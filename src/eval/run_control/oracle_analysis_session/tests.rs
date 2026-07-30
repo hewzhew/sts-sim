@@ -578,7 +578,75 @@ fn analysis_checkpoint_restores_the_resident_combat_stage() {
 }
 
 #[test]
-fn typed_rescue_preserves_flexible_potions_when_a_verified_win_exists() {
+fn quality_gated_potion_replacement_survives_checkpoint_restore() {
+    let mut combat = one_strike_combat();
+    combat.entities.player.current_hp = 40;
+    combat.entities.player.max_hp = 40;
+    combat.entities.monsters[0].current_hp = 8;
+    combat.entities.monsters[0].max_hp = 8;
+    combat.zones.draw_pile = vec![CombatCard::new(crate::content::cards::CardId::Strike, 2)].into();
+    combat.entities.potions = vec![Some(Potion::new(PotionId::SkillPotion, 60))];
+    let budgets = strategic_combat_budgets(RunControlSearchCombatOptions {
+        max_nodes: Some(512),
+        ..RunControlSearchCombatOptions::default()
+    });
+    let mut analysis = combat_analysis_with_budgets(combat, None, budgets.clone());
+
+    for _ in 0..16 {
+        let work = &mut analysis
+            .combat_jobs
+            .get_mut(&0)
+            .expect("resident conserving search")
+            .work;
+        if work.has_verified_witness() {
+            break;
+        }
+        let _ = work.advance_improving_incumbent(
+            &RunControlCombatSearchQuantum {
+                label: "quality-gate-checkpoint",
+                additional_nodes: 32,
+                soft_wall_ms: None,
+            },
+            None,
+        );
+    }
+    let conserving_work = &analysis
+        .combat_jobs
+        .get(&0)
+        .expect("resident conserving search")
+        .work;
+    assert!(conserving_work.has_verified_witness());
+    assert!(!conserving_work.has_quality_satisfying_witness());
+    assert!(analysis
+        .promote_combat_job_if_needed(0)
+        .expect("promote verified low-quality incumbent"));
+    let checkpoint = analysis.checkpoint().expect("quality-gated checkpoint");
+    assert_eq!(checkpoint.combat_jobs[0].stage, 1);
+    assert!(
+        checkpoint.combat_jobs[0]
+            .work
+            .potion_spend_requires_satisfaction
+    );
+    assert_eq!(checkpoint.combat_jobs[0].work.allowed_potion_slots, Some(1));
+
+    let restored = OracleAnalysisSessionV1::restore(checkpoint, budgets, None, None)
+        .expect("restore quality-gated analysis");
+    let restored_checkpoint = restored
+        .checkpoint()
+        .expect("restored quality-gated checkpoint");
+    assert!(
+        restored_checkpoint.combat_jobs[0]
+            .work
+            .potion_spend_requires_satisfaction
+    );
+    assert_eq!(
+        restored_checkpoint.combat_jobs[0].work.allowed_potion_slots,
+        Some(1)
+    );
+}
+
+#[test]
+fn quality_gated_rescue_can_inspect_flexible_potions_without_admitting_passive_escape() {
     let mut combat = one_strike_combat();
     combat.entities.potions = vec![
         Some(Potion::new(PotionId::BlockPotion, 61)),
@@ -603,7 +671,11 @@ fn typed_rescue_preserves_flexible_potions_when_a_verified_win_exists() {
 
     let improve = budgets.for_session_stage_with_prior(&branch.session, 1, &prior);
     assert_eq!(improve.max_potions_used, Some(1));
-    assert_eq!(improve.allowed_potion_slots, Some(1_u64 << 0));
+    assert_eq!(
+        improve.allowed_potion_slots,
+        Some((1_u64 << 0) | (1_u64 << 1)),
+        "the protected no-potion incumbent lets autonomous search inspect the flexible Skill Potion"
+    );
 
     prior.incumbent = None;
     let survival = budgets.for_session_stage_with_prior(&branch.session, 1, &prior);

@@ -578,6 +578,7 @@ fn empty_combat_work_checkpoint() -> OracleRunCombatWorkCheckpointV1 {
         potion_contract_recorded: false,
         max_potions_used: None,
         allowed_potion_slots: None,
+        potion_spend_requires_satisfaction: false,
         incumbent: None,
         advisor_nodes: 0,
         advisor_elapsed_ms: 0,
@@ -746,7 +747,7 @@ fn potion_rescue_tiers_distinguish_common_tactics_from_reserved_resources() {
         assert_eq!(
             oracle_potion_rescue_tier_v1(potion),
             OraclePotionRescueTierV1::FindAnyWin,
-            "{potion:?} should remain reserved while a verified win exists"
+            "{potion:?} needs a quality-gated autonomous rescue or a no-win emergency"
         );
     }
 
@@ -756,6 +757,52 @@ fn potion_rescue_tiers_distinguish_common_tactics_from_reserved_resources() {
             OraclePotionRescueTierV1::Excluded
         );
     }
+}
+
+#[test]
+fn autonomous_quality_gated_rescue_can_inspect_continuation_sensitive_potions() {
+    let mut session = RunControlSession::new(RunControlConfig::default());
+    let mut combat = crate::test_support::blank_test_combat();
+    combat.entities.potions = vec![
+        Some(crate::content::potions::Potion::new(
+            PotionId::BlockPotion,
+            7,
+        )),
+        Some(crate::content::potions::Potion::new(
+            PotionId::ColorlessPotion,
+            8,
+        )),
+        Some(crate::content::potions::Potion::new(
+            PotionId::FairyPotion,
+            9,
+        )),
+    ];
+    session.active_combat = Some(crate::state::core::ActiveCombat::new(
+        crate::state::core::EngineState::CombatPlayerTurn,
+        combat,
+        crate::state::core::CombatContext::Room(crate::state::core::RoomCombatContext {
+            room_type: crate::state::map::node::RoomType::MonsterRoom,
+        }),
+    ));
+
+    assert_eq!(
+        oracle_potion_rescue_slot_mask_v1(&session, OraclePotionRescueKindV1::ImproveVerifiedWin),
+        1,
+        "legacy owner refinement still admits only combat-local resources"
+    );
+    assert_eq!(
+        oracle_potion_rescue_slot_mask_v1(
+            &session,
+            OraclePotionRescueKindV1::ImproveVerifiedWinQualityGated
+        ),
+        0b011,
+        "autonomous quality gating may inspect both active identities"
+    );
+    assert_eq!(
+        oracle_potion_rescue_slot_mask_v1(&session, OraclePotionRescueKindV1::FindAnyWin),
+        0b011,
+        "passive death insurance remains excluded from active victory search"
+    );
 }
 
 #[test]

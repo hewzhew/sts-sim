@@ -148,7 +148,8 @@ pub(super) fn potion_conserving_refinement_search_session_plan(
     } else {
         (
             match rescue_kind {
-                OraclePotionRescueKindV1::ImproveVerifiedWin => {
+                OraclePotionRescueKindV1::ImproveVerifiedWin
+                | OraclePotionRescueKindV1::ImproveVerifiedWinQualityGated => {
                     CombatSearchSessionStage::ImproveVerifiedWin
                 }
                 OraclePotionRescueKindV1::FindAnyWin => CombatSearchSessionStage::FindAnyWin,

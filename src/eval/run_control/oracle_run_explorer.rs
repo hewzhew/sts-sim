@@ -224,6 +224,7 @@ pub struct OraclePendingCombatSummaryV1 {
     pub incumbent_final_hp: Option<i32>,
     pub incumbent_hp_loss: Option<i32>,
     pub incumbent_action_count: Option<usize>,
+    pub potion_spend_requires_satisfaction: bool,
     pub incumbent_revision: u64,
     pub quanta_since_incumbent_improvement: usize,
     pub last_status: Option<&'static str>,
@@ -337,7 +338,7 @@ impl OracleRunCombatBudgetsV1 {
             return options;
         }
         let rescue_kind = if prior.incumbent.is_some() {
-            OraclePotionRescueKindV1::ImproveVerifiedWin
+            OraclePotionRescueKindV1::ImproveVerifiedWinQualityGated
         } else {
             OraclePotionRescueKindV1::FindAnyWin
         };
@@ -400,7 +401,7 @@ impl OracleRunCombatBudgetsV1 {
             return true;
         }
         let rescue_kind = if work.has_verified_witness() {
-            OraclePotionRescueKindV1::ImproveVerifiedWin
+            OraclePotionRescueKindV1::ImproveVerifiedWinQualityGated
         } else {
             OraclePotionRescueKindV1::FindAnyWin
         };
@@ -662,6 +663,7 @@ impl OracleRunExplorerV1 {
                     incumbent_final_hp: progress.incumbent_final_hp,
                     incumbent_hp_loss: progress.incumbent_hp_loss,
                     incumbent_action_count: progress.incumbent_action_count,
+                    potion_spend_requires_satisfaction: progress.potion_spend_requires_satisfaction,
                     incumbent_revision: progress.incumbent_revision,
                     quanta_since_incumbent_improvement: progress.quanta_since_incumbent_improvement,
                     last_status: progress.last_status,

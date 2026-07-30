@@ -126,6 +126,9 @@ pub struct OracleAnalysisCombatProgressV1 {
     /// Exact potion slots admitted by the resident portfolio. `None` means
     /// every otherwise legal slot remains available.
     pub allowed_potion_slots: Option<u64>,
+    /// A spending witness must satisfy the configured strategic target before
+    /// it may replace the retained potion-free incumbent.
+    pub potion_spend_requires_satisfaction: bool,
     /// Work charged by prior resident searches and preserved across resumes.
     pub historical_generation_work: u64,
     pub current_search_generation_work: u64,
@@ -1682,6 +1685,7 @@ fn combat_progress_view(job: &OracleAnalysisCombatJobV1) -> OracleAnalysisCombat
         search_stage: job.stage,
         max_potions_used: work.max_potions_used(),
         allowed_potion_slots: work.allowed_potion_slots(),
+        potion_spend_requires_satisfaction: progress.potion_spend_requires_satisfaction,
         historical_generation_work: progress.historical_generation_work,
         current_search_generation_work: progress.current_search_generation_work,
         generation_work: progress.generation_work,

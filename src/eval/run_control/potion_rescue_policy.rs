@@ -4,7 +4,13 @@ use super::RunControlSession;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum OraclePotionRescueKindV1 {
+    /// Legacy owner-audit refinement. Until that separate control flow can
+    /// retain the no-potion incumbent, it admits only combat-local resources.
     ImproveVerifiedWin,
+    /// Autonomous run refinement retains the exact no-potion incumbent and
+    /// may inspect any active potion, but a spending line may replace that
+    /// incumbent only by satisfying the configured strategic quality target.
+    ImproveVerifiedWinQualityGated,
     FindAnyWin,
 }
 
@@ -15,9 +21,10 @@ pub enum OraclePotionRescueTierV1 {
     /// strategic HP-quality target and under the exact one-potion cap.
     BoundedQuality,
     /// Flexible discovery, out-of-combat recovery, and all other uncommon or
-    /// rare active resources stay reserved while any verified win exists.
-    /// They may enter the same exact one-potion lane only when no victory has
-    /// been found.
+    /// rare active resources need continuation-sensitive review. Legacy owner
+    /// refinement keeps them reserved while a verified win exists. Autonomous
+    /// refinement may inspect them behind the exact no-potion-incumbent
+    /// quality gate, or use them when no victory has been found.
     FindAnyWin,
     /// Passive death insurance and explicit escape are not active victory
     /// actions. Their separate run-control contracts remain authoritative.

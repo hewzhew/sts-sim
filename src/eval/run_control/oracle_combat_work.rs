@@ -38,6 +38,8 @@ pub(super) struct OracleRunCombatWorkV1 {
     max_transition_steps: usize,
     max_potions_used: Option<u32>,
     allowed_potion_slots: Option<u64>,
+    potion_spend_requires_satisfaction: bool,
+    protected_potion_free_incumbent: Option<OracleCombatWitness>,
     satisfaction: PortfolioWitnessSatisfactionV1,
     remaining_wall_time: Option<Duration>,
     quantum_count: usize,
@@ -114,6 +116,10 @@ pub struct OracleRunCombatWorkCheckpointV1 {
     pub max_potions_used: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub allowed_potion_slots: Option<u64>,
+    /// When true, a verified potion-free incumbent is protected from a
+    /// higher-HP spending line that still misses the configured satisfaction.
+    #[serde(default)]
+    pub potion_spend_requires_satisfaction: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub incumbent: Option<OracleCombatWitness>,
     #[serde(default)]
@@ -175,6 +181,7 @@ pub(super) struct OracleRunCombatWorkProgressV1 {
     pub incumbent_action_count: Option<usize>,
     pub incumbent_potions_used: Option<u32>,
     pub incumbent_potion_slots: Option<u64>,
+    pub potion_spend_requires_satisfaction: bool,
     pub incumbent_revision: u64,
     pub quanta_since_incumbent_improvement: usize,
     pub last_quantum_generation_work: usize,
@@ -298,6 +305,8 @@ impl OracleRunCombatWorkV1 {
             max_transition_steps,
             max_potions_used: prepared.config.max_potions_used,
             allowed_potion_slots: prepared.options.allowed_potion_slots,
+            potion_spend_requires_satisfaction: false,
+            protected_potion_free_incumbent: None,
             satisfaction,
             remaining_wall_time: prepared.config.wall_time,
             quantum_count: 0,
@@ -353,6 +362,14 @@ impl OracleRunCombatWorkV1 {
         work.restart_count = checkpoint.restart_count.saturating_add(1);
         work.incumbent_revision = checkpoint.incumbent_revision;
         work.quanta_since_incumbent_improvement = checkpoint.quanta_since_incumbent_improvement;
+        work.potion_spend_requires_satisfaction = checkpoint.potion_spend_requires_satisfaction;
+        if work.potion_spend_requires_satisfaction {
+            work.protected_potion_free_incumbent = checkpoint
+                .incumbent
+                .as_ref()
+                .filter(|incumbent| combat_witness_potion_expenditures(&work.start, incumbent) == 0)
+                .cloned();
+        }
         if let Some(incumbent) = checkpoint.incumbent {
             work.restore_checkpoint_incumbent(incumbent)?;
         }
@@ -377,6 +394,18 @@ impl OracleRunCombatWorkV1 {
         work.restart_count = prior.restart_count.saturating_add(1);
         work.incumbent_revision = prior.incumbent_revision;
         work.quanta_since_incumbent_improvement = prior.quanta_since_incumbent_improvement;
+        let expands_potion_contract = prior.max_potions_used == Some(0)
+            && work.max_potions_used.is_some_and(|limit| limit > 0);
+        let protected_incumbent = prior
+            .incumbent
+            .as_ref()
+            .filter(|incumbent| combat_witness_potion_expenditures(&work.start, incumbent) == 0)
+            .cloned();
+        work.potion_spend_requires_satisfaction = prior.potion_spend_requires_satisfaction
+            || (expands_potion_contract && protected_incumbent.is_some());
+        if work.potion_spend_requires_satisfaction {
+            work.protected_potion_free_incumbent = protected_incumbent;
+        }
         if let Some(incumbent) = prior.incumbent {
             work.restore_checkpoint_incumbent(incumbent)?;
         }
@@ -491,6 +520,7 @@ impl OracleRunCombatWorkV1 {
             potion_contract_recorded: true,
             max_potions_used: self.max_potions_used,
             allowed_potion_slots: self.allowed_potion_slots,
+            potion_spend_requires_satisfaction: self.potion_spend_requires_satisfaction,
             incumbent: self.best_witness().cloned(),
             // Kept in checkpoint schema so old files still deserialize. New
             // local-graph searches never start the retired V2 advisor.
@@ -851,6 +881,7 @@ impl OracleRunCombatWorkV1 {
             self.local_search.witness(),
             self.discrepancy_witness.as_ref(),
             self.policy_witness.as_ref(),
+            self.protected_potion_free_incumbent.as_ref(),
         ]
         .into_iter()
         .flatten()
@@ -863,7 +894,13 @@ impl OracleRunCombatWorkV1 {
             )
         })
         .reduce(|best, candidate| {
-            if combat_witness_better(&self.start, candidate, best) {
+            if combat_witness_better_with_potion_quality_gate(
+                &self.start,
+                self.satisfaction,
+                self.potion_spend_requires_satisfaction,
+                candidate,
+                best,
+            ) {
                 candidate
             } else {
                 best
@@ -978,6 +1015,7 @@ impl OracleRunCombatWorkV1 {
                 .map(|witness| combat_witness_potion_expenditures(&self.start, witness)),
             incumbent_potion_slots: incumbent
                 .map(|witness| combat_witness_potion_expenditure_slots(&self.start, witness)),
+            potion_spend_requires_satisfaction: self.potion_spend_requires_satisfaction,
             incumbent_revision: self.incumbent_revision,
             quanta_since_incumbent_improvement: self.quanta_since_incumbent_improvement,
             last_quantum_generation_work: self.last_quantum_generation_work,
@@ -1113,6 +1151,28 @@ fn combat_witness_better(
         combat_witness_quality(start, left),
         combat_witness_quality(start, right),
     )
+}
+
+fn combat_witness_better_with_potion_quality_gate(
+    start: &crate::sim::combat::CombatPosition,
+    satisfaction: PortfolioWitnessSatisfactionV1,
+    potion_spend_requires_satisfaction: bool,
+    left: &OracleCombatWitness,
+    right: &OracleCombatWitness,
+) -> bool {
+    if potion_spend_requires_satisfaction {
+        let left_potions = combat_witness_potion_expenditures(start, left);
+        let right_potions = combat_witness_potion_expenditures(start, right);
+        let left_satisfies = combat_witness_satisfies(satisfaction, start, left);
+        let right_satisfies = combat_witness_satisfies(satisfaction, start, right);
+        if left_satisfies != right_satisfies {
+            return left_satisfies;
+        }
+        if !left_satisfies && left_potions != right_potions {
+            return left_potions < right_potions;
+        }
+    }
+    combat_witness_better(start, left, right)
 }
 
 fn combat_witness_potion_expenditures(
@@ -1319,6 +1379,90 @@ mod tests {
         combat.entities.monsters[0].current_hp = 1;
         combat.entities.monsters[0].max_hp = 1;
         session
+    }
+
+    fn synthetic_witness(
+        start: &crate::sim::combat::CombatPosition,
+        final_hp: i32,
+        spend_potion: bool,
+    ) -> OracleCombatWitness {
+        let mut final_position = start.clone();
+        final_position.combat.entities.player.current_hp = final_hp;
+        let actions = if spend_potion {
+            final_position.combat.entities.potions[0] = None;
+            vec![TurnOptionAction {
+                input: ClientInput::UsePotion {
+                    potion_index: 0,
+                    target: None,
+                },
+                expected_successor_hash: "synthetic".into(),
+                engine_steps: 0,
+            }]
+        } else {
+            Vec::new()
+        };
+        OracleCombatWitness {
+            actions,
+            final_position,
+            negative_log_policy: 0.0,
+            replay_engine_steps: 0,
+            discovery_source: OracleCombatWitnessDiscoverySource::RestoredExactActions,
+        }
+    }
+
+    #[test]
+    fn quality_gate_protects_no_potion_incumbent_from_marginal_spend() {
+        let mut session = hallway_combat_session();
+        session
+            .active_combat
+            .as_mut()
+            .unwrap()
+            .combat_state
+            .entities
+            .potions = vec![Some(crate::content::potions::Potion::new(
+            crate::content::potions::PotionId::ColorlessPotion,
+            7,
+        ))];
+        let start = session
+            .current_active_combat_position()
+            .expect("exact potion rescue root");
+        let baseline = synthetic_witness(&start, 50, false);
+        let marginal_spend = synthetic_witness(&start, 55, true);
+        let quality_spend = synthetic_witness(&start, 65, true);
+        let satisfaction = PortfolioWitnessSatisfactionV1::HpLossAtMost(20);
+
+        assert!(
+            combat_witness_better(&start, &marginal_spend, &baseline),
+            "raw final-HP comparison demonstrates the regression guard's purpose"
+        );
+        assert!(!combat_witness_better_with_potion_quality_gate(
+            &start,
+            satisfaction,
+            true,
+            &marginal_spend,
+            &baseline,
+        ));
+        assert!(combat_witness_better_with_potion_quality_gate(
+            &start,
+            satisfaction,
+            true,
+            &baseline,
+            &marginal_spend,
+        ));
+        assert!(combat_witness_better_with_potion_quality_gate(
+            &start,
+            satisfaction,
+            true,
+            &quality_spend,
+            &baseline,
+        ));
+        assert!(!combat_witness_better_with_potion_quality_gate(
+            &start,
+            satisfaction,
+            true,
+            &baseline,
+            &quality_spend,
+        ));
     }
 
     #[test]
