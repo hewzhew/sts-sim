@@ -1,3 +1,6 @@
+use sts_simulator::ai::potion_continuation_context_v1::{
+    potion_run_continuation_context_v1, PotionRunContinuationContextV1,
+};
 use sts_simulator::eval::run_control::{
     combat_search_trace_summaries, CombatSearchTraceSummary, OraclePotionRescueKindV1,
     RunControlCombatSearchRejection, RunControlHpLossLimit, RunControlSession,
@@ -44,6 +47,12 @@ pub(super) fn run_combat_search_session_step(
         ));
     }
 
+    let active_combat = session
+        .active_combat
+        .as_ref()
+        .ok_or_else(|| "combat search session has no active combat".to_string())?;
+    let potion_continuation_context =
+        potion_run_continuation_context_v1(&session.run_state, &active_combat.combat_state);
     let combat_capture = capture_active_combat(session)?;
     let owner_hp_loss_limit = match owner_audit_hp_loss_limit(session) {
         RunControlHpLossLimit::Limit(limit) => Some(limit),
@@ -90,6 +99,7 @@ pub(super) fn run_combat_search_session_step(
                 primary_facts.as_ref(),
                 false,
                 primary_decision,
+                &potion_continuation_context,
             ));
             plan = refinement;
             outcome = match session.apply_combat_search(plan.search.clone()) {
@@ -132,6 +142,7 @@ pub(super) fn run_combat_search_session_step(
         facts.as_ref(),
         applied,
         decision,
+        &potion_continuation_context,
     ));
     if let Some(diagnostic) = combat_capture.and_then(|capture| {
         accepted_high_loss_diagnostic(
@@ -237,6 +248,7 @@ fn combat_search_summaries(
     facts: Option<&SearchCandidateFacts>,
     applied: bool,
     decision: &'static str,
+    potion_continuation_context: &PotionRunContinuationContextV1,
 ) -> Vec<CombatSearchTraceSummary> {
     let mut summaries =
         combat_search_trace_summaries(&outcome.trace_annotations).collect::<Vec<_>>();
@@ -253,6 +265,7 @@ fn combat_search_summaries(
         summary.portfolio_candidate_tier = facts.map(|facts| facts.tier.as_str().to_string());
         summary.portfolio_selected = Some(applied);
         summary.portfolio_decision = Some(decision.to_string());
+        summary.potion_continuation_context = Some(potion_continuation_context.clone());
     }
     summaries
 }
@@ -463,6 +476,15 @@ mod tests {
                 && summary.profile_max_potions_used == Some(0)
                 && summary.profile_allowed_potion_slots == Some(0)
         }));
+        let continuation = result
+            .combat_search
+            .iter()
+            .find_map(|summary| summary.potion_continuation_context.as_ref())
+            .expect("owner search should preserve pre-search potion context");
+        assert_eq!(continuation.capture_boundary, "before_combat_search");
+        assert_eq!(continuation.inventory.slot_capacity, 1);
+        assert_eq!(continuation.inventory.occupied_slots, 1);
+        assert!(continuation.inventory.inventory_full);
     }
 
     #[test]

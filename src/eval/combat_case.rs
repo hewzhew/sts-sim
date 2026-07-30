@@ -234,6 +234,7 @@ mod tests {
     use serde_json::json;
 
     use super::*;
+    use crate::ai::potion_continuation_context_v1::potion_run_continuation_context_v1;
     use crate::ai::strategy::challenger_signature::DeckBurdenBand;
     use crate::ai::strategy::trajectory_comparison::{
         TrajectoryConstruction, TrajectoryDeployabilityEvidence, TrajectoryPressureEvidence,
@@ -365,5 +366,36 @@ mod tests {
             restored.path[0].decision_evidence.as_ref().unwrap()["candidate_pool"][0]["selected"],
             true
         );
+    }
+
+    #[test]
+    fn combat_case_round_trip_preserves_potion_continuation_context() {
+        let run = crate::state::run::RunState::new(7, 0, false, "IRONCLAD");
+        let combat = crate::test_support::blank_test_combat();
+        let continuation = potion_run_continuation_context_v1(&run, &combat);
+        let attempt = CombatSearchTraceSummary {
+            potion_continuation_context: Some(continuation),
+            ..CombatSearchTraceSummary::default()
+        };
+        let mut case = sample_case();
+        case.combat_search_attempts = vec![attempt.clone()];
+        case.failed_search = Some(attempt);
+
+        let payload = serde_json::to_value(&case).expect("serialize combat case");
+        assert_eq!(
+            payload["combat_search_attempts"][0]["potion_continuation_context"]["capture_boundary"],
+            "before_combat_search"
+        );
+
+        let restored: CombatCase =
+            serde_json::from_value(payload).expect("deserialize combat case");
+        assert!(restored.combat_search_attempts[0]
+            .potion_continuation_context
+            .is_some());
+        assert!(restored
+            .failed_search
+            .as_ref()
+            .and_then(|attempt| attempt.potion_continuation_context.as_ref())
+            .is_some());
     }
 }

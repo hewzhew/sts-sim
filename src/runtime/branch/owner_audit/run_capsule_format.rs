@@ -383,6 +383,7 @@ mod tests {
 
     use super::*;
     use sts_simulator::ai::combat_search_v2::CombatSearchAcceptancePluginId;
+    use sts_simulator::ai::potion_continuation_context_v1::potion_run_continuation_context_v1;
     use sts_simulator::ai::strategy::trajectory_comparison::{
         TrajectoryDeployabilityEvidence, TrajectoryPairEligibility,
         TrajectorySearchComparabilityStatus,
@@ -662,6 +663,35 @@ mod tests {
     }
 
     #[test]
+    fn result_preserves_potion_continuation_context_in_attempts_and_history() {
+        let mut branch = sample_branch();
+        let combat = sts_simulator::test_support::blank_test_combat();
+        let continuation = potion_run_continuation_context_v1(&branch.session.run_state, &combat);
+        let attempt = CombatSearchTraceSummary {
+            potion_continuation_context: Some(continuation),
+            ..CombatSearchTraceSummary::default()
+        };
+        branch.combat_search = vec![attempt.clone()];
+        branch.combat_search_history = vec![attempt];
+        let trajectory_evaluation = evaluation(vec![branch.clone()]);
+
+        let value = result_value(3, &branch, Value::Null, Value::Null, &trajectory_evaluation);
+
+        assert_eq!(
+            value["combat_search_attempts"][0]["potion_continuation_context"]["capture_boundary"],
+            "before_combat_search"
+        );
+        assert_eq!(
+            value["combat_search_history"][0]["potion_continuation_context"]["capture_boundary"],
+            "before_combat_search"
+        );
+        assert_eq!(
+            value["failed_search"]["potion_continuation_context"]["capture_boundary"],
+            "before_combat_search"
+        );
+    }
+
+    #[test]
     fn manifest_writes_run_contract_and_legacy_args_projection() {
         let value = manifest_value(
             sample_args(),
@@ -730,6 +760,7 @@ mod tests {
             portfolio_candidate_tier: None,
             portfolio_selected: None,
             portfolio_decision: None,
+            potion_continuation_context: None,
             act: 1,
             floor: 14,
             turn: 1,
@@ -837,6 +868,7 @@ mod tests {
             portfolio_candidate_tier: None,
             portfolio_selected: None,
             portfolio_decision: None,
+            potion_continuation_context: None,
             act: 1,
             floor: 14,
             turn: 1,
@@ -904,6 +936,7 @@ mod tests {
             portfolio_candidate_tier: None,
             portfolio_selected: None,
             portfolio_decision: None,
+            potion_continuation_context: None,
             act: 1,
             floor: 14,
             turn: 1,
