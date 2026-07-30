@@ -489,10 +489,6 @@ fn summarize_path(path: &RouteWindowPath) -> PathStats {
             }
             Some(RoomType::ShopRoom) => {
                 stats.shops = stats.shops.saturating_add(1);
-                if !stats.recovered {
-                    stats.recovery_before_damage = stats.damage_before_recovery == 0;
-                    stats.recovered = true;
-                }
             }
             Some(RoomType::TreasureRoom) => {
                 stats.treasures = stats.treasures.saturating_add(1);
@@ -529,7 +525,10 @@ fn route_policy_band_v1(
     if context.recovery_pressure && path.some_path_recovers_before_damage() {
         return RoutePolicyBandV1::RecoveryOption;
     }
-    if *room_type == Some(RoomType::ShopRoom) && shop_conversion_is_supported(context) {
+    if *room_type == Some(RoomType::ShopRoom)
+        && path.min_elites == 0
+        && shop_conversion_is_supported(context)
+    {
         return RoutePolicyBandV1::LiquidityConversion;
     }
     if path.min_elites == 0
@@ -653,6 +652,23 @@ mod tests {
         let mut node = MapRoomNode::new(x, y);
         node.class = Some(room_type);
         node
+    }
+
+    fn route_action(
+        room_type: RoomType,
+        arrival: RoutePolicyArrivalV1,
+        path: RoutePolicyPathEvidenceV1,
+    ) -> RoutePolicyActionV1 {
+        RoutePolicyActionV1::Select {
+            x: 0,
+            y: 0,
+            room_type: Some(room_type),
+            uses_wing_boots: false,
+            has_emerald_key: false,
+            actual_wing_boots_spent: 0,
+            arrival,
+            path,
+        }
     }
 
     fn two_route_session() -> RunControlSession {
@@ -846,6 +862,76 @@ mod tests {
                 ..
             })
         ));
+    }
+
+    #[test]
+    fn funded_shop_with_a_forced_elite_does_not_outrank_a_flexible_safe_route() {
+        let context = RoutePolicyContextV1 {
+            current_hp: 72,
+            max_hp: 90,
+            gold: 129,
+            critical_recovery: false,
+            recovery_pressure: false,
+            shop_conversion_support: StrategyPlanSupportV1::Plausible,
+            pending_rewards_only_unclaimable_potions: false,
+        };
+        let shop = route_action(
+            RoomType::ShopRoom,
+            RoutePolicyArrivalV1::Shop,
+            RoutePolicyPathEvidenceV1 {
+                coverage: Some(RouteWindowCoverageKind::CompleteWithinHorizon),
+                observed_path_count: 1,
+                min_elites: 1,
+                max_elites: 1,
+                min_shops: 1,
+                max_shops: 1,
+                ..RoutePolicyPathEvidenceV1::default()
+            },
+        );
+        let flexible = route_action(
+            RoomType::EventRoom,
+            RoutePolicyArrivalV1::Event,
+            RoutePolicyPathEvidenceV1 {
+                coverage: Some(RouteWindowCoverageKind::CompleteWithinHorizon),
+                observed_path_count: 2,
+                min_elites: 0,
+                max_elites: 1,
+                min_campfires: 1,
+                max_campfires: 2,
+                ..RoutePolicyPathEvidenceV1::default()
+            },
+        );
+
+        let shop_band = route_policy_band_v1(&shop, context);
+        let flexible_band = route_policy_band_v1(&flexible, context);
+
+        assert_eq!(shop_band, RoutePolicyBandV1::Ordinary);
+        assert_eq!(flexible_band, RoutePolicyBandV1::FlexibleGrowth);
+        assert!(flexible_band < shop_band);
+    }
+
+    #[test]
+    fn shop_is_not_reported_as_guaranteed_recovery() {
+        let stats = summarize_path(&RouteWindowPath {
+            nodes: vec![
+                crate::ai::route_window_facts::RouteWindowNode {
+                    x: 0,
+                    y: 0,
+                    room_type: Some(RoomType::ShopRoom),
+                },
+                crate::ai::route_window_facts::RouteWindowNode {
+                    x: 0,
+                    y: 1,
+                    room_type: Some(RoomType::MonsterRoomElite),
+                },
+            ],
+        });
+
+        assert_eq!(stats.shops, 1);
+        assert_eq!(stats.elites, 1);
+        assert_eq!(stats.damage_before_recovery, 1);
+        assert!(!stats.recovered);
+        assert!(!stats.recovery_before_damage);
     }
 
     #[test]

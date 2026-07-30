@@ -577,7 +577,6 @@ fn update_route_path_stats(mut stats: RoutePathStats, node: &RouteWindowNode) ->
             if !stats.first_elite_seen {
                 stats.shops_before_first_elite += 1;
             }
-            observe_recovery(&mut stats);
         }
         Some(RoomType::RestRoom) => {
             stats.campfires += 1;
@@ -1345,6 +1344,39 @@ mod tests {
             family.coverage.kind,
             RouteWindowCoverageKind::CompleteWithinHorizon
         );
+    }
+
+    #[test]
+    fn shop_is_liquidity_not_guaranteed_recovery() {
+        let family = RouteWindowPathFamily {
+            coverage: RouteWindowCoverage {
+                kind: RouteWindowCoverageKind::CompleteWithinHorizon,
+                horizon_nodes: 2,
+                path_budget: 16,
+                path_budget_exhausted: false,
+                limitations: Vec::new(),
+            },
+            paths: vec![RouteWindowPath {
+                nodes: vec![
+                    RouteWindowNode {
+                        x: 0,
+                        y: 0,
+                        room_type: Some(RoomType::ShopRoom),
+                    },
+                    RouteWindowNode {
+                        x: 0,
+                        y: 1,
+                        room_type: Some(RoomType::MonsterRoomElite),
+                    },
+                ],
+            }],
+        };
+
+        let summary = summarize_route_path_family(&family);
+
+        assert_eq!(summary.min_shops, 1);
+        assert_eq!(summary.paths_with_recovery_before_damage, 0);
+        assert_eq!(summary.min_damage_rooms_before_recovery, 1);
     }
 
     #[test]
