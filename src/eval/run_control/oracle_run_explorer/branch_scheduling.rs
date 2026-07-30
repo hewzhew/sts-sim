@@ -116,7 +116,11 @@ impl OracleRunExplorerV1 {
             })?;
         let work = OracleRunCombatWorkV1::restart_for_higher_fidelity_with_guidance(
             &branch.session,
-            combat_budgets.for_session_stage(&branch.session, deferred.stage),
+            combat_budgets.for_session_stage_with_prior(
+                &branch.session,
+                deferred.stage,
+                &deferred.prior_work,
+            ),
             deferred.prior_work.clone(),
             combat_budgets.guidance_bundle.as_deref(),
         )?;

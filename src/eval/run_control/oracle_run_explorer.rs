@@ -324,6 +324,50 @@ impl OracleRunCombatBudgetsV1 {
         scale_combat_options(options, self.stage_divisor(stage))
     }
 
+    pub(super) fn for_session_stage_with_prior(
+        &self,
+        session: &RunControlSession,
+        stage: u8,
+        prior: &OracleRunCombatWorkCheckpointV1,
+    ) -> RunControlSearchCombatOptions {
+        let mut options = self.for_session_stage(session, stage);
+        if stage == 0
+            || !self.uses_potion_conserving_primary(session, &self.for_session_stage(session, 1))
+        {
+            return options;
+        }
+        let rescue_kind = if prior.incumbent.is_some() {
+            OraclePotionRescueKindV1::ImproveVerifiedWin
+        } else {
+            OraclePotionRescueKindV1::FindAnyWin
+        };
+        options.potion_policy =
+            Some(crate::ai::combat_search_v2::CombatSearchV2PotionPolicy::SemanticBudgeted);
+        options.max_potions_used = Some(1);
+        options.allowed_potion_slots =
+            Some(oracle_potion_rescue_slot_mask_v1(session, rescue_kind));
+        options
+    }
+
+    pub(super) fn for_session_stage_restore(
+        &self,
+        session: &RunControlSession,
+        stage: u8,
+        checkpoint: &OracleRunCombatWorkCheckpointV1,
+    ) -> RunControlSearchCombatOptions {
+        if !checkpoint.potion_contract_recorded {
+            return self.for_session_stage_with_prior(session, stage, checkpoint);
+        }
+        let mut options = self.for_session_stage(session, stage);
+        options.max_potions_used = checkpoint.max_potions_used;
+        options.allowed_potion_slots = checkpoint.allowed_potion_slots;
+        if checkpoint.allowed_potion_slots.is_some() && checkpoint.max_potions_used != Some(0) {
+            options.potion_policy =
+                Some(crate::ai::combat_search_v2::CombatSearchV2PotionPolicy::SemanticBudgeted);
+        }
+        options
+    }
+
     fn stage_divisor(&self, stage: u8) -> u32 {
         if stage == 0 {
             self.initial_divisor.max(1)
@@ -335,8 +379,12 @@ impl OracleRunCombatBudgetsV1 {
     pub(super) fn has_later_stage(&self, session: &RunControlSession, stage: u8) -> bool {
         stage == 0
             && (self.initial_divisor > 1
-                || self
-                    .uses_potion_conserving_primary(session, &self.for_session_stage(session, 1)))
+                || (self
+                    .uses_potion_conserving_primary(session, &self.for_session_stage(session, 1))
+                    && oracle_potion_rescue_slot_mask_v1(
+                        session,
+                        OraclePotionRescueKindV1::FindAnyWin,
+                    ) != 0))
     }
 
     pub(super) fn needs_later_stage(
@@ -345,7 +393,18 @@ impl OracleRunCombatBudgetsV1 {
         stage: u8,
         work: &OracleRunCombatWorkV1,
     ) -> bool {
-        self.has_later_stage(session, stage) && !work.has_quality_satisfying_witness()
+        if !self.has_later_stage(session, stage) || work.has_quality_satisfying_witness() {
+            return false;
+        }
+        if self.initial_divisor > 1 {
+            return true;
+        }
+        let rescue_kind = if work.has_verified_witness() {
+            OraclePotionRescueKindV1::ImproveVerifiedWin
+        } else {
+            OraclePotionRescueKindV1::FindAnyWin
+        };
+        oracle_potion_rescue_slot_mask_v1(session, rescue_kind) != 0
     }
 
     fn uses_potion_conserving_primary(
@@ -356,6 +415,9 @@ impl OracleRunCombatBudgetsV1 {
         if self.quality_policy != OracleRunCombatQualityPolicyV1::StrategicRun
             || options.max_potions_used.is_some()
             || options.potion_policy.is_some()
+            || options.allowed_potion_slots.is_some()
+            || session.search_max_potions_used.is_some()
+            || session.search_potion_policy.is_some()
         {
             return false;
         }
@@ -367,9 +429,73 @@ impl OracleRunCombatBudgetsV1 {
                     .potions
                     .iter()
                     .flatten()
-                    .any(|potion| potion.can_use)
+                    .any(|potion| {
+                        potion.can_use
+                            || potion.id == crate::content::potions::PotionId::FairyPotion
+                    })
         })
     }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum OraclePotionRescueKindV1 {
+    ImproveVerifiedWin,
+    FindAnyWin,
+}
+
+fn oracle_potion_rescue_slot_mask_v1(
+    session: &RunControlSession,
+    rescue_kind: OraclePotionRescueKindV1,
+) -> u64 {
+    let Some(active) = session.active_combat.as_ref() else {
+        return 0;
+    };
+    active
+        .combat_state
+        .entities
+        .potions
+        .iter()
+        .enumerate()
+        .filter_map(|(slot, potion)| {
+            let potion = potion.as_ref()?;
+            if !potion.can_use || !potion_can_support_victory_rescue_v1(potion.id) {
+                return None;
+            }
+            if rescue_kind == OraclePotionRescueKindV1::ImproveVerifiedWin
+                && !potion_is_bounded_quality_rescue_v1(potion.id)
+            {
+                return None;
+            }
+            u32::try_from(slot)
+                .ok()
+                .and_then(|slot| 1_u64.checked_shl(slot))
+        })
+        .fold(0, |mask, slot| mask | slot)
+}
+
+fn potion_can_support_victory_rescue_v1(potion: crate::content::potions::PotionId) -> bool {
+    !matches!(
+        potion,
+        crate::content::potions::PotionId::FairyPotion
+            | crate::content::potions::PotionId::SmokeBomb
+    )
+}
+
+fn potion_is_bounded_quality_rescue_v1(potion: crate::content::potions::PotionId) -> bool {
+    // Once a no-potion win already exists, only common deterministic tactical
+    // effects may compete for a bounded HP-quality improvement. Flexible
+    // discovery, scaling, rare insurance, and escape tools remain reserved.
+    // If no win exists at all, the broader FindAnyWin mask above may admit
+    // them under the same exact one-potion cap.
+    matches!(
+        potion,
+        crate::content::potions::PotionId::FirePotion
+            | crate::content::potions::PotionId::ExplosivePotion
+            | crate::content::potions::PotionId::PoisonPotion
+            | crate::content::potions::PotionId::WeakenPotion
+            | crate::content::potions::PotionId::FearPotion
+            | crate::content::potions::PotionId::BlockPotion
+    )
 }
 
 fn scale_combat_options(

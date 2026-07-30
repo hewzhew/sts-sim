@@ -37,6 +37,8 @@ pub struct PolicyDiscrepancyConfig {
     /// Maximum potion resources expended by a terminal witness. Use and
     /// discard both count; over-budget wins do not terminate search.
     pub max_potions_used: Option<u32>,
+    /// Optional exact slot mask for explicit potion use and discard actions.
+    pub allowed_potion_slots: Option<u64>,
 }
 
 impl Default for PolicyDiscrepancyConfig {
@@ -47,6 +49,7 @@ impl Default for PolicyDiscrepancyConfig {
             max_greedy_actions_per_dive: 128,
             turn_macro: None,
             max_potions_used: None,
+            allowed_potion_slots: None,
         }
     }
 }

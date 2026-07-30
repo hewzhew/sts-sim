@@ -574,6 +574,9 @@ fn empty_combat_work_checkpoint() -> OracleRunCombatWorkCheckpointV1 {
         policy_witness_proposals: 0,
         policy_witness_proposal_rejections: 0,
         quanta_since_incumbent_improvement: 1,
+        potion_contract_recorded: false,
+        max_potions_used: None,
+        allowed_potion_slots: None,
         incumbent: None,
         advisor_nodes: 0,
         advisor_elapsed_ms: 0,
@@ -701,6 +704,73 @@ fn strategic_nonboss_search_conserves_potions_before_exact_rescue() {
         Some(crate::ai::combat_search_v2::CombatSearchV2PotionPolicy::Never)
     );
     assert!(!budgets.has_later_stage(&session, 1));
+}
+
+#[test]
+fn strategic_staging_preserves_session_overrides_and_does_not_rescue_with_escape_only_inventory() {
+    let options = RunControlSearchCombatOptions::default();
+    let budgets = OracleRunCombatBudgetsV1 {
+        hallway: options.clone(),
+        elite: options.clone(),
+        boss: options,
+        quality_policy: OracleRunCombatQualityPolicyV1::StrategicRun,
+        initial_divisor: 1,
+        guidance_bundle: None,
+    };
+    let mut session = RunControlSession::new(RunControlConfig::default());
+    let mut combat = crate::test_support::blank_test_combat();
+    combat.entities.potions = vec![Some(crate::content::potions::Potion::new(
+        crate::content::potions::PotionId::SmokeBomb,
+        8,
+    ))];
+    session.active_combat = Some(crate::state::core::ActiveCombat::new(
+        crate::state::core::EngineState::CombatPlayerTurn,
+        combat,
+        crate::state::core::CombatContext::Room(crate::state::core::RoomCombatContext {
+            room_type: crate::state::map::node::RoomType::MonsterRoom,
+        }),
+    ));
+
+    assert!(!budgets.has_later_stage(&session, 0));
+    assert_eq!(
+        budgets.for_session_stage(&session, 0).max_potions_used,
+        Some(0)
+    );
+    session
+        .active_combat
+        .as_mut()
+        .unwrap()
+        .combat_state
+        .entities
+        .potions = vec![Some(crate::content::potions::Potion::new(
+        crate::content::potions::PotionId::FairyPotion,
+        10,
+    ))];
+    assert!(!budgets.has_later_stage(&session, 0));
+    assert_eq!(
+        budgets.for_session_stage(&session, 0).max_potions_used,
+        Some(0),
+        "the conserving lane must count passive Fairy consumption even though Fairy is not an active rescue slot"
+    );
+
+    session.search_potion_policy =
+        Some(crate::ai::combat_search_v2::CombatSearchV2PotionPolicy::All);
+    session
+        .active_combat
+        .as_mut()
+        .unwrap()
+        .combat_state
+        .entities
+        .potions = vec![Some(crate::content::potions::Potion::new(
+        crate::content::potions::PotionId::BlockPotion,
+        9,
+    ))];
+    assert!(!budgets.has_later_stage(&session, 0));
+    assert_ne!(
+        budgets.for_session_stage(&session, 0).max_potions_used,
+        Some(0),
+        "an explicit session policy must not be replaced by the automatic conserving stage"
+    );
 }
 
 #[test]

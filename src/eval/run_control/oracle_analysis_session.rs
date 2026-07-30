@@ -123,6 +123,9 @@ pub struct OracleAnalysisCombatProgressV1 {
     /// Exact cap owned by the resident tactical search. Stage zero uses zero
     /// when the strategic conserving challenge applies.
     pub max_potions_used: Option<u32>,
+    /// Exact potion slots admitted by the resident portfolio. `None` means
+    /// every otherwise legal slot remains available.
+    pub allowed_potion_slots: Option<u64>,
     /// Work charged by prior resident searches and preserved across resumes.
     pub historical_generation_work: u64,
     pub current_search_generation_work: u64,
@@ -156,6 +159,8 @@ pub struct OracleAnalysisCombatProgressV1 {
     pub incumbent_final_hp: Option<i32>,
     pub incumbent_hp_loss: Option<i32>,
     pub incumbent_action_count: Option<usize>,
+    pub incumbent_potions_used: Option<u32>,
+    pub incumbent_potion_slots: Option<u64>,
     pub quantum_count: usize,
     pub remaining_nodes: usize,
     pub remaining_wall_ms: Option<u64>,
@@ -462,9 +467,11 @@ impl OracleAnalysisSessionV1 {
                         saved.branch_id
                     )
                 })?;
+            let options =
+                combat_budgets.for_session_stage_restore(&branch.session, saved.stage, &saved.work);
             let work = OracleRunCombatWorkV1::restart_from_checkpoint_with_guidance(
                 &branch.session,
-                combat_budgets.for_session_stage(&branch.session, saved.stage),
+                options,
                 saved.work,
                 combat_budgets.guidance_bundle.as_deref(),
             )?;
@@ -1407,10 +1414,14 @@ impl OracleAnalysisSessionV1 {
         };
         let work = {
             let branch = self.require_branch(node_id)?;
+            let options = self.combat_budgets.for_session_stage_with_prior(
+                &branch.session,
+                next_stage,
+                &prior_work,
+            );
             OracleRunCombatWorkV1::restart_for_higher_fidelity_with_guidance(
                 &branch.session,
-                self.combat_budgets
-                    .for_session_stage(&branch.session, next_stage),
+                options,
                 prior_work,
                 self.combat_budgets.guidance_bundle.as_deref(),
             )?
@@ -1670,6 +1681,7 @@ fn combat_progress_view(job: &OracleAnalysisCombatJobV1) -> OracleAnalysisCombat
     OracleAnalysisCombatProgressV1 {
         search_stage: job.stage,
         max_potions_used: work.max_potions_used(),
+        allowed_potion_slots: work.allowed_potion_slots(),
         historical_generation_work: progress.historical_generation_work,
         current_search_generation_work: progress.current_search_generation_work,
         generation_work: progress.generation_work,
@@ -1702,6 +1714,8 @@ fn combat_progress_view(job: &OracleAnalysisCombatJobV1) -> OracleAnalysisCombat
         incumbent_final_hp: progress.incumbent_final_hp,
         incumbent_hp_loss: progress.incumbent_hp_loss,
         incumbent_action_count: progress.incumbent_action_count,
+        incumbent_potions_used: progress.incumbent_potions_used,
+        incumbent_potion_slots: progress.incumbent_potion_slots,
         quantum_count: work.quantum_count(),
         remaining_nodes: work.remaining_nodes(),
         remaining_wall_ms: work.remaining_wall_ms(),

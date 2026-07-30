@@ -37,6 +37,7 @@ pub(super) struct OracleRunCombatWorkV1 {
     remaining_engine_steps: usize,
     max_transition_steps: usize,
     max_potions_used: Option<u32>,
+    allowed_potion_slots: Option<u64>,
     satisfaction: PortfolioWitnessSatisfactionV1,
     remaining_wall_time: Option<Duration>,
     quantum_count: usize,
@@ -105,6 +106,14 @@ pub struct OracleRunCombatWorkCheckpointV1 {
     pub policy_witness_proposal_rejections: usize,
     #[serde(default)]
     pub quanta_since_incumbent_improvement: usize,
+    /// Distinguishes a newly written exact potion contract from legacy
+    /// checkpoints where absent fields meant "unknown, reconstruct".
+    #[serde(default)]
+    pub potion_contract_recorded: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_potions_used: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub allowed_potion_slots: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub incumbent: Option<OracleCombatWitness>,
     #[serde(default)]
@@ -164,6 +173,8 @@ pub(super) struct OracleRunCombatWorkProgressV1 {
     pub incumbent_final_hp: Option<i32>,
     pub incumbent_hp_loss: Option<i32>,
     pub incumbent_action_count: Option<usize>,
+    pub incumbent_potions_used: Option<u32>,
+    pub incumbent_potion_slots: Option<u64>,
     pub incumbent_revision: u64,
     pub quanta_since_incumbent_improvement: usize,
     pub last_quantum_generation_work: usize,
@@ -245,6 +256,7 @@ impl OracleRunCombatWorkV1 {
                 generator: TurnOptionGeneratorConfig {
                     max_engine_steps_per_transition: max_transition_steps,
                     allow_potion_expenditure: prepared.config.max_potions_used != Some(0),
+                    allowed_potion_slots: prepared.options.allowed_potion_slots,
                     ..TurnOptionGeneratorConfig::default()
                 },
                 generation_quantum_work: 4,
@@ -269,6 +281,7 @@ impl OracleRunCombatWorkV1 {
                     ..PolicyDiscrepancyTurnMacroConfig::default()
                 }),
                 max_potions_used: prepared.config.max_potions_used,
+                allowed_potion_slots: prepared.options.allowed_potion_slots,
                 ..PolicyDiscrepancyConfig::default()
             },
             policy,
@@ -284,6 +297,7 @@ impl OracleRunCombatWorkV1 {
             remaining_engine_steps: max_work.saturating_mul(max_transition_steps),
             max_transition_steps,
             max_potions_used: prepared.config.max_potions_used,
+            allowed_potion_slots: prepared.options.allowed_potion_slots,
             satisfaction,
             remaining_wall_time: prepared.config.wall_time,
             quantum_count: 0,
@@ -418,7 +432,12 @@ impl OracleRunCombatWorkV1 {
         }) else {
             return;
         };
-        if !combat_witness_within_potion_budget(&proposal, self.max_potions_used) {
+        if !combat_witness_within_potion_contract(
+            &self.start,
+            &proposal,
+            self.max_potions_used,
+            self.allowed_potion_slots,
+        ) {
             self.policy_witness_proposal_rejections =
                 self.policy_witness_proposal_rejections.saturating_add(1);
             return;
@@ -469,6 +488,9 @@ impl OracleRunCombatWorkV1 {
                 .saturating_add(self.policy_witness_proposals),
             policy_witness_proposal_rejections: self.policy_witness_proposal_rejections,
             quanta_since_incumbent_improvement: self.quanta_since_incumbent_improvement,
+            potion_contract_recorded: true,
+            max_potions_used: self.max_potions_used,
+            allowed_potion_slots: self.allowed_potion_slots,
             incumbent: self.best_witness().cloned(),
             // Kept in checkpoint schema so old files still deserialize. New
             // local-graph searches never start the retired V2 advisor.
@@ -536,7 +558,9 @@ impl OracleRunCombatWorkV1 {
         let deadline = soft_wall.and_then(|duration| now.checked_add(duration));
         self.last_quantum_generation_work = 0;
         self.last_quantum_engine_steps = 0;
-        let before_incumbent_quality = self.best_witness().map(combat_witness_quality);
+        let before_incumbent_quality = self
+            .best_witness()
+            .map(|witness| combat_witness_quality(&self.start, witness));
         let engine_grant = self
             .remaining_engine_steps
             .min(work.saturating_mul(self.max_transition_steps));
@@ -548,70 +572,69 @@ impl OracleRunCombatWorkV1 {
             return RunControlCombatWorkAdvanceV1::ReadyToFinish;
         };
         self.next_portfolio_member = member.other();
-        let (consumed_work, consumed_engine, member_complete, status) = match member {
-            PortfolioMemberV1::LocalTurnGraph => {
-                let before = self.local_search.counters();
-                let report = self.local_search.advance(
-                    LocalTurnGraphWitnessQuantum {
-                        additional_selections: work,
-                        additional_generation_work: work,
-                        additional_engine_steps: engine_grant,
-                        deadline,
-                    },
-                    &crate::sim::combat::EngineCombatStepper,
-                );
-                let after = report.counters;
-                let before_work = before.generation_work.saturating_add(before.lookahead_work);
-                let after_work = after.generation_work.saturating_add(after.lookahead_work);
-                let member_complete =
-                    !matches!(&report.status, LocalTurnGraphWitnessStatus::Partial(_));
-                (
-                    after_work.saturating_sub(before_work),
-                    after.engine_steps.saturating_sub(before.engine_steps),
-                    member_complete,
-                    PortfolioStatusV1::Local(report.status),
-                )
-            }
-            PortfolioMemberV1::PolicyDiscrepancy => {
-                let before = self.discrepancy_search.counters();
-                let report = self.discrepancy_search.advance(
-                    &crate::sim::combat::EngineCombatStepper,
-                    PolicyDiscrepancyQuantum {
-                        additional_applied_transitions: work,
-                        additional_engine_steps: engine_grant,
-                        deadline,
-                    },
-                );
-                let after = report.after;
-                let status = report.status;
-                if let Some(witness) = report.witness {
-                    let witness = OracleCombatWitness {
-                        actions: witness.actions,
-                        final_position: witness.final_position,
-                        negative_log_policy: witness.negative_log_policy,
-                        replay_engine_steps: witness.replay_engine_steps,
-                        discovery_source:
-                            OracleCombatWitnessDiscoverySource::PolicyDiscrepancySearch,
-                    };
-                    if self
-                        .discrepancy_witness
-                        .as_ref()
-                        .is_none_or(|current| combat_witness_better(&witness, current))
-                    {
-                        self.discrepancy_witness = Some(witness);
-                    }
+        let (consumed_work, consumed_engine, member_complete, status) =
+            match member {
+                PortfolioMemberV1::LocalTurnGraph => {
+                    let before = self.local_search.counters();
+                    let report = self.local_search.advance(
+                        LocalTurnGraphWitnessQuantum {
+                            additional_selections: work,
+                            additional_generation_work: work,
+                            additional_engine_steps: engine_grant,
+                            deadline,
+                        },
+                        &crate::sim::combat::EngineCombatStepper,
+                    );
+                    let after = report.counters;
+                    let before_work = before.generation_work.saturating_add(before.lookahead_work);
+                    let after_work = after.generation_work.saturating_add(after.lookahead_work);
+                    let member_complete =
+                        !matches!(&report.status, LocalTurnGraphWitnessStatus::Partial(_));
+                    (
+                        after_work.saturating_sub(before_work),
+                        after.engine_steps.saturating_sub(before.engine_steps),
+                        member_complete,
+                        PortfolioStatusV1::Local(report.status),
+                    )
                 }
-                let member_complete = !matches!(status, PolicyDiscrepancyStatus::Partial(_));
-                (
-                    after
-                        .applied_action_transitions
-                        .saturating_sub(before.applied_action_transitions),
-                    after.engine_steps.saturating_sub(before.engine_steps),
-                    member_complete,
-                    PortfolioStatusV1::PolicyDiscrepancy(status),
-                )
-            }
-        };
+                PortfolioMemberV1::PolicyDiscrepancy => {
+                    let before = self.discrepancy_search.counters();
+                    let report = self.discrepancy_search.advance(
+                        &crate::sim::combat::EngineCombatStepper,
+                        PolicyDiscrepancyQuantum {
+                            additional_applied_transitions: work,
+                            additional_engine_steps: engine_grant,
+                            deadline,
+                        },
+                    );
+                    let after = report.after;
+                    let status = report.status;
+                    if let Some(witness) = report.witness {
+                        let witness = OracleCombatWitness {
+                            actions: witness.actions,
+                            final_position: witness.final_position,
+                            negative_log_policy: witness.negative_log_policy,
+                            replay_engine_steps: witness.replay_engine_steps,
+                            discovery_source:
+                                OracleCombatWitnessDiscoverySource::PolicyDiscrepancySearch,
+                        };
+                        if self.discrepancy_witness.as_ref().is_none_or(|current| {
+                            combat_witness_better(&self.start, &witness, current)
+                        }) {
+                            self.discrepancy_witness = Some(witness);
+                        }
+                    }
+                    let member_complete = !matches!(status, PolicyDiscrepancyStatus::Partial(_));
+                    (
+                        after
+                            .applied_action_transitions
+                            .saturating_sub(before.applied_action_transitions),
+                        after.engine_steps.saturating_sub(before.engine_steps),
+                        member_complete,
+                        PortfolioStatusV1::PolicyDiscrepancy(status),
+                    )
+                }
+            };
         match &status {
             PortfolioStatusV1::Local(status) => {
                 self.local_complete = member_complete;
@@ -624,7 +647,9 @@ impl OracleRunCombatWorkV1 {
         }
         self.last_quantum_generation_work = consumed_work;
         self.last_quantum_engine_steps = consumed_engine;
-        let after_incumbent_quality = self.best_witness().map(combat_witness_quality);
+        let after_incumbent_quality = self
+            .best_witness()
+            .map(|witness| combat_witness_quality(&self.start, witness));
         let incumbent_improved = match (before_incumbent_quality, after_incumbent_quality) {
             (None, Some(_)) => true,
             (Some(before), Some(after)) => combat_witness_quality_better(after, before),
@@ -785,11 +810,17 @@ impl OracleRunCombatWorkV1 {
             replay_engine_steps,
             discovery_source: OracleCombatWitnessDiscoverySource::RestoredExactActions,
         };
-        if !combat_witness_within_potion_budget(&witness, self.max_potions_used) {
+        if !combat_witness_within_potion_contract(
+            &self.start,
+            &witness,
+            self.max_potions_used,
+            self.allowed_potion_slots,
+        ) {
             return Err(format!(
-                "oracle combat witness uses {} potion(s), exceeding configured limit {:?}",
-                combat_witness_potion_expenditures(&witness),
-                self.max_potions_used
+                "oracle combat witness violates potion contract: uses {} potion(s), limit {:?}, allowed slots {:?}",
+                combat_witness_potion_expenditures(&self.start, &witness),
+                self.max_potions_used,
+                self.allowed_potion_slots,
             ));
         }
         self.local_search.restore_verified_witness(witness)?;
@@ -823,9 +854,16 @@ impl OracleRunCombatWorkV1 {
         ]
         .into_iter()
         .flatten()
-        .filter(|witness| combat_witness_within_potion_budget(witness, self.max_potions_used))
+        .filter(|witness| {
+            combat_witness_within_potion_contract(
+                &self.start,
+                witness,
+                self.max_potions_used,
+                self.allowed_potion_slots,
+            )
+        })
         .reduce(|best, candidate| {
-            if combat_witness_better(candidate, best) {
+            if combat_witness_better(&self.start, candidate, best) {
                 candidate
             } else {
                 best
@@ -848,6 +886,10 @@ impl OracleRunCombatWorkV1 {
 
     pub(super) fn max_potions_used(&self) -> Option<u32> {
         self.max_potions_used
+    }
+
+    pub(super) fn allowed_potion_slots(&self) -> Option<u64> {
+        self.allowed_potion_slots
     }
 
     pub(super) fn restart_count(&self) -> usize {
@@ -932,6 +974,10 @@ impl OracleRunCombatWorkV1 {
             incumbent_hp_loss: incumbent_final_hp
                 .map(|final_hp| initial_hp.saturating_sub(final_hp).max(0)),
             incumbent_action_count: incumbent.map(|witness| witness.actions.len()),
+            incumbent_potions_used: incumbent
+                .map(|witness| combat_witness_potion_expenditures(&self.start, witness)),
+            incumbent_potion_slots: incumbent
+                .map(|witness| combat_witness_potion_expenditure_slots(&self.start, witness)),
             incumbent_revision: self.incumbent_revision,
             quanta_since_incumbent_improvement: self.quanta_since_incumbent_improvement,
             last_quantum_generation_work: self.last_quantum_generation_work,
@@ -1006,7 +1052,10 @@ struct CombatWitnessQualityV1 {
     negative_log_policy: f64,
 }
 
-fn combat_witness_quality(witness: &OracleCombatWitness) -> CombatWitnessQualityV1 {
+fn combat_witness_quality(
+    start: &crate::sim::combat::CombatPosition,
+    witness: &OracleCombatWitness,
+) -> CombatWitnessQualityV1 {
     let final_hp = witness.final_position.combat.entities.player.current_hp;
     let persistent_run_value =
         crate::ai::combat_search_v2::persistent_run_value(&witness.final_position.combat);
@@ -1014,7 +1063,7 @@ fn combat_witness_quality(witness: &OracleCombatWitness) -> CombatWitnessQuality
         persistent_adjusted_hp: final_hp.saturating_add(persistent_run_value),
         final_hp,
         persistent_run_value,
-        potions_used: combat_witness_potion_expenditures(witness),
+        potions_used: combat_witness_potion_expenditures(start, witness),
         action_count: witness.actions.len(),
         negative_log_policy: witness.negative_log_policy,
     }
@@ -1055,12 +1104,22 @@ fn combat_witness_acceptance_improved(
     }
 }
 
-fn combat_witness_better(left: &OracleCombatWitness, right: &OracleCombatWitness) -> bool {
-    combat_witness_quality_better(combat_witness_quality(left), combat_witness_quality(right))
+fn combat_witness_better(
+    start: &crate::sim::combat::CombatPosition,
+    left: &OracleCombatWitness,
+    right: &OracleCombatWitness,
+) -> bool {
+    combat_witness_quality_better(
+        combat_witness_quality(start, left),
+        combat_witness_quality(start, right),
+    )
 }
 
-fn combat_witness_potion_expenditures(witness: &OracleCombatWitness) -> u32 {
-    witness
+fn combat_witness_potion_expenditures(
+    start: &crate::sim::combat::CombatPosition,
+    witness: &OracleCombatWitness,
+) -> u32 {
+    let explicit_expenditures = witness
         .actions
         .iter()
         .filter(|action| {
@@ -1071,14 +1130,108 @@ fn combat_witness_potion_expenditures(witness: &OracleCombatWitness) -> u32 {
         })
         .count()
         .try_into()
-        .unwrap_or(u32::MAX)
+        .unwrap_or(u32::MAX);
+    let remaining_uuids = witness
+        .final_position
+        .combat
+        .entities
+        .potions
+        .iter()
+        .flatten()
+        .map(|potion| potion.uuid)
+        .collect::<std::collections::BTreeSet<_>>();
+    let missing_starting_resources = start
+        .combat
+        .entities
+        .potions
+        .iter()
+        .flatten()
+        .filter(|potion| !remaining_uuids.contains(&potion.uuid))
+        .count()
+        .try_into()
+        .unwrap_or(u32::MAX);
+    explicit_expenditures.max(missing_starting_resources)
 }
 
-fn combat_witness_within_potion_budget(
+fn combat_witness_within_potion_contract(
+    start: &crate::sim::combat::CombatPosition,
     witness: &OracleCombatWitness,
     max_potions_used: Option<u32>,
+    allowed_potion_slots: Option<u64>,
 ) -> bool {
-    max_potions_used.is_none_or(|limit| combat_witness_potion_expenditures(witness) <= limit)
+    max_potions_used.is_none_or(|limit| combat_witness_potion_expenditures(start, witness) <= limit)
+        && witness.actions.iter().all(|action| {
+            let slot = match action.input {
+                ClientInput::UsePotion { potion_index, .. } => Some(potion_index),
+                ClientInput::DiscardPotion(slot) => Some(slot),
+                _ => None,
+            };
+            slot.is_none_or(|slot| {
+                allowed_potion_slots.is_none_or(|allowed_slots| {
+                    u32::try_from(slot)
+                        .ok()
+                        .and_then(|slot| 1_u64.checked_shl(slot))
+                        .is_some_and(|slot_mask| allowed_slots & slot_mask != 0)
+                })
+            })
+        })
+        && allowed_potion_slots.is_none_or(|allowed_slots| {
+            starting_potion_expenditure_slots(start, witness) & !allowed_slots == 0
+        })
+}
+
+fn starting_potion_expenditure_slots(
+    start: &crate::sim::combat::CombatPosition,
+    witness: &OracleCombatWitness,
+) -> u64 {
+    let remaining_uuids = witness
+        .final_position
+        .combat
+        .entities
+        .potions
+        .iter()
+        .flatten()
+        .map(|potion| potion.uuid)
+        .collect::<std::collections::BTreeSet<_>>();
+    start
+        .combat
+        .entities
+        .potions
+        .iter()
+        .enumerate()
+        .filter_map(|(slot, potion)| {
+            let potion = potion.as_ref()?;
+            if remaining_uuids.contains(&potion.uuid) {
+                return None;
+            }
+            u32::try_from(slot)
+                .ok()
+                .and_then(|slot| 1_u64.checked_shl(slot))
+        })
+        .fold(0_u64, |mask, slot| mask | slot)
+}
+
+fn combat_witness_potion_expenditure_slots(
+    start: &crate::sim::combat::CombatPosition,
+    witness: &OracleCombatWitness,
+) -> u64 {
+    witness
+        .actions
+        .iter()
+        .filter_map(|action| match action.input {
+            ClientInput::UsePotion { potion_index, .. } => Some(potion_index),
+            ClientInput::DiscardPotion(slot) => Some(slot),
+            _ => None,
+        })
+        .filter_map(|slot| {
+            u32::try_from(slot)
+                .ok()
+                .and_then(|slot| 1_u64.checked_shl(slot))
+        })
+        .fold(
+            starting_potion_expenditure_slots(start, witness),
+            |mask, slot| mask | slot,
+        )
 }
 
 fn combat_witness_satisfies(
@@ -1197,10 +1350,103 @@ mod tests {
                 target: Some(target),
             }])
             .expect_err("an exact potion win must not bypass the configured resource contract");
-        assert!(error.contains("exceeding configured limit"));
-        assert!(work
-            .best_witness()
-            .is_none_or(|witness| { combat_witness_potion_expenditures(witness) == 0 }));
+        assert!(error.contains("violates potion contract"));
+        assert!(work.best_witness().is_none_or(|witness| {
+            combat_witness_potion_expenditures(&work.start, witness) == 0
+        }));
+    }
+
+    #[test]
+    fn exact_restored_witness_cannot_bypass_potion_slot_contract() {
+        let mut session = one_strike_win_session();
+        let combat = &mut session.active_combat.as_mut().unwrap().combat_state;
+        let target = combat.entities.monsters[0].id;
+        combat.entities.potions = vec![Some(crate::content::potions::Potion::new(
+            crate::content::potions::PotionId::FirePotion,
+            8,
+        ))];
+        let mut work = OracleRunCombatWorkV1::new_with_guidance(
+            &session,
+            RunControlSearchCombatOptions {
+                max_nodes: Some(16),
+                max_potions_used: Some(1),
+                allowed_potion_slots: Some(1_u64 << 1),
+                satisfaction: Some(
+                    crate::ai::combat_search_v2::CombatSearchV2Satisfaction::FirstCompleteWin,
+                ),
+                ..RunControlSearchCombatOptions::default()
+            },
+            None,
+        )
+        .expect("slot-constrained portfolio should accept an active combat");
+
+        let error = work
+            .verify_and_restore_action_witness(&[ClientInput::UsePotion {
+                potion_index: 0,
+                target: Some(target),
+            }])
+            .expect_err("an exact potion win must not bypass the exact slot contract");
+
+        assert!(error.contains("allowed slots Some(2)"), "{error}");
+        assert!(work.best_witness().is_none_or(|witness| {
+            witness.actions.iter().all(|action| {
+                !matches!(
+                    action.input,
+                    ClientInput::UsePotion {
+                        potion_index: 0,
+                        ..
+                    }
+                )
+            })
+        }));
+    }
+
+    #[test]
+    fn passive_fairy_consumption_is_not_mislabeled_as_zero_potion() {
+        let mut session = hallway_combat_session();
+        session
+            .active_combat
+            .as_mut()
+            .unwrap()
+            .combat_state
+            .entities
+            .potions = vec![Some(crate::content::potions::Potion::new(
+            crate::content::potions::PotionId::FairyPotion,
+            9,
+        ))];
+        let start = session
+            .current_active_combat_position()
+            .expect("exact Fairy root");
+        let mut final_position = start.clone();
+        final_position.combat.entities.potions[0] = None;
+        let witness = OracleCombatWitness {
+            actions: Vec::new(),
+            final_position,
+            negative_log_policy: 0.0,
+            replay_engine_steps: 0,
+            discovery_source: OracleCombatWitnessDiscoverySource::PolicyProposal,
+        };
+
+        assert_eq!(combat_witness_potion_expenditures(&start, &witness), 1);
+        assert_eq!(combat_witness_potion_expenditure_slots(&start, &witness), 1);
+        assert!(!combat_witness_within_potion_contract(
+            &start,
+            &witness,
+            Some(0),
+            None,
+        ));
+        assert!(!combat_witness_within_potion_contract(
+            &start,
+            &witness,
+            Some(1),
+            Some(0),
+        ));
+        assert!(combat_witness_within_potion_contract(
+            &start,
+            &witness,
+            Some(1),
+            Some(1),
+        ));
     }
 
     #[test]

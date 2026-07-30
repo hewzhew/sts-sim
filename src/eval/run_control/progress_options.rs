@@ -15,6 +15,9 @@ pub struct RunControlSearchCombatOptions {
     pub max_hp_loss: Option<RunControlHpLossLimit>,
     pub potion_policy: Option<CombatSearchV2PotionPolicy>,
     pub max_potions_used: Option<u32>,
+    /// Optional exact slot mask used by oracle portfolio search. `None` keeps
+    /// every legal potion slot; `Some(0)` keeps no explicit potion action.
+    pub allowed_potion_slots: Option<u64>,
     pub rollout_policy: Option<CombatSearchV2RolloutPolicy>,
     pub child_rollout_policy: Option<CombatSearchV2ChildRolloutPolicy>,
     pub rollout_max_evaluations: Option<usize>,

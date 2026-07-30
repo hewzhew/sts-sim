@@ -483,6 +483,7 @@ fn compact_run_combat_progress(
     json!({
         "search_stage": combat.search_stage,
         "max_potions_used": combat.max_potions_used,
+        "allowed_potion_slots": combat.allowed_potion_slots,
         "generation_work": combat.generation_work,
         "local_generation_work": combat.local_generation_work,
         "discrepancy_generation_work": combat.discrepancy_generation_work,
@@ -499,6 +500,8 @@ fn compact_run_combat_progress(
         "incumbent_final_hp": combat.incumbent_final_hp,
         "incumbent_hp_loss": combat.incumbent_hp_loss,
         "incumbent_actions": combat.incumbent_action_count,
+        "incumbent_potions_used": combat.incumbent_potions_used,
+        "incumbent_potion_slots": combat.incumbent_potion_slots,
         "last_status": combat.last_status,
         "resume_kind": combat.resume_kind,
         "restart_count": combat.restart_count,

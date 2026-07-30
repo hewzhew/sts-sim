@@ -400,7 +400,58 @@ fn bounded_no_potion_unknown_enters_the_full_potion_stage() {
 
     assert_eq!(combat.search_stage, 1);
     assert_ne!(combat.max_potions_used, Some(0));
+    assert_eq!(combat.allowed_potion_slots, Some(1));
     assert_eq!(analysis.explorer.combat_search_restarts, 1);
+}
+
+#[test]
+fn typed_fire_potion_rescue_materializes_when_no_potion_win_exists() {
+    let mut combat = one_strike_combat();
+    combat.zones.hand.clear();
+    combat.entities.monsters[0].current_hp = 20;
+    combat.entities.monsters[0].max_hp = 20;
+    combat.entities.potions = vec![Some(Potion::new(PotionId::FirePotion, 52))];
+    let mut analysis = combat_analysis_with_budgets(
+        combat,
+        None,
+        strategic_combat_budgets(RunControlSearchCombatOptions {
+            max_nodes: Some(256),
+            ..RunControlSearchCombatOptions::default()
+        }),
+    );
+
+    let report = analysis
+        .advance_cursor(OracleAnalysisAdvanceRequestV1 {
+            max_quanta: 8,
+            quantum_nodes: 32,
+            quantum_ms: None,
+            wall_ms: None,
+            improve_incumbent: true,
+        })
+        .expect("serve exact Fire Potion rescue");
+
+    assert!(
+        matches!(
+            report.status,
+            OracleAnalysisAdvanceStatusV1::BoundaryReached { .. }
+        ),
+        "the typed survival lane should admit the exact lethal potion: {:?}",
+        report.status
+    );
+    let progress = report.combat.expect("final rescue progress");
+    assert_eq!(progress.search_stage, 1);
+    assert_eq!(progress.allowed_potion_slots, Some(1));
+    assert_eq!(progress.incumbent_potions_used, Some(1));
+    assert_eq!(progress.incumbent_potion_slots, Some(1));
+    assert!(
+        analysis
+            .view_cursor()
+            .expect("rescued child")
+            .potions
+            .first()
+            .is_some_and(Option::is_none),
+        "the materialized exact child must record the Fire Potion expenditure"
+    );
 }
 
 #[test]
@@ -474,5 +525,54 @@ fn analysis_checkpoint_restores_the_resident_combat_stage() {
 
     assert_eq!(restored_progress.search_stage, 1);
     assert_ne!(restored_progress.max_potions_used, Some(0));
+    assert_eq!(restored_progress.allowed_potion_slots, Some(1));
     assert_eq!(restored_progress.restart_count, 2);
+}
+
+#[test]
+fn typed_rescue_preserves_flexible_potions_when_a_verified_win_exists() {
+    let mut combat = one_strike_combat();
+    combat.entities.potions = vec![
+        Some(Potion::new(PotionId::BlockPotion, 61)),
+        Some(Potion::new(PotionId::SkillPotion, 62)),
+        Some(Potion::new(PotionId::FairyPotion, 63)),
+        Some(Potion::new(PotionId::SmokeBomb, 64)),
+    ];
+    let budgets = strategic_combat_budgets(RunControlSearchCombatOptions::default());
+    let analysis = combat_analysis_with_budgets(combat, None, budgets.clone());
+    let branch = analysis.require_branch(0).expect("combat branch");
+    let mut prior = analysis
+        .combat_jobs
+        .get(&0)
+        .expect("resident combat")
+        .work
+        .checkpoint();
+    assert!(
+        prior.incumbent.is_some(),
+        "the deterministic one-Strike policy should provide a verified fallback"
+    );
+    let incumbent = prior.incumbent.clone();
+
+    let improve = budgets.for_session_stage_with_prior(&branch.session, 1, &prior);
+    assert_eq!(improve.max_potions_used, Some(1));
+    assert_eq!(improve.allowed_potion_slots, Some(1_u64 << 0));
+
+    prior.incumbent = None;
+    let survival = budgets.for_session_stage_with_prior(&branch.session, 1, &prior);
+    assert_eq!(survival.max_potions_used, Some(1));
+    assert_eq!(
+        survival.allowed_potion_slots,
+        Some((1_u64 << 0) | (1_u64 << 1)),
+        "finding any win may use the flexible Skill Potion, but passive Fairy and explicit escape stay outside victory search"
+    );
+
+    prior.potion_contract_recorded = true;
+    prior.max_potions_used = survival.max_potions_used;
+    prior.allowed_potion_slots = survival.allowed_potion_slots;
+    prior.incumbent = incumbent;
+    let restored = budgets.for_session_stage_restore(&branch.session, 1, &prior);
+    assert_eq!(
+        restored.allowed_potion_slots, survival.allowed_potion_slots,
+        "checkpoint restore must keep the original survival lane even after that lane has an incumbent"
+    );
 }
