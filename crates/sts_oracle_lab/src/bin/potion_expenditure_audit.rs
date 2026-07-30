@@ -14,9 +14,11 @@ use sts_combat_planner::{
     CombatDecisionRoot, LocalTurnGraphWitnessInterruption, LocalTurnGraphWitnessStatus,
     OracleCombatWitnessSatisfaction, TurnOptionAction,
 };
-use sts_oracle_runtime::content::potions::Potion;
+use sts_oracle_runtime::content::potions::{Potion, PotionId};
 use sts_oracle_runtime::eval::combat_case::load_combat_case;
-use sts_oracle_runtime::eval::run_control::existing_combat_knowledge_policy_v1;
+use sts_oracle_runtime::eval::run_control::{
+    existing_combat_knowledge_policy_v1, oracle_potion_rescue_tier_v1, OraclePotionRescueTierV1,
+};
 use sts_oracle_runtime::sim::combat::{
     CombatPosition, CombatStepLimits, CombatStepper, EngineCombatStepper,
 };
@@ -24,7 +26,7 @@ use sts_oracle_runtime::state::core::ClientInput;
 
 use super::combat_graph_search_spec::LocalGraphSearchSpec;
 
-const SCHEMA_NAME: &str = "OracleCombatCasePotionExpenditureAuditV1";
+const SCHEMA_NAME: &str = "OracleCombatCasePotionExpenditureAuditV2";
 
 #[derive(Debug, Args)]
 pub(super) struct CombatCasePotionExpenditureAuditArgs {
@@ -67,6 +69,14 @@ pub(super) struct CombatCasePotionExpenditureAuditArgs {
     expect_no_potion_dominates_consuming: bool,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum PotionVerifiedWinRescueTierV1 {
+    BoundedQuality,
+    FindAnyWin,
+    Excluded,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 struct PotionResourceV1 {
     slot: usize,
@@ -74,6 +84,7 @@ struct PotionResourceV1 {
     uuid: u32,
     can_use: bool,
     can_discard: bool,
+    verified_win_rescue_tier: PotionVerifiedWinRescueTierV1,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
@@ -91,6 +102,7 @@ struct PotionExpenditureEventV1 {
     id: String,
     uuid: u32,
     mode: PotionExpenditureModeV1,
+    verified_win_rescue_tier: PotionVerifiedWinRescueTierV1,
 }
 
 #[derive(Clone, Debug)]
@@ -140,6 +152,26 @@ enum PotionMarginalAssessmentV1 {
     NoAdditionalPotionConsumed,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum VerifiedWinPotionDispositionV1 {
+    NoPotionSpent,
+    BoundedQualityOnly,
+    ContainsReservedResource,
+    ContainsExcludedResource,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum PotionPolicyReviewFlagV1 {
+    ReservedResourceCrossesSurvivalReserve,
+    ReservedResourceImprovesHpWithoutCrossingReserve,
+    AdmittedResourceIsParetoDominated,
+    AdmittedResourceHasNoHpBenefit,
+    DelayedHealRequiresExtraTurns,
+    ExcludedResourceConsumed,
+}
+
 #[derive(Clone, Debug, Serialize)]
 struct PotionMarginalComparisonV1 {
     final_hp_delta: Option<i32>,
@@ -157,6 +189,8 @@ struct PotionAuditWitnessV1 {
     action_count: usize,
     explicit_potion_action_count: usize,
     potion_expenditures: Vec<PotionExpenditureEventV1>,
+    verified_win_potion_disposition: VerifiedWinPotionDispositionV1,
+    policy_review_flags: Vec<PotionPolicyReviewFlagV1>,
     lane_compliant: bool,
     meets_survival_reserve: Option<bool>,
     relative_to_no_potion: Option<PotionMarginalComparisonV1>,
@@ -184,7 +218,7 @@ struct PotionAuditLimitationsV1 {
 }
 
 #[derive(Clone, Debug, Serialize)]
-pub(super) struct CombatCasePotionExpenditureAuditV1 {
+pub(super) struct CombatCasePotionExpenditureAuditV2 {
     schema_name: &'static str,
     case: PathBuf,
     root_exact_state_hash: String,
@@ -199,7 +233,7 @@ pub(super) struct CombatCasePotionExpenditureAuditV1 {
 
 pub(super) fn run(
     args: CombatCasePotionExpenditureAuditArgs,
-) -> Result<CombatCasePotionExpenditureAuditV1, String> {
+) -> Result<CombatCasePotionExpenditureAuditV2, String> {
     let CombatCasePotionExpenditureAuditArgs {
         case,
         max_combination_size,
@@ -302,6 +336,7 @@ pub(super) fn run(
 
     annotate_marginal_comparisons(&mut lanes, survival_reserve_hp);
     annotate_pareto_frontier(&mut lanes);
+    annotate_policy_review_flags(&mut lanes);
     validate_expectations(
         &lanes,
         expect_no_potion_min_final_hp,
@@ -317,7 +352,7 @@ pub(super) fn run(
         })
         .collect();
 
-    Ok(CombatCasePotionExpenditureAuditV1 {
+    Ok(CombatCasePotionExpenditureAuditV2 {
         schema_name: SCHEMA_NAME,
         case,
         root_exact_state_hash,
@@ -379,6 +414,15 @@ fn potion_resource(slot: usize, potion: &Potion) -> PotionResourceV1 {
         uuid: potion.uuid,
         can_use: potion.can_use,
         can_discard: potion.can_discard,
+        verified_win_rescue_tier: potion_rescue_tier(potion.id),
+    }
+}
+
+fn potion_rescue_tier(id: PotionId) -> PotionVerifiedWinRescueTierV1 {
+    match oracle_potion_rescue_tier_v1(id) {
+        OraclePotionRescueTierV1::BoundedQuality => PotionVerifiedWinRescueTierV1::BoundedQuality,
+        OraclePotionRescueTierV1::FindAnyWin => PotionVerifiedWinRescueTierV1::FindAnyWin,
+        OraclePotionRescueTierV1::Excluded => PotionVerifiedWinRescueTierV1::Excluded,
     }
 }
 
@@ -476,6 +520,7 @@ fn summarize_witness(
         .iter()
         .filter(|event| event.mode != PotionExpenditureModeV1::Passive)
         .count();
+    let verified_win_potion_disposition = verified_win_potion_disposition(&potion_expenditures);
     let all_slots_allowed = potion_expenditures.iter().all(|event| {
         event.slot < u64::BITS as usize && allowed_slot_mask & (1_u64 << event.slot) != 0
     });
@@ -491,6 +536,8 @@ fn summarize_witness(
         action_count: actions.len(),
         explicit_potion_action_count,
         potion_expenditures,
+        verified_win_potion_disposition,
+        policy_review_flags: Vec::new(),
         lane_compliant,
         meets_survival_reserve: survival_reserve_hp.map(|reserve| final_hp >= reserve),
         relative_to_no_potion: None,
@@ -526,6 +573,7 @@ fn replay_potion_expenditures(
                 id: format!("{:?}", potion.id),
                 uuid: potion.uuid,
                 mode,
+                verified_win_rescue_tier: potion_rescue_tier(potion.id),
             });
             Some(potion.uuid)
         } else {
@@ -564,12 +612,33 @@ fn replay_potion_expenditures(
                     id: format!("{:?}", potion.id),
                     uuid: potion.uuid,
                     mode: PotionExpenditureModeV1::Passive,
+                    verified_win_rescue_tier: potion_rescue_tier(potion.id),
                 });
             }
         }
         position = result.position;
     }
     Ok(events)
+}
+
+fn verified_win_potion_disposition(
+    events: &[PotionExpenditureEventV1],
+) -> VerifiedWinPotionDispositionV1 {
+    if events
+        .iter()
+        .any(|event| event.verified_win_rescue_tier == PotionVerifiedWinRescueTierV1::Excluded)
+    {
+        VerifiedWinPotionDispositionV1::ContainsExcludedResource
+    } else if events
+        .iter()
+        .any(|event| event.verified_win_rescue_tier == PotionVerifiedWinRescueTierV1::FindAnyWin)
+    {
+        VerifiedWinPotionDispositionV1::ContainsReservedResource
+    } else if events.is_empty() {
+        VerifiedWinPotionDispositionV1::NoPotionSpent
+    } else {
+        VerifiedWinPotionDispositionV1::BoundedQualityOnly
+    }
 }
 
 fn annotate_marginal_comparisons(
@@ -684,6 +753,69 @@ fn annotate_pareto_frontier(lanes: &mut [PotionAuditLaneResultV1]) {
             .map(|(other_id, ..)| other_id.clone())
             .collect();
         witness.pareto_frontier = witness.dominated_by.is_empty();
+    }
+}
+
+fn annotate_policy_review_flags(lanes: &mut [PotionAuditLaneResultV1]) {
+    for lane in lanes {
+        let Some(witness) = lane.witness.as_mut() else {
+            continue;
+        };
+        let assessment = witness
+            .relative_to_no_potion
+            .as_ref()
+            .map(|comparison| comparison.assessment);
+        match witness.verified_win_potion_disposition {
+            VerifiedWinPotionDispositionV1::NoPotionSpent => {}
+            VerifiedWinPotionDispositionV1::BoundedQualityOnly => {
+                if !witness.pareto_frontier {
+                    witness
+                        .policy_review_flags
+                        .push(PotionPolicyReviewFlagV1::AdmittedResourceIsParetoDominated);
+                }
+                if matches!(
+                    assessment,
+                    Some(
+                        PotionMarginalAssessmentV1::SameFinalHpWithExtraResource
+                            | PotionMarginalAssessmentV1::WorseFinalHpWithExtraResource
+                    )
+                ) {
+                    witness
+                        .policy_review_flags
+                        .push(PotionPolicyReviewFlagV1::AdmittedResourceHasNoHpBenefit);
+                }
+            }
+            VerifiedWinPotionDispositionV1::ContainsReservedResource => {
+                if assessment == Some(PotionMarginalAssessmentV1::CrossesSurvivalReserve) {
+                    witness
+                        .policy_review_flags
+                        .push(PotionPolicyReviewFlagV1::ReservedResourceCrossesSurvivalReserve);
+                } else if assessment == Some(PotionMarginalAssessmentV1::ImprovesFinalHp) {
+                    witness.policy_review_flags.push(
+                        PotionPolicyReviewFlagV1::ReservedResourceImprovesHpWithoutCrossingReserve,
+                    );
+                }
+            }
+            VerifiedWinPotionDispositionV1::ContainsExcludedResource => {
+                witness
+                    .policy_review_flags
+                    .push(PotionPolicyReviewFlagV1::ExcludedResourceConsumed);
+            }
+        }
+        let delayed_regen = witness
+            .potion_expenditures
+            .iter()
+            .any(|event| event.id == "RegenPotion")
+            && witness
+                .relative_to_no_potion
+                .as_ref()
+                .and_then(|comparison| comparison.final_turn_delta)
+                .is_some_and(|delta| delta > 0);
+        if delayed_regen {
+            witness
+                .policy_review_flags
+                .push(PotionPolicyReviewFlagV1::DelayedHealRequiresExtraTurns);
+        }
     }
 }
 
@@ -832,6 +964,55 @@ mod tests {
             id: "TestPotion".to_owned(),
             uuid,
             mode: PotionExpenditureModeV1::Use,
+            verified_win_rescue_tier: PotionVerifiedWinRescueTierV1::BoundedQuality,
+        }
+    }
+
+    fn policy_lane(
+        lane_id: &str,
+        event: PotionExpenditureEventV1,
+        disposition: VerifiedWinPotionDispositionV1,
+        assessment: PotionMarginalAssessmentV1,
+        final_turn_delta: i64,
+        pareto_frontier: bool,
+    ) -> PotionAuditLaneResultV1 {
+        PotionAuditLaneResultV1 {
+            lane_id: lane_id.to_owned(),
+            allowed_slot_mask: 1,
+            allowed_potions: Vec::new(),
+            max_explicit_expenditures: 1,
+            status: "partial:generation_work_budget".to_owned(),
+            elapsed_ms: 0,
+            counters: PotionAuditLaneCountersV1 {
+                selections: 0,
+                generation_work: 0,
+                engine_steps: 0,
+                exact_nodes: 0,
+                terminal_win_options: 0,
+                witness_replay_attempts: 0,
+                witness_replay_improvements: 0,
+            },
+            witness: Some(PotionAuditWitnessV1 {
+                final_hp: 30,
+                hp_loss: 10,
+                final_player_turn: 5,
+                turns_elapsed: 5,
+                action_count: 10,
+                explicit_potion_action_count: 1,
+                potion_expenditures: vec![event],
+                verified_win_potion_disposition: disposition,
+                policy_review_flags: Vec::new(),
+                lane_compliant: true,
+                meets_survival_reserve: Some(true),
+                relative_to_no_potion: Some(PotionMarginalComparisonV1 {
+                    final_hp_delta: Some(10),
+                    final_turn_delta: Some(final_turn_delta),
+                    action_count_delta: Some(1),
+                    assessment,
+                }),
+                pareto_frontier,
+                dominated_by: Vec::new(),
+            }),
         }
     }
 
@@ -876,6 +1057,42 @@ mod tests {
 
         assert!(!first.is_subset(&second));
         assert!(!second.is_subset(&first));
+    }
+
+    #[test]
+    fn policy_review_flags_expose_reserved_upside_and_admitted_waste() {
+        let mut regen = expenditure(10);
+        regen.id = "RegenPotion".to_owned();
+        regen.verified_win_rescue_tier = PotionVerifiedWinRescueTierV1::FindAnyWin;
+        let mut lanes = vec![
+            policy_lane(
+                "regen",
+                regen,
+                VerifiedWinPotionDispositionV1::ContainsReservedResource,
+                PotionMarginalAssessmentV1::CrossesSurvivalReserve,
+                3,
+                true,
+            ),
+            policy_lane(
+                "fire",
+                expenditure(20),
+                VerifiedWinPotionDispositionV1::BoundedQualityOnly,
+                PotionMarginalAssessmentV1::SameFinalHpWithExtraResource,
+                1,
+                false,
+            ),
+        ];
+
+        annotate_policy_review_flags(&mut lanes);
+
+        let regen_flags = &lanes[0].witness.as_ref().unwrap().policy_review_flags;
+        assert!(
+            regen_flags.contains(&PotionPolicyReviewFlagV1::ReservedResourceCrossesSurvivalReserve)
+        );
+        assert!(regen_flags.contains(&PotionPolicyReviewFlagV1::DelayedHealRequiresExtraTurns));
+        let fire_flags = &lanes[1].witness.as_ref().unwrap().policy_review_flags;
+        assert!(fire_flags.contains(&PotionPolicyReviewFlagV1::AdmittedResourceIsParetoDominated));
+        assert!(fire_flags.contains(&PotionPolicyReviewFlagV1::AdmittedResourceHasNoHpBenefit));
     }
 
     #[test]
