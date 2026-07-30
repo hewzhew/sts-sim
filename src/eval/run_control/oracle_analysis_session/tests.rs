@@ -455,6 +455,54 @@ fn typed_fire_potion_rescue_materializes_when_no_potion_win_exists() {
 }
 
 #[test]
+fn common_strength_potion_can_rescue_a_verified_but_low_quality_win() {
+    let mut combat = one_strike_combat();
+    combat.entities.player.current_hp = 40;
+    combat.entities.player.max_hp = 40;
+    combat.entities.monsters[0].current_hp = 8;
+    combat.entities.monsters[0].max_hp = 8;
+    combat.zones.draw_pile = vec![CombatCard::new(crate::content::cards::CardId::Strike, 2)].into();
+    combat.entities.potions = vec![Some(Potion::new(PotionId::StrengthPotion, 53))];
+    let mut analysis = combat_analysis_with_budgets(
+        combat,
+        None,
+        strategic_combat_budgets(RunControlSearchCombatOptions {
+            max_nodes: Some(512),
+            ..RunControlSearchCombatOptions::default()
+        }),
+    );
+
+    let report = analysis
+        .advance_cursor(OracleAnalysisAdvanceRequestV1 {
+            max_quanta: 16,
+            quantum_nodes: 32,
+            quantum_ms: None,
+            wall_ms: None,
+            improve_incumbent: true,
+        })
+        .expect("serve exact Strength Potion quality rescue");
+
+    assert!(
+        matches!(
+            report.status,
+            OracleAnalysisAdvanceStatusV1::BoundaryReached { .. }
+        ),
+        "the common deterministic rescue should improve the verified line: {:?}",
+        report.status
+    );
+    let progress = report.combat.expect("final Strength rescue progress");
+    assert_eq!(progress.search_stage, 1);
+    assert_eq!(progress.allowed_potion_slots, Some(1));
+    assert_eq!(progress.incumbent_potions_used, Some(1));
+    assert_eq!(progress.incumbent_potion_slots, Some(1));
+    assert_eq!(
+        analysis.view_cursor().expect("rescued child").current_hp,
+        40,
+        "Strength should kill before the otherwise unavoidable Jaw Worm hit"
+    );
+}
+
+#[test]
 fn boss_and_explicit_potion_overrides_skip_the_conserving_policy() {
     let mut boss_combat = potion_equipped_one_strike_combat();
     boss_combat.meta.is_boss_fight = true;

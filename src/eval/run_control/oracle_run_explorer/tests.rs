@@ -707,6 +707,63 @@ fn strategic_nonboss_search_conserves_potions_before_exact_rescue() {
 }
 
 #[test]
+fn potion_rescue_tiers_distinguish_common_tactics_from_reserved_resources() {
+    for potion in [
+        PotionId::FirePotion,
+        PotionId::ExplosivePotion,
+        PotionId::PoisonPotion,
+        PotionId::WeakenPotion,
+        PotionId::FearPotion,
+        PotionId::BlockPotion,
+        PotionId::EnergyPotion,
+        PotionId::StrengthPotion,
+        PotionId::DexterityPotion,
+        PotionId::SpeedPotion,
+        PotionId::SteroidPotion,
+        PotionId::SwiftPotion,
+        PotionId::FocusPotion,
+        PotionId::BottledMiracle,
+        PotionId::BlessingOfTheForge,
+    ] {
+        assert_eq!(
+            oracle_potion_rescue_tier_v1(potion),
+            OraclePotionRescueTierV1::BoundedQuality,
+            "{potion:?} should be eligible only after a no-potion quality miss"
+        );
+        assert!(potion_can_support_victory_rescue_v1(potion));
+        assert!(potion_is_bounded_quality_rescue_v1(potion));
+    }
+
+    for potion in [
+        PotionId::BloodPotion,
+        PotionId::RegenPotion,
+        PotionId::AttackPotion,
+        PotionId::SkillPotion,
+        PotionId::PowerPotion,
+        PotionId::DuplicationPotion,
+        PotionId::LiquidMemories,
+        PotionId::GhostInAJar,
+    ] {
+        assert_eq!(
+            oracle_potion_rescue_tier_v1(potion),
+            OraclePotionRescueTierV1::FindAnyWin,
+            "{potion:?} should remain reserved while a verified win exists"
+        );
+        assert!(potion_can_support_victory_rescue_v1(potion));
+        assert!(!potion_is_bounded_quality_rescue_v1(potion));
+    }
+
+    for potion in [PotionId::FairyPotion, PotionId::SmokeBomb] {
+        assert_eq!(
+            oracle_potion_rescue_tier_v1(potion),
+            OraclePotionRescueTierV1::Excluded
+        );
+        assert!(!potion_can_support_victory_rescue_v1(potion));
+        assert!(!potion_is_bounded_quality_rescue_v1(potion));
+    }
+}
+
+#[test]
 fn strategic_staging_preserves_session_overrides_and_does_not_rescue_with_escape_only_inventory() {
     let options = RunControlSearchCombatOptions::default();
     let budgets = OracleRunCombatBudgetsV1 {
