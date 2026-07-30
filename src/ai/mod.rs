@@ -25,6 +25,7 @@ pub mod opening_hand_target_plan_v1;
 pub mod pandora_offer_profile_v1;
 pub mod planner_core;
 pub mod potion_continuation_context_v1;
+pub mod potion_continuation_pressure_v1;
 pub mod random_upgrade_opportunity_v1;
 pub mod relic_trade_policy_v1;
 pub mod reward_policy_v1;

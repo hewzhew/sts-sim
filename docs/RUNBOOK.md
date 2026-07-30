@@ -118,8 +118,10 @@ if (Test-Path -LiteralPath "$capsule/frontier.json") {
 
 The 1-node phase is a capture mechanism, not a claim that the combat is hard
 or unwinnable. Before auditing, require every saved search summary to contain
-one identical `before_combat_search` context. The V5 audit must report
-`validated_exact_root` with no mismatches:
+one identical `before_combat_search` context. Current captures should also
+contain one identical `PotionContinuationPressureV1`; its absence is expected
+only for legacy cases. The V5 audit must report `validated_exact_root` with no
+mismatches:
 
 ```powershell
 $case = Get-ChildItem -LiteralPath "$capsule/combat_cases" `

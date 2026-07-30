@@ -13,6 +13,7 @@ use crate::ai::planner_core::{
     PLANNER_BEHAVIOR_EVENT_SCHEMA_VERSION,
 };
 use crate::ai::potion_continuation_context_v1::PotionRunContinuationContextV1;
+use crate::ai::potion_continuation_pressure_v1::PotionContinuationPressureV1;
 use crate::ai::strategy::pressure_assessment::PressureAxis;
 use crate::content::cards::CardId;
 use crate::content::potions::PotionId;
@@ -300,6 +301,8 @@ pub struct CombatSearchTraceSummary {
     pub portfolio_decision: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub potion_continuation_context: Option<PotionRunContinuationContextV1>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub potion_continuation_pressure: Option<PotionContinuationPressureV1>,
     pub act: u8,
     pub floor: i32,
     pub turn: u32,
@@ -574,6 +577,7 @@ pub fn combat_search_trace_summaries(
             portfolio_selected: None,
             portfolio_decision: None,
             potion_continuation_context: None,
+            potion_continuation_pressure: None,
             act: snapshot.act,
             floor: snapshot.floor,
             turn: snapshot.turn,
@@ -712,6 +716,7 @@ mod tests {
             serde_json::from_value(payload).expect("deserialize legacy summary");
 
         assert!(restored.potion_continuation_context.is_none());
+        assert!(restored.potion_continuation_pressure.is_none());
     }
 
     #[test]

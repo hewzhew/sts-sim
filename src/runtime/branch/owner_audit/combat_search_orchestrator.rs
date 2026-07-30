@@ -1,6 +1,9 @@
 use sts_simulator::ai::potion_continuation_context_v1::{
     potion_run_continuation_context_v1, PotionRunContinuationContextV1,
 };
+use sts_simulator::ai::potion_continuation_pressure_v1::{
+    potion_continuation_pressure_v1, PotionContinuationPressureV1,
+};
 use sts_simulator::eval::run_control::{
     combat_search_trace_summaries, CombatSearchTraceSummary, OraclePotionRescueKindV1,
     RunControlCombatSearchRejection, RunControlHpLossLimit, RunControlSession,
@@ -53,6 +56,8 @@ pub(super) fn run_combat_search_session_step(
         .ok_or_else(|| "combat search session has no active combat".to_string())?;
     let potion_continuation_context =
         potion_run_continuation_context_v1(&session.run_state, &active_combat.combat_state);
+    let potion_continuation_pressure =
+        potion_continuation_pressure_v1(&session.run_state, &potion_continuation_context);
     let combat_capture = capture_active_combat(session)?;
     let owner_hp_loss_limit = match owner_audit_hp_loss_limit(session) {
         RunControlHpLossLimit::Limit(limit) => Some(limit),
@@ -100,6 +105,7 @@ pub(super) fn run_combat_search_session_step(
                 false,
                 primary_decision,
                 &potion_continuation_context,
+                &potion_continuation_pressure,
             ));
             plan = refinement;
             outcome = match session.apply_combat_search(plan.search.clone()) {
@@ -143,6 +149,7 @@ pub(super) fn run_combat_search_session_step(
         applied,
         decision,
         &potion_continuation_context,
+        &potion_continuation_pressure,
     ));
     if let Some(diagnostic) = combat_capture.and_then(|capture| {
         accepted_high_loss_diagnostic(
@@ -249,6 +256,7 @@ fn combat_search_summaries(
     applied: bool,
     decision: &'static str,
     potion_continuation_context: &PotionRunContinuationContextV1,
+    potion_continuation_pressure: &PotionContinuationPressureV1,
 ) -> Vec<CombatSearchTraceSummary> {
     let mut summaries =
         combat_search_trace_summaries(&outcome.trace_annotations).collect::<Vec<_>>();
@@ -266,6 +274,7 @@ fn combat_search_summaries(
         summary.portfolio_selected = Some(applied);
         summary.portfolio_decision = Some(decision.to_string());
         summary.potion_continuation_context = Some(potion_continuation_context.clone());
+        summary.potion_continuation_pressure = Some(potion_continuation_pressure.clone());
     }
     summaries
 }
@@ -439,6 +448,7 @@ mod tests {
     #[test]
     fn owner_audit_accepts_a_quality_no_potion_win_before_opening_rescue() {
         let mut session = hallway_session(6, vec![Some(Potion::new(PotionId::BlockPotion, 10))]);
+        session.run_state.gold = 57;
         session
             .active_combat
             .as_mut()
@@ -485,6 +495,19 @@ mod tests {
         assert_eq!(continuation.inventory.slot_capacity, 1);
         assert_eq!(continuation.inventory.occupied_slots, 1);
         assert!(continuation.inventory.inventory_full);
+        let pressure = result
+            .combat_search
+            .iter()
+            .find_map(|summary| summary.potion_continuation_pressure.as_ref())
+            .expect("owner search should preserve compact potion pressure");
+        assert_eq!(pressure.capture_boundary, "before_combat_search");
+        assert_eq!(pressure.inventory.slot_capacity, 1);
+        assert_eq!(pressure.inventory.occupied_slots, 1);
+        assert_eq!(pressure.shop.current_gold, 57);
+        assert_eq!(
+            pressure.recovery.current_hp_deficit,
+            continuation.max_hp - continuation.current_hp
+        );
     }
 
     #[test]

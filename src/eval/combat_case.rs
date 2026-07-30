@@ -235,6 +235,7 @@ mod tests {
 
     use super::*;
     use crate::ai::potion_continuation_context_v1::potion_run_continuation_context_v1;
+    use crate::ai::potion_continuation_pressure_v1::potion_continuation_pressure_v1;
     use crate::ai::strategy::challenger_signature::DeckBurdenBand;
     use crate::ai::strategy::trajectory_comparison::{
         TrajectoryConstruction, TrajectoryDeployabilityEvidence, TrajectoryPressureEvidence,
@@ -373,8 +374,10 @@ mod tests {
         let run = crate::state::run::RunState::new(7, 0, false, "IRONCLAD");
         let combat = crate::test_support::blank_test_combat();
         let continuation = potion_run_continuation_context_v1(&run, &combat);
+        let pressure = potion_continuation_pressure_v1(&run, &continuation);
         let attempt = CombatSearchTraceSummary {
             potion_continuation_context: Some(continuation),
+            potion_continuation_pressure: Some(pressure),
             ..CombatSearchTraceSummary::default()
         };
         let mut case = sample_case();
@@ -384,6 +387,11 @@ mod tests {
         let payload = serde_json::to_value(&case).expect("serialize combat case");
         assert_eq!(
             payload["combat_search_attempts"][0]["potion_continuation_context"]["capture_boundary"],
+            "before_combat_search"
+        );
+        assert_eq!(
+            payload["combat_search_attempts"][0]["potion_continuation_pressure"]
+                ["capture_boundary"],
             "before_combat_search"
         );
 
@@ -396,6 +404,14 @@ mod tests {
             .failed_search
             .as_ref()
             .and_then(|attempt| attempt.potion_continuation_context.as_ref())
+            .is_some());
+        assert!(restored.combat_search_attempts[0]
+            .potion_continuation_pressure
+            .is_some());
+        assert!(restored
+            .failed_search
+            .as_ref()
+            .and_then(|attempt| attempt.potion_continuation_pressure.as_ref())
             .is_some());
     }
 }
