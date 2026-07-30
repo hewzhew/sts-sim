@@ -26,7 +26,7 @@ use sts_oracle_runtime::state::core::ClientInput;
 
 use super::combat_graph_search_spec::LocalGraphSearchSpec;
 
-const SCHEMA_NAME: &str = "OracleCombatCasePotionExpenditureAuditV2";
+const SCHEMA_NAME: &str = "OracleCombatCasePotionExpenditureAuditV3";
 
 #[derive(Debug, Args)]
 pub(super) struct CombatCasePotionExpenditureAuditArgs {
@@ -172,6 +172,32 @@ enum PotionPolicyReviewFlagV1 {
     ExcludedResourceConsumed,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(tag = "decision", rename_all = "snake_case")]
+enum PotionSpendAdjudicationV1 {
+    NoPotionBaseline,
+    NoAdditionalPotionConsumed,
+    UnknownWithoutNoPotionWitness {
+        baseline_frontier_exhausted: bool,
+    },
+    RejectDominated {
+        dominated_by: Vec<String>,
+    },
+    RejectNonPositiveHpGain {
+        final_hp_delta: i32,
+    },
+    SpendToCrossSurvivalReserve {
+        final_hp_delta: i32,
+    },
+    CompareContinuationValue {
+        immediate_hp_gain: i32,
+        break_even_retained_value_hp: i32,
+        final_turn_delta: i64,
+        potion_expenditures: usize,
+    },
+    ExcludedFromVictorySpend,
+}
+
 #[derive(Clone, Debug, Serialize)]
 struct PotionMarginalComparisonV1 {
     final_hp_delta: Option<i32>,
@@ -196,6 +222,7 @@ struct PotionAuditWitnessV1 {
     relative_to_no_potion: Option<PotionMarginalComparisonV1>,
     pareto_frontier: bool,
     dominated_by: Vec<String>,
+    shadow_spend_adjudication: Option<PotionSpendAdjudicationV1>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -218,7 +245,7 @@ struct PotionAuditLimitationsV1 {
 }
 
 #[derive(Clone, Debug, Serialize)]
-pub(super) struct CombatCasePotionExpenditureAuditV2 {
+pub(super) struct CombatCasePotionExpenditureAuditV3 {
     schema_name: &'static str,
     case: PathBuf,
     root_exact_state_hash: String,
@@ -233,7 +260,7 @@ pub(super) struct CombatCasePotionExpenditureAuditV2 {
 
 pub(super) fn run(
     args: CombatCasePotionExpenditureAuditArgs,
-) -> Result<CombatCasePotionExpenditureAuditV2, String> {
+) -> Result<CombatCasePotionExpenditureAuditV3, String> {
     let CombatCasePotionExpenditureAuditArgs {
         case,
         max_combination_size,
@@ -336,6 +363,7 @@ pub(super) fn run(
 
     annotate_marginal_comparisons(&mut lanes, survival_reserve_hp);
     annotate_pareto_frontier(&mut lanes);
+    annotate_shadow_spend_adjudications(&mut lanes);
     annotate_policy_review_flags(&mut lanes);
     validate_expectations(
         &lanes,
@@ -352,7 +380,7 @@ pub(super) fn run(
         })
         .collect();
 
-    Ok(CombatCasePotionExpenditureAuditV2 {
+    Ok(CombatCasePotionExpenditureAuditV3 {
         schema_name: SCHEMA_NAME,
         case,
         root_exact_state_hash,
@@ -543,6 +571,7 @@ fn summarize_witness(
         relative_to_no_potion: None,
         pareto_frontier: false,
         dominated_by: Vec::new(),
+        shadow_spend_adjudication: None,
     })
 }
 
@@ -753,6 +782,58 @@ fn annotate_pareto_frontier(lanes: &mut [PotionAuditLaneResultV1]) {
             .map(|(other_id, ..)| other_id.clone())
             .collect();
         witness.pareto_frontier = witness.dominated_by.is_empty();
+    }
+}
+
+fn annotate_shadow_spend_adjudications(lanes: &mut [PotionAuditLaneResultV1]) {
+    for lane in lanes {
+        let Some(witness) = lane.witness.as_mut() else {
+            continue;
+        };
+        let adjudication = if lane.lane_id == "no_potion" {
+            PotionSpendAdjudicationV1::NoPotionBaseline
+        } else if witness.potion_expenditures.is_empty() {
+            PotionSpendAdjudicationV1::NoAdditionalPotionConsumed
+        } else {
+            let comparison = witness.relative_to_no_potion.as_ref();
+            let baseline_frontier_exhausted = comparison.is_some_and(|comparison| {
+                comparison.assessment
+                    == PotionMarginalAssessmentV1::NoPotionFrontierExhaustedUnderContract
+            });
+            let Some((final_hp_delta, final_turn_delta)) = comparison
+                .and_then(|comparison| comparison.final_hp_delta.zip(comparison.final_turn_delta))
+            else {
+                witness.shadow_spend_adjudication =
+                    Some(PotionSpendAdjudicationV1::UnknownWithoutNoPotionWitness {
+                        baseline_frontier_exhausted,
+                    });
+                continue;
+            };
+            if !witness.lane_compliant
+                || witness.verified_win_potion_disposition
+                    == VerifiedWinPotionDispositionV1::ContainsExcludedResource
+            {
+                PotionSpendAdjudicationV1::ExcludedFromVictorySpend
+            } else if !witness.pareto_frontier {
+                PotionSpendAdjudicationV1::RejectDominated {
+                    dominated_by: witness.dominated_by.clone(),
+                }
+            } else if final_hp_delta <= 0 {
+                PotionSpendAdjudicationV1::RejectNonPositiveHpGain { final_hp_delta }
+            } else if comparison.is_some_and(|comparison| {
+                comparison.assessment == PotionMarginalAssessmentV1::CrossesSurvivalReserve
+            }) {
+                PotionSpendAdjudicationV1::SpendToCrossSurvivalReserve { final_hp_delta }
+            } else {
+                PotionSpendAdjudicationV1::CompareContinuationValue {
+                    immediate_hp_gain: final_hp_delta,
+                    break_even_retained_value_hp: final_hp_delta,
+                    final_turn_delta,
+                    potion_expenditures: witness.potion_expenditures.len(),
+                }
+            }
+        };
+        witness.shadow_spend_adjudication = Some(adjudication);
     }
 }
 
@@ -1012,8 +1093,17 @@ mod tests {
                 }),
                 pareto_frontier,
                 dominated_by: Vec::new(),
+                shadow_spend_adjudication: None,
             }),
         }
+    }
+
+    fn shadow_adjudication(mut lane: PotionAuditLaneResultV1) -> PotionSpendAdjudicationV1 {
+        annotate_shadow_spend_adjudications(std::slice::from_mut(&mut lane));
+        lane.witness
+            .unwrap()
+            .shadow_spend_adjudication
+            .expect("shadow spend adjudication")
     }
 
     #[test]
@@ -1093,6 +1183,176 @@ mod tests {
         let fire_flags = &lanes[1].witness.as_ref().unwrap().policy_review_flags;
         assert!(fire_flags.contains(&PotionPolicyReviewFlagV1::AdmittedResourceIsParetoDominated));
         assert!(fire_flags.contains(&PotionPolicyReviewFlagV1::AdmittedResourceHasNoHpBenefit));
+    }
+
+    #[test]
+    fn shadow_spend_adjudication_preserves_baseline_and_budget_unknowns() {
+        let baseline = policy_lane(
+            "no_potion",
+            expenditure(10),
+            VerifiedWinPotionDispositionV1::BoundedQualityOnly,
+            PotionMarginalAssessmentV1::ImprovesFinalHp,
+            0,
+            false,
+        );
+        assert_eq!(
+            shadow_adjudication(baseline),
+            PotionSpendAdjudicationV1::NoPotionBaseline
+        );
+
+        let mut no_spend = policy_lane(
+            "power",
+            expenditure(20),
+            VerifiedWinPotionDispositionV1::NoPotionSpent,
+            PotionMarginalAssessmentV1::NoPotionWitnessNotFoundUnderAllowance,
+            0,
+            false,
+        );
+        let no_spend_witness = no_spend.witness.as_mut().unwrap();
+        no_spend_witness.potion_expenditures.clear();
+        no_spend_witness
+            .relative_to_no_potion
+            .as_mut()
+            .unwrap()
+            .final_hp_delta = None;
+        assert_eq!(
+            shadow_adjudication(no_spend),
+            PotionSpendAdjudicationV1::NoAdditionalPotionConsumed
+        );
+
+        let mut unknown = policy_lane(
+            "fire",
+            expenditure(30),
+            VerifiedWinPotionDispositionV1::BoundedQualityOnly,
+            PotionMarginalAssessmentV1::NoPotionFrontierExhaustedUnderContract,
+            0,
+            false,
+        );
+        let unknown_comparison = unknown
+            .witness
+            .as_mut()
+            .unwrap()
+            .relative_to_no_potion
+            .as_mut()
+            .unwrap();
+        unknown_comparison.final_hp_delta = None;
+        unknown_comparison.final_turn_delta = None;
+        assert_eq!(
+            shadow_adjudication(unknown),
+            PotionSpendAdjudicationV1::UnknownWithoutNoPotionWitness {
+                baseline_frontier_exhausted: true,
+            }
+        );
+    }
+
+    #[test]
+    fn shadow_spend_adjudication_applies_safety_and_break_even_priority() {
+        let mut excluded = policy_lane(
+            "smoke",
+            expenditure(10),
+            VerifiedWinPotionDispositionV1::ContainsExcludedResource,
+            PotionMarginalAssessmentV1::WorseFinalHpWithExtraResource,
+            4,
+            false,
+        );
+        excluded
+            .witness
+            .as_mut()
+            .unwrap()
+            .dominated_by
+            .push("no_potion".to_owned());
+        assert_eq!(
+            shadow_adjudication(excluded),
+            PotionSpendAdjudicationV1::ExcludedFromVictorySpend
+        );
+
+        let mut non_compliant = policy_lane(
+            "passive",
+            expenditure(15),
+            VerifiedWinPotionDispositionV1::BoundedQualityOnly,
+            PotionMarginalAssessmentV1::ImprovesFinalHp,
+            0,
+            false,
+        );
+        non_compliant.witness.as_mut().unwrap().lane_compliant = false;
+        assert_eq!(
+            shadow_adjudication(non_compliant),
+            PotionSpendAdjudicationV1::ExcludedFromVictorySpend
+        );
+
+        let mut dominated = policy_lane(
+            "block",
+            expenditure(20),
+            VerifiedWinPotionDispositionV1::BoundedQualityOnly,
+            PotionMarginalAssessmentV1::WorseFinalHpWithExtraResource,
+            1,
+            false,
+        );
+        let dominated_witness = dominated.witness.as_mut().unwrap();
+        dominated_witness
+            .relative_to_no_potion
+            .as_mut()
+            .unwrap()
+            .final_hp_delta = Some(-1);
+        dominated_witness.dominated_by.push("no_potion".to_owned());
+        assert_eq!(
+            shadow_adjudication(dominated),
+            PotionSpendAdjudicationV1::RejectDominated {
+                dominated_by: vec!["no_potion".to_owned()],
+            }
+        );
+
+        let mut no_gain = policy_lane(
+            "strength",
+            expenditure(30),
+            VerifiedWinPotionDispositionV1::BoundedQualityOnly,
+            PotionMarginalAssessmentV1::SameFinalHpWithExtraResource,
+            -10,
+            true,
+        );
+        no_gain
+            .witness
+            .as_mut()
+            .unwrap()
+            .relative_to_no_potion
+            .as_mut()
+            .unwrap()
+            .final_hp_delta = Some(0);
+        assert_eq!(
+            shadow_adjudication(no_gain),
+            PotionSpendAdjudicationV1::RejectNonPositiveHpGain { final_hp_delta: 0 }
+        );
+
+        let crosses_reserve = policy_lane(
+            "duplication",
+            expenditure(40),
+            VerifiedWinPotionDispositionV1::ContainsReservedResource,
+            PotionMarginalAssessmentV1::CrossesSurvivalReserve,
+            2,
+            true,
+        );
+        assert_eq!(
+            shadow_adjudication(crosses_reserve),
+            PotionSpendAdjudicationV1::SpendToCrossSurvivalReserve { final_hp_delta: 10 }
+        );
+
+        let continuation = policy_lane(
+            "regen",
+            expenditure(50),
+            VerifiedWinPotionDispositionV1::ContainsReservedResource,
+            PotionMarginalAssessmentV1::ImprovesFinalHp,
+            3,
+            true,
+        );
+        assert_eq!(
+            shadow_adjudication(continuation),
+            PotionSpendAdjudicationV1::CompareContinuationValue {
+                immediate_hp_gain: 10,
+                break_even_retained_value_hp: 10,
+                final_turn_delta: 3,
+                potion_expenditures: 1,
+            }
+        );
     }
 
     #[test]
