@@ -500,6 +500,12 @@ artifact paths after every completed seed. A top-level
 `interrupted / invocation_wall_budget` result is a successful durable slice,
 not a seed failure.
 
+The per-seed run wall bounds additional search and owner scheduling. If the
+last admitted combat search has already returned a verified incumbent, the
+autonomous runner atomically applies that exact line before recording a
+run-wall stop at the resulting boundary. The report records this as
+`incumbent_accepted_after_run_wall` and includes any resulting wall overshoot.
+
 Full `combat-case` reports also include a read-only `storage` census. It
 separates live generator work from retained slot, exact-state index, scheduling
 heap, and graph-edge capacities, including the subset owned by already

@@ -163,18 +163,6 @@ pub fn run_oracle_analysis_to_stop_v1(
     let mut owner_visited_nodes = BTreeSet::new();
 
     for _ in 0..config.max_boundaries {
-        if run_wall_budget_reached(run_started, config.run_wall_ms) {
-            return Ok(stopped_autonomous_run_report(
-                start_node,
-                &node,
-                owner_decisions,
-                &combats,
-                &timing,
-                elapsed_millis(run_started),
-                config.run_wall_ms,
-                "run_wall_budget",
-            ));
-        }
         if matches!(
             node.boundary,
             OracleRunBoundaryV1::TerminalVictory | OracleRunBoundaryV1::TerminalDefeat
@@ -190,6 +178,18 @@ pub fn run_oracle_analysis_to_stop_v1(
                 config.run_wall_ms,
                 config.export_continuation.as_deref(),
             );
+        }
+        if run_wall_budget_reached(run_started, config.run_wall_ms) {
+            return Ok(stopped_autonomous_run_report(
+                start_node,
+                &node,
+                owner_decisions,
+                &combats,
+                &timing,
+                elapsed_millis(run_started),
+                config.run_wall_ms,
+                "run_wall_budget",
+            ));
         }
 
         if !node.choices.is_empty() {
@@ -302,10 +302,10 @@ pub fn run_oracle_analysis_to_stop_v1(
             .as_ref()
             .and_then(|combat| combat.incumbent_final_hp);
         let materialized = after.boundary != OracleRunBoundaryV1::Combat;
-        let acceptance_deferred = !materialized
-            && incumbent.is_some()
-            && run_wall_budget_reached(run_started, config.run_wall_ms);
-        let accepted = if !materialized && incumbent.is_some() && !acceptance_deferred {
+        let incumbent_needs_acceptance = combat_incumbent_needs_acceptance(materialized, incumbent);
+        let accepted_after_run_wall =
+            incumbent_needs_acceptance && run_wall_budget_reached(run_started, config.run_wall_ms);
+        let accepted = if incumbent_needs_acceptance {
             let accept_started = Instant::now();
             after = workspace.accept_combat_incumbent()?;
             timing.combat_accept_ms = timing
@@ -325,23 +325,11 @@ pub fn run_oracle_analysis_to_stop_v1(
             "budget_ms": wall_ms,
             "elapsed_ms": report.elapsed_ms,
             "accepted_incumbent": accepted,
-            "incumbent_acceptance_deferred": acceptance_deferred,
+            "incumbent_accepted_after_run_wall": accepted_after_run_wall,
             "search": compact_run_combat_progress(report.combat.as_ref()),
             "after": compact_run_node(&after),
         }));
 
-        if acceptance_deferred {
-            return Ok(stopped_autonomous_run_report(
-                start_node,
-                &after,
-                owner_decisions,
-                &combats,
-                &timing,
-                elapsed_millis(run_started),
-                config.run_wall_ms,
-                "run_wall_budget",
-            ));
-        }
         if !materialized && !accepted {
             return Ok(stopped_autonomous_run_report(
                 start_node,
@@ -547,11 +535,18 @@ fn run_wall_budget_reached(started: Instant, run_wall_ms: Option<u64>) -> bool {
     run_wall_ms.is_some_and(|limit| elapsed_millis(started) >= limit)
 }
 
+fn combat_incumbent_needs_acceptance(materialized: bool, incumbent_final_hp: Option<i32>) -> bool {
+    !materialized && incumbent_final_hp.is_some()
+}
+
 #[cfg(test)]
 mod tests {
     use std::time::{Duration, Instant};
 
-    use super::{apply_owner_steps, run_wall_budget_reached, AutonomousRunTiming};
+    use super::{
+        apply_owner_steps, combat_incumbent_needs_acceptance, run_wall_budget_reached,
+        AutonomousRunTiming,
+    };
     use crate::content::potions::{Potion, PotionId};
     use crate::eval::run_control::{
         positive_ranked_run_policy_prior_v1, seed_oracle_run_explorer_from_session_v1,
@@ -683,5 +678,15 @@ mod tests {
 
         assert!(!run_wall_budget_reached(started, None));
         assert!(run_wall_budget_reached(started, Some(5)));
+    }
+
+    #[test]
+    fn verified_incumbent_remains_an_atomic_commit_after_search_wall() {
+        let started = Instant::now() - Duration::from_millis(10);
+
+        assert!(run_wall_budget_reached(started, Some(5)));
+        assert!(combat_incumbent_needs_acceptance(false, Some(51)));
+        assert!(!combat_incumbent_needs_acceptance(true, Some(51)));
+        assert!(!combat_incumbent_needs_acceptance(false, None));
     }
 }

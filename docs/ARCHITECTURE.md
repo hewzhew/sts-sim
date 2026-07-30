@@ -163,6 +163,13 @@ Accepted combat lines must be exact executable lines from the current combat
 state. Frontiers, near misses, rollout samples, and dirty diagnostic lines are
 evidence, not runnable campaign actions.
 
+An autonomous run wall stops additional search and owner scheduling; it does
+not discard a verified incumbent returned by the final admitted search call.
+Runtime first materializes that exact combat line as one atomic transaction,
+records any wall overshoot, and then stops at the resulting boundary. A
+terminal outcome already reached by that transaction takes precedence over a
+run-wall stop classification.
+
 ### Combat Search Orchestration
 
 Combat search code should keep these phases separate:
