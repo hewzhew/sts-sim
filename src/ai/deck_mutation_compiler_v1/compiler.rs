@@ -1,9 +1,11 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::ai::card_semantics_v1::{card_reward_semantic_profile_v1, CardRewardSemanticRoleV1};
+use crate::ai::event_resource_budget::build_event_resource_budget;
 use crate::ai::opening_hand_target_plan_v1::{
     opening_hand_target_profile_for_card_v1, OpeningHandDebtTierV1,
 };
+use crate::ai::route_window_facts::{build_route_window_facts, RouteWindowFactsConfig};
 use crate::ai::strategy::deck_role_inventory::DeckRoleInventory;
 use crate::ai::upgrade_planner_v1::{
     plan_upgrades_v1, upgrade_candidate_score_hint_v1, UpgradeCandidateV1,
@@ -11,8 +13,10 @@ use crate::ai::upgrade_planner_v1::{
 use crate::content::cards::{get_card_definition, CardId, CardRarity, CardTag, CardType};
 use crate::runtime::combat::CombatCard;
 use crate::state::core::{RunPendingChoiceReason, RunPendingChoiceState};
+use crate::state::events::EventId;
 use crate::state::rewards::RewardCard;
 use crate::state::run::RunState;
+use crate::state::selection::DomainEventSource;
 
 use super::types::{
     AllowedDeckMutationConsumersV1, CompiledDeckMutationDecisionV1, DeckMutationCardSnapshotV1,
@@ -50,6 +54,13 @@ struct GroupCountCombination {
     represented_exact_count: usize,
 }
 
+#[derive(Clone, Copy, Debug)]
+struct BonfireOfferContextV1 {
+    current_hp: i32,
+    max_hp: i32,
+    reserve_floor: i32,
+}
+
 pub fn compile_deck_mutation_decision_v1(
     run_state: &RunState,
     choice: &RunPendingChoiceState,
@@ -57,6 +68,7 @@ pub fn compile_deck_mutation_decision_v1(
 ) -> CompiledDeckMutationDecisionV1 {
     let targets = exact_targets(run_state, choice);
     let mut candidate_plans = plan_candidates(choice, &targets, request.output);
+    let bonfire_offer_context = bonfire_offer_context_v1(run_state, choice);
 
     let low_value_available = targets
         .iter()
@@ -80,6 +92,7 @@ pub fn compile_deck_mutation_decision_v1(
             candidate,
             low_value_available,
             clean_bottle_target_available,
+            bonfire_offer_context,
         );
     }
     candidate_plans.sort_by(compare_deck_mutation_candidates_v1);
@@ -712,6 +725,7 @@ fn evaluate_candidate(
     candidate: &mut DeckMutationPlanCandidateV1,
     low_value_available: bool,
     clean_bottle_target_available: bool,
+    bonfire_offer_context: Option<BonfireOfferContextV1>,
 ) {
     evaluate_candidate_for_reason(
         choice.reason,
@@ -719,6 +733,70 @@ fn evaluate_candidate(
         low_value_available,
         clean_bottle_target_available,
     );
+    if let Some(context) = bonfire_offer_context {
+        apply_bonfire_offer_recovery_v1(choice.reason, candidate, context);
+    }
+}
+
+fn bonfire_offer_context_v1(
+    run_state: &RunState,
+    choice: &RunPendingChoiceState,
+) -> Option<BonfireOfferContextV1> {
+    if choice.reason != RunPendingChoiceReason::PurgeNonBottled
+        || !matches!(
+            choice.source,
+            DomainEventSource::Event(EventId::BonfireElementals | EventId::BonfireSpirits)
+        )
+    {
+        return None;
+    }
+
+    let route_facts = build_route_window_facts(run_state, RouteWindowFactsConfig::default());
+    let budget = build_event_resource_budget(run_state, &route_facts);
+    Some(BonfireOfferContextV1 {
+        current_hp: run_state.current_hp,
+        max_hp: run_state.max_hp,
+        reserve_floor: budget.hp.reserve_floor,
+    })
+}
+
+fn apply_bonfire_offer_recovery_v1(
+    reason: RunPendingChoiceReason,
+    candidate: &mut DeckMutationPlanCandidateV1,
+    context: BonfireOfferContextV1,
+) {
+    let [card] = candidate.step.cards.as_slice() else {
+        return;
+    };
+    let rarity = get_card_definition(card.card).rarity;
+    let (projected_hp, projected_max_hp) = match rarity {
+        CardRarity::Basic | CardRarity::Curse => (context.current_hp, context.max_hp),
+        CardRarity::Common | CardRarity::Special => {
+            ((context.current_hp + 5).min(context.max_hp), context.max_hp)
+        }
+        CardRarity::Uncommon => (context.max_hp, context.max_hp),
+        CardRarity::Rare => (context.max_hp + 10, context.max_hp + 10),
+    };
+    candidate.reasons.push(format!(
+        "bonfire_offer_reward rarity={rarity:?} projected_hp={projected_hp}/{projected_max_hp} reserve_floor={}",
+        context.reserve_floor
+    ));
+
+    let crosses_survival_reserve = context.current_hp < context.reserve_floor
+        && projected_hp >= context.reserve_floor
+        && projected_hp > context.current_hp;
+    if !crosses_survival_reserve || candidate.role == DeckMutationPlanRoleV1::Blocked {
+        return;
+    }
+
+    candidate.role = DeckMutationPlanRoleV1::PolicyPreferred;
+    candidate.confidence = 0.82;
+    candidate.score_hint = candidate.score_hint.saturating_add(10_000);
+    candidate.allowed_consumers = allowed_consumers(reason, candidate.role, candidate);
+    candidate.reasons.push(format!(
+        "bonfire_offer_crosses_survival_reserve current_hp={} projected_hp={} reserve_floor={}",
+        context.current_hp, projected_hp, context.reserve_floor
+    ));
 }
 
 fn evaluate_candidate_for_reason(
@@ -1392,6 +1470,11 @@ fn target_loss_for_card_mutation(
             .push("breaks_live_strength_package".to_string());
         has_core_signal = true;
     }
+    if removal_breaks_last_high_quality_block(run_state, card.uuid) {
+        loss.signals
+            .push("removes_last_high_quality_block".to_string());
+        has_core_signal = true;
+    }
     if card.upgrades > 0 {
         loss.signals.push("upgraded_target".to_string());
     }
@@ -1431,6 +1514,21 @@ fn removal_breaks_live_strength_package(run_state: &RunState, removed_uuid: u32)
     let after_has_source =
         after.strength_source_units > 0 || after.conditional_strength_source_units > 0;
     !(after_has_source && after.strength_multiplier_units > 0)
+}
+
+fn removal_breaks_last_high_quality_block(run_state: &RunState, removed_uuid: u32) -> bool {
+    let before = DeckRoleInventory::from_deck(&run_state.master_deck);
+    if before.high_quality_block_units == 0 {
+        return false;
+    }
+
+    let remaining = run_state
+        .master_deck
+        .iter()
+        .filter(|card| card.uuid != removed_uuid)
+        .cloned()
+        .collect::<Vec<_>>();
+    DeckRoleInventory::from_deck(&remaining).high_quality_block_units == 0
 }
 
 fn opening_hand_profile_for_card_mutation(

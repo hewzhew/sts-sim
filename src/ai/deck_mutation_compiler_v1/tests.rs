@@ -10,7 +10,9 @@ use crate::ai::upgrade_planner_v1::{
 use crate::content::cards::CardId;
 use crate::runtime::combat::CombatCard;
 use crate::state::core::{EngineState, RunPendingChoiceReason, RunPendingChoiceState};
+use crate::state::events::EventId;
 use crate::state::run::RunState;
+use crate::state::selection::DomainEventSource;
 
 #[test]
 fn removal_snapshots_preserve_redundant_functional_loss_tier() {
@@ -99,6 +101,73 @@ fn compiler_execute_one_selects_evaluated_executable_plan() {
         .candidate_plans
         .iter()
         .any(|candidate| candidate.plan_id == selected.plan_id));
+}
+
+#[test]
+fn critical_bonfire_offer_trades_a_redundant_uncommon_for_full_recovery() {
+    for event_id in [EventId::BonfireElementals, EventId::BonfireSpirits] {
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        run_state.act_num = 3;
+        run_state.floor_num = 36;
+        run_state.current_hp = 12;
+        run_state.max_hp = 80;
+        run_state.master_deck = vec![
+            CombatCard::new(CardId::Strike, 1),
+            CombatCard::new(CardId::DarkEmbrace, 2),
+            CombatCard::new(CardId::DarkEmbrace, 3),
+        ];
+        let choice = RunPendingChoiceState {
+            min_choices: 1,
+            max_choices: 1,
+            reason: RunPendingChoiceReason::PurgeNonBottled,
+            source: DomainEventSource::Event(event_id),
+            return_state: Box::new(EngineState::EventRoom),
+        };
+
+        let decision = compile_deck_mutation_decision_v1(
+            &run_state,
+            &choice,
+            DeckMutationCompilerRequestV1::committed_forced_execute_one(),
+        );
+        let selected = decision.selected_plan.expect("bonfire sacrifice target");
+
+        assert_eq!(selected.step.cards[0].card, CardId::DarkEmbrace);
+        assert_eq!(selected.role, DeckMutationPlanRoleV1::PolicyPreferred);
+        assert!(selected.reasons.iter().any(|reason| {
+            reason.contains("bonfire_offer_crosses_survival_reserve")
+                && reason.contains("projected_hp=80")
+        }));
+    }
+}
+
+#[test]
+fn healthy_bonfire_offer_keeps_the_ordinary_low_loss_removal_order() {
+    let mut run_state = RunState::new(1, 0, false, "Ironclad");
+    run_state.current_hp = 70;
+    run_state.max_hp = 80;
+    run_state.master_deck = vec![
+        CombatCard::new(CardId::Strike, 1),
+        CombatCard::new(CardId::DarkEmbrace, 2),
+        CombatCard::new(CardId::DarkEmbrace, 3),
+    ];
+    let choice = RunPendingChoiceState {
+        min_choices: 1,
+        max_choices: 1,
+        reason: RunPendingChoiceReason::PurgeNonBottled,
+        source: DomainEventSource::Event(EventId::BonfireElementals),
+        return_state: Box::new(EngineState::EventRoom),
+    };
+
+    let decision = compile_deck_mutation_decision_v1(
+        &run_state,
+        &choice,
+        DeckMutationCompilerRequestV1::committed_forced_execute_one(),
+    );
+
+    assert_eq!(
+        decision.selected_plan.unwrap().step.cards[0].card,
+        CardId::Strike
+    );
 }
 
 #[test]
@@ -330,6 +399,40 @@ fn forced_purge_preserves_the_last_multiplier_of_a_live_strength_package() {
         decision.selected_plan.unwrap().step.cards[0].card,
         CardId::LimitBreak,
         "a forced purge should sacrifice an ordinary functional card before breaking live scaling"
+    );
+}
+
+#[test]
+fn forced_purge_preserves_the_last_high_quality_block_chunk() {
+    let mut run_state = RunState::new(1, 0, false, "Ironclad");
+    run_state.master_deck = vec![
+        CombatCard::new(CardId::PowerThrough, 1),
+        CombatCard::new(CardId::Headbutt, 2),
+    ];
+
+    let decision = compile_deck_mutation_decision_v1(
+        &run_state,
+        &choice(RunPendingChoiceReason::PurgeNonBottled, 1),
+        DeckMutationCompilerRequestV1::committed_forced_execute_one(),
+    );
+    let power_through = decision
+        .candidate_plans
+        .iter()
+        .find(|plan| plan.step.cards[0].card == CardId::PowerThrough)
+        .expect("Power Through purge candidate");
+
+    assert_eq!(
+        power_through.step.cards[0].target_loss.tier,
+        DeckMutationTargetLossTierV1::CoreFunctional
+    );
+    assert!(power_through.step.cards[0]
+        .target_loss
+        .signals
+        .iter()
+        .any(|signal| signal == "removes_last_high_quality_block"));
+    assert_eq!(
+        decision.selected_plan.unwrap().step.cards[0].card,
+        CardId::Headbutt
     );
 }
 
