@@ -15,7 +15,8 @@ use sts_combat_knowledge::existing_combat_knowledge_policy_v1;
 use sts_combat_planner::{
     combat_plan_selection_timing_policy_v1, combat_plan_state_guide_policy_v1, CombatDecisionRoot,
     LocalTurnGraphWitnessConfig, LocalTurnGraphWitnessQuantum, LocalTurnGraphWitnessSession,
-    OracleCombatWitnessSatisfaction, TurnOptionGeneratorConfig, DETAIL_TIMING_SAMPLE_INTERVAL,
+    OracleCombatWitness, OracleCombatWitnessSatisfaction, TurnOptionGeneratorConfig,
+    DETAIL_TIMING_SAMPLE_INTERVAL,
 };
 use sts_core::ai::combat_state_key::{
     combat_exact_state_hash_v2, combat_exact_state_key_profiled_v1, CombatExactStateKey,
@@ -38,6 +39,14 @@ struct Cli {
     /// resulting player-turn boundary.
     #[arg(long)]
     watch_actions: Option<PathBuf>,
+    /// Write the replay-verified witness as a `--watch-actions` compatible
+    /// exact action file.
+    #[arg(long)]
+    write_witness_actions: Option<PathBuf>,
+    /// Write a compact exact replay trace with resolved cards, potions, and
+    /// before/after combat state for each witness action.
+    #[arg(long)]
+    write_witness_trace: Option<PathBuf>,
     /// Replay `--watch-actions` to this player turn and use that exact state
     /// as the search root. The remaining actions stay available as the watched
     /// suffix corridor.
@@ -365,6 +374,10 @@ fn run(args: Cli) -> Result<(), String> {
 
     let setup_started = Instant::now();
     let search_root_player_turn = search_position.combat.turn.turn_count;
+    let witness_trace_root = args
+        .write_witness_trace
+        .is_some()
+        .then(|| search_position.clone());
     let root = CombatDecisionRoot::new(search_position)
         .map_err(|error| format!("invalid combat case root: {error:?}"))?;
     let config_defaults = LocalTurnGraphWitnessConfig::default();
@@ -490,6 +503,33 @@ fn run(args: Cli) -> Result<(), String> {
     }
 
     let witness = report.witness.as_ref();
+    if let Some(path) = args.write_witness_actions.as_ref() {
+        let witness = witness.ok_or_else(|| {
+            "cannot write witness actions without a replay-verified witness".to_owned()
+        })?;
+        let actions = witness
+            .actions
+            .iter()
+            .map(|action| &action.input)
+            .collect::<Vec<_>>();
+        let bytes = serde_json::to_vec_pretty(&actions)
+            .map_err(|error| format!("cannot serialize witness actions: {error}"))?;
+        std::fs::write(path, bytes).map_err(|error| {
+            format!("cannot write witness actions '{}': {error}", path.display())
+        })?;
+    }
+    if let Some(path) = args.write_witness_trace.as_ref() {
+        let witness = witness.ok_or_else(|| {
+            "cannot write witness trace without a replay-verified witness".to_owned()
+        })?;
+        write_witness_trace(
+            path,
+            witness_trace_root
+                .as_ref()
+                .expect("trace root is captured when trace output is requested"),
+            witness,
+        )?;
+    }
     if args.performance_only {
         let transitions = report.counters.applied_action_transitions;
         let timing = report.performance_timing;
@@ -780,6 +820,97 @@ fn read_watch_actions(path: &PathBuf) -> Result<Vec<ClientInput>, String> {
         .map_err(|error| format!("cannot read watch actions '{}': {error}", path.display()))?;
     serde_json::from_slice::<Vec<ClientInput>>(&bytes)
         .map_err(|error| format!("cannot parse watch actions '{}': {error}", path.display()))
+}
+
+fn write_witness_trace(
+    path: &PathBuf,
+    root: &CombatPosition,
+    witness: &OracleCombatWitness,
+) -> Result<(), String> {
+    let stepper = EngineCombatStepper;
+    let mut position = root.clone();
+    let root_exact_state_hash = combat_exact_state_hash_v2(&position.engine, &position.combat);
+    let mut trace = Vec::with_capacity(witness.actions.len());
+    for (index, action) in witness.actions.iter().enumerate() {
+        let subject = match &action.input {
+            ClientInput::PlayCard { card_index, .. } => position
+                .combat
+                .zones
+                .hand
+                .get(*card_index)
+                .map(|card| json!({ "kind": "card", "card": card })),
+            ClientInput::UsePotion { potion_index, .. }
+            | ClientInput::DiscardPotion(potion_index) => position
+                .combat
+                .entities
+                .potions
+                .get(*potion_index)
+                .and_then(Option::as_ref)
+                .map(|potion| json!({ "kind": "potion", "potion": potion })),
+            _ => None,
+        };
+        let before = compact_combat_trace_state(&position);
+        position = apply_watch_action(&stepper, &position, action.input.clone(), index)?;
+        trace.push(json!({
+            "index": index,
+            "input": action.input,
+            "subject": subject,
+            "before": before,
+            "after": compact_combat_trace_state(&position),
+        }));
+    }
+    let payload = json!({
+        "schema_name": "CombatContractWitnessTraceV1",
+        "schema_version": 1,
+        "root_exact_state_hash": root_exact_state_hash,
+        "final_exact_state_hash": combat_exact_state_hash_v2(&position.engine, &position.combat),
+        "action_count": trace.len(),
+        "actions": trace,
+    });
+    let bytes = serde_json::to_vec_pretty(&payload)
+        .map_err(|error| format!("cannot serialize witness trace: {error}"))?;
+    std::fs::write(path, bytes)
+        .map_err(|error| format!("cannot write witness trace '{}': {error}", path.display()))
+}
+
+fn compact_combat_trace_state(position: &CombatPosition) -> serde_json::Value {
+    json!({
+        "engine": format!("{:?}", position.engine),
+        "turn": position.combat.turn.turn_count,
+        "energy": position.combat.turn.energy,
+        "player": {
+            "hp": position.combat.entities.player.current_hp,
+            "block": position.combat.entities.player.block,
+        },
+        "hand": position.combat.zones.hand.iter().map(compact_trace_card).collect::<Vec<_>>(),
+        "discard_pile": position.combat.zones.discard_pile.iter().map(compact_trace_card).collect::<Vec<_>>(),
+        "exhaust_pile": position.combat.zones.exhaust_pile.iter().map(compact_trace_card).collect::<Vec<_>>(),
+        "potions": position.combat.entities.potions.iter().map(|potion| potion.as_ref().map(|potion| json!({
+            "id": potion.id,
+            "uuid": potion.uuid,
+        }))).collect::<Vec<_>>(),
+        "monsters": position.combat.entities.monsters.iter().map(|monster| json!({
+            "id": monster.id,
+            "monster_type": monster.monster_type,
+            "hp": monster.current_hp,
+            "max_hp": monster.max_hp,
+            "block": monster.block,
+            "slot": monster.slot,
+            "is_dying": monster.is_dying,
+            "half_dead": monster.half_dead,
+            "is_escaped": monster.is_escaped,
+        })).collect::<Vec<_>>(),
+    })
+}
+
+fn compact_trace_card(card: &sts_core::runtime::combat::CombatCard) -> serde_json::Value {
+    json!({
+        "id": card.id,
+        "uuid": card.uuid,
+        "upgrades": card.upgrades,
+        "cost_for_turn": card.cost_for_turn,
+        "free_to_play_once": card.free_to_play_once,
+    })
 }
 
 fn replay_to_player_turn(

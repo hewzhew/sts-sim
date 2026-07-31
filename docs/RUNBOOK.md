@@ -472,6 +472,12 @@ Use `.\ol-contract.cmd` for the maintained exact-combat contracts. It compiles
 only simulator/core combat, the planner, shared tactical knowledge, and its
 thin runner; a planner edit therefore does not invalidate or link the full
 oracle run explorer.
+Pass `--write-witness-actions <path>` to save a replay-verified witness as an
+exact action array. The same file can be supplied later with
+`--watch-actions <path>` to inspect player-turn membership and work without
+reconstructing the line from display text. Use
+`--write-witness-trace <path>` when the investigation also needs resolved card
+or potion identity and compact before/after state for every exact action.
 The heavy `oracle_lab` and `oracle_lab_service` targets require the internal
 `canonical-oracle-artifacts` feature. This is intentional: an ad-hoc
 `cargo build -p sts_oracle_lab --bin oracle_lab` is rejected during Cargo
