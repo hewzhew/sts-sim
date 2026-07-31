@@ -41,6 +41,7 @@ pub(super) struct OracleRunCombatWorkV1 {
     potion_spend_requires_satisfaction: bool,
     protected_potion_free_incumbent: Option<OracleCombatWitness>,
     prior_stage_incumbent: Option<OracleCombatWitness>,
+    stage_entry_incumbent: Option<OracleCombatWitness>,
     satisfaction: PortfolioWitnessSatisfactionV1,
     remaining_wall_time: Option<Duration>,
     quantum_count: usize,
@@ -315,6 +316,7 @@ impl OracleRunCombatWorkV1 {
             potion_spend_requires_satisfaction: false,
             protected_potion_free_incumbent: None,
             prior_stage_incumbent: None,
+            stage_entry_incumbent: None,
             satisfaction,
             remaining_wall_time: prepared.config.wall_time,
             quantum_count: 0,
@@ -378,6 +380,7 @@ impl OracleRunCombatWorkV1 {
                 .filter(|incumbent| combat_witness_potion_expenditures(&work.start, incumbent) == 0)
                 .cloned();
         }
+        work.stage_entry_incumbent = checkpoint.incumbent.clone();
         if let Some(incumbent) = checkpoint.incumbent {
             work.restore_checkpoint_incumbent(incumbent)?;
         }
@@ -414,6 +417,7 @@ impl OracleRunCombatWorkV1 {
         if work.potion_spend_requires_satisfaction {
             work.protected_potion_free_incumbent = protected_incumbent;
         }
+        work.stage_entry_incumbent = prior.incumbent.clone();
         if let Some(incumbent) = prior.incumbent {
             work.restore_checkpoint_incumbent(incumbent)?;
         }
@@ -607,6 +611,10 @@ impl OracleRunCombatWorkV1 {
         quantum: &RunControlCombatSearchQuantum,
         global_deadline: Option<Instant>,
     ) -> RunControlCombatWorkAdvanceV1 {
+        // "First" is relative to the configured owner satisfaction. Survival
+        // mode still accepts the first exact win; strategic quality modes keep
+        // an insufficient win safe while using only this stage's allowance to
+        // seek a quality-reaching replacement.
         self.advance_with_witness_policy(quantum, global_deadline, true)
     }
 
@@ -626,7 +634,7 @@ impl OracleRunCombatWorkV1 {
         &mut self,
         quantum: &RunControlCombatSearchQuantum,
         global_deadline: Option<Instant>,
-        stop_on_first_witness: bool,
+        stop_on_first_satisfying_witness: bool,
     ) -> RunControlCombatWorkAdvanceV1 {
         let now = Instant::now();
         let global_remaining =
@@ -665,7 +673,28 @@ impl OracleRunCombatWorkV1 {
         let engine_grant = self
             .remaining_engine_steps
             .min(work.saturating_mul(self.max_transition_steps));
-        let Some(member) = select_portfolio_member(
+        let productive_member = if stop_on_first_satisfying_witness
+            && self.satisfaction != PortfolioWitnessSatisfactionV1::BudgetOrExhaustion
+        {
+            self.best_witness().and_then(|witness| {
+                if combat_witness_satisfies(self.satisfaction, &self.start, witness) {
+                    return None;
+                }
+                match witness.discovery_source {
+                    OracleCombatWitnessDiscoverySource::PlannerSearch => {
+                        Some(PortfolioMemberV1::LocalTurnGraph)
+                    }
+                    OracleCombatWitnessDiscoverySource::PolicyDiscrepancySearch => {
+                        Some(PortfolioMemberV1::PolicyDiscrepancy)
+                    }
+                    _ => None,
+                }
+            })
+        } else {
+            None
+        };
+        let Some(member) = select_productive_portfolio_member(
+            productive_member,
             self.next_portfolio_member,
             self.local_complete,
             self.discrepancy_complete,
@@ -778,10 +807,25 @@ impl OracleRunCombatWorkV1 {
         // improve HP, commit the exact fallback instead of spending the
         // encounter's entire wall allowance proving that no improvement
         // exists.
-        let fallback_challenge_complete = stop_on_first_witness
+        let fallback_challenge_complete = stop_on_first_satisfying_witness
             && self.policy_witness.is_some()
             && self.current_local_search_work() >= quantum.additional_nodes;
-        let quality_satisfied = !stop_on_first_witness
+        let inherited_satisfying_challenge_complete = inherited_satisfying_incumbent_challenged(
+            stop_on_first_satisfying_witness,
+            self.satisfaction,
+            &self.start,
+            self.stage_entry_incumbent.as_ref(),
+            self.current_local_search_work(),
+            quantum.additional_nodes,
+        );
+        let standard_satisfaction_reached = standard_witness_ends_stage(
+            stop_on_first_satisfying_witness,
+            acceptance_improved,
+            self.satisfaction,
+            &self.start,
+            self.best_witness(),
+        );
+        let quality_satisfied = !stop_on_first_satisfying_witness
             && self.best_witness().is_some_and(|witness| {
                 combat_witness_ends_quality_refinement(
                     &self.start,
@@ -795,8 +839,9 @@ impl OracleRunCombatWorkV1 {
         }) || self.current_local_search_work()
             >= quantum.additional_nodes
             || self.local_complete;
-        if (stop_on_first_witness && acceptance_improved)
+        if standard_satisfaction_reached
             || fallback_challenge_complete
+            || inherited_satisfying_challenge_complete
             || (quality_satisfied && quality_challenge_complete)
             || (self.local_complete && self.discrepancy_complete)
         {
@@ -1251,6 +1296,31 @@ fn combat_witness_better(
     )
 }
 
+fn standard_witness_ends_stage(
+    stop_on_first_satisfying_witness: bool,
+    acceptance_improved: bool,
+    satisfaction: PortfolioWitnessSatisfactionV1,
+    start: &crate::sim::combat::CombatPosition,
+    witness: Option<&OracleCombatWitness>,
+) -> bool {
+    stop_on_first_satisfying_witness
+        && acceptance_improved
+        && witness.is_some_and(|witness| combat_witness_satisfies(satisfaction, start, witness))
+}
+
+fn inherited_satisfying_incumbent_challenged(
+    stop_on_first_satisfying_witness: bool,
+    satisfaction: PortfolioWitnessSatisfactionV1,
+    start: &crate::sim::combat::CombatPosition,
+    inherited: Option<&OracleCombatWitness>,
+    local_generation_work: usize,
+    challenge_work: usize,
+) -> bool {
+    stop_on_first_satisfying_witness
+        && local_generation_work >= challenge_work
+        && inherited.is_some_and(|witness| combat_witness_satisfies(satisfaction, start, witness))
+}
+
 fn combat_witness_better_with_potion_quality_gate(
     start: &crate::sim::combat::CombatPosition,
     satisfaction: PortfolioWitnessSatisfactionV1,
@@ -1425,6 +1495,23 @@ fn combat_witness_satisfies(
 
 fn wall_allowance_exhausted(remaining: Option<Duration>) -> bool {
     remaining.is_some_and(|duration| duration < MIN_USABLE_WALL_ALLOWANCE)
+}
+
+fn select_productive_portfolio_member(
+    productive_member: Option<PortfolioMemberV1>,
+    next: PortfolioMemberV1,
+    local_complete: bool,
+    discrepancy_complete: bool,
+) -> Option<PortfolioMemberV1> {
+    match productive_member {
+        Some(PortfolioMemberV1::LocalTurnGraph) if !local_complete => {
+            Some(PortfolioMemberV1::LocalTurnGraph)
+        }
+        Some(PortfolioMemberV1::PolicyDiscrepancy) if !discrepancy_complete => {
+            Some(PortfolioMemberV1::PolicyDiscrepancy)
+        }
+        _ => select_portfolio_member(next, local_complete, discrepancy_complete),
+    }
 }
 
 fn select_portfolio_member(
@@ -1818,6 +1905,46 @@ mod tests {
     }
 
     #[test]
+    fn wider_potion_stage_keeps_a_separate_entry_incumbent_challenge() {
+        let (session, stage_one) = explosive_stage_one_work();
+        let stage_two = OracleRunCombatWorkV1::restart_for_higher_fidelity_with_guidance(
+            &session,
+            RunControlSearchCombatOptions {
+                max_nodes: Some(16),
+                max_potions_used: Some(2),
+                allowed_potion_slots: Some(0b11),
+                satisfaction: Some(
+                    crate::ai::combat_search_v2::CombatSearchV2Satisfaction::FirstCompleteWin,
+                ),
+                ..RunControlSearchCombatOptions::default()
+            },
+            stage_one.checkpoint(),
+            None,
+        )
+        .expect("wider stage should retain the exact slot-zero incumbent");
+
+        assert!(stage_two.prior_stage_incumbent.is_none());
+        let inherited = stage_two
+            .stage_entry_incumbent
+            .as_ref()
+            .expect("stage entry should remain explicit even inside the wider mask");
+        assert!(combat_witness_within_potion_contract(
+            &stage_two.start,
+            inherited,
+            stage_two.max_potions_used,
+            stage_two.allowed_potion_slots,
+        ));
+        assert!(inherited_satisfying_incumbent_challenged(
+            true,
+            stage_two.satisfaction,
+            &stage_two.start,
+            Some(inherited),
+            16,
+            16,
+        ));
+    }
+
+    #[test]
     fn prior_stage_incumbent_must_replay_exactly_before_restore() {
         let (session, stage_one) = explosive_stage_one_work();
         let mut checkpoint = stage_one.checkpoint();
@@ -1922,6 +2049,37 @@ mod tests {
         assert_eq!(
             select_portfolio_member(PortfolioMemberV1::LocalTurnGraph, true, true),
             None
+        );
+    }
+
+    #[test]
+    fn insufficient_incumbent_keeps_service_with_its_productive_member() {
+        assert_eq!(
+            select_productive_portfolio_member(
+                Some(PortfolioMemberV1::LocalTurnGraph),
+                PortfolioMemberV1::PolicyDiscrepancy,
+                false,
+                false,
+            ),
+            Some(PortfolioMemberV1::LocalTurnGraph)
+        );
+        assert_eq!(
+            select_productive_portfolio_member(
+                Some(PortfolioMemberV1::PolicyDiscrepancy),
+                PortfolioMemberV1::LocalTurnGraph,
+                false,
+                false,
+            ),
+            Some(PortfolioMemberV1::PolicyDiscrepancy)
+        );
+        assert_eq!(
+            select_productive_portfolio_member(
+                Some(PortfolioMemberV1::LocalTurnGraph),
+                PortfolioMemberV1::LocalTurnGraph,
+                true,
+                false,
+            ),
+            Some(PortfolioMemberV1::PolicyDiscrepancy)
         );
     }
 
@@ -2112,6 +2270,87 @@ mod tests {
             PortfolioWitnessSatisfactionV1::PersistentRunValueGain,
             &work.start,
             &profitable
+        ));
+    }
+
+    #[test]
+    fn standard_advance_ends_a_stage_only_on_a_satisfying_new_win() {
+        // Keep one witness shape fixed and vary only its final HP so this
+        // contract tests stage termination rather than search reachability.
+        let session = one_strike_win_session();
+        let work = OracleRunCombatWorkV1::new_with_guidance(
+            &session,
+            RunControlSearchCombatOptions {
+                max_nodes: Some(16),
+                satisfaction: Some(
+                    crate::ai::combat_search_v2::CombatSearchV2Satisfaction::HpLossAtMost(8),
+                ),
+                ..RunControlSearchCombatOptions::default()
+            },
+            None,
+        )
+        .expect("one-strike combat should create a portfolio");
+        let satisfying = work
+            .policy_witness
+            .clone()
+            .expect("policy should provide an exact winning line");
+        let mut insufficient = satisfying.clone();
+        insufficient
+            .final_position
+            .combat
+            .entities
+            .player
+            .current_hp = work
+            .start
+            .combat
+            .entities
+            .player
+            .current_hp
+            .saturating_sub(20);
+
+        assert!(!standard_witness_ends_stage(
+            true,
+            true,
+            PortfolioWitnessSatisfactionV1::HpLossAtMost(8),
+            &work.start,
+            Some(&insufficient)
+        ));
+        assert!(standard_witness_ends_stage(
+            true,
+            true,
+            PortfolioWitnessSatisfactionV1::HpLossAtMost(8),
+            &work.start,
+            Some(&satisfying)
+        ));
+        assert!(standard_witness_ends_stage(
+            true,
+            true,
+            PortfolioWitnessSatisfactionV1::FirstWitness,
+            &work.start,
+            Some(&insufficient)
+        ));
+        assert!(!standard_witness_ends_stage(
+            true,
+            false,
+            PortfolioWitnessSatisfactionV1::HpLossAtMost(8),
+            &work.start,
+            Some(&satisfying)
+        ));
+        assert!(inherited_satisfying_incumbent_challenged(
+            true,
+            PortfolioWitnessSatisfactionV1::HpLossAtMost(8),
+            &work.start,
+            Some(&satisfying),
+            64,
+            64
+        ));
+        assert!(!inherited_satisfying_incumbent_challenged(
+            true,
+            PortfolioWitnessSatisfactionV1::HpLossAtMost(8),
+            &work.start,
+            Some(&insufficient),
+            64,
+            64
         ));
     }
 

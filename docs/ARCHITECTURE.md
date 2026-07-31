@@ -134,6 +134,16 @@ runner may open bounded one-potion lanes across active potion identities. A
 spending witness may replace the protected incumbent only by satisfying that
 quality contract; a higher-HP result that still misses the target is not
 permission to exchange continuation value for a marginal local improvement.
+Within each standard strategic stage, an insufficient first win remains the
+safe incumbent but does not end that stage; search stops when a new win reaches
+the configured satisfaction or the already granted stage allowance ends.
+Literal `FirstCompleteWin` survival search keeps first-win termination.
+While that incumbent is insufficient, portfolio service stays with the exact
+member that produced it until quality is reached or that member completes;
+with no productive witness, local-graph and discrepancy members retain their
+ordinary round-robin schedule. A later identity inheriting an already
+satisfying witness receives one complete local challenge rather than a full
+quality-polishing allowance.
 
 During `ImproveVerifiedWin`, a quality-reaching spending witness remains an
 exact candidate but cannot by itself end the refinement quantum. Early
