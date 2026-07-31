@@ -100,6 +100,7 @@ pub struct CampfireRecoveryContextV1 {
     pub boss_nodes_remaining: Option<usize>,
     pub rest_heal_capacity: i32,
     pub known_combat_before_next_campfire: RouteWindowModality,
+    pub known_elite_before_next_campfire: RouteWindowModality,
 }
 
 struct CampfirePolicyContextV1 {
@@ -337,34 +338,38 @@ fn campfire_recovery_context_v1(parent: &RunControlSession) -> CampfireRecoveryC
                 .get(parent.run_state.map.current_y as usize)
                 .and_then(|row| row.get(parent.run_state.map.current_x as usize))
                 .is_some());
-    let known_combat_before_next_campfire = map_cursor_available
-        .then(|| {
-            build_route_window_facts(
-                &parent.run_state,
-                RouteWindowFactsConfig {
-                    horizon_nodes: boss_nodes_remaining.unwrap_or(5).max(1),
-                    ..RouteWindowFactsConfig::default()
-                },
-            )
-        })
-        .and_then(|route_facts| {
-            route_facts
-                .facts
-                .into_iter()
-                .find(|fact| {
-                    fact.predicate
-                        == (RouteWindowPredicate::OccursBefore {
-                            subject: RouteWindowSubject::KnownCombat,
-                            before: RouteWindowSubject::Campfire,
-                        })
-                })
-                .map(|fact| fact.modality)
-        })
-        .unwrap_or(RouteWindowModality::Unknown);
+    let route_facts = map_cursor_available.then(|| {
+        build_route_window_facts(
+            &parent.run_state,
+            RouteWindowFactsConfig {
+                horizon_nodes: boss_nodes_remaining.unwrap_or(5).max(1),
+                ..RouteWindowFactsConfig::default()
+            },
+        )
+    });
+    let occurs_before_campfire = |subject| {
+        route_facts
+            .as_ref()
+            .and_then(|route_facts| {
+                route_facts
+                    .facts
+                    .iter()
+                    .find(|fact| {
+                        fact.predicate
+                            == (RouteWindowPredicate::OccursBefore {
+                                subject,
+                                before: RouteWindowSubject::Campfire,
+                            })
+                    })
+                    .map(|fact| fact.modality)
+            })
+            .unwrap_or(RouteWindowModality::Unknown)
+    };
     CampfireRecoveryContextV1 {
         boss_nodes_remaining,
         rest_heal_capacity: empty_hp.current_hp.max(0),
-        known_combat_before_next_campfire,
+        known_combat_before_next_campfire: occurs_before_campfire(RouteWindowSubject::KnownCombat),
+        known_elite_before_next_campfire: occurs_before_campfire(RouteWindowSubject::Elite),
     }
 }
 
@@ -546,6 +551,13 @@ fn campfire_policy_band_v1(
             CampfirePolicyBandV1::Liability
         }
         CampfirePolicyActionV1::Rest { hp_gain } if parent.run_state.current_hp <= *hp_gain => {
+            CampfirePolicyBandV1::ImmediateSurvival
+        }
+        CampfirePolicyActionV1::Rest { hp_gain }
+            if recovery.known_elite_before_next_campfire == RouteWindowModality::Must
+                && recovery.rest_heal_capacity > 0
+                && hp_gain.saturating_mul(4) >= recovery.rest_heal_capacity.saturating_mul(3) =>
+        {
             CampfirePolicyBandV1::ImmediateSurvival
         }
         CampfirePolicyActionV1::Rest { hp_gain }
@@ -871,6 +883,108 @@ mod tests {
         assert_eq!(
             decision.evidence[0].band,
             CampfirePolicyBandV1::PrepareBossSurvival
+        );
+    }
+
+    #[test]
+    fn forced_elite_recovery_precedes_required_upgrade_debt() {
+        let mut session = campfire_session(&[
+            CardId::Strike,
+            CardId::Strike,
+            CardId::Strike,
+            CardId::Strike,
+            CardId::Defend,
+            CardId::Defend,
+            CardId::Defend,
+            CardId::Defend,
+            CardId::Bash,
+            CardId::PowerThrough,
+            CardId::Uppercut,
+            CardId::SecondWind,
+            CardId::Cleave,
+            CardId::ShrugItOff,
+            CardId::DarkEmbrace,
+            CardId::Uppercut,
+            CardId::WildStrike,
+            CardId::DarkEmbrace,
+            CardId::FiendFire,
+            CardId::Cleave,
+            CardId::DemonForm,
+            CardId::SwordBoomerang,
+            CardId::Clothesline,
+            CardId::ShrugItOff,
+        ]);
+        session.run_state.master_deck[8].upgrades = 1;
+        session.run_state.master_deck[13].upgrades = 1;
+        session.run_state.act_num = 2;
+        session.run_state.floor_num = 27;
+        session.run_state.current_hp = 35;
+        session.run_state.max_hp = 80;
+        session.run_state.boss_key = Some(EncounterId::TheChamp);
+        set_linear_map(
+            &mut session,
+            &[
+                RoomType::RestRoom,
+                RoomType::MonsterRoomElite,
+                RoomType::RestRoom,
+            ],
+        );
+
+        let surface = build_decision_surface(&session);
+        let legal = policy_candidates(&surface);
+        let decision = exact_campfire_policy_decision_v1(&session, &legal)
+            .expect("forced elite recovery decision");
+        let rest = decision
+            .evidence
+            .iter()
+            .find(|candidate| candidate.candidate_id == "rest")
+            .expect("rest evidence");
+
+        assert_eq!(
+            decision.recovery.known_elite_before_next_campfire,
+            RouteWindowModality::Must
+        );
+        assert_eq!(decision.recovery.rest_heal_capacity, 24);
+        assert_eq!(rest.delta.hp_gain, 24);
+        assert_eq!(rest.band, CampfirePolicyBandV1::ImmediateSurvival);
+        assert_eq!(decision.prior.entries[0].candidate_id, "rest");
+        assert!(
+            decision.evidence.iter().any(|candidate| {
+                matches!(candidate.action, CampfirePolicyActionV1::Smith { .. })
+                    && candidate.band == CampfirePolicyBandV1::PayRequiredUpgradeDebt
+            }),
+            "the forced-elite recovery must outrank, not erase, required upgrade debt; evidence={:#?}",
+            decision.evidence
+        );
+    }
+
+    #[test]
+    fn forced_elite_survival_requires_must_and_efficient_recovery() {
+        let mut session = campfire_session(&[CardId::Entrench]);
+        session.run_state.current_hp = 35;
+        session.run_state.max_hp = 80;
+        let rest = CampfirePolicyActionV1::Rest { hp_gain: 24 };
+        let optional_elite = CampfireRecoveryContextV1 {
+            boss_nodes_remaining: Some(5),
+            rest_heal_capacity: 24,
+            known_combat_before_next_campfire: RouteWindowModality::Must,
+            known_elite_before_next_campfire: RouteWindowModality::Can,
+        };
+
+        assert_eq!(
+            campfire_policy_band_v1(&session, &rest, optional_elite),
+            CampfirePolicyBandV1::PrepareBossSurvival
+        );
+
+        session.run_state.current_hp = 70;
+        let inefficient_rest = CampfirePolicyActionV1::Rest { hp_gain: 10 };
+        let forced_elite = CampfireRecoveryContextV1 {
+            known_elite_before_next_campfire: RouteWindowModality::Must,
+            ..optional_elite
+        };
+        assert_eq!(
+            campfire_policy_band_v1(&session, &inefficient_rest, forced_elite),
+            CampfirePolicyBandV1::PreserveSurvival
         );
     }
 
