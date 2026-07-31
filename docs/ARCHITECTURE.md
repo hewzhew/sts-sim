@@ -139,9 +139,12 @@ safe incumbent but does not end that stage; search stops when a new win reaches
 the configured satisfaction or the already granted stage allowance ends.
 Literal `FirstCompleteWin` survival search keeps first-win termination.
 While that incumbent is insufficient, portfolio service stays with the exact
-member that produced it until quality is reached or that member completes;
-with no productive witness, local-graph and discrepancy members retain their
-ordinary round-robin schedule. A later identity inheriting an already
+member that produced it until quality is reached or that member completes.
+With no productive witness, non-Boss combat retains the ordinary local-graph /
+discrepancy round-robin schedule. Each Boss stage instead serves the local
+graph as its primary until that member completes or the stage allowance ends;
+policy discrepancy remains a bounded fallback when local completion leaves
+allowance without an acceptable witness. A later identity inheriting an already
 satisfying witness receives one complete local challenge rather than a full
 quality-polishing allowance.
 

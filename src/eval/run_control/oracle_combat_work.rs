@@ -30,6 +30,7 @@ pub(super) struct OracleRunCombatWorkV1 {
     start: crate::sim::combat::CombatPosition,
     local_search: LocalTurnGraphWitnessSession,
     discrepancy_search: PolicyDiscrepancySession,
+    portfolio_service_order: PortfolioServiceOrderV1,
     next_portfolio_member: PortfolioMemberV1,
     local_complete: bool,
     discrepancy_complete: bool,
@@ -68,6 +69,12 @@ pub(super) struct OracleRunCombatWorkV1 {
 enum PortfolioMemberV1 {
     LocalTurnGraph,
     PolicyDiscrepancy,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum PortfolioServiceOrderV1 {
+    RoundRobin,
+    LocalPrimary,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -265,6 +272,11 @@ impl OracleRunCombatWorkV1 {
             policy
         };
         let policy = combat_plan_state_guide_policy_v1(policy);
+        let portfolio_service_order = if prepared.start.combat.meta.is_boss_fight {
+            PortfolioServiceOrderV1::LocalPrimary
+        } else {
+            PortfolioServiceOrderV1::RoundRobin
+        };
         let local_search = LocalTurnGraphWitnessSession::with_policy(
             root.clone(),
             LocalTurnGraphWitnessConfig {
@@ -305,6 +317,7 @@ impl OracleRunCombatWorkV1 {
             start: prepared.start,
             local_search,
             discrepancy_search,
+            portfolio_service_order,
             next_portfolio_member: PortfolioMemberV1::LocalTurnGraph,
             local_complete: false,
             discrepancy_complete: false,
@@ -695,6 +708,7 @@ impl OracleRunCombatWorkV1 {
         };
         let Some(member) = select_productive_portfolio_member(
             productive_member,
+            self.portfolio_service_order,
             self.next_portfolio_member,
             self.local_complete,
             self.discrepancy_complete,
@@ -1499,6 +1513,7 @@ fn wall_allowance_exhausted(remaining: Option<Duration>) -> bool {
 
 fn select_productive_portfolio_member(
     productive_member: Option<PortfolioMemberV1>,
+    service_order: PortfolioServiceOrderV1,
     next: PortfolioMemberV1,
     local_complete: bool,
     discrepancy_complete: bool,
@@ -1510,15 +1525,23 @@ fn select_productive_portfolio_member(
         Some(PortfolioMemberV1::PolicyDiscrepancy) if !discrepancy_complete => {
             Some(PortfolioMemberV1::PolicyDiscrepancy)
         }
-        _ => select_portfolio_member(next, local_complete, discrepancy_complete),
+        _ => select_portfolio_member(service_order, next, local_complete, discrepancy_complete),
     }
 }
 
 fn select_portfolio_member(
+    service_order: PortfolioServiceOrderV1,
     next: PortfolioMemberV1,
     local_complete: bool,
     discrepancy_complete: bool,
 ) -> Option<PortfolioMemberV1> {
+    if service_order == PortfolioServiceOrderV1::LocalPrimary {
+        return match (local_complete, discrepancy_complete) {
+            (false, _) => Some(PortfolioMemberV1::LocalTurnGraph),
+            (true, false) => Some(PortfolioMemberV1::PolicyDiscrepancy),
+            (true, true) => None,
+        };
+    }
     match (next, local_complete, discrepancy_complete) {
         (_, true, true) => None,
         (PortfolioMemberV1::LocalTurnGraph, false, _)
@@ -1561,6 +1584,17 @@ mod tests {
                 room_type: crate::state::map::node::RoomType::MonsterRoom,
             }),
         ));
+        session
+    }
+
+    fn boss_combat_session() -> RunControlSession {
+        let mut session = hallway_combat_session();
+        let active = session.active_combat.as_mut().expect("active combat");
+        active.combat_state.meta.is_boss_fight = true;
+        active.context =
+            crate::state::core::CombatContext::Room(crate::state::core::RoomCombatContext {
+                room_type: crate::state::map::node::RoomType::MonsterRoomBoss,
+            });
         session
     }
 
@@ -2031,24 +2065,71 @@ mod tests {
     #[test]
     fn portfolio_alternates_live_members_and_skips_completed_members() {
         assert_eq!(
-            select_portfolio_member(PortfolioMemberV1::LocalTurnGraph, false, false),
+            select_portfolio_member(
+                PortfolioServiceOrderV1::RoundRobin,
+                PortfolioMemberV1::LocalTurnGraph,
+                false,
+                false,
+            ),
             Some(PortfolioMemberV1::LocalTurnGraph)
         );
         assert_eq!(
-            select_portfolio_member(PortfolioMemberV1::PolicyDiscrepancy, false, false),
+            select_portfolio_member(
+                PortfolioServiceOrderV1::RoundRobin,
+                PortfolioMemberV1::PolicyDiscrepancy,
+                false,
+                false,
+            ),
             Some(PortfolioMemberV1::PolicyDiscrepancy)
         );
         assert_eq!(
-            select_portfolio_member(PortfolioMemberV1::LocalTurnGraph, true, false),
+            select_portfolio_member(
+                PortfolioServiceOrderV1::RoundRobin,
+                PortfolioMemberV1::LocalTurnGraph,
+                true,
+                false,
+            ),
             Some(PortfolioMemberV1::PolicyDiscrepancy)
         );
         assert_eq!(
-            select_portfolio_member(PortfolioMemberV1::PolicyDiscrepancy, false, true),
+            select_portfolio_member(
+                PortfolioServiceOrderV1::RoundRobin,
+                PortfolioMemberV1::PolicyDiscrepancy,
+                false,
+                true,
+            ),
             Some(PortfolioMemberV1::LocalTurnGraph)
         );
         assert_eq!(
-            select_portfolio_member(PortfolioMemberV1::LocalTurnGraph, true, true),
+            select_portfolio_member(
+                PortfolioServiceOrderV1::RoundRobin,
+                PortfolioMemberV1::LocalTurnGraph,
+                true,
+                true,
+            ),
             None
+        );
+    }
+
+    #[test]
+    fn boss_portfolio_keeps_local_primary_until_it_completes() {
+        assert_eq!(
+            select_portfolio_member(
+                PortfolioServiceOrderV1::LocalPrimary,
+                PortfolioMemberV1::PolicyDiscrepancy,
+                false,
+                false,
+            ),
+            Some(PortfolioMemberV1::LocalTurnGraph)
+        );
+        assert_eq!(
+            select_portfolio_member(
+                PortfolioServiceOrderV1::LocalPrimary,
+                PortfolioMemberV1::LocalTurnGraph,
+                true,
+                false,
+            ),
+            Some(PortfolioMemberV1::PolicyDiscrepancy)
         );
     }
 
@@ -2057,6 +2138,7 @@ mod tests {
         assert_eq!(
             select_productive_portfolio_member(
                 Some(PortfolioMemberV1::LocalTurnGraph),
+                PortfolioServiceOrderV1::RoundRobin,
                 PortfolioMemberV1::PolicyDiscrepancy,
                 false,
                 false,
@@ -2066,6 +2148,7 @@ mod tests {
         assert_eq!(
             select_productive_portfolio_member(
                 Some(PortfolioMemberV1::PolicyDiscrepancy),
+                PortfolioServiceOrderV1::RoundRobin,
                 PortfolioMemberV1::LocalTurnGraph,
                 false,
                 false,
@@ -2075,6 +2158,7 @@ mod tests {
         assert_eq!(
             select_productive_portfolio_member(
                 Some(PortfolioMemberV1::LocalTurnGraph),
+                PortfolioServiceOrderV1::RoundRobin,
                 PortfolioMemberV1::LocalTurnGraph,
                 true,
                 false,
@@ -2127,6 +2211,45 @@ mod tests {
                 .counters()
                 .applied_action_transitions,
             1
+        );
+        assert_eq!(work.remaining_work, 14);
+    }
+
+    #[test]
+    fn boss_portfolio_serves_local_graph_across_caller_quanta() {
+        let session = boss_combat_session();
+        let mut work = OracleRunCombatWorkV1::new_with_guidance(
+            &session,
+            RunControlSearchCombatOptions {
+                max_nodes: Some(16),
+                satisfaction: Some(
+                    crate::ai::combat_search_v2::CombatSearchV2Satisfaction::FirstCompleteWin,
+                ),
+                ..RunControlSearchCombatOptions::default()
+            },
+            None,
+        )
+        .expect("boss portfolio should accept an active combat");
+        let quantum = RunControlCombatSearchQuantum {
+            label: "boss_local_primary_contract",
+            additional_nodes: 1,
+            soft_wall_ms: None,
+        };
+
+        assert_eq!(
+            work.advance(&quantum, None),
+            RunControlCombatWorkAdvanceV1::Pending
+        );
+        assert_eq!(
+            work.advance(&quantum, None),
+            RunControlCombatWorkAdvanceV1::Pending
+        );
+        assert_eq!(work.local_search.counters().generation_work, 2);
+        assert_eq!(
+            work.discrepancy_search
+                .counters()
+                .applied_action_transitions,
+            0
         );
         assert_eq!(work.remaining_work, 14);
     }

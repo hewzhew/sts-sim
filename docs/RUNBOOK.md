@@ -561,7 +561,10 @@ an acceptable witness. With `n` active identities, every stage receives one
 share of the configured allowance divided by `n + 1`; the caller's combat wall
 still bounds the complete sequence. This preserves genuinely necessary
 multi-potion rescue without letting its larger action surface hide a clean or
-single-potion win.
+single-potion win. Within each Boss stage, the local graph is the primary
+portfolio member. Policy discrepancy is served only after local completion
+when bounded stage allowance remains; non-Boss stages retain round-robin
+service.
 
 Full `combat-case` reports also include a read-only `storage` census. It
 separates live generator work from retained slot, exact-state index, scheduling
