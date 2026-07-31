@@ -236,6 +236,15 @@ Changing frontier scheduling should touch a frontier plugin. Changing what
 counts as an acceptable result should touch acceptance. Runner code should only
 run profiles and apply typed outcomes.
 
+A typed encounter plan may expose categorical action timing to one bounded,
+plan-compatible exact prefix proposal. Strategy owns the timing semantics; the
+planner materializes the prefix as ordinary graph edges; run-control only gates
+the proposal, charges its actual work, and reports diagnostic counts. The
+proposal never prunes alternatives, claims a win, or becomes another global
+frontier scheduler. Acceptance still requires the ordinary exact witness and
+replay contract. Production admission is explicit and evidence-backed per
+encounter plan; merely having categorical action timing does not opt a plan in.
+
 ## Gap Semantics
 
 Gaps are typed stops, not verdicts:

@@ -152,6 +152,49 @@ fn weak_without_a_visible_attack_is_not_promoted_to_immediate_mitigation() {
 }
 
 #[test]
+fn persistent_strength_down_prefers_the_larger_visible_attack_target() {
+    let mut combat = blank_test_combat();
+    combat.turn.energy = 3;
+    combat.zones.hand = vec![CombatCard::new(CardId::Disarm, 10)];
+
+    let mut automaton = planned_monster(EnemyId::BronzeAutomaton, 2);
+    automaton.id = 1;
+    automaton.current_hp = 300;
+    automaton.max_hp = 300;
+    let mut orb = planned_monster(EnemyId::BronzeOrb, 1);
+    orb.id = 2;
+    orb.current_hp = 52;
+    orb.max_hp = 52;
+    combat.entities.monsters = vec![automaton, orb];
+
+    let boss = priority_for_input(
+        &EngineState::CombatPlayerTurn,
+        &combat,
+        &ClientInput::PlayCard {
+            card_index: 0,
+            target: Some(1),
+        },
+        CombatSearchV2PhaseGuardPolicy::Default,
+        CombatSearchV2SetupBiasPolicy::Default,
+    );
+    let minion = priority_for_input(
+        &EngineState::CombatPlayerTurn,
+        &combat,
+        &ClientInput::PlayCard {
+            card_index: 0,
+            target: Some(2),
+        },
+        CombatSearchV2PhaseGuardPolicy::Default,
+        CombatSearchV2SetupBiasPolicy::Default,
+    );
+
+    assert_eq!(boss.effects.direct.persistent_enemy_strength_down, 2);
+    assert_eq!(minion.effects.direct.persistent_enemy_strength_down, 2);
+    assert!(boss.mitigation > minion.mitigation);
+    assert!(boss > minion, "boss={boss:?} minion={minion:?}");
+}
+
+#[test]
 fn apparition_under_visible_attack_is_ranked_by_prevented_damage() {
     let mut combat = blank_test_combat();
     combat.turn.energy = 3;

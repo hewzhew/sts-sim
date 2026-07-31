@@ -3,17 +3,6 @@ use std::time::{Duration, Instant};
 
 const MIN_USABLE_WALL_ALLOWANCE: Duration = Duration::from_millis(1);
 
-use serde::{Deserialize, Serialize};
-use sts_combat_planner::{
-    combat_plan_state_guide_policy_v1, CombatDecisionRoot, LocalTurnGraphRootActionFamilySnapshot,
-    LocalTurnGraphWitnessConfig, LocalTurnGraphWitnessQuantum, LocalTurnGraphWitnessSession,
-    LocalTurnGraphWitnessStatus, OracleCombatDeepStateSnapshot, OracleCombatWitness,
-    OracleCombatWitnessDiscoverySource, OracleCombatWitnessSatisfaction,
-    OracleCombatWitnessStateProgressSnapshot, PolicyDiscrepancyConfig, PolicyDiscrepancyQuantum,
-    PolicyDiscrepancySession, PolicyDiscrepancyStatus, PolicyDiscrepancyTurnMacroConfig,
-    TurnOptionAction, TurnOptionGeneratorConfig,
-};
-
 use super::combat_line_executor::apply_oracle_combat_witness;
 use super::combat_search::RunControlCombatWorkAdvanceV1;
 use super::combat_search_setup::prepare_search_combat;
@@ -25,6 +14,16 @@ use super::session::{RunControlCombatSearchRejection, RunControlSession, RunProg
 use super::trace_annotation::CombatAutomationTrajectorySource;
 use crate::eval::combat_guidance_bundle::CombatGuidanceBundleV1;
 use crate::state::core::ClientInput;
+use serde::{Deserialize, Serialize};
+use sts_combat_planner::{
+    combat_plan_state_guide_policy_v1, CombatDecisionRoot, LocalTurnGraphRootActionFamilySnapshot,
+    LocalTurnGraphWitnessConfig, LocalTurnGraphWitnessQuantum, LocalTurnGraphWitnessSession,
+    LocalTurnGraphWitnessStatus, OracleCombatDeepStateSnapshot, OracleCombatWitness,
+    OracleCombatWitnessDiscoverySource, OracleCombatWitnessSatisfaction,
+    OracleCombatWitnessStateProgressSnapshot, PolicyDiscrepancyConfig, PolicyDiscrepancyQuantum,
+    PolicyDiscrepancySession, PolicyDiscrepancyStatus, PolicyDiscrepancyTurnMacroConfig,
+    TurnOptionAction, TurnOptionGeneratorConfig,
+};
 
 pub(super) struct OracleRunCombatWorkV1 {
     start: crate::sim::combat::CombatPosition,
@@ -51,6 +50,10 @@ pub(super) struct OracleRunCombatWorkV1 {
     policy_witness_proposals: usize,
     policy_witness_replay_engine_steps: usize,
     policy_witness_proposal_rejections: usize,
+    plan_prefix_proposals: usize,
+    plan_prefix_proposed_turns: usize,
+    plan_prefix_proposed_actions: usize,
+    plan_prefix_proposal_rejections: usize,
     policy_witness: Option<OracleCombatWitness>,
     discrepancy_witness: Option<OracleCombatWitness>,
     restart_count: usize,
@@ -183,6 +186,10 @@ pub(super) struct OracleRunCombatWorkProgressV1 {
     pub current_policy_witness_proposal_rejections: usize,
     pub policy_witness_proposals: usize,
     pub policy_witness_proposal_rejections: usize,
+    pub plan_prefix_proposals: usize,
+    pub plan_prefix_proposed_turns: usize,
+    pub plan_prefix_proposed_actions: usize,
+    pub plan_prefix_proposal_rejections: usize,
     pub advisor_nodes: u64,
     pub advisor_elapsed_ms: u64,
     pub advisor_active: bool,
@@ -338,6 +345,10 @@ impl OracleRunCombatWorkV1 {
             policy_witness_proposals: 0,
             policy_witness_replay_engine_steps: 0,
             policy_witness_proposal_rejections: 0,
+            plan_prefix_proposals: 0,
+            plan_prefix_proposed_turns: 0,
+            plan_prefix_proposed_actions: 0,
+            plan_prefix_proposal_rejections: 0,
             policy_witness: None,
             discrepancy_witness: None,
             restart_count: 0,
@@ -354,6 +365,7 @@ impl OracleRunCombatWorkV1 {
         if offer_policy_proposal {
             work.offer_initial_rollout_policy_proposal();
         }
+        work.offer_initial_plan_prefix();
         Ok(work)
     }
 
@@ -566,6 +578,53 @@ impl OracleRunCombatWorkV1 {
             .saturating_add(replay_steps);
         self.remaining_engine_steps = self.remaining_engine_steps.saturating_sub(replay_steps);
         self.policy_witness = Some(proposal);
+    }
+
+    fn offer_initial_plan_prefix(&mut self) {
+        const MAX_PLAN_PREFIX_TURNS: usize = 6;
+        const MAX_PLAN_PREFIX_ACTIONS: usize = 64;
+
+        let max_actions = MAX_PLAN_PREFIX_ACTIONS.min(self.remaining_work);
+        if max_actions == 0
+            || wall_allowance_exhausted(self.remaining_wall_time)
+            || !self.local_search.has_supported_initial_plan_prefix()
+        {
+            return;
+        }
+        let started = Instant::now();
+        let report = self.local_search.offer_plan_compatible_policy_line(
+            MAX_PLAN_PREFIX_TURNS,
+            max_actions,
+            &crate::sim::combat::EngineCombatStepper,
+        );
+        if let Some(remaining) = &mut self.remaining_wall_time {
+            *remaining = remaining.saturating_sub(started.elapsed());
+        }
+        let report = match report {
+            Ok(report) => report,
+            Err(_) => {
+                self.plan_prefix_proposal_rejections =
+                    self.plan_prefix_proposal_rejections.saturating_add(1);
+                return;
+            }
+        };
+        if report.proposed_turns == 0 {
+            return;
+        }
+
+        self.plan_prefix_proposals = self.plan_prefix_proposals.saturating_add(1);
+        self.plan_prefix_proposed_turns = self
+            .plan_prefix_proposed_turns
+            .saturating_add(report.proposed_turns);
+        self.plan_prefix_proposed_actions = self
+            .plan_prefix_proposed_actions
+            .saturating_add(report.proposed_actions.len());
+        self.remaining_work = self
+            .remaining_work
+            .saturating_sub(report.proposed_actions.len());
+        self.remaining_engine_steps = self
+            .remaining_engine_steps
+            .saturating_sub(report.engine_steps);
     }
 
     /// Restores a legacy exact combat state whose checkpoint did not preserve
@@ -1013,7 +1072,10 @@ impl OracleRunCombatWorkV1 {
 
     fn current_local_search_work(&self) -> usize {
         let local = self.local_search.counters();
-        local.generation_work.saturating_add(local.lookahead_work)
+        local
+            .generation_work
+            .saturating_add(local.lookahead_work)
+            .saturating_add(self.plan_prefix_proposed_actions)
     }
 
     fn best_witness(&self) -> Option<&OracleCombatWitness> {
@@ -1149,6 +1211,10 @@ impl OracleRunCombatWorkV1 {
                 .policy_witness_proposals
                 .saturating_add(self.prior_policy_witness_proposals),
             policy_witness_proposal_rejections: self.policy_witness_proposal_rejections,
+            plan_prefix_proposals: self.plan_prefix_proposals,
+            plan_prefix_proposed_turns: self.plan_prefix_proposed_turns,
+            plan_prefix_proposed_actions: self.plan_prefix_proposed_actions,
+            plan_prefix_proposal_rejections: self.plan_prefix_proposal_rejections,
             advisor_nodes: 0,
             advisor_elapsed_ms: 0,
             advisor_active: false,
@@ -1595,6 +1661,46 @@ mod tests {
             crate::state::core::CombatContext::Room(crate::state::core::RoomCombatContext {
                 room_type: crate::state::map::node::RoomType::MonsterRoomBoss,
             });
+        session
+    }
+
+    fn bronze_automaton_combat_session() -> RunControlSession {
+        let mut session = boss_combat_session();
+        let active = session.active_combat.as_mut().expect("active combat");
+        let combat = &mut active.combat_state;
+        let mut automaton =
+            crate::test_support::test_monster(crate::content::monsters::EnemyId::BronzeAutomaton);
+        automaton.id = 10;
+        let plan = crate::content::monsters::roll_monster_turn_plan(
+            &mut combat.rng.ai_rng,
+            &automaton,
+            combat.meta.ascension_level,
+            99,
+            std::slice::from_ref(&automaton),
+            &[],
+        );
+        automaton.set_planned_move_id(plan.move_id);
+        automaton.set_planned_steps(plan.steps);
+        automaton.set_planned_visible_spec(plan.visible_spec);
+        combat.entities.monsters = vec![automaton];
+        crate::content::powers::store::set_powers_for(
+            combat,
+            10,
+            vec![crate::runtime::combat::Power {
+                power_type: crate::content::powers::PowerId::Artifact,
+                instance_id: None,
+                amount: 3,
+                extra_data: 0,
+                payload: crate::runtime::combat::PowerPayload::None,
+                just_applied: false,
+            }],
+        );
+        combat.turn.energy = 3;
+        combat.zones.hand = vec![
+            crate::runtime::combat::CombatCard::new(crate::content::cards::CardId::Disarm, 1),
+            crate::runtime::combat::CombatCard::new(crate::content::cards::CardId::ThunderClap, 2),
+            crate::runtime::combat::CombatCard::new(crate::content::cards::CardId::Strike, 3),
+        ];
         session
     }
 
@@ -2252,6 +2358,68 @@ mod tests {
             0
         );
         assert_eq!(work.remaining_work, 14);
+    }
+
+    #[test]
+    fn timed_bronze_plan_materializes_one_bounded_charged_prefix() {
+        let session = bronze_automaton_combat_session();
+        let max_work = 128;
+        let work = OracleRunCombatWorkV1::for_exact_action_witness_with_guidance(
+            &session,
+            RunControlSearchCombatOptions {
+                max_nodes: Some(max_work),
+                satisfaction: Some(
+                    crate::ai::combat_search_v2::CombatSearchV2Satisfaction::FirstCompleteWin,
+                ),
+                ..RunControlSearchCombatOptions::default()
+            },
+            None,
+        )
+        .expect("Bronze Automaton should create a production portfolio");
+        let progress = work.progress();
+
+        assert_eq!(progress.plan_prefix_proposals, 1);
+        assert!((1..=6).contains(&progress.plan_prefix_proposed_turns));
+        assert!((1..=64).contains(&progress.plan_prefix_proposed_actions));
+        assert_eq!(progress.plan_prefix_proposal_rejections, 0);
+        assert_eq!(
+            max_work.saturating_sub(work.remaining_work),
+            progress.plan_prefix_proposed_actions,
+            "materialized prefix actions must consume the shared generation allowance"
+        );
+        assert_eq!(
+            progress.current_search_generation_work as usize,
+            progress.plan_prefix_proposed_actions
+        );
+        assert_eq!(
+            max_work
+                .saturating_mul(work.max_transition_steps)
+                .saturating_sub(work.remaining_engine_steps),
+            progress.engine_steps,
+            "exact transition previews must consume the shared engine allowance"
+        );
+    }
+
+    #[test]
+    fn encounter_without_timed_plan_does_not_offer_a_prefix() {
+        let session = hallway_combat_session();
+        let max_work = 16;
+        let work = OracleRunCombatWorkV1::for_exact_action_witness_with_guidance(
+            &session,
+            RunControlSearchCombatOptions {
+                max_nodes: Some(max_work),
+                ..RunControlSearchCombatOptions::default()
+            },
+            None,
+        )
+        .expect("ordinary hallway combat should create a production portfolio");
+        let progress = work.progress();
+
+        assert_eq!(progress.plan_prefix_proposals, 0);
+        assert_eq!(progress.plan_prefix_proposed_turns, 0);
+        assert_eq!(progress.plan_prefix_proposed_actions, 0);
+        assert_eq!(progress.plan_prefix_proposal_rejections, 0);
+        assert_eq!(work.remaining_work, max_work);
     }
 
     #[test]

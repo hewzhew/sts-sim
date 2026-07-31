@@ -153,6 +153,9 @@ fn plan_transition_parts(
         CombatPlanTransitionAnnotationV1::AwakenedOnePhaseControl(transition) => {
             ("awakened_one_phase_control", transition)
         }
+        CombatPlanTransitionAnnotationV1::BronzeAutomatonControl(transition) => {
+            ("bronze_automaton_control", transition)
+        }
         CombatPlanTransitionAnnotationV1::ChampPhaseControl(transition) => {
             ("champ_phase_control", transition)
         }

@@ -22,7 +22,8 @@ use setup::{
     key_setup_card_online_candidate,
 };
 use target::{
-    target_enemy_id, target_has_stasis_card, target_progress_hint, target_progress_kills,
+    persistent_mitigation_target_hint, target_enemy_id, target_has_stasis_card,
+    target_progress_hint, target_progress_kills,
 };
 
 pub(super) fn priority_for_play_card(
@@ -84,7 +85,14 @@ pub(super) fn priority_for_play_card(
     let timed_threat = (target_progress > 0)
         .then(|| target.and_then(|entity_id| timed_enemy_threat_for_target(combat, entity_id)))
         .flatten();
-    let mitigation = effects.net_mitigation_ordering_score().max(0);
+    let mitigation = effects
+        .net_mitigation_ordering_score()
+        .max(0)
+        .saturating_add(persistent_mitigation_target_hint(
+            combat,
+            target,
+            effects.direct.persistent_enemy_strength_down,
+        ));
     let reactive_risk = effects.reactive_risk_score();
     let target_lethal = phase_transition.projected_target_lethal
         || target_progress_kills(combat, target_kind, target, declared_damage);

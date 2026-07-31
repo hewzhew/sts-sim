@@ -1,6 +1,12 @@
 use super::*;
 
 impl LocalTurnGraphWitnessSession {
+    /// Reports whether this session's unchanged exact root has an encounter
+    /// plan explicitly admitted for one production prefix proposal.
+    pub fn has_supported_initial_plan_prefix(&self) -> bool {
+        combat_plan_supports_initial_policy_prefix_v1(&self.original_root)
+    }
+
     /// Materializes one bounded, exact policy mainline as ordinary graph
     /// edges.
     ///

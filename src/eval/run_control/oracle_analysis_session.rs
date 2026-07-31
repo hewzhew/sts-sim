@@ -138,6 +138,14 @@ pub struct OracleAnalysisCombatStageTraceV1 {
     pub completed_turn_options: usize,
     pub policy_witness_proposals: usize,
     pub policy_witness_proposal_rejections: usize,
+    #[serde(default)]
+    pub plan_prefix_proposals: usize,
+    #[serde(default)]
+    pub plan_prefix_proposed_turns: usize,
+    #[serde(default)]
+    pub plan_prefix_proposed_actions: usize,
+    #[serde(default)]
+    pub plan_prefix_proposal_rejections: usize,
     pub incumbent_discovery_source: Option<sts_combat_planner::OracleCombatWitnessDiscoverySource>,
     pub incumbent_final_hp: Option<i32>,
     pub incumbent_action_count: Option<usize>,
@@ -200,6 +208,12 @@ pub struct OracleAnalysisCombatProgressV1 {
     pub pending_witness_replay: bool,
     pub policy_witness_proposals: usize,
     pub policy_witness_proposal_rejections: usize,
+    /// Diagnostic counts for the bounded typed-plan prefix materialized into
+    /// the ordinary exact local graph before portfolio service begins.
+    pub plan_prefix_proposals: usize,
+    pub plan_prefix_proposed_turns: usize,
+    pub plan_prefix_proposed_actions: usize,
+    pub plan_prefix_proposal_rejections: usize,
     pub advisor_nodes: u64,
     pub advisor_elapsed_ms: u64,
     pub advisor_active: bool,
@@ -1835,6 +1849,10 @@ fn combat_stage_trace_view_from_progress(
         completed_turn_options: progress.completed_turn_options,
         policy_witness_proposals: progress.current_policy_witness_proposals,
         policy_witness_proposal_rejections: progress.current_policy_witness_proposal_rejections,
+        plan_prefix_proposals: progress.plan_prefix_proposals,
+        plan_prefix_proposed_turns: progress.plan_prefix_proposed_turns,
+        plan_prefix_proposed_actions: progress.plan_prefix_proposed_actions,
+        plan_prefix_proposal_rejections: progress.plan_prefix_proposal_rejections,
         incumbent_discovery_source: progress.incumbent_discovery_source,
         incumbent_final_hp: progress.incumbent_final_hp,
         incumbent_action_count: progress.incumbent_action_count,
@@ -1890,6 +1908,10 @@ fn combat_progress_view_with_exit(
         pending_witness_replay: progress.pending_witness_replay,
         policy_witness_proposals: progress.policy_witness_proposals,
         policy_witness_proposal_rejections: progress.policy_witness_proposal_rejections,
+        plan_prefix_proposals: progress.plan_prefix_proposals,
+        plan_prefix_proposed_turns: progress.plan_prefix_proposed_turns,
+        plan_prefix_proposed_actions: progress.plan_prefix_proposed_actions,
+        plan_prefix_proposal_rejections: progress.plan_prefix_proposal_rejections,
         advisor_nodes: progress.advisor_nodes,
         advisor_elapsed_ms: progress.advisor_elapsed_ms,
         advisor_active: progress.advisor_active,

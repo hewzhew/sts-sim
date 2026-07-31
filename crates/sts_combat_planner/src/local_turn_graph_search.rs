@@ -26,8 +26,8 @@ use smallvec::SmallVec;
 use sts_combat_strategy::{
     combat_plan_action_timing_v1, combat_plan_has_timed_action_preference_v1,
     combat_plan_projection_v1, combat_plan_selection_member_timing_v1,
-    combat_plan_transition_annotation_v1, CombatPlanActionTimingV1,
-    CombatPlanTransitionAnnotationV1,
+    combat_plan_supports_initial_policy_prefix_v1, combat_plan_transition_annotation_v1,
+    CombatPlanActionTimingV1, CombatPlanTransitionAnnotationV1,
 };
 use sts_core::ai::combat_state_key::combat_exact_state_key;
 use sts_core::sim::combat::{CombatPosition, CombatStepLimits, CombatStepper, CombatTerminal};

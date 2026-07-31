@@ -9,7 +9,7 @@
 use serde::{Deserialize, Serialize};
 
 use sts_core::ai::analysis::card_semantics::{
-    card_definition_with_upgrades, CombatEvent, PlayEffect,
+    card_definition_with_upgrades, CombatEvent, Mechanic, PlayEffect,
 };
 use sts_core::content::cards::{exhausts_when_played, get_card_definition, CardId, CardType};
 use sts_core::content::monsters::EnemyId;
@@ -22,8 +22,10 @@ use sts_core::sim::combat_action_surface::{
 use sts_core::sim::combat_projection::project_monster_move_preview_in_combat;
 use sts_core::state::core::{ClientInput, HandSelectReason};
 
+mod bronze_automaton;
 mod champ;
 
+pub use bronze_automaton::{bronze_automaton_combat_plan_v1, bronze_automaton_plan_transition_v1};
 pub use champ::{champ_combat_plan_v1, champ_plan_transition_v1};
 
 pub const COMBAT_PLAN_SCHEMA_V1: &str = "typed-combat-plan/v1";
@@ -32,6 +34,7 @@ pub const COMBAT_PLAN_SCHEMA_V1: &str = "typed-combat-plan/v1";
 #[serde(rename_all = "snake_case")]
 pub enum CombatPlanIdV1 {
     AwakenedOnePhaseControl,
+    BronzeAutomatonControl,
     ChampPhaseControl,
     DonuAndDecaGrowthControl,
 }
@@ -40,6 +43,7 @@ pub enum CombatPlanIdV1 {
 #[serde(rename_all = "snake_case")]
 pub enum CombatPlanStageV1 {
     RemoveEscalatingAdds,
+    ExposeAttackMitigationTarget,
     PrepareFirstPhaseCommit,
     ExploitTransitionWindow,
     SurviveSecondPhaseOpening,
@@ -54,6 +58,7 @@ pub enum CombatPlanStageV1 {
 #[serde(rename_all = "snake_case")]
 pub enum CombatPlanMilestoneV1 {
     EscalatingAddsRemoved,
+    AttackMitigationTargetExposed,
     UntaxedTransitionWindowReached,
     TransitionWindowClosed,
     SecondPhaseOpeningSurvived,
@@ -75,6 +80,7 @@ pub enum CombatPlanMilestoneV1 {
 pub enum CombatPlanActionDeferralV1 {
     PreserveFiniteSkillConversionUntilUntaxedWindow,
     PreserveUndeployedPlanAsset,
+    PreserveArtifactSensitiveMitigationUntilTargetExposed,
 }
 
 /// Plan-owned timing class for one exact action successor.
@@ -173,6 +179,11 @@ pub struct CombatPlanResourcesV1 {
     /// Live, unexhausted cards which can reduce enemy Strength.
     #[serde(default)]
     pub remaining_strength_reduction: u16,
+    /// Live cards whose Weak or enemy-Strength-down payoff is blocked by
+    /// Artifact. This is exact supply, not permission to spend one as an
+    /// Artifact strip.
+    #[serde(default)]
+    pub remaining_artifact_sensitive_mitigation: u16,
     /// Live Apparition cards which can cover a later forced attack window.
     #[serde(default)]
     pub remaining_intangible_sources: u16,
@@ -202,6 +213,9 @@ pub struct CombatPlanStateEnvelopeV1 {
     /// HP plus Block on the encounter plan's current focus target.
     #[serde(default)]
     pub priority_target_hp_with_block: Option<i32>,
+    /// Exact Artifact stacks on the encounter plan's current focus target.
+    #[serde(default)]
+    pub priority_target_artifact: Option<i32>,
     /// Exact damage required to cross the encounter's next phase threshold.
     #[serde(default)]
     pub phase_transition_damage_remaining: Option<i32>,
@@ -257,6 +271,10 @@ pub enum CombatPlanTransitionEventV1 {
         before: u16,
         after: u16,
     },
+    ArtifactSensitiveMitigationSupplyChanged {
+        before: u16,
+        after: u16,
+    },
     PhaseSurvivalSupplyChanged {
         before: u16,
         after: u16,
@@ -266,6 +284,10 @@ pub enum CombatPlanTransitionEventV1 {
         after: u8,
     },
     PriorityTargetHpWithBlockChanged {
+        before: Option<i32>,
+        after: Option<i32>,
+    },
+    PriorityTargetArtifactChanged {
         before: Option<i32>,
         after: Option<i32>,
     },
@@ -315,6 +337,7 @@ pub struct CombatPlanTransitionV1 {
 #[serde(rename_all = "snake_case", tag = "plan", content = "transition")]
 pub enum CombatPlanTransitionAnnotationV1 {
     AwakenedOnePhaseControl(CombatPlanTransitionV1),
+    BronzeAutomatonControl(CombatPlanTransitionV1),
     ChampPhaseControl(CombatPlanTransitionV1),
     DonuAndDecaGrowthControl(CombatPlanTransitionV1),
 }
@@ -323,6 +346,7 @@ impl CombatPlanTransitionAnnotationV1 {
     pub fn completed_milestones(&self) -> &[CombatPlanMilestoneV1] {
         match self {
             Self::AwakenedOnePhaseControl(transition)
+            | Self::BronzeAutomatonControl(transition)
             | Self::ChampPhaseControl(transition)
             | Self::DonuAndDecaGrowthControl(transition) => &transition.completed_milestones,
         }
@@ -341,6 +365,9 @@ pub fn combat_plan_transition_annotation_v1(
     if awakened_one_combat_plan_v1(before).is_some() {
         awakened_one_plan_transition_v1(before, after)
             .map(CombatPlanTransitionAnnotationV1::AwakenedOnePhaseControl)
+    } else if bronze_automaton_combat_plan_v1(before).is_some() {
+        bronze_automaton_plan_transition_v1(before, after)
+            .map(CombatPlanTransitionAnnotationV1::BronzeAutomatonControl)
     } else if champ_combat_plan_v1(before).is_some() {
         champ_plan_transition_v1(before, after)
             .map(CombatPlanTransitionAnnotationV1::ChampPhaseControl)
@@ -356,6 +383,7 @@ pub fn combat_plan_transition_annotation_v1(
 /// reachable, desirable, or solved.
 pub fn combat_plan_projection_v1(position: &CombatPosition) -> Option<CombatPlanProjectionV1> {
     awakened_one_combat_plan_v1(position)
+        .or_else(|| bronze_automaton_combat_plan_v1(position))
         .or_else(|| champ_combat_plan_v1(position))
         .or_else(|| donu_and_deca_combat_plan_v1(position))
 }
@@ -369,6 +397,9 @@ pub fn combat_plan_state_guide_rank_v1(
     position: &CombatPosition,
 ) -> Option<CombatPlanStateGuideRankV1> {
     let plan = combat_plan_projection_v1(position)?;
+    if plan.plan == CombatPlanIdV1::BronzeAutomatonControl {
+        return bronze_automaton::bronze_automaton_state_guide_rank_v1(position, &plan);
+    }
     if plan.plan == CombatPlanIdV1::ChampPhaseControl {
         return None;
     }
@@ -439,6 +470,9 @@ pub fn combat_plan_state_guide_rank_v1(
         | CombatPlanStageV1::AwaitDebuffCleanse
         | CombatPlanStageV1::SurviveExecuteWindow => {
             unreachable!("Champ plans are diagnostic-only and do not own production guidance")
+        }
+        CombatPlanStageV1::ExposeAttackMitigationTarget => {
+            unreachable!("Bronze Automaton guidance is owned by its encounter module")
         }
         CombatPlanStageV1::EliminateTeamGrowthSource => {
             let mitigation_ready = plan.resources.remaining_strength_reduction == 0
@@ -535,6 +569,9 @@ pub fn awakened_one_combat_plan_v1(position: &CombatPosition) -> Option<CombatPl
         ),
         CombatPlanStageV1::EliminateTeamGrowthSource => {
             unreachable!("Awakened One plan cannot enter Donu's growth-control stage")
+        }
+        CombatPlanStageV1::ExposeAttackMitigationTarget => {
+            unreachable!("Awakened One plan cannot enter Bronze Automaton's setup stage")
         }
         CombatPlanStageV1::PrepareThresholdCommit
         | CombatPlanStageV1::AwaitDebuffCleanse
@@ -805,17 +842,21 @@ pub fn combat_plan_action_deferral_v1(
     }
 }
 
-/// Classifies exact resource timing around Awakened One's phase boundary.
+/// Classifies exact resource timing around encounter-owned plan boundaries.
 ///
-/// Before the first-phase commit, a survivable line reserves finite skill
-/// conversion. During the untaxed transition and the second-phase opening,
-/// deploying that same reserved conversion directly serves the current typed
-/// obligation. All other actions remain neutral and keep their base-policy
-/// order.
+/// All alternatives remain legal. This categorical signal is consumed only by
+/// explicitly plan-compatible proposal lanes; it is not an ordinary action
+/// weight or pruning rule.
 pub fn combat_plan_action_timing_v1(
     before_position: &CombatPosition,
     after_position: &CombatPosition,
 ) -> CombatPlanActionTimingV1 {
+    if bronze_automaton_combat_plan_v1(before_position).is_some() {
+        return bronze_automaton::bronze_automaton_action_timing_v1(
+            before_position,
+            after_position,
+        );
+    }
     let Some(before) = awakened_one_combat_plan_v1(before_position) else {
         return CombatPlanActionTimingV1::Neutral;
     };
@@ -913,15 +954,28 @@ pub fn combat_plan_selection_member_timing_v1(
 /// surface for a plan-owned timing preference. The encounter plan remains the
 /// sole owner of stage and resource semantics.
 pub fn combat_plan_has_timed_action_preference_v1(position: &CombatPosition) -> bool {
-    awakened_one_combat_plan_v1(position).is_some_and(|plan| {
-        let held_setup_available = live_cards(&position.combat)
-            .any(|card| undeployed_card_supplies_plan_resource(card, &plan.resources));
-        matches!(
-            plan.stage,
-            CombatPlanStageV1::ExploitTransitionWindow
-                | CombatPlanStageV1::SurviveSecondPhaseOpening
-        ) && (plan.resources.finite_skill_conversion == FiniteSkillConversionStateV1::Available
-            || held_setup_available)
+    combat_plan_supports_initial_policy_prefix_v1(position)
+        || awakened_one_combat_plan_v1(position).is_some_and(|plan| {
+            let held_setup_available = live_cards(&position.combat)
+                .any(|card| undeployed_card_supplies_plan_resource(card, &plan.resources));
+            matches!(
+                plan.stage,
+                CombatPlanStageV1::ExploitTransitionWindow
+                    | CombatPlanStageV1::SurviveSecondPhaseOpening
+            ) && (plan.resources.finite_skill_conversion == FiniteSkillConversionStateV1::Available
+                || held_setup_available)
+        })
+}
+
+/// Admits only encounter plans with exact-root evidence that one bounded
+/// policy prefix improves the production search corridor.
+///
+/// Timed action preferences alone are insufficient: they remain available to
+/// explicit laboratory proposals without silently changing production.
+pub fn combat_plan_supports_initial_policy_prefix_v1(position: &CombatPosition) -> bool {
+    bronze_automaton_combat_plan_v1(position).is_some_and(|plan| {
+        plan.stage == CombatPlanStageV1::ExposeAttackMitigationTarget
+            && plan.resources.remaining_artifact_sensitive_mitigation > 0
     })
 }
 
@@ -987,6 +1041,7 @@ fn awakened_one_stage(awakened: &MonsterEntity, living_cultists: u8) -> CombatPl
 const fn stage_ordinal(stage: CombatPlanStageV1) -> u8 {
     match stage {
         CombatPlanStageV1::RemoveEscalatingAdds => 0,
+        CombatPlanStageV1::ExposeAttackMitigationTarget => 0,
         CombatPlanStageV1::PrepareFirstPhaseCommit => 1,
         CombatPlanStageV1::ExploitTransitionWindow => 2,
         CombatPlanStageV1::SurviveSecondPhaseOpening => 3,
@@ -1047,6 +1102,7 @@ fn combat_plan_resources_v1(combat: &CombatState) -> CombatPlanResourcesV1 {
         remaining_strength_reduction: count_live_cards(combat, |card| {
             matches!(card.id, CardId::Disarm | CardId::DarkShackles)
         }),
+        remaining_artifact_sensitive_mitigation: 0,
         remaining_intangible_sources: count_live_cards(combat, |card| {
             card.id == CardId::Apparition
         }),
@@ -1115,6 +1171,7 @@ fn combat_plan_state_envelope_v1(combat: &CombatState) -> CombatPlanStateEnvelop
             get_card_definition(card.id).card_type == CardType::Status
         }),
         priority_target_hp_with_block: None,
+        priority_target_artifact: None,
         phase_transition_damage_remaining: None,
         enemy_team_strength: combat
             .entities
@@ -1204,6 +1261,16 @@ fn combat_plan_transition_events_v1(
             },
         );
     }
+    if before.resources.remaining_artifact_sensitive_mitigation
+        != after.resources.remaining_artifact_sensitive_mitigation
+    {
+        events.push(
+            CombatPlanTransitionEventV1::ArtifactSensitiveMitigationSupplyChanged {
+                before: before.resources.remaining_artifact_sensitive_mitigation,
+                after: after.resources.remaining_artifact_sensitive_mitigation,
+            },
+        );
+    }
     if before.resources.remaining_intangible_sources != after.resources.remaining_intangible_sources
     {
         events.push(CombatPlanTransitionEventV1::PhaseSurvivalSupplyChanged {
@@ -1225,6 +1292,12 @@ fn combat_plan_transition_events_v1(
                 after: after.envelope.priority_target_hp_with_block,
             },
         );
+    }
+    if before.envelope.priority_target_artifact != after.envelope.priority_target_artifact {
+        events.push(CombatPlanTransitionEventV1::PriorityTargetArtifactChanged {
+            before: before.envelope.priority_target_artifact,
+            after: after.envelope.priority_target_artifact,
+        });
     }
     if before.envelope.enemy_team_strength != after.envelope.enemy_team_strength {
         events.push(CombatPlanTransitionEventV1::EnemyTeamStrengthChanged {
@@ -1645,6 +1718,7 @@ mod tests {
         store::set_powers_for(&mut after.combat, 0, vec![power(PowerId::DemonForm, 3)]);
 
         assert!(combat_plan_has_timed_action_preference_v1(&before));
+        assert!(!combat_plan_supports_initial_policy_prefix_v1(&before));
         assert_eq!(
             combat_plan_action_timing_v1(&before, &after),
             CombatPlanActionTimingV1::PreferNow
