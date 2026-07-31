@@ -7,7 +7,9 @@ use crate::ai::block_plan_profile_v1::{block_plan_profile_v1, BlockPlanProfileV1
 use crate::ai::boss_mechanics_v1::{
     boss_mechanic_pressure_profile_v1, BossEncounterTargetTopologyV1, BossMechanicPressurePointV1,
 };
-use crate::ai::card_analysis_v1::{card_analysis_profile_v1, CardAnalysisAttackChunkV1};
+use crate::ai::card_analysis_v1::{
+    card_analysis_profile_v1, CardAnalysisAoeSupportV1, CardAnalysisAttackChunkV1,
+};
 use crate::ai::card_component_signal_v1::{
     evaluate_card_component_signals_v1, is_concrete_package_support_signal_v1,
     is_unresolved_package_payoff_debt_signal_v1, CardComponentSignalContextV1,
@@ -592,6 +594,8 @@ fn card_reward_band_v1(
         CardRewardPolicyAcquisitionV1::SingingBowl => CardRewardPolicyBandV1::PreserveDeckQuality,
         CardRewardPolicyAcquisitionV1::Skip => CardRewardPolicyBandV1::PreserveDeckQuality,
         CardRewardPolicyAcquisitionV1::Card {
+            card,
+            upgrades,
             semantics,
             component_signals,
             ..
@@ -603,7 +607,7 @@ fn card_reward_band_v1(
             let has_intrinsic_asset_role = semantics
                 .roles
                 .iter()
-                .any(|role| is_self_sufficient_strategic_role(*role))
+                .any(|role| is_self_sufficient_strategic_role(*role, *card, *upgrades))
                 || random_target_frontload_reliable;
             let has_blocking_package_debt = component_signals
                 .debt_signals
@@ -739,12 +743,22 @@ fn is_access_role(role: CardRewardSemanticRoleV1) -> bool {
 ///
 /// Plain block is deliberately absent. Block is an amount and timing claim,
 /// not an asset by itself: it must fill a current need or carry another
-/// self-sufficient role before it can outrank preserving deck quality.
-fn is_self_sufficient_strategic_role(role: CardRewardSemanticRoleV1) -> bool {
+/// self-sufficient role before it can outrank preserving deck quality. Light
+/// AoE follows the same rule; only a shared-analysis `Strong` AoE profile is
+/// intrinsically valuable without an exact capability or threat delta.
+fn is_self_sufficient_strategic_role(
+    role: CardRewardSemanticRoleV1,
+    card: CardId,
+    upgrades: u8,
+) -> bool {
+    if role == CardRewardSemanticRoleV1::AoeDamage {
+        return card_analysis_profile_v1(card, upgrades).aoe_support
+            == CardAnalysisAoeSupportV1::Strong;
+    }
+
     matches!(
         role,
-        CardRewardSemanticRoleV1::AoeDamage
-            | CardRewardSemanticRoleV1::CardDraw
+        CardRewardSemanticRoleV1::CardDraw
             | CardRewardSemanticRoleV1::CycleAccess
             | CardRewardSemanticRoleV1::DiscardPileTopdeckAccess
             | CardRewardSemanticRoleV1::HandTopdeckSelection
@@ -1236,6 +1250,88 @@ mod tests {
                 DecisionCandidateKey::CardRewardSkip { .. }
             )),
             "supported exhaust payoff should precede skip; evidence={:#?}",
+            decision.evidence
+        );
+    }
+
+    #[test]
+    fn light_aoe_without_exact_delta_does_not_outrank_skip_in_a_mature_deck() {
+        let mut session = reward_session(&[
+            (CardId::Anger, 1),
+            (CardId::Bloodletting, 0),
+            (CardId::ThunderClap, 1),
+        ]);
+        session.run_state.act_num = 3;
+        session.run_state.floor_num = 38;
+        session.run_state.boss_key = Some(EncounterId::AwakenedOne);
+        session.run_state.current_hp = 72;
+        session.run_state.max_hp = 90;
+        session.run_state.master_deck = [
+            (CardId::Strike, 0),
+            (CardId::Strike, 0),
+            (CardId::Defend, 0),
+            (CardId::Defend, 0),
+            (CardId::Defend, 0),
+            (CardId::Defend, 0),
+            (CardId::Bash, 1),
+            (CardId::ShrugItOff, 1),
+            (CardId::Clash, 0),
+            (CardId::SearingBlow, 0),
+            (CardId::IronWave, 0),
+            (CardId::SeverSoul, 1),
+            (CardId::Whirlwind, 1),
+            (CardId::Cleave, 1),
+            (CardId::FiendFire, 1),
+            (CardId::DarkEmbrace, 0),
+            (CardId::Armaments, 1),
+            (CardId::Shockwave, 1),
+            (CardId::PommelStrike, 1),
+            (CardId::Offering, 1),
+            (CardId::DemonForm, 0),
+            (CardId::TrueGrit, 1),
+            (CardId::DarkShackles, 0),
+            (CardId::Inflame, 0),
+        ]
+        .into_iter()
+        .enumerate()
+        .map(|(index, (card, upgrades))| {
+            let mut owned = CombatCard::new(card, index as u32);
+            owned.upgrades = upgrades;
+            owned
+        })
+        .collect();
+
+        let decision = decision(&session);
+        let thunder_clap = card_evidence(&decision, CardId::ThunderClap);
+        assert!(matches!(
+            &thunder_clap.acquisition,
+            CardRewardPolicyAcquisitionV1::Card { semantics, .. }
+                if semantics.roles.contains(&CardRewardSemanticRoleV1::AoeDamage)
+        ));
+        assert_eq!(
+            card_analysis_profile_v1(CardId::ThunderClap, 1).aoe_support,
+            CardAnalysisAoeSupportV1::Present
+        );
+        assert!(thunder_clap.delta.closed_threat_gaps.is_empty());
+        assert!(thunder_clap.delta.capability_improvements.is_empty());
+        assert!(thunder_clap.delta.resolved_formation_needs.is_empty());
+        assert!(thunder_clap.delta.added_formation_strengths.is_empty());
+        assert_eq!(
+            thunder_clap.band,
+            CardRewardPolicyBandV1::SpeculativeAddition
+        );
+        assert!(
+            position(&decision, |key| matches!(
+                key,
+                DecisionCandidateKey::CardRewardSkip { .. }
+            )) < position(&decision, |key| matches!(
+                key,
+                DecisionCandidateKey::CardRewardPick {
+                    card: CardId::ThunderClap,
+                    ..
+                }
+            )),
+            "light AoE that adds no exact capability must not outrank preserving deck quality; evidence={:#?}",
             decision.evidence
         );
     }
