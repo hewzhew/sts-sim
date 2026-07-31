@@ -100,9 +100,10 @@ pub use campfire_policy_prior::{
 };
 pub use card_reward_policy_prior::{
     exact_card_reward_policy_audit_v1, exact_card_reward_policy_decision_v1,
-    exact_card_reward_policy_prior_v1, CardRewardPolicyAcquisitionV1,
-    CardRewardPolicyActionEvidenceV1, CardRewardPolicyAuditCandidateV1, CardRewardPolicyBandV1,
-    ExactCardRewardPolicyAuditV1, ExactCardRewardPolicyDecisionV1,
+    exact_card_reward_policy_prior_v1, CardRewardBossDamagePlanImprovementV1,
+    CardRewardPolicyAcquisitionV1, CardRewardPolicyActionEvidenceV1,
+    CardRewardPolicyAuditCandidateV1, CardRewardPolicyBandV1, ExactCardRewardPolicyAuditV1,
+    ExactCardRewardPolicyDecisionV1,
 };
 pub use combat_case_adjudication::{
     adjudicate_combat_case_line_v1, CombatCaseAdjudicationProbeV1, COMBAT_CASE_PROJECTION_TRUST_V1,

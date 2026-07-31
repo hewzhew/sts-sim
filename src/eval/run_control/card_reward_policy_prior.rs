@@ -29,8 +29,12 @@ use crate::ai::noncombat_strategy_v1::{
     StrategyCapabilityCoverageV1, StrategyCapabilityKindV1, StrategyPackageIdV2,
     StrategyPlanSupportV1, StrategyThreatSourceV1,
 };
+use crate::ai::strategy::boss_damage_plan::{
+    assess_boss_damage_plan_v1, BossDamagePlanEngineReliabilityV1, BossDamagePlanReadinessV1,
+};
 use crate::ai::strength_profile_v1::card_unlocks_convertible_strength_payoff_v1;
 use crate::content::cards::CardId;
+use crate::runtime::combat::CombatCard;
 use crate::state::rewards::RewardCard;
 
 use super::{
@@ -68,6 +72,15 @@ pub enum CardRewardPolicyAcquisitionV1 {
     OpenReward,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct CardRewardBossDamagePlanImprovementV1 {
+    pub before_readiness: BossDamagePlanReadinessV1,
+    pub after_readiness: BossDamagePlanReadinessV1,
+    pub before_reliability: BossDamagePlanEngineReliabilityV1,
+    pub after_reliability: BossDamagePlanEngineReliabilityV1,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct CardRewardPolicyActionEvidenceV1 {
     pub candidate_id: String,
@@ -91,6 +104,9 @@ pub struct CardRewardPolicyActionEvidenceV1 {
     pub added_deck_shape_risks: Vec<DeckShapeRiskV1>,
     pub improves_threat_relevant_capability: bool,
     pub amplifies_existing_answers: bool,
+    /// A shared boss-damage-plan improvement introduced by this exact card.
+    /// This is a same-band tie-break, not a card-specific priority override.
+    pub boss_damage_plan_improvement: Option<CardRewardBossDamagePlanImprovementV1>,
     /// Support for the route resource required by an upgrade-investment card.
     ///
     /// `None` means the candidate has no such dependency.  Keeping this typed
@@ -129,6 +145,7 @@ pub struct CardRewardPolicyAuditCandidateV1 {
     pub added_deck_shape_risks: Vec<String>,
     pub improves_threat_relevant_capability: bool,
     pub amplifies_existing_answers: bool,
+    pub boss_damage_plan_improvement: Option<CardRewardBossDamagePlanImprovementV1>,
     pub upgrade_investment_support: Option<String>,
     pub surface_index: usize,
     pub prior_probability: f64,
@@ -220,6 +237,7 @@ impl ExactCardRewardPolicyDecisionV1 {
                     improves_threat_relevant_capability: evidence
                         .improves_threat_relevant_capability,
                     amplifies_existing_answers: evidence.amplifies_existing_answers,
+                    boss_damage_plan_improvement: evidence.boss_damage_plan_improvement,
                     upgrade_investment_support: evidence
                         .upgrade_investment_support
                         .map(|value| format!("{value:?}")),
@@ -468,6 +486,7 @@ fn card_reward_action_evidence_v1(
     .then_some(upgrade_sink_support);
     let amplifies_existing_answers =
         access_amplifies_existing_answers(&decision.before, &acquisition);
+    let boss_damage_plan_improvement = boss_damage_plan_improvement_v1(parent, &acquisition);
     let base_band = card_reward_band_v1(
         &acquisition,
         &delta,
@@ -498,9 +517,34 @@ fn card_reward_action_evidence_v1(
         added_deck_shape_risks,
         improves_threat_relevant_capability,
         amplifies_existing_answers,
+        boss_damage_plan_improvement,
         upgrade_investment_support,
         surface_index,
     })
+}
+
+fn boss_damage_plan_improvement_v1(
+    parent: &RunControlSession,
+    acquisition: &CardRewardPolicyAcquisitionV1,
+) -> Option<CardRewardBossDamagePlanImprovementV1> {
+    let CardRewardPolicyAcquisitionV1::Card { card, upgrades, .. } = acquisition else {
+        return None;
+    };
+
+    let before = assess_boss_damage_plan_v1(&parent.run_state.master_deck);
+    let mut after_deck = parent.run_state.master_deck.clone();
+    let mut added = CombatCard::new(*card, u32::MAX);
+    added.upgrades = *upgrades;
+    after_deck.push(added);
+    let after = assess_boss_damage_plan_v1(&after_deck);
+
+    ((after.readiness, after.engine_reliability) > (before.readiness, before.engine_reliability))
+        .then_some(CardRewardBossDamagePlanImprovementV1 {
+            before_readiness: before.readiness,
+            after_readiness: after.readiness,
+            before_reliability: before.engine_reliability,
+            after_reliability: after.engine_reliability,
+        })
 }
 
 fn apply_upgrade_investment_gate_v1(
@@ -808,6 +852,12 @@ fn compare_card_reward_evidence(
         })
         .then_with(|| {
             right
+                .boss_damage_plan_improvement
+                .is_some()
+                .cmp(&left.boss_damage_plan_improvement.is_some())
+        })
+        .then_with(|| {
+            right
                 .random_target_frontload_reliable
                 .cmp(&left.random_target_frontload_reliable)
         })
@@ -841,7 +891,6 @@ mod tests {
     use crate::content::monsters::factory::EncounterId;
     use crate::content::relics::{RelicId, RelicState};
     use crate::eval::run_control::{build_decision_surface, RunControlConfig};
-    use crate::runtime::combat::CombatCard;
     use crate::state::core::EngineState;
     use crate::state::rewards::{RewardItem, RewardState};
 
@@ -1170,6 +1219,83 @@ mod tests {
         let clash = card_evidence(&decision, CardId::Clash);
         assert!(clash.added_deck_shape_risks.is_empty());
         assert_ne!(clash.band, CardRewardPolicyBandV1::Liability);
+    }
+
+    #[test]
+    fn established_boss_scaling_repair_precedes_external_payoff_in_same_band() {
+        let mut session = reward_session(&[
+            (CardId::Feed, 0),
+            (CardId::DemonForm, 0),
+            (CardId::FiendFire, 0),
+        ]);
+        session.run_state.act_num = 1;
+        session.run_state.floor_num = 16;
+        session.run_state.boss_key = Some(EncounterId::Hexaghost);
+        session.run_state.current_hp = 33;
+        session.run_state.max_hp = 80;
+        session.run_state.master_deck = [
+            (CardId::Strike, 0),
+            (CardId::Strike, 0),
+            (CardId::Strike, 0),
+            (CardId::Strike, 0),
+            (CardId::Defend, 0),
+            (CardId::Defend, 0),
+            (CardId::Defend, 0),
+            (CardId::Defend, 0),
+            (CardId::Bash, 1),
+            (CardId::WildStrike, 0),
+            (CardId::GhostlyArmor, 0),
+            (CardId::SeeingRed, 1),
+            (CardId::ShrugItOff, 0),
+            (CardId::PommelStrike, 0),
+            (CardId::SwordBoomerang, 0),
+            (CardId::SpotWeakness, 0),
+        ]
+        .into_iter()
+        .enumerate()
+        .map(|(index, (card, upgrades))| {
+            let mut owned = CombatCard::new(card, index as u32);
+            owned.upgrades = upgrades;
+            owned
+        })
+        .collect();
+
+        let decision = decision(&session);
+        let demon_form = card_evidence(&decision, CardId::DemonForm);
+        let feed = card_evidence(&decision, CardId::Feed);
+
+        assert_eq!(
+            demon_form.band,
+            CardRewardPolicyBandV1::EstablishStrategicAsset
+        );
+        assert_eq!(feed.band, CardRewardPolicyBandV1::EstablishStrategicAsset);
+        assert_eq!(
+            demon_form.boss_damage_plan_improvement,
+            Some(CardRewardBossDamagePlanImprovementV1 {
+                before_readiness: BossDamagePlanReadinessV1::Engine,
+                after_readiness: BossDamagePlanReadinessV1::Engine,
+                before_reliability: BossDamagePlanEngineReliabilityV1::Fragile,
+                after_reliability: BossDamagePlanEngineReliabilityV1::Established,
+            })
+        );
+        assert_eq!(feed.boss_damage_plan_improvement, None);
+        assert!(
+            position(&decision, |key| matches!(
+                key,
+                DecisionCandidateKey::CardRewardPick {
+                    card: CardId::DemonForm,
+                    ..
+                }
+            )) < position(&decision, |key| matches!(
+                key,
+                DecisionCandidateKey::CardRewardPick {
+                    card: CardId::Feed,
+                    ..
+                }
+            )),
+            "the shared reliability repair must break the same-band surface tie; evidence={:#?}",
+            decision.evidence
+        );
     }
 
     #[test]
