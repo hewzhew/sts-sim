@@ -1831,6 +1831,82 @@ mod tests {
     }
 
     #[test]
+    fn persistent_strength_down_precedes_an_already_supported_damage_payoff() {
+        let mut session = reward_session(&[
+            (CardId::SwordBoomerang, 0),
+            (CardId::Disarm, 0),
+            (CardId::PerfectedStrike, 0),
+        ]);
+        session.run_state.act_num = 2;
+        session.run_state.floor_num = 21;
+        session.run_state.boss_key = Some(EncounterId::TheChamp);
+        // Keep enough established offense that Sword Boomerang remains a
+        // supported payoff; a smaller deck would test two missing capabilities.
+        session.run_state.master_deck = [
+            (CardId::Strike, 0),
+            (CardId::Strike, 0),
+            (CardId::Strike, 0),
+            (CardId::Strike, 0),
+            (CardId::Defend, 0),
+            (CardId::Defend, 0),
+            (CardId::Defend, 0),
+            (CardId::Defend, 0),
+            (CardId::Bash, 1),
+            (CardId::PowerThrough, 0),
+            (CardId::Uppercut, 0),
+            (CardId::SecondWind, 0),
+            (CardId::Cleave, 0),
+            (CardId::ShrugItOff, 0),
+            (CardId::DarkEmbrace, 0),
+            (CardId::Uppercut, 0),
+            (CardId::WildStrike, 0),
+            (CardId::DarkEmbrace, 0),
+            (CardId::FiendFire, 0),
+            (CardId::Cleave, 0),
+            (CardId::DemonForm, 0),
+        ]
+        .into_iter()
+        .enumerate()
+        .map(|(index, (card, upgrades))| {
+            let mut owned = CombatCard::new(card, index as u32);
+            owned.upgrades = upgrades;
+            owned
+        })
+        .collect();
+
+        let decision = decision(&session);
+        let sword_boomerang = card_evidence(&decision, CardId::SwordBoomerang);
+        let disarm = card_evidence(&decision, CardId::Disarm);
+
+        assert!(sword_boomerang.random_target_frontload_reliable);
+        assert_eq!(
+            sword_boomerang.band,
+            CardRewardPolicyBandV1::EstablishStrategicAsset
+        );
+        assert!(disarm.improves_threat_relevant_capability);
+        assert_eq!(
+            disarm.band,
+            CardRewardPolicyBandV1::ImproveRequiredCapability
+        );
+        assert!(
+            position(&decision, |key| matches!(
+                key,
+                DecisionCandidateKey::CardRewardPick {
+                    card: CardId::Disarm,
+                    ..
+                }
+            )) < position(&decision, |key| matches!(
+                key,
+                DecisionCandidateKey::CardRewardPick {
+                    card: CardId::SwordBoomerang,
+                    ..
+                }
+            )),
+            "persistent mitigation should close the defense quality gap before adding another supported payoff"
+        );
+    }
+
+    #[test]
     fn pyramid_without_status_digest_exposes_wild_strike_liability() {
         let mut session = reward_session(&[(CardId::WildStrike, 0)]);
         session

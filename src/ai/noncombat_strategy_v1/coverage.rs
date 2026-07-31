@@ -336,7 +336,6 @@ fn defense_coverage(facts: &CapabilityFacts) -> Coverage {
     let broad_exhaust_block_engine =
         facts.broad_exhaust_generators > 0 && facts.exhaust_block_payoffs > 0;
     if facts.strength_down_sources > 0 && facts.block_total >= 25
-        || facts.weak_sources >= 2 && facts.block_total >= 35
         || broad_exhaust_block_engine && facts.block_total >= 25
     {
         Coverage::Strong
@@ -433,5 +432,26 @@ fn required_capabilities(tag: Tag) -> Vec<Kind> {
         Tag::CardPlayLimit => vec![Kind::CardPlayEfficiency],
         Tag::RetaliationPunish => vec![Kind::RetaliationSafeDamage],
         Tag::TimedDamageRace => vec![Kind::TimedDamageRace],
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn repeated_weak_supports_defense_without_claiming_persistent_strength_down() {
+        let weak_only = CapabilityFacts {
+            block_total: 48,
+            weak_sources: 2,
+            ..CapabilityFacts::default()
+        };
+        assert_eq!(defense_coverage(&weak_only), Coverage::Supported);
+
+        let with_strength_down = CapabilityFacts {
+            strength_down_sources: 1,
+            ..weak_only
+        };
+        assert_eq!(defense_coverage(&with_strength_down), Coverage::Strong);
     }
 }
