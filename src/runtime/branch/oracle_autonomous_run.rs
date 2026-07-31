@@ -256,41 +256,18 @@ pub fn run_oracle_analysis_to_stop_v1(
         });
         let combat_node = node.node_id;
 
-        if node
-            .combat
-            .as_ref()
-            .and_then(|combat| combat.incumbent_final_hp)
-            .is_some()
-        {
-            let accept_started = Instant::now();
-            let after = workspace.accept_combat_incumbent()?;
-            timing.combat_accept_ms = timing
-                .combat_accept_ms
-                .saturating_add(elapsed_millis(accept_started));
-            combats.push(json!({
-                "node": combat_node,
-                "act": node.act,
-                "floor": node.floor,
-                "start_hp": node.current_hp,
-                "kind": encounter_kind(encounter.is_elite, encounter.is_boss),
-                "monsters": encounter.monsters.iter().map(|monster| monster.label.clone()).collect::<Vec<_>>(),
-                "budget_ms": 0,
-                "elapsed_ms": 0,
-                "accepted_existing_incumbent": true,
-                "search": compact_run_combat_progress(node.combat.as_ref()),
-                "after": compact_run_node(&after),
-            }));
-            node = after;
-            continue;
-        }
-
         let advance_started = Instant::now();
         let (report, mut after) = workspace.advance(OracleAnalysisAdvanceRequestV1 {
             max_quanta: config.max_quanta,
             quantum_nodes: config.quantum_nodes,
             quantum_ms: Some(config.quantum_ms),
             wall_ms: Some(wall_ms),
-            improve_incumbent: true,
+            // Standard advance already gives a verified policy proposal one
+            // bounded independent challenge, checks strategic HP quality, and
+            // promotes to exact potion rescue only when needed. Autonomous run
+            // must not bypass that contract or force every combat to spend its
+            // full wall polishing an acceptable incumbent.
+            improve_incumbent: false,
         })?;
         timing.combat_advance_ms = timing
             .combat_advance_ms
@@ -544,8 +521,8 @@ mod tests {
     use std::time::{Duration, Instant};
 
     use super::{
-        apply_owner_steps, combat_incumbent_needs_acceptance, run_wall_budget_reached,
-        AutonomousRunTiming,
+        apply_owner_steps, combat_incumbent_needs_acceptance, run_oracle_analysis_to_stop_v1,
+        run_wall_budget_reached, AutonomousRunTiming, OracleAutonomousRunConfigV1,
     };
     use crate::content::potions::{Potion, PotionId};
     use crate::eval::run_control::{
@@ -688,5 +665,98 @@ mod tests {
         assert!(combat_incumbent_needs_acceptance(false, Some(51)));
         assert!(!combat_incumbent_needs_acceptance(true, Some(51)));
         assert!(!combat_incumbent_needs_acceptance(false, None));
+    }
+
+    #[test]
+    fn autonomous_run_challenges_a_policy_proposal_before_committing_it() {
+        // This must cross the public workspace runner: lower combat-work tests
+        // cannot catch an autonomous pre-acceptance bypass around `advance`.
+        let config = OracleRunConfig {
+            seed: 20260730012,
+            ascension: 0,
+            budget: OracleRunBudget::default(),
+        };
+        let combat_budgets = oracle_combat_budgets(&config);
+        let mut session = RunControlSession::new(RunControlConfig::default());
+        let mut combat = crate::test_support::blank_test_combat();
+        let mut monster =
+            crate::test_support::test_monster(crate::content::monsters::EnemyId::JawWorm);
+        let plan = crate::content::monsters::roll_monster_turn_plan(
+            &mut combat.rng.ai_rng,
+            &monster,
+            combat.meta.ascension_level,
+            99,
+            std::slice::from_ref(&monster),
+            &[],
+        );
+        monster.set_planned_move_id(plan.move_id);
+        monster.set_planned_steps(plan.steps);
+        monster.set_planned_visible_spec(plan.visible_spec);
+        monster.current_hp = 6;
+        monster.max_hp = 6;
+        combat.entities.monsters = vec![monster];
+        combat.zones.hand = vec![crate::runtime::combat::CombatCard::new(
+            crate::content::cards::CardId::Strike,
+            1,
+        )];
+        session.engine_state = EngineState::CombatPlayerTurn;
+        session.active_combat = Some(crate::state::core::ActiveCombat::new(
+            EngineState::CombatPlayerTurn,
+            combat,
+            crate::state::core::CombatContext::Room(crate::state::core::RoomCombatContext {
+                room_type: crate::state::map::node::RoomType::MonsterRoom,
+            }),
+        ));
+        let explorer = seed_oracle_run_explorer_from_session_v1(
+            session,
+            RunProgressJournalV1::default(),
+            &combat_budgets,
+            None,
+        )
+        .expect("seed one-strike combat explorer");
+        let analysis =
+            OracleAnalysisSessionV1::from_explorer(explorer, Some(0), combat_budgets, None, None)
+                .expect("one-strike analysis session");
+        let mut workspace = OracleAnalysisWorkspaceV1 {
+            seed: config.seed,
+            ascension: config.ascension,
+            budget: config.budget,
+            combat_guidance_bundle: None,
+            session: analysis,
+        };
+        let before = workspace.view().expect("combat view");
+        assert_eq!(
+            before.boundary,
+            crate::eval::run_control::OracleRunBoundaryV1::Combat
+        );
+        assert_eq!(
+            before
+                .combat
+                .as_ref()
+                .and_then(|work| work.incumbent_final_hp),
+            Some(80),
+            "the mature policy proposal should already be exact and verified"
+        );
+
+        let report = run_oracle_analysis_to_stop_v1(
+            &mut workspace,
+            &OracleAutonomousRunConfigV1 {
+                hallway_wall_ms: 1_000,
+                elite_wall_ms: 1_000,
+                boss_wall_ms: 1_000,
+                max_quanta: 8,
+                quantum_nodes: 64,
+                quantum_ms: 10,
+                max_boundaries: 1,
+                run_wall_ms: None,
+                export_continuation: None,
+            },
+        )
+        .expect("autonomous one-strike run");
+        let combat = &report["combats"][0];
+
+        assert!(combat.get("accepted_existing_incumbent").is_none());
+        assert!(combat["search"]["generation_work"].as_u64().unwrap_or(0) > 0);
+        assert_eq!(report["final"]["boundary"], "reward");
     }
 }
