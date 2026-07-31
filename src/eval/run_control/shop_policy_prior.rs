@@ -789,14 +789,20 @@ fn strategic_acquisition_supported(
 ) -> bool {
     match acquisition {
         ShopPolicyAcquisitionV1::Card {
+            card,
             semantics,
             copies_before,
             ..
         } => {
             *copies_before == 0
                 && semantics.roles.iter().any(|role| {
+                    if *role == CardRewardSemanticRoleV1::CombatExternalPayoff
+                        && matches!(card, CardId::HandOfGreed | CardId::Wish)
+                    {
+                        return gold_payoff_has_conversion_window(parent);
+                    }
                     matches!(
-                        role,
+                        *role,
                         CardRewardSemanticRoleV1::CardDraw
                             | CardRewardSemanticRoleV1::CycleAccess
                             | CardRewardSemanticRoleV1::EnergySource
@@ -838,6 +844,43 @@ fn strategic_acquisition_supported(
         | ShopPolicyAcquisitionV1::OpenRewards
         | ShopPolicyAcquisitionV1::Leave => false,
     }
+}
+
+fn gold_payoff_has_conversion_window(parent: &RunControlSession) -> bool {
+    // Gold survives the first two acts, so a later act can still convert it.
+    // In Act 3 and beyond, require a visible non-Boss payoff combat followed
+    // by another shop; gold earned on the Boss kill cannot improve this run.
+    if parent.run_state.act_num < 3 {
+        return true;
+    }
+
+    route_window_targets(&parent.run_state)
+        .into_iter()
+        .any(|target| {
+            let family = build_route_path_family_from_target(
+                &parent.run_state,
+                target.x,
+                target.y,
+                RouteWindowFactsConfig {
+                    horizon_nodes: 15,
+                    path_budget: 2_000,
+                },
+            );
+            family.paths.iter().any(|path| {
+                let mut payoff_combat_seen = false;
+                path.nodes.iter().any(|node| match node.room_type {
+                    Some(
+                        crate::state::map::node::RoomType::MonsterRoom
+                        | crate::state::map::node::RoomType::MonsterRoomElite,
+                    ) => {
+                        payoff_combat_seen = true;
+                        false
+                    }
+                    Some(crate::state::map::node::RoomType::ShopRoom) => payoff_combat_seen,
+                    _ => false,
+                })
+            })
+        })
 }
 
 fn followup_v1(engine_state: &EngineState) -> ShopPolicyFollowupV1 {
@@ -1651,5 +1694,123 @@ mod tests {
                 ..
             }
         ));
+    }
+
+    #[test]
+    fn late_act_three_gold_payoff_requires_a_later_shop_conversion_window() {
+        fn session_with_route(route: &[RoomType]) -> RunControlSession {
+            let mut session = RunControlSession::new(RunControlConfig::default());
+            session.run_state.act_num = 3;
+            session.run_state.floor_num = 46;
+            session.run_state.boss_key = Some(EncounterId::AwakenedOne);
+            session.run_state.gold = 428;
+            // Exact F46 production deck: Hand of Greed improves a generic
+            // efficiency axis here but closes no remaining threat gap.
+            session.run_state.master_deck = [
+                (CardId::Strike, 0),
+                (CardId::Strike, 0),
+                (CardId::Defend, 0),
+                (CardId::Defend, 0),
+                (CardId::Defend, 0),
+                (CardId::Defend, 0),
+                (CardId::Bash, 1),
+                (CardId::ShrugItOff, 1),
+                (CardId::Clash, 0),
+                (CardId::SearingBlow, 0),
+                (CardId::IronWave, 0),
+                (CardId::SeverSoul, 1),
+                (CardId::Whirlwind, 1),
+                (CardId::Cleave, 1),
+                (CardId::FiendFire, 1),
+                (CardId::DarkEmbrace, 0),
+                (CardId::Armaments, 1),
+                (CardId::Shockwave, 1),
+                (CardId::PommelStrike, 1),
+                (CardId::Offering, 1),
+                (CardId::DemonForm, 1),
+                (CardId::TrueGrit, 1),
+                (CardId::DarkShackles, 0),
+                (CardId::Inflame, 0),
+                (CardId::FeelNoPain, 0),
+            ]
+            .into_iter()
+            .enumerate()
+            .map(|(index, (card, upgrades))| {
+                let mut owned = CombatCard::new(card, index as u32);
+                owned.upgrades = upgrades;
+                owned
+            })
+            .collect();
+
+            let rows = route
+                .iter()
+                .enumerate()
+                .map(|(y, room_type)| {
+                    let mut node = MapRoomNode::new(0, y as i32);
+                    node.class = Some(*room_type);
+                    if y + 1 < route.len() {
+                        node.edges
+                            .insert(MapEdge::new(0, y as i32, 0, y as i32 + 1));
+                    }
+                    vec![node]
+                })
+                .collect::<Vec<_>>();
+            let mut map = MapState::new(rows);
+            map.current_x = 0;
+            map.current_y = 0;
+            session.run_state.map = map;
+
+            let mut shop = ShopState::new();
+            shop.purge_available = false;
+            shop.cards.push(ShopCard {
+                card_id: CardId::HandOfGreed,
+                upgrades: 1,
+                price: 192,
+                can_buy: true,
+                blocked_reason: None,
+            });
+            session.engine_state = EngineState::Shop(shop);
+            session
+        }
+
+        let no_conversion = session_with_route(&[
+            RoomType::ShopRoom,
+            RoomType::RestRoom,
+            RoomType::MonsterRoomBoss,
+        ]);
+        let surface = build_decision_surface(&no_conversion);
+        let legal = policy_candidates(&surface);
+        let decision = exact_shop_policy_decision_v1(&no_conversion, &legal)
+            .expect("late Act 3 shop policy without conversion");
+        assert_eq!(
+            candidate_band(&decision, CardId::HandOfGreed),
+            ShopPolicyBandV1::SpeculativePurchase
+        );
+        assert!(
+            decision
+                .evidence
+                .iter()
+                .position(|candidate| matches!(
+                    candidate.acquisition,
+                    ShopPolicyAcquisitionV1::Leave
+                ))
+                .expect("leave position")
+                < candidate_position(&decision, CardId::HandOfGreed)
+        );
+
+        let convertible = session_with_route(&[
+            RoomType::ShopRoom,
+            RoomType::MonsterRoom,
+            RoomType::ShopRoom,
+            RoomType::RestRoom,
+        ]);
+        let surface = build_decision_surface(&convertible);
+        let legal = policy_candidates(&surface);
+        let decision = exact_shop_policy_decision_v1(&convertible, &legal)
+            .expect("late Act 3 shop policy with conversion");
+        assert_eq!(
+            candidate_band(&decision, CardId::HandOfGreed),
+            ShopPolicyBandV1::EstablishStrategicAsset
+        );
     }
 }
