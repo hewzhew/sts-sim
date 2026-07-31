@@ -161,6 +161,13 @@ at most `1 + 1 / active identities` allowances for non-Boss combat and
 caller's combat wall deadline remains authoritative. Slot order follows
 deterministic slot identity, not a potion value ranking.
 
+Production combat progress carries the exact root hash and one compact typed
+trace row per served stage. A row freezes that stage's slot contract, charged
+local/discrepancy work, proposal counts, incumbent facts, quality satisfaction,
+remaining allowance, and exit reason. Completed rows survive workspace
+checkpoint restore. This trace is diagnostic evidence for locating an owner
+scheduling divergence; it does not rank potions or authorize a policy change.
+
 Pre-A5 Act 1/2 room Boss victories deterministically restore full HP while
 retaining the potion inventory. Owner-audit therefore searches those boundaries
 without active potion expenditure first and lands any exact clean win; only a

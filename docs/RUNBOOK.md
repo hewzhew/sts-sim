@@ -377,7 +377,11 @@ hypotheses. More seeds do not repair a censored or ambiguous measurement.
    to a fresh ignored path, restart only its current combat, advance the real
    resident production portfolio, and replay-verify the committed journal.
    This determines whether a component result survives owner scheduling,
-   staging, acceptance, and materialization.
+   staging, acceptance, and materialization. When isolated and production
+   witnesses diverge, compare the exact-root `stage_trace` first: stage slot,
+   charged local/discrepancy work, proposal counts, incumbent quality, and exit
+   reason locate the earliest production-side difference without another
+   parameter ablation.
 4. **Two to five contract-selected sentinels, normally under three minutes.**
    Choose exact cases or saved run checkpoints that represent the changed
    contract, a known success, a known hard unknown, and any observed

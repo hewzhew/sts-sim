@@ -195,6 +195,8 @@ pub(super) fn advance(
     }
     let combat = report.combat.as_ref().map(|combat| {
         json!({
+            "root_exact_state_hash": combat.root_exact_state_hash,
+            "stage_trace": combat.stage_trace,
             "generation_work": combat.generation_work,
             "current_search_generation_work": combat.current_search_generation_work,
             "exact_states": combat.exact_states,
@@ -205,6 +207,8 @@ pub(super) fn advance(
             "incumbent_final_hp": combat.incumbent_final_hp,
             "incumbent_hp_loss": combat.incumbent_hp_loss,
             "incumbent_action_count": combat.incumbent_action_count,
+            "incumbent_satisfies_satisfaction": combat.incumbent_satisfies_satisfaction,
+            "incumbent_ends_quality_refinement": combat.incumbent_ends_quality_refinement,
             "last_status": combat.last_status,
         })
     });

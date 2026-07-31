@@ -147,7 +147,8 @@ pub use forced_transition::{
 pub use oracle_analysis_session::{
     OracleAnalysisAdvanceReportV1, OracleAnalysisAdvanceRequestV1, OracleAnalysisAdvanceStatusV1,
     OracleAnalysisChildViewV1, OracleAnalysisChoiceViewV1, OracleAnalysisCombatJobCheckpointV1,
-    OracleAnalysisCombatProgressV1, OracleAnalysisEdgeKindV1, OracleAnalysisEdgeV1,
+    OracleAnalysisCombatProgressV1, OracleAnalysisCombatStageExitV1,
+    OracleAnalysisCombatStageTraceV1, OracleAnalysisEdgeKindV1, OracleAnalysisEdgeV1,
     OracleAnalysisNodeSummaryV1, OracleAnalysisNodeViewV1, OracleAnalysisSessionCheckpointV1,
     OracleAnalysisSessionV1, OracleAnalysisTreeViewV1, ORACLE_ANALYSIS_SESSION_SCHEMA_NAME,
     ORACLE_ANALYSIS_SESSION_SCHEMA_VERSION,

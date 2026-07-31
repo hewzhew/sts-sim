@@ -467,6 +467,8 @@ fn compact_run_combat_progress(
         return Value::Null;
     };
     json!({
+        "root_exact_state_hash": combat.root_exact_state_hash,
+        "stage_trace": combat.stage_trace,
         "search_stage": combat.search_stage,
         "max_potions_used": combat.max_potions_used,
         "allowed_potion_slots": combat.allowed_potion_slots,
@@ -488,6 +490,8 @@ fn compact_run_combat_progress(
         "incumbent_actions": combat.incumbent_action_count,
         "incumbent_potions_used": combat.incumbent_potions_used,
         "incumbent_potion_slots": combat.incumbent_potion_slots,
+        "incumbent_satisfies_satisfaction": combat.incumbent_satisfies_satisfaction,
+        "incumbent_ends_quality_refinement": combat.incumbent_ends_quality_refinement,
         "last_status": combat.last_status,
         "resume_kind": combat.resume_kind,
         "restart_count": combat.restart_count,

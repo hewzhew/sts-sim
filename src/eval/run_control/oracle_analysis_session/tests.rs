@@ -401,6 +401,17 @@ fn bounded_no_potion_unknown_enters_the_full_potion_stage() {
     assert_eq!(combat.search_stage, 1);
     assert_ne!(combat.max_potions_used, Some(0));
     assert_eq!(combat.allowed_potion_slots, Some(1));
+    assert_eq!(combat.stage_trace.len(), 2);
+    assert_eq!(combat.stage_trace[0].stage, 0);
+    assert_eq!(
+        combat.stage_trace[0].exit,
+        OracleAnalysisCombatStageExitV1::PromotedForReservedQuantum
+    );
+    assert_eq!(combat.stage_trace[1].stage, 1);
+    assert_eq!(
+        combat.stage_trace[1].exit,
+        OracleAnalysisCombatStageExitV1::SearchPending
+    );
     assert_eq!(analysis.explorer.combat_search_restarts, 1);
 }
 
@@ -441,6 +452,16 @@ fn new_identity_stage_keeps_its_configured_share_of_a_larger_advance_request() {
     assert_eq!(job.stage, 1);
     assert_eq!(job.work.allowed_potion_slots(), Some(0b01));
     assert_eq!(job.work.remaining_nodes(), 5);
+    let progress = report.combat.expect("identity-stage progress");
+    assert_eq!(progress.stage_trace.len(), 2);
+    assert_eq!(
+        progress.stage_trace[0].exit,
+        OracleAnalysisCombatStageExitV1::PromotedAfterAllowanceExhausted
+    );
+    assert_eq!(
+        progress.stage_trace[1].exit,
+        OracleAnalysisCombatStageExitV1::SearchPending
+    );
     assert!(analysis
         .combat_budgets
         .has_later_stage(&analysis.require_branch(0).unwrap().session, 1));
@@ -485,6 +506,10 @@ fn typed_fire_potion_rescue_materializes_when_no_potion_win_exists() {
     assert_eq!(progress.allowed_potion_slots, Some(1));
     assert_eq!(progress.incumbent_potions_used, Some(1));
     assert_eq!(progress.incumbent_potion_slots, Some(1));
+    assert_eq!(
+        progress.stage_trace.last().map(|stage| stage.exit),
+        Some(OracleAnalysisCombatStageExitV1::BoundaryReached)
+    );
     assert!(
         analysis
             .view_cursor()
@@ -716,6 +741,7 @@ fn analysis_checkpoint_restores_the_resident_combat_stage() {
 
     let checkpoint = analysis.checkpoint().expect("analysis checkpoint");
     assert_eq!(checkpoint.combat_jobs[0].stage, 1);
+    assert_eq!(checkpoint.combat_jobs[0].completed_stage_trace.len(), 1);
     let restored = OracleAnalysisSessionV1::restore(checkpoint, budgets, None, None)
         .expect("restore analysis");
     let restored_progress = restored
@@ -727,6 +753,20 @@ fn analysis_checkpoint_restores_the_resident_combat_stage() {
     assert_eq!(restored_progress.search_stage, 1);
     assert_ne!(restored_progress.max_potions_used, Some(0));
     assert_eq!(restored_progress.allowed_potion_slots, Some(1));
+    assert_eq!(restored_progress.stage_trace.len(), 2);
+    assert_eq!(restored_progress.stage_trace[0].stage, 0);
+    assert_eq!(
+        restored_progress.stage_trace[0].exit,
+        OracleAnalysisCombatStageExitV1::PromotedForReservedQuantum
+    );
+    assert_eq!(restored_progress.stage_trace[1].stage, 1);
+    assert_eq!(
+        restored_progress.stage_trace[1].exit,
+        OracleAnalysisCombatStageExitV1::Active
+    );
+    assert!(restored_progress.stage_trace.iter().all(|stage| stage
+        .historical_generation_work_at_entry
+        <= restored_progress.generation_work));
     assert_eq!(restored_progress.restart_count, 2);
 }
 

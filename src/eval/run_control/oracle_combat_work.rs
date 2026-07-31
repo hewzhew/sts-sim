@@ -135,6 +135,7 @@ pub struct OracleRunCombatWorkCheckpointV1 {
 
 #[derive(Clone, Debug)]
 pub(super) struct OracleRunCombatWorkProgressV1 {
+    pub root_exact_state_hash: String,
     /// Work charged by earlier search attempts whose frontier was not
     /// serialized and therefore is not present in the current session.
     pub historical_generation_work: u64,
@@ -170,6 +171,8 @@ pub(super) struct OracleRunCombatWorkProgressV1 {
     pub max_completed_turn_options_at_state: usize,
     pub generation_gap_count: usize,
     pub pending_witness_replay: bool,
+    pub current_policy_witness_proposals: usize,
+    pub current_policy_witness_proposal_rejections: usize,
     pub policy_witness_proposals: usize,
     pub policy_witness_proposal_rejections: usize,
     pub advisor_nodes: u64,
@@ -182,6 +185,8 @@ pub(super) struct OracleRunCombatWorkProgressV1 {
     pub incumbent_action_count: Option<usize>,
     pub incumbent_potions_used: Option<u32>,
     pub incumbent_potion_slots: Option<u64>,
+    pub incumbent_satisfies_satisfaction: Option<bool>,
+    pub incumbent_ends_quality_refinement: Option<bool>,
     pub potion_spend_requires_satisfaction: bool,
     pub incumbent_revision: u64,
     pub quanta_since_incumbent_improvement: usize,
@@ -1026,6 +1031,10 @@ impl OracleRunCombatWorkV1 {
         let local_retained_state_work = self.local_search.retained_state_work();
         let discrepancy_retained_state_work = self.discrepancy_search.retained_state_work();
         OracleRunCombatWorkProgressV1 {
+            root_exact_state_hash: crate::ai::combat_state_key::combat_exact_state_hash_v2(
+                &self.start.engine,
+                &self.start.combat,
+            ),
             historical_generation_work: self.prior_generation_work,
             current_search_generation_work: current_generation_work,
             generation_work: self
@@ -1075,6 +1084,8 @@ impl OracleRunCombatWorkV1 {
                 .generation_gap_count
                 .saturating_add(discrepancy_counters.transition_step_limit_gaps),
             pending_witness_replay: local_progress.pending_witness_replay,
+            current_policy_witness_proposals: self.policy_witness_proposals,
+            current_policy_witness_proposal_rejections: self.policy_witness_proposal_rejections,
             policy_witness_proposals: self
                 .policy_witness_proposals
                 .saturating_add(self.prior_policy_witness_proposals),
@@ -1092,6 +1103,16 @@ impl OracleRunCombatWorkV1 {
                 .map(|witness| combat_witness_potion_expenditures(&self.start, witness)),
             incumbent_potion_slots: incumbent
                 .map(|witness| combat_witness_potion_expenditure_slots(&self.start, witness)),
+            incumbent_satisfies_satisfaction: incumbent
+                .map(|witness| combat_witness_satisfies(self.satisfaction, &self.start, witness)),
+            incumbent_ends_quality_refinement: incumbent.map(|witness| {
+                combat_witness_ends_quality_refinement(
+                    &self.start,
+                    self.satisfaction,
+                    self.potion_spend_requires_satisfaction,
+                    witness,
+                )
+            }),
             potion_spend_requires_satisfaction: self.potion_spend_requires_satisfaction,
             incumbent_revision: self.incumbent_revision,
             quanta_since_incumbent_improvement: self.quanta_since_incumbent_improvement,

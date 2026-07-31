@@ -109,6 +109,48 @@ pub struct OracleAnalysisChildViewV1 {
     pub is_on_mainline: bool,
 }
 
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum OracleAnalysisCombatStageExitV1 {
+    Active,
+    PromotedForReservedQuantum,
+    PromotedAfterReadyToFinish,
+    PromotedAfterAllowanceExhausted,
+    SearchPending,
+    BudgetUnknown,
+    BoundaryReached,
+    ExhaustiveRefutation,
+    SetupOrMechanicsError,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct OracleAnalysisCombatStageTraceV1 {
+    pub stage: u8,
+    pub max_potions_used: Option<u32>,
+    pub allowed_potion_slots: Option<u64>,
+    pub potion_spend_requires_satisfaction: bool,
+    pub historical_generation_work_at_entry: u64,
+    pub generation_work: u64,
+    pub local_generation_work: u64,
+    pub discrepancy_generation_work: u64,
+    pub exact_states: usize,
+    pub completed_turn_options: usize,
+    pub policy_witness_proposals: usize,
+    pub policy_witness_proposal_rejections: usize,
+    pub incumbent_discovery_source: Option<sts_combat_planner::OracleCombatWitnessDiscoverySource>,
+    pub incumbent_final_hp: Option<i32>,
+    pub incumbent_action_count: Option<usize>,
+    pub incumbent_potions_used: Option<u32>,
+    pub incumbent_potion_slots: Option<u64>,
+    pub incumbent_satisfies_satisfaction: Option<bool>,
+    pub incumbent_ends_quality_refinement: Option<bool>,
+    pub remaining_nodes: usize,
+    pub remaining_wall_ms: Option<u64>,
+    pub last_status: Option<String>,
+    pub exit: OracleAnalysisCombatStageExitV1,
+}
+
 #[derive(Clone, Debug, Serialize)]
 #[serde(deny_unknown_fields)]
 /// Cumulative and currently retained search evidence for one combat boundary.
@@ -117,6 +159,10 @@ pub struct OracleAnalysisChildViewV1 {
 /// discrepancy fields describe the live frontiers retained by this process.
 /// This report observes budget use; it does not grant additional search work.
 pub struct OracleAnalysisCombatProgressV1 {
+    /// Exact combat identity shared by every stage entry below.
+    pub root_exact_state_hash: String,
+    /// Completed stages followed by the current/final stage snapshot.
+    pub stage_trace: Vec<OracleAnalysisCombatStageTraceV1>,
     /// Zero is the conserving/low-fidelity challenge; later stages use the
     /// configured full combat policy.
     pub search_stage: u8,
@@ -164,6 +210,8 @@ pub struct OracleAnalysisCombatProgressV1 {
     pub incumbent_action_count: Option<usize>,
     pub incumbent_potions_used: Option<u32>,
     pub incumbent_potion_slots: Option<u64>,
+    pub incumbent_satisfies_satisfaction: Option<bool>,
+    pub incumbent_ends_quality_refinement: Option<bool>,
     pub quantum_count: usize,
     pub remaining_nodes: usize,
     pub remaining_wall_ms: Option<u64>,
@@ -348,6 +396,8 @@ pub struct OracleAnalysisCombatJobCheckpointV1 {
     /// restored their work with the configured full combat policy.
     #[serde(default = "default_oracle_analysis_combat_stage")]
     pub stage: u8,
+    #[serde(default)]
+    pub completed_stage_trace: Vec<OracleAnalysisCombatStageTraceV1>,
     pub work: OracleRunCombatWorkCheckpointV1,
 }
 
@@ -386,6 +436,7 @@ pub struct OracleAnalysisSessionV1 {
 
 struct OracleAnalysisCombatJobV1 {
     stage: u8,
+    completed_stage_trace: Vec<OracleAnalysisCombatStageTraceV1>,
     work: OracleRunCombatWorkV1,
 }
 
@@ -422,7 +473,16 @@ impl OracleAnalysisSessionV1 {
         let combat_jobs = explorer
             .drain_pending_combats()
             .into_iter()
-            .map(|(branch_id, stage, work)| (branch_id, OracleAnalysisCombatJobV1 { stage, work }))
+            .map(|(branch_id, stage, work)| {
+                (
+                    branch_id,
+                    OracleAnalysisCombatJobV1 {
+                        stage,
+                        completed_stage_trace: Vec::new(),
+                        work,
+                    },
+                )
+            })
             .collect::<BTreeMap<_, _>>();
         let mut session = Self {
             explorer,
@@ -480,6 +540,7 @@ impl OracleAnalysisSessionV1 {
             )?;
             let job = OracleAnalysisCombatJobV1 {
                 stage: saved.stage,
+                completed_stage_trace: saved.completed_stage_trace,
                 work,
             };
             if combat_jobs.insert(saved.branch_id, job).is_some() {
@@ -524,6 +585,7 @@ impl OracleAnalysisSessionV1 {
                 .map(|(branch_id, job)| OracleAnalysisCombatJobCheckpointV1 {
                     branch_id: *branch_id,
                     stage: job.stage,
+                    completed_stage_trace: job.completed_stage_trace.clone(),
                     work: job.work.checkpoint(),
                 })
                 .collect(),
@@ -1126,8 +1188,14 @@ impl OracleAnalysisSessionV1 {
                     .for_session_stage(&branch.session, stage),
                 self.combat_budgets.guidance_bundle.as_deref(),
             )?;
-            self.combat_jobs
-                .insert(source_node_id, OracleAnalysisCombatJobV1 { stage, work });
+            self.combat_jobs.insert(
+                source_node_id,
+                OracleAnalysisCombatJobV1 {
+                    stage,
+                    completed_stage_trace: Vec::new(),
+                    work,
+                },
+            );
         }
         let resumes_existing_search = self
             .combat_jobs
@@ -1164,7 +1232,10 @@ impl OracleAnalysisSessionV1 {
             // whether a potion changes the outcome.
             if quanta_served > 0
                 && quanta_served.saturating_add(1) == request.max_quanta
-                && self.promote_combat_job_if_needed(source_node_id)?
+                && self.promote_combat_job_if_needed_with_exit(
+                    source_node_id,
+                    OracleAnalysisCombatStageExitV1::PromotedForReservedQuantum,
+                )?
             {
                 // Promotion is the work: the reserved final quantum below is
                 // served against the next configured exact stage.
@@ -1186,7 +1257,16 @@ impl OracleAnalysisSessionV1 {
                 RunControlCombatWorkAdvanceV1::ReadyToFinish
                 | RunControlCombatWorkAdvanceV1::AllowanceExhausted => {
                     quanta_served = quanta_served.saturating_add(1);
-                    if self.promote_combat_job_if_needed(source_node_id)? {
+                    let stage_exit = match advance {
+                        RunControlCombatWorkAdvanceV1::ReadyToFinish => {
+                            OracleAnalysisCombatStageExitV1::PromotedAfterReadyToFinish
+                        }
+                        RunControlCombatWorkAdvanceV1::AllowanceExhausted => {
+                            OracleAnalysisCombatStageExitV1::PromotedAfterAllowanceExhausted
+                        }
+                        _ => unreachable!("matched terminal staged advance"),
+                    };
+                    if self.promote_combat_job_if_needed_with_exit(source_node_id, stage_exit)? {
                         if deadline.is_some_and(|deadline| Instant::now() >= deadline) {
                             break;
                         }
@@ -1206,7 +1286,10 @@ impl OracleAnalysisSessionV1 {
                 status: OracleAnalysisAdvanceStatusV1::BudgetUnknown,
                 quanta_served,
                 elapsed_ms: elapsed_ms(started),
-                combat: self.combat_progress(source_node_id),
+                combat: self.combat_progress_with_exit(
+                    source_node_id,
+                    OracleAnalysisCombatStageExitV1::BudgetUnknown,
+                ),
             });
         }
         if terminal_advance != Some(RunControlCombatWorkAdvanceV1::ReadyToFinish) {
@@ -1215,7 +1298,10 @@ impl OracleAnalysisSessionV1 {
                 status: OracleAnalysisAdvanceStatusV1::SearchPending,
                 quanta_served,
                 elapsed_ms: elapsed_ms(started),
-                combat: self.combat_progress(source_node_id),
+                combat: self.combat_progress_with_exit(
+                    source_node_id,
+                    OracleAnalysisCombatStageExitV1::SearchPending,
+                ),
             });
         }
 
@@ -1223,7 +1309,6 @@ impl OracleAnalysisSessionV1 {
             .combat_jobs
             .remove(&source_node_id)
             .expect("ready analysis combat job exists");
-        let final_progress = combat_progress_view(&job);
         let child_node_id = match self.materialize_combat_work(source_node_id, &job.work) {
             Ok(child_node_id) => child_node_id,
             Err(error) => {
@@ -1251,6 +1336,24 @@ impl OracleAnalysisSessionV1 {
                 _ => OracleAnalysisAdvanceStatusV1::BudgetUnknown,
             }
         };
+        let stage_exit = match &status {
+            OracleAnalysisAdvanceStatusV1::BoundaryReached { .. } => {
+                OracleAnalysisCombatStageExitV1::BoundaryReached
+            }
+            OracleAnalysisAdvanceStatusV1::BudgetUnknown => {
+                OracleAnalysisCombatStageExitV1::BudgetUnknown
+            }
+            OracleAnalysisAdvanceStatusV1::ExhaustiveRefutation => {
+                OracleAnalysisCombatStageExitV1::ExhaustiveRefutation
+            }
+            OracleAnalysisAdvanceStatusV1::SetupOrMechanicsError => {
+                OracleAnalysisCombatStageExitV1::SetupOrMechanicsError
+            }
+            OracleAnalysisAdvanceStatusV1::SearchPending => {
+                OracleAnalysisCombatStageExitV1::SearchPending
+            }
+        };
+        let final_progress = combat_progress_view_with_exit(&job, stage_exit);
         Ok(OracleAnalysisAdvanceReportV1 {
             source_node_id,
             status,
@@ -1389,14 +1492,30 @@ impl OracleAnalysisSessionV1 {
                     .for_session_stage(&branch.session, stage),
                 self.combat_budgets.guidance_bundle.as_deref(),
             )?;
-            OracleAnalysisCombatJobV1 { stage, work }
+            OracleAnalysisCombatJobV1 {
+                stage,
+                completed_stage_trace: Vec::new(),
+                work,
+            }
         };
         self.combat_jobs.insert(node_id, job);
         Ok(())
     }
 
+    #[cfg(test)]
     fn promote_combat_job_if_needed(&mut self, node_id: usize) -> Result<bool, String> {
-        let (next_stage, prior_work) = {
+        self.promote_combat_job_if_needed_with_exit(
+            node_id,
+            OracleAnalysisCombatStageExitV1::PromotedForReservedQuantum,
+        )
+    }
+
+    fn promote_combat_job_if_needed_with_exit(
+        &mut self,
+        node_id: usize,
+        stage_exit: OracleAnalysisCombatStageExitV1,
+    ) -> Result<bool, String> {
+        let (next_stage, prior_work, completed_stage_trace) = {
             let branch = self.require_branch(node_id)?;
             let job = self
                 .combat_jobs
@@ -1408,7 +1527,13 @@ impl OracleAnalysisSessionV1 {
             {
                 return Ok(false);
             }
-            (job.stage.saturating_add(1), job.work.checkpoint())
+            let mut completed_stage_trace = job.completed_stage_trace.clone();
+            completed_stage_trace.push(combat_stage_trace_view(job, stage_exit));
+            (
+                job.stage.saturating_add(1),
+                job.work.checkpoint(),
+                completed_stage_trace,
+            )
         };
         let work = {
             let branch = self.require_branch(node_id)?;
@@ -1428,6 +1553,7 @@ impl OracleAnalysisSessionV1 {
             node_id,
             OracleAnalysisCombatJobV1 {
                 stage: next_stage,
+                completed_stage_trace,
                 work,
             },
         );
@@ -1490,7 +1616,17 @@ impl OracleAnalysisSessionV1 {
     }
 
     fn combat_progress(&self, node_id: usize) -> Option<OracleAnalysisCombatProgressV1> {
-        self.combat_jobs.get(&node_id).map(combat_progress_view)
+        self.combat_progress_with_exit(node_id, OracleAnalysisCombatStageExitV1::Active)
+    }
+
+    fn combat_progress_with_exit(
+        &self,
+        node_id: usize,
+        stage_exit: OracleAnalysisCombatStageExitV1,
+    ) -> Option<OracleAnalysisCombatProgressV1> {
+        self.combat_jobs
+            .get(&node_id)
+            .map(|job| combat_progress_view_with_exit(job, stage_exit))
     }
 
     fn seed_canonical_edges(&mut self) {
@@ -1673,10 +1809,59 @@ fn parse_choice_ref(value: &str) -> Result<(usize, &str), String> {
     Ok((node, key))
 }
 
-fn combat_progress_view(job: &OracleAnalysisCombatJobV1) -> OracleAnalysisCombatProgressV1 {
+fn combat_stage_trace_view(
+    job: &OracleAnalysisCombatJobV1,
+    exit: OracleAnalysisCombatStageExitV1,
+) -> OracleAnalysisCombatStageTraceV1 {
+    let progress = job.work.progress();
+    combat_stage_trace_view_from_progress(job, &progress, exit)
+}
+
+fn combat_stage_trace_view_from_progress(
+    job: &OracleAnalysisCombatJobV1,
+    progress: &OracleRunCombatWorkProgressV1,
+    exit: OracleAnalysisCombatStageExitV1,
+) -> OracleAnalysisCombatStageTraceV1 {
+    OracleAnalysisCombatStageTraceV1 {
+        stage: job.stage,
+        max_potions_used: job.work.max_potions_used(),
+        allowed_potion_slots: job.work.allowed_potion_slots(),
+        potion_spend_requires_satisfaction: progress.potion_spend_requires_satisfaction,
+        historical_generation_work_at_entry: progress.historical_generation_work,
+        generation_work: progress.current_search_generation_work,
+        local_generation_work: progress.local_generation_work,
+        discrepancy_generation_work: progress.discrepancy_generation_work,
+        exact_states: progress.exact_states,
+        completed_turn_options: progress.completed_turn_options,
+        policy_witness_proposals: progress.current_policy_witness_proposals,
+        policy_witness_proposal_rejections: progress.current_policy_witness_proposal_rejections,
+        incumbent_discovery_source: progress.incumbent_discovery_source,
+        incumbent_final_hp: progress.incumbent_final_hp,
+        incumbent_action_count: progress.incumbent_action_count,
+        incumbent_potions_used: progress.incumbent_potions_used,
+        incumbent_potion_slots: progress.incumbent_potion_slots,
+        incumbent_satisfies_satisfaction: progress.incumbent_satisfies_satisfaction,
+        incumbent_ends_quality_refinement: progress.incumbent_ends_quality_refinement,
+        remaining_nodes: job.work.remaining_nodes(),
+        remaining_wall_ms: job.work.remaining_wall_ms(),
+        last_status: progress.last_status.map(str::to_owned),
+        exit,
+    }
+}
+
+fn combat_progress_view_with_exit(
+    job: &OracleAnalysisCombatJobV1,
+    stage_exit: OracleAnalysisCombatStageExitV1,
+) -> OracleAnalysisCombatProgressV1 {
     let work = &job.work;
     let progress: OracleRunCombatWorkProgressV1 = work.progress();
+    let mut stage_trace = job.completed_stage_trace.clone();
+    stage_trace.push(combat_stage_trace_view_from_progress(
+        job, &progress, stage_exit,
+    ));
     OracleAnalysisCombatProgressV1 {
+        root_exact_state_hash: progress.root_exact_state_hash,
+        stage_trace,
         search_stage: job.stage,
         max_potions_used: work.max_potions_used(),
         allowed_potion_slots: work.allowed_potion_slots(),
@@ -1715,6 +1900,8 @@ fn combat_progress_view(job: &OracleAnalysisCombatJobV1) -> OracleAnalysisCombat
         incumbent_action_count: progress.incumbent_action_count,
         incumbent_potions_used: progress.incumbent_potions_used,
         incumbent_potion_slots: progress.incumbent_potion_slots,
+        incumbent_satisfies_satisfaction: progress.incumbent_satisfies_satisfaction,
+        incumbent_ends_quality_refinement: progress.incumbent_ends_quality_refinement,
         quantum_count: work.quantum_count(),
         remaining_nodes: work.remaining_nodes(),
         remaining_wall_ms: work.remaining_wall_ms(),

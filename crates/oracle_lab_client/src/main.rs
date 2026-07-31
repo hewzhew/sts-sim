@@ -659,6 +659,8 @@ fn compact_combat_progress(combat: Option<&Value>) -> Value {
         return Value::Null;
     };
     json!({
+        "root_exact_state_hash": combat.get("root_exact_state_hash"),
+        "stage_trace": combat.get("stage_trace"),
         "search_stage": combat.get("search_stage"),
         "max_potions_used": combat.get("max_potions_used"),
         "allowed_potion_slots": combat.get("allowed_potion_slots"),
@@ -683,6 +685,8 @@ fn compact_combat_progress(combat: Option<&Value>) -> Value {
         "incumbent_actions": combat.get("incumbent_action_count"),
         "incumbent_potions_used": combat.get("incumbent_potions_used"),
         "incumbent_potion_slots": combat.get("incumbent_potion_slots"),
+        "incumbent_satisfies_satisfaction": combat.get("incumbent_satisfies_satisfaction"),
+        "incumbent_ends_quality_refinement": combat.get("incumbent_ends_quality_refinement"),
         "last_status": combat.get("last_status"),
         "quantum_count": combat.get("quantum_count"),
         "remaining_nodes": combat.get("remaining_nodes"),
