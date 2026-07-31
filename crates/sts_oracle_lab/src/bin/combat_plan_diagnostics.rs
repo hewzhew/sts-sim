@@ -10,7 +10,7 @@ use sts_oracle_runtime::sim::combat::{
 };
 use sts_oracle_runtime::sim::combat_action::combat_action_key;
 
-use super::combat_trace_view::combat_action_label;
+use super::combat_trace_view::{combat_action_label, combat_position_snapshot};
 use super::exact_turn_corridor::load_action_segments as load_combat_action_segments;
 use super::{oracle_lab_runtime_identity, print_json};
 
@@ -126,6 +126,7 @@ pub(super) fn run_trace(args: CombatCasePlanTraceArgs) -> Result<(), String> {
 
     for (index, input) in inputs.into_iter().enumerate() {
         let before_hash = combat_exact_state_hash_v2(&position.engine, &position.combat);
+        let before_state = combat_position_snapshot(&position);
         let label = combat_action_label(&position, &input);
         let action_key = combat_action_key(&position.combat, &input);
         let step = stepper.apply_to_stable(
@@ -144,13 +145,16 @@ pub(super) fn run_trace(args: CombatCasePlanTraceArgs) -> Result<(), String> {
             .flatten();
         let after_hash = (!step.truncated)
             .then(|| combat_exact_state_hash_v2(&step.position.engine, &step.position.combat));
+        let after_state = (!step.truncated).then(|| combat_position_snapshot(&step.position));
         trace.push(json!({
             "action_index": index,
             "label": label,
             "action_key": action_key,
             "input": input,
             "before_exact_state_hash": before_hash,
+            "before_state": before_state,
             "after_exact_state_hash": after_hash,
+            "after_state": after_state,
             "engine_steps": step.engine_steps,
             "truncated": step.truncated,
             "timed_out": step.timed_out,
