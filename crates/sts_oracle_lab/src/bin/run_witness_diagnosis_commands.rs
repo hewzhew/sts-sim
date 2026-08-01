@@ -101,6 +101,16 @@ pub(super) fn diagnose(
                 .map(compact_combat_pivot)
                 .collect::<Vec<_>>(),
             "recovery_pivots": report.recovery_pivots,
+            "current_hp_epoch": {
+                "last_full_hp_reset": report.current_hp_epoch.last_full_hp_reset,
+                "start": report.current_hp_epoch.start,
+                "current": report.current_hp_epoch.current,
+                "net_hp_change": report.current_hp_epoch.net_hp_change,
+                "combat_timeline": report.current_hp_epoch.combat_timeline
+                    .iter()
+                    .map(compact_combat_pivot)
+                    .collect::<Vec<_>>(),
+            },
         })
     };
 

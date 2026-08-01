@@ -217,8 +217,9 @@ pub use progress_replay::{
     exact_replay_run_progress_journal_prefix_v1, exact_replay_run_progress_journal_v1,
     splice_exact_combat_resolution_v1, ExactRunProgressReplayReportV1,
     ExactRunWitnessDiagnosisReportV1, ExactRunWitnessPolicyAuditReportV1,
-    RunWitnessCombatTimelineEntryV1, RunWitnessPotionSnapshotV1, RunWitnessRecoveryPivotV1,
-    RunWitnessResourceSnapshotV1, RunWitnessStrategicDecisionV1, WitnessPolicyDecisionAuditV1,
+    RunWitnessCombatTimelineEntryV1, RunWitnessCurrentHpEpochV1, RunWitnessFullHpResetV1,
+    RunWitnessPotionSnapshotV1, RunWitnessRecoveryPivotV1, RunWitnessResourceSnapshotV1,
+    RunWitnessStrategicDecisionV1, WitnessPolicyDecisionAuditV1,
 };
 pub use progress_step::{RunControlAutoStopKind, RunControlAutoStopV1, RunProgressStepV1};
 pub use registry::{add_case_to_benchmark_registry, BenchmarkCasePaths};

@@ -108,6 +108,24 @@ pub struct RunWitnessRecoveryPivotV1 {
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct RunWitnessFullHpResetV1 {
+    pub journal_entry: usize,
+    pub boundary: String,
+    pub chosen_label: Option<String>,
+    pub before: RunWitnessResourceSnapshotV1,
+    pub after: RunWitnessResourceSnapshotV1,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct RunWitnessCurrentHpEpochV1 {
+    pub last_full_hp_reset: Option<RunWitnessFullHpResetV1>,
+    pub start: RunWitnessResourceSnapshotV1,
+    pub current: RunWitnessResourceSnapshotV1,
+    pub net_hp_change: i32,
+    pub combat_timeline: Vec<RunWitnessCombatTimelineEntryV1>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct ExactRunWitnessDiagnosisReportV1 {
     pub replay: ExactRunProgressReplayReportV1,
     pub policy: ExactRunWitnessPolicyAuditReportV1,
@@ -115,6 +133,7 @@ pub struct ExactRunWitnessDiagnosisReportV1 {
     pub highest_peak_hp_loss_combats: Vec<RunWitnessCombatTimelineEntryV1>,
     pub lowest_post_combat_hp_combats: Vec<RunWitnessCombatTimelineEntryV1>,
     pub recovery_pivots: Vec<RunWitnessRecoveryPivotV1>,
+    pub current_hp_epoch: RunWitnessCurrentHpEpochV1,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -232,6 +251,9 @@ where
 {
     let initial = canonical_replay_session(seed, ascension, expected_final);
     let mut before_resources = run_witness_resource_snapshot_v1(&initial);
+    let mut hp_epoch_start = before_resources.clone();
+    let mut last_full_hp_reset = None;
+    let mut hp_epoch_combats = Vec::new();
     let mut strategic_decisions_since_combat = Vec::new();
     let mut combat_timeline = Vec::new();
     let mut recovery_pivots = Vec::new();
@@ -244,6 +266,7 @@ where
         decision_order,
         |entry_index, entry, session| {
             let after_resources = run_witness_resource_snapshot_v1(session);
+            let full_hp_reset = establishes_full_hp_reset_v1(&before_resources, &after_resources);
             if after_resources.current_hp > before_resources.current_hp {
                 let (boundary, chosen_label) = progress_entry_label_v1(entry);
                 recovery_pivots.push(RunWitnessRecoveryPivotV1 {
@@ -278,7 +301,7 @@ where
                             before_resources.current_hp.min(after_resources.current_hp),
                             i32::min,
                         );
-                    combat_timeline.push(RunWitnessCombatTimelineEntryV1 {
+                    let combat = RunWitnessCombatTimelineEntryV1 {
                         journal_entry: entry_index,
                         act: before_resources.act,
                         floor: before_resources.floor,
@@ -296,9 +319,25 @@ where
                         preceding_strategic_decisions: std::mem::take(
                             &mut strategic_decisions_since_combat,
                         ),
-                    });
+                    };
+                    combat_timeline.push(combat.clone());
+                    if !full_hp_reset {
+                        hp_epoch_combats.push(combat);
+                    }
                 }
                 RunProgressStepV1::ForcedTransition(_) | RunProgressStepV1::Stop(_) => {}
+            }
+            if full_hp_reset {
+                let (boundary, chosen_label) = progress_entry_label_v1(entry);
+                last_full_hp_reset = Some(RunWitnessFullHpResetV1 {
+                    journal_entry: entry_index,
+                    boundary,
+                    chosen_label,
+                    before: before_resources.clone(),
+                    after: after_resources.clone(),
+                });
+                hp_epoch_start = after_resources.clone();
+                hp_epoch_combats.clear();
             }
             before_resources = after_resources;
             Ok(())
@@ -331,6 +370,14 @@ where
     });
     recovery_pivots.truncate(pivot_limit);
 
+    let current_hp_epoch = RunWitnessCurrentHpEpochV1 {
+        last_full_hp_reset,
+        net_hp_change: before_resources.current_hp - hp_epoch_start.current_hp,
+        start: hp_epoch_start,
+        current: before_resources,
+        combat_timeline: hp_epoch_combats,
+    };
+
     Ok(ExactRunWitnessDiagnosisReportV1 {
         replay: policy.replay.clone(),
         policy,
@@ -338,6 +385,7 @@ where
         highest_peak_hp_loss_combats,
         lowest_post_combat_hp_combats,
         recovery_pivots,
+        current_hp_epoch,
     })
 }
 
@@ -480,6 +528,15 @@ fn run_witness_resource_snapshot_v1(session: &RunControlSession) -> RunWitnessRe
             })
             .collect(),
     }
+}
+
+fn establishes_full_hp_reset_v1(
+    before: &RunWitnessResourceSnapshotV1,
+    after: &RunWitnessResourceSnapshotV1,
+) -> bool {
+    before.current_hp < before.max_hp
+        && after.current_hp == after.max_hp
+        && after.current_hp > before.current_hp
 }
 
 fn strategic_decision_v1(
@@ -881,5 +938,38 @@ mod tests {
         assert!(report.highest_peak_hp_loss_combats.is_empty());
         assert!(report.lowest_post_combat_hp_combats.is_empty());
         assert!(report.recovery_pivots.is_empty());
+        assert!(report.current_hp_epoch.last_full_hp_reset.is_none());
+        assert_eq!(report.current_hp_epoch.net_hp_change, 0);
+        assert_eq!(
+            report.current_hp_epoch.start,
+            report.current_hp_epoch.current
+        );
+        assert!(report.current_hp_epoch.combat_timeline.is_empty());
+    }
+
+    #[test]
+    fn full_hp_reset_breaks_prior_damage_lineage_only_when_hp_reaches_the_cap() {
+        let snapshot = |current_hp, max_hp| RunWitnessResourceSnapshotV1 {
+            act: 2,
+            floor: 32,
+            current_hp,
+            max_hp,
+            gold: 0,
+            deck_size: 0,
+            potions: Vec::new(),
+        };
+
+        assert!(establishes_full_hp_reset_v1(
+            &snapshot(8, 80),
+            &snapshot(80, 80)
+        ));
+        assert!(!establishes_full_hp_reset_v1(
+            &snapshot(8, 80),
+            &snapshot(42, 80)
+        ));
+        assert!(!establishes_full_hp_reset_v1(
+            &snapshot(80, 80),
+            &snapshot(80, 80)
+        ));
     }
 }

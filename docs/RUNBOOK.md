@@ -502,10 +502,13 @@ history before changing combat policy or starting a seed panel:
 The command performs exact journal replay without search. Its compact default
 reports the largest peak combat HP losses, lowest post-combat HP boundaries,
 largest recovery transitions, typed potion identity, nearby typed route/card/
-shop/Campfire choices, and the first decision where the current owner ranks a
-different candidate first. `--details` additionally emits the complete combat
-timeline and every owner divergence. A divergence is a counterfactual candidate,
-not causal proof. Import the exported prefix into a fresh workspace, apply one
+shop/Campfire choices, the combat-only HP lineage after the most recent full-HP
+reset, and the first decision where the current owner ranks a different
+candidate first. The HP epoch prevents an Act-transition heal from making an
+earlier large loss look like a direct cause of the current HP. `--details`
+additionally emits the complete combat timeline and every owner divergence. A
+divergence is a counterfactual candidate, not causal proof. Import the exported
+prefix into a fresh workspace, apply one
 alternative, and give only that branch a bounded downstream wall before
 escalating to more seeds:
 
