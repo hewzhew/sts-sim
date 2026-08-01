@@ -2,14 +2,17 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
+use crate::content::potions::PotionId;
+
 use super::combat_line_executor::drawn_cards_from_action_result;
 use super::combat_line_trace::{
     combat_automation_opportunity_state_v1, combat_automation_step_state_v1,
 };
 use super::oracle_run_explorer::run_session_fingerprint_v2;
 use super::{
-    RunCombatResolutionBoundaryV1, RunCombatResolutionV1, RunControlConfig, RunControlSession,
-    RunDecisionBoundaryV1, RunDecisionTransactionV1, RunProgressJournalV1, RunProgressStepV1,
+    DecisionCandidateKey, RunCombatResolutionBoundaryV1, RunCombatResolutionV1, RunControlConfig,
+    RunControlSession, RunDecisionBoundaryV1, RunDecisionTransactionV1, RunProgressJournalV1,
+    RunProgressStepV1,
 };
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -43,6 +46,75 @@ pub struct WitnessPolicyDecisionAuditV1 {
     pub owner_candidate_count: usize,
     pub owner_first_candidate_id: Option<String>,
     pub owner_first_label: Option<String>,
+    pub resources: RunWitnessResourceSnapshotV1,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+pub struct RunWitnessPotionSnapshotV1 {
+    pub id: PotionId,
+    pub uuid: u32,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct RunWitnessResourceSnapshotV1 {
+    pub act: u8,
+    pub floor: i32,
+    pub current_hp: i32,
+    pub max_hp: i32,
+    pub gold: i32,
+    pub deck_size: usize,
+    pub potions: Vec<Option<RunWitnessPotionSnapshotV1>>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct RunWitnessStrategicDecisionV1 {
+    pub journal_entry: usize,
+    pub act: u8,
+    pub floor: i32,
+    pub boundary: String,
+    pub chosen_label: String,
+    pub key: DecisionCandidateKey,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct RunWitnessCombatTimelineEntryV1 {
+    pub journal_entry: usize,
+    pub act: u8,
+    pub floor: i32,
+    pub encounter: String,
+    pub resolution_kind: String,
+    pub source: String,
+    pub action_count: usize,
+    pub hp_before: i32,
+    pub minimum_combat_hp: i32,
+    pub hp_after: i32,
+    pub peak_hp_loss: i32,
+    pub net_hp_change: i32,
+    pub potions_before: Vec<Option<RunWitnessPotionSnapshotV1>>,
+    pub potions_after: Vec<Option<RunWitnessPotionSnapshotV1>>,
+    pub preceding_strategic_decisions: Vec<RunWitnessStrategicDecisionV1>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct RunWitnessRecoveryPivotV1 {
+    pub journal_entry: usize,
+    pub act: u8,
+    pub floor: i32,
+    pub boundary: String,
+    pub chosen_label: Option<String>,
+    pub hp_before: i32,
+    pub hp_after: i32,
+    pub hp_recovered: i32,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct ExactRunWitnessDiagnosisReportV1 {
+    pub replay: ExactRunProgressReplayReportV1,
+    pub policy: ExactRunWitnessPolicyAuditReportV1,
+    pub combat_timeline: Vec<RunWitnessCombatTimelineEntryV1>,
+    pub highest_peak_hp_loss_combats: Vec<RunWitnessCombatTimelineEntryV1>,
+    pub lowest_post_combat_hp_combats: Vec<RunWitnessCombatTimelineEntryV1>,
+    pub recovery_pivots: Vec<RunWitnessRecoveryPivotV1>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -76,6 +148,7 @@ pub fn exact_replay_run_progress_journal_v1(
         ascension,
         journal,
         expected_final,
+        |_, _, _| Ok(()),
         |_, _, _| Ok(()),
     )
 }
@@ -128,10 +201,157 @@ pub fn exact_audit_run_progress_journal_policy_v1<F>(
     ascension: u8,
     journal: &RunProgressJournalV1,
     expected_final: &RunControlSession,
-    mut decision_order: F,
+    decision_order: F,
 ) -> Result<ExactRunWitnessPolicyAuditReportV1, String>
 where
     F: FnMut(&RunControlSession) -> Vec<String>,
+{
+    exact_audit_run_progress_journal_policy_observed_v1(
+        seed,
+        ascension,
+        journal,
+        expected_final,
+        decision_order,
+        |_, _, _| Ok(()),
+    )
+}
+
+/// Replays one exact run witness once and returns the compact typed pivots
+/// needed to choose a bounded counterfactual. This is diagnostic only: it
+/// neither changes owner policy nor assigns causal credit to a divergence.
+pub fn exact_diagnose_run_progress_journal_v1<F>(
+    seed: u64,
+    ascension: u8,
+    journal: &RunProgressJournalV1,
+    expected_final: &RunControlSession,
+    decision_order: F,
+    max_pivots: usize,
+) -> Result<ExactRunWitnessDiagnosisReportV1, String>
+where
+    F: FnMut(&RunControlSession) -> Vec<String>,
+{
+    let initial = canonical_replay_session(seed, ascension, expected_final);
+    let mut before_resources = run_witness_resource_snapshot_v1(&initial);
+    let mut strategic_decisions_since_combat = Vec::new();
+    let mut combat_timeline = Vec::new();
+    let mut recovery_pivots = Vec::new();
+
+    let policy = exact_audit_run_progress_journal_policy_observed_v1(
+        seed,
+        ascension,
+        journal,
+        expected_final,
+        decision_order,
+        |entry_index, entry, session| {
+            let after_resources = run_witness_resource_snapshot_v1(session);
+            if after_resources.current_hp > before_resources.current_hp {
+                let (boundary, chosen_label) = progress_entry_label_v1(entry);
+                recovery_pivots.push(RunWitnessRecoveryPivotV1 {
+                    journal_entry: entry_index,
+                    act: before_resources.act,
+                    floor: before_resources.floor,
+                    boundary,
+                    chosen_label,
+                    hp_before: before_resources.current_hp,
+                    hp_after: after_resources.current_hp,
+                    hp_recovered: after_resources.current_hp - before_resources.current_hp,
+                });
+            }
+
+            match entry {
+                RunProgressStepV1::Decision(record) => {
+                    if let Some(decision) =
+                        strategic_decision_v1(entry_index, &before_resources, record)
+                    {
+                        strategic_decisions_since_combat.push(decision);
+                    }
+                }
+                RunProgressStepV1::CombatResolution(record) => {
+                    let minimum_combat_hp = record
+                        .trajectory
+                        .actions
+                        .iter()
+                        .filter_map(|action| {
+                            action.combat_after.as_ref().map(|state| state.player_hp)
+                        })
+                        .fold(
+                            before_resources.current_hp.min(after_resources.current_hp),
+                            i32::min,
+                        );
+                    combat_timeline.push(RunWitnessCombatTimelineEntryV1 {
+                        journal_entry: entry_index,
+                        act: before_resources.act,
+                        floor: before_resources.floor,
+                        encounter: combat_encounter_label_v1(record),
+                        resolution_kind: format!("{:?}", record.kind),
+                        source: record.trajectory.source.label().to_string(),
+                        action_count: record.trajectory.action_count,
+                        hp_before: before_resources.current_hp,
+                        minimum_combat_hp,
+                        hp_after: after_resources.current_hp,
+                        peak_hp_loss: (before_resources.current_hp - minimum_combat_hp).max(0),
+                        net_hp_change: after_resources.current_hp - before_resources.current_hp,
+                        potions_before: before_resources.potions.clone(),
+                        potions_after: after_resources.potions.clone(),
+                        preceding_strategic_decisions: std::mem::take(
+                            &mut strategic_decisions_since_combat,
+                        ),
+                    });
+                }
+                RunProgressStepV1::ForcedTransition(_) | RunProgressStepV1::Stop(_) => {}
+            }
+            before_resources = after_resources;
+            Ok(())
+        },
+    )?;
+
+    let pivot_limit = max_pivots.max(1);
+    let mut highest_peak_hp_loss_combats = combat_timeline.clone();
+    highest_peak_hp_loss_combats.sort_by(|left, right| {
+        right
+            .peak_hp_loss
+            .cmp(&left.peak_hp_loss)
+            .then_with(|| left.journal_entry.cmp(&right.journal_entry))
+    });
+    highest_peak_hp_loss_combats.truncate(pivot_limit);
+
+    let mut lowest_post_combat_hp_combats = combat_timeline.clone();
+    lowest_post_combat_hp_combats.sort_by(|left, right| {
+        left.hp_after
+            .cmp(&right.hp_after)
+            .then_with(|| left.journal_entry.cmp(&right.journal_entry))
+    });
+    lowest_post_combat_hp_combats.truncate(pivot_limit);
+
+    recovery_pivots.sort_by(|left, right| {
+        right
+            .hp_recovered
+            .cmp(&left.hp_recovered)
+            .then_with(|| left.journal_entry.cmp(&right.journal_entry))
+    });
+    recovery_pivots.truncate(pivot_limit);
+
+    Ok(ExactRunWitnessDiagnosisReportV1 {
+        replay: policy.replay.clone(),
+        policy,
+        combat_timeline,
+        highest_peak_hp_loss_combats,
+        lowest_post_combat_hp_combats,
+        recovery_pivots,
+    })
+}
+
+fn exact_audit_run_progress_journal_policy_observed_v1<F, G>(
+    seed: u64,
+    ascension: u8,
+    journal: &RunProgressJournalV1,
+    expected_final: &RunControlSession,
+    mut decision_order: F,
+    after_entry: G,
+) -> Result<ExactRunWitnessPolicyAuditReportV1, String>
+where
+    F: FnMut(&RunControlSession) -> Vec<String>,
+    G: FnMut(usize, &RunProgressStepV1, &RunControlSession) -> Result<(), String>,
 {
     let mut decision_audits = Vec::new();
     let replay = exact_replay_run_progress_journal_observed_v1(
@@ -174,9 +394,11 @@ where
                 owner_candidate_count: owner_order.len(),
                 owner_first_candidate_id,
                 owner_first_label,
+                resources: run_witness_resource_snapshot_v1(session),
             });
             Ok(())
         },
+        after_entry,
     )?;
 
     let decisions_with_owner_preferences = decision_audits
@@ -238,6 +460,119 @@ where
     })
 }
 
+fn run_witness_resource_snapshot_v1(session: &RunControlSession) -> RunWitnessResourceSnapshotV1 {
+    RunWitnessResourceSnapshotV1 {
+        act: session.run_state.act_num,
+        floor: session.run_state.floor_num,
+        current_hp: session.run_state.current_hp,
+        max_hp: session.run_state.max_hp,
+        gold: session.run_state.gold,
+        deck_size: session.run_state.master_deck.len(),
+        potions: session
+            .run_state
+            .potions
+            .iter()
+            .map(|slot| {
+                slot.as_ref().map(|potion| RunWitnessPotionSnapshotV1 {
+                    id: potion.id,
+                    uuid: potion.uuid,
+                })
+            })
+            .collect(),
+    }
+}
+
+fn strategic_decision_v1(
+    journal_entry: usize,
+    resources: &RunWitnessResourceSnapshotV1,
+    record: &RunDecisionTransactionV1,
+) -> Option<RunWitnessStrategicDecisionV1> {
+    let selected = record
+        .before
+        .candidates
+        .iter()
+        .find(|candidate| candidate.candidate_id == record.selection.candidate_id)?;
+    let key = selected.key.clone()?;
+    if !is_strategic_decision_key_v1(&key) {
+        return None;
+    }
+    Some(RunWitnessStrategicDecisionV1 {
+        journal_entry,
+        act: resources.act,
+        floor: resources.floor,
+        boundary: record.before.title.clone(),
+        chosen_label: selected.label.clone(),
+        key,
+    })
+}
+
+fn is_strategic_decision_key_v1(key: &DecisionCandidateKey) -> bool {
+    matches!(
+        key,
+        DecisionCandidateKey::RouteSelect { .. }
+            | DecisionCandidateKey::EventOption { .. }
+            | DecisionCandidateKey::CardRewardPick { .. }
+            | DecisionCandidateKey::CardRewardSingingBowl { .. }
+            | DecisionCandidateKey::CardRewardSkip { .. }
+            | DecisionCandidateKey::BossRelicPick { .. }
+            | DecisionCandidateKey::BossRelicSkip
+            | DecisionCandidateKey::CampfireRest
+            | DecisionCandidateKey::CampfireSmith { .. }
+            | DecisionCandidateKey::CampfireDig
+            | DecisionCandidateKey::CampfireLift
+            | DecisionCandidateKey::CampfireToke { .. }
+            | DecisionCandidateKey::CampfireRecall
+            | DecisionCandidateKey::ShopPurgeCard { .. }
+            | DecisionCandidateKey::ShopBuyCard { .. }
+            | DecisionCandidateKey::ShopBuyRelic { .. }
+            | DecisionCandidateKey::ShopBuyPotion { .. }
+    )
+}
+
+fn progress_entry_label_v1(entry: &RunProgressStepV1) -> (String, Option<String>) {
+    match entry {
+        RunProgressStepV1::Decision(record) => {
+            let chosen_label = record
+                .before
+                .candidates
+                .iter()
+                .find(|candidate| candidate.candidate_id == record.selection.candidate_id)
+                .map(|candidate| candidate.label.clone());
+            (record.before.title.clone(), chosen_label)
+        }
+        RunProgressStepV1::ForcedTransition(record) => (
+            record.before.title.clone(),
+            Some(format!("{:?}", record.kind)),
+        ),
+        RunProgressStepV1::CombatResolution(record) => (
+            record.before.title.clone(),
+            Some(record.trajectory.source.label().to_string()),
+        ),
+        RunProgressStepV1::Stop(record) => ("Stop".to_string(), Some(record.reason.clone())),
+    }
+}
+
+fn combat_encounter_label_v1(record: &RunCombatResolutionV1) -> String {
+    let labels = record
+        .trajectory
+        .actions
+        .iter()
+        .find_map(|action| action.combat_after.as_ref())
+        .map(|state| {
+            state
+                .monsters
+                .iter()
+                .map(|monster| monster.label.as_str())
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    if labels.is_empty() {
+        record.before.title.clone()
+    } else {
+        labels.join(" + ")
+    }
+}
+
 /// Replaces one committed combat trajectory while preserving the surrounding
 /// strategic history. The replacement is accepted only when its exact combat
 /// boundaries match and the entire resulting journal still replays to the
@@ -275,15 +610,17 @@ pub fn splice_exact_combat_resolution_v1(
     Ok((journal, replay))
 }
 
-fn exact_replay_run_progress_journal_observed_v1<F>(
+fn exact_replay_run_progress_journal_observed_v1<F, G>(
     seed: u64,
     ascension: u8,
     journal: &RunProgressJournalV1,
     expected_final: &RunControlSession,
     mut before_decision: F,
+    mut after_entry: G,
 ) -> Result<ExactRunProgressReplayReportV1, String>
 where
     F: FnMut(usize, &RunControlSession, &RunDecisionTransactionV1) -> Result<(), String>,
+    G: FnMut(usize, &RunProgressStepV1, &RunControlSession) -> Result<(), String>,
 {
     let mut session = canonical_replay_session(seed, ascension, expected_final);
     let mut counters = ExactReplayCountersV1::default();
@@ -296,6 +633,7 @@ where
             &mut counters,
             &mut before_decision,
         )?;
+        after_entry(entry_index, entry, &session)?;
     }
 
     let final_fingerprint = run_session_fingerprint_v2(&session);
@@ -517,5 +855,31 @@ mod tests {
         assert_eq!(report.decisions_with_owner_preferences, 0);
         assert!(report.divergences.is_empty());
         assert!(report.combat_sources.is_empty());
+    }
+
+    #[test]
+    fn empty_witness_diagnosis_is_compact_exact_and_search_free() {
+        let seed = 20260713006;
+        let expected_final = RunControlSession::new(RunControlConfig {
+            seed,
+            ascension_level: 0,
+            ..RunControlConfig::default()
+        });
+        let report = exact_diagnose_run_progress_journal_v1(
+            seed,
+            0,
+            &RunProgressJournalV1::default(),
+            &expected_final,
+            |_| panic!("an empty diagnosis must not ask the owner for an ordering"),
+            5,
+        )
+        .unwrap();
+
+        assert_eq!(report.replay.journal_entries, 0);
+        assert!(report.policy.first_divergence.is_none());
+        assert!(report.combat_timeline.is_empty());
+        assert!(report.highest_peak_hp_loss_combats.is_empty());
+        assert!(report.lowest_post_combat_hp_combats.is_empty());
+        assert!(report.recovery_pivots.is_empty());
     }
 }

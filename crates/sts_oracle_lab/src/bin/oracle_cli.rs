@@ -114,6 +114,25 @@ pub(super) enum Command {
         #[arg(long)]
         details: bool,
     },
+    /// Exact-replay one saved run once and emit a compact typed combat/resource
+    /// timeline plus current-owner divergences. No search runs.
+    DiagnoseRunWitness {
+        #[arg(long)]
+        workspace: PathBuf,
+        #[arg(long, default_value_t = 0)]
+        node: usize,
+        /// Number of highest-loss, lowest-HP, and recovery pivots to retain.
+        #[arg(long, default_value_t = 5)]
+        max_pivots: usize,
+        /// Include the complete typed combat timeline and every owner
+        /// divergence instead of the compact pivot summary.
+        #[arg(long)]
+        details: bool,
+        /// Optionally export the exact run prefix immediately before the first
+        /// current-owner divergence as an importable continuation.
+        #[arg(long)]
+        export_first_divergence_continuation: Option<PathBuf>,
+    },
     /// Replay a versioned set of exact F0-to-Act-3 witnesses in one process.
     ///
     /// The optional owner audit is diagnostic only: historical policy

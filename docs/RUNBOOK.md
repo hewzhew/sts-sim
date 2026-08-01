@@ -487,6 +487,35 @@ The heavy `oracle_lab` and `oracle_lab_service` targets require the internal
 target selection, before it can spend tens of seconds linking an artifact that
 the runtime profile guard would later refuse to execute.
 
+When a production run reaches a suspicious late stop, diagnose the committed
+history before changing combat policy or starting a seed panel:
+
+```powershell
+.\ol.cmd diagnose-run-witness `
+  --workspace .oracle-lab/cases/<run>.workspace.json `
+  --node <node> --max-pivots 5 `
+  --export-first-divergence-continuation `
+    .oracle-lab/cases/<fresh-id>.continuation.json `
+  > .oracle-lab/reports/<fresh-id>.diagnosis.json
+```
+
+The command performs exact journal replay without search. Its compact default
+reports the largest peak combat HP losses, lowest post-combat HP boundaries,
+largest recovery transitions, typed potion identity, nearby typed route/card/
+shop/Campfire choices, and the first decision where the current owner ranks a
+different candidate first. `--details` additionally emits the complete combat
+timeline and every owner divergence. A divergence is a counterfactual candidate,
+not causal proof. Import the exported prefix into a fresh workspace, apply one
+alternative, and give only that branch a bounded downstream wall before
+escalating to more seeds:
+
+```powershell
+.\ol.cmd import --continuation .oracle-lab/cases/<fresh-id>.continuation.json `
+  --workspace .oracle-lab/cases/<fresh-id>.workspace.json
+.\ol.cmd choose --workspace .oracle-lab/cases/<fresh-id>.workspace.json `
+  --owner-rank 0
+```
+
 For a production-owner run, create and start one exact F0 workspace. The thin
 client sends one typed `run` transaction; the resident runtime owns the
 owner/search/accept loop in memory and saves once at the terminal or explicit

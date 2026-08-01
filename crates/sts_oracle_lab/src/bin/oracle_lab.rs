@@ -34,6 +34,7 @@ mod oracle_seed_panel;
 mod policy_discrepancy_search;
 mod potion_expenditure_audit;
 mod run_witness_commands;
+mod run_witness_diagnosis_commands;
 mod run_witness_suite;
 mod turn_audits;
 mod turn_membership_audit;
@@ -140,6 +141,19 @@ fn main() -> Result<(), String> {
             details,
         } => print_json(&run_witness_commands::audit_policy(
             &workspace, node, details,
+        )?),
+        Command::DiagnoseRunWitness {
+            workspace,
+            node,
+            max_pivots,
+            details,
+            export_first_divergence_continuation,
+        } => print_json(&run_witness_diagnosis_commands::diagnose(
+            &workspace,
+            node,
+            max_pivots,
+            details,
+            export_first_divergence_continuation.as_deref(),
         )?),
         Command::VerifyRunWitnessSuite { args } => {
             print_json(&run_witness_suite::verify_run_witness_suite(args)?)
