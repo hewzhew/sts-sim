@@ -71,9 +71,11 @@ Use these principles unless stronger measured evidence replaces them:
 
 ## Local Experiments And Tool Safety
 
-- Prefer repository files and CLI tools. Because browser GPU compatibility has
-  been unstable on this machine, do not launch Browser Use, Chrome control, or
-  Computer Use unless the project owner explicitly re-authorizes it.
+- Prefer repository files and CLI tools. Browser Use, Chrome control, and
+  Computer Use are authorized again after the earlier GPU instability. Start
+  UI automation with one lightweight surface at a time, avoid running those
+  surfaces concurrently until stability is established, and stop if GPU or
+  window instability returns.
 - Do not generate images for engineering work unless explicitly requested.
 - Keep terminal output bounded: use summaries, counts, targeted searches, and
   at most a few dozen relevant log lines.
