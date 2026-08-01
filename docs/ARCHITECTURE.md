@@ -153,7 +153,10 @@ exact candidate but cannot by itself end the refinement quantum. Early
 satisfaction requires a clean potion-free witness at the same quality target.
 When several clean witnesses reach that target, run control minimizes potion
 use before applying the ordinary final-HP and persistent-payoff ordering.
-`FindAnyWin` survival rescue keeps its separate first-acceptable-win contract.
+`FindAnyWin` survival rescue keeps its separate first-reserve-compliant-win
+contract: it may land below the search-quality target, but never below the
+owner's captured strategic survival floor. Guaranteed full-heal boundaries
+retain their explicit unlimited limit.
 Autonomous refinement gives each active potion identity its own exact search
 stage. The current stage's slot mask constrains newly generated or proposed
 witnesses; it does not discard an exact-verified incumbent inherited from an

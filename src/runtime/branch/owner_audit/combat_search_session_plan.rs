@@ -12,7 +12,9 @@ use sts_simulator::eval::run_control::{
     RunControlSession,
 };
 
-use super::combat_search_survival::owner_audit_search_quality_loss_target;
+use super::combat_search_survival::{
+    owner_audit_hp_loss_limit, owner_audit_search_quality_loss_target,
+};
 use super::Args;
 
 const HALLWAY_REFINEMENT_MAX_NODES: usize = 300_000;
@@ -174,6 +176,10 @@ pub(super) fn potion_conserving_refinement_search_session_plan(
             Some(1),
         )
     };
+    let max_hp_loss = match rescue_kind {
+        PotionRescueKind::ImproveVerifiedWinQualityGated => RunControlHpLossLimit::Unlimited,
+        PotionRescueKind::FindAnyWin => owner_audit_hp_loss_limit(session),
+    };
     Some(build_combat_search_session_plan(
         session,
         stakes,
@@ -182,7 +188,7 @@ pub(super) fn potion_conserving_refinement_search_session_plan(
         potion_policy,
         max_potions_used,
         Some(allowed_potion_slots),
-        RunControlHpLossLimit::Unlimited,
+        max_hp_loss,
         rescue_kind == PotionRescueKind::FindAnyWin,
     ))
 }
@@ -527,6 +533,10 @@ mod tests {
         assert_eq!(survival.stage, CombatSearchSessionStage::FindAnyWin);
         assert_eq!(survival.search.allowed_potion_slots, Some(1));
         assert_eq!(survival.max_potions_used, Some(1));
+        assert!(matches!(
+            survival.search.max_hp_loss,
+            Some(RunControlHpLossLimit::Limit(_))
+        ));
         assert!(survival.search.allow_smoke_bomb_survival_fallback);
         assert!(matches!(
             survival.search.satisfaction,

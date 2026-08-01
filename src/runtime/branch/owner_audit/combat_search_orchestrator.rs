@@ -236,10 +236,9 @@ pub(super) fn run_combat_search_session_step(
                         return Ok(search_error_result(&plan, error, prior_search_summaries));
                     }
                 };
-                match session.apply_combat_search_attempt(
-                    refinement_attempt,
-                    RunControlHpLossLimit::Unlimited,
-                ) {
+                match session
+                    .apply_combat_search_attempt(refinement_attempt, owner_hp_loss_limit_fact)
+                {
                     Ok(outcome) => outcome,
                     Err(error) => {
                         return Ok(search_error_result(&plan, error, prior_search_summaries));
@@ -828,6 +827,50 @@ mod tests {
                     .best_win
                     .as_ref()
                     .is_some_and(|win| win.potions_used == 1)
+        }));
+    }
+
+    #[test]
+    fn owner_audit_rejects_potion_rescue_below_the_survival_floor() {
+        let mut session = hallway_session(26, vec![Some(Potion::new(PotionId::FirePotion, 11))]);
+        let combat = &mut session.active_combat.as_mut().unwrap().combat_state;
+        combat.entities.player.current_hp = 20;
+        combat.entities.player.max_hp = 80;
+        combat.zones.hand.clear();
+        combat.zones.draw_pile = vec![sts_simulator::runtime::combat::CombatCard::new(
+            sts_simulator::content::cards::CardId::Strike,
+            1,
+        )]
+        .into();
+        combat.zones.card_uuid_counter = 2;
+
+        let result =
+            run_combat_search_session_step(&mut session, args()).expect("owner potion rescue");
+
+        assert!(
+            session.active_combat.is_some(),
+            "a win that falls below the survival floor must not resolve combat"
+        );
+        assert!(session
+            .active_combat
+            .as_ref()
+            .unwrap()
+            .combat_state
+            .entities
+            .potions
+            .first()
+            .is_some_and(|slot| slot
+                .as_ref()
+                .is_some_and(|potion| { potion.id == PotionId::FirePotion && potion.uuid == 11 })));
+        assert!(result.combat_search.iter().any(|summary| {
+            summary.lane.as_deref() == Some("find_any_win")
+                && summary.portfolio_selected == Some(false)
+                && summary.portfolio_decision.as_deref()
+                    == Some("candidate_rejected_by_typed_acceptance")
+                && summary
+                    .best_win
+                    .as_ref()
+                    .is_some_and(|win| win.hp_loss > 0 && win.potions_used == 1)
         }));
     }
 

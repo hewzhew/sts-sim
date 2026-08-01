@@ -180,8 +180,11 @@ The production `ImproveVerifiedWin` stage keeps searching after a spending
 witness reaches the quality limit; only a clean potion-free quality witness may
 end that refinement early. At commit time, clean quality-reaching candidates
 prefer fewer potion uses before final HP and persistent payoff. This rule does
-not apply to `FindAnyWin` survival rescue. Potion audit crossings should be
-interpreted against that staged contract, not as standalone spend labels.
+not apply to `FindAnyWin` survival rescue. That rescue may miss the
+search-quality target, but its exact incumbent must still preserve the owner's
+captured strategic survival floor; guaranteed full-heal boundaries remain
+unlimited. Potion audit crossings should be interpreted against that staged
+contract, not as standalone spend labels.
 
 Route ordering in that question comes only from typed `OccursBefore` facts.
 `must`, `can`, and `cannot` retain their original modality and provenance;
