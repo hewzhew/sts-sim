@@ -14,6 +14,7 @@ use super::action_successor_reanalysis::ActionSuccessorReanalysisArgs;
 use super::boundary_successor_corpus::BoundarySuccessorCorpusArgs;
 use super::boundary_successor_lookahead::BoundarySuccessorLookaheadArgs;
 use super::combat_case_local_graph::CombatCaseLocalGraphArgs;
+use super::combat_evidence_audit::CombatEvidenceAuditArgs;
 use super::combat_plan_diagnostics::{CombatCasePlanAnnotationsArgs, CombatCasePlanTraceArgs};
 use super::depth_beam_audits::DepthBeamTurnAuditArgs;
 use super::guidance_combination_audit::GuidanceCombinationAuditArgs;
@@ -183,6 +184,8 @@ pub(super) enum Command {
     /// This is a read-only trace: actions are supplied by the caller, never
     /// selected or ranked by this command.
     CombatCasePlanTrace(CombatCasePlanTraceArgs),
+    /// Batch-index exact combat artifacts and audit typed Fiend Fire conversion windows.
+    CombatEvidenceAudit(CombatEvidenceAuditArgs),
     /// Follow the action policy to terminal states and search complete
     /// trajectories by increasing weighted policy discrepancy.
     CombatCasePolicyDiscrepancy(CombatCasePolicyDiscrepancyArgs),

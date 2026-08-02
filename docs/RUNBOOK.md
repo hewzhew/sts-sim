@@ -57,6 +57,34 @@ cargo run -p sts_oracle_tools --bin combat_case_review -- --case <case.json> --l
 Review output is diagnostic. It does not mutate runner policy and does not
 prove a deck is good or bad by itself.
 
+### Batch Combat Evidence Audit
+
+Use one bounded command to index local combat artifacts, replay exact
+case/action relationships, and inspect typed Fiend Fire conversion windows:
+
+```powershell
+.\ol.cmd combat-evidence-audit `
+  --root .oracle-lab `
+  --output <fresh-output-directory> `
+  --replay-untraced
+```
+
+The scanner recognizes every filename ending in `trace.json`, including
+`*.plan-trace.json`. Trace-declared case/action paths are replayed exactly.
+With `--replay-untraced`, the command also tries only same-stem pairs and
+directories containing exactly one case; ambiguous or illegal legacy pairings
+remain explicit unknowns. Source artifacts are never rewritten.
+
+The output directory contains `summary.json`, normalized typed timelines in
+`evidence.jsonl`, `fiend-fire-windows.json`, and `unresolved.json`. The current
+summary freezes the canonical runtime identity and source-content fingerprint.
+The Fiend Fire audit requires an Attack to lower the eventual target's positive
+Block, the following Fiend Fire to make that target terminal-like, an immediate
+Fiend Fire counterfactual to remain non-terminal, and the supplied full line to
+replay to a win. Counts are deduplicated by exact root and action identity;
+independent-root counts, not duplicate lines, determine case diversity. This is
+diagnostic evidence and does not authorize a search or potion-policy change.
+
 ### Potion Expenditure Audit
 
 Compare no-potion, each initial potion, and optionally small potion

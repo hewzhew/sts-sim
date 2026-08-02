@@ -13,6 +13,7 @@ mod canonical_launch;
 mod combat_case_contract;
 mod combat_case_local_graph;
 mod combat_case_performance;
+mod combat_evidence_audit;
 mod combat_graph_diagnostics;
 mod combat_graph_execution;
 mod combat_graph_exports;
@@ -292,6 +293,7 @@ fn main() -> Result<(), String> {
         Command::CombatCaseLocalGraph(args) => combat_case_local_graph::run(args),
         Command::CombatCasePlanAnnotations(args) => combat_plan_diagnostics::run_annotations(args),
         Command::CombatCasePlanTrace(args) => combat_plan_diagnostics::run_trace(args),
+        Command::CombatEvidenceAudit(args) => print_json(&combat_evidence_audit::run(args)?),
         Command::CombatCasePolicyDiscrepancy(args) => policy_discrepancy_search::run(args),
         Command::CombatCasePotionExpenditureAudit(args) => {
             print_json(&potion_expenditure_audit::run(args)?)
