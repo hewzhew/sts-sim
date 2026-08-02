@@ -4,11 +4,17 @@ use std::path::{Path, PathBuf};
 
 use serde_json::Value;
 
-use super::{display_path, ArtifactInventory, PairCandidate, UnresolvedArtifact};
+use super::super::combat_evidence_manifest::{
+    decode_combat_evidence_manifest, COMBAT_EVIDENCE_MANIFEST_FILE_SUFFIX,
+};
+use super::{
+    display_path, ArtifactInventory, PairCandidate, ReplayExpectations, UnresolvedArtifact,
+};
 
 pub(super) fn collect_artifacts(root: &Path) -> Result<ArtifactInventory, String> {
     let mut inventory = ArtifactInventory::default();
     collect_artifacts_recursive(root, &mut inventory)?;
+    inventory.manifest_files.sort();
     inventory.trace_files.sort();
     inventory.case_files.sort();
     inventory.action_files.sort();
@@ -46,6 +52,9 @@ fn collect_artifacts_recursive(
         if is_trace_artifact_name(&name) {
             inventory.trace_files.push(path.clone());
         }
+        if name.ends_with(COMBAT_EVIDENCE_MANIFEST_FILE_SUFFIX) {
+            inventory.manifest_files.push(path.clone());
+        }
         if name.ends_with(".case.json") || name.ends_with(".combat-case.json") {
             inventory.case_files.push(path.clone());
         }
@@ -66,6 +75,55 @@ pub(super) fn read_json_value(path: &Path) -> Result<Value, String> {
             .map_err(|error| format!("cannot read trace '{}': {error}", path.display()))?,
     )
     .map_err(|error| format!("cannot parse trace '{}': {error}", path.display()))
+}
+
+pub(super) fn declared_manifest_pairs(
+    manifest_path: &Path,
+    scan_root: &Path,
+    current_dir: &Path,
+) -> Result<Vec<PairCandidate>, String> {
+    let bytes = fs::read(manifest_path).map_err(|error| {
+        format!(
+            "cannot read combat evidence manifest '{}': {error}",
+            manifest_path.display()
+        )
+    })?;
+    let manifest = decode_combat_evidence_manifest(manifest_path, &bytes)?;
+    let case_raw = manifest.case_path.to_string_lossy();
+    let case_path = resolve_declared_path(&case_raw, manifest_path, scan_root, current_dir)
+        .ok_or_else(|| format!("manifest case path is missing: {case_raw}"))?;
+    let mut candidates = Vec::with_capacity(manifest.entries.len());
+    for entry in manifest.entries {
+        let mut action_paths = Vec::with_capacity(entry.action_paths.len());
+        for raw_path in &entry.action_paths {
+            let raw = raw_path.to_string_lossy();
+            action_paths.push(
+                resolve_declared_path(&raw, manifest_path, scan_root, current_dir)
+                    .ok_or_else(|| format!("manifest action path is missing: {raw}"))?,
+            );
+        }
+        let mut source_paths = BTreeSet::from([display_path(manifest_path)]);
+        for raw_path in &entry.trace_paths {
+            let raw = raw_path.to_string_lossy();
+            let path = resolve_declared_path(&raw, manifest_path, scan_root, current_dir)
+                .ok_or_else(|| format!("manifest trace path is missing: {raw}"))?;
+            source_paths.insert(display_path(&path));
+        }
+        candidates.push(PairCandidate {
+            case_path: case_path.clone(),
+            action_paths,
+            provenance: BTreeSet::from(["typed_evidence_manifest".to_string()]),
+            source_paths,
+            expectations: ReplayExpectations {
+                root_exact_state_hashes: BTreeSet::from([manifest.root_exact_state_hash.clone()]),
+                action_sequence_blake2b_512: BTreeSet::from([entry.action_sequence_blake2b_512]),
+                supplied_action_counts: BTreeSet::from([entry.supplied_action_count]),
+                final_terminals: vec![entry.expected_terminal],
+                final_player_hps: entry.expected_final_player_hp.into_iter().collect(),
+            },
+        });
+    }
+    Ok(candidates)
 }
 
 pub(super) fn declared_pair(
@@ -106,6 +164,7 @@ pub(super) fn declared_pair(
         action_paths,
         provenance: BTreeSet::from(["trace_declared_exact_pair".to_string()]),
         source_paths: BTreeSet::from([display_path(trace_path)]),
+        expectations: ReplayExpectations::default(),
     }))
 }
 
@@ -151,6 +210,26 @@ pub(super) fn merge_pair(
     if let Some(existing) = pairs.get_mut(&key) {
         existing.provenance.extend(candidate.provenance);
         existing.source_paths.extend(candidate.source_paths);
+        existing
+            .expectations
+            .root_exact_state_hashes
+            .extend(candidate.expectations.root_exact_state_hashes);
+        existing
+            .expectations
+            .action_sequence_blake2b_512
+            .extend(candidate.expectations.action_sequence_blake2b_512);
+        existing
+            .expectations
+            .supplied_action_counts
+            .extend(candidate.expectations.supplied_action_counts);
+        existing
+            .expectations
+            .final_terminals
+            .extend(candidate.expectations.final_terminals);
+        existing
+            .expectations
+            .final_player_hps
+            .extend(candidate.expectations.final_player_hps);
     } else {
         pairs.insert(key, candidate);
     }
@@ -214,6 +293,7 @@ pub(super) fn infer_untraced_pairs(
             action_paths: vec![action_path.clone()],
             provenance: BTreeSet::from([provenance.to_string()]),
             source_paths: BTreeSet::from([display_path(&action_path)]),
+            expectations: ReplayExpectations::default(),
         };
         let key = pair_key(&candidate.case_path, &candidate.action_paths);
         inferred_keys.insert(key.clone());

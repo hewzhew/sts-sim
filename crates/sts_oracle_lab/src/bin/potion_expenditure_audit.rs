@@ -52,6 +52,10 @@ use sts_oracle_runtime::sim::combat::{
 };
 use sts_oracle_runtime::state::core::ClientInput;
 
+use super::combat_evidence_manifest::{
+    write_combat_evidence_manifest, CombatEvidenceManifestEntryV1, CombatEvidenceProducerV1,
+    COMBAT_EVIDENCE_MANIFEST_FILE_SUFFIX,
+};
 use super::combat_graph_search_spec::LocalGraphSearchSpec;
 use super::combat_replay_tools::save_combat_inputs;
 
@@ -814,6 +818,7 @@ pub(super) fn run(
     let lane_specs = build_lane_specs(&root_potions, max_combination_size, max_lanes)?;
     let base_policy = existing_combat_knowledge_policy_v1();
     let mut lanes = Vec::with_capacity(lane_specs.len());
+    let mut evidence_manifest_entries = Vec::new();
 
     for lane in lane_specs {
         let mut lane_policy = base_policy.clone();
@@ -866,10 +871,19 @@ pub(super) fn run(
             match (export_witness_actions_dir.as_ref(), report.witness.as_ref()) {
                 (Some(directory), Some(witness)) => {
                     let path = directory.join(format!("{}.actions.json", lane.lane_id));
-                    save_combat_inputs(
-                        &path,
-                        witness.actions.iter().map(|action| action.input.clone()),
-                    )?;
+                    let actions = witness
+                        .actions
+                        .iter()
+                        .map(|action| action.input.clone())
+                        .collect::<Vec<_>>();
+                    save_combat_inputs(&path, actions.iter().cloned())?;
+                    evidence_manifest_entries.push(CombatEvidenceManifestEntryV1::from_actions(
+                        lane.lane_id.clone(),
+                        vec![path.clone()],
+                        &actions,
+                        CombatTerminal::Win,
+                        Some(witness.final_position.combat.entities.player.current_hp),
+                    )?);
                     Some(path)
                 }
                 _ => None,
@@ -930,6 +944,18 @@ pub(super) fn run(
         expect_no_potion_min_final_hp,
         expect_no_potion_dominates_consuming,
     )?;
+    if let Some(directory) = export_witness_actions_dir
+        .as_ref()
+        .filter(|_| !evidence_manifest_entries.is_empty())
+    {
+        write_combat_evidence_manifest(
+            &directory.join(COMBAT_EVIDENCE_MANIFEST_FILE_SUFFIX),
+            CombatEvidenceProducerV1::PotionExpenditureAudit,
+            root_exact_state_hash.clone(),
+            case.clone(),
+            evidence_manifest_entries,
+        )?;
+    }
     let pareto_lane_ids = lanes
         .iter()
         .filter_map(|lane| {

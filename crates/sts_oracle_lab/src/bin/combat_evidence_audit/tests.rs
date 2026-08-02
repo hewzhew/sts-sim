@@ -251,6 +251,7 @@ fn tracked_slime_boss_pair_replays_through_typed_timeline() {
         ],
         provenance: BTreeSet::from(["test_fixture".to_string()]),
         source_paths: BTreeSet::new(),
+        expectations: super::ReplayExpectations::default(),
     };
 
     let record = replay_pair(&candidate, 250).expect("tracked exact witness should replay");

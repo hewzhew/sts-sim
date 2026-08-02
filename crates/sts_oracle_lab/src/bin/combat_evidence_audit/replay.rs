@@ -1,6 +1,5 @@
 use std::collections::BTreeMap;
 
-use blake2::{Blake2b512, Digest};
 use sts_oracle_runtime::ai::combat_state_key::combat_exact_state_hash_v2;
 use sts_oracle_runtime::content::cards::{get_card_definition, CardId};
 use sts_oracle_runtime::eval::combat_case::load_combat_case;
@@ -10,6 +9,7 @@ use sts_oracle_runtime::sim::combat::{
 };
 use sts_oracle_runtime::state::core::ClientInput;
 
+use super::super::combat_evidence_manifest::combat_action_sequence_hash;
 use super::super::exact_turn_corridor::load_action_segments;
 use super::{
     display_path, ActionObservation, CardObservation, EvidenceRecord, FiendFireClassification,
@@ -35,6 +35,7 @@ pub(super) fn replay_pair(
     let root_hash = combat_exact_state_hash_v2(&position.engine, &position.combat);
     let record_id = record_id(&root_hash, &action_hash);
     let supplied_action_count = inputs.len();
+    validate_manifest_input_identity(candidate, &root_hash, &action_hash, supplied_action_count)?;
     let mut frames = Vec::with_capacity(inputs.len());
 
     for (index, input) in inputs.into_iter().enumerate() {
@@ -94,6 +95,8 @@ pub(super) fn replay_pair(
     }
 
     let final_terminal = combat_terminal(&position.engine, &position.combat);
+    let final_player_hp = position.combat.entities.player.current_hp;
+    validate_manifest_outcome(candidate, final_terminal, final_player_hp, frames.len())?;
     let observations = frames
         .iter()
         .map(|frame| frame.observation.clone())
@@ -118,10 +121,84 @@ pub(super) fn replay_pair(
         supplied_action_count,
         consumed_action_count: observations.len(),
         final_terminal,
-        final_player_hp: position.combat.entities.player.current_hp,
+        final_player_hp,
         actions: observations,
         fiend_fire_observations,
     })
+}
+
+fn validate_manifest_input_identity(
+    candidate: &PairCandidate,
+    root_hash: &str,
+    action_hash: &str,
+    supplied_action_count: usize,
+) -> Result<(), String> {
+    let expected = &candidate.expectations;
+    if expected
+        .root_exact_state_hashes
+        .iter()
+        .any(|value| value != root_hash)
+    {
+        return Err(format!(
+            "pair replay rejected manifest root identity: actual {root_hash}"
+        ));
+    }
+    if expected
+        .action_sequence_blake2b_512
+        .iter()
+        .any(|value| value != action_hash)
+    {
+        return Err(format!(
+            "pair replay rejected manifest action identity: actual {action_hash}"
+        ));
+    }
+    if expected
+        .supplied_action_counts
+        .iter()
+        .any(|value| *value != supplied_action_count)
+    {
+        return Err(format!(
+            "pair replay rejected manifest action count: actual {supplied_action_count}"
+        ));
+    }
+    Ok(())
+}
+
+fn validate_manifest_outcome(
+    candidate: &PairCandidate,
+    final_terminal: CombatTerminal,
+    final_player_hp: i32,
+    consumed_action_count: usize,
+) -> Result<(), String> {
+    let expected = &candidate.expectations;
+    if expected
+        .supplied_action_counts
+        .iter()
+        .any(|value| *value != consumed_action_count)
+    {
+        return Err(format!(
+            "pair replay rejected manifest consumed action count: actual {consumed_action_count}"
+        ));
+    }
+    if expected
+        .final_terminals
+        .iter()
+        .any(|value| *value != final_terminal)
+    {
+        return Err(format!(
+            "pair replay rejected manifest terminal: actual {final_terminal:?}"
+        ));
+    }
+    if expected
+        .final_player_hps
+        .iter()
+        .any(|value| *value != final_player_hp)
+    {
+        return Err(format!(
+            "pair replay rejected manifest final player HP: actual {final_player_hp}"
+        ));
+    }
+    Ok(())
 }
 
 fn snapshot(position: &CombatPosition) -> StateObservation {
@@ -443,14 +520,7 @@ fn classify_fiend_fire(
 }
 
 pub(super) fn action_sequence_hash(inputs: &[ClientInput]) -> Result<String, String> {
-    let bytes = serde_json::to_vec(inputs).map_err(|error| error.to_string())?;
-    let mut digest = Blake2b512::new();
-    digest.update(bytes);
-    Ok(digest
-        .finalize()
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect())
+    combat_action_sequence_hash(inputs)
 }
 
 pub(super) fn record_id(root_hash: &str, action_hash: &str) -> String {

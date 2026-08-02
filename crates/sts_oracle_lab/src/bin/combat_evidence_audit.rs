@@ -7,6 +7,8 @@
 
 mod artifacts;
 mod contract;
+#[cfg(test)]
+mod manifest_tests;
 mod query;
 mod replay;
 #[cfg(test)]
@@ -32,7 +34,7 @@ use self::query::*;
 use self::replay::*;
 use super::canonical_launch::{runtime_identity, runtime_source_content_fingerprint};
 
-const SUMMARY_SCHEMA_NAME: &str = "CombatEvidenceAuditSummaryV2";
+const SUMMARY_SCHEMA_NAME: &str = "CombatEvidenceAuditSummaryV3";
 const EVIDENCE_SCHEMA_NAME: &str = "CombatEvidenceReplayV2";
 
 #[derive(Debug, Args)]
@@ -221,6 +223,16 @@ struct PairCandidate {
     action_paths: Vec<PathBuf>,
     provenance: BTreeSet<String>,
     source_paths: BTreeSet<String>,
+    expectations: ReplayExpectations,
+}
+
+#[derive(Clone, Debug, Default)]
+struct ReplayExpectations {
+    root_exact_state_hashes: BTreeSet<String>,
+    action_sequence_blake2b_512: BTreeSet<String>,
+    supplied_action_counts: BTreeSet<usize>,
+    final_terminals: Vec<CombatTerminal>,
+    final_player_hps: BTreeSet<i32>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -231,6 +243,7 @@ struct UnresolvedArtifact {
 
 #[derive(Debug, Default)]
 struct ArtifactInventory {
+    manifest_files: Vec<PathBuf>,
     trace_files: Vec<PathBuf>,
     case_files: Vec<PathBuf>,
     action_files: Vec<PathBuf>,
@@ -268,11 +281,13 @@ pub(super) struct CombatEvidenceAuditSummary {
     scan_root: String,
     output_directory: String,
     trace_files: usize,
+    manifest_files: usize,
     case_files: usize,
     action_files: usize,
     trace_schema_counts: BTreeMap<String, usize>,
     non_replay_trace_files: usize,
     declared_replay_pairs: usize,
+    manifest_replay_pairs: usize,
     inferred_replay_pairs: usize,
     exact_replays: usize,
     replay_failures: usize,
@@ -314,7 +329,27 @@ pub(super) fn run(args: CombatEvidenceAuditArgs) -> Result<CombatEvidenceAuditSu
     let mut contract_records = Vec::new();
     let mut referenced_actions = BTreeSet::<PathBuf>::new();
     let mut declared_pair_keys = BTreeSet::new();
+    let mut manifest_pair_keys = BTreeSet::new();
     let mut non_replay_trace_files = 0usize;
+
+    for manifest_path in &inventory.manifest_files {
+        match declared_manifest_pairs(manifest_path, &scan_root, &current_dir) {
+            Ok(candidates) => {
+                for candidate in candidates {
+                    for action_path in &candidate.action_paths {
+                        referenced_actions.insert(action_path.clone());
+                    }
+                    let key = pair_key(&candidate.case_path, &candidate.action_paths);
+                    manifest_pair_keys.insert(key.clone());
+                    merge_pair(&mut pair_candidates, key, candidate);
+                }
+            }
+            Err(error) => unresolved.push(UnresolvedArtifact {
+                path: display_path(manifest_path),
+                reason: error,
+            }),
+        }
+    }
 
     for trace_path in &inventory.trace_files {
         let value = match read_json_value(trace_path) {
@@ -457,7 +492,7 @@ pub(super) fn run(args: CombatEvidenceAuditArgs) -> Result<CombatEvidenceAuditSu
 
     let summary = CombatEvidenceAuditSummary {
         schema_name: SUMMARY_SCHEMA_NAME,
-        schema_version: 2,
+        schema_version: 3,
         contract: json!({
             "classification": "diagnostic",
             "search": false,
@@ -465,17 +500,20 @@ pub(super) fn run(args: CombatEvidenceAuditArgs) -> Result<CombatEvidenceAuditSu
             "ranking": false,
             "source_artifact_mutation": false,
             "missing_or_failed_replay": "explicit_unknown",
+            "manifest_identity": "replay_revalidated",
         }),
         runtime: runtime_identity(),
         runtime_source_content_fingerprint: runtime_source_content_fingerprint()?,
         scan_root: display_path(&scan_root),
         output_directory: display_path(&output),
         trace_files: inventory.trace_files.len(),
+        manifest_files: inventory.manifest_files.len(),
         case_files: inventory.case_files.len(),
         action_files: inventory.action_files.len(),
         trace_schema_counts: schema_counts,
         non_replay_trace_files,
         declared_replay_pairs: declared_pair_keys.len(),
+        manifest_replay_pairs: manifest_pair_keys.len(),
         inferred_replay_pairs: inferred_pair_keys.len(),
         exact_replays,
         replay_failures,
@@ -547,10 +585,17 @@ fn unresolved_category(reason: &str) -> &'static str {
         || reason.contains("declared action path is missing")
     {
         "missing_declared_path"
+    } else if reason.contains("manifest case path is missing")
+        || reason.contains("manifest action path is missing")
+        || reason.contains("manifest trace path is missing")
+    {
+        "missing_manifest_path"
     } else if reason.contains("pair replay") {
         "replay_rejected"
     } else if reason.contains("cannot parse") || reason.contains("cannot decode") {
         "parse_or_schema_error"
+    } else if reason.contains("combat evidence manifest") {
+        "invalid_manifest"
     } else {
         "other"
     }

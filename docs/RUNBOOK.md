@@ -69,6 +69,11 @@ case/action relationships. The root defaults to `.oracle-lab`; omitting
 
 The scanner recognizes every filename ending in `trace.json`, including
 `*.plan-trace.json`. Trace-declared case/action paths are replayed exactly.
+It first consumes `*combat-evidence-manifest.json` producer declarations and
+revalidates their exact root hash, action hash/count, complete consumption,
+terminal outcome, and final player HP during replay. A missing path or identity
+mismatch remains explicit unresolved evidence; a manifest never overrides the
+simulator.
 With `--replay-untraced`, the command also tries only same-stem pairs and
 directories containing exactly one case; ambiguous or illegal legacy pairings
 remain explicit unknowns. Source artifacts are never rewritten.
@@ -112,6 +117,13 @@ combinations from one unchanged exact combat root:
   --export-witness-actions-dir <fresh-output-directory> `
   --wall-ms-per-lane 10000
 ```
+
+When `--export-witness-actions-dir` produces one or more verified witnesses,
+the audit writes `combat-evidence-manifest.json` into that directory after all
+lane validation succeeds. The manifest freezes the shared case/root, each lane
+action identity and outcome, the typed producer, canonical runtime identity,
+and runtime source fingerprint. New exports therefore do not require filename
+pairing inference during a later evidence audit.
 
 Every lane receives the same independent search allowance. The command filters
 explicit potion-use inputs by exact slot without deleting potions from the
