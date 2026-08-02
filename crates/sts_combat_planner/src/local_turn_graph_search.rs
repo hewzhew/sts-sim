@@ -121,6 +121,8 @@ struct GraphNode {
     path_atomic_depth: usize,
     relative_turn_depth: usize,
     visits: usize,
+    first_service_selection: Option<usize>,
+    first_guide_service_selection: Option<usize>,
     generated_options: usize,
     children: Vec<GraphEdge>,
     guides: Vec<CombatStateGuide>,
@@ -527,6 +529,9 @@ impl LocalTurnGraphWitnessSession {
         view: LocalServiceView,
     ) {
         self.nodes[node_id].visits = self.nodes[node_id].visits.saturating_add(1);
+        self.nodes[node_id]
+            .first_service_selection
+            .get_or_insert(self.used.selections.saturating_add(1));
         self.used.node_visits = self.used.node_visits.saturating_add(1);
         match view {
             LocalServiceView::Anchor => {
@@ -534,6 +539,9 @@ impl LocalTurnGraphWitnessSession {
                     self.nodes[node_id].widen_anchor_visits.saturating_add(1);
             }
             LocalServiceView::Guide(lane) => {
+                self.nodes[node_id]
+                    .first_guide_service_selection
+                    .get_or_insert(self.used.selections.saturating_add(1));
                 let visits = self.nodes[node_id]
                     .widen_guide_visits
                     .entry(lane)

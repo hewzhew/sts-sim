@@ -287,6 +287,152 @@ fn draw_and_energy_gain_are_ranked_as_immediate_action_supply() {
 }
 
 #[test]
+fn burning_pact_access_precedes_partial_defense_with_energy_to_use_the_draw() {
+    let mut combat = blank_test_combat();
+    combat.turn.energy = 3;
+    combat.entities.player.current_hp = 80;
+    combat.zones.hand = vec![
+        CombatCard::new(CardId::BurningPact, 10),
+        CombatCard::new(CardId::Disarm, 11),
+        CombatCard::new(CardId::Defend, 12),
+    ];
+    add_visible_attacker(&mut combat);
+
+    let burning_pact = priority_for_input(
+        &EngineState::CombatPlayerTurn,
+        &combat,
+        &ClientInput::PlayCard {
+            card_index: 0,
+            target: None,
+        },
+        CombatSearchV2PhaseGuardPolicy::Default,
+        CombatSearchV2SetupBiasPolicy::Default,
+    );
+    let disarm = priority_for_input(
+        &EngineState::CombatPlayerTurn,
+        &combat,
+        &ClientInput::PlayCard {
+            card_index: 1,
+            target: Some(2),
+        },
+        CombatSearchV2PhaseGuardPolicy::Default,
+        CombatSearchV2SetupBiasPolicy::Default,
+    );
+    let defend = priority_for_input(
+        &EngineState::CombatPlayerTurn,
+        &combat,
+        &ClientInput::PlayCard {
+            card_index: 2,
+            target: None,
+        },
+        CombatSearchV2PhaseGuardPolicy::Default,
+        CombatSearchV2SetupBiasPolicy::Default,
+    );
+
+    assert_eq!(burning_pact.role, ActionOrderingRole::ImmediateActionSupply);
+    assert_eq!(burning_pact.policy_log2_bias, 6);
+    assert!(
+        burning_pact > disarm,
+        "pact={burning_pact:?} disarm={disarm:?}"
+    );
+    assert!(
+        burning_pact > defend,
+        "pact={burning_pact:?} defend={defend:?}"
+    );
+}
+
+#[test]
+fn burning_pact_does_not_jump_a_block_when_no_energy_remains_for_the_draw() {
+    let mut combat = blank_test_combat();
+    combat.turn.energy = 1;
+    combat.entities.player.current_hp = 80;
+    combat.zones.hand = vec![
+        CombatCard::new(CardId::BurningPact, 10),
+        CombatCard::new(CardId::Strike, 11),
+        CombatCard::new(CardId::Defend, 12),
+    ];
+    add_visible_attacker(&mut combat);
+
+    let burning_pact = priority_for_input(
+        &EngineState::CombatPlayerTurn,
+        &combat,
+        &ClientInput::PlayCard {
+            card_index: 0,
+            target: None,
+        },
+        CombatSearchV2PhaseGuardPolicy::Default,
+        CombatSearchV2SetupBiasPolicy::Default,
+    );
+    let defend = priority_for_input(
+        &EngineState::CombatPlayerTurn,
+        &combat,
+        &ClientInput::PlayCard {
+            card_index: 2,
+            target: None,
+        },
+        CombatSearchV2PhaseGuardPolicy::Default,
+        CombatSearchV2SetupBiasPolicy::Default,
+    );
+
+    assert!(
+        defend > burning_pact,
+        "pact={burning_pact:?} defend={defend:?}"
+    );
+    assert_eq!(burning_pact.policy_log2_bias, 0);
+}
+
+#[test]
+fn burning_pact_pre_engine_access_bias_ends_after_dark_embrace_is_online() {
+    let mut combat = blank_test_combat();
+    combat.turn.energy = 3;
+    combat.entities.player.current_hp = 80;
+    combat.zones.hand = vec![
+        CombatCard::new(CardId::BurningPact, 10),
+        CombatCard::new(CardId::Strike, 11),
+        CombatCard::new(CardId::Defend, 12),
+    ];
+    combat.entities.power_db.insert(
+        combat.entities.player.id,
+        vec![crate::runtime::combat::Power {
+            power_type: crate::content::powers::PowerId::DarkEmbrace,
+            instance_id: None,
+            amount: 1,
+            extra_data: 0,
+            payload: crate::runtime::combat::PowerPayload::None,
+            just_applied: false,
+        }],
+    );
+    add_visible_attacker(&mut combat);
+
+    let burning_pact = priority_for_input(
+        &EngineState::CombatPlayerTurn,
+        &combat,
+        &ClientInput::PlayCard {
+            card_index: 0,
+            target: None,
+        },
+        CombatSearchV2PhaseGuardPolicy::Default,
+        CombatSearchV2SetupBiasPolicy::Default,
+    );
+    let defend = priority_for_input(
+        &EngineState::CombatPlayerTurn,
+        &combat,
+        &ClientInput::PlayCard {
+            card_index: 2,
+            target: None,
+        },
+        CombatSearchV2PhaseGuardPolicy::Default,
+        CombatSearchV2SetupBiasPolicy::Default,
+    );
+
+    assert!(
+        defend > burning_pact,
+        "pact={burning_pact:?} defend={defend:?}"
+    );
+    assert_eq!(burning_pact.policy_log2_bias, 0);
+}
+
+#[test]
 fn unusable_draw_and_lethal_self_damage_do_not_claim_immediate_supply() {
     let mut combat = blank_test_combat();
     combat.turn.energy = 3;

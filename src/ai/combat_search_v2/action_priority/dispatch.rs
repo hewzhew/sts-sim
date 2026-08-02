@@ -22,6 +22,7 @@ pub(in crate::ai::combat_search_v2) fn priority_for_input_with_plugins(
             pending_choice_primary: hint.primary,
             pending_choice_secondary: hint.secondary,
             pending_choice_selected_count: hint.selected_count_tiebreak,
+            policy_log2_bias: hint.policy_log2_bias,
             ..ActionOrderingPriority::neutral(role)
         };
     }

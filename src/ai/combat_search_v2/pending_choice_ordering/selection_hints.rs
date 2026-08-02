@@ -1,5 +1,7 @@
 use crate::content::cards::CardId;
+use crate::content::powers::{store, PowerId};
 use crate::runtime::combat::CombatCard;
+use crate::runtime::combat::CombatState;
 use crate::state::core::{GridSelectReason, HandSelectReason};
 
 use super::card_selection::{aggregate_card_facts, CardSelectionFacts};
@@ -7,14 +9,24 @@ use super::{PendingChoiceOrderingHint, PendingChoiceOrderingRole};
 
 const RECYCLE_ENERGY_FACTOR: i32 = 10;
 const SETUP_EXPENSIVE_CARD_BONUS: i32 = 25;
+// A Wound is normally the first card a one-card Exhaust choice should remove.
+// Once the Power Through / Second Wind / Dark Embrace engine is connected,
+// however, that same Wound is five-or-more Block plus one draw when converted
+// by Second Wind.  This penalty deliberately exceeds the ordinary +1000
+// undesirable-card removal value so the context-specific engine prior changes
+// the ordering by a full tier instead of becoming another small tiebreak.
+const CONNECTED_SECOND_WIND_WOUND_PRESERVATION: i32 = 2_000;
+const CONNECTED_SECOND_WIND_WOUND_LOG2_BIAS: i32 = -10;
 
 pub(super) fn selection_hint_for_hand_reason(
+    combat: &CombatState,
     reason: HandSelectReason,
     cards: &[&CombatCard],
     selected_count: usize,
 ) -> PendingChoiceOrderingHint {
     match reason {
-        HandSelectReason::Discard | HandSelectReason::Exhaust | HandSelectReason::GamblingChip => {
+        HandSelectReason::Exhaust => exhaust_selection_hint(combat, cards, selected_count),
+        HandSelectReason::Discard | HandSelectReason::GamblingChip => {
             removal_selection_hint(cards, selected_count)
         }
         HandSelectReason::Recycle => recycle_selection_hint(cards, selected_count),
@@ -27,6 +39,49 @@ pub(super) fn selection_hint_for_hand_reason(
         | HandSelectReason::PutToBottomOfDraw
         | HandSelectReason::Setup => draw_pile_setup_selection_hint(cards, selected_count),
     }
+}
+
+fn exhaust_selection_hint(
+    combat: &CombatState,
+    cards: &[&CombatCard],
+    selected_count: usize,
+) -> PendingChoiceOrderingHint {
+    let facts = aggregate_card_facts(cards.iter().copied().map(CardSelectionFacts::from_card));
+    let preserved_wounds = if connected_second_wind_wound_engine(combat) {
+        cards
+            .iter()
+            .filter(|card| card.id == CardId::Wound)
+            .count()
+            .try_into()
+            .unwrap_or(i32::MAX)
+    } else {
+        0
+    };
+    PendingChoiceOrderingHint {
+        role: PendingChoiceOrderingRole::RemovalSelection,
+        primary: facts.removal_value.saturating_sub(
+            preserved_wounds.saturating_mul(CONNECTED_SECOND_WIND_WOUND_PRESERVATION),
+        ),
+        secondary: -facts.keep_value,
+        selected_count_tiebreak: -(selected_count as i32),
+        policy_log2_bias: preserved_wounds.saturating_mul(CONNECTED_SECOND_WIND_WOUND_LOG2_BIAS),
+    }
+}
+
+fn connected_second_wind_wound_engine(combat: &CombatState) -> bool {
+    let player = combat.entities.player.id;
+    store::has_power(combat, player, PowerId::DarkEmbrace)
+        && active_unexhausted_cards(combat).any(|card| card.id == CardId::SecondWind)
+        && active_unexhausted_cards(combat).any(|card| card.id == CardId::PowerThrough)
+}
+
+fn active_unexhausted_cards(combat: &CombatState) -> impl Iterator<Item = &CombatCard> {
+    combat
+        .zones
+        .hand
+        .iter()
+        .chain(&combat.zones.draw_pile)
+        .chain(&combat.zones.discard_pile)
 }
 
 pub(super) fn selection_hint_for_grid_reason(
@@ -58,6 +113,7 @@ fn value_selection_hint(cards: &[&CombatCard], selected_count: usize) -> Pending
         primary: facts.keep_value,
         secondary: -facts.removal_value,
         selected_count_tiebreak: -(selected_count as i32),
+        policy_log2_bias: 0,
     }
 }
 
@@ -71,6 +127,7 @@ pub(super) fn value_selection_hint_from_card_id(
         primary: facts.keep_value,
         secondary: -facts.removal_value,
         selected_count_tiebreak: -(selected_count as i32),
+        policy_log2_bias: 0,
     }
 }
 
@@ -86,6 +143,7 @@ fn repeated_value_selection_hint(
         primary: facts.keep_value.saturating_mul(repeat_count),
         secondary: facts.upgrade_value.saturating_sub(facts.removal_value),
         selected_count_tiebreak: -(selected_count as i32),
+        policy_log2_bias: 0,
     }
 }
 
@@ -99,6 +157,7 @@ fn upgrade_selection_hint(
         primary: facts.upgrade_value,
         secondary: facts.keep_value.saturating_sub(facts.removal_value),
         selected_count_tiebreak: -(selected_count as i32),
+        policy_log2_bias: 0,
     }
 }
 
@@ -114,6 +173,7 @@ fn exhume_selection_hint(
         primary: facts.keep_value.saturating_add(upgrade_bonus),
         secondary: -facts.removal_value,
         selected_count_tiebreak: -(selected_count as i32),
+        policy_log2_bias: 0,
     }
 }
 
@@ -127,6 +187,7 @@ fn removal_selection_hint(
         primary: facts.removal_value,
         secondary: -facts.keep_value,
         selected_count_tiebreak: -(selected_count as i32),
+        policy_log2_bias: 0,
     }
 }
 
@@ -145,6 +206,7 @@ pub(super) fn removal_selection_hint_from_card_ids(
         primary: facts.removal_value,
         secondary: -facts.keep_value,
         selected_count_tiebreak: -(selected_count as i32),
+        policy_log2_bias: 0,
     }
 }
 
@@ -164,6 +226,7 @@ fn recycle_selection_hint(
             .saturating_add(facts.removal_value),
         secondary: -facts.keep_value,
         selected_count_tiebreak: -(selected_count as i32),
+        policy_log2_bias: 0,
     }
 }
 
@@ -183,5 +246,6 @@ fn draw_pile_setup_selection_hint(
             .saturating_add(currently_expensive.saturating_mul(SETUP_EXPENSIVE_CARD_BONUS)),
         secondary: -facts.removal_value,
         selected_count_tiebreak: -(selected_count as i32),
+        policy_log2_bias: 0,
     }
 }

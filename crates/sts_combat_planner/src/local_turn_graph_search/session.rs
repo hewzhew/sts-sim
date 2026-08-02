@@ -78,6 +78,8 @@ impl LocalTurnGraphWitnessSession {
             path_atomic_depth: 0,
             relative_turn_depth: 0,
             visits: 0,
+            first_service_selection: None,
+            first_guide_service_selection: None,
             generated_options: 0,
             children: Vec::new(),
             guides: root_guides,

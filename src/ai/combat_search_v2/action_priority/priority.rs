@@ -28,6 +28,10 @@ pub(in crate::ai::combat_search_v2) struct ActionOrderingPriority {
     pub(in crate::ai::combat_search_v2) pending_choice_primary: i32,
     pub(in crate::ai::combat_search_v2) pending_choice_secondary: i32,
     pub(in crate::ai::combat_search_v2) pending_choice_selected_count: i32,
+    /// Signed base-two multiplier applied after ordinal rank is converted to
+    /// a positive policy weight.  It is deliberately not part of `Ord`:
+    /// categorical ordering and semantic concentration remain auditable.
+    pub(in crate::ai::combat_search_v2) policy_log2_bias: i32,
     pub(in crate::ai::combat_search_v2) phase_hint: PhaseActionOrderingHint,
     pub(in crate::ai::combat_search_v2) effects: CardPlayEffectDiagnostics,
 }
@@ -56,6 +60,7 @@ impl ActionOrderingPriority {
             pending_choice_primary: 0,
             pending_choice_secondary: 0,
             pending_choice_selected_count: 0,
+            policy_log2_bias: 0,
             phase_hint: PhaseActionOrderingHint::default(),
             effects: CardPlayEffectDiagnostics::default(),
         }

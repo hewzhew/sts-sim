@@ -32,6 +32,7 @@ pub(super) fn pending_choice_ordering_hint(
             primary: 0,
             secondary: 0,
             selected_count_tiebreak: 0,
+            policy_log2_bias: 0,
         }),
         (
             PendingChoice::HandSelect {
@@ -50,7 +51,12 @@ pub(super) fn pending_choice_ordering_hint(
                     find_card_by_uuid(CardPileView::Contiguous(&combat.zones.hand), *uuid)
                 })
                 .collect::<Vec<_>>();
-            Some(selection_hint_for_hand_reason(*reason, &cards, uuids.len()))
+            Some(selection_hint_for_hand_reason(
+                combat,
+                *reason,
+                &cards,
+                uuids.len(),
+            ))
         }
         (
             PendingChoice::GridSelect {
@@ -105,6 +111,7 @@ pub(super) fn pending_choice_ordering_hint(
                 primary: -(*idx as i32),
                 secondary: 0,
                 selected_count_tiebreak: -1,
+                policy_log2_bias: 0,
             })
         }
         _ => None,

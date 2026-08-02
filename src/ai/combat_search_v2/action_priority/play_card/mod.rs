@@ -14,7 +14,7 @@ use super::constants::*;
 use super::*;
 use crate::ai::card_semantics_v1::{card_mechanics_profile_v1, CombatExternalPayoffV1};
 use crate::content::cards::{self, CardType};
-use crate::content::powers::PowerId;
+use crate::content::powers::{store, PowerId};
 use crate::runtime::combat::CombatState;
 
 use setup::{
@@ -169,6 +169,12 @@ pub(super) fn priority_for_play_card(
         && (visible_loss_after_block < current_hp || guardian_mode_shift_interrupts_visible_attack);
     let prevents_hp_loss = visible_loss_after_block < visible_loss_now
         || guardian_mode_shift_interrupts_visible_attack;
+    let defensive_action_supply = card.id == cards::CardId::BurningPact
+        && safe_immediate_action_supply
+        && !store::has_power(combat, combat.entities.player.id, PowerId::DarkEmbrace)
+        && visible_loss_now > 0
+        && visible_loss_now < current_hp
+        && i32::from(combat.turn.energy).saturating_sub(card.cost_for_turn_java().max(0)) >= 1;
     let key_setup_card = plugins.action_prior.prioritizes_key_card_online()
         && key_setup_card_online_candidate(card.id, card.upgrades);
     let (role, role_rank) = if target_lethal {
@@ -177,6 +183,11 @@ pub(super) fn priority_for_play_card(
         (
             ActionOrderingRole::PreventVisibleLethal,
             ROLE_PREVENT_VISIBLE_LETHAL,
+        )
+    } else if defensive_action_supply {
+        (
+            ActionOrderingRole::ImmediateActionSupply,
+            ROLE_DEFENSIVE_ACTION_SUPPLY,
         )
     } else if mitigation > 0 {
         (
@@ -254,6 +265,7 @@ pub(super) fn priority_for_play_card(
         phase_survival: phase_hint.phase_survival,
         phase_transition_safety: phase_hint.phase_transition_safety,
         resource_timing: resource_timing.ordering_score,
+        policy_log2_bias: if defensive_action_supply { 6 } else { 0 },
         phase_hint,
         effects: effect_diagnostics,
         ..ActionOrderingPriority::neutral(role)

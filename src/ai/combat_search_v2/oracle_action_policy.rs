@@ -52,6 +52,7 @@ pub struct OracleAtomicActionPriorityDiagnosticV1 {
     pub phase_survival: i32,
     pub phase_transition_safety: i32,
     pub resource_timing: i32,
+    pub policy_log2_bias: i32,
     pub direct_persistent_enemy_strength_down: i32,
     pub direct_temporary_enemy_strength_down: i32,
     pub direct_visible_attack_mitigation_hint: i32,
@@ -209,8 +210,8 @@ where
         });
     }
     let mut rank_by_input = vec![None; inputs.len()];
-    for (rank, (original_action_id, _)) in ranked.into_iter().enumerate() {
-        rank_by_input[original_action_id] = Some(rank);
+    for (rank, (original_action_id, priority)) in ranked.into_iter().enumerate() {
+        rank_by_input[original_action_id] = Some((rank, priority.policy_log2_bias));
     }
     rank_by_input
         .into_iter()
@@ -221,7 +222,9 @@ where
             {
                 return 1.0e-6;
             }
-            rank.map_or(1.0, oracle_ordinal_rank_weight)
+            rank.map_or(1.0, |(rank, policy_log2_bias)| {
+                oracle_rank_weight_with_semantic_bias(rank, policy_log2_bias)
+            })
         })
         .collect()
 }
@@ -273,7 +276,15 @@ where
             {
                 return 1.0e-6;
             }
-            rank.map_or(1.0, oracle_ordinal_rank_weight)
+            rank.map_or(1.0, |rank| {
+                let priority = super::action_priority::priority_for_input_with_plugins(
+                    &position.engine,
+                    &position.combat,
+                    input,
+                    oracle_action_ordering_plugins(position),
+                );
+                oracle_rank_weight_with_semantic_bias(rank, priority.policy_log2_bias)
+            })
         })
         .collect()
 }
@@ -309,6 +320,7 @@ pub fn oracle_atomic_action_policy_priority_diagnostics_v1(
                 phase_survival: priority.phase_survival,
                 phase_transition_safety: priority.phase_transition_safety,
                 resource_timing: priority.resource_timing,
+                policy_log2_bias: priority.policy_log2_bias,
                 direct_persistent_enemy_strength_down: priority
                     .effects
                     .direct
@@ -780,6 +792,12 @@ fn oracle_ordinal_rank_weight(rank: usize) -> f64 {
     1.0 / rank.saturating_add(1) as f64
 }
 
+fn oracle_rank_weight_with_semantic_bias(rank: usize, policy_log2_bias: i32) -> f64 {
+    const MAX_ABS_POLICY_LOG2_BIAS: i32 = 20;
+    oracle_ordinal_rank_weight(rank)
+        * 2.0_f64.powi(policy_log2_bias.clamp(-MAX_ABS_POLICY_LOG2_BIAS, MAX_ABS_POLICY_LOG2_BIAS))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -821,6 +839,111 @@ mod tests {
         assert_eq!(
             oracle_legal_atomic_action_policy_weights_for_refs(&position, &input_refs),
             oracle_atomic_action_policy_weights(&position, &inputs)
+        );
+    }
+
+    #[test]
+    fn trusted_legal_policy_path_matches_validated_semantic_bias() {
+        let mut combat = crate::test_support::blank_test_combat();
+        combat.entities.player.current_hp = 80;
+        let mut attacker = crate::test_support::planned_monster(EnemyId::TimeEater, 2);
+        attacker.id = 2;
+        combat.entities.monsters = vec![attacker];
+        combat.zones.hand = vec![
+            CombatCard::new(CardId::BurningPact, 11),
+            CombatCard::new(CardId::Defend, 12),
+        ];
+        combat.turn.energy = 3;
+        let position = CombatPosition::new(EngineState::CombatPlayerTurn, combat);
+        let inputs = EngineCombatStepper.atomic_actions(&position);
+        let input_refs = inputs.iter().collect::<Vec<_>>();
+
+        let validated = oracle_atomic_action_policy_weights(&position, &inputs);
+        let trusted = oracle_legal_atomic_action_policy_weights_for_refs(&position, &input_refs);
+        assert_eq!(trusted, validated);
+
+        let burning_pact_index = inputs
+            .iter()
+            .position(|input| {
+                matches!(
+                    input,
+                    ClientInput::PlayCard {
+                        card_index: 0,
+                        target: None
+                    }
+                )
+            })
+            .expect("Burning Pact should be a legal atomic action");
+        let diagnostics = oracle_atomic_action_policy_priority_diagnostics_v1(&position, &inputs);
+        assert_eq!(
+            diagnostics[burning_pact_index]
+                .as_ref()
+                .expect("Burning Pact should have priority diagnostics")
+                .policy_log2_bias,
+            6
+        );
+        assert!(trusted[burning_pact_index] > 1.0);
+    }
+
+    #[test]
+    fn connected_second_wind_wound_bias_reaches_both_policy_paths() {
+        let mut combat = crate::test_support::blank_test_combat();
+        combat.zones.hand = vec![
+            CombatCard::new(CardId::Wound, 10),
+            CombatCard::new(CardId::Cleave, 20),
+        ];
+        combat.zones.draw_pile = vec![
+            CombatCard::new(CardId::SecondWind, 30),
+            CombatCard::new(CardId::PowerThrough, 40),
+        ]
+        .into();
+        combat.entities.power_db.insert(
+            combat.entities.player.id,
+            vec![Power {
+                power_type: PowerId::DarkEmbrace,
+                instance_id: None,
+                amount: 1,
+                extra_data: 0,
+                payload: PowerPayload::None,
+                just_applied: false,
+            }],
+        );
+        let position = CombatPosition::new(
+            EngineState::PendingChoice(crate::state::core::PendingChoice::HandSelect {
+                candidate_uuids: vec![10, 20],
+                min_cards: 1,
+                max_cards: 1,
+                can_cancel: false,
+                reason: crate::state::core::HandSelectReason::Exhaust,
+            }),
+            combat,
+        );
+        let inputs = vec![
+            ClientInput::SubmitSelection(crate::state::selection::SelectionResolution::card_uuids(
+                crate::state::selection::SelectionScope::Hand,
+                [10],
+            )),
+            ClientInput::SubmitSelection(crate::state::selection::SelectionResolution::card_uuids(
+                crate::state::selection::SelectionScope::Hand,
+                [20],
+            )),
+        ];
+        let input_refs = inputs.iter().collect::<Vec<_>>();
+
+        let validated = oracle_atomic_action_policy_weights(&position, &inputs);
+        let trusted = oracle_legal_atomic_action_policy_weights_for_refs(&position, &input_refs);
+        assert_eq!(trusted, validated);
+        assert!(
+            trusted[1] > trusted[0] * 1_000.0,
+            "Wound should be suppressed by a semantic scale: {trusted:?}"
+        );
+        let diagnostics = oracle_atomic_action_policy_priority_diagnostics_v1(&position, &inputs);
+        assert_eq!(
+            diagnostics[0]
+                .as_ref()
+                .expect("Wound choice should have priority diagnostics")
+                .policy_log2_bias,
+            -10
         );
     }
 
@@ -1061,6 +1184,20 @@ mod tests {
         assert_eq!(oracle_ordinal_rank_weight(1), 0.5);
         assert_eq!(oracle_ordinal_rank_weight(2), 1.0 / 3.0);
         assert_eq!(oracle_ordinal_rank_weight(15), 1.0 / 16.0);
+    }
+
+    #[test]
+    fn explicit_semantic_bias_uses_bounded_base_two_scale() {
+        assert_eq!(oracle_rank_weight_with_semantic_bias(0, 6), 64.0);
+        assert_eq!(oracle_rank_weight_with_semantic_bias(0, -10), 1.0 / 1_024.0);
+        assert_eq!(
+            oracle_rank_weight_with_semantic_bias(0, 21),
+            oracle_rank_weight_with_semantic_bias(0, 20)
+        );
+        assert_eq!(
+            oracle_rank_weight_with_semantic_bias(0, -21),
+            oracle_rank_weight_with_semantic_bias(0, -20)
+        );
     }
 
     #[test]

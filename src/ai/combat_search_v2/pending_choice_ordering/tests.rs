@@ -1,5 +1,7 @@
 use super::*;
+use crate::content::powers::PowerId;
 use crate::runtime::combat::CombatCard;
+use crate::runtime::combat::{Power, PowerPayload};
 use crate::state::selection::{SelectionResolution, SelectionScope};
 use crate::test_support::blank_test_combat;
 
@@ -102,4 +104,73 @@ fn cancel_is_explicitly_low_priority_but_still_ranked() {
 
     assert_eq!(cancel.role, PendingChoiceOrderingRole::Cancel);
     assert!(pick.primary > cancel.primary);
+}
+
+#[test]
+fn connected_second_wind_engine_preserves_wound_for_batch_conversion() {
+    let mut combat = blank_test_combat();
+    combat.zones.hand = vec![
+        CombatCard::new(CardId::Wound, 10),
+        CombatCard::new(CardId::Cleave, 20),
+    ];
+    combat.zones.draw_pile = vec![
+        CombatCard::new(CardId::SecondWind, 30),
+        CombatCard::new(CardId::PowerThrough, 40),
+    ]
+    .into();
+    combat.entities.power_db.insert(
+        combat.entities.player.id,
+        vec![Power {
+            power_type: PowerId::DarkEmbrace,
+            instance_id: None,
+            amount: 1,
+            extra_data: 0,
+            payload: PowerPayload::None,
+            just_applied: false,
+        }],
+    );
+    let engine = EngineState::PendingChoice(PendingChoice::HandSelect {
+        candidate_uuids: vec![10, 20],
+        min_cards: 1,
+        max_cards: 1,
+        can_cancel: false,
+        reason: HandSelectReason::Exhaust,
+    });
+
+    let wound = pending_choice_ordering_hint(&engine, &combat, &hand_select([10]))
+        .expect("Wound candidate should rank");
+    let cleave = pending_choice_ordering_hint(&engine, &combat, &hand_select([20]))
+        .expect("Cleave candidate should rank");
+
+    assert!(
+        cleave.primary > wound.primary,
+        "connected batch conversion should preserve Wound: wound={wound:?} cleave={cleave:?}"
+    );
+    assert_eq!(wound.policy_log2_bias, -10);
+    assert_eq!(cleave.policy_log2_bias, 0);
+}
+
+#[test]
+fn ordinary_exhaust_still_prefers_removing_wound() {
+    let mut combat = blank_test_combat();
+    combat.zones.hand = vec![
+        CombatCard::new(CardId::Wound, 10),
+        CombatCard::new(CardId::Cleave, 20),
+    ];
+    let engine = EngineState::PendingChoice(PendingChoice::HandSelect {
+        candidate_uuids: vec![10, 20],
+        min_cards: 1,
+        max_cards: 1,
+        can_cancel: false,
+        reason: HandSelectReason::Exhaust,
+    });
+
+    let wound = pending_choice_ordering_hint(&engine, &combat, &hand_select([10]))
+        .expect("Wound candidate should rank");
+    let cleave = pending_choice_ordering_hint(&engine, &combat, &hand_select([20]))
+        .expect("Cleave candidate should rank");
+
+    assert!(wound.primary > cleave.primary);
+    assert_eq!(wound.policy_log2_bias, 0);
+    assert_eq!(cleave.policy_log2_bias, 0);
 }

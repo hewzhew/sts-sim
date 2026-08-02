@@ -267,6 +267,8 @@ pub struct LocalTurnGraphStateSnapshot {
     pub exact_state_hash: String,
     pub relative_turn_depth: usize,
     pub visits: usize,
+    pub first_service_selection: Option<usize>,
+    pub first_guide_service_selection: Option<usize>,
     pub generation_work: usize,
     pub generator_engine_steps: usize,
     pub retained_generator_work_items: usize,

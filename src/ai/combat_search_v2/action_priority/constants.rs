@@ -2,6 +2,11 @@
 // They never merge, prune, or claim that two actions are equivalent.
 pub(super) const ROLE_LETHAL_CARD: i32 = 130;
 pub(super) const ROLE_PREVENT_VISIBLE_LETHAL: i32 = 120;
+// A nonlethal incoming attack is exactly when two-or-more-card access can find
+// the rest of the defense while there is still energy to use it.  Keep this
+// below already-proven lethal prevention, but above committing mitigation or
+// one known block card before seeing the additional hand information.
+pub(super) const ROLE_DEFENSIVE_ACTION_SUPPLY: i32 = 105;
 pub(super) const ROLE_SUSTAINED_MITIGATION: i32 = 95;
 pub(super) const ROLE_KEY_SETUP_CARD: i32 = 90;
 pub(super) const ROLE_TACTICAL_POTION_BASE: i32 = 60;

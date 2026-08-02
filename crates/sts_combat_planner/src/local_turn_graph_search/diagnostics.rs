@@ -171,6 +171,8 @@ impl LocalTurnGraphWitnessSession {
             exact_state_hash: exact_state_hash.to_owned(),
             relative_turn_depth: node.relative_turn_depth,
             visits: node.visits,
+            first_service_selection: node.first_service_selection,
+            first_guide_service_selection: node.first_guide_service_selection,
             generation_work: counters.generation_work,
             generator_engine_steps: counters.engine_steps,
             retained_generator_work_items: node.generator.retained_work_items(),
