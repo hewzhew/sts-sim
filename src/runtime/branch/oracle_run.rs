@@ -3,16 +3,14 @@ use std::path::Path;
 use std::time::{Instant, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
 
 use crate::ai::combat_search_v2::{CombatSearchV2RolloutPolicy, CombatSearchV2Satisfaction};
 use crate::content::potions::Potion;
 use crate::content::relics::RelicState;
 use crate::eval::combat_case::{
-    CombatCase, CombatCaseGap, CombatCasePathStep, CombatCaseRngSummary, CombatCaseRunSummary,
-    CombatCaseSource,
+    CombatCase, CombatCaseGap, CombatCaseRngSummary, CombatCaseRunSummary, CombatCaseSource,
 };
-use crate::eval::combat_case_context::capture_combat_case_production_context_v1;
+use crate::eval::combat_case_context::capture_oracle_analysis_combat_case_production_context_v1;
 use crate::eval::run_control::{
     drive_oracle_run_explorer_v1, expand_oracle_neow_candidates_v1,
     seed_oracle_run_explorer_from_checkpoint_v1, seed_oracle_run_explorer_from_session_v1,
@@ -294,7 +292,7 @@ pub fn run_oracle_run(config: OracleRunConfig) -> Result<OracleRunReportV1, Stri
         OracleRunExploreBudgetV1 {
             max_work_items: config.budget.max_work_items,
             wall_ms: config.budget.wall_ms,
-            combat: oracle_combat_budgets(&config),
+            combat: oracle_run_combat_budgets_v1(&config),
             combat_quantum_nodes: config.budget.combat_quantum_nodes,
             combat_quantum_ms: Some(config.budget.combat_quantum_ms),
             decision_prior: Some(super::owner_audit::legacy_oracle_policy_prior_v1),
@@ -326,7 +324,7 @@ pub fn run_oracle_run_from_continuation(
     validate_config(&config)?;
     validate_continuation(&config, &continuation)?;
     let started = Instant::now();
-    let combat_budgets = oracle_combat_budgets(&config);
+    let combat_budgets = oracle_run_combat_budgets_v1(&config);
     let explorer = if let Some(frontier) = continuation.explorer_frontier {
         seed_oracle_run_explorer_from_checkpoint_v1(frontier, &combat_budgets)?
     } else {
@@ -689,25 +687,14 @@ fn combat_case_for_branch(
         },
         Vec::new(),
         None,
-        branch
-            .replay
-            .iter()
-            .map(|step| CombatCasePathStep {
-                key: Value::Null,
-                label: step.label.clone(),
-                state_before: None,
-                decision_evidence: Some(json!({
-                    "candidate_id": &step.candidate_id,
-                    "action": &step.action,
-                })),
-            })
-            .collect(),
+        Vec::new(),
         CombatCaseRngSummary::from_pool(&branch.session.run_state.rng_pool),
         position,
     );
-    case.production_context = Some(capture_combat_case_production_context_v1(
+    case.production_context = Some(capture_oracle_analysis_combat_case_production_context_v1(
         &case,
         &branch.session,
+        &oracle_run_combat_budgets_v1(config),
     )?);
     Ok(Some(case))
 }
@@ -854,7 +841,7 @@ fn validate_continuation(
     Ok(())
 }
 
-pub(super) fn oracle_combat_budgets(config: &OracleRunConfig) -> OracleRunCombatBudgetsV1 {
+pub fn oracle_run_combat_budgets_v1(config: &OracleRunConfig) -> OracleRunCombatBudgetsV1 {
     OracleRunCombatBudgetsV1 {
         hallway: RunControlSearchCombatOptions {
             max_nodes: Some(config.budget.hallway_nodes),
@@ -936,7 +923,7 @@ mod tests {
             budget: OracleRunBudget::default(),
         };
 
-        let budgets = oracle_combat_budgets(&config);
+        let budgets = oracle_run_combat_budgets_v1(&config);
 
         assert_eq!(
             budgets.boss.satisfaction,

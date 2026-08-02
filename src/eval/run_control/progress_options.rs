@@ -1,3 +1,5 @@
+use serde::{Deserialize, Serialize};
+
 use crate::ai::combat_search_v2::{
     CombatSearchProfile, CombatSearchV2ChildRolloutPolicy, CombatSearchV2PhaseGuardPolicy,
     CombatSearchV2PotionPolicy, CombatSearchV2RolloutPolicy, CombatSearchV2Satisfaction,
@@ -39,13 +41,15 @@ pub struct RunControlCombatSearchQuantum {
     pub soft_wall_ms: Option<u64>,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum RunControlCombatSegmentMode {
     TurnBoundary,
     NonBossTurnBoundary,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum RunControlHpLossLimit {
     Limit(u32),
     Unlimited,

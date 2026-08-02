@@ -158,11 +158,14 @@ impl CombatCase {
     }
 
     pub fn replay_capability_v1(&self) -> Result<CombatCaseReplayCapabilityV1, String> {
-        if self.production_context.is_some() {
-            validate_combat_case_production_context_v1(self)?;
+        let Some(context) = self.production_context.as_ref() else {
+            return Ok(CombatCaseReplayCapabilityV1::IsolatedProjection);
+        };
+        validate_combat_case_production_context_v1(self)?;
+        if context.production_owner.is_some() {
             Ok(CombatCaseReplayCapabilityV1::ExactProductionOwner)
         } else {
-            Ok(CombatCaseReplayCapabilityV1::IsolatedProjection)
+            Ok(CombatCaseReplayCapabilityV1::ExactProductionState)
         }
     }
 

@@ -88,6 +88,18 @@ Start a diagnostic review from one saved case:
 cargo run -p sts_oracle_tools --bin combat_case_review -- --case <case.json> --ladder
 ```
 
+Run the captured production owner directly from a case that carries validated
+owner context:
+
+```powershell
+.\ol.cmd combat-case-owner-parity --case <case.json> --wall-ms 30000
+```
+
+The default command is in-memory and writes no workspace, timeline, or sidecar.
+Use `--keep-debug <path>` only when the full advance report and resumable
+analysis checkpoint are needed. Legacy, counterfactual, descendant, and
+state-only cases are rejected rather than combined with inferred owner defaults.
+
 Review output is diagnostic. It does not mutate runner policy or prove that a
 deck is good or bad.
 

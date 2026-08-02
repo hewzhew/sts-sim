@@ -3,10 +3,10 @@ use std::path::Path;
 use serde_json::{json, Value};
 use sts_oracle_runtime::ai::combat_state_key::combat_exact_state_hash_v2;
 use sts_oracle_runtime::eval::combat_case::{
-    save_combat_case, CombatCase, CombatCaseGap, CombatCasePathStep, CombatCaseRngSummary,
-    CombatCaseRunSummary, CombatCaseSource,
+    save_combat_case, CombatCase, CombatCaseGap, CombatCaseRngSummary, CombatCaseRunSummary,
+    CombatCaseSource,
 };
-use sts_oracle_runtime::eval::combat_case_context::capture_combat_case_production_context_v1;
+use sts_oracle_runtime::eval::combat_case_context::capture_oracle_analysis_combat_case_production_context_v1;
 use sts_oracle_runtime::eval::run_control::{
     exact_audit_run_progress_journal_policy_v1, exact_replay_run_progress_journal_prefix_v1,
     exact_replay_run_progress_journal_v1, splice_exact_combat_resolution_v1,
@@ -14,8 +14,8 @@ use sts_oracle_runtime::eval::run_control::{
 };
 use sts_oracle_runtime::runtime::branch::{
     current_oracle_candidate_order_v1, load_oracle_analysis_workspace_v1,
-    recover_oracle_analysis_combat_case_v1, save_oracle_run_continuation_v1,
-    OracleRunContinuationV1,
+    oracle_run_combat_budgets_v1, recover_oracle_analysis_combat_case_v1,
+    save_oracle_run_continuation_v1, OracleRunConfig, OracleRunContinuationV1,
 };
 use sts_oracle_runtime::sim::combat::{combat_terminal, CombatPosition};
 
@@ -216,33 +216,18 @@ pub(super) fn export_historical_combat(
         format!("journal entry {journal_entry} does not begin at an active combat")
     })?;
     let position = CombatPosition::new(active.engine_state.clone(), active.combat_state.clone());
-    let path = continuation
+    let generation = continuation
         .journal
         .entries()
         .iter()
         .take(journal_entry)
         .filter_map(RunProgressStepV1::as_decision)
-        .map(|record| CombatCasePathStep {
-            key: Value::Null,
-            label: record.result.chosen_label.clone(),
-            state_before: Some(json!({
-                "title": record.before.title,
-                "location": record.before.location,
-            })),
-            decision_evidence: Some(json!({
-                "candidate_id": record.selection.candidate_id,
-                "source": record.selection.source,
-                "candidates": record.before.candidates.iter()
-                    .map(|candidate| &candidate.label)
-                    .collect::<Vec<_>>(),
-            })),
-        })
-        .collect::<Vec<_>>();
+        .count();
     let mut case = CombatCase::new(
         CombatCaseSource {
             seed: continuation.seed,
             ascension: continuation.ascension,
-            generation: path.len(),
+            generation,
             branch_id: node,
             parent_id: None,
         },
@@ -269,13 +254,20 @@ pub(super) fn export_historical_combat(
         },
         Vec::new(),
         None,
-        path,
+        Vec::new(),
         CombatCaseRngSummary::from_pool(&historical.run_state.rng_pool),
         position,
     );
-    case.production_context = Some(capture_combat_case_production_context_v1(
+    let owner_budgets = oracle_run_combat_budgets_v1(&OracleRunConfig {
+        seed: analysis.seed,
+        ascension: analysis.ascension,
+        budget: analysis.budget,
+    })
+    .with_guidance_bundle(analysis.combat_guidance_bundle.clone());
+    case.production_context = Some(capture_oracle_analysis_combat_case_production_context_v1(
         &case,
         &historical,
+        &owner_budgets,
     )?);
     let actions = resolution
         .trajectory

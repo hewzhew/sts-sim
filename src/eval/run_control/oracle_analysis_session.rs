@@ -2,7 +2,6 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
 use sts_combat_planner::LocalTurnGraphRootActionFamilySnapshot;
 
 use crate::content::potions::Potion;
@@ -14,10 +13,9 @@ use crate::sim::combat::CombatPosition;
 use crate::state::core::ClientInput;
 
 use crate::eval::combat_case::{
-    CombatCase, CombatCaseGap, CombatCasePathStep, CombatCaseRngSummary, CombatCaseRunSummary,
-    CombatCaseSource,
+    CombatCase, CombatCaseGap, CombatCaseRngSummary, CombatCaseRunSummary, CombatCaseSource,
 };
-use crate::eval::combat_case_context::capture_combat_case_production_context_v1;
+use crate::eval::combat_case_context::capture_oracle_analysis_combat_case_production_context_v1;
 
 use super::oracle_combat_work::{
     OracleCombatLocalCandidateDispositionV1, OracleRunCombatWorkCheckpointV1,
@@ -822,30 +820,17 @@ impl OracleAnalysisSessionV1 {
     ) -> Result<CombatCase, String> {
         let branch = self.require_branch(node_id)?;
         let position: CombatPosition = branch.session.current_active_combat_position()?;
-        let path: Vec<CombatCasePathStep> = branch
+        let generation = branch
             .journal
             .entries()
             .iter()
             .filter_map(RunProgressStepV1::as_decision)
-            .map(|record| CombatCasePathStep {
-                key: Value::Null,
-                label: record.result.chosen_label.clone(),
-                state_before: Some(json!({
-                    "title": record.before.title,
-                    "location": record.before.location,
-                })),
-                decision_evidence: Some(json!({
-                    "candidate_id": record.selection.candidate_id,
-                    "source": record.selection.source,
-                    "candidates": record.before.candidates.iter().map(|candidate| &candidate.label).collect::<Vec<_>>(),
-                })),
-            })
-            .collect();
+            .count();
         let mut case = CombatCase::new(
             CombatCaseSource {
                 seed,
                 ascension,
-                generation: path.len(),
+                generation,
                 branch_id: branch.branch_id,
                 parent_id: branch.parent_branch_id,
             },
@@ -872,13 +857,14 @@ impl OracleAnalysisSessionV1 {
             },
             Vec::new(),
             None,
-            path,
+            Vec::new(),
             CombatCaseRngSummary::from_pool(&branch.session.run_state.rng_pool),
             position,
         );
-        case.production_context = Some(capture_combat_case_production_context_v1(
+        case.production_context = Some(capture_oracle_analysis_combat_case_production_context_v1(
             &case,
             &branch.session,
+            &self.combat_budgets,
         )?);
         Ok(case)
     }

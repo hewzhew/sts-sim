@@ -560,7 +560,7 @@ mod tests {
         OracleAnalysisSessionV1, RunControlConfig, RunControlSession, RunPolicyCandidateV1,
         RunPolicyPriorV1, RunProgressJournalV1,
     };
-    use crate::runtime::branch::oracle_run::oracle_combat_budgets;
+    use crate::runtime::branch::oracle_run::oracle_run_combat_budgets_v1;
     use crate::runtime::branch::{OracleAnalysisWorkspaceV1, OracleRunBudget, OracleRunConfig};
     use crate::state::core::EngineState;
     use crate::state::rewards::{RewardItem, RewardState};
@@ -619,7 +619,7 @@ mod tests {
             ascension: 0,
             budget: OracleRunBudget::default(),
         };
-        let combat_budgets = oracle_combat_budgets(&config);
+        let combat_budgets = oracle_run_combat_budgets_v1(&config);
         let explorer = seed_oracle_run_explorer_from_session_v1(
             session,
             RunProgressJournalV1::default(),
@@ -719,7 +719,7 @@ mod tests {
             ascension: 0,
             budget: OracleRunBudget::default(),
         };
-        let combat_budgets = oracle_combat_budgets(&config);
+        let combat_budgets = oracle_run_combat_budgets_v1(&config);
         let mut session = RunControlSession::new(RunControlConfig::default());
         let mut combat = crate::test_support::blank_test_combat();
         let mut monster =

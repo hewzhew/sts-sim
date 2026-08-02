@@ -116,12 +116,19 @@ branch-tiny combat gap cannot be investigated from a saved case, fix the case
 payload or the review entrypoint instead of creating another report format.
 
 A case without a validated typed `production_context` supports isolated combat
-replay only. Exact production-owner restoration requires that context to bind
+replay only. Exact production-state restoration requires that context to bind
 the case's exact combat-root hash, normalized run-session fingerprint, and
-run-control checkpoint; all three identities must validate before use. A
-counterfactual or descendant case must clear this context when its position
-changes. Display paths, branch ids, filenames, and synthetic run projection do
-not upgrade a case to production parity.
+run-control checkpoint; all three identities must validate before use. Exact
+production-owner parity additionally requires a typed owner-policy snapshot;
+defaults or caller-supplied guesses do not qualify. A counterfactual or
+descendant case must clear this context when its position changes. Display
+paths, branch ids, filenames, and synthetic run projection do not upgrade a
+case to production parity.
+
+New production case producers leave the legacy display `path` empty. Exact run
+identity comes from the validated context, while committed decision history
+remains owned by the journal/workspace. Legacy paths stay readable for old
+diagnostics but candidate display text is not copied into new case payloads.
 
 Potions are run resources. Combat may consider potion actions only when the
 runner explicitly opens a potion policy and budget. A diagnostic fact such as

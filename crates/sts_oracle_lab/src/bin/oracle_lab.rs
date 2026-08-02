@@ -12,6 +12,7 @@ mod boundary_successor_lookahead;
 mod canonical_launch;
 mod combat_case_contract;
 mod combat_case_local_graph;
+mod combat_case_owner_parity;
 mod combat_case_performance;
 mod combat_evidence_audit;
 mod combat_evidence_export;
@@ -293,6 +294,7 @@ fn main() -> Result<(), String> {
             print_json(&guidance_combination_audit::run(args)?)
         }
         Command::CombatCaseLocalGraph(args) => combat_case_local_graph::run(args),
+        Command::CombatCaseOwnerParity(args) => print_json(&combat_case_owner_parity::run(args)?),
         Command::CombatCasePlanAnnotations(args) => combat_plan_diagnostics::run_annotations(args),
         Command::CombatCasePlanTrace(args) => combat_plan_diagnostics::run_trace(args),
         Command::CombatEvidenceAudit(args) => print_json(&combat_evidence_audit::run(args)?),

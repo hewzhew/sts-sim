@@ -253,7 +253,8 @@ pub struct OracleRunCombatBudgetsV1 {
     pub guidance_bundle: Option<Arc<CombatGuidanceBundleV1>>,
 }
 
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum OracleRunCombatQualityPolicyV1 {
     /// Preserve the satisfaction carried by each configured search option.
     #[default]

@@ -14,6 +14,7 @@ use super::action_successor_reanalysis::ActionSuccessorReanalysisArgs;
 use super::boundary_successor_corpus::BoundarySuccessorCorpusArgs;
 use super::boundary_successor_lookahead::BoundarySuccessorLookaheadArgs;
 use super::combat_case_local_graph::CombatCaseLocalGraphArgs;
+use super::combat_case_owner_parity::CombatCaseOwnerParityArgs;
 use super::combat_evidence_audit::CombatEvidenceAuditArgs;
 use super::combat_plan_diagnostics::{CombatCasePlanAnnotationsArgs, CombatCasePlanTraceArgs};
 use super::depth_beam_audits::DepthBeamTurnAuditArgs;
@@ -192,6 +193,8 @@ pub(super) enum Command {
     /// Isolated local-graph component with node-local lazy widening.
     #[command(name = "combat-case", visible_alias = "combat-case-local-graph")]
     CombatCaseLocalGraph(CombatCaseLocalGraphArgs),
+    /// Restore one case's captured production owner and serve one bounded in-memory attempt.
+    CombatCaseOwnerParity(CombatCaseOwnerParityArgs),
     /// Compare isolated no-potion, per-potion, and bounded combination lanes
     /// from one unchanged exact combat root.
     CombatCasePotionExpenditureAudit(CombatCasePotionExpenditureAuditArgs),

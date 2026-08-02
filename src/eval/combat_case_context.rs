@@ -1,9 +1,19 @@
+use std::sync::Arc;
+
 use serde::{Deserialize, Serialize};
 
+use crate::ai::combat_search_v2::{
+    CombatSearchV2ChildRolloutPolicy, CombatSearchV2PhaseGuardPolicy, CombatSearchV2PotionPolicy,
+    CombatSearchV2RolloutPolicy, CombatSearchV2Satisfaction, CombatSearchV2SetupBiasPolicy,
+    CombatSearchV2TurnPlanPolicy,
+};
 use crate::ai::combat_state_key::combat_exact_state_hash_v2;
 use crate::eval::combat_case::{combat_summary, CombatCase, CombatCaseRngSummary};
+use crate::eval::combat_guidance_bundle::CombatGuidanceBundleV1;
 use crate::eval::run_control::{
-    run_control_session_fingerprint_v2, RunControlSession, RunControlSessionCheckpointV1,
+    run_control_session_fingerprint_v2, OracleRunCombatBudgetsV1, OracleRunCombatQualityPolicyV1,
+    RunControlCombatSegmentMode, RunControlHpLossLimit, RunControlSearchCombatOptions,
+    RunControlSession, RunControlSessionCheckpointV1,
 };
 use crate::state::core::{ActiveCombat, CombatContext};
 
@@ -14,10 +24,57 @@ pub const COMBAT_CASE_PRODUCTION_CONTEXT_SCHEMA_VERSION: u32 = 1;
 #[serde(rename_all = "snake_case")]
 pub enum CombatCaseReplayCapabilityV1 {
     IsolatedProjection,
+    ExactProductionState,
     ExactProductionOwner,
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum CombatCaseProductionOwnerV1 {
+    OracleAnalysis {
+        policy_fingerprint: String,
+        budgets: CombatCaseOracleCombatBudgetsV1,
+    },
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct CombatCaseOracleCombatBudgetsV1 {
+    pub hallway: CombatCaseSearchOptionsV1,
+    pub elite: CombatCaseSearchOptionsV1,
+    pub boss: CombatCaseSearchOptionsV1,
+    pub quality_policy: OracleRunCombatQualityPolicyV1,
+    pub initial_divisor: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub guidance_bundle: Option<CombatGuidanceBundleV1>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct CombatCaseSearchOptionsV1 {
+    pub max_nodes: Option<usize>,
+    pub max_actions_per_line: Option<usize>,
+    pub max_engine_steps_per_action: Option<usize>,
+    pub wall_ms: Option<u64>,
+    pub satisfaction: Option<CombatSearchV2Satisfaction>,
+    pub max_hp_loss: Option<RunControlHpLossLimit>,
+    pub potion_policy: Option<CombatSearchV2PotionPolicy>,
+    pub max_potions_used: Option<u32>,
+    pub allowed_potion_slots: Option<u64>,
+    pub rollout_policy: Option<CombatSearchV2RolloutPolicy>,
+    pub child_rollout_policy: Option<CombatSearchV2ChildRolloutPolicy>,
+    pub rollout_max_evaluations: Option<usize>,
+    pub rollout_max_actions: Option<usize>,
+    pub rollout_beam_width: Option<usize>,
+    pub turn_plan_policy: Option<CombatSearchV2TurnPlanPolicy>,
+    pub phase_guard_policy: Option<CombatSearchV2PhaseGuardPolicy>,
+    pub setup_bias_policy: Option<CombatSearchV2SetupBiasPolicy>,
+    pub segment_mode: Option<RunControlCombatSegmentMode>,
+    pub enable_legacy_no_win_rescue: bool,
+    pub allow_smoke_bomb_survival_fallback: bool,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct CombatCaseProductionContextV1 {
     pub schema_name: String,
@@ -26,6 +83,8 @@ pub struct CombatCaseProductionContextV1 {
     pub run_session_fingerprint: String,
     pub combat_context: CombatContext,
     pub run_session_checkpoint: RunControlSessionCheckpointV1,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub production_owner: Option<CombatCaseProductionOwnerV1>,
 }
 
 pub fn capture_combat_case_production_context_v1(
@@ -48,9 +107,145 @@ pub fn capture_combat_case_production_context_v1(
         run_session_fingerprint: run_control_session_fingerprint_v2(session),
         combat_context: active_combat.context,
         run_session_checkpoint,
+        production_owner: None,
     };
     validate_context_payload(case, &context)?;
     Ok(context)
+}
+
+pub fn capture_oracle_analysis_combat_case_production_context_v1(
+    case: &CombatCase,
+    session: &RunControlSession,
+    budgets: &OracleRunCombatBudgetsV1,
+) -> Result<CombatCaseProductionContextV1, String> {
+    let mut context = capture_combat_case_production_context_v1(case, session)?;
+    let budgets = CombatCaseOracleCombatBudgetsV1::capture(budgets)?;
+    context.production_owner = Some(CombatCaseProductionOwnerV1::OracleAnalysis {
+        policy_fingerprint: owner_policy_fingerprint(&budgets),
+        budgets,
+    });
+    Ok(context)
+}
+
+pub fn restore_combat_case_oracle_analysis_owner_v1(
+    case: &CombatCase,
+) -> Result<(RunControlSession, OracleRunCombatBudgetsV1), String> {
+    let session = restore_combat_case_production_session_v1(case)?;
+    let owner = case
+        .production_context
+        .as_ref()
+        .and_then(|context| context.production_owner.as_ref())
+        .ok_or_else(|| {
+            "combat case has exact production state but no production owner".to_string()
+        })?;
+    validate_production_owner(owner)?;
+    let CombatCaseProductionOwnerV1::OracleAnalysis { budgets, .. } = owner;
+    Ok((session, budgets.restore()))
+}
+
+pub fn combat_case_production_owner_fingerprint_v1(case: &CombatCase) -> Result<String, String> {
+    let owner = case
+        .production_context
+        .as_ref()
+        .and_then(|context| context.production_owner.as_ref())
+        .ok_or_else(|| "combat case has no production owner".to_string())?;
+    validate_production_owner(owner)?;
+    let CombatCaseProductionOwnerV1::OracleAnalysis {
+        policy_fingerprint, ..
+    } = owner;
+    Ok(policy_fingerprint.clone())
+}
+
+impl CombatCaseOracleCombatBudgetsV1 {
+    fn capture(budgets: &OracleRunCombatBudgetsV1) -> Result<Self, String> {
+        if budgets.initial_divisor == 0 {
+            return Err("oracle combat initial divisor must be positive".to_string());
+        }
+        Ok(Self {
+            hallway: CombatCaseSearchOptionsV1::capture(&budgets.hallway)?,
+            elite: CombatCaseSearchOptionsV1::capture(&budgets.elite)?,
+            boss: CombatCaseSearchOptionsV1::capture(&budgets.boss)?,
+            quality_policy: budgets.quality_policy,
+            initial_divisor: budgets.initial_divisor,
+            guidance_bundle: budgets.guidance_bundle.as_deref().cloned(),
+        })
+    }
+
+    fn restore(&self) -> OracleRunCombatBudgetsV1 {
+        OracleRunCombatBudgetsV1 {
+            hallway: self.hallway.restore(),
+            elite: self.elite.restore(),
+            boss: self.boss.restore(),
+            quality_policy: self.quality_policy,
+            initial_divisor: self.initial_divisor,
+            guidance_bundle: self.guidance_bundle.clone().map(Arc::new),
+        }
+    }
+}
+
+impl CombatCaseSearchOptionsV1 {
+    fn capture(options: &RunControlSearchCombatOptions) -> Result<Self, String> {
+        if options.profile.is_some() {
+            return Err(
+                "combat case owner context does not support an implicit named search profile"
+                    .to_string(),
+            );
+        }
+        if !options.work_quanta.is_empty() {
+            return Err(
+                "combat case owner context requires externally serviced search quanta".to_string(),
+            );
+        }
+        Ok(Self {
+            max_nodes: options.max_nodes,
+            max_actions_per_line: options.max_actions_per_line,
+            max_engine_steps_per_action: options.max_engine_steps_per_action,
+            wall_ms: options.wall_ms,
+            satisfaction: options.satisfaction,
+            max_hp_loss: options.max_hp_loss,
+            potion_policy: options.potion_policy,
+            max_potions_used: options.max_potions_used,
+            allowed_potion_slots: options.allowed_potion_slots,
+            rollout_policy: options.rollout_policy,
+            child_rollout_policy: options.child_rollout_policy,
+            rollout_max_evaluations: options.rollout_max_evaluations,
+            rollout_max_actions: options.rollout_max_actions,
+            rollout_beam_width: options.rollout_beam_width,
+            turn_plan_policy: options.turn_plan_policy,
+            phase_guard_policy: options.phase_guard_policy,
+            setup_bias_policy: options.setup_bias_policy,
+            segment_mode: options.segment_mode,
+            enable_legacy_no_win_rescue: options.enable_legacy_no_win_rescue,
+            allow_smoke_bomb_survival_fallback: options.allow_smoke_bomb_survival_fallback,
+        })
+    }
+
+    fn restore(&self) -> RunControlSearchCombatOptions {
+        RunControlSearchCombatOptions {
+            profile: None,
+            max_nodes: self.max_nodes,
+            max_actions_per_line: self.max_actions_per_line,
+            max_engine_steps_per_action: self.max_engine_steps_per_action,
+            wall_ms: self.wall_ms,
+            satisfaction: self.satisfaction,
+            max_hp_loss: self.max_hp_loss,
+            potion_policy: self.potion_policy,
+            max_potions_used: self.max_potions_used,
+            allowed_potion_slots: self.allowed_potion_slots,
+            rollout_policy: self.rollout_policy,
+            child_rollout_policy: self.child_rollout_policy,
+            rollout_max_evaluations: self.rollout_max_evaluations,
+            rollout_max_actions: self.rollout_max_actions,
+            rollout_beam_width: self.rollout_beam_width,
+            turn_plan_policy: self.turn_plan_policy,
+            phase_guard_policy: self.phase_guard_policy,
+            setup_bias_policy: self.setup_bias_policy,
+            segment_mode: self.segment_mode,
+            enable_legacy_no_win_rescue: self.enable_legacy_no_win_rescue,
+            allow_smoke_bomb_survival_fallback: self.allow_smoke_bomb_survival_fallback,
+            work_quanta: Vec::new(),
+        }
+    }
 }
 
 pub fn validate_combat_case_production_context_v1(case: &CombatCase) -> Result<(), String> {
@@ -76,6 +271,9 @@ fn validate_context_payload(
     context: &CombatCaseProductionContextV1,
 ) -> Result<RunControlSession, String> {
     validate_context_header(context)?;
+    if let Some(owner) = context.production_owner.as_ref() {
+        validate_production_owner(owner)?;
+    }
     let case_root = combat_exact_state_hash_v2(&case.position.engine, &case.position.combat);
     if context.root_exact_state_hash != case_root {
         return Err(format!(
@@ -93,6 +291,27 @@ fn validate_context_payload(
         ));
     }
     Ok(session)
+}
+
+fn validate_production_owner(owner: &CombatCaseProductionOwnerV1) -> Result<(), String> {
+    let CombatCaseProductionOwnerV1::OracleAnalysis {
+        policy_fingerprint,
+        budgets,
+    } = owner;
+    if budgets.initial_divisor == 0 {
+        return Err("combat case owner initial divisor must be positive".to_string());
+    }
+    let actual = owner_policy_fingerprint(budgets);
+    if policy_fingerprint != &actual {
+        return Err(format!(
+            "combat case owner-policy fingerprint mismatch: context {policy_fingerprint}, payload {actual}"
+        ));
+    }
+    Ok(())
+}
+
+fn owner_policy_fingerprint(budgets: &CombatCaseOracleCombatBudgetsV1) -> String {
+    crate::eval::fingerprint::hash_serializable(budgets)
 }
 
 fn restore_context_session(
@@ -252,7 +471,7 @@ mod tests {
     }
 
     #[test]
-    fn exact_context_capture_round_trips_the_production_owner() {
+    fn exact_context_capture_round_trips_the_production_state() {
         let (mut case, session) = exact_fixture();
         case.production_context =
             Some(capture_combat_case_production_context_v1(&case, &session).unwrap());
@@ -262,7 +481,7 @@ mod tests {
 
         assert_eq!(
             case.replay_capability_v1().unwrap(),
-            CombatCaseReplayCapabilityV1::ExactProductionOwner
+            CombatCaseReplayCapabilityV1::ExactProductionState
         );
         let restored = restore_combat_case_production_session_v1(&case).unwrap();
         assert_eq!(
@@ -281,6 +500,69 @@ mod tests {
 
         let error = restore_combat_case_production_session_v1(&case).unwrap_err();
         assert!(error.contains("root hash mismatch"), "{error}");
+    }
+
+    #[test]
+    fn oracle_owner_context_round_trips_policy_without_default_inference() {
+        let (mut case, session) = exact_fixture();
+        let mut options = RunControlSearchCombatOptions {
+            max_nodes: Some(12_345),
+            wall_ms: Some(678),
+            satisfaction: Some(CombatSearchV2Satisfaction::FirstCompleteWin),
+            potion_policy: Some(CombatSearchV2PotionPolicy::Never),
+            max_potions_used: Some(0),
+            ..RunControlSearchCombatOptions::default()
+        };
+        options.rollout_policy = Some(CombatSearchV2RolloutPolicy::TurnBeamNoPotion);
+        let mut budgets = OracleRunCombatBudgetsV1::uniform(options);
+        budgets.quality_policy = OracleRunCombatQualityPolicyV1::StrategicRun;
+        budgets.initial_divisor = 3;
+        case.production_context = Some(
+            capture_oracle_analysis_combat_case_production_context_v1(&case, &session, &budgets)
+                .unwrap(),
+        );
+
+        assert_eq!(
+            case.replay_capability_v1().unwrap(),
+            CombatCaseReplayCapabilityV1::ExactProductionOwner
+        );
+        let (_, restored) = restore_combat_case_oracle_analysis_owner_v1(&case).unwrap();
+        assert_eq!(restored.hallway.max_nodes, Some(12_345));
+        assert_eq!(restored.hallway.wall_ms, Some(678));
+        assert_eq!(
+            restored.hallway.satisfaction,
+            Some(CombatSearchV2Satisfaction::FirstCompleteWin)
+        );
+        assert_eq!(restored.initial_divisor, 3);
+        assert_eq!(
+            restored.quality_policy,
+            OracleRunCombatQualityPolicyV1::StrategicRun
+        );
+    }
+
+    #[test]
+    fn oracle_owner_context_rejects_a_tampered_policy_payload() {
+        let (mut case, session) = exact_fixture();
+        let budgets = OracleRunCombatBudgetsV1::uniform(RunControlSearchCombatOptions::default());
+        case.production_context = Some(
+            capture_oracle_analysis_combat_case_production_context_v1(&case, &session, &budgets)
+                .unwrap(),
+        );
+        let owner = case
+            .production_context
+            .as_mut()
+            .unwrap()
+            .production_owner
+            .as_mut()
+            .unwrap();
+        let CombatCaseProductionOwnerV1::OracleAnalysis { budgets, .. } = owner;
+        budgets.hallway.max_nodes = Some(123_456);
+
+        let error = case.replay_capability_v1().unwrap_err();
+        assert!(
+            error.contains("owner-policy fingerprint mismatch"),
+            "{error}"
+        );
     }
 
     #[test]

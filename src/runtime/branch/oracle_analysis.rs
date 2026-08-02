@@ -4,10 +4,9 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 
 use crate::eval::combat_case::{
-    CombatCase, CombatCaseGap, CombatCasePathStep, CombatCaseRngSummary, CombatCaseRunSummary,
-    CombatCaseSource,
+    CombatCase, CombatCaseGap, CombatCaseRngSummary, CombatCaseRunSummary, CombatCaseSource,
 };
-use crate::eval::combat_case_context::capture_combat_case_production_context_v1;
+use crate::eval::combat_case_context::capture_oracle_analysis_combat_case_production_context_v1;
 use crate::eval::combat_guidance_bundle::CombatGuidanceBundleV1;
 use crate::eval::combat_lab_v1::atomic_write_json;
 use crate::eval::run_control::{
@@ -21,7 +20,7 @@ use crate::eval::run_control::{
 use crate::state::core::ClientInput;
 
 use super::oracle_run::{
-    oracle_combat_budgets, OracleRunBudget, OracleRunConfig, OracleRunContinuationV1,
+    oracle_run_combat_budgets_v1, OracleRunBudget, OracleRunConfig, OracleRunContinuationV1,
     ORACLE_RUN_CONTINUATION_SCHEMA_NAME, ORACLE_RUN_CONTINUATION_SCHEMA_VERSION,
 };
 
@@ -99,8 +98,8 @@ impl OracleAnalysisWorkspaceV1 {
                     .map(|branch| branch.branch_id)
             })
             .or_else(|| explorer.branches.first().map(|branch| branch.branch_id));
-        let combat_budgets =
-            oracle_combat_budgets(&config).with_guidance_bundle(combat_guidance_bundle.clone());
+        let combat_budgets = oracle_run_combat_budgets_v1(&config)
+            .with_guidance_bundle(combat_guidance_bundle.clone());
         let analysis = OracleAnalysisSessionV1::from_explorer(
             explorer,
             first_root,
@@ -137,8 +136,8 @@ impl OracleAnalysisWorkspaceV1 {
                 continuation.seed, continuation.ascension, config.seed, config.ascension
             ));
         }
-        let combat_budgets =
-            oracle_combat_budgets(&config).with_guidance_bundle(combat_guidance_bundle.clone());
+        let combat_budgets = oracle_run_combat_budgets_v1(&config)
+            .with_guidance_bundle(combat_guidance_bundle.clone());
         // Import the exact selected state and its committed journal. Historical
         // automatic frontier work is intentionally not treated as an editable
         // analysis tree; the workbench creates explicit variations from here.
@@ -187,8 +186,8 @@ impl OracleAnalysisWorkspaceV1 {
                 continuation.seed, continuation.ascension, config.seed, config.ascension
             ));
         }
-        let combat_budgets =
-            oracle_combat_budgets(&config).with_guidance_bundle(combat_guidance_bundle.clone());
+        let combat_budgets = oracle_run_combat_budgets_v1(&config)
+            .with_guidance_bundle(combat_guidance_bundle.clone());
         let frontier = continuation.explorer_frontier.ok_or_else(|| {
             "oracle continuation has no retained frontier from which to import a branch".to_string()
         })?;
@@ -248,7 +247,7 @@ impl OracleAnalysisWorkspaceV1 {
         };
         validate_analysis_config(&config)?;
         validate_combat_guidance(&artifact.combat_guidance_bundle)?;
-        let combat_budgets = oracle_combat_budgets(&config)
+        let combat_budgets = oracle_run_combat_budgets_v1(&config)
             .with_guidance_bundle(artifact.combat_guidance_bundle.clone());
         let session = OracleAnalysisSessionV1::restore(
             artifact.session,
@@ -457,19 +456,6 @@ pub fn recover_oracle_analysis_combat_case_v1(
         branch_id: saved.branch_id,
         parent_id: saved.parent_branch_id,
     };
-    let path = saved
-        .replay
-        .iter()
-        .map(|step| CombatCasePathStep {
-            key: serde_json::to_value(&step.action).unwrap_or(serde_json::Value::Null),
-            label: step.label.clone(),
-            state_before: None,
-            decision_evidence: Some(serde_json::json!({
-                "candidate_id": step.candidate_id,
-                "recovered_from_branch": branch_id,
-            })),
-        })
-        .collect::<Vec<_>>();
     let session = saved.session.into_session()?;
     let position = session.current_active_combat_position()?;
     let (search_nodes, search_ms) = if position.combat.meta.is_boss_fight {
@@ -504,11 +490,21 @@ pub fn recover_oracle_analysis_combat_case_v1(
         },
         Vec::new(),
         None,
-        path,
+        Vec::new(),
         CombatCaseRngSummary::from_pool(&session.run_state.rng_pool),
         position,
     );
-    case.production_context = Some(capture_combat_case_production_context_v1(&case, &session)?);
+    let owner_budgets = oracle_run_combat_budgets_v1(&OracleRunConfig {
+        seed: artifact.seed,
+        ascension: artifact.ascension,
+        budget: artifact.budget,
+    })
+    .with_guidance_bundle(artifact.combat_guidance_bundle.clone());
+    case.production_context = Some(capture_oracle_analysis_combat_case_production_context_v1(
+        &case,
+        &session,
+        &owner_budgets,
+    )?);
     Ok(case)
 }
 
