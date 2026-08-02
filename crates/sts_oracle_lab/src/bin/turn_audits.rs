@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use clap::Args;
-use serde_json::json;
+use serde_json::{json, Value};
 use sts_combat_planner::CombatPolicyChoice;
 use sts_oracle_runtime::eval::combat_case::{load_combat_case, save_combat_case};
 use sts_oracle_runtime::eval::run_control::existing_combat_knowledge_policy_v1;
@@ -68,6 +68,84 @@ fn replay_prefix(
         position = result.position;
     }
     Ok(position)
+}
+
+fn turn_plan_tactical_end_snapshot(
+    position: &sts_oracle_runtime::sim::combat::CombatPosition,
+    visible_incoming_damage: i32,
+) -> Value {
+    let combat = &position.combat;
+    let visible_hp_loss = visible_incoming_damage
+        .saturating_sub(combat.entities.player.block)
+        .max(0);
+    let player = combat.entities.player.id;
+    let player_powers = combat
+        .entities
+        .power_db
+        .get(&player)
+        .into_iter()
+        .flatten()
+        .map(|power| {
+            json!({
+                "id": power.power_type,
+                "amount": power.amount,
+            })
+        })
+        .collect::<Vec<_>>();
+    let enemies = combat
+        .entities
+        .monsters
+        .iter()
+        .map(|monster| {
+            let powers = combat
+                .entities
+                .power_db
+                .get(&monster.id)
+                .into_iter()
+                .flatten()
+                .map(|power| {
+                    json!({
+                        "id": power.power_type,
+                        "amount": power.amount,
+                    })
+                })
+                .collect::<Vec<_>>();
+            json!({
+                "entity_id": monster.id,
+                "monster_type": monster.monster_type,
+                "slot": monster.slot,
+                "alive_for_action": monster.is_alive_for_action(),
+                "current_hp": monster.current_hp,
+                "max_hp": monster.max_hp,
+                "block": monster.block,
+                "powers": powers,
+            })
+        })
+        .collect::<Vec<_>>();
+    let hand = combat
+        .zones
+        .hand
+        .iter()
+        .map(|card| {
+            json!({
+                "id": card.id,
+                "uuid": card.uuid,
+                "upgrades": card.upgrades,
+                "cost_for_turn": card.cost_for_turn_java(),
+            })
+        })
+        .collect::<Vec<_>>();
+    json!({
+        "visible_hp_loss": visible_hp_loss,
+        "visible_survival_margin": combat
+            .entities
+            .player
+            .current_hp
+            .saturating_sub(visible_hp_loss),
+        "hand": hand,
+        "player_powers": player_powers,
+        "enemies": enemies,
+    })
 }
 
 pub(super) fn single_potion_slot_mask(slot: usize) -> Result<u64, String> {
@@ -376,27 +454,32 @@ pub(super) fn run_plan(args: TurnPlanAuditArgs) -> Result<(), String> {
         None
     };
     let selected = audit
-        .report
         .candidates
         .iter()
         .map(|candidate| {
+            let report = &candidate.report;
             json!({
-                "plan_index": candidate.plan_index,
-                "bucket": candidate.bucket,
-                "stop_reason": candidate.stop_reason,
-                "action_count": candidate.action_count,
-                "actions": candidate.actions.iter().map(|action| {
+                "plan_index": report.plan_index,
+                "bucket": report.bucket,
+                "stop_reason": report.stop_reason,
+                "action_count": report.action_count,
+                "actions": report.actions.iter().map(|action| {
                     json!({
                         "key": action.action_key,
                         "debug": action.action_debug,
                     })
                 }).collect::<Vec<_>>(),
-                "end_exact_state_hash": candidate.steps.last().map(|step| {
+                "end_exact_state_hash": report.steps.last().map(|step| {
                     step.state_after_exact_state_hash.as_str()
                 }),
-                "final_hp": candidate.eval_final_hp,
-                "risk_margin": candidate.eval_risk_margin,
-                "enemy_progress": candidate.eval_enemy_progress,
+                "final_hp": report.eval_final_hp,
+                "risk_margin": report.eval_risk_margin,
+                "enemy_progress": report.eval_enemy_progress,
+                "end_state": report.end_state,
+                "tactical_end": turn_plan_tactical_end_snapshot(
+                    &candidate.position,
+                    report.end_state.visible_incoming_damage,
+                ),
             })
         })
         .collect::<Vec<_>>();
@@ -418,32 +501,37 @@ pub(super) fn run_plan(args: TurnPlanAuditArgs) -> Result<(), String> {
         .collect::<Vec<_>>();
     if !full {
         let compact_selected = audit
-            .report
             .candidates
             .iter()
-            .filter(|candidate| candidate.bucket != "terminal_loss")
+            .filter(|candidate| candidate.report.bucket != "terminal_loss")
             .take(limit)
             .map(|candidate| {
+                let report = &candidate.report;
                 json!({
-                    "plan_index": candidate.plan_index,
-                    "bucket": candidate.bucket,
-                    "stop_reason": candidate.stop_reason,
-                    "action_count": candidate.action_count,
-                    "actions": candidate.actions.iter().map(|action| {
+                    "plan_index": report.plan_index,
+                    "bucket": report.bucket,
+                    "stop_reason": report.stop_reason,
+                    "action_count": report.action_count,
+                    "actions": report.actions.iter().map(|action| {
                         action.action_key.as_str()
                     }).collect::<Vec<_>>(),
-                    "end_exact_state_hash": candidate.steps.last().map(|step| {
+                    "end_exact_state_hash": report.steps.last().map(|step| {
                         step.state_after_exact_state_hash.as_str()
                     }),
-                    "final_hp": candidate.eval_final_hp,
-                    "risk_margin": candidate.eval_risk_margin,
-                    "enemy_progress": candidate.eval_enemy_progress,
+                    "final_hp": report.eval_final_hp,
+                    "risk_margin": report.eval_risk_margin,
+                    "enemy_progress": report.eval_enemy_progress,
+                    "end_state": report.end_state,
+                    "tactical_end": turn_plan_tactical_end_snapshot(
+                        &candidate.position,
+                        report.end_state.visible_incoming_damage,
+                    ),
                 })
             })
             .collect::<Vec<_>>();
         return print_json(&json!({
-            "schema_name": "OracleTurnPlanAuditCompactV2",
-            "schema_version": 2,
+            "schema_name": "OracleTurnPlanAuditCompactV3",
+            "schema_version": 3,
             "behavioral_scope": "read_only_no_search_seeding",
             "prefix": prefix,
             "config": audit.report.config,
@@ -453,8 +541,8 @@ pub(super) fn run_plan(args: TurnPlanAuditArgs) -> Result<(), String> {
         }));
     }
     print_json(&json!({
-        "schema_name": "OracleTurnPlanAuditV2",
-        "schema_version": 2,
+        "schema_name": "OracleTurnPlanAuditV3",
+        "schema_version": 3,
         "behavioral_scope": "read_only_no_search_seeding",
         "prefix": prefix,
         "config": audit.report.config,
@@ -470,7 +558,8 @@ mod tests {
     use super::*;
     use sts_oracle_runtime::content::cards::CardId;
     use sts_oracle_runtime::content::monsters::EnemyId;
-    use sts_oracle_runtime::runtime::combat::CombatCard;
+    use sts_oracle_runtime::content::powers::PowerId;
+    use sts_oracle_runtime::runtime::combat::{CombatCard, Power, PowerPayload};
     use sts_oracle_runtime::sim::combat::CombatPosition;
     use sts_oracle_runtime::state::core::EngineState;
     use sts_oracle_runtime::test_support::{blank_test_combat, test_monster};
@@ -504,5 +593,50 @@ mod tests {
         assert_eq!(single_potion_slot_mask(0), Ok(1));
         assert_eq!(single_potion_slot_mask(2), Ok(4));
         assert!(single_potion_slot_mask(64).is_err());
+    }
+
+    #[test]
+    fn tactical_end_snapshot_keeps_enemy_slots_and_typed_powers() {
+        let mut combat = blank_test_combat();
+        let mut monster = test_monster(EnemyId::SphericGuardian);
+        monster.id = 7;
+        monster.slot = 2;
+        monster.current_hp = 19;
+        monster.block = 11;
+        combat.entities.monsters = vec![monster];
+        combat.entities.power_db.insert(
+            7,
+            vec![
+                Power {
+                    power_type: PowerId::Artifact,
+                    instance_id: None,
+                    amount: 2,
+                    extra_data: 0,
+                    payload: PowerPayload::None,
+                    just_applied: false,
+                },
+                Power {
+                    power_type: PowerId::Vulnerable,
+                    instance_id: None,
+                    amount: 3,
+                    extra_data: 0,
+                    payload: PowerPayload::None,
+                    just_applied: false,
+                },
+            ],
+        );
+        let position = CombatPosition::new(EngineState::CombatPlayerTurn, combat);
+
+        let snapshot = turn_plan_tactical_end_snapshot(&position, 0);
+        let enemy = &snapshot["enemies"][0];
+
+        assert_eq!(enemy["entity_id"], 7);
+        assert_eq!(enemy["slot"], 2);
+        assert_eq!(enemy["current_hp"], 19);
+        assert_eq!(enemy["block"], 11);
+        assert_eq!(enemy["powers"][0]["id"], "Artifact");
+        assert_eq!(enemy["powers"][0]["amount"], 2);
+        assert_eq!(enemy["powers"][1]["id"], "Vulnerable");
+        assert_eq!(enemy["powers"][1]["amount"], 3);
     }
 }
