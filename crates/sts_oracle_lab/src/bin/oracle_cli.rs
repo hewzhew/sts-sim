@@ -184,7 +184,7 @@ pub(super) enum Command {
     /// This is a read-only trace: actions are supplied by the caller, never
     /// selected or ranked by this command.
     CombatCasePlanTrace(CombatCasePlanTraceArgs),
-    /// Batch-index exact combat artifacts and audit typed Fiend Fire conversion windows.
+    /// Batch-index exact combat artifacts and execute bounded typed transition queries.
     CombatEvidenceAudit(CombatEvidenceAuditArgs),
     /// Follow the action policy to terminal states and search complete
     /// trajectories by increasing weighted policy discrepancy.

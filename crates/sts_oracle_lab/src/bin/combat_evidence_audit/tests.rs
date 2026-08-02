@@ -1,14 +1,17 @@
 use std::collections::BTreeSet;
 use std::path::PathBuf;
 
-use sts_oracle_runtime::content::cards::CardId;
+use sts_oracle_runtime::content::cards::{CardId, CardType};
+use sts_oracle_runtime::sim::combat::CombatTerminal;
 use sts_oracle_runtime::state::core::ClientInput;
 
 use super::artifacts::is_trace_artifact_name;
+use super::query::{execute_query_batch, CombatEvidenceQueryBatch};
 use super::replay::{build_fiend_fire_observation, replay_pair};
 use super::{
-    ActionObservation, CardObservation, ImmediateFiendFireObservation, MonsterObservation,
-    PairCandidate, PlayerObservation, StateObservation,
+    ActionObservation, CardObservation, EvidenceRecord, FiendFireClassification,
+    MonsterObservation, PairCandidate, PlayerObservation, PreviousCardBypassObservation,
+    PreviousCardBypassStatus, StateObservation,
 };
 
 fn monster(id: usize, hp: i32, block: i32, terminal: bool) -> MonsterObservation {
@@ -54,10 +57,11 @@ fn a3f37_shape_requires_nonlethal_immediate_fiend_fire() {
                 target: None,
             },
             card: Some(card(CardId::SwordBoomerang, 10)),
-            card_type: Some("Attack".to_string()),
+            card_type: Some(CardType::Attack),
             before: state(2, monster(3, 20, 27, false)),
             after: state(2, monster(3, 20, 21, false)),
-            terminal_after: "Unresolved".to_string(),
+            terminal_after: CombatTerminal::Unresolved,
+            previous_card_bypass: None,
         },
         ActionObservation {
             index: 1,
@@ -66,10 +70,11 @@ fn a3f37_shape_requires_nonlethal_immediate_fiend_fire() {
                 target: Some(3),
             },
             card: Some(card(CardId::FiendFire, 11)),
-            card_type: Some("Attack".to_string()),
+            card_type: Some(CardType::Attack),
             before: state(2, monster(3, 20, 21, false)),
             after: state(2, monster(3, 0, 0, true)),
-            terminal_after: "Unresolved".to_string(),
+            terminal_after: CombatTerminal::Unresolved,
+            previous_card_bypass: None,
         },
     ];
     let observation = build_fiend_fire_observation(
@@ -77,15 +82,17 @@ fn a3f37_shape_requires_nonlethal_immediate_fiend_fire() {
         "root",
         &actions,
         1,
-        ImmediateFiendFireObservation {
-            status: "non_terminal".to_string(),
-            target_after: Some(monster(3, 4, 0, false)),
+        PreviousCardBypassObservation {
+            previous_action_index: Some(0),
+            status: PreviousCardBypassStatus::Applied,
+            terminal_after: Some(CombatTerminal::Unresolved),
+            after: Some(state(2, monster(3, 4, 0, false))),
         },
-        "Win",
+        CombatTerminal::Win,
     );
     assert_eq!(
         observation.classification,
-        "confirmed_block_conversion_window"
+        FiendFireClassification::ConfirmedBlockConversionWindow
     );
 }
 
@@ -99,10 +106,11 @@ fn bronze_preparation_without_positive_target_block_stays_out_of_scope() {
                 target: Some(2),
             },
             card: Some(card(CardId::Clothesline, 20)),
-            card_type: Some("Attack".to_string()),
+            card_type: Some(CardType::Attack),
             before: state(1, monster(3, 57, 0, false)),
             after: state(1, monster(3, 57, 0, false)),
-            terminal_after: "Unresolved".to_string(),
+            terminal_after: CombatTerminal::Unresolved,
+            previous_card_bypass: None,
         },
         ActionObservation {
             index: 1,
@@ -111,10 +119,11 @@ fn bronze_preparation_without_positive_target_block_stays_out_of_scope() {
                 target: Some(3),
             },
             card: Some(card(CardId::FiendFire, 21)),
-            card_type: Some("Attack".to_string()),
+            card_type: Some(CardType::Attack),
             before: state(1, monster(3, 57, 0, false)),
             after: state(1, monster(3, 1, 0, false)),
-            terminal_after: "Unresolved".to_string(),
+            terminal_after: CombatTerminal::Unresolved,
+            previous_card_bypass: None,
         },
     ];
     let observation = build_fiend_fire_observation(
@@ -122,16 +131,106 @@ fn bronze_preparation_without_positive_target_block_stays_out_of_scope() {
         "root",
         &actions,
         1,
-        ImmediateFiendFireObservation {
-            status: "non_terminal".to_string(),
-            target_after: Some(monster(3, 9, 0, false)),
+        PreviousCardBypassObservation {
+            previous_action_index: Some(0),
+            status: PreviousCardBypassStatus::Applied,
+            terminal_after: Some(CombatTerminal::Unresolved),
+            after: Some(state(1, monster(3, 9, 0, false))),
         },
-        "Win",
+        CombatTerminal::Win,
     );
     assert_eq!(
         observation.classification,
-        "no_positive_block_before_previous_attack"
+        FiendFireClassification::NoPositiveBlockBeforePreviousAttack
     );
+}
+
+#[test]
+fn typed_batch_query_matches_observed_preparation_and_exact_bypass() {
+    let previous = ActionObservation {
+        index: 0,
+        input: ClientInput::PlayCard {
+            card_index: 0,
+            target: None,
+        },
+        card: Some(card(CardId::SwordBoomerang, 10)),
+        card_type: Some(CardType::Attack),
+        before: state(2, monster(3, 20, 27, false)),
+        after: state(2, monster(3, 20, 21, false)),
+        terminal_after: CombatTerminal::Unresolved,
+        previous_card_bypass: Some(PreviousCardBypassObservation {
+            previous_action_index: None,
+            status: PreviousCardBypassStatus::NoPreviousCardBoundary,
+            terminal_after: None,
+            after: None,
+        }),
+    };
+    let current = ActionObservation {
+        index: 1,
+        input: ClientInput::PlayCard {
+            card_index: 0,
+            target: Some(3),
+        },
+        card: Some(card(CardId::FiendFire, 11)),
+        card_type: Some(CardType::Attack),
+        before: state(2, monster(3, 20, 21, false)),
+        after: state(2, monster(3, 0, 0, true)),
+        terminal_after: CombatTerminal::Win,
+        previous_card_bypass: Some(PreviousCardBypassObservation {
+            previous_action_index: Some(0),
+            status: PreviousCardBypassStatus::Applied,
+            terminal_after: Some(CombatTerminal::Unresolved),
+            after: Some(state(2, monster(3, 4, 0, false))),
+        }),
+    };
+    let record = EvidenceRecord {
+        schema_name: "CombatEvidenceReplayV2".to_string(),
+        schema_version: 2,
+        record_id: "record".to_string(),
+        root_exact_state_hash: "root".to_string(),
+        action_sequence_blake2b_512: "actions".to_string(),
+        provenance: BTreeSet::new(),
+        source_paths: BTreeSet::new(),
+        case_path: None,
+        action_paths: Vec::new(),
+        replay_exact: true,
+        supplied_action_count: 2,
+        consumed_action_count: 2,
+        final_terminal: CombatTerminal::Win,
+        final_player_hp: 80,
+        actions: vec![previous, current],
+        fiend_fire_observations: Vec::new(),
+    };
+    let batch: CombatEvidenceQueryBatch = serde_json::from_value(serde_json::json!({
+        "schema_name": "CombatEvidenceQueryBatchV1",
+        "schema_version": 1,
+        "queries": [{
+            "query_id": "block_conversion",
+            "record": {"replay_exact": true, "final_terminal": "win"},
+            "current": {
+                "card_id": "FiendFire",
+                "query_target": {"after": {"terminal_like": true}}
+            },
+            "previous_card_same_turn": {
+                "card_type": "Attack",
+                "query_target": {
+                    "before": {"block": {"gt": 0}},
+                    "block_delta": {"lt": 0}
+                }
+            },
+            "bypass_previous_card": {
+                "status": "applied",
+                "query_target_after": {"terminal_like": false}
+            },
+            "max_matches": 8
+        }]
+    }))
+    .expect("typed query batch should decode");
+
+    let value = serde_json::to_value(execute_query_batch(&batch, &[record]).unwrap()).unwrap();
+    assert_eq!(value["results"][0]["matched_action_count"], 1);
+    assert_eq!(value["results"][0]["independent_root_count"], 1);
+    assert_eq!(value["results"][0]["matches"][0]["action_index"], 1);
 }
 
 #[test]
@@ -156,7 +255,7 @@ fn tracked_slime_boss_pair_replays_through_typed_timeline() {
 
     let record = replay_pair(&candidate, 250).expect("tracked exact witness should replay");
 
-    assert_eq!(record.final_terminal, "Win");
+    assert_eq!(record.final_terminal, CombatTerminal::Win);
     assert_eq!(record.consumed_action_count, record.supplied_action_count);
     assert!(!record.actions.is_empty());
 }

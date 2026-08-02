@@ -1,12 +1,13 @@
 //! Batch indexing and typed replay for local combat evidence artifacts.
 //!
 //! This is a diagnostic surface. It discovers exact case/action relationships
-//! declared by traces, optionally replays conservative legacy pairings, and
-//! audits one concrete Fiend Fire preparation question without changing search
-//! or run policy.
+//! declared by traces, optionally replays conservative legacy pairings, records
+//! typed same-turn bypass counterfactuals, and executes bounded query batches
+//! without changing search or run policy.
 
 mod artifacts;
 mod contract;
+mod query;
 mod replay;
 #[cfg(test)]
 mod tests;
@@ -15,33 +16,39 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{self, File};
 use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use clap::Args;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use sts_oracle_runtime::content::cards::CardId;
+use sts_oracle_runtime::content::cards::{CardId, CardType};
 use sts_oracle_runtime::sim::combat::CombatPosition;
+use sts_oracle_runtime::sim::combat::CombatTerminal;
 use sts_oracle_runtime::state::core::ClientInput;
 
 use self::artifacts::*;
 use self::contract::*;
+use self::query::*;
 use self::replay::*;
 use super::canonical_launch::{runtime_identity, runtime_source_content_fingerprint};
 
-const SUMMARY_SCHEMA_NAME: &str = "CombatEvidenceAuditSummaryV1";
-const EVIDENCE_SCHEMA_NAME: &str = "CombatEvidenceReplayV1";
+const SUMMARY_SCHEMA_NAME: &str = "CombatEvidenceAuditSummaryV2";
+const EVIDENCE_SCHEMA_NAME: &str = "CombatEvidenceReplayV2";
 
 #[derive(Debug, Args)]
 pub(super) struct CombatEvidenceAuditArgs {
     /// Artifact tree to scan. The command never mutates source artifacts.
-    #[arg(long)]
+    #[arg(long, default_value = ".oracle-lab")]
     root: PathBuf,
-    /// Fresh ignored directory for summary, evidence JSONL, and audit rows.
+    /// Fresh ignored directory for evidence artifacts. Defaults to a unique report directory.
     #[arg(long)]
-    output: PathBuf,
+    output: Option<PathBuf>,
     /// Replay same-stem and single-case-directory action files not declared by a trace.
     #[arg(long)]
     replay_untraced: bool,
+    /// Optional CombatEvidenceQueryBatchV1 JSON file; use '-' to read one batch from stdin.
+    #[arg(long)]
+    query_batch: Option<PathBuf>,
     #[arg(long, default_value_t = 250)]
     max_engine_steps_per_transition: usize,
 }
@@ -106,20 +113,22 @@ impl StateObservation {
     }
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 struct ActionObservation {
     index: usize,
     input: ClientInput,
     card: Option<CardObservation>,
-    card_type: Option<String>,
+    card_type: Option<CardType>,
     before: StateObservation,
     after: StateObservation,
-    terminal_after: String,
+    terminal_after: CombatTerminal,
+    #[serde(default)]
+    previous_card_bypass: Option<PreviousCardBypassObservation>,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 struct EvidenceRecord {
-    schema_name: &'static str,
+    schema_name: String,
     schema_version: u32,
     record_id: String,
     root_exact_state_hash: String,
@@ -131,13 +140,13 @@ struct EvidenceRecord {
     replay_exact: bool,
     supplied_action_count: usize,
     consumed_action_count: usize,
-    final_terminal: String,
+    final_terminal: CombatTerminal,
     final_player_hp: i32,
     actions: Vec<ActionObservation>,
     fiend_fire_observations: Vec<FiendFireObservation>,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 struct FiendFireObservation {
     record_id: String,
     root_exact_state_hash: String,
@@ -145,21 +154,59 @@ struct FiendFireObservation {
     previous_action_index: Option<usize>,
     fiend_fire_action_index: usize,
     previous_card: Option<CardId>,
-    previous_card_type: Option<String>,
+    previous_card_type: Option<CardType>,
     target_id: Option<usize>,
     target_before_previous: Option<MonsterObservation>,
     target_after_previous: Option<MonsterObservation>,
     target_before_fiend_fire: Option<MonsterObservation>,
     target_after_fiend_fire: Option<MonsterObservation>,
-    immediate_fiend_fire: ImmediateFiendFireObservation,
-    full_line_terminal: String,
-    classification: String,
+    immediate_fiend_fire: PreviousCardBypassObservation,
+    full_line_terminal: CombatTerminal,
+    classification: FiendFireClassification,
 }
 
-#[derive(Clone, Debug, Default, Serialize)]
-struct ImmediateFiendFireObservation {
-    status: String,
-    target_after: Option<MonsterObservation>,
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum PreviousCardBypassStatus {
+    Applied,
+    NoPreviousCardBoundary,
+    MissingCardIdentity,
+    NotCardPlay,
+    CardNotInPreviousHand,
+    IllegalAtPreviousBoundary,
+    TransitionLimited,
+    TraceOnlyUnavailable,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+struct PreviousCardBypassObservation {
+    previous_action_index: Option<usize>,
+    status: PreviousCardBypassStatus,
+    terminal_after: Option<CombatTerminal>,
+    after: Option<StateObservation>,
+}
+
+impl PreviousCardBypassObservation {
+    fn target_after(&self, target: usize) -> Option<&MonsterObservation> {
+        self.after.as_ref()?.monster(target)
+    }
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum FiendFireClassification {
+    NoPreviousCard,
+    PreviousCardNotAttack,
+    FiendFireHasNoTarget,
+    MissingPreviousTargetState,
+    NoPositiveBlockBeforePreviousAttack,
+    PreviousAttackDidNotReduceTargetBlock,
+    FiendFireNotTerminalLike,
+    ImmediateFiendFireAlreadyTerminalLike,
+    ConfirmedBlockConversionWindow,
+    LocalBlockConversionWithoutCompleteWin,
+    ObservedBlockConversionCandidate,
+    BlockConversionCounterfactualUnknown,
 }
 
 #[derive(Clone, Debug)]
@@ -232,20 +279,27 @@ pub(super) struct CombatEvidenceAuditSummary {
     contract_trace_records: usize,
     deduplicated_evidence_records: usize,
     fiend_fire_plays: usize,
-    fiend_fire_classifications: BTreeMap<String, usize>,
+    fiend_fire_classifications: BTreeMap<FiendFireClassification, usize>,
     confirmed_independent_root_count: usize,
     unresolved_artifact_count: usize,
     unresolved_reason_counts: BTreeMap<String, usize>,
+    query_results: Option<CombatEvidenceQueryBatchSummary>,
     output_files: Vec<String>,
 }
 
 pub(super) fn run(args: CombatEvidenceAuditArgs) -> Result<CombatEvidenceAuditSummary, String> {
-    if args.output.exists() {
+    let output = args.output.unwrap_or_else(default_output_directory);
+    if output.exists() {
         return Err(format!(
             "output directory already exists; choose a fresh path: {}",
-            args.output.display()
+            output.display()
         ));
     }
+    let query_batch = args
+        .query_batch
+        .as_deref()
+        .map(read_query_batch)
+        .transpose()?;
     let scan_root = args.root.canonicalize().map_err(|error| {
         format!(
             "cannot resolve scan root '{}': {error}",
@@ -346,15 +400,15 @@ pub(super) fn run(args: CombatEvidenceAuditArgs) -> Result<CombatEvidenceAuditSu
         .iter()
         .flat_map(|record| record.fiend_fire_observations.iter().cloned())
         .collect::<Vec<_>>();
-    let mut classifications = BTreeMap::<String, usize>::new();
+    let mut classifications = BTreeMap::<FiendFireClassification, usize>::new();
     for window in &windows {
-        *classifications
-            .entry(window.classification.clone())
-            .or_default() += 1;
+        *classifications.entry(window.classification).or_default() += 1;
     }
     let confirmed_roots = windows
         .iter()
-        .filter(|window| window.classification == "confirmed_block_conversion_window")
+        .filter(|window| {
+            window.classification == FiendFireClassification::ConfirmedBlockConversionWindow
+        })
         .map(|window| window.root_exact_state_hash.clone())
         .collect::<BTreeSet<_>>();
     let mut unresolved_reason_counts = BTreeMap::<String, usize>::new();
@@ -364,23 +418,46 @@ pub(super) fn run(args: CombatEvidenceAuditArgs) -> Result<CombatEvidenceAuditSu
             .or_default() += 1;
     }
 
-    fs::create_dir_all(&args.output).map_err(|error| {
+    fs::create_dir_all(&output).map_err(|error| {
         format!(
             "cannot create output directory '{}': {error}",
-            args.output.display()
+            output.display()
         )
     })?;
-    let evidence_path = args.output.join("evidence.jsonl");
+    let evidence_path = output.join("evidence.jsonl");
     write_jsonl(&evidence_path, &records)?;
-    let windows_path = args.output.join("fiend-fire-windows.json");
+    let windows_path = output.join("fiend-fire-windows.json");
     write_json(&windows_path, &windows)?;
-    let unresolved_path = args.output.join("unresolved.json");
+    let unresolved_path = output.join("unresolved.json");
     write_json(&unresolved_path, &unresolved)?;
-    let summary_path = args.output.join("summary.json");
+    let summary_path = output.join("summary.json");
+    let mut query_output_paths = Vec::new();
+    let query_results = if let Some(batch) = query_batch.as_ref() {
+        let batch_path = output.join("query-batch.json");
+        write_json(&batch_path, batch)?;
+        let results = execute_query_batch(batch, &records)?;
+        let results_path = output.join("query-results.json");
+        write_json(&results_path, &results)?;
+        query_output_paths.push(batch_path);
+        query_output_paths.push(results_path);
+        Some(results.summary())
+    } else {
+        None
+    };
+
+    let mut output_files = vec![
+        display_path(&evidence_path),
+        display_path(&windows_path),
+        display_path(&unresolved_path),
+        display_path(&summary_path),
+    ];
+    for path in &query_output_paths {
+        output_files.push(display_path(path));
+    }
 
     let summary = CombatEvidenceAuditSummary {
         schema_name: SUMMARY_SCHEMA_NAME,
-        schema_version: 1,
+        schema_version: 2,
         contract: json!({
             "classification": "diagnostic",
             "search": false,
@@ -392,7 +469,7 @@ pub(super) fn run(args: CombatEvidenceAuditArgs) -> Result<CombatEvidenceAuditSu
         runtime: runtime_identity(),
         runtime_source_content_fingerprint: runtime_source_content_fingerprint()?,
         scan_root: display_path(&scan_root),
-        output_directory: display_path(&args.output),
+        output_directory: display_path(&output),
         trace_files: inventory.trace_files.len(),
         case_files: inventory.case_files.len(),
         action_files: inventory.action_files.len(),
@@ -409,15 +486,21 @@ pub(super) fn run(args: CombatEvidenceAuditArgs) -> Result<CombatEvidenceAuditSu
         confirmed_independent_root_count: confirmed_roots.len(),
         unresolved_artifact_count: unresolved.len(),
         unresolved_reason_counts,
-        output_files: vec![
-            display_path(&evidence_path),
-            display_path(&windows_path),
-            display_path(&unresolved_path),
-            display_path(&summary_path),
-        ],
+        query_results,
+        output_files,
     };
     write_json(&summary_path, &summary)?;
     Ok(summary)
+}
+
+fn default_output_directory() -> PathBuf {
+    let suffix = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_millis())
+        .unwrap_or_default();
+    PathBuf::from(format!(
+        ".oracle-lab/reports/combat-evidence-audit-{suffix}"
+    ))
 }
 
 fn write_json(path: &Path, value: &impl Serialize) -> Result<(), String> {

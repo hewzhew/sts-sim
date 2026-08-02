@@ -12,9 +12,10 @@ use sts_oracle_runtime::state::core::ClientInput;
 
 use super::super::exact_turn_corridor::load_action_segments;
 use super::{
-    display_path, ActionObservation, CardObservation, EvidenceRecord, FiendFireObservation,
-    ImmediateFiendFireObservation, MonsterObservation, PairCandidate, PlayerObservation,
-    ReplayFrame, StateObservation, EVIDENCE_SCHEMA_NAME,
+    display_path, ActionObservation, CardObservation, EvidenceRecord, FiendFireClassification,
+    FiendFireObservation, MonsterObservation, PairCandidate, PlayerObservation,
+    PreviousCardBypassObservation, PreviousCardBypassStatus, ReplayFrame, StateObservation,
+    EVIDENCE_SCHEMA_NAME,
 };
 
 pub(super) fn replay_pair(
@@ -53,7 +54,7 @@ pub(super) fn replay_pair(
         let card = played_card(&position, &input);
         let card_type = card
             .as_ref()
-            .map(|card| format!("{:?}", get_card_definition(card.id).card_type));
+            .map(|card| get_card_definition(card.id).card_type);
         let step = stepper.apply_to_stable(
             &position,
             input.clone(),
@@ -74,7 +75,8 @@ pub(super) fn replay_pair(
             card_type,
             before,
             after: snapshot(&step.position),
-            terminal_after: format!("{:?}", step.terminal),
+            terminal_after: step.terminal,
+            previous_card_bypass: None,
         };
         position = step.position;
         frames.push(ReplayFrame {
@@ -83,21 +85,24 @@ pub(super) fn replay_pair(
         });
     }
 
-    let final_terminal = format!("{:?}", combat_terminal(&position.engine, &position.combat));
+    for index in 0..frames.len() {
+        if frames[index].observation.card.is_some() {
+            let observation =
+                previous_card_bypass_from_replay(&frames, index, max_engine_steps_per_transition);
+            frames[index].observation.previous_card_bypass = Some(observation);
+        }
+    }
+
+    let final_terminal = combat_terminal(&position.engine, &position.combat);
     let observations = frames
         .iter()
         .map(|frame| frame.observation.clone())
         .collect::<Vec<_>>();
-    let fiend_fire_observations = fiend_fire_observations_from_replay(
-        &record_id,
-        &root_hash,
-        &frames,
-        &final_terminal,
-        max_engine_steps_per_transition,
-    );
+    let fiend_fire_observations =
+        fiend_fire_observations_from_replay(&record_id, &root_hash, &frames, final_terminal);
     Ok(EvidenceRecord {
-        schema_name: EVIDENCE_SCHEMA_NAME,
-        schema_version: 1,
+        schema_name: EVIDENCE_SCHEMA_NAME.to_string(),
+        schema_version: 2,
         record_id,
         root_exact_state_hash: root_hash,
         action_sequence_blake2b_512: action_hash,
@@ -179,8 +184,7 @@ fn fiend_fire_observations_from_replay(
     record_id: &str,
     root_hash: &str,
     frames: &[ReplayFrame],
-    final_terminal: &str,
-    max_engine_steps_per_transition: usize,
+    final_terminal: CombatTerminal,
 ) -> Vec<FiendFireObservation> {
     let mut observations = Vec::new();
     let actions = frames
@@ -191,18 +195,14 @@ fn fiend_fire_observations_from_replay(
         if frame.observation.card.as_ref().map(|card| card.id) != Some(CardId::FiendFire) {
             continue;
         }
-        let immediate = previous_card_index(&actions, index)
-            .map(|previous_index| {
-                immediate_fiend_fire_counterfactual(
-                    &frames[previous_index].before_position,
-                    &frame.observation,
-                    max_engine_steps_per_transition,
-                )
-            })
-            .unwrap_or_else(|| ImmediateFiendFireObservation {
-                status: "no_previous_card_boundary".to_string(),
-                target_after: None,
-            });
+        let immediate = frame.observation.previous_card_bypass.clone().unwrap_or(
+            PreviousCardBypassObservation {
+                previous_action_index: None,
+                status: PreviousCardBypassStatus::NoPreviousCardBoundary,
+                terminal_after: None,
+                after: None,
+            },
+        );
         observations.push(build_fiend_fire_observation(
             record_id,
             root_hash,
@@ -215,21 +215,51 @@ fn fiend_fire_observations_from_replay(
     observations
 }
 
-fn immediate_fiend_fire_counterfactual(
-    previous_boundary: &CombatPosition,
-    fiend_fire: &ActionObservation,
+fn previous_card_bypass_from_replay(
+    frames: &[ReplayFrame],
+    index: usize,
     max_engine_steps_per_transition: usize,
-) -> ImmediateFiendFireObservation {
-    let Some(card) = fiend_fire.card.as_ref() else {
-        return ImmediateFiendFireObservation {
-            status: "missing_fiend_fire_identity".to_string(),
-            target_after: None,
+) -> PreviousCardBypassObservation {
+    let actions = frames
+        .iter()
+        .map(|frame| frame.observation.clone())
+        .collect::<Vec<_>>();
+    let Some(previous_action_index) = previous_card_index(&actions, index) else {
+        return PreviousCardBypassObservation {
+            previous_action_index: None,
+            status: PreviousCardBypassStatus::NoPreviousCardBoundary,
+            terminal_after: None,
+            after: None,
         };
     };
-    let ClientInput::PlayCard { target, .. } = fiend_fire.input else {
-        return ImmediateFiendFireObservation {
-            status: "missing_fiend_fire_input".to_string(),
-            target_after: None,
+    previous_card_bypass_counterfactual(
+        previous_action_index,
+        &frames[previous_action_index].before_position,
+        &frames[index].observation,
+        max_engine_steps_per_transition,
+    )
+}
+
+fn previous_card_bypass_counterfactual(
+    previous_action_index: usize,
+    previous_boundary: &CombatPosition,
+    current_action: &ActionObservation,
+    max_engine_steps_per_transition: usize,
+) -> PreviousCardBypassObservation {
+    let Some(card) = current_action.card.as_ref() else {
+        return PreviousCardBypassObservation {
+            previous_action_index: Some(previous_action_index),
+            status: PreviousCardBypassStatus::MissingCardIdentity,
+            terminal_after: None,
+            after: None,
+        };
+    };
+    let ClientInput::PlayCard { target, .. } = current_action.input else {
+        return PreviousCardBypassObservation {
+            previous_action_index: Some(previous_action_index),
+            status: PreviousCardBypassStatus::NotCardPlay,
+            terminal_after: None,
+            after: None,
         };
     };
     let Some(card_index) = previous_boundary
@@ -239,9 +269,11 @@ fn immediate_fiend_fire_counterfactual(
         .iter()
         .position(|candidate| candidate.uuid == card.uuid)
     else {
-        return ImmediateFiendFireObservation {
-            status: "fiend_fire_not_in_previous_hand".to_string(),
-            target_after: None,
+        return PreviousCardBypassObservation {
+            previous_action_index: Some(previous_action_index),
+            status: PreviousCardBypassStatus::CardNotInPreviousHand,
+            terminal_after: None,
+            after: None,
         };
     };
     let input = ClientInput::PlayCard { card_index, target };
@@ -252,9 +284,11 @@ fn immediate_fiend_fire_counterfactual(
             .choice_for_legal_input(previous_boundary, &input)
             .is_none()
     {
-        return ImmediateFiendFireObservation {
-            status: "not_legal_at_previous_boundary".to_string(),
-            target_after: None,
+        return PreviousCardBypassObservation {
+            previous_action_index: Some(previous_action_index),
+            status: PreviousCardBypassStatus::IllegalAtPreviousBoundary,
+            terminal_after: None,
+            after: None,
         };
     }
     let step = stepper.apply_to_stable(
@@ -266,27 +300,22 @@ fn immediate_fiend_fire_counterfactual(
         },
     );
     if step.truncated || step.timed_out {
-        return ImmediateFiendFireObservation {
-            status: "counterfactual_transition_limited".to_string(),
-            target_after: None,
+        return PreviousCardBypassObservation {
+            previous_action_index: Some(previous_action_index),
+            status: PreviousCardBypassStatus::TransitionLimited,
+            terminal_after: None,
+            after: None,
         };
     }
-    let target_after = target.and_then(|target| snapshot(&step.position).monster(target).cloned());
-    let status = if target_after
-        .as_ref()
-        .is_some_and(MonsterObservation::terminal_like)
-    {
-        "terminal_like"
-    } else {
-        "non_terminal"
-    };
-    ImmediateFiendFireObservation {
-        status: status.to_string(),
-        target_after,
+    PreviousCardBypassObservation {
+        previous_action_index: Some(previous_action_index),
+        status: PreviousCardBypassStatus::Applied,
+        terminal_after: Some(step.terminal),
+        after: Some(snapshot(&step.position)),
     }
 }
 
-fn previous_card_index(actions: &[ActionObservation], index: usize) -> Option<usize> {
+pub(super) fn previous_card_index(actions: &[ActionObservation], index: usize) -> Option<usize> {
     let turn = actions.get(index)?.before.turn;
     for candidate_index in (0..index).rev() {
         let candidate = &actions[candidate_index];
@@ -305,8 +334,8 @@ pub(super) fn build_fiend_fire_observation(
     root_hash: &str,
     actions: &[ActionObservation],
     index: usize,
-    immediate: ImmediateFiendFireObservation,
-    final_terminal: &str,
+    immediate: PreviousCardBypassObservation,
+    final_terminal: CombatTerminal,
 ) -> FiendFireObservation {
     let fiend_fire = &actions[index];
     let previous_index = previous_card_index(actions, index);
@@ -352,7 +381,7 @@ pub(super) fn build_fiend_fire_observation(
         target_before_fiend_fire,
         target_after_fiend_fire,
         immediate_fiend_fire: immediate,
-        full_line_terminal: final_terminal.to_string(),
+        full_line_terminal: final_terminal,
         classification,
     }
 }
@@ -363,41 +392,53 @@ fn classify_fiend_fire(
     target_before_previous: Option<&MonsterObservation>,
     target_after_previous: Option<&MonsterObservation>,
     target_after_fiend_fire: Option<&MonsterObservation>,
-    immediate: &ImmediateFiendFireObservation,
-    final_terminal: &str,
-) -> String {
+    immediate: &PreviousCardBypassObservation,
+    final_terminal: CombatTerminal,
+) -> FiendFireClassification {
     let Some(previous) = previous else {
-        return "no_previous_card".to_string();
+        return FiendFireClassification::NoPreviousCard;
     };
-    if previous.card_type.as_deref() != Some("Attack") {
-        return "previous_card_not_attack".to_string();
+    if previous.card_type != Some(sts_oracle_runtime::content::cards::CardType::Attack) {
+        return FiendFireClassification::PreviousCardNotAttack;
     }
     if target.is_none() {
-        return "fiend_fire_has_no_target".to_string();
+        return FiendFireClassification::FiendFireHasNoTarget;
     }
     let Some(before) = target_before_previous else {
-        return "missing_previous_target_state".to_string();
+        return FiendFireClassification::MissingPreviousTargetState;
     };
     let Some(after) = target_after_previous else {
-        return "missing_previous_target_state".to_string();
+        return FiendFireClassification::MissingPreviousTargetState;
     };
     if before.block <= 0 {
-        return "no_positive_block_before_previous_attack".to_string();
+        return FiendFireClassification::NoPositiveBlockBeforePreviousAttack;
     }
     if after.block >= before.block {
-        return "previous_attack_did_not_reduce_target_block".to_string();
+        return FiendFireClassification::PreviousAttackDidNotReduceTargetBlock;
     }
     if !target_after_fiend_fire.is_some_and(MonsterObservation::terminal_like) {
-        return "fiend_fire_not_terminal_like".to_string();
+        return FiendFireClassification::FiendFireNotTerminalLike;
     }
-    match immediate.status.as_str() {
-        "terminal_like" => "immediate_fiend_fire_already_terminal_like".to_string(),
-        "non_terminal" if final_terminal == "Win" => {
-            "confirmed_block_conversion_window".to_string()
+    match immediate.status {
+        PreviousCardBypassStatus::Applied
+            if immediate
+                .after
+                .as_ref()
+                .and_then(|state| target.and_then(|target| state.monster(target)))
+                .is_some_and(MonsterObservation::terminal_like) =>
+        {
+            FiendFireClassification::ImmediateFiendFireAlreadyTerminalLike
         }
-        "non_terminal" => "local_block_conversion_without_complete_win".to_string(),
-        "unavailable_trace_only" => "observed_block_conversion_candidate".to_string(),
-        _ => "block_conversion_counterfactual_unknown".to_string(),
+        PreviousCardBypassStatus::Applied if final_terminal == CombatTerminal::Win => {
+            FiendFireClassification::ConfirmedBlockConversionWindow
+        }
+        PreviousCardBypassStatus::Applied => {
+            FiendFireClassification::LocalBlockConversionWithoutCompleteWin
+        }
+        PreviousCardBypassStatus::TraceOnlyUnavailable => {
+            FiendFireClassification::ObservedBlockConversionCandidate
+        }
+        _ => FiendFireClassification::BlockConversionCounterfactualUnknown,
     }
 }
 

@@ -3,11 +3,15 @@ use std::path::Path;
 
 use serde_json::Value;
 use sts_oracle_runtime::content::cards::{get_card_definition, CardId};
+use sts_oracle_runtime::sim::combat::CombatTerminal;
 
-use super::replay::{action_sequence_hash, build_fiend_fire_observation, record_id};
+use super::replay::{
+    action_sequence_hash, build_fiend_fire_observation, previous_card_index, record_id,
+};
 use super::{
-    display_path, ActionObservation, ContractTrace, EvidenceRecord, ImmediateFiendFireObservation,
-    MonsterObservation, StateObservation, EVIDENCE_SCHEMA_NAME,
+    display_path, ActionObservation, ContractTrace, EvidenceRecord, MonsterObservation,
+    PreviousCardBypassObservation, PreviousCardBypassStatus, StateObservation,
+    EVIDENCE_SCHEMA_NAME,
 };
 
 pub(super) fn contract_record(trace_path: &Path, value: Value) -> Result<EvidenceRecord, String> {
@@ -24,14 +28,14 @@ pub(super) fn contract_record(trace_path: &Path, value: Value) -> Result<Evidenc
         .collect::<Vec<_>>();
     let action_hash = action_sequence_hash(&inputs)?;
     let record_id = record_id(&trace.root_exact_state_hash, &action_hash);
-    let actions = trace
+    let mut actions = trace
         .actions
         .into_iter()
         .map(|action| {
             let card = action.subject.and_then(|subject| subject.card);
             let card_type = card
                 .as_ref()
-                .map(|card| format!("{:?}", get_card_definition(card.id).card_type));
+                .map(|card| get_card_definition(card.id).card_type);
             let terminal_after = infer_terminal(&action.after);
             ActionObservation {
                 index: action.index,
@@ -41,13 +45,30 @@ pub(super) fn contract_record(trace_path: &Path, value: Value) -> Result<Evidenc
                 before: action.before,
                 after: action.after,
                 terminal_after,
+                previous_card_bypass: None,
             }
         })
         .collect::<Vec<_>>();
+    for index in 0..actions.len() {
+        if actions[index].card.is_none() {
+            continue;
+        }
+        let previous_action_index = previous_card_index(&actions, index);
+        actions[index].previous_card_bypass = Some(PreviousCardBypassObservation {
+            previous_action_index,
+            status: if previous_action_index.is_some() {
+                PreviousCardBypassStatus::TraceOnlyUnavailable
+            } else {
+                PreviousCardBypassStatus::NoPreviousCardBoundary
+            },
+            terminal_after: None,
+            after: None,
+        });
+    }
     let final_terminal = actions
         .last()
         .map(|action| infer_terminal(&action.after))
-        .unwrap_or_else(|| "Unresolved".to_string());
+        .unwrap_or(CombatTerminal::Unresolved);
     let fiend_fire_observations = actions
         .iter()
         .enumerate()
@@ -58,17 +79,21 @@ pub(super) fn contract_record(trace_path: &Path, value: Value) -> Result<Evidenc
                 &trace.root_exact_state_hash,
                 &actions,
                 index,
-                ImmediateFiendFireObservation {
-                    status: "unavailable_trace_only".to_string(),
-                    target_after: None,
-                },
-                &final_terminal,
+                actions[index].previous_card_bypass.clone().unwrap_or(
+                    PreviousCardBypassObservation {
+                        previous_action_index: None,
+                        status: PreviousCardBypassStatus::TraceOnlyUnavailable,
+                        terminal_after: None,
+                        after: None,
+                    },
+                ),
+                final_terminal,
             )
         })
         .collect::<Vec<_>>();
     Ok(EvidenceRecord {
-        schema_name: EVIDENCE_SCHEMA_NAME,
-        schema_version: 1,
+        schema_name: EVIDENCE_SCHEMA_NAME.to_string(),
+        schema_version: 2,
         record_id,
         root_exact_state_hash: trace.root_exact_state_hash,
         action_sequence_blake2b_512: action_hash,
@@ -89,14 +114,14 @@ pub(super) fn contract_record(trace_path: &Path, value: Value) -> Result<Evidenc
     })
 }
 
-fn infer_terminal(state: &StateObservation) -> String {
+fn infer_terminal(state: &StateObservation) -> CombatTerminal {
     if state.player.hp <= 0 {
-        "Loss".to_string()
+        CombatTerminal::Loss
     } else if !state.monsters.is_empty()
         && state.monsters.iter().all(MonsterObservation::terminal_like)
     {
-        "Win".to_string()
+        CombatTerminal::Win
     } else {
-        "Unresolved".to_string()
+        CombatTerminal::Unresolved
     }
 }

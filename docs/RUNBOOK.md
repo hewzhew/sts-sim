@@ -59,14 +59,12 @@ prove a deck is good or bad by itself.
 
 ### Batch Combat Evidence Audit
 
-Use one bounded command to index local combat artifacts, replay exact
-case/action relationships, and inspect typed Fiend Fire conversion windows:
+Use one bounded command to index local combat artifacts and replay exact
+case/action relationships. The root defaults to `.oracle-lab`; omitting
+`--output` creates a fresh ignored report directory automatically:
 
 ```powershell
-.\ol.cmd combat-evidence-audit `
-  --root .oracle-lab `
-  --output <fresh-output-directory> `
-  --replay-untraced
+.\ol.cmd combat-evidence-audit --replay-untraced
 ```
 
 The scanner recognizes every filename ending in `trace.json`, including
@@ -76,8 +74,25 @@ directories containing exactly one case; ambiguous or illegal legacy pairings
 remain explicit unknowns. Source artifacts are never rewritten.
 
 The output directory contains `summary.json`, normalized typed timelines in
-`evidence.jsonl`, `fiend-fire-windows.json`, and `unresolved.json`. The current
-summary freezes the canonical runtime identity and source-content fingerprint.
+`evidence.jsonl`, `fiend-fire-windows.json`, and `unresolved.json`. Every exact
+card transition also records a typed `previous_card_bypass`: when possible it
+replays the same card from the boundary before the preceding same-turn card,
+using exact card UUID and target identity. Missing identity, illegality,
+transition limits, and trace-only evidence remain distinct typed statuses.
+The current summary freezes the canonical runtime identity and source-content
+fingerprint.
+
+Pass one `CombatEvidenceQueryBatchV1` document with `--query-batch <path>`, or
+use `--query-batch -` for stdin. A batch can contain up to 128 action-transition
+queries. Queries filter typed record outcome, current and previous same-turn
+card identity/type, target before/after state, HP/Block deltas, and the exact
+bypass result. Each query is bounded by `max_matches`; `query-results.json`
+contains bounded typed match projections, while the command summary returns
+match counts, exact-root-deduplicated counts, and truncation status directly.
+The normalized `query-batch.json` is saved beside the result even when stdin
+was used. The query engine does not contain card-specific policy conclusions,
+search, or ranking.
+
 The Fiend Fire audit requires an Attack to lower the eventual target's positive
 Block, the following Fiend Fire to make that target terminal-like, an immediate
 Fiend Fire counterfactual to remain non-terminal, and the supplied full line to
