@@ -1,8 +1,10 @@
-use crate::content::cards::CardId;
+use crate::ai::card_semantics_v1::card_reward_facts_v1;
+use crate::content::cards::{self, CardId};
 use crate::content::powers::{store, PowerId};
 use crate::runtime::combat::CombatCard;
 use crate::runtime::combat::CombatState;
 use crate::state::core::{GridSelectReason, HandSelectReason};
+use crate::state::rewards::RewardCard;
 
 use super::card_selection::{aggregate_card_facts, CardSelectionFacts};
 use super::{PendingChoiceOrderingHint, PendingChoiceOrderingRole};
@@ -17,6 +19,11 @@ const SETUP_EXPENSIVE_CARD_BONUS: i32 = 25;
 // the ordering by a full tier instead of becoming another small tiebreak.
 const CONNECTED_SECOND_WIND_WOUND_PRESERVATION: i32 = 2_000;
 const CONNECTED_SECOND_WIND_WOUND_LOG2_BIAS: i32 = -10;
+// An Exhaust choice should not casually consume the cards that answer the
+// currently visible attack or provide scarce enemy Strength control. Keep
+// them a full tier below ordinary fodder without removing the legal choice.
+const TACTICAL_CARD_PRESERVATION: i32 = 1_000;
+const TACTICAL_CARD_PRESERVATION_LOG2_BIAS: i32 = -6;
 
 pub(super) fn selection_hint_for_hand_reason(
     combat: &CombatState,
@@ -57,18 +64,50 @@ fn exhaust_selection_hint(
     } else {
         0
     };
+    let visible_loss = super::super::visible_incoming_damage(combat)
+        .saturating_sub(combat.entities.player.block)
+        .max(0);
+    let preserved_tactical_cards = cards
+        .iter()
+        .filter(|card| {
+            let definition = cards::get_card_definition(card.id);
+            let preserves_visible_block = visible_loss > 0
+                && card.cost_for_turn_java() >= 0
+                && card.cost_for_turn_java() <= i32::from(combat.turn.energy)
+                && definition.base_block.saturating_add(
+                    definition
+                        .upgrade_block
+                        .saturating_mul(i32::from(card.upgrades)),
+                ) > 0;
+            let preserves_strength_control =
+                card_reward_facts_v1(&RewardCard::new(card.id, card.upgrades)).enemy_strength_down
+                    > 0;
+            preserves_visible_block || preserves_strength_control
+        })
+        .count()
+        .try_into()
+        .unwrap_or(i32::MAX);
     PendingChoiceOrderingHint {
         role: PendingChoiceOrderingRole::RemovalSelection,
-        primary: facts.removal_value.saturating_sub(
-            preserved_wounds.saturating_mul(CONNECTED_SECOND_WIND_WOUND_PRESERVATION),
-        ),
+        primary: facts
+            .removal_value
+            .saturating_sub(
+                preserved_wounds.saturating_mul(CONNECTED_SECOND_WIND_WOUND_PRESERVATION),
+            )
+            .saturating_sub(preserved_tactical_cards.saturating_mul(TACTICAL_CARD_PRESERVATION)),
         secondary: -facts.keep_value,
         selected_count_tiebreak: -(selected_count as i32),
-        policy_log2_bias: preserved_wounds.saturating_mul(CONNECTED_SECOND_WIND_WOUND_LOG2_BIAS),
+        policy_log2_bias: preserved_wounds
+            .saturating_mul(CONNECTED_SECOND_WIND_WOUND_LOG2_BIAS)
+            .saturating_add(
+                preserved_tactical_cards.saturating_mul(TACTICAL_CARD_PRESERVATION_LOG2_BIAS),
+            ),
     }
 }
 
-fn connected_second_wind_wound_engine(combat: &CombatState) -> bool {
+pub(in crate::ai::combat_search_v2) fn connected_second_wind_wound_engine(
+    combat: &CombatState,
+) -> bool {
     let player = combat.entities.player.id;
     store::has_power(combat, player, PowerId::DarkEmbrace)
         && active_unexhausted_cards(combat).any(|card| card.id == CardId::SecondWind)

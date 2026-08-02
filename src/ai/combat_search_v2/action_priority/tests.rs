@@ -89,6 +89,41 @@ fn add_visible_attacker(combat: &mut crate::runtime::combat::CombatState) {
     combat.entities.monsters.push(attacker);
 }
 
+fn connected_burning_pact_combat(include_wound: bool) -> crate::runtime::combat::CombatState {
+    let mut combat = blank_test_combat();
+    combat.turn.energy = 3;
+    combat.entities.player.current_hp = 80;
+    combat.zones.hand = vec![
+        CombatCard::new(CardId::BurningPact, 10),
+        CombatCard::new(CardId::Strike, 12),
+        CombatCard::new(CardId::Defend, 13),
+    ];
+    if include_wound {
+        combat
+            .zones
+            .hand
+            .insert(1, CombatCard::new(CardId::Wound, 11));
+    }
+    combat.zones.draw_pile = vec![
+        CombatCard::new(CardId::SecondWind, 14),
+        CombatCard::new(CardId::PowerThrough, 15),
+    ]
+    .into();
+    combat.entities.power_db.insert(
+        combat.entities.player.id,
+        vec![crate::runtime::combat::Power {
+            power_type: crate::content::powers::PowerId::DarkEmbrace,
+            instance_id: None,
+            amount: 1,
+            extra_data: 0,
+            payload: crate::runtime::combat::PowerPayload::None,
+            just_applied: false,
+        }],
+    );
+    add_visible_attacker(&mut combat);
+    combat
+}
+
 #[test]
 fn weak_against_a_visible_attack_is_ranked_as_real_mitigation() {
     let mut combat = blank_test_combat();
@@ -429,6 +464,62 @@ fn burning_pact_pre_engine_access_bias_ends_after_dark_embrace_is_online() {
         defend > burning_pact,
         "pact={burning_pact:?} defend={defend:?}"
     );
+    assert_eq!(burning_pact.policy_log2_bias, 0);
+}
+
+#[test]
+fn burning_pact_keeps_semantic_bias_for_a_connected_wound_conversion() {
+    let mut combat = connected_burning_pact_combat(true);
+    combat.entities.player.block = 100;
+
+    let burning_pact = priority_for_input(
+        &EngineState::CombatPlayerTurn,
+        &combat,
+        &ClientInput::PlayCard {
+            card_index: 0,
+            target: None,
+        },
+        CombatSearchV2PhaseGuardPolicy::Default,
+        CombatSearchV2SetupBiasPolicy::Default,
+    );
+
+    assert_eq!(burning_pact.policy_log2_bias, 6);
+}
+
+#[test]
+fn burning_pact_connected_engine_bias_requires_a_wound_in_hand() {
+    let mut combat = connected_burning_pact_combat(false);
+    combat.entities.player.block = 100;
+
+    let burning_pact = priority_for_input(
+        &EngineState::CombatPlayerTurn,
+        &combat,
+        &ClientInput::PlayCard {
+            card_index: 0,
+            target: None,
+        },
+        CombatSearchV2PhaseGuardPolicy::Default,
+        CombatSearchV2SetupBiasPolicy::Default,
+    );
+
+    assert_eq!(burning_pact.policy_log2_bias, 0);
+}
+
+#[test]
+fn burning_pact_connected_engine_bias_waits_until_visible_pressure_is_covered() {
+    let combat = connected_burning_pact_combat(true);
+
+    let burning_pact = priority_for_input(
+        &EngineState::CombatPlayerTurn,
+        &combat,
+        &ClientInput::PlayCard {
+            card_index: 0,
+            target: None,
+        },
+        CombatSearchV2PhaseGuardPolicy::Default,
+        CombatSearchV2SetupBiasPolicy::Default,
+    );
+
     assert_eq!(burning_pact.policy_log2_bias, 0);
 }
 

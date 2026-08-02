@@ -175,6 +175,20 @@ pub(super) fn priority_for_play_card(
         && visible_loss_now > 0
         && visible_loss_now < current_hp
         && i32::from(combat.turn.energy).saturating_sub(card.cost_for_turn_java().max(0)) >= 1;
+    let connected_wound_conversion = card.id == cards::CardId::BurningPact
+        && visible_loss_now == 0
+        && super::super::pending_choice_ordering::connected_second_wind_wound_engine(combat)
+        && combat
+            .zones
+            .hand
+            .iter()
+            .any(|candidate| candidate.id == cards::CardId::Wound)
+        && combat
+            .zones
+            .hand
+            .iter()
+            .enumerate()
+            .any(|(index, candidate)| index != card_index && candidate.id != cards::CardId::Wound);
     let key_setup_card = plugins.action_prior.prioritizes_key_card_online()
         && key_setup_card_online_candidate(card.id, card.upgrades);
     let (role, role_rank) = if target_lethal {
@@ -265,7 +279,11 @@ pub(super) fn priority_for_play_card(
         phase_survival: phase_hint.phase_survival,
         phase_transition_safety: phase_hint.phase_transition_safety,
         resource_timing: resource_timing.ordering_score,
-        policy_log2_bias: if defensive_action_supply { 6 } else { 0 },
+        policy_log2_bias: if defensive_action_supply || connected_wound_conversion {
+            6
+        } else {
+            0
+        },
         phase_hint,
         effects: effect_diagnostics,
         ..ActionOrderingPriority::neutral(role)

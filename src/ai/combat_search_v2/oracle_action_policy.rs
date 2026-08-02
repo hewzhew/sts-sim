@@ -7,6 +7,7 @@ use crate::{
     content::{
         cards::{exhausts_when_played, get_card_definition, CardType},
         powers::{store, PowerId},
+        relics::RelicId,
     },
     runtime::combat::{CombatCard, CombatState},
 };
@@ -487,8 +488,11 @@ fn combat_setup_guide_components(
     position: &CombatPosition,
     value: &super::value::CombatSearchStateValueV1,
     setup: PlayerSetupSummary,
+    tactical: PlayerTacticalOpportunitySummary,
 ) -> Vec<i32> {
     vec![
+        tactical.runic_cube_emergency_draw_conversion,
+        tactical.dark_embrace_wound_access_conversion,
         setup.exhaust_engine_connected,
         setup.status_access_engine_connected,
         setup.exhaust_payoff_engine_count,
@@ -515,12 +519,13 @@ fn combat_setup_guide_components(
 pub fn oracle_combat_guide_bundle_v1(position: &CombatPosition) -> OracleCombatGuideBundleV1 {
     let value = oracle_combat_state_value(position);
     let setup = player_setup_summary(&position.combat);
+    let tactical = player_tactical_opportunity_summary(position, &value);
     OracleCombatGuideBundleV1 {
         progress: combat_state_guide_components(position, &value),
         survival: combat_survival_guide_components(position, &value),
         horizon: combat_horizon_guide_components(position, &value),
         turn_generation: combat_turn_generation_guide_components(position, &value, setup),
-        setup: combat_setup_guide_components(position, &value, setup),
+        setup: combat_setup_guide_components(position, &value, setup, tactical),
     }
 }
 
@@ -575,7 +580,12 @@ pub fn oracle_combat_turn_generation_guide_components(position: &CombatPosition)
 /// which happened to create it.
 pub fn oracle_combat_setup_guide_components(position: &CombatPosition) -> Vec<i32> {
     let value = oracle_combat_state_value(position);
-    combat_setup_guide_components(position, &value, player_setup_summary(&position.combat))
+    combat_setup_guide_components(
+        position,
+        &value,
+        player_setup_summary(&position.combat),
+        player_tactical_opportunity_summary(position, &value),
+    )
 }
 
 /// Progress against an encounter member whose death removes a persistent
@@ -621,6 +631,129 @@ struct PlayerSetupSummary {
     active_power_mass: i32,
 }
 
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+struct PlayerTacticalOpportunitySummary {
+    runic_cube_emergency_draw_conversion: i32,
+    dark_embrace_wound_access_conversion: i32,
+}
+
+fn player_tactical_opportunity_summary(
+    position: &CombatPosition,
+    value: &super::value::CombatSearchStateValueV1,
+) -> PlayerTacticalOpportunitySummary {
+    PlayerTacticalOpportunitySummary {
+        runic_cube_emergency_draw_conversion: i32::from(
+            runic_cube_emergency_draw_conversion_ready(position, value),
+        ),
+        dark_embrace_wound_access_conversion: i32::from(
+            dark_embrace_wound_access_conversion_ready(position, value),
+        ),
+    }
+}
+
+fn dark_embrace_wound_access_conversion_ready(
+    position: &CombatPosition,
+    value: &super::value::CombatSearchStateValueV1,
+) -> bool {
+    let combat = &position.combat;
+    if !matches!(
+        &position.engine,
+        crate::state::core::EngineState::CombatPlayerTurn
+    ) || value.survival_margin >= 0
+        || !super::pending_choice_ordering::connected_second_wind_wound_engine(combat)
+    {
+        return false;
+    }
+    let burning_pact_affordable = combat.zones.hand.iter().any(|card| {
+        card.id == crate::content::cards::CardId::BurningPact
+            && nonnegative_card_cost(card).is_some_and(|cost| cost <= i32::from(combat.turn.energy))
+    });
+    let has_wound = combat
+        .zones
+        .hand
+        .iter()
+        .any(|card| card.id == crate::content::cards::CardId::Wound);
+    let has_non_wound_exhaust_target = combat.zones.hand.iter().any(|card| {
+        !matches!(
+            card.id,
+            crate::content::cards::CardId::BurningPact | crate::content::cards::CardId::Wound
+        )
+    });
+    burning_pact_affordable && has_wound && has_non_wound_exhaust_target
+}
+
+/// Runic Cube can turn otherwise-costly retaliation into the one-card access
+/// needed for an immediate Power Through / Second Wind defense conversion.
+/// Keep this deliberately exact and narrow: it is a one-lane service prior,
+/// not permission to spend HP for generic draw or a claim that the line wins.
+fn runic_cube_emergency_draw_conversion_ready(
+    position: &CombatPosition,
+    value: &super::value::CombatSearchStateValueV1,
+) -> bool {
+    let combat = &position.combat;
+    if !matches!(
+        &position.engine,
+        crate::state::core::EngineState::CombatPlayerTurn
+    ) || value.survival_margin >= 0
+        || !combat.entities.player.has_relic(RelicId::RunicCube)
+    {
+        return false;
+    }
+    let Some(power_through) = combat
+        .zones
+        .draw_pile
+        .first()
+        .filter(|card| card.id == crate::content::cards::CardId::PowerThrough)
+    else {
+        return false;
+    };
+    let Some(second_wind_cost) = combat
+        .zones
+        .hand
+        .iter()
+        .filter(|card| card.id == crate::content::cards::CardId::SecondWind)
+        .filter_map(nonnegative_card_cost)
+        .min()
+    else {
+        return false;
+    };
+    let Some(power_through_cost) = nonnegative_card_cost(power_through) else {
+        return false;
+    };
+    let energy_after_conversion = i32::from(combat.turn.energy)
+        .saturating_sub(second_wind_cost)
+        .saturating_sub(power_through_cost);
+    if energy_after_conversion < 0 {
+        return false;
+    }
+    let has_affordable_attack = combat.zones.hand.iter().any(|card| {
+        get_card_definition(card.id).card_type == CardType::Attack
+            && nonnegative_card_cost(card).is_some_and(|cost| cost <= energy_after_conversion)
+    });
+    if !has_affordable_attack {
+        return false;
+    }
+    let retaliation = combat
+        .entities
+        .monsters
+        .iter()
+        .filter(|monster| monster.is_alive_for_action())
+        .map(|monster| {
+            store::power_amount(combat, monster.id, PowerId::Thorns)
+                .max(0)
+                .saturating_add(store::power_amount(combat, monster.id, PowerId::SharpHide).max(0))
+        })
+        .max()
+        .unwrap_or_default();
+    let hp_loss = retaliation.saturating_sub(combat.entities.player.block);
+    hp_loss > 0 && hp_loss < combat.entities.player.current_hp
+}
+
+fn nonnegative_card_cost(card: &CombatCard) -> Option<i32> {
+    let cost = card.cost_for_turn_java();
+    (cost >= 0).then_some(cost)
+}
+
 fn player_setup_summary(combat: &CombatState) -> PlayerSetupSummary {
     let player = combat.entities.player.id;
     let (active_power_count, active_power_mass, recurring_output_count, recurring_output_mass) =
@@ -651,21 +784,12 @@ fn player_setup_summary(combat: &CombatState) -> PlayerSetupSummary {
         .chain(&combat.zones.draw_pile)
         .chain(&combat.zones.discard_pile)
         .collect::<Vec<_>>();
-    let (remaining_skills, remaining_statuses) =
-        unexhausted_cards
-            .iter()
-            .fold(
-                (0_i32, 0_i32),
-                |(skills, statuses), card| match get_card_definition(card.id).card_type {
-                    CardType::Skill => (skills.saturating_add(1), statuses),
-                    CardType::Status => (skills, statuses.saturating_add(1)),
-                    _ => (skills, statuses),
-                },
-            );
-    let exhaust_engine_connected = i32::from(
-        store::has_power(combat, player, PowerId::Corruption)
-            && store::has_power(combat, player, PowerId::DarkEmbrace),
-    );
+    let remaining_statuses = unexhausted_cards
+        .iter()
+        .filter(|card| get_card_definition(card.id).card_type == CardType::Status)
+        .count()
+        .try_into()
+        .unwrap_or(i32::MAX);
     let status_access_engine_connected =
         i32::from(remaining_statuses > 0 && store::has_power(combat, player, PowerId::Evolve));
     let corruption_active = store::has_power(combat, player, PowerId::Corruption);
@@ -678,6 +802,10 @@ fn player_setup_summary(combat: &CombatState) -> PlayerSetupSummary {
         .count()
         .try_into()
         .unwrap_or(i32::MAX);
+    let exhaust_engine_connected = i32::from(
+        remaining_exhaust_event_sources > 0
+            && store::has_power(combat, player, PowerId::DarkEmbrace),
+    );
     let exhaust_payoff_engine_count = if remaining_exhaust_event_sources > 0 {
         i32::from(store::has_power(combat, player, PowerId::FeelNoPain)).saturating_add(i32::from(
             store::has_power(combat, player, PowerId::DarkEmbrace),
@@ -688,7 +816,8 @@ fn player_setup_summary(combat: &CombatState) -> PlayerSetupSummary {
     PlayerSetupSummary {
         exhaust_engine_connected,
         status_access_engine_connected,
-        exhaust_engine_fuel: remaining_skills.saturating_mul(exhaust_engine_connected),
+        exhaust_engine_fuel: remaining_exhaust_event_sources
+            .saturating_mul(exhaust_engine_connected),
         exhaust_payoff_engine_count,
         exhaust_payoff_engine_fuel: remaining_exhaust_event_sources
             .saturating_mul(exhaust_payoff_engine_count),
@@ -1229,6 +1358,99 @@ mod tests {
     }
 
     #[test]
+    fn runic_cube_emergency_conversion_is_a_categorical_generation_opportunity() {
+        let position = runic_cube_emergency_conversion_position();
+        let value = oracle_combat_state_value(&position);
+
+        assert!(
+            value.survival_margin < 0,
+            "expected visible lethal pressure, value={value:?}"
+        );
+        assert!(runic_cube_emergency_draw_conversion_ready(
+            &position, &value
+        ));
+        let rank = oracle_combat_setup_guide_components(&position);
+        assert_eq!(rank.first(), Some(&1));
+    }
+
+    #[test]
+    fn runic_cube_emergency_conversion_requires_every_tactical_dependency() {
+        let ready = |position: &CombatPosition| {
+            let value = oracle_combat_state_value(position);
+            runic_cube_emergency_draw_conversion_ready(position, &value)
+        };
+
+        let mut no_cube = runic_cube_emergency_conversion_position();
+        no_cube.combat.entities.player.relics.clear();
+        assert!(!ready(&no_cube));
+
+        let mut wrong_top_draw = runic_cube_emergency_conversion_position();
+        wrong_top_draw.combat.zones.draw_pile = vec![CombatCard::new(CardId::Defend, 90)].into();
+        assert!(!ready(&wrong_top_draw));
+
+        let mut insufficient_energy = runic_cube_emergency_conversion_position();
+        insufficient_energy.combat.turn.energy = 2;
+        assert!(!ready(&insufficient_energy));
+
+        let mut retaliation_is_blocked = runic_cube_emergency_conversion_position();
+        retaliation_is_blocked.combat.entities.player.block = 5;
+        assert!(!ready(&retaliation_is_blocked));
+
+        let mut no_emergency = runic_cube_emergency_conversion_position();
+        no_emergency.combat.entities.player.current_hp = 80;
+        assert!(!ready(&no_emergency));
+    }
+
+    #[test]
+    fn dark_embrace_wound_access_is_a_categorical_state_opportunity() {
+        let position = dark_embrace_wound_access_position();
+        let value = oracle_combat_state_value(&position);
+
+        assert!(dark_embrace_wound_access_conversion_ready(
+            &position, &value
+        ));
+        let rank = oracle_combat_setup_guide_components(&position);
+        assert_eq!(rank.first(), Some(&0));
+        assert_eq!(rank.get(1), Some(&1));
+    }
+
+    #[test]
+    fn dark_embrace_wound_access_requires_the_immediate_engine_surface() {
+        let ready = |position: &CombatPosition| {
+            let value = oracle_combat_state_value(position);
+            dark_embrace_wound_access_conversion_ready(position, &value)
+        };
+
+        let mut no_wound = dark_embrace_wound_access_position();
+        no_wound
+            .combat
+            .zones
+            .hand
+            .retain(|card| card.id != CardId::Wound);
+        assert!(!ready(&no_wound));
+
+        let mut no_burning_pact = dark_embrace_wound_access_position();
+        no_burning_pact
+            .combat
+            .zones
+            .hand
+            .retain(|card| card.id != CardId::BurningPact);
+        assert!(!ready(&no_burning_pact));
+
+        let mut no_exhaust_target = dark_embrace_wound_access_position();
+        no_exhaust_target
+            .combat
+            .zones
+            .hand
+            .retain(|card| matches!(card.id, CardId::BurningPact | CardId::Wound));
+        assert!(!ready(&no_exhaust_target));
+
+        let mut no_emergency = dark_embrace_wound_access_position();
+        no_emergency.combat.entities.player.current_hp = 80;
+        assert!(!ready(&no_emergency));
+    }
+
+    #[test]
     fn setup_summary_recognizes_connected_engines_and_remaining_fuel() {
         let mut combat = crate::test_support::blank_test_combat();
         let player = combat.entities.player.id;
@@ -1251,6 +1473,83 @@ mod tests {
         assert_eq!(summary.exhaust_engine_connected, 1);
         assert_eq!(summary.status_access_engine_connected, 1);
         assert_eq!(summary.exhaust_engine_fuel, 2);
+    }
+
+    #[test]
+    fn dark_embrace_connects_to_explicit_exhaust_sources_without_corruption() {
+        let mut combat = crate::test_support::blank_test_combat();
+        let player = combat.entities.player.id;
+        combat
+            .entities
+            .power_db
+            .insert(player, vec![test_power(PowerId::DarkEmbrace)]);
+        combat.zones.hand = vec![
+            CombatCard::new(CardId::BurningPact, 24),
+            CombatCard::new(CardId::Strike, 25),
+        ];
+
+        let connected = player_setup_summary(&combat);
+        assert_eq!(connected.exhaust_engine_connected, 1);
+        assert_eq!(connected.exhaust_engine_fuel, 1);
+
+        combat.zones.hand = vec![CombatCard::new(CardId::Strike, 26)];
+        let disconnected = player_setup_summary(&combat);
+        assert_eq!(disconnected.exhaust_engine_connected, 0);
+        assert_eq!(disconnected.exhaust_engine_fuel, 0);
+    }
+
+    fn runic_cube_emergency_conversion_position() -> CombatPosition {
+        use crate::content::relics::RelicState;
+
+        let mut combat = crate::test_support::blank_test_combat();
+        combat.entities.player.current_hp = 24;
+        combat
+            .entities
+            .player
+            .add_relic(RelicState::new(RelicId::RunicCube));
+        combat.turn.energy = 3;
+        combat.zones.hand = vec![
+            CombatCard::new(CardId::SwordBoomerang, 10),
+            CombatCard::new(CardId::SecondWind, 20),
+        ];
+        combat.zones.draw_pile = vec![CombatCard::new(CardId::PowerThrough, 30)].into();
+
+        let mut spiker = crate::test_support::planned_monster(EnemyId::Spiker, 1);
+        spiker.id = 1;
+        let mut attacker = crate::test_support::planned_monster(EnemyId::TimeEater, 2);
+        attacker.id = 2;
+        combat.entities.monsters = vec![spiker, attacker];
+        combat
+            .entities
+            .power_db
+            .insert(1, vec![test_power_amount(PowerId::Thorns, 5)]);
+        CombatPosition::new(EngineState::CombatPlayerTurn, combat)
+    }
+
+    fn dark_embrace_wound_access_position() -> CombatPosition {
+        let mut combat = crate::test_support::blank_test_combat();
+        combat.entities.player.current_hp = 18;
+        combat.turn.energy = 3;
+        combat.entities.power_db.insert(
+            combat.entities.player.id,
+            vec![test_power(PowerId::DarkEmbrace)],
+        );
+        combat.zones.hand = vec![
+            CombatCard::new(CardId::BurningPact, 40),
+            CombatCard::new(CardId::Wound, 41),
+            CombatCard::new(CardId::Cleave, 42),
+        ];
+        combat.zones.draw_pile = vec![
+            CombatCard::new(CardId::PowerThrough, 43),
+            CombatCard::new(CardId::SecondWind, 44),
+        ]
+        .into();
+        let mut spiker = crate::test_support::planned_monster(EnemyId::Spiker, 1);
+        spiker.id = 1;
+        let mut attacker = crate::test_support::planned_monster(EnemyId::TimeEater, 2);
+        attacker.id = 2;
+        combat.entities.monsters = vec![spiker, attacker];
+        CombatPosition::new(EngineState::CombatPlayerTurn, combat)
     }
 
     #[test]

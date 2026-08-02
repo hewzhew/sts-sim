@@ -11,6 +11,7 @@ mod card_selection;
 mod selection_hints;
 mod types;
 
+pub(in crate::ai::combat_search_v2) use selection_hints::connected_second_wind_wound_engine;
 use selection_hints::{
     removal_selection_hint_from_card_ids, selection_hint_for_grid_reason,
     selection_hint_for_hand_reason, value_selection_hint_from_card_id,

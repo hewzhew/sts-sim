@@ -1,9 +1,10 @@
 use super::*;
+use crate::content::monsters::EnemyId;
 use crate::content::powers::PowerId;
 use crate::runtime::combat::CombatCard;
 use crate::runtime::combat::{Power, PowerPayload};
 use crate::state::selection::{SelectionResolution, SelectionScope};
-use crate::test_support::blank_test_combat;
+use crate::test_support::{blank_test_combat, planned_monster};
 
 fn hand_select(uuids: impl IntoIterator<Item = u32>) -> ClientInput {
     ClientInput::SubmitSelection(SelectionResolution::card_uuids(SelectionScope::Hand, uuids))
@@ -172,5 +173,63 @@ fn ordinary_exhaust_still_prefers_removing_wound() {
 
     assert!(wound.primary > cleave.primary);
     assert_eq!(wound.policy_log2_bias, 0);
+    assert_eq!(cleave.policy_log2_bias, 0);
+}
+
+#[test]
+fn exhaust_preserves_visible_block_and_strength_control_over_ordinary_damage() {
+    let mut combat = blank_test_combat();
+    combat.turn.energy = 2;
+    combat.zones.hand = vec![
+        CombatCard::new(CardId::Disarm, 10),
+        CombatCard::new(CardId::Defend, 20),
+        CombatCard::new(CardId::Cleave, 30),
+    ];
+    combat.entities.monsters = vec![planned_monster(EnemyId::TimeEater, 2)];
+    let engine = EngineState::PendingChoice(PendingChoice::HandSelect {
+        candidate_uuids: vec![10, 20, 30],
+        min_cards: 1,
+        max_cards: 1,
+        can_cancel: false,
+        reason: HandSelectReason::Exhaust,
+    });
+
+    let disarm = pending_choice_ordering_hint(&engine, &combat, &hand_select([10]))
+        .expect("Disarm candidate should rank");
+    let defend = pending_choice_ordering_hint(&engine, &combat, &hand_select([20]))
+        .expect("Defend candidate should rank");
+    let cleave = pending_choice_ordering_hint(&engine, &combat, &hand_select([30]))
+        .expect("Cleave candidate should rank");
+
+    assert!(cleave.primary > disarm.primary);
+    assert!(cleave.primary > defend.primary);
+    assert_eq!(disarm.policy_log2_bias, -6);
+    assert_eq!(defend.policy_log2_bias, -6);
+    assert_eq!(cleave.policy_log2_bias, 0);
+}
+
+#[test]
+fn exhaust_does_not_protect_block_without_visible_pressure() {
+    let mut combat = blank_test_combat();
+    combat.turn.energy = 2;
+    combat.zones.hand = vec![
+        CombatCard::new(CardId::Defend, 20),
+        CombatCard::new(CardId::Cleave, 30),
+    ];
+    let engine = EngineState::PendingChoice(PendingChoice::HandSelect {
+        candidate_uuids: vec![20, 30],
+        min_cards: 1,
+        max_cards: 1,
+        can_cancel: false,
+        reason: HandSelectReason::Exhaust,
+    });
+
+    let defend = pending_choice_ordering_hint(&engine, &combat, &hand_select([20]))
+        .expect("Defend candidate should rank");
+    let cleave = pending_choice_ordering_hint(&engine, &combat, &hand_select([30]))
+        .expect("Cleave candidate should rank");
+
+    assert_eq!(defend.primary, cleave.primary);
+    assert_eq!(defend.policy_log2_bias, 0);
     assert_eq!(cleave.policy_log2_bias, 0);
 }
