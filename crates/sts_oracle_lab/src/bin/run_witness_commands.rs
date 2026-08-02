@@ -1,6 +1,7 @@
 use std::path::Path;
 
 use serde_json::{json, Value};
+use sts_oracle_runtime::ai::combat_state_key::combat_exact_state_hash_v2;
 use sts_oracle_runtime::eval::combat_case::{
     save_combat_case, CombatCase, CombatCaseGap, CombatCasePathStep, CombatCaseRngSummary,
     CombatCaseRunSummary, CombatCaseSource,
@@ -15,9 +16,15 @@ use sts_oracle_runtime::runtime::branch::{
     recover_oracle_analysis_combat_case_v1, save_oracle_run_continuation_v1,
     OracleRunContinuationV1,
 };
-use sts_oracle_runtime::sim::combat::CombatPosition;
+use sts_oracle_runtime::sim::combat::{combat_terminal, CombatPosition};
 
-use super::combat_replay_tools::save_combat_inputs;
+use super::combat_evidence_manifest::{
+    combat_evidence_manifest_path_for_actions, write_combat_evidence_manifest,
+    CombatEvidenceManifestEntryV1, CombatEvidenceProducerV1,
+};
+use super::combat_replay_tools::{replay_combat_inputs, save_combat_inputs};
+
+const EVIDENCE_REPLAY_MAX_ENGINE_STEPS_PER_TRANSITION: usize = 250;
 
 pub(super) fn export_continuation(
     workspace: &Path,
@@ -265,15 +272,24 @@ pub(super) fn export_historical_combat(
         CombatCaseRngSummary::from_pool(&historical.run_state.rng_pool),
         position,
     );
-    save_combat_case(case_output, &case)?;
-    save_combat_inputs(
-        actions_output,
-        resolution
-            .trajectory
-            .actions
-            .iter()
-            .map(|action| action.input.clone()),
+    let actions = resolution
+        .trajectory
+        .actions
+        .iter()
+        .map(|action| action.input.clone())
+        .collect::<Vec<_>>();
+    let final_position = replay_combat_inputs(
+        case.position.clone(),
+        &actions,
+        EVIDENCE_REPLAY_MAX_ENGINE_STEPS_PER_TRANSITION,
     )?;
+    let root_exact_state_hash =
+        combat_exact_state_hash_v2(&case.position.engine, &case.position.combat);
+    let final_terminal = combat_terminal(&final_position.engine, &final_position.combat);
+    let final_player_hp = final_position.combat.entities.player.current_hp;
+    save_combat_case(case_output, &case)?;
+    save_combat_inputs(actions_output, actions.iter().cloned())?;
+    let manifest_output = combat_evidence_manifest_path_for_actions(actions_output);
     if let Some(output) = continuation_output {
         let prefix_journal = RunProgressJournalV1::from_committed_steps(
             continuation.journal.entries()[..journal_entry].to_vec(),
@@ -289,15 +305,29 @@ pub(super) fn export_historical_combat(
         };
         save_oracle_run_continuation_v1(output, &prefix)?;
     }
+    write_combat_evidence_manifest(
+        &manifest_output,
+        CombatEvidenceProducerV1::HistoricalCombatWitnessExport,
+        root_exact_state_hash,
+        case_output.to_path_buf(),
+        vec![CombatEvidenceManifestEntryV1::from_actions(
+            format!("journal_entry_{journal_entry}"),
+            vec![actions_output.to_path_buf()],
+            &actions,
+            final_terminal,
+            Some(final_player_hp),
+        )?],
+    )?;
     Ok(json!({
-        "schema_name": "HistoricalCombatWitnessExportV1",
-        "schema_version": 1,
+        "schema_name": "HistoricalCombatWitnessExportV2",
+        "schema_version": 2,
         "workspace": workspace,
         "node_id": node,
         "journal_entry": journal_entry,
         "source": resolution.trajectory.source.label(),
         "case_output": case_output,
         "actions_output": actions_output,
+        "manifest_output": manifest_output,
         "continuation_output": continuation_output,
         "action_count": resolution.trajectory.actions.len(),
         "combat": case.combat,

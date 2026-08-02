@@ -125,6 +125,14 @@ action identity and outcome, the typed producer, canonical runtime identity,
 and runtime source fingerprint. New exports therefore do not require filename
 pairing inference during a later evidence audit.
 
+`export-historical-combat-witness` likewise writes a manifest named from its
+actions output after replaying the journal trajectory from the exported combat
+root. In contrast, a local-graph `*.prefix.actions.json` beside a descendant
+case describes the path **to** that descendant from the original case. It must
+not be paired with the descendant case as though it were a witness starting
+there; those exports remain explicit legacy evidence until their original-case
+identity is carried by the producer.
+
 Every lane receives the same independent search allowance. The command filters
 explicit potion-use inputs by exact slot without deleting potions from the
 root, then replay-attributes actual consumption by potion UUID. Explicit

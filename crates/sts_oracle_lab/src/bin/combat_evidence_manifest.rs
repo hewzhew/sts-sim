@@ -17,6 +17,7 @@ pub(super) const COMBAT_EVIDENCE_MANIFEST_FILE_SUFFIX: &str = "combat-evidence-m
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub(super) enum CombatEvidenceProducerV1 {
+    HistoricalCombatWitnessExport,
     PotionExpenditureAudit,
 }
 
@@ -119,6 +120,18 @@ pub(super) fn write_combat_evidence_manifest(
     })
 }
 
+pub(super) fn combat_evidence_manifest_path_for_actions(action_path: &Path) -> PathBuf {
+    let file_name = action_path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("actions.json");
+    let stem = file_name
+        .strip_suffix(".actions.json")
+        .or_else(|| action_path.file_stem().and_then(|stem| stem.to_str()))
+        .unwrap_or("actions");
+    action_path.with_file_name(format!("{stem}.{COMBAT_EVIDENCE_MANIFEST_FILE_SUFFIX}"))
+}
+
 pub(super) fn decode_combat_evidence_manifest(
     path: &Path,
     bytes: &[u8],
@@ -213,8 +226,8 @@ mod tests {
     use std::path::Path;
 
     use super::{
-        combat_action_sequence_hash, decode_combat_evidence_manifest,
-        COMBAT_EVIDENCE_MANIFEST_SCHEMA_NAME,
+        combat_action_sequence_hash, combat_evidence_manifest_path_for_actions,
+        decode_combat_evidence_manifest, COMBAT_EVIDENCE_MANIFEST_SCHEMA_NAME,
     };
 
     #[test]
@@ -249,5 +262,11 @@ mod tests {
         let right = combat_action_sequence_hash(&[]).unwrap();
         assert_eq!(left, right);
         assert_eq!(left.len(), 128);
+    }
+
+    #[test]
+    fn action_manifest_path_preserves_distinct_action_stem() {
+        let path = combat_evidence_manifest_path_for_actions(Path::new("root/win.actions.json"));
+        assert_eq!(path, Path::new("root/win.combat-evidence-manifest.json"));
     }
 }
