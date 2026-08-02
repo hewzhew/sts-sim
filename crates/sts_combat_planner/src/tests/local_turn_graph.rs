@@ -35,6 +35,60 @@ fn local_turn_graph_retires_finished_generator_search_storage() {
 }
 
 #[test]
+fn local_turn_graph_absolute_final_hp_satisfaction_uses_terminal_hp() {
+    let decision_root = root();
+    let terminal_hp = decision_root.position().combat.entities.player.current_hp;
+    let config_for = |minimum| LocalTurnGraphWitnessConfig {
+        generator: config(),
+        initial_expansion_work: 16,
+        root_initial_expansion_work: 16,
+        lookahead_max_evaluations: 0,
+        max_turn_depth: 1,
+        satisfaction: OracleCombatWitnessSatisfaction::FinalHpAtLeast(minimum),
+        ..LocalTurnGraphWitnessConfig::default()
+    };
+    let quantum = LocalTurnGraphWitnessQuantum {
+        additional_selections: 64,
+        additional_generation_work: 256,
+        additional_engine_steps: 1_024,
+        deadline: None,
+    };
+
+    let mut reached = LocalTurnGraphWitnessSession::with_policy(
+        decision_root.clone(),
+        config_for(terminal_hp),
+        Arc::new(PreferPlayPolicy),
+    );
+    let reached_report = reached.advance(quantum, &TinyTurnStepper::lethal());
+    assert_eq!(
+        reached_report.status,
+        LocalTurnGraphWitnessStatus::WitnessFound
+    );
+
+    let mut missed = LocalTurnGraphWitnessSession::with_policy(
+        decision_root,
+        config_for(terminal_hp.saturating_add(1)),
+        Arc::new(PreferPlayPolicy),
+    );
+    let missed_report = missed.advance(quantum, &TinyTurnStepper::lethal());
+    assert_ne!(
+        missed_report.status,
+        LocalTurnGraphWitnessStatus::WitnessFound
+    );
+    assert_eq!(
+        missed
+            .witness()
+            .expect("the lower-HP exact witness remains diagnostic evidence")
+            .final_position
+            .combat
+            .entities
+            .player
+            .current_hp,
+        terminal_hp
+    );
+}
+
+#[test]
 fn local_turn_graph_policy_proposal_requires_exact_root_replay() {
     let stepper = TinyTurnStepper::lethal_after_current_turn();
     let decision_root = root();

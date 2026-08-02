@@ -312,6 +312,8 @@ mod tests {
                         9,
                         Some(2),
                         false,
+                        None,
+                        None,
                     ),
                     counterfactual: LocalGraphCounterfactual {
                         full_health: false,

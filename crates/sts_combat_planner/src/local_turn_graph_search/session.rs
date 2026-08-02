@@ -190,6 +190,9 @@ impl LocalTurnGraphWitnessSession {
                 let final_hp = witness.final_position.combat.entities.player.current_hp;
                 initial_hp.saturating_sub(final_hp).max(0) as u32 <= limit
             }
+            OracleCombatWitnessSatisfaction::FinalHpAtLeast(minimum) => {
+                witness.final_position.combat.entities.player.current_hp >= minimum
+            }
             OracleCombatWitnessSatisfaction::BudgetOrExhaustion => false,
         }
     }

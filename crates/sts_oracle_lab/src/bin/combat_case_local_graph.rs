@@ -31,6 +31,7 @@ use super::combat_policy_controls::load_action_imitation_policy;
 use super::exact_turn_corridor::load as load_exact_turn_corridor;
 use super::guidance_artifact_commands::load_value_prototype;
 use super::print_json;
+use super::turn_audits::single_potion_slot_mask;
 
 #[derive(Debug, Args)]
 pub(super) struct CombatCaseLocalGraphArgs {
@@ -139,12 +140,25 @@ pub(super) struct CombatCaseLocalGraphArgs {
     /// first-win or best-HP search.
     #[arg(long, conflicts_with = "improve_incumbent")]
     max_hp_loss: Option<u32>,
+    /// Stop at the first replay-verified witness whose post-victory HP reaches
+    /// this absolute threshold. Unlike `--max-hp-loss`, this remains meaningful
+    /// when victory relics or combat healing raise HP above the search root.
+    #[arg(
+        long,
+        conflicts_with = "improve_incumbent",
+        conflicts_with = "max_hp_loss"
+    )]
+    satisfy_min_final_hp: Option<i32>,
     /// Maximum potion resources the exact search may expend. The laboratory
     /// starts potion-free; pass a positive value to open an explicit potion
     /// lane. Every finite limit is enforced during generation, not only when
     /// a terminal witness is accepted.
     #[arg(long, default_value = "0")]
     max_potions_used: Option<u32>,
+    /// Restrict newly generated potion actions to one exact zero-based slot.
+    /// This is a search contract, not a trace-only filter.
+    #[arg(long)]
+    potion_slot: Option<usize>,
     /// All-legal diagnostic control: admit explicit potion discard actions.
     /// Semantic victory search omits them by default because discarding is not
     /// a generic way to diversify a sparse search.
@@ -159,6 +173,10 @@ pub(super) struct CombatCaseLocalGraphArgs {
     uniform_exploration_ppm: u32,
     #[arg(long, default_value_t = 4)]
     generation_quantum_work: usize,
+    /// Lab A/B control for the deterministic first service granted to a newly
+    /// selected exact turn-boundary node. Omit to retain the planner default.
+    #[arg(long)]
+    initial_expansion_work: Option<usize>,
     #[arg(long, default_value_t = 32)]
     max_turn_depth: usize,
     /// Diagnostic counterfactual: keep the exact combat state, RNG,
@@ -221,11 +239,14 @@ pub(super) fn run(args: CombatCaseLocalGraphArgs) -> Result<(), String> {
         wall_ms,
         improve_incumbent,
         max_hp_loss,
+        satisfy_min_final_hp,
         max_potions_used,
+        potion_slot,
         include_discard_actions,
         max_engine_steps_per_transition,
         uniform_exploration_ppm,
         generation_quantum_work,
+        initial_expansion_work,
         max_turn_depth,
         full_health,
         readable,
@@ -245,6 +266,13 @@ pub(super) fn run(args: CombatCaseLocalGraphArgs) -> Result<(), String> {
     }
     let initial_hp = loaded.position.combat.entities.player.current_hp;
     let root_player_turn = loaded.position.combat.turn.turn_count;
+    if potion_slot.is_some() && max_potions_used == Some(0) {
+        return Err("--potion-slot requires a positive --max-potions-used".to_string());
+    }
+    if initial_expansion_work == Some(0) {
+        return Err("--initial-expansion-work must be positive".to_string());
+    }
+    let allowed_potion_slots = potion_slot.map(single_potion_slot_mask).transpose()?;
     let execution_profile = LocalGraphExecutionProfile::from_controls(
         anchor_only,
         root_turn_anchor_only,
@@ -262,6 +290,8 @@ pub(super) fn run(args: CombatCaseLocalGraphArgs) -> Result<(), String> {
         max_turn_depth,
         max_potions_used,
         include_discard_actions,
+        allowed_potion_slots,
+        initial_expansion_work,
     );
     let search_root_position = loaded.position.clone();
     let watched_corridor = if watch_corridor_actions.is_empty() {
@@ -277,6 +307,8 @@ pub(super) fn run(args: CombatCaseLocalGraphArgs) -> Result<(), String> {
         .map_err(|error| format!("invalid combat case root: {error:?}"))?;
     let satisfaction = if improve_incumbent {
         OracleCombatWitnessSatisfaction::BudgetOrExhaustion
+    } else if let Some(minimum) = satisfy_min_final_hp {
+        OracleCombatWitnessSatisfaction::FinalHpAtLeast(minimum)
     } else if let Some(limit) = max_hp_loss {
         OracleCombatWitnessSatisfaction::HpLossAtMost(limit)
     } else {

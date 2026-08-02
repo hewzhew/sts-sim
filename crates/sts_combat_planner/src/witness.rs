@@ -11,6 +11,7 @@ pub enum OracleCombatWitnessSatisfaction {
     #[default]
     FirstWitness,
     HpLossAtMost(u32),
+    FinalHpAtLeast(i32),
     BudgetOrExhaustion,
 }
 

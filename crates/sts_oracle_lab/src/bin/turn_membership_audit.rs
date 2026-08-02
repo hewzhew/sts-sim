@@ -15,6 +15,7 @@ use super::combat_policy_controls::anchor_only_policy;
 use super::combat_trace_view::target_atomic_policy_trace;
 use super::exact_turn_corridor::load as load_exact_turn_corridor;
 use super::print_json;
+use super::turn_audits::single_potion_slot_mask;
 
 #[derive(Debug, Args)]
 pub(super) struct TurnMembershipArgs {
@@ -45,6 +46,10 @@ pub(super) struct TurnMembershipArgs {
     /// Lab-only control: keep action weights but disable all state guides.
     #[arg(long)]
     anchor_only: bool,
+    /// Restrict the generator to one exact zero-based potion identity slot and
+    /// omit explicit discard, matching a production single-potion stage.
+    #[arg(long)]
+    potion_slot: Option<usize>,
     /// Include every target-prefix queue snapshot. By default the report
     /// stays compact and includes only the last reached and first missing
     /// prefixes.
@@ -63,6 +68,7 @@ pub(super) fn run(args: TurnMembershipArgs) -> Result<(), String> {
         quantum_work,
         max_engine_steps_per_transition,
         anchor_only,
+        potion_slot,
         full,
     } = args;
     let (root_position, target, selected_corridor_rank) =
@@ -111,14 +117,17 @@ pub(super) fn run(args: TurnMembershipArgs) -> Result<(), String> {
     } else {
         policy
     };
-    let mut generator = TurnOptionGeneratorSession::with_policy(
-        root,
-        TurnOptionGeneratorConfig {
-            max_engine_steps_per_transition,
-            ..TurnOptionGeneratorConfig::default()
-        },
-        policy,
-    );
+    let allowed_potion_slots = potion_slot.map(single_potion_slot_mask).transpose()?;
+    let mut generator_config = TurnOptionGeneratorConfig {
+        max_engine_steps_per_transition,
+        ..TurnOptionGeneratorConfig::default()
+    };
+    if let Some(mask) = allowed_potion_slots {
+        generator_config.allow_potion_expenditure = true;
+        generator_config.allow_potion_discard = false;
+        generator_config.allowed_potion_slots = Some(mask);
+    }
+    let mut generator = TurnOptionGeneratorSession::with_policy(root, generator_config, policy);
     let started = Instant::now();
     let deadline = started + Duration::from_millis(wall_ms);
     let mut scanned_options = 0usize;
@@ -271,6 +280,11 @@ pub(super) fn run(args: TurnMembershipArgs) -> Result<(), String> {
         "schema_name": "OracleTurnMembershipProbeV1",
         "schema_version": 1,
         "scheduler": if anchor_only { "anchor_only" } else { "anchor_and_guides" },
+        "potion_contract": {
+            "potion_slot": potion_slot,
+            "allowed_potion_slots": allowed_potion_slots,
+            "allow_potion_discard": generator_config.allow_potion_discard,
+        },
         "matched": matched.is_some(),
         "match": matched,
         "target_action_count": target.len(),

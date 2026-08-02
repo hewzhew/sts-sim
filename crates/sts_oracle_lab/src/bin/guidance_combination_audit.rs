@@ -221,6 +221,8 @@ pub(super) fn run(
         args.max_turn_depth,
         args.max_potions_used,
         false,
+        None,
+        None,
     );
     let execution_profile =
         LocalGraphExecutionProfile::from_controls(false, false, false, false, false)?;

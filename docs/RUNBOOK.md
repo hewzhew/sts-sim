@@ -127,6 +127,7 @@ concrete identity lane and disables discard:
 .\ol.cmd turn-action-audit --case <case.json> --actions <actions.json> --through <N>
 .\ol.cmd turn-plan-audit --case <case.json> --actions <actions.json> --through <N> --potion-slot 2
 .\ol.cmd turn-quality-corridor --case <case.json> --min-boundary-player-hp 14 --min-terminal-player-hp 20 --potion-slot 2 --max-turns 3
+.\ol.cmd turn-quality-frontier --case <case.json> --checkpoint <depth-N.json.gz> --export-representatives-dir <fresh-dir> --probe-next-turn-roots 512
 ```
 
 The corridor command deduplicates exact next-turn states. Its unresolved-turn
@@ -142,6 +143,21 @@ only `--max-turns` may increase:
 ```powershell
 .\ol.cmd turn-quality-corridor <same-args> --checkpoint-out <depth-3.json.gz>
 .\ol.cmd turn-quality-corridor <same-args> --max-turns 4 --checkpoint-in <depth-3.json.gz> --checkpoint-out <depth-4.json.gz>
+```
+
+`turn-quality-frontier` validates every stored exact hash, reports typed HP,
+enemy-composition, potion-identity, and active-setup distributions, and exports
+diagnostic descendant cases with their exact prefix actions. Its optional
+next-turn probe inspects only the requested survival-ranked roots; an unprobed
+remainder is reported as censoring, never as a non-existence result.
+
+For a descendant suffix whose victory heal makes relative HP loss ambiguous,
+use absolute terminal satisfaction. A retained potion requires an explicit
+slot contract; an already-consumed descendant can remain potion-free:
+
+```powershell
+.\ol.cmd combat-case-local-graph --case <descendant.case.json> --satisfy-min-final-hp 20 --max-potions-used 0
+.\ol.cmd combat-case-local-graph --case <root.case.json> --satisfy-min-final-hp 20 --max-potions-used 1 --potion-slot 2
 ```
 
 Keep full JSON and build output below `.oracle-lab`; report aggregate lane
