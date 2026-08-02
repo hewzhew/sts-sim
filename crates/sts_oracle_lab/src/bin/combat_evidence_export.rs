@@ -102,10 +102,12 @@ mod tests {
             .duration_since(UNIX_EPOCH)
             .expect("system clock should follow the Unix epoch")
             .as_nanos();
-        std::env::temp_dir().join(format!(
-            "sts-oracle-combat-evidence-export-{label}-{}-{nonce}",
-            std::process::id()
-        ))
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../target/test-artifacts")
+            .join(format!(
+                "sts-oracle-combat-evidence-export-{label}-{}-{nonce}",
+                std::process::id()
+            ))
     }
 
     fn fixture() -> (PathBuf, CombatPosition, Vec<ClientInput>, CombatPosition) {
@@ -165,10 +167,29 @@ mod tests {
             manifest.producer,
             CombatEvidenceProducerV1::PolicyDiscrepancySearch
         );
-        assert_eq!(manifest.case_path, case_path);
-        assert_eq!(manifest.root_exact_state_hash, expected_root_hash);
+        assert!(!manifest.case_path.is_absolute());
+        let manifest_base = manifest_output.parent().unwrap();
+        assert_eq!(
+            manifest_base
+                .join(&manifest.case_path)
+                .canonicalize()
+                .unwrap(),
+            case_path.canonicalize().unwrap()
+        );
+        let identity = manifest.case_identity.as_ref().unwrap();
+        assert_eq!(identity.root_exact_state_hash, expected_root_hash);
+        assert_eq!(
+            identity.capability,
+            sts_oracle_runtime::eval::combat_case_context::CombatCaseReplayCapabilityV1::IsolatedProjection
+        );
         assert_eq!(manifest.entries.len(), 1);
-        assert_eq!(manifest.entries[0].action_paths, vec![action_output]);
+        assert_eq!(
+            manifest_base
+                .join(&manifest.entries[0].action_paths[0])
+                .canonicalize()
+                .unwrap(),
+            action_output.canonicalize().unwrap()
+        );
         assert_eq!(manifest.entries[0].supplied_action_count, actions.len());
         assert_eq!(manifest.entries[0].expected_terminal, CombatTerminal::Win);
         assert_eq!(

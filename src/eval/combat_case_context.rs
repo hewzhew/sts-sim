@@ -19,13 +19,28 @@ use crate::state::core::{ActiveCombat, CombatContext};
 
 pub const COMBAT_CASE_PRODUCTION_CONTEXT_SCHEMA_NAME: &str = "CombatCaseProductionContextV1";
 pub const COMBAT_CASE_PRODUCTION_CONTEXT_SCHEMA_VERSION: u32 = 1;
+pub const COMBAT_CASE_REPLAY_IDENTITY_SCHEMA_NAME: &str = "CombatCaseReplayIdentityV1";
+pub const COMBAT_CASE_REPLAY_IDENTITY_SCHEMA_VERSION: u32 = 1;
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum CombatCaseReplayCapabilityV1 {
     IsolatedProjection,
     ExactProductionState,
     ExactProductionOwner,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct CombatCaseReplayIdentityV1 {
+    pub schema_name: String,
+    pub schema_version: u32,
+    pub capability: CombatCaseReplayCapabilityV1,
+    pub root_exact_state_hash: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub run_session_fingerprint: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub owner_policy_fingerprint: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -143,17 +158,40 @@ pub fn restore_combat_case_oracle_analysis_owner_v1(
     Ok((session, budgets.restore()))
 }
 
-pub fn combat_case_production_owner_fingerprint_v1(case: &CombatCase) -> Result<String, String> {
-    let owner = case
-        .production_context
-        .as_ref()
-        .and_then(|context| context.production_owner.as_ref())
-        .ok_or_else(|| "combat case has no production owner".to_string())?;
-    validate_production_owner(owner)?;
-    let CombatCaseProductionOwnerV1::OracleAnalysis {
-        policy_fingerprint, ..
-    } = owner;
-    Ok(policy_fingerprint.clone())
+pub fn combat_case_replay_identity_v1(
+    case: &CombatCase,
+) -> Result<CombatCaseReplayIdentityV1, String> {
+    let root_exact_state_hash =
+        combat_exact_state_hash_v2(&case.position.engine, &case.position.combat);
+    let Some(context) = case.production_context.as_ref() else {
+        return Ok(CombatCaseReplayIdentityV1 {
+            schema_name: COMBAT_CASE_REPLAY_IDENTITY_SCHEMA_NAME.to_string(),
+            schema_version: COMBAT_CASE_REPLAY_IDENTITY_SCHEMA_VERSION,
+            capability: CombatCaseReplayCapabilityV1::IsolatedProjection,
+            root_exact_state_hash,
+            run_session_fingerprint: None,
+            owner_policy_fingerprint: None,
+        });
+    };
+    validate_context_payload(case, context)?;
+    let owner_policy_fingerprint = context.production_owner.as_ref().map(|owner| {
+        let CombatCaseProductionOwnerV1::OracleAnalysis {
+            policy_fingerprint, ..
+        } = owner;
+        policy_fingerprint.clone()
+    });
+    Ok(CombatCaseReplayIdentityV1 {
+        schema_name: COMBAT_CASE_REPLAY_IDENTITY_SCHEMA_NAME.to_string(),
+        schema_version: COMBAT_CASE_REPLAY_IDENTITY_SCHEMA_VERSION,
+        capability: if owner_policy_fingerprint.is_some() {
+            CombatCaseReplayCapabilityV1::ExactProductionOwner
+        } else {
+            CombatCaseReplayCapabilityV1::ExactProductionState
+        },
+        root_exact_state_hash,
+        run_session_fingerprint: Some(context.run_session_fingerprint.clone()),
+        owner_policy_fingerprint,
+    })
 }
 
 impl CombatCaseOracleCombatBudgetsV1 {
@@ -483,6 +521,18 @@ mod tests {
             case.replay_capability_v1().unwrap(),
             CombatCaseReplayCapabilityV1::ExactProductionState
         );
+        let identity = case.replay_identity_v1().unwrap();
+        assert_eq!(
+            identity.root_exact_state_hash,
+            combat_exact_state_hash_v2(&case.position.engine, &case.position.combat)
+        );
+        assert_eq!(
+            identity.run_session_fingerprint.as_deref(),
+            case.production_context
+                .as_ref()
+                .map(|context| context.run_session_fingerprint.as_str())
+        );
+        assert!(identity.owner_policy_fingerprint.is_none());
         let restored = restore_combat_case_production_session_v1(&case).unwrap();
         assert_eq!(
             run_control_session_fingerprint_v2(&restored),
@@ -526,6 +576,9 @@ mod tests {
             case.replay_capability_v1().unwrap(),
             CombatCaseReplayCapabilityV1::ExactProductionOwner
         );
+        let identity = case.replay_identity_v1().unwrap();
+        assert!(identity.run_session_fingerprint.is_some());
+        assert!(identity.owner_policy_fingerprint.is_some());
         let (_, restored) = restore_combat_case_oracle_analysis_owner_v1(&case).unwrap();
         assert_eq!(restored.hallway.max_nodes, Some(12_345));
         assert_eq!(restored.hallway.wall_ms, Some(678));
@@ -590,6 +643,13 @@ mod tests {
             case.replay_capability_v1().unwrap(),
             CombatCaseReplayCapabilityV1::IsolatedProjection
         );
+        let identity = case.replay_identity_v1().unwrap();
+        assert_eq!(
+            identity.root_exact_state_hash,
+            combat_exact_state_hash_v2(&case.position.engine, &case.position.combat)
+        );
+        assert!(identity.run_session_fingerprint.is_none());
+        assert!(identity.owner_policy_fingerprint.is_none());
         assert!(restore_combat_case_production_session_v1(&case)
             .unwrap_err()
             .contains("isolated replay only"));

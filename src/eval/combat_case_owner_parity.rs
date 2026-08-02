@@ -1,9 +1,7 @@
 use serde::Serialize;
 
 use crate::eval::combat_case::CombatCase;
-use crate::eval::combat_case_context::{
-    combat_case_production_owner_fingerprint_v1, restore_combat_case_oracle_analysis_owner_v1,
-};
+use crate::eval::combat_case_context::restore_combat_case_oracle_analysis_owner_v1;
 use crate::eval::run_control::{
     seed_oracle_run_explorer_from_session_v1, CombatAutomationTrajectorySource,
     OracleAnalysisAdvanceReportV1, OracleAnalysisAdvanceRequestV1, OracleAnalysisAdvanceStatusV1,
@@ -91,13 +89,14 @@ pub fn run_combat_case_owner_parity_v1(
     case: &CombatCase,
     request: CombatCaseOwnerParityRequestV1,
 ) -> Result<CombatCaseOwnerParityRunV1, String> {
-    let context = case
-        .production_context
-        .as_ref()
+    let identity = case.replay_identity_v1()?;
+    let run_session_fingerprint = identity
+        .run_session_fingerprint
         .ok_or_else(|| "combat-case owner parity requires exact production context".to_string())?;
-    let root_exact_state_hash = context.root_exact_state_hash.clone();
-    let run_session_fingerprint = context.run_session_fingerprint.clone();
-    let owner_policy_fingerprint = combat_case_production_owner_fingerprint_v1(case)?;
+    let owner_policy_fingerprint = identity.owner_policy_fingerprint.ok_or_else(|| {
+        "combat case has exact production state but no production owner".to_string()
+    })?;
+    let root_exact_state_hash = identity.root_exact_state_hash;
     let (session, budgets) = restore_combat_case_oracle_analysis_owner_v1(case)?;
     let explorer = seed_oracle_run_explorer_from_session_v1(
         session,
@@ -311,7 +310,10 @@ mod tests {
         ));
         assert_eq!(
             result.report.owner_policy_fingerprint,
-            combat_case_production_owner_fingerprint_v1(&case).unwrap()
+            case.replay_identity_v1()
+                .unwrap()
+                .owner_policy_fingerprint
+                .unwrap()
         );
         assert!(result.report.witness.is_some());
         assert!(result.debug.is_none());

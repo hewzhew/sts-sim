@@ -28,10 +28,12 @@ fn temp_directory(label: &str) -> PathBuf {
         .duration_since(UNIX_EPOCH)
         .expect("system clock should follow the Unix epoch")
         .as_nanos();
-    std::env::temp_dir().join(format!(
-        "sts-oracle-local-graph-export-{label}-{}-{nonce}",
-        std::process::id()
-    ))
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../target/test-artifacts")
+        .join(format!(
+            "sts-oracle-local-graph-export-{label}-{}-{nonce}",
+            std::process::id()
+        ))
 }
 
 fn fixture() -> (PathBuf, CombatCase, Vec<ClientInput>) {
@@ -102,8 +104,21 @@ fn ordinary_complete_win_exports_a_local_graph_manifest() {
         manifest.producer,
         CombatEvidenceProducerV1::LocalGraphSearch
     );
-    assert_eq!(manifest.case_path, case_path);
-    assert_eq!(manifest.entries[0].action_paths, vec![action_output]);
+    let manifest_base = manifest_path.parent().unwrap();
+    assert_eq!(
+        manifest_base
+            .join(&manifest.case_path)
+            .canonicalize()
+            .unwrap(),
+        case_path.canonicalize().unwrap()
+    );
+    assert_eq!(
+        manifest_base
+            .join(&manifest.entries[0].action_paths[0])
+            .canonicalize()
+            .unwrap(),
+        action_output.canonicalize().unwrap()
+    );
 
     fs::remove_dir_all(directory).expect("temporary export should clean up");
 }

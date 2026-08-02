@@ -28,6 +28,12 @@ pub(super) fn replay_pair(
             candidate.case_path.display()
         )
     })?;
+    let case_identity = loaded.replay_identity_v1().map_err(|error| {
+        format!(
+            "candidate case '{}' has invalid replay identity: {error}",
+            candidate.case_path.display()
+        )
+    })?;
     let inputs = load_action_segments(&candidate.action_paths)?;
     let action_hash = action_sequence_hash(&inputs)?;
     let stepper = EngineCombatStepper;
@@ -35,7 +41,13 @@ pub(super) fn replay_pair(
     let root_hash = combat_exact_state_hash_v2(&position.engine, &position.combat);
     let record_id = record_id(&root_hash, &action_hash);
     let supplied_action_count = inputs.len();
-    validate_manifest_input_identity(candidate, &root_hash, &action_hash, supplied_action_count)?;
+    validate_manifest_input_identity(
+        candidate,
+        &case_identity,
+        &root_hash,
+        &action_hash,
+        supplied_action_count,
+    )?;
     let mut frames = Vec::with_capacity(inputs.len());
 
     for (index, input) in inputs.into_iter().enumerate() {
@@ -105,9 +117,10 @@ pub(super) fn replay_pair(
         fiend_fire_observations_from_replay(&record_id, &root_hash, &frames, final_terminal);
     Ok(EvidenceRecord {
         schema_name: EVIDENCE_SCHEMA_NAME.to_string(),
-        schema_version: 2,
+        schema_version: 3,
         record_id,
         root_exact_state_hash: root_hash,
+        case_identity: Some(case_identity),
         action_sequence_blake2b_512: action_hash,
         provenance: candidate.provenance.clone(),
         source_paths: candidate.source_paths.clone(),
@@ -129,11 +142,22 @@ pub(super) fn replay_pair(
 
 fn validate_manifest_input_identity(
     candidate: &PairCandidate,
+    case_identity: &sts_oracle_runtime::eval::combat_case_context::CombatCaseReplayIdentityV1,
     root_hash: &str,
     action_hash: &str,
     supplied_action_count: usize,
 ) -> Result<(), String> {
     let expected = &candidate.expectations;
+    if expected
+        .case_identities
+        .iter()
+        .any(|value| value != case_identity)
+    {
+        return Err(format!(
+            "pair replay rejected manifest case identity: actual capability {:?}, root {}",
+            case_identity.capability, case_identity.root_exact_state_hash
+        ));
+    }
     if expected
         .root_exact_state_hashes
         .iter()

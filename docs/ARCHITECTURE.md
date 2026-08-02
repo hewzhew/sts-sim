@@ -130,6 +130,12 @@ identity comes from the validated context, while committed decision history
 remains owned by the journal/workspace. Legacy paths stay readable for old
 diagnostics but candidate display text is not copied into new case payloads.
 
+Combat evidence manifests embed the case's typed replay identity rather than
+repeating an unbound root string. New manifests resolve case, action, and trace
+artifacts only relative to the manifest file. Legacy manifests may use their
+compatibility resolver, but undeclared files are never promoted by same-stem or
+single-case-directory inference.
+
 Potions are run resources. Combat may consider potion actions only when the
 runner explicitly opens a potion policy and budget. A diagnostic fact such as
 "potion rescue found a win" does not automatically mean the main runner should

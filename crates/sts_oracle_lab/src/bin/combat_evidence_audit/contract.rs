@@ -93,9 +93,10 @@ pub(super) fn contract_record(trace_path: &Path, value: Value) -> Result<Evidenc
         .collect::<Vec<_>>();
     Ok(EvidenceRecord {
         schema_name: EVIDENCE_SCHEMA_NAME.to_string(),
-        schema_version: 2,
+        schema_version: 3,
         record_id,
         root_exact_state_hash: trace.root_exact_state_hash,
+        case_identity: None,
         action_sequence_blake2b_512: action_hash,
         provenance: BTreeSet::from(["typed_contract_trace".to_string()]),
         source_paths: BTreeSet::from([display_path(trace_path)]),

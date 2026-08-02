@@ -7,8 +7,8 @@ use serde_json::Value;
 use crate::ai::strategy::trajectory_comparison::TrajectorySnapshot;
 use crate::content::monsters::EnemyId;
 use crate::eval::combat_case_context::{
-    validate_combat_case_production_context_v1, CombatCaseProductionContextV1,
-    CombatCaseReplayCapabilityV1,
+    combat_case_replay_identity_v1, CombatCaseProductionContextV1, CombatCaseReplayCapabilityV1,
+    CombatCaseReplayIdentityV1,
 };
 use crate::eval::run_control::CombatSearchTraceSummary;
 use crate::runtime::combat::{CombatCard, CombatState};
@@ -158,15 +158,11 @@ impl CombatCase {
     }
 
     pub fn replay_capability_v1(&self) -> Result<CombatCaseReplayCapabilityV1, String> {
-        let Some(context) = self.production_context.as_ref() else {
-            return Ok(CombatCaseReplayCapabilityV1::IsolatedProjection);
-        };
-        validate_combat_case_production_context_v1(self)?;
-        if context.production_owner.is_some() {
-            Ok(CombatCaseReplayCapabilityV1::ExactProductionOwner)
-        } else {
-            Ok(CombatCaseReplayCapabilityV1::ExactProductionState)
-        }
+        Ok(self.replay_identity_v1()?.capability)
+    }
+
+    pub fn replay_identity_v1(&self) -> Result<CombatCaseReplayIdentityV1, String> {
+        combat_case_replay_identity_v1(self)
     }
 
     pub fn clear_production_context(&mut self) {

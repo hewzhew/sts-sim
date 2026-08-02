@@ -106,7 +106,7 @@ deck is good or bad.
 Index local combat evidence and replay exact relationships:
 
 ```powershell
-.\ol.cmd combat-evidence-audit --replay-untraced
+.\ol.cmd combat-evidence-audit
 ```
 
 Compare potion lanes from one unchanged exact root:

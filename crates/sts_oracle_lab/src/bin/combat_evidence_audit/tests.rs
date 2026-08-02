@@ -184,10 +184,11 @@ fn typed_batch_query_matches_observed_preparation_and_exact_bypass() {
         }),
     };
     let record = EvidenceRecord {
-        schema_name: "CombatEvidenceReplayV2".to_string(),
-        schema_version: 2,
+        schema_name: "CombatEvidenceReplayV3".to_string(),
+        schema_version: 3,
         record_id: "record".to_string(),
         root_exact_state_hash: "root".to_string(),
+        case_identity: None,
         action_sequence_blake2b_512: "actions".to_string(),
         provenance: BTreeSet::new(),
         source_paths: BTreeSet::new(),

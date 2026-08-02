@@ -22,7 +22,7 @@ fn tracked_slime_boss_pair() -> PairCandidate {
 }
 
 #[test]
-fn typed_manifest_producers_resolve_external_case_and_revalidate_identity() {
+fn legacy_v1_manifest_producers_remain_replayable() {
     let baseline = tracked_slime_boss_pair();
     let expected = replay_pair(&baseline, 250).expect("tracked witness should replay");
     let suffix = SystemTime::now()
@@ -70,10 +70,72 @@ fn typed_manifest_producers_resolve_external_case_and_revalidate_identity() {
         assert_eq!(candidates.len(), 1);
         let replayed =
             replay_pair(&candidates[0], 250).expect("manifest identity should revalidate");
-        assert!(replayed.provenance.contains("typed_evidence_manifest"));
+        assert!(replayed
+            .provenance
+            .contains("typed_evidence_manifest_v1_legacy_paths"));
         assert_eq!(replayed.record_id, expected.record_id);
     }
 
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn manifest_case_identity_mismatch_is_rejected_before_replay() {
+    let mut candidate = tracked_slime_boss_pair();
+    let replayed = replay_pair(&candidate, 250).expect("tracked witness should replay");
+    let mut foreign = replayed.case_identity.unwrap();
+    foreign.schema_version += 1;
+    candidate.expectations.case_identities.insert(foreign);
+
+    let error = replay_pair(&candidate, 250).expect_err("foreign case identity must be rejected");
+    assert!(error.contains("manifest case identity"), "{error}");
+}
+
+#[test]
+fn v2_manifest_never_falls_back_to_the_process_working_directory() {
+    let suffix = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let root = std::env::temp_dir().join(format!(
+        "sts-combat-evidence-v2-path-base-{}-{suffix}",
+        std::process::id()
+    ));
+    let artifact_dir = root.join("artifacts");
+    let manifest_dir = root.join("manifests");
+    fs::create_dir_all(&artifact_dir).unwrap();
+    fs::create_dir_all(&manifest_dir).unwrap();
+    fs::write(artifact_dir.join("case.json"), b"{}").unwrap();
+    fs::write(artifact_dir.join("witness.actions.json"), b"[]").unwrap();
+    let manifest_path = manifest_dir.join("witness.combat-evidence-manifest.json");
+    let value = serde_json::json!({
+        "schema_name": "CombatEvidenceManifestV2",
+        "schema_version": 2,
+        "producer": "policy_discrepancy_search",
+        "runtime": {},
+        "runtime_source_content_fingerprint": "0".repeat(128),
+        "case_identity": {
+            "schema_name": "CombatCaseReplayIdentityV1",
+            "schema_version": 1,
+            "capability": "isolated_projection",
+            "root_exact_state_hash": "0".repeat(64)
+        },
+        "case_path": "artifacts/case.json",
+        "entries": [{
+            "evidence_id": "witness",
+            "action_paths": ["artifacts/witness.actions.json"],
+            "action_sequence_blake2b_512": "0".repeat(128),
+            "supplied_action_count": 0,
+            "expected_terminal": "unresolved",
+            "expected_final_player_hp": 1
+        }]
+    });
+    fs::write(&manifest_path, serde_json::to_vec_pretty(&value).unwrap()).unwrap();
+
+    let error = declared_manifest_pairs(&manifest_path, &root, &root)
+        .expect_err("V2 paths must resolve from the manifest directory only");
+
+    assert!(error.contains("manifest case path is missing"), "{error}");
     fs::remove_dir_all(root).unwrap();
 }
 

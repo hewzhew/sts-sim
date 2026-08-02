@@ -89,33 +89,59 @@ pub(super) fn declared_manifest_pairs(
         )
     })?;
     let manifest = decode_combat_evidence_manifest(manifest_path, &bytes)?;
+    let manifest_relative_paths = manifest.uses_manifest_relative_paths();
+    let manifest_root_exact_state_hash = manifest.root_exact_state_hash().to_string();
+    let manifest_case_identity = manifest.case_identity.clone();
     let case_raw = manifest.case_path.to_string_lossy();
-    let case_path = resolve_declared_path(&case_raw, manifest_path, scan_root, current_dir)
-        .ok_or_else(|| format!("manifest case path is missing: {case_raw}"))?;
+    let case_path = resolve_manifest_path(
+        &case_raw,
+        manifest_path,
+        scan_root,
+        current_dir,
+        manifest_relative_paths,
+    )
+    .ok_or_else(|| format!("manifest case path is missing: {case_raw}"))?;
     let mut candidates = Vec::with_capacity(manifest.entries.len());
     for entry in manifest.entries {
         let mut action_paths = Vec::with_capacity(entry.action_paths.len());
         for raw_path in &entry.action_paths {
             let raw = raw_path.to_string_lossy();
             action_paths.push(
-                resolve_declared_path(&raw, manifest_path, scan_root, current_dir)
-                    .ok_or_else(|| format!("manifest action path is missing: {raw}"))?,
+                resolve_manifest_path(
+                    &raw,
+                    manifest_path,
+                    scan_root,
+                    current_dir,
+                    manifest_relative_paths,
+                )
+                .ok_or_else(|| format!("manifest action path is missing: {raw}"))?,
             );
         }
         let mut source_paths = BTreeSet::from([display_path(manifest_path)]);
         for raw_path in &entry.trace_paths {
             let raw = raw_path.to_string_lossy();
-            let path = resolve_declared_path(&raw, manifest_path, scan_root, current_dir)
-                .ok_or_else(|| format!("manifest trace path is missing: {raw}"))?;
+            let path = resolve_manifest_path(
+                &raw,
+                manifest_path,
+                scan_root,
+                current_dir,
+                manifest_relative_paths,
+            )
+            .ok_or_else(|| format!("manifest trace path is missing: {raw}"))?;
             source_paths.insert(display_path(&path));
         }
         candidates.push(PairCandidate {
             case_path: case_path.clone(),
             action_paths,
-            provenance: BTreeSet::from(["typed_evidence_manifest".to_string()]),
+            provenance: BTreeSet::from([if manifest_relative_paths {
+                "typed_evidence_manifest_v2".to_string()
+            } else {
+                "typed_evidence_manifest_v1_legacy_paths".to_string()
+            }]),
             source_paths,
             expectations: ReplayExpectations {
-                root_exact_state_hashes: BTreeSet::from([manifest.root_exact_state_hash.clone()]),
+                case_identities: manifest_case_identity.clone().into_iter().collect(),
+                root_exact_state_hashes: BTreeSet::from([manifest_root_exact_state_hash.clone()]),
                 action_sequence_blake2b_512: BTreeSet::from([entry.action_sequence_blake2b_512]),
                 supplied_action_counts: BTreeSet::from([entry.supplied_action_count]),
                 final_terminals: vec![entry.expected_terminal],
@@ -124,6 +150,29 @@ pub(super) fn declared_manifest_pairs(
         });
     }
     Ok(candidates)
+}
+
+fn resolve_manifest_path(
+    raw: &str,
+    manifest_path: &Path,
+    scan_root: &Path,
+    current_dir: &Path,
+    manifest_relative_paths: bool,
+) -> Option<PathBuf> {
+    if manifest_relative_paths {
+        let raw_path = Path::new(raw);
+        if raw_path.is_absolute() {
+            return None;
+        }
+        return manifest_path
+            .parent()
+            .unwrap_or_else(|| Path::new("."))
+            .join(raw_path)
+            .canonicalize()
+            .ok()
+            .filter(|candidate| candidate.is_file());
+    }
+    resolve_declared_path(raw, manifest_path, scan_root, current_dir)
 }
 
 pub(super) fn declared_pair(
@@ -212,6 +261,10 @@ pub(super) fn merge_pair(
         existing.source_paths.extend(candidate.source_paths);
         existing
             .expectations
+            .case_identities
+            .extend(candidate.expectations.case_identities);
+        existing
+            .expectations
             .root_exact_state_hashes
             .extend(candidate.expectations.root_exact_state_hashes);
         existing
@@ -235,25 +288,12 @@ pub(super) fn merge_pair(
     }
 }
 
-pub(super) fn infer_untraced_pairs(
+pub(super) fn report_unassociated_actions(
     inventory: &ArtifactInventory,
     referenced_actions: &BTreeSet<PathBuf>,
-    pairs: &mut BTreeMap<String, PairCandidate>,
-    inferred_keys: &mut BTreeSet<String>,
     unresolved: &mut Vec<UnresolvedArtifact>,
-) -> Result<(), String> {
-    let mut cases_by_directory = BTreeMap::<PathBuf, Vec<PathBuf>>::new();
-    for case_path in &inventory.case_files {
-        let canonical = case_path
-            .canonicalize()
-            .map_err(|error| error.to_string())?;
-        if let Some(parent) = canonical.parent() {
-            cases_by_directory
-                .entry(parent.to_path_buf())
-                .or_default()
-                .push(canonical);
-        }
-    }
+) -> Result<usize, String> {
+    let mut count = 0usize;
     for action_path in &inventory.action_files {
         let action_path = action_path
             .canonicalize()
@@ -261,62 +301,52 @@ pub(super) fn infer_untraced_pairs(
         if referenced_actions.contains(&action_path) {
             continue;
         }
-        let Some(parent) = action_path.parent() else {
-            continue;
-        };
-        let cases = cases_by_directory.get(parent).cloned().unwrap_or_default();
-        let action_base = artifact_base(&action_path, ".actions.json");
-        let same_stem = cases
-            .iter()
-            .find(|case_path| case_base(case_path) == action_base)
-            .cloned();
-        let (case_path, provenance) = if let Some(case_path) = same_stem {
-            (case_path, "same_stem_candidate")
-        } else if cases.len() == 1 {
-            (cases[0].clone(), "single_case_directory_candidate")
-        } else {
-            unresolved.push(UnresolvedArtifact {
-                path: display_path(&action_path),
-                reason: if cases.is_empty() {
-                    "unassociated action sequence: no case in directory".to_string()
-                } else {
-                    format!(
-                        "ambiguous action sequence: {} cases in directory and no exact stem",
-                        cases.len()
-                    )
-                },
-            });
-            continue;
-        };
-        let candidate = PairCandidate {
-            case_path,
-            action_paths: vec![action_path.clone()],
-            provenance: BTreeSet::from([provenance.to_string()]),
-            source_paths: BTreeSet::from([display_path(&action_path)]),
-            expectations: ReplayExpectations::default(),
-        };
-        let key = pair_key(&candidate.case_path, &candidate.action_paths);
-        inferred_keys.insert(key.clone());
-        merge_pair(pairs, key, candidate);
+        count = count.saturating_add(1);
+        unresolved.push(UnresolvedArtifact {
+            path: display_path(&action_path),
+            reason:
+                "unassociated action sequence: no producer manifest or declared trace relationship"
+                    .to_string(),
+        });
     }
-    Ok(())
+    Ok(count)
 }
 
-fn artifact_base(path: &Path, suffix: &str) -> String {
-    path.file_name()
-        .and_then(|name| name.to_str())
-        .and_then(|name| name.strip_suffix(suffix))
-        .unwrap_or_default()
-        .to_string()
-}
+#[cfg(test)]
+mod tests {
+    use std::fs;
+    use std::time::{SystemTime, UNIX_EPOCH};
 
-fn case_base(path: &Path) -> String {
-    let name = path
-        .file_name()
-        .and_then(|name| name.to_str())
-        .unwrap_or_default();
-    name.strip_suffix(".combat-case.json")
-        .or_else(|| name.strip_suffix(".case.json"))
-        .unwrap_or_default()
-        .to_string()
+    use super::*;
+
+    #[test]
+    fn undeclared_actions_remain_unknown_instead_of_using_directory_inference() {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!(
+            "sts-combat-evidence-unassociated-{}-{nonce}",
+            std::process::id()
+        ));
+        fs::create_dir_all(&root).unwrap();
+        let action_path = root.join("same-stem.actions.json");
+        let case_path = root.join("same-stem.case.json");
+        fs::write(&action_path, b"[]").unwrap();
+        fs::write(&case_path, b"{}").unwrap();
+        let inventory = ArtifactInventory {
+            action_files: vec![action_path],
+            case_files: vec![case_path],
+            ..ArtifactInventory::default()
+        };
+        let mut unresolved = Vec::new();
+
+        let count =
+            report_unassociated_actions(&inventory, &BTreeSet::new(), &mut unresolved).unwrap();
+
+        assert_eq!(count, 1);
+        assert_eq!(unresolved.len(), 1);
+        assert!(unresolved[0].reason.contains("no producer manifest"));
+        fs::remove_dir_all(root).unwrap();
+    }
 }

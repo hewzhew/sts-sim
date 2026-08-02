@@ -1,9 +1,9 @@
 //! Batch indexing and typed replay for local combat evidence artifacts.
 //!
 //! This is a diagnostic surface. It discovers exact case/action relationships
-//! declared by traces, optionally replays conservative legacy pairings, records
-//! typed same-turn bypass counterfactuals, and executes bounded query batches
-//! without changing search or run policy.
+//! declared by producer manifests or traces, records typed same-turn bypass
+//! counterfactuals, and executes bounded query batches without changing search
+//! or run policy. Undeclared action files remain explicit unknowns.
 
 mod artifacts;
 mod contract;
@@ -24,6 +24,7 @@ use clap::Args;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sts_oracle_runtime::content::cards::{CardId, CardType};
+use sts_oracle_runtime::eval::combat_case_context::CombatCaseReplayIdentityV1;
 use sts_oracle_runtime::sim::combat::CombatPosition;
 use sts_oracle_runtime::sim::combat::CombatTerminal;
 use sts_oracle_runtime::state::core::ClientInput;
@@ -34,8 +35,8 @@ use self::query::*;
 use self::replay::*;
 use super::canonical_launch::{runtime_identity, runtime_source_content_fingerprint};
 
-const SUMMARY_SCHEMA_NAME: &str = "CombatEvidenceAuditSummaryV3";
-const EVIDENCE_SCHEMA_NAME: &str = "CombatEvidenceReplayV2";
+const SUMMARY_SCHEMA_NAME: &str = "CombatEvidenceAuditSummaryV4";
+const EVIDENCE_SCHEMA_NAME: &str = "CombatEvidenceReplayV3";
 
 #[derive(Debug, Args)]
 pub(super) struct CombatEvidenceAuditArgs {
@@ -45,8 +46,9 @@ pub(super) struct CombatEvidenceAuditArgs {
     /// Fresh ignored directory for evidence artifacts. Defaults to a unique report directory.
     #[arg(long)]
     output: Option<PathBuf>,
-    /// Replay same-stem and single-case-directory action files not declared by a trace.
-    #[arg(long)]
+    /// Removed compatibility switch. Directory inference is no longer an
+    /// evidence source; producers must declare the case/action relationship.
+    #[arg(long, hide = true)]
     replay_untraced: bool,
     /// Optional CombatEvidenceQueryBatchV1 JSON file; use '-' to read one batch from stdin.
     #[arg(long)]
@@ -134,6 +136,8 @@ struct EvidenceRecord {
     schema_version: u32,
     record_id: String,
     root_exact_state_hash: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    case_identity: Option<CombatCaseReplayIdentityV1>,
     action_sequence_blake2b_512: String,
     provenance: BTreeSet<String>,
     source_paths: BTreeSet<String>,
@@ -228,6 +232,7 @@ struct PairCandidate {
 
 #[derive(Clone, Debug, Default)]
 struct ReplayExpectations {
+    case_identities: BTreeSet<CombatCaseReplayIdentityV1>,
     root_exact_state_hashes: BTreeSet<String>,
     action_sequence_blake2b_512: BTreeSet<String>,
     supplied_action_counts: BTreeSet<usize>,
@@ -288,7 +293,7 @@ pub(super) struct CombatEvidenceAuditSummary {
     non_replay_trace_files: usize,
     declared_replay_pairs: usize,
     manifest_replay_pairs: usize,
-    inferred_replay_pairs: usize,
+    unassociated_action_files: usize,
     exact_replays: usize,
     replay_failures: usize,
     contract_trace_records: usize,
@@ -303,6 +308,12 @@ pub(super) struct CombatEvidenceAuditSummary {
 }
 
 pub(super) fn run(args: CombatEvidenceAuditArgs) -> Result<CombatEvidenceAuditSummary, String> {
+    if args.replay_untraced {
+        return Err(
+            "--replay-untraced is no longer supported; export a producer manifest for each exact case/action relationship"
+                .to_string(),
+        );
+    }
     let output = args.output.unwrap_or_else(default_output_directory);
     if output.exists() {
         return Err(format!(
@@ -397,16 +408,8 @@ pub(super) fn run(args: CombatEvidenceAuditArgs) -> Result<CombatEvidenceAuditSu
         }
     }
 
-    let mut inferred_pair_keys = BTreeSet::new();
-    if args.replay_untraced {
-        infer_untraced_pairs(
-            &inventory,
-            &referenced_actions,
-            &mut pair_candidates,
-            &mut inferred_pair_keys,
-            &mut unresolved,
-        )?;
-    }
+    let unassociated_action_files =
+        report_unassociated_actions(&inventory, &referenced_actions, &mut unresolved)?;
 
     let mut replay_failures = 0usize;
     let mut records = contract_records;
@@ -492,7 +495,7 @@ pub(super) fn run(args: CombatEvidenceAuditArgs) -> Result<CombatEvidenceAuditSu
 
     let summary = CombatEvidenceAuditSummary {
         schema_name: SUMMARY_SCHEMA_NAME,
-        schema_version: 3,
+        schema_version: 4,
         contract: json!({
             "classification": "diagnostic",
             "search": false,
@@ -514,7 +517,7 @@ pub(super) fn run(args: CombatEvidenceAuditArgs) -> Result<CombatEvidenceAuditSu
         non_replay_trace_files,
         declared_replay_pairs: declared_pair_keys.len(),
         manifest_replay_pairs: manifest_pair_keys.len(),
-        inferred_replay_pairs: inferred_pair_keys.len(),
+        unassociated_action_files,
         exact_replays,
         replay_failures,
         contract_trace_records,

@@ -13,20 +13,25 @@ revision cannot silently stale this recipe.
 Index local combat artifacts and replay exact case/action relationships:
 
 ```powershell
-.\ol.cmd combat-evidence-audit --replay-untraced
+.\ol.cmd combat-evidence-audit
 ```
 
 The root defaults to `.oracle-lab`; omitting `--output` creates a fresh ignored
 report directory. Source artifacts are never rewritten.
 
 The scanner consumes producer-owned `*combat-evidence-manifest.json` files
-first. It validates the declared root, action identity and count, complete
-consumption, terminal outcome, and final player HP against the simulator. A
-manifest is evidence routing, not an override of replay truth.
+first. V2 manifests bind the case's typed replay capability, exact combat root,
+optional run-session fingerprint, and optional owner-policy fingerprint. Every
+artifact path is relative to the manifest itself and has exactly one resolution
+base. On Windows, the manifest and its declared artifacts must therefore live
+on the same volume. The scanner then revalidates root identity, action identity
+and count, complete consumption, terminal outcome, and final player HP against
+the simulator. A manifest is evidence routing, not an override of replay truth.
 
-With `--replay-untraced`, the audit may also try unambiguous legacy pairings:
-same-stem files or a directory containing exactly one case. Missing,
-ambiguous, identity-mismatched, or illegal pairings remain explicit unknowns.
+Legacy V1 manifests and declared trace relationships remain readable through
+an explicitly labeled compatibility path. Undeclared action files are not
+paired by matching stems or by counting cases in a directory; they remain
+explicit unknowns until a producer-owned relationship exists.
 
 The report directory contains:
 
