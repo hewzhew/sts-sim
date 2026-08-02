@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use clap::Args;
 use serde_json::json;
-use sts_combat_strategy::{awakened_one_combat_plan_v1, awakened_one_plan_transition_v1};
+use sts_combat_strategy::{combat_plan_projection_v1, combat_plan_transition_annotation_v1};
 use sts_oracle_runtime::ai::combat_state_key::combat_exact_state_hash_v2;
 use sts_oracle_runtime::eval::combat_case::load_combat_case;
 use sts_oracle_runtime::sim::combat::{
@@ -32,7 +32,7 @@ pub(super) fn run_annotations(args: CombatCasePlanAnnotationsArgs) -> Result<(),
     let position = loaded.position;
     let stepper = EngineCombatStepper;
     let surface = stepper.legal_action_surface(&position);
-    let root_plan = awakened_one_combat_plan_v1(&position);
+    let root_plan = combat_plan_projection_v1(&position);
     let annotations = surface
         .atomic_actions
         .iter()
@@ -48,10 +48,10 @@ pub(super) fn run_annotations(args: CombatCasePlanAnnotationsArgs) -> Result<(),
             let exact_successor_hash = (!step.truncated)
                 .then(|| combat_exact_state_hash_v2(&step.position.engine, &step.position.combat));
             let transition = (!step.truncated)
-                .then(|| awakened_one_plan_transition_v1(&position, &step.position))
+                .then(|| combat_plan_transition_annotation_v1(&position, &step.position))
                 .flatten();
             let successor_plan = (!step.truncated)
-                .then(|| awakened_one_combat_plan_v1(&step.position))
+                .then(|| combat_plan_projection_v1(&step.position))
                 .flatten();
             json!({
                 "label": combat_action_label(&position, input),
@@ -68,8 +68,8 @@ pub(super) fn run_annotations(args: CombatCasePlanAnnotationsArgs) -> Result<(),
         })
         .collect::<Vec<_>>();
     print_json(&json!({
-        "schema_name": "OracleCombatCasePlanAnnotationsV1",
-        "schema_version": 1,
+        "schema_name": "OracleCombatCasePlanAnnotationsV2",
+        "schema_version": 2,
         "case": case_path,
         "runtime": oracle_lab_runtime_identity(),
         "contract": {
@@ -120,7 +120,7 @@ pub(super) fn run_trace(args: CombatCasePlanTraceArgs) -> Result<(), String> {
     let stepper = EngineCombatStepper;
     let mut position = loaded.position;
     let root_exact_state_hash = combat_exact_state_hash_v2(&position.engine, &position.combat);
-    let root_plan = awakened_one_combat_plan_v1(&position);
+    let root_plan = combat_plan_projection_v1(&position);
     let mut trace = Vec::new();
     let mut consumed_actions = 0_usize;
 
@@ -138,10 +138,10 @@ pub(super) fn run_trace(args: CombatCasePlanTraceArgs) -> Result<(), String> {
             },
         );
         let transition = (!step.truncated)
-            .then(|| awakened_one_plan_transition_v1(&position, &step.position))
+            .then(|| combat_plan_transition_annotation_v1(&position, &step.position))
             .flatten();
         let successor_plan = (!step.truncated)
-            .then(|| awakened_one_combat_plan_v1(&step.position))
+            .then(|| combat_plan_projection_v1(&step.position))
             .flatten();
         let after_hash = (!step.truncated)
             .then(|| combat_exact_state_hash_v2(&step.position.engine, &step.position.combat));
@@ -171,8 +171,8 @@ pub(super) fn run_trace(args: CombatCasePlanTraceArgs) -> Result<(), String> {
 
     let final_terminal = combat_terminal(&position.engine, &position.combat);
     print_json(&json!({
-        "schema_name": "OracleCombatCasePlanTraceV1",
-        "schema_version": 1,
+        "schema_name": "OracleCombatCasePlanTraceV2",
+        "schema_version": 2,
         "case": case_path,
         "actions": action_paths,
         "runtime": oracle_lab_runtime_identity(),
@@ -195,7 +195,7 @@ pub(super) fn run_trace(args: CombatCasePlanTraceArgs) -> Result<(), String> {
         ),
         "final_terminal": format!("{final_terminal:?}"),
         "final_player_hp": position.combat.entities.player.current_hp,
-        "final_plan": awakened_one_combat_plan_v1(&position),
+        "final_plan": combat_plan_projection_v1(&position),
         "max_engine_steps_per_transition": max_engine_steps_per_transition,
         "trace": trace,
     }))
