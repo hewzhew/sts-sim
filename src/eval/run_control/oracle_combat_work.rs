@@ -7,7 +7,8 @@ use super::combat_line_executor::apply_oracle_combat_witness;
 use super::combat_search::RunControlCombatWorkAdvanceV1;
 use super::combat_search_setup::prepare_search_combat;
 use super::oracle_combat_policy::{
-    existing_combat_rollout_witness_v1, ExistingCombatKnowledgePolicy,
+    authorized_potion_trial_policy_v1, existing_combat_rollout_witness_v1,
+    ExistingCombatKnowledgePolicy,
 };
 use super::progress_options::{RunControlCombatSearchQuantum, RunControlSearchCombatOptions};
 use super::session::{RunControlCombatSearchRejection, RunControlSession, RunProgressOutcome};
@@ -273,11 +274,23 @@ impl OracleRunCombatWorkV1 {
         let root = CombatDecisionRoot::new(prepared.start.clone())
             .map_err(|error| format!("invalid oracle combat root: {error:?}"))?;
         let policy = Arc::new(ExistingCombatKnowledgePolicy::default());
-        let policy = if let Some(guidance) = guidance {
+        let mut policy = if let Some(guidance) = guidance {
             guidance.policy(policy)?
         } else {
             policy
         };
+        if let Some(allowed_potion_slots) = prepared
+            .options
+            .allowed_potion_slots
+            .filter(|slots| *slots != 0)
+            .filter(|_| prepared.config.max_potions_used != Some(0))
+        {
+            policy = authorized_potion_trial_policy_v1(
+                policy,
+                prepared.start.clone(),
+                allowed_potion_slots,
+            );
+        }
         let policy = combat_plan_state_guide_policy_v1(policy);
         let portfolio_service_order = if prepared.start.combat.meta.is_boss_fight {
             PortfolioServiceOrderV1::LocalPrimary
@@ -967,6 +980,15 @@ impl OracleRunCombatWorkV1 {
 
     pub(super) fn has_verified_witness(&self) -> bool {
         self.best_witness().is_some()
+    }
+
+    pub(super) fn incumbent_hp_loss(&self) -> Option<u32> {
+        let initial_hp = self.start.combat.entities.player.current_hp;
+        self.best_witness().map(|witness| {
+            initial_hp
+                .saturating_sub(witness.final_position.combat.entities.player.current_hp)
+                .max(0) as u32
+        })
     }
 
     pub(super) fn has_refinement_ending_witness(&self) -> bool {

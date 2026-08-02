@@ -66,6 +66,7 @@ combinations from one unchanged exact combat root:
 .\ol.cmd combat-case-potion-expenditure-audit `
   --case <case.json> `
   --max-combination-size 2 `
+  --export-witness-actions-dir <fresh-output-directory> `
   --wall-ms-per-lane 10000
 ```
 
@@ -82,6 +83,10 @@ budget-unknown unless the lane reports `frontier_exhausted`. Continuation value
 such as forced-rest avoidance, future elite plans, potion-slot overflow, and
 encounter-specific preservation remains a run-level decision and is listed as
 unobserved rather than invented into one combat score.
+When `--export-witness-actions-dir` is present, every lane with a
+replay-verified witness also writes `<lane-id>.actions.json`. Use those exact
+inputs with `combat-case-plan-trace`, `--watch-actions`, or another replay
+surface instead of reconstructing a promising lane from display text.
 
 ### Fresh Potion Continuation Cases
 
@@ -532,8 +537,10 @@ cargo oracle-lab new --seed 20260713009 --ascension 0 --workspace .oracle-lab/ca
 
 `live run` uses the maintained 5/15/30-second hallway/elite/boss budgets. It
 accepts only replay-verified combat incumbents. If a combat has no witness
-within its budget, the command saves the resident workspace and stops at that
-exact combat with `combat_budget_unknown_without_witness`; it does not restart,
+within its budget, or only has a witness below the owner's strategic survival
+floor, the command saves the resident workspace and stops at that exact combat
+with `combat_budget_unknown_without_witness` or
+`combat_budget_unknown_without_reserve_compliant_witness`; it does not restart,
 switch algorithms, or select a historical donor. At terminal victory it
 replays the complete committed journal from the canonical seed state inside
 the resident service, exports the exact continuation when requested, and

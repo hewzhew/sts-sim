@@ -157,6 +157,10 @@ use before applying the ordinary final-HP and persistent-payoff ordering.
 contract: it may land below the search-quality target, but never below the
 owner's captured strategic survival floor. Guaranteed full-heal boundaries
 retain their explicit unlimited limit.
+After every configured quality stage is exhausted, analysis advance may
+materialize an insufficient-quality fallback only when it still preserves that
+survival floor. A lower verified win remains an exact incumbent for diagnosis,
+but autonomous run reports budget-unknown and does not silently accept it.
 Autonomous refinement gives each active potion identity its own exact search
 stage. The current stage's slot mask constrains newly generated or proposed
 witnesses; it does not discard an exact-verified incumbent inherited from an
@@ -176,6 +180,13 @@ at most `1 + 1 / active identities` allowances for non-Boss combat and
 `1 + 1 / (active identities + 1)` allowances for Boss combat, while the
 caller's combat wall deadline remains authoritative. Slot order follows
 deterministic slot identity, not a potion value ranking.
+
+When an exact identity stage is opened, its admitted potion-use actions receive
+one explicit challenge at the unchanged combat root instead of inheriting the
+conservation policy's near-zero rejection weight. The challenge changes only
+search guidance inside that already-authorized slot mask: it does not make the
+action legal, alter later-turn timing, discard the protected clean incumbent,
+or authorize a spending witness that misses the owner's quality contract.
 
 Production combat progress carries the exact root hash and one compact typed
 trace row per served stage. A row freezes that stage's slot contract, charged

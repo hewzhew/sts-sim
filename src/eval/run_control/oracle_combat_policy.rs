@@ -11,7 +11,8 @@ use crate::sim::combat::{
 
 pub(super) use sts_combat_knowledge::ExistingCombatKnowledgePolicy;
 pub use sts_combat_knowledge::{
-    existing_combat_knowledge_policy_v1, existing_combat_rollout_lookahead_v1,
+    authorized_potion_trial_policy_v1, existing_combat_knowledge_policy_v1,
+    existing_combat_rollout_lookahead_v1,
 };
 
 const ADVISOR_TOTAL_NODE_LIMIT: usize = 800_000;

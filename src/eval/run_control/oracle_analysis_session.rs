@@ -32,9 +32,9 @@ use super::{
     exact_route_policy_audit_v1, exact_shop_policy_audit_v1, CombatAutomationMonsterStateV1,
     CombatAutomationTrajectoryRecordV1, ExactCampfirePolicyAuditV1, ExactCardRewardPolicyAuditV1,
     ExactRoutePolicyAuditV1, ExactShopPolicyAuditV1, RunControlCombatSearchQuantum,
-    RunControlCombatWorkAdvanceV1, RunControlSessionCheckpointV1, RunControlTraceAnnotationV1,
-    RunDecisionAction, RunPolicyCandidateV1, RunPolicyPriorFnV1, RunProgressJournalV1,
-    RunProgressStepV1,
+    RunControlCombatWorkAdvanceV1, RunControlHpLossLimit, RunControlSessionCheckpointV1,
+    RunControlTraceAnnotationV1, RunDecisionAction, RunPolicyCandidateV1, RunPolicyPriorFnV1,
+    RunProgressJournalV1, RunProgressStepV1,
 };
 
 pub const ORACLE_ANALYSIS_SESSION_SCHEMA_NAME: &str = "OracleAnalysisSession";
@@ -1319,6 +1319,19 @@ impl OracleAnalysisSessionV1 {
             });
         }
 
+        if !self.cursor_combat_incumbent_preserves_survival_floor()? {
+            return Ok(OracleAnalysisAdvanceReportV1 {
+                source_node_id,
+                status: OracleAnalysisAdvanceStatusV1::BudgetUnknown,
+                quanta_served,
+                elapsed_ms: elapsed_ms(started),
+                combat: self.combat_progress_with_exit(
+                    source_node_id,
+                    OracleAnalysisCombatStageExitV1::BudgetUnknown,
+                ),
+            });
+        }
+
         let job = self
             .combat_jobs
             .remove(&source_node_id)
@@ -1409,6 +1422,34 @@ impl OracleAnalysisSessionV1 {
         };
         child_node_id
             .ok_or_else(|| "verified combat incumbent did not materialize a child".to_string())
+    }
+
+    /// Whether the current verified incumbent preserves the run owner's broad
+    /// floor-to-floor survival reserve. This is deliberately looser than the
+    /// quality target: a reserve-compliant fallback may still be accepted after
+    /// bounded refinement, while an incumbent below this floor remains
+    /// budget-unknown unless an analyst explicitly supplies or accepts it.
+    pub fn cursor_combat_incumbent_preserves_survival_floor(&self) -> Result<bool, String> {
+        let source_node_id = self.cursor_node_id;
+        let branch = self.require_branch(source_node_id)?;
+        if branch.boundary != OracleRunBoundaryV1::Combat {
+            return Err(format!(
+                "oracle analysis node {source_node_id} is at {:?}, not combat",
+                branch.boundary
+            ));
+        }
+        let Some(job) = self.combat_jobs.get(&source_node_id) else {
+            return Ok(false);
+        };
+        let Some(hp_loss) = job.work.incumbent_hp_loss() else {
+            return Ok(false);
+        };
+        Ok(
+            match super::strategic_combat_survival_hp_loss_limit_v1(&branch.session) {
+                RunControlHpLossLimit::Unlimited => true,
+                RunControlHpLossLimit::Limit(limit) => hp_loss <= limit,
+            },
+        )
     }
 
     pub fn accept_cursor_combat_actions(

@@ -279,7 +279,22 @@ pub fn run_oracle_analysis_to_stop_v1(
             .as_ref()
             .and_then(|combat| combat.incumbent_final_hp);
         let materialized = after.boundary != OracleRunBoundaryV1::Combat;
-        let incumbent_needs_acceptance = combat_incumbent_needs_acceptance(materialized, incumbent);
+        let incumbent_survival_floor_satisfied = if materialized {
+            incumbent.map(|_| true)
+        } else if incumbent.is_some() {
+            Some(
+                workspace
+                    .session
+                    .cursor_combat_incumbent_preserves_survival_floor()?,
+            )
+        } else {
+            None
+        };
+        let incumbent_needs_acceptance = combat_incumbent_needs_acceptance(
+            materialized,
+            incumbent,
+            incumbent_survival_floor_satisfied,
+        );
         let accepted_after_run_wall =
             incumbent_needs_acceptance && run_wall_budget_reached(run_started, config.run_wall_ms);
         let accepted = if incumbent_needs_acceptance {
@@ -302,12 +317,19 @@ pub fn run_oracle_analysis_to_stop_v1(
             "budget_ms": wall_ms,
             "elapsed_ms": report.elapsed_ms,
             "accepted_incumbent": accepted,
+            "incumbent_survival_floor_satisfied": incumbent_survival_floor_satisfied,
             "incumbent_accepted_after_run_wall": accepted_after_run_wall,
             "search": compact_run_combat_progress(report.combat.as_ref()),
             "after": compact_run_node(&after),
         }));
 
         if !materialized && !accepted {
+            let stop_reason =
+                if incumbent.is_some() && incumbent_survival_floor_satisfied == Some(false) {
+                    "combat_budget_unknown_without_reserve_compliant_witness"
+                } else {
+                    "combat_budget_unknown_without_witness"
+                };
             return Ok(stopped_autonomous_run_report(
                 start_node,
                 &after,
@@ -316,7 +338,7 @@ pub fn run_oracle_analysis_to_stop_v1(
                 &timing,
                 elapsed_millis(run_started),
                 config.run_wall_ms,
-                "combat_budget_unknown_without_witness",
+                stop_reason,
             ));
         }
         node = after;
@@ -516,8 +538,12 @@ fn run_wall_budget_reached(started: Instant, run_wall_ms: Option<u64>) -> bool {
     run_wall_ms.is_some_and(|limit| elapsed_millis(started) >= limit)
 }
 
-fn combat_incumbent_needs_acceptance(materialized: bool, incumbent_final_hp: Option<i32>) -> bool {
-    !materialized && incumbent_final_hp.is_some()
+fn combat_incumbent_needs_acceptance(
+    materialized: bool,
+    incumbent_final_hp: Option<i32>,
+    survival_floor_satisfied: Option<bool>,
+) -> bool {
+    !materialized && incumbent_final_hp.is_some() && survival_floor_satisfied == Some(true)
 }
 
 #[cfg(test)]
@@ -666,9 +692,22 @@ mod tests {
         let started = Instant::now() - Duration::from_millis(10);
 
         assert!(run_wall_budget_reached(started, Some(5)));
-        assert!(combat_incumbent_needs_acceptance(false, Some(51)));
-        assert!(!combat_incumbent_needs_acceptance(true, Some(51)));
-        assert!(!combat_incumbent_needs_acceptance(false, None));
+        assert!(combat_incumbent_needs_acceptance(
+            false,
+            Some(51),
+            Some(true)
+        ));
+        assert!(!combat_incumbent_needs_acceptance(
+            false,
+            Some(9),
+            Some(false)
+        ));
+        assert!(!combat_incumbent_needs_acceptance(
+            true,
+            Some(51),
+            Some(true)
+        ));
+        assert!(!combat_incumbent_needs_acceptance(false, None, None));
     }
 
     #[test]

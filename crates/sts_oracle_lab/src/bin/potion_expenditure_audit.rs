@@ -51,8 +51,9 @@ use sts_oracle_runtime::sim::combat::{
 use sts_oracle_runtime::state::core::ClientInput;
 
 use super::combat_graph_search_spec::LocalGraphSearchSpec;
+use super::combat_replay_tools::save_combat_inputs;
 
-const SCHEMA_NAME: &str = "OracleCombatCasePotionExpenditureAuditV11";
+const SCHEMA_NAME: &str = "OracleCombatCasePotionExpenditureAuditV12";
 
 #[derive(Debug, Args)]
 pub(super) struct CombatCasePotionExpenditureAuditArgs {
@@ -69,6 +70,10 @@ pub(super) struct CombatCasePotionExpenditureAuditArgs {
     /// Optional strategic final-HP reserve reported for every exact witness.
     #[arg(long)]
     survival_reserve_hp: Option<i32>,
+    /// Save each replay-verified lane witness as
+    /// `<lane-id>.actions.json` below this directory.
+    #[arg(long, value_name = "DIRECTORY")]
+    export_witness_actions_dir: Option<PathBuf>,
     /// Add the same typed combat-plan state guide used by production combat
     /// search while preserving independent exact potion-slot lanes.
     #[arg(long)]
@@ -494,6 +499,8 @@ struct PotionAuditLaneResultV1 {
     status: String,
     elapsed_ms: u64,
     counters: PotionAuditLaneCountersV1,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    exported_witness_actions: Option<PathBuf>,
     witness: Option<PotionAuditWitnessV1>,
 }
 
@@ -697,7 +704,7 @@ struct PotionRetainedValueEvidenceV1 {
 }
 
 #[derive(Clone, Debug, Serialize)]
-pub(super) struct CombatCasePotionExpenditureAuditV10 {
+pub(super) struct CombatCasePotionExpenditureAuditV12 {
     schema_name: &'static str,
     case: PathBuf,
     root_exact_state_hash: String,
@@ -708,6 +715,8 @@ pub(super) struct CombatCasePotionExpenditureAuditV10 {
     continuation_pressure_projection: PotionContinuationPressureProjectionV1,
     combat_victory_continuation_projection: CombatVictoryContinuationProjectionV1,
     strategic_hp_quality_projection: StrategicHpQualityProjectionV1,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    export_witness_actions_dir: Option<PathBuf>,
     settings: PotionAuditSearchSettingsV1,
     lanes: Vec<PotionAuditLaneResultV1>,
     pareto_lane_ids: Vec<String>,
@@ -716,12 +725,13 @@ pub(super) struct CombatCasePotionExpenditureAuditV10 {
 
 pub(super) fn run(
     args: CombatCasePotionExpenditureAuditArgs,
-) -> Result<CombatCasePotionExpenditureAuditV10, String> {
+) -> Result<CombatCasePotionExpenditureAuditV12, String> {
     let CombatCasePotionExpenditureAuditArgs {
         case,
         max_combination_size,
         max_lanes,
         survival_reserve_hp,
+        export_witness_actions_dir,
         typed_plan_guide,
         max_nodes,
         max_selections,
@@ -807,6 +817,18 @@ pub(super) fn run(
         let started = Instant::now();
         let report = session.advance(search_spec.quantum(), &EngineCombatStepper);
         let elapsed_ms = duration_millis_u64(started.elapsed());
+        let exported_witness_actions =
+            match (export_witness_actions_dir.as_ref(), report.witness.as_ref()) {
+                (Some(directory), Some(witness)) => {
+                    let path = directory.join(format!("{}.actions.json", lane.lane_id));
+                    save_combat_inputs(
+                        &path,
+                        witness.actions.iter().map(|action| action.input.clone()),
+                    )?;
+                    Some(path)
+                }
+                _ => None,
+            };
         let witness = report
             .witness
             .as_ref()
@@ -842,6 +864,7 @@ pub(super) fn run(
                 witness_replay_attempts: report.counters.witness_replay_attempts,
                 witness_replay_improvements: report.counters.witness_replay_improvements,
             },
+            exported_witness_actions,
             witness,
         });
     }
@@ -872,7 +895,7 @@ pub(super) fn run(
         })
         .collect();
 
-    Ok(CombatCasePotionExpenditureAuditV10 {
+    Ok(CombatCasePotionExpenditureAuditV12 {
         schema_name: SCHEMA_NAME,
         case,
         root_exact_state_hash,
@@ -883,6 +906,7 @@ pub(super) fn run(
         continuation_pressure_projection,
         combat_victory_continuation_projection,
         strategic_hp_quality_projection,
+        export_witness_actions_dir,
         settings: PotionAuditSearchSettingsV1 {
             max_combination_size,
             max_lanes,
@@ -3003,6 +3027,7 @@ mod tests {
                 witness_replay_attempts: 0,
                 witness_replay_improvements: 0,
             },
+            exported_witness_actions: None,
             witness: Some(PotionAuditWitnessV1 {
                 final_hp: 30,
                 hp_loss: 10,

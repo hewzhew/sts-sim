@@ -373,6 +373,86 @@ fn strategic_no_potion_witness_that_meets_quality_materializes_without_rescue() 
 }
 
 #[test]
+fn strategic_advance_keeps_a_below_reserve_win_resident_until_explicit_acceptance() {
+    // This deliberately crosses witness replay, analysis advance, and child
+    // materialization: a lower-level predicate test cannot catch an unsafe
+    // fallback being committed by the public staged-advance transaction.
+    let mut combat = one_strike_combat();
+    combat.entities.player.current_hp = 7;
+    combat.entities.player.max_hp = 80;
+    combat.turn.energy = 0;
+    combat.zones.hand = vec![
+        CombatCard::new(crate::content::cards::CardId::Offering, 2),
+        CombatCard::new(crate::content::cards::CardId::Strike, 1),
+    ];
+    let mut analysis = combat_analysis_with_budgets(
+        combat,
+        None,
+        strategic_combat_budgets(RunControlSearchCombatOptions {
+            max_nodes: Some(0),
+            ..RunControlSearchCombatOptions::default()
+        }),
+    );
+    let actions = [
+        ClientInput::PlayCard {
+            card_index: 0,
+            target: None,
+        },
+        ClientInput::PlayCard {
+            card_index: 0,
+            target: Some(1),
+        },
+    ];
+    analysis
+        .combat_jobs
+        .get_mut(&0)
+        .expect("resident low-HP combat")
+        .work
+        .verify_and_restore_action_witness(&actions)
+        .expect("exact Offering win");
+
+    assert!(!analysis
+        .cursor_combat_incumbent_preserves_survival_floor()
+        .expect("typed survival-floor check"));
+    let report = analysis
+        .advance_cursor(OracleAnalysisAdvanceRequestV1 {
+            max_quanta: 1,
+            quantum_nodes: 1,
+            quantum_ms: None,
+            wall_ms: None,
+            improve_incumbent: false,
+        })
+        .expect("bounded strategic advance");
+
+    assert!(matches!(
+        report.status,
+        OracleAnalysisAdvanceStatusV1::BudgetUnknown
+    ));
+    assert_eq!(
+        report
+            .combat
+            .as_ref()
+            .and_then(|combat| combat.incumbent_final_hp),
+        Some(1)
+    );
+    assert_eq!(
+        analysis
+            .view_cursor()
+            .expect("resident combat view")
+            .boundary,
+        OracleRunBoundaryV1::Combat,
+        "an unsafe fallback must not materialize during ordinary advance"
+    );
+
+    analysis
+        .accept_cursor_combat_incumbent()
+        .expect("explicit analyst acceptance");
+    let accepted = analysis.view_cursor().expect("explicitly accepted child");
+    assert_eq!(accepted.boundary, OracleRunBoundaryV1::Reward);
+    assert_eq!(accepted.current_hp, 1);
+}
+
+#[test]
 fn bounded_no_potion_unknown_enters_the_full_potion_stage() {
     let mut combat = potion_equipped_one_strike_combat();
     combat.zones.hand.clear();
