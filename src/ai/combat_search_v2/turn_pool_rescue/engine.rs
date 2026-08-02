@@ -7,8 +7,8 @@ use crate::sim::combat_action::CombatActionChoice;
 use crate::state::core::ClientInput;
 
 use super::super::{
-    filter_combat_search_legal_actions, CombatSearchPluginStack, CombatSearchV2Config,
-    SearchTerminalLabel,
+    filter_combat_search_legal_actions_with_potion_plugin, CombatSearchPluginStack,
+    CombatSearchV2Config, SearchTerminalLabel,
 };
 use super::ranking::{keep_diverse_lane_nodes, keep_lane_nodes, lane_rank};
 use super::types::{
@@ -260,10 +260,9 @@ fn turn_pool_choices<'a>(
     }
 
     let choices = match plugins {
-        Some(plugins) => filter_combat_search_legal_actions(
+        Some(plugins) => filter_combat_search_legal_actions_with_potion_plugin(
             stepper.atomic_action_choices(position),
-            plugins.potion.policy,
-            plugins.potion.allowed_potion_slots,
+            plugins.potion,
             &position.combat,
         ),
         None => stepper.atomic_action_choices(position),

@@ -17,6 +17,7 @@ pub(super) struct LocalGraphPlannerSettings {
     max_engine_steps_per_transition: usize,
     uniform_exploration_ppm: u32,
     allow_potion_expenditure: bool,
+    allow_potion_discard: bool,
     generation_quantum_work: usize,
     backed_generation_quantum_work: usize,
     initial_expansion_work: usize,
@@ -51,6 +52,7 @@ impl LocalGraphSearchSpec {
         generation_quantum_work: usize,
         max_turn_depth: usize,
         max_potions_used: Option<u32>,
+        allow_potion_discard: bool,
     ) -> Self {
         let defaults = LocalTurnGraphWitnessConfig::default();
         let lookahead_work_per_evaluation = defaults.lookahead_work_per_evaluation;
@@ -59,6 +61,7 @@ impl LocalGraphSearchSpec {
                 max_engine_steps_per_transition,
                 uniform_exploration_ppm,
                 allow_potion_expenditure: max_potions_used != Some(0),
+                allow_potion_discard,
                 generation_quantum_work,
                 backed_generation_quantum_work: defaults.backed_generation_quantum_work,
                 initial_expansion_work: defaults.initial_expansion_work,
@@ -89,6 +92,7 @@ impl LocalGraphSearchSpec {
                 max_engine_steps_per_transition: self.planner.max_engine_steps_per_transition,
                 uniform_exploration_ppm: self.planner.uniform_exploration_ppm,
                 allow_potion_expenditure: self.planner.allow_potion_expenditure,
+                allow_potion_discard: self.planner.allow_potion_discard,
                 ..TurnOptionGeneratorConfig::default()
             },
             generation_quantum_work: self.planner.generation_quantum_work,
@@ -119,12 +123,14 @@ mod tests {
 
     #[test]
     fn spec_serializes_every_effective_setting_and_allowance() {
-        let spec = LocalGraphSearchSpec::from_controls(240, 80, 15, 7, 12_345, 3, 9, Some(0));
+        let spec =
+            LocalGraphSearchSpec::from_controls(240, 80, 15, 7, 12_345, 3, 9, Some(0), false);
         let value = serde_json::to_value(spec).expect("serialize search spec");
 
         assert_eq!(value["planner"]["max_engine_steps_per_transition"], 7);
         assert_eq!(value["planner"]["uniform_exploration_ppm"], 12_345);
         assert_eq!(value["planner"]["allow_potion_expenditure"], false);
+        assert_eq!(value["planner"]["allow_potion_discard"], false);
         assert_eq!(value["planner"]["generation_quantum_work"], 3);
         assert_eq!(
             value["planner"]["backed_generation_quantum_work"],
@@ -141,13 +147,14 @@ mod tests {
 
     #[test]
     fn planner_config_and_quantum_are_built_from_the_reported_spec() {
-        let spec = LocalGraphSearchSpec::from_controls(240, 80, 15, 7, 12_345, 3, 9, Some(2));
+        let spec = LocalGraphSearchSpec::from_controls(240, 80, 15, 7, 12_345, 3, 9, Some(2), true);
         let config = spec.planner_config(OracleCombatWitnessSatisfaction::HpLossAtMost(4));
         let quantum = spec.quantum();
 
         assert_eq!(config.generator.max_engine_steps_per_transition, 7);
         assert_eq!(config.generator.uniform_exploration_ppm, 12_345);
         assert!(config.generator.allow_potion_expenditure);
+        assert!(config.generator.allow_potion_discard);
         assert_eq!(config.generation_quantum_work, 3);
         assert_eq!(config.lookahead_max_evaluations, 10);
         assert_eq!(config.max_turn_depth, 9);

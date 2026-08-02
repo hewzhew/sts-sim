@@ -149,6 +149,7 @@ pub(super) fn search_config(
         allowed_potion_slots: options
             .allowed_potion_slots
             .or(defaults.allowed_potion_slots),
+        allow_potion_discard: defaults.allow_potion_discard,
         rollout_policy: options.rollout_policy.unwrap_or(defaults.rollout_policy),
         child_rollout_policy: options
             .child_rollout_policy

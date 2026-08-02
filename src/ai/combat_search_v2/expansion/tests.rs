@@ -59,7 +59,13 @@ fn potion_policy_filtered_actions_are_observed_after_filtering() {
         ),
         CombatActionChoice::from_input(&combat, ClientInput::EndTurn),
     ];
-    let filtered = filtered_legal_actions(legal, CombatSearchV2PotionPolicy::Never, None, &combat);
+    let filtered = filtered_legal_actions(
+        legal,
+        CombatSearchV2PotionPolicy::Never,
+        None,
+        None,
+        &combat,
+    );
 
     let summary = summarize_action_expansion(&EngineState::CombatPlayerTurn, &combat, &filtered);
 
@@ -101,6 +107,7 @@ fn exact_potion_slot_mask_filters_use_and_discard_before_expansion() {
         legal,
         CombatSearchV2PotionPolicy::All,
         Some(1 << 1),
+        None,
         &combat,
     );
     let inputs = filtered
@@ -126,6 +133,42 @@ fn exact_potion_slot_mask_filters_use_and_discard_before_expansion() {
             ..
         } | ClientInput::DiscardPotion(0)
     )));
+}
+
+#[test]
+fn all_potion_use_can_explicitly_exclude_discard_before_expansion() {
+    let mut combat = blank_test_combat();
+    combat.entities.potions = vec![Some(Potion::new(PotionId::FirePotion, 7))];
+    let legal = vec![
+        CombatActionChoice::from_input(
+            &combat,
+            ClientInput::UsePotion {
+                potion_index: 0,
+                target: None,
+            },
+        ),
+        CombatActionChoice::from_input(&combat, ClientInput::DiscardPotion(0)),
+        CombatActionChoice::from_input(&combat, ClientInput::EndTurn),
+    ];
+
+    let filtered = filtered_legal_actions(
+        legal,
+        CombatSearchV2PotionPolicy::All,
+        Some(1),
+        Some(false),
+        &combat,
+    );
+
+    assert!(filtered.iter().any(|choice| matches!(
+        choice.input,
+        ClientInput::UsePotion {
+            potion_index: 0,
+            ..
+        }
+    )));
+    assert!(filtered
+        .iter()
+        .all(|choice| !matches!(choice.input, ClientInput::DiscardPotion(_))));
 }
 
 #[test]

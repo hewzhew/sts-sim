@@ -376,6 +376,7 @@ fn test_config() -> CombatSearchV2Config {
         potion_policy: CombatSearchV2PotionPolicy::Never,
         max_potions_used: None,
         allowed_potion_slots: None,
+        allow_potion_discard: None,
         rollout_policy: CombatSearchV2RolloutPolicy::ConservativeNoPotion,
         child_rollout_policy: CombatSearchV2ChildRolloutPolicy::Immediate,
         rollout_max_evaluations: 10,

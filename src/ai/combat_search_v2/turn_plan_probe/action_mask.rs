@@ -18,6 +18,7 @@ pub(super) fn root_action_mask_report(
     combat: &CombatState,
     potion_policy: CombatSearchV2PotionPolicy,
     allowed_potion_slots: Option<u64>,
+    allow_potion_discard: Option<bool>,
     legal_actions: Vec<CombatActionChoice>,
     preselection_first_actions: &[CombatSearchV2ActionTrace],
     preselection_first_action_summaries: &[TurnPlanFirstActionSummaryV1],
@@ -26,6 +27,7 @@ pub(super) fn root_action_mask_report(
         legal_actions.clone(),
         potion_policy,
         allowed_potion_slots,
+        allow_potion_discard,
         combat,
     );
     let equivalence = compress_equivalent_actions(engine, combat, candidate_eligible.clone());

@@ -101,6 +101,7 @@ fn enumerate_turn_plans_impl(
                 ),
                 config.potion_policy,
                 config.allowed_potion_slots,
+                config.allow_potion_discard,
                 &node.combat,
             );
             if legal.is_empty() {

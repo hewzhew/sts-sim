@@ -4,11 +4,16 @@ pub(super) fn filtered_legal_actions(
     legal: Vec<CombatActionChoice>,
     potion_policy: CombatSearchV2PotionPolicy,
     allowed_potion_slots: Option<u64>,
+    allow_potion_discard: Option<bool>,
     combat: &CombatState,
 ) -> Vec<CombatActionChoice> {
     let legal = legal
         .into_iter()
         .filter(|choice| potion_slot_is_allowed(&choice.input, allowed_potion_slots))
+        .filter(|choice| {
+            allow_potion_discard.unwrap_or(matches!(potion_policy, CombatSearchV2PotionPolicy::All))
+                || !matches!(choice.input, ClientInput::DiscardPotion(_))
+        })
         .collect::<Vec<_>>();
     match potion_policy {
         CombatSearchV2PotionPolicy::All => legal,

@@ -79,6 +79,7 @@ impl CombatSearchPluginStack {
                 policy: config.potion_policy,
                 max_potions_used: config.max_potions_used,
                 allowed_potion_slots: config.allowed_potion_slots,
+                allow_potion_discard: config.allow_potion_discard,
             },
             phase_guard: config.phase_guard_policy.into(),
         }
@@ -91,6 +92,11 @@ pub struct CombatSearchPotionPlugin {
     pub max_potions_used: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub allowed_potion_slots: Option<u64>,
+    /// Explicit admission for discard actions. `None` preserves the legacy
+    /// policy-derived surface (`All` admits discard); semantic production
+    /// profiles set `Some(false)` even when every selected potion may be used.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub allow_potion_discard: Option<bool>,
 }
 
 impl Default for CombatSearchPotionPlugin {
@@ -99,6 +105,7 @@ impl Default for CombatSearchPotionPlugin {
             policy: CombatSearchV2PotionPolicy::Never,
             max_potions_used: None,
             allowed_potion_slots: None,
+            allow_potion_discard: None,
         }
     }
 }
@@ -442,6 +449,7 @@ impl CombatSearchEngineProfile {
             potion_policy: self.plugins.potion.policy,
             max_potions_used: self.plugins.potion.max_potions_used,
             allowed_potion_slots: self.plugins.potion.allowed_potion_slots,
+            allow_potion_discard: self.plugins.potion.allow_potion_discard,
             rollout_policy: self.plugins.rollout.into(),
             child_rollout_policy: self.plugins.child_rollout.into(),
             expansion_policy: self.plugins.expansion.into(),
@@ -694,6 +702,19 @@ mod tests {
         assert_eq!(
             base.semantics_fingerprint(),
             refined.semantics_fingerprint()
+        );
+    }
+
+    #[test]
+    fn semantics_identity_distinguishes_explicit_potion_discard_admission() {
+        let mut legacy_all_legal = test_profile("all_legal");
+        legacy_all_legal.engine.plugins.potion.policy = CombatSearchV2PotionPolicy::All;
+        let mut semantic_use_only = legacy_all_legal;
+        semantic_use_only.engine.plugins.potion.allow_potion_discard = Some(false);
+
+        assert_ne!(
+            legacy_all_legal.semantics_fingerprint(),
+            semantic_use_only.semantics_fingerprint()
         );
     }
 

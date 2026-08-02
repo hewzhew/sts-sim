@@ -163,6 +163,7 @@ pub fn run_combat_mechanism_horizon_probe_v1(
                     per_bucket_limit: config.per_bucket_limit,
                     potion_policy: super::CombatSearchV2PotionPolicy::Never,
                     allowed_potion_slots: None,
+                    allow_potion_discard: None,
                     max_engine_steps_per_action: config.max_engine_steps_per_action,
                     turn_plan_prior: None,
                     capture_step_trace: false,

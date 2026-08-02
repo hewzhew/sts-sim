@@ -248,10 +248,12 @@ impl OracleRunCombatWorkV1 {
         let prepared = prepare_search_combat(session, options)?;
         let max_transition_steps = prepared.config.max_engine_steps_per_action.max(1);
         let max_work = prepared.config.max_nodes;
-        let allow_potion_discard = matches!(
-            prepared.config.potion_policy,
-            crate::ai::combat_search_v2::CombatSearchV2PotionPolicy::All
-        );
+        let allow_potion_discard = prepared.config.allow_potion_discard.unwrap_or_else(|| {
+            matches!(
+                prepared.config.potion_policy,
+                crate::ai::combat_search_v2::CombatSearchV2PotionPolicy::All
+            )
+        });
         let (satisfaction, planner_satisfaction) = match prepared.config.satisfaction {
             crate::ai::combat_search_v2::CombatSearchV2Satisfaction::BudgetOrExhaustion => {
                 (
@@ -2108,6 +2110,42 @@ mod tests {
             .verify_and_restore_action_witness(&actions)
             .expect("all-legal discard witness");
         assert!(all_legal.has_verified_witness());
+
+        let mut semantic_all_options =
+            options(crate::ai::combat_search_v2::CombatSearchV2PotionPolicy::All);
+        semantic_all_options.profile = Some(crate::ai::combat_search_v2::CombatSearchProfile {
+            label: "all_potion_use_without_discard",
+            engine: crate::ai::combat_search_v2::CombatSearchEngineProfile {
+                budget: crate::ai::combat_search_v2::CombatSearchBudgetSpec {
+                    max_nodes: 16,
+                    wall_ms: 100,
+                },
+                plugins: crate::ai::combat_search_v2::CombatSearchPluginStack {
+                    potion: crate::ai::combat_search_v2::CombatSearchPotionPlugin {
+                        policy: crate::ai::combat_search_v2::CombatSearchV2PotionPolicy::All,
+                        max_potions_used: Some(1),
+                        allowed_potion_slots: Some(1),
+                        allow_potion_discard: Some(false),
+                    },
+                    ..crate::ai::combat_search_v2::CombatSearchPluginStack::default()
+                },
+            },
+            policy: crate::ai::combat_search_v2::CombatSearchAttemptPolicy {
+                acceptance:
+                    crate::ai::combat_search_v2::CombatSearchAcceptancePluginId::AcceptedLineOnly,
+                artifacts: crate::ai::combat_search_v2::CombatSearchArtifactPluginId::None,
+            },
+        });
+        let mut semantic_all = OracleRunCombatWorkV1::for_exact_action_witness_with_guidance(
+            &session,
+            semantic_all_options,
+            None,
+        )
+        .expect("all-use semantic exact-witness work");
+        let error = semantic_all
+            .verify_and_restore_action_witness(&actions)
+            .expect_err("explicit semantic profile must reject discard under All use policy");
+        assert!(error.contains("outside an all-legal search policy"));
     }
 
     #[test]

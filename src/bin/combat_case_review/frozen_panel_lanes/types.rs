@@ -104,6 +104,7 @@ mod tests {
                         policy: CombatSearchV2PotionPolicy::All,
                         max_potions_used: Some(3),
                         allowed_potion_slots: None,
+                        allow_potion_discard: None,
                     },
                     phase_guard: CombatSearchPhaseGuardPluginId::TimeEaterClockHint,
                     ..CombatSearchPluginStack::default()

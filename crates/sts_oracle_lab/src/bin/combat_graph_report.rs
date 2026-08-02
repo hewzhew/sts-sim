@@ -67,8 +67,8 @@ pub(super) fn local_graph_trace_report(data: &LocalGraphReportData<'_>) -> Value
         };
 
     json!({
-        "schema_name": "LocalTurnGraphCombatTraceV2",
-        "schema_version": 2,
+        "schema_name": "LocalTurnGraphCombatTraceV3",
+        "schema_version": 3,
         "case": data.run.case,
         "status": format!("{:?}", data.report.status),
         "satisfaction": format!("{:?}", data.run.satisfaction),
@@ -191,8 +191,8 @@ pub(super) fn local_graph_full_report(
     let progress = full_progress_report(data, options.readable);
 
     json!({
-        "schema_name": "LocalTurnGraphCombatSearchReportV2",
-        "schema_version": 2,
+        "schema_name": "LocalTurnGraphCombatSearchReportV3",
+        "schema_version": 3,
         "case": data.run.case,
         "counterfactual": counterfactual,
         "action_imitation_artifact": options.action_imitation_artifact,
@@ -311,6 +311,7 @@ mod tests {
                         3,
                         9,
                         Some(2),
+                        false,
                     ),
                     counterfactual: LocalGraphCounterfactual {
                         full_health: false,
@@ -337,7 +338,7 @@ mod tests {
         let fixture = Fixture::new();
         let report = local_graph_trace_report(&fixture.data());
 
-        assert_eq!(report["schema_name"], "LocalTurnGraphCombatTraceV2");
+        assert_eq!(report["schema_name"], "LocalTurnGraphCombatTraceV3");
         assert_eq!(report["elapsed_ms"], 7);
         assert_eq!(report["storage"]["exact_nodes"], 0);
         assert!(report["witness"].is_null());
@@ -364,7 +365,7 @@ mod tests {
             },
         );
 
-        assert_eq!(report["schema_name"], "LocalTurnGraphCombatSearchReportV2");
+        assert_eq!(report["schema_name"], "LocalTurnGraphCombatSearchReportV3");
         assert_eq!(report["scheduler"], "anchor_and_guides");
         assert_eq!(
             report["execution_profile"]["guide_service"],

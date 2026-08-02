@@ -25,6 +25,7 @@ fn semantic_policy_keeps_attack_potion_when_ordinary_damage_is_uncovered() {
         legal,
         CombatSearchV2PotionPolicy::SemanticBudgeted,
         None,
+        None,
         &combat,
     );
 
@@ -134,6 +135,7 @@ fn semantic_policy_does_not_admit_passive_fairy_use() {
         legal,
         CombatSearchV2PotionPolicy::SemanticBudgeted,
         None,
+        None,
         &combat,
     );
 
@@ -170,6 +172,7 @@ fn semantic_policy_keeps_lethal_fire_potion_without_incoming_damage() {
     let filtered = filtered_legal_actions(
         legal,
         CombatSearchV2PotionPolicy::SemanticBudgeted,
+        None,
         None,
         &combat,
     );

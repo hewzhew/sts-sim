@@ -109,6 +109,7 @@ fn replay_terminal_witness(
             stepper.atomic_action_choices(&position),
             config.potion_policy,
             config.allowed_potion_slots,
+            config.allow_potion_discard,
             &node.combat,
         )
         .iter()
@@ -120,6 +121,7 @@ fn replay_terminal_witness(
             vec![candidate],
             config.potion_policy,
             config.allowed_potion_slots,
+            config.allow_potion_discard,
             &node.combat,
         )
         .into_iter()

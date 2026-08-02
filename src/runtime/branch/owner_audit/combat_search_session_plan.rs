@@ -235,6 +235,7 @@ fn build_combat_search_session_plan(
                     policy: potion_policy,
                     max_potions_used,
                     allowed_potion_slots,
+                    allow_potion_discard: Some(false),
                 },
                 ..CombatSearchPluginStack::default()
             },
@@ -483,6 +484,18 @@ mod tests {
         assert_eq!(refinement.potion_policy, CombatSearchV2PotionPolicy::All);
         assert_eq!(refinement.max_potions_used, Some(1));
         assert_eq!(refinement.search.allowed_potion_slots, Some(1));
+        assert_eq!(
+            refinement
+                .search
+                .profile
+                .as_ref()
+                .expect("refinement profile")
+                .engine
+                .plugins
+                .potion
+                .allow_potion_discard,
+            Some(false)
+        );
         assert_eq!(
             refinement.search.max_hp_loss,
             Some(RunControlHpLossLimit::Unlimited)

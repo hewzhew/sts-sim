@@ -17,6 +17,7 @@ fn semantic_policy_rejects_block_potion_without_visible_incoming_loss() {
         legal,
         CombatSearchV2PotionPolicy::SemanticBudgeted,
         None,
+        None,
         &combat,
     );
 

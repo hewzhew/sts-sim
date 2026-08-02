@@ -139,11 +139,17 @@ pub(super) struct CombatCaseLocalGraphArgs {
     /// first-win or best-HP search.
     #[arg(long, conflicts_with = "improve_incumbent")]
     max_hp_loss: Option<u32>,
-    /// Require the exact search to expend at most this many potion resources.
-    /// Every finite limit is enforced during generation, not only when a
-    /// terminal witness is accepted.
-    #[arg(long)]
+    /// Maximum potion resources the exact search may expend. The laboratory
+    /// starts potion-free; pass a positive value to open an explicit potion
+    /// lane. Every finite limit is enforced during generation, not only when
+    /// a terminal witness is accepted.
+    #[arg(long, default_value = "0")]
     max_potions_used: Option<u32>,
+    /// All-legal diagnostic control: admit explicit potion discard actions.
+    /// Semantic victory search omits them by default because discarding is not
+    /// a generic way to diversify a sparse search.
+    #[arg(long)]
+    include_discard_actions: bool,
     #[arg(long, default_value_t = 250)]
     max_engine_steps_per_transition: usize,
     /// Uniform exploration mixed into action-policy weights, in parts per
@@ -216,6 +222,7 @@ pub(super) fn run(args: CombatCaseLocalGraphArgs) -> Result<(), String> {
         improve_incumbent,
         max_hp_loss,
         max_potions_used,
+        include_discard_actions,
         max_engine_steps_per_transition,
         uniform_exploration_ppm,
         generation_quantum_work,
@@ -253,6 +260,7 @@ pub(super) fn run(args: CombatCaseLocalGraphArgs) -> Result<(), String> {
         generation_quantum_work,
         max_turn_depth,
         max_potions_used,
+        include_discard_actions,
     );
     let search_root_position = loaded.position.clone();
     let watched_corridor = if watch_corridor_actions.is_empty() {

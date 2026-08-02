@@ -33,6 +33,7 @@ pub(in crate::ai::combat_search_v2) fn turn_plan_frontier_seed(
         per_bucket_limit: TURN_PLAN_FRONTIER_SEED_PER_BUCKET_LIMIT,
         potion_policy: plugins.potion.policy,
         allowed_potion_slots: plugins.potion.allowed_potion_slots,
+        allow_potion_discard: plugins.potion.allow_potion_discard,
         max_engine_steps_per_action: config.max_engine_steps_per_action,
         turn_plan_prior: config.turn_plan_prior.clone(),
         capture_step_trace: false,

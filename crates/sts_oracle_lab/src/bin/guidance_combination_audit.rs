@@ -48,7 +48,9 @@ pub(super) struct GuidanceCombinationAuditArgs {
     generation_quantum_work: usize,
     #[arg(long, default_value_t = 32)]
     max_turn_depth: usize,
-    #[arg(long)]
+    /// Keep guidance comparisons potion-free unless an explicit positive
+    /// expenditure budget is part of the experiment.
+    #[arg(long, default_value = "0")]
     max_potions_used: Option<u32>,
     /// Fail unless combined guidance finds a replay-verified witness.
     #[arg(long)]
@@ -218,6 +220,7 @@ pub(super) fn run(
         args.generation_quantum_work,
         args.max_turn_depth,
         args.max_potions_used,
+        false,
     );
     let execution_profile =
         LocalGraphExecutionProfile::from_controls(false, false, false, false, false)?;
@@ -266,8 +269,8 @@ pub(super) fn run(
     validate_expectations(&args, &controls, assessment)?;
 
     Ok(GuidanceCombinationAuditReport {
-        schema_name: "GuidanceCombinationAuditV1",
-        schema_version: 1,
+        schema_name: "GuidanceCombinationAuditV2",
+        schema_version: 2,
         case,
         runtime_identity,
         runtime_source_content_fingerprint,

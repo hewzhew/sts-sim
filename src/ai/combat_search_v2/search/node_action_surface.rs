@@ -16,6 +16,7 @@ pub(super) fn collect_node_action_surface(
         stepper.atomic_action_choices(position),
         loop_state.plugins.potion.policy,
         loop_state.plugins.potion.allowed_potion_slots,
+        loop_state.plugins.potion.allow_potion_discard,
         &node.combat,
     );
     let pending_choice = summarize_pending_choice(&node.engine);

@@ -841,13 +841,13 @@ pub(super) fn run(
             generation_quantum_work,
             max_turn_depth,
             Some(lane.max_explicit_expenditures),
+            include_discard_actions,
         );
         let satisfaction = max_hp_loss
             .map(OracleCombatWitnessSatisfaction::HpLossAtMost)
             .unwrap_or(OracleCombatWitnessSatisfaction::BudgetOrExhaustion);
         let mut config = search_spec.planner_config(satisfaction);
         config.generator.allowed_potion_slots = Some(lane.allowed_slot_mask);
-        config.generator.allow_potion_discard = include_discard_actions;
         let lane_root = CombatDecisionRoot::new(loaded.position.clone())
             .map_err(|error| format!("invalid potion audit lane root: {error:?}"))?;
         if lane_root.exact_state_hash() != root_exact_state_hash {

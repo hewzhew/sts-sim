@@ -177,6 +177,7 @@ fn microscope_candidate_sample(
         stepper.atomic_action_choices(position),
         potion_policy,
         None,
+        None,
         combat,
     );
     let equivalence = compress_equivalent_actions(engine, combat, legal);
