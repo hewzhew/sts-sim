@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use clap::Args;
 use serde_json::json;
@@ -13,6 +13,68 @@ use super::combat_policy_controls::load_action_imitation_policy;
 use super::combat_replay_tools::save_combat_inputs;
 use super::combat_trace_view::{combat_action_label, combat_turn_snapshot};
 use super::print_json;
+
+fn replay_optional_prefix(
+    position: sts_oracle_runtime::sim::combat::CombatPosition,
+    actions: Option<&Path>,
+    through: usize,
+    max_engine_steps_per_transition: usize,
+) -> Result<sts_oracle_runtime::sim::combat::CombatPosition, String> {
+    let Some(actions) = actions else {
+        return Ok(position);
+    };
+    let actions = serde_json::from_slice::<Vec<ClientInput>>(
+        &std::fs::read(actions).map_err(|error| error.to_string())?,
+    )
+    .map_err(|error| format!("invalid prefix action list: {error}"))?;
+    if through > actions.len() {
+        return Err(format!(
+            "--through {through} exceeds the {} available prefix actions",
+            actions.len()
+        ));
+    }
+    replay_prefix(
+        position,
+        actions.into_iter().take(through),
+        max_engine_steps_per_transition,
+    )
+}
+
+fn replay_prefix(
+    mut position: sts_oracle_runtime::sim::combat::CombatPosition,
+    actions: impl IntoIterator<Item = ClientInput>,
+    max_engine_steps_per_transition: usize,
+) -> Result<sts_oracle_runtime::sim::combat::CombatPosition, String> {
+    for (index, input) in actions.into_iter().enumerate() {
+        if EngineCombatStepper
+            .choice_for_legal_input(&position, &input)
+            .is_none()
+        {
+            return Err(format!("prefix action {index} is not legal"));
+        }
+        let result = EngineCombatStepper.apply_to_stable(
+            &position,
+            input,
+            CombatStepLimits {
+                max_engine_steps: max_engine_steps_per_transition,
+                deadline: None,
+            },
+        );
+        if result.truncated || result.timed_out {
+            return Err(format!(
+                "prefix action {index} did not reach a stable state"
+            ));
+        }
+        position = result.position;
+    }
+    Ok(position)
+}
+
+pub(super) fn single_potion_slot_mask(slot: usize) -> Result<u64, String> {
+    1_u64
+        .checked_shl(slot.try_into().unwrap_or(u32::MAX))
+        .ok_or_else(|| format!("--potion-slot {slot} exceeds the 64-slot mask"))
+}
 
 #[derive(Debug, Args)]
 pub(super) struct TurnActionAuditArgs {
@@ -39,41 +101,12 @@ pub(super) fn run_action(args: TurnActionAuditArgs) -> Result<(), String> {
         max_engine_steps_per_transition,
     } = args;
     let case = load_combat_case(&case)?;
-    let mut position = case.position;
-    if let Some(actions) = actions {
-        let actions = serde_json::from_slice::<Vec<ClientInput>>(
-            &std::fs::read(actions).map_err(|error| error.to_string())?,
-        )
-        .map_err(|error| format!("invalid prefix action list: {error}"))?;
-        if through > actions.len() {
-            return Err(format!(
-                "--through {through} exceeds the {} available prefix actions",
-                actions.len()
-            ));
-        }
-        for (index, input) in actions.into_iter().take(through).enumerate() {
-            if EngineCombatStepper
-                .choice_for_legal_input(&position, &input)
-                .is_none()
-            {
-                return Err(format!("prefix action {index} is not legal"));
-            }
-            let result = EngineCombatStepper.apply_to_stable(
-                &position,
-                input,
-                CombatStepLimits {
-                    max_engine_steps: max_engine_steps_per_transition,
-                    deadline: None,
-                },
-            );
-            if result.truncated || result.timed_out {
-                return Err(format!(
-                    "prefix action {index} did not reach a stable state"
-                ));
-            }
-            position = result.position;
-        }
-    }
+    let position = replay_optional_prefix(
+        case.position,
+        actions.as_deref(),
+        through,
+        max_engine_steps_per_transition,
+    )?;
 
     let policy = action_imitation_artifact
         .as_deref()
@@ -220,6 +253,12 @@ pub(super) fn run_action(args: TurnActionAuditArgs) -> Result<(), String> {
 pub(super) struct TurnPlanAuditArgs {
     #[arg(long)]
     case: PathBuf,
+    /// Optional exact action list used only to reach the audited prefix.
+    #[arg(long)]
+    actions: Option<PathBuf>,
+    /// Number of actions from --actions to replay before auditing.
+    #[arg(long, default_value_t = 0, requires = "actions")]
+    through: usize,
     #[arg(long, default_value_t = 256)]
     max_inner_nodes: usize,
     #[arg(long, default_value_t = 24)]
@@ -228,6 +267,9 @@ pub(super) struct TurnPlanAuditArgs {
     per_bucket_limit: usize,
     #[arg(long, default_value_t = 250)]
     max_engine_steps_per_transition: usize,
+    /// Open exactly one concrete potion identity lane. Slots are zero-based.
+    #[arg(long)]
+    potion_slot: Option<usize>,
     /// Number of selected non-loss turn plans shown by the default compact
     /// report.
     #[arg(long, default_value_t = 8)]
@@ -249,22 +291,46 @@ pub(super) struct TurnPlanAuditArgs {
 pub(super) fn run_plan(args: TurnPlanAuditArgs) -> Result<(), String> {
     let TurnPlanAuditArgs {
         case,
+        actions,
+        through,
         max_inner_nodes,
         max_end_states,
         per_bucket_limit,
         max_engine_steps_per_transition,
+        potion_slot,
         limit,
         full,
         export_rank,
         export_case,
         export_actions,
     } = args;
-    let case = load_combat_case(&case)?;
+    let mut case = load_combat_case(&case)?;
+    case.position = replay_optional_prefix(
+        case.position,
+        actions.as_deref(),
+        through,
+        max_engine_steps_per_transition,
+    )?;
+    let prefix = json!({
+        "actions": actions,
+        "through": through,
+        "position_hash": sts_oracle_runtime::ai::combat_state_key::combat_exact_state_hash_v2(
+            &case.position.engine,
+            &case.position.combat,
+        ),
+    });
     let mut config = sts_oracle_runtime::ai::combat_search_v2::CombatSearchV2Config::default();
     config.max_engine_steps_per_action = max_engine_steps_per_transition.max(1);
     config.turn_plan_probe_max_inner_nodes = Some(max_inner_nodes.max(1));
     config.turn_plan_probe_max_end_states = Some(max_end_states.max(1));
     config.turn_plan_probe_per_bucket_limit = Some(per_bucket_limit.max(1));
+    if let Some(slot) = potion_slot {
+        config.potion_policy =
+            sts_oracle_runtime::ai::combat_search_v2::CombatSearchV2PotionPolicy::All;
+        config.max_potions_used = Some(1);
+        config.allowed_potion_slots = Some(single_potion_slot_mask(slot)?);
+        config.allow_potion_discard = Some(false);
+    }
     config.input_label = Some("oracle_lab_turn_plan_audit".to_string());
     let audit = sts_oracle_runtime::ai::combat_search_v2::
                 enumerate_combat_search_v2_turn_plan_probe_candidates_across_pending_choices(
@@ -376,9 +442,10 @@ pub(super) fn run_plan(args: TurnPlanAuditArgs) -> Result<(), String> {
             })
             .collect::<Vec<_>>();
         return print_json(&json!({
-            "schema_name": "OracleTurnPlanAuditCompactV1",
-            "schema_version": 1,
+            "schema_name": "OracleTurnPlanAuditCompactV2",
+            "schema_version": 2,
             "behavioral_scope": "read_only_no_search_seeding",
+            "prefix": prefix,
             "config": audit.report.config,
             "enumeration": audit.report.enumeration,
             "exported_plan": exported_plan,
@@ -386,13 +453,56 @@ pub(super) fn run_plan(args: TurnPlanAuditArgs) -> Result<(), String> {
         }));
     }
     print_json(&json!({
-        "schema_name": "OracleTurnPlanAuditV1",
-        "schema_version": 1,
+        "schema_name": "OracleTurnPlanAuditV2",
+        "schema_version": 2,
         "behavioral_scope": "read_only_no_search_seeding",
+        "prefix": prefix,
         "config": audit.report.config,
         "enumeration": audit.report.enumeration,
         "exported_plan": exported_plan,
         "preselection": preselection,
         "selected": selected,
     }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sts_oracle_runtime::content::cards::CardId;
+    use sts_oracle_runtime::content::monsters::EnemyId;
+    use sts_oracle_runtime::runtime::combat::CombatCard;
+    use sts_oracle_runtime::sim::combat::CombatPosition;
+    use sts_oracle_runtime::state::core::EngineState;
+    use sts_oracle_runtime::test_support::{blank_test_combat, test_monster};
+
+    #[test]
+    fn exact_prefix_replay_reaches_a_stable_same_turn_state() {
+        let mut combat = blank_test_combat();
+        combat.entities.monsters = vec![test_monster(EnemyId::JawWorm)];
+        combat.zones.hand = vec![CombatCard::new(CardId::Defend, 41)];
+        let position = CombatPosition::new(EngineState::CombatPlayerTurn, combat);
+        let original_turn = position.combat.turn.turn_count;
+
+        let replayed = replay_prefix(
+            position,
+            [ClientInput::PlayCard {
+                card_index: 0,
+                target: None,
+            }],
+            250,
+        )
+        .expect("defend should replay to a stable same-turn state");
+
+        assert_eq!(replayed.engine, EngineState::CombatPlayerTurn);
+        assert_eq!(replayed.combat.turn.turn_count, original_turn);
+        assert!(replayed.combat.entities.player.block > 0);
+        assert!(replayed.combat.zones.hand.is_empty());
+    }
+
+    #[test]
+    fn concrete_potion_lane_uses_one_exact_slot_bit() {
+        assert_eq!(single_potion_slot_mask(0), Ok(1));
+        assert_eq!(single_potion_slot_mask(2), Ok(4));
+        assert!(single_potion_slot_mask(64).is_err());
+    }
 }

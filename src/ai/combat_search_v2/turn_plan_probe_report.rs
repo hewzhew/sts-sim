@@ -31,6 +31,8 @@ pub struct CombatSearchV2TurnPlanProbeConfigReport {
     pub max_end_states: usize,
     pub per_bucket_limit: usize,
     pub potion_policy: &'static str,
+    pub allowed_potion_slots: Option<u64>,
+    pub allow_potion_discard: Option<bool>,
     pub max_engine_steps_per_action: usize,
 }
 

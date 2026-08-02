@@ -76,7 +76,7 @@ fn enumerate_probe_candidates(
         .collect::<Vec<_>>();
     let root_report = CombatSearchV2TurnPlanProbeRootReport {
         schema_name: "CombatSearchV2TurnPlanProbeRootReport",
-        schema_version: 2,
+        schema_version: 3,
         question: "which_exact_same_turn_plan_should_receive_followup_search_budget",
         behavioral_scope: "diagnostic_only_no_prune_no_policy_change_no_artifact_promotion",
         input_label: config.input_label.clone(),
@@ -85,6 +85,8 @@ fn enumerate_probe_candidates(
             max_end_states: turn_config.max_end_states,
             per_bucket_limit: turn_config.per_bucket_limit,
             potion_policy: turn_config.potion_policy.label(),
+            allowed_potion_slots: turn_config.allowed_potion_slots,
+            allow_potion_discard: turn_config.allow_potion_discard,
             max_engine_steps_per_action: turn_config.max_engine_steps_per_action,
         },
         initial_context: CombatSearchV2DecisionContext {
