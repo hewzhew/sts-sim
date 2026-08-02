@@ -14,6 +14,7 @@ mod combat_case_contract;
 mod combat_case_local_graph;
 mod combat_case_performance;
 mod combat_evidence_audit;
+mod combat_evidence_export;
 mod combat_evidence_manifest;
 mod combat_graph_diagnostics;
 mod combat_graph_execution;

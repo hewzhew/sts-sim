@@ -182,6 +182,23 @@ This contract applies only to the complete winning witness. A descendant
 to the adjacent descendant case; it is not a witness starting at that
 descendant and receives no manifest from this producer.
 
+## Local-Graph Complete Wins
+
+`combat-case-local-graph --export-witness-actions <fresh-output>.actions.json`
+uses the same complete-witness export gate. Before writing, it replays the
+actions from the search root, confirms a win, and requires the replay endpoint
+to match the search witness. An ordinary case-root search writes a sibling
+producer manifest and returns both paths in the V2 full or trace report.
+
+`--full-health` changes the caller's case into an undeclared counterfactual
+root. Its replay-verified actions may still be exported for diagnosis, but no
+manifest is written and the original case is not claimed as their root. Export
+the counterfactual root as its own case before it can become typed evidence.
+
+Deepest-survival and deepest-progress exports remain descendant cases with
+prefix actions. They are not complete witnesses from those adjacent cases and
+do not use this manifest contract.
+
 ## Historical Combat Witness Exports
 
 `export-historical-combat-witness` replays the journal to the selected combat

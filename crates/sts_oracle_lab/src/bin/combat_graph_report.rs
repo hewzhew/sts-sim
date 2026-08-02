@@ -67,8 +67,8 @@ pub(super) fn local_graph_trace_report(data: &LocalGraphReportData<'_>) -> Value
         };
 
     json!({
-        "schema_name": "LocalTurnGraphCombatTraceV1",
-        "schema_version": 1,
+        "schema_name": "LocalTurnGraphCombatTraceV2",
+        "schema_version": 2,
         "case": data.run.case,
         "status": format!("{:?}", data.report.status),
         "satisfaction": format!("{:?}", data.run.satisfaction),
@@ -107,6 +107,7 @@ pub(super) fn local_graph_trace_report(data: &LocalGraphReportData<'_>) -> Value
             "trace": compact_combat_trace(data.diagnostics.witness_trace.as_ref()),
         })),
         "exported_witness_actions": data.exports.witness_actions,
+        "exported_witness_manifest": data.exports.witness_manifest,
         "exported_deepest_survival_case": data.exports.deepest_survival_case,
         "exported_deepest_survival_actions": data.exports.deepest_survival_actions,
         "exported_deepest_progress_case": data.exports.deepest_progress_case,
@@ -190,8 +191,8 @@ pub(super) fn local_graph_full_report(
     let progress = full_progress_report(data, options.readable);
 
     json!({
-        "schema_name": "LocalTurnGraphCombatSearchReportV1",
-        "schema_version": 1,
+        "schema_name": "LocalTurnGraphCombatSearchReportV2",
+        "schema_version": 2,
         "case": data.run.case,
         "counterfactual": counterfactual,
         "action_imitation_artifact": options.action_imitation_artifact,
@@ -224,6 +225,7 @@ pub(super) fn local_graph_full_report(
         "watched_states": data.observation.watched_states,
         "watched_corridor": watched_corridor,
         "exported_witness_actions": data.exports.witness_actions,
+        "exported_witness_manifest": data.exports.witness_manifest,
         "exported_deepest_survival_case": data.exports.deepest_survival_case,
         "exported_deepest_survival_actions": data.exports.deepest_survival_actions,
         "exported_deepest_progress_case": data.exports.deepest_progress_case,
@@ -280,6 +282,7 @@ mod tests {
                 },
                 exports: LocalGraphExports {
                     witness_actions: None,
+                    witness_manifest: None,
                     deepest_survival_case: None,
                     deepest_survival_actions: None,
                     deepest_progress_case: None,
@@ -334,7 +337,7 @@ mod tests {
         let fixture = Fixture::new();
         let report = local_graph_trace_report(&fixture.data());
 
-        assert_eq!(report["schema_name"], "LocalTurnGraphCombatTraceV1");
+        assert_eq!(report["schema_name"], "LocalTurnGraphCombatTraceV2");
         assert_eq!(report["elapsed_ms"], 7);
         assert_eq!(report["storage"]["exact_nodes"], 0);
         assert!(report["witness"].is_null());
@@ -361,7 +364,7 @@ mod tests {
             },
         );
 
-        assert_eq!(report["schema_name"], "LocalTurnGraphCombatSearchReportV1");
+        assert_eq!(report["schema_name"], "LocalTurnGraphCombatSearchReportV2");
         assert_eq!(report["scheduler"], "anchor_and_guides");
         assert_eq!(
             report["execution_profile"]["guide_service"],

@@ -314,21 +314,30 @@ pub(super) fn run(args: CombatCaseLocalGraphArgs) -> Result<(), String> {
     let report = session.advance(search_spec.quantum(), &EngineCombatStepper);
     let search_elapsed = search_started.elapsed();
     let progress = session.progress_snapshot();
+    let witness_inputs = report.witness.as_ref().map(|witness| {
+        witness
+            .actions
+            .iter()
+            .map(|action| action.input.clone())
+            .collect::<Vec<_>>()
+    });
     // Exports are explicit side effects of the command, not presentation.
     // Complete them before compact-contract or performance-only reporting can
     // return early.
     let exports = export_local_graph_paths(
         &loaded,
+        (!full_health).then_some(case.as_path()),
         LocalGraphExportPaths {
             witness_actions: export_witness_actions.as_deref(),
             deepest_survival_case: export_deepest_survival_case.as_deref(),
             deepest_progress_case: export_deepest_progress_case.as_deref(),
         },
         LocalGraphExportActions {
-            witness: report
+            witness: witness_inputs.as_deref(),
+            witness_final_position: report
                 .witness
                 .as_ref()
-                .map(|witness| witness.actions.as_slice()),
+                .map(|witness| &witness.final_position),
             deepest_survival: &progress.deepest_survival_actions,
             deepest_progress: &progress.deepest_progress_actions,
         },

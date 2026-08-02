@@ -41,6 +41,7 @@ fn typed_manifest_producers_resolve_external_case_and_revalidate_identity() {
         .unwrap();
     for producer in [
         "historical_combat_witness_export",
+        "local_graph_search",
         "policy_discrepancy_search",
         "potion_expenditure_audit",
     ] {

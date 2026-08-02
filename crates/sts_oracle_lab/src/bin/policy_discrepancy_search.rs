@@ -1,26 +1,21 @@
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
+use super::combat_evidence_export::{
+    export_verified_combat_witness, CombatEvidenceManifestExport, VerifiedCombatWitnessExport,
+};
 use clap::Args;
 use serde_json::json;
 use sts_combat_planner::{
     CombatDecisionRoot, PolicyDiscrepancyConfig, PolicyDiscrepancyQuantum,
     PolicyDiscrepancySession, PolicyDiscrepancyTurnMacroConfig,
 };
-use sts_oracle_runtime::ai::combat_state_key::combat_exact_state_hash_v2;
 use sts_oracle_runtime::eval::combat_case::load_combat_case;
 use sts_oracle_runtime::eval::run_control::existing_combat_knowledge_policy_v1;
-use sts_oracle_runtime::sim::combat::{
-    CombatPosition, CombatStepper, CombatTerminal, EngineCombatStepper,
-};
-use sts_oracle_runtime::state::core::ClientInput;
+use sts_oracle_runtime::sim::combat::EngineCombatStepper;
 
-use super::combat_evidence_manifest::{
-    combat_evidence_manifest_path_for_actions, write_combat_evidence_manifest,
-    CombatEvidenceManifestEntryV1, CombatEvidenceProducerV1,
-};
+use super::combat_evidence_manifest::CombatEvidenceProducerV1;
 use super::combat_policy_controls::load_action_imitation_policy;
-use super::combat_replay_tools::{replay_combat_inputs, save_combat_inputs};
 use super::exact_turn_corridor::load_action_segments as load_combat_action_segments;
 use super::{oracle_lab_runtime_identity, print_json};
 
@@ -190,14 +185,22 @@ pub(super) fn run(args: CombatCasePolicyDiscrepancyArgs) -> Result<(), String> {
                     .iter()
                     .map(|action| action.input.clone())
                     .collect::<Vec<_>>();
-                let manifest = export_verified_witness(
-                    &case_path,
-                    &root_position,
-                    path,
-                    &actions,
-                    &witness.final_position,
+                let manifest = export_verified_combat_witness(VerifiedCombatWitnessExport {
+                    root_position: &root_position,
+                    action_output: path,
+                    actions: &actions,
+                    expected_final_position: &witness.final_position,
                     max_engine_steps_per_transition,
-                )?;
+                    manifest: Some(CombatEvidenceManifestExport {
+                        producer: CombatEvidenceProducerV1::PolicyDiscrepancySearch,
+                        case_path: &case_path,
+                        evidence_id: "policy_discrepancy_complete_win",
+                    }),
+                })?
+                .ok_or_else(|| {
+                    "policy-discrepancy witness export unexpectedly omitted its manifest"
+                        .to_string()
+                })?;
                 (Some(path.clone()), Some(manifest))
             }
             _ => (None, None),
@@ -284,166 +287,4 @@ pub(super) fn run(args: CombatCasePolicyDiscrepancyArgs) -> Result<(), String> {
             "replay_engine_steps": witness.replay_engine_steps,
     })),
     }))
-}
-
-fn export_verified_witness(
-    case_path: &Path,
-    root_position: &CombatPosition,
-    action_output: &Path,
-    actions: &[ClientInput],
-    expected_final_position: &CombatPosition,
-    max_engine_steps_per_transition: usize,
-) -> Result<PathBuf, String> {
-    let replayed = replay_combat_inputs(
-        root_position.clone(),
-        actions,
-        max_engine_steps_per_transition,
-    )?;
-    if EngineCombatStepper.terminal(&replayed) != CombatTerminal::Win {
-        return Err("policy-discrepancy exported witness did not replay to a win".to_string());
-    }
-    let root_exact_state_hash =
-        combat_exact_state_hash_v2(&root_position.engine, &root_position.combat);
-    let replayed_exact_state_hash = combat_exact_state_hash_v2(&replayed.engine, &replayed.combat);
-    let expected_exact_state_hash = combat_exact_state_hash_v2(
-        &expected_final_position.engine,
-        &expected_final_position.combat,
-    );
-    if replayed_exact_state_hash != expected_exact_state_hash {
-        return Err(
-            "policy-discrepancy exported witness replay did not match the search witness"
-                .to_string(),
-        );
-    }
-
-    let manifest_output = combat_evidence_manifest_path_for_actions(action_output);
-    save_combat_inputs(action_output, actions.iter().cloned())?;
-    write_combat_evidence_manifest(
-        &manifest_output,
-        CombatEvidenceProducerV1::PolicyDiscrepancySearch,
-        root_exact_state_hash,
-        case_path.to_path_buf(),
-        vec![CombatEvidenceManifestEntryV1::from_actions(
-            "policy_discrepancy_complete_win".to_string(),
-            vec![action_output.to_path_buf()],
-            actions,
-            CombatTerminal::Win,
-            Some(replayed.combat.entities.player.current_hp),
-        )?],
-    )?;
-    Ok(manifest_output)
-}
-
-#[cfg(test)]
-mod tests {
-    use std::fs;
-    use std::time::{SystemTime, UNIX_EPOCH};
-
-    use super::*;
-    use crate::combat_evidence_manifest::decode_combat_evidence_manifest;
-
-    const MAX_ENGINE_STEPS_PER_TRANSITION: usize = 10_000;
-
-    fn fixture_path(file_name: &str) -> PathBuf {
-        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../../fixtures/oracle_witnesses")
-            .join(file_name)
-    }
-
-    fn temp_directory(label: &str) -> PathBuf {
-        let nonce = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("system clock should follow the Unix epoch")
-            .as_nanos();
-        std::env::temp_dir().join(format!(
-            "sts-oracle-policy-discrepancy-{label}-{}-{nonce}",
-            std::process::id()
-        ))
-    }
-
-    fn fixture() -> (PathBuf, CombatPosition, Vec<ClientInput>, CombatPosition) {
-        let case_path =
-            fixture_path("seed20260713008_a0_body_slam_fiend_fire_donu_deca.combat-case.json");
-        let actions_path = fixture_path(
-            "seed20260713008_a0_body_slam_fiend_fire_donu_deca.policy-discrepancy.actions.json",
-        );
-        let case = load_combat_case(&case_path).expect("fixture case should load");
-        let actions = serde_json::from_slice::<Vec<ClientInput>>(
-            &fs::read(&actions_path).expect("fixture actions should load"),
-        )
-        .expect("fixture actions should decode");
-        let final_position = replay_combat_inputs(
-            case.position.clone(),
-            &actions,
-            MAX_ENGINE_STEPS_PER_TRANSITION,
-        )
-        .expect("fixture actions should replay");
-        assert_eq!(
-            EngineCombatStepper.terminal(&final_position),
-            CombatTerminal::Win
-        );
-        (case_path, case.position, actions, final_position)
-    }
-
-    #[test]
-    fn exported_policy_discrepancy_witness_carries_original_root_identity() {
-        let (case_path, root_position, actions, final_position) = fixture();
-        let directory = temp_directory("manifest");
-        let action_output = directory.join("complete-win.actions.json");
-        let manifest_output = export_verified_witness(
-            &case_path,
-            &root_position,
-            &action_output,
-            &actions,
-            &final_position,
-            MAX_ENGINE_STEPS_PER_TRANSITION,
-        )
-        .expect("verified witness should export");
-
-        let manifest = decode_combat_evidence_manifest(
-            &manifest_output,
-            &fs::read(&manifest_output).expect("manifest should exist"),
-        )
-        .expect("manifest should decode");
-        let expected_root_hash = CombatDecisionRoot::new(root_position)
-            .expect("fixture root should be valid")
-            .exact_state_hash()
-            .to_string();
-        assert_eq!(
-            manifest.producer,
-            CombatEvidenceProducerV1::PolicyDiscrepancySearch
-        );
-        assert_eq!(manifest.case_path, case_path);
-        assert_eq!(manifest.root_exact_state_hash, expected_root_hash);
-        assert_eq!(manifest.entries.len(), 1);
-        assert_eq!(manifest.entries[0].action_paths, vec![action_output]);
-        assert_eq!(manifest.entries[0].supplied_action_count, actions.len());
-        assert_eq!(manifest.entries[0].expected_terminal, CombatTerminal::Win);
-        assert_eq!(
-            manifest.entries[0].expected_final_player_hp,
-            Some(final_position.combat.entities.player.current_hp)
-        );
-
-        fs::remove_dir_all(directory).expect("temporary export should clean up");
-    }
-
-    #[test]
-    fn witness_mismatch_is_rejected_before_any_export_is_written() {
-        let (case_path, root_position, actions, _) = fixture();
-        let directory = temp_directory("mismatch");
-        let action_output = directory.join("mismatch.actions.json");
-        let error = export_verified_witness(
-            &case_path,
-            &root_position,
-            &action_output,
-            &actions,
-            &root_position,
-            MAX_ENGINE_STEPS_PER_TRANSITION,
-        )
-        .expect_err("a mismatched expected final state must be rejected");
-
-        assert!(error.contains("did not match the search witness"));
-        assert!(!action_output.exists());
-        assert!(!combat_evidence_manifest_path_for_actions(&action_output).exists());
-    }
 }
