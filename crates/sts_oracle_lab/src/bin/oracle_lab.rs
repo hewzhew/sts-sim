@@ -306,6 +306,9 @@ fn main() -> Result<(), String> {
         Command::TurnActionAudit(args) => turn_audits::run_action(args),
         Command::TurnPlanAudit(args) => turn_audits::run_plan(args),
         Command::TurnQualityCorridor(args) => print_json(&turn_quality_corridor::run(args)?),
+        Command::TurnQualityFrontier(args) => {
+            print_json(&turn_quality_corridor::inspect_frontier(args)?)
+        }
         Command::DepthBeamTurnAudit(args) => depth_beam_audits::run_turn(args),
         Command::TurnMembership(args) => turn_membership_audit::run(args),
         Command::V2CapabilityAudit(args) => v2_capability_audit::run(args),

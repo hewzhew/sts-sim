@@ -23,6 +23,9 @@ use sts_oracle_runtime::state::core::ClientInput;
 use super::combat_replay_tools::save_combat_inputs;
 use super::turn_audits::single_potion_slot_mask;
 
+mod frontier;
+pub(super) use frontier::{inspect_frontier, TurnQualityFrontierArgs};
+
 const CHECKPOINT_SCHEMA_NAME: &str = "OracleTurnQualityCorridorCheckpointV1";
 const CHECKPOINT_SCHEMA_VERSION: u32 = 1;
 

@@ -25,7 +25,7 @@ use super::potion_expenditure_audit::CombatCasePotionExpenditureAuditArgs;
 use super::run_witness_suite::RunWitnessSuiteArgs;
 use super::turn_audits::{TurnActionAuditArgs, TurnPlanAuditArgs};
 use super::turn_membership_audit::TurnMembershipArgs;
-use super::turn_quality_corridor::TurnQualityCorridorArgs;
+use super::turn_quality_corridor::{TurnQualityCorridorArgs, TurnQualityFrontierArgs};
 use super::v2_capability_audit::V2CapabilityAuditArgs;
 
 #[derive(Debug, Parser)]
@@ -359,6 +359,9 @@ pub(super) enum Command {
     /// Explore exact complete-turn successors under separate unresolved-boundary
     /// and post-victory HP floors. Any cap remains an explicit unknown.
     TurnQualityCorridor(TurnQualityCorridorArgs),
+    /// Census a resumable exact turn frontier and optionally export a few
+    /// machine-replayable diagnostic descendant cases.
+    TurnQualityFrontier(TurnQualityFrontierArgs),
     /// Generate complete-turn proposals with an independent action-depth beam.
     /// Finished short turns never displace still-live longer prefixes.
     DepthBeamTurnAudit(DepthBeamTurnAuditArgs),
