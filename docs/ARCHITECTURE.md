@@ -148,6 +148,15 @@ allowance without an acceptable witness. A later identity inheriting an already
 satisfying witness receives one complete local challenge rather than a full
 quality-polishing allowance.
 
+Inside the local graph, one shared boundary agenda rotates between the anchor
+and the available semantic guide lanes. A guide entry selects one exact
+boundary once; it receives 128 coherent generator-work units, while repeated
+and exhaustive service remains owned by the anchor. This value controls
+preemption granularity, not combat value or admission, and production and
+laboratory hosts use the same planner constant. Full local-graph reports retain
+the effective value in their search specification so budget-cliff comparisons
+remain reconstructible.
+
 During `ImproveVerifiedWin`, a quality-reaching spending witness remains an
 exact candidate but cannot by itself end the refinement quantum. Early
 satisfaction requires a clean potion-free witness at the same quality target.

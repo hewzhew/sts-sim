@@ -22,7 +22,7 @@ use sts_combat_planner::{
     OracleCombatWitnessDiscoverySource, OracleCombatWitnessSatisfaction,
     OracleCombatWitnessStateProgressSnapshot, PolicyDiscrepancyConfig, PolicyDiscrepancyQuantum,
     PolicyDiscrepancySession, PolicyDiscrepancyStatus, PolicyDiscrepancyTurnMacroConfig,
-    TurnOptionAction, TurnOptionGeneratorConfig,
+    TurnOptionAction, TurnOptionGeneratorConfig, DEFAULT_BACKED_GENERATION_QUANTUM_WORK,
 };
 
 pub(super) struct OracleRunCombatWorkV1 {
@@ -315,7 +315,7 @@ impl OracleRunCombatWorkV1 {
                     ..TurnOptionGeneratorConfig::default()
                 },
                 generation_quantum_work: 4,
-                backed_generation_quantum_work: 256,
+                backed_generation_quantum_work: DEFAULT_BACKED_GENERATION_QUANTUM_WORK,
                 initial_expansion_work: 64,
                 root_initial_expansion_work: 2_048,
                 lookahead_max_evaluations: 384,

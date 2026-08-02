@@ -1,6 +1,14 @@
 use crate::types::TurnOptionGeneratorConfig;
 use crate::witness::OracleCombatWitnessSatisfaction;
 
+/// Coherent work granted by one guide-selected boundary service.
+///
+/// Runtime and laboratory hosts share this value so a report's scheduler
+/// identity matches production.  It is large enough to make one selected
+/// boundary productive without letting a few one-shot guide entries consume
+/// the entire bounded allowance before later high-ranked states are visited.
+pub const DEFAULT_BACKED_GENERATION_QUANTUM_WORK: usize = 128;
+
 /// Resumable search over a shared graph of exact player-turn boundaries.
 ///
 /// Complete-turn generation remains lazy. Independent global views select one
@@ -43,7 +51,7 @@ impl Default for LocalTurnGraphWitnessConfig {
         Self {
             generator: TurnOptionGeneratorConfig::default(),
             generation_quantum_work: 4,
-            backed_generation_quantum_work: 256,
+            backed_generation_quantum_work: DEFAULT_BACKED_GENERATION_QUANTUM_WORK,
             initial_expansion_work: 64,
             root_initial_expansion_work: 2_048,
             lookahead_max_evaluations: 384,

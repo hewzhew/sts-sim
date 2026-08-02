@@ -35,6 +35,7 @@ pub use local_turn_graph_search::{
     LocalTurnGraphStorageSnapshot, LocalTurnGraphSuffixProbeAttempt, LocalTurnGraphWitnessConfig,
     LocalTurnGraphWitnessCounters, LocalTurnGraphWitnessInterruption, LocalTurnGraphWitnessQuantum,
     LocalTurnGraphWitnessReport, LocalTurnGraphWitnessSession, LocalTurnGraphWitnessStatus,
+    DEFAULT_BACKED_GENERATION_QUANTUM_WORK,
 };
 pub use policy::{
     combat_plan_selection_timing_policy_v1, combat_plan_state_guide_policy_v1, CombatActionPolicy,

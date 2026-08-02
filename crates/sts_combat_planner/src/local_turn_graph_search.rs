@@ -10,7 +10,7 @@ mod session;
 mod shared_agenda;
 mod storage_diagnostics;
 
-pub use config::LocalTurnGraphWitnessConfig;
+pub use config::{LocalTurnGraphWitnessConfig, DEFAULT_BACKED_GENERATION_QUANTUM_WORK};
 use potion_budget::*;
 pub use reporting::*;
 use scheduling::*;

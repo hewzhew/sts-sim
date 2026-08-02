@@ -126,6 +126,10 @@ mod tests {
         assert_eq!(value["planner"]["uniform_exploration_ppm"], 12_345);
         assert_eq!(value["planner"]["allow_potion_expenditure"], false);
         assert_eq!(value["planner"]["generation_quantum_work"], 3);
+        assert_eq!(
+            value["planner"]["backed_generation_quantum_work"],
+            sts_combat_planner::DEFAULT_BACKED_GENERATION_QUANTUM_WORK
+        );
         assert_eq!(value["planner"]["lookahead_max_evaluations"], 10);
         assert_eq!(value["planner"]["max_turn_depth"], 9);
         assert_eq!(value["planner"]["max_potions_used"], 0);
