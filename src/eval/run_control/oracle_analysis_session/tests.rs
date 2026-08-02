@@ -660,6 +660,18 @@ fn common_strength_potion_can_rescue_a_verified_but_low_quality_win() {
     assert_eq!(progress.allowed_potion_slots, Some(1));
     assert_eq!(progress.incumbent_potions_used, Some(1));
     assert_eq!(progress.incumbent_potion_slots, Some(1));
+    let final_stage = progress.stage_trace.last().expect("final Strength stage");
+    assert_eq!(final_stage.local_candidate_final_hp, Some(40));
+    assert_eq!(final_stage.local_candidate_potions_used, Some(1));
+    assert_eq!(final_stage.local_candidate_potion_slots, Some(1));
+    assert_eq!(
+        final_stage.local_candidate_satisfies_satisfaction,
+        Some(true)
+    );
+    assert_eq!(
+        final_stage.local_candidate_disposition,
+        Some(OracleCombatLocalCandidateDispositionV1::SelectedIncumbent)
+    );
     assert_eq!(
         analysis.view_cursor().expect("rescued child").current_hp,
         40,

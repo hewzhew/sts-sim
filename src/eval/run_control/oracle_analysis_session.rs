@@ -19,7 +19,8 @@ use crate::eval::combat_case::{
 };
 
 use super::oracle_combat_work::{
-    OracleRunCombatWorkCheckpointV1, OracleRunCombatWorkProgressV1, OracleRunCombatWorkV1,
+    OracleCombatLocalCandidateDispositionV1, OracleRunCombatWorkCheckpointV1,
+    OracleRunCombatWorkProgressV1, OracleRunCombatWorkV1,
 };
 use super::oracle_run_explorer::{
     seed_oracle_run_explorer_from_checkpoint_v1, LazyOracleRunDecisionV1,
@@ -146,6 +147,18 @@ pub struct OracleAnalysisCombatStageTraceV1 {
     pub plan_prefix_proposed_actions: usize,
     #[serde(default)]
     pub plan_prefix_proposal_rejections: usize,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub local_candidate_final_hp: Option<i32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub local_candidate_action_count: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub local_candidate_potions_used: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub local_candidate_potion_slots: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub local_candidate_satisfies_satisfaction: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub local_candidate_disposition: Option<OracleCombatLocalCandidateDispositionV1>,
     pub incumbent_discovery_source: Option<sts_combat_planner::OracleCombatWitnessDiscoverySource>,
     pub incumbent_final_hp: Option<i32>,
     pub incumbent_action_count: Option<usize>,
@@ -214,6 +227,12 @@ pub struct OracleAnalysisCombatProgressV1 {
     pub plan_prefix_proposed_turns: usize,
     pub plan_prefix_proposed_actions: usize,
     pub plan_prefix_proposal_rejections: usize,
+    pub local_candidate_final_hp: Option<i32>,
+    pub local_candidate_action_count: Option<usize>,
+    pub local_candidate_potions_used: Option<u32>,
+    pub local_candidate_potion_slots: Option<u64>,
+    pub local_candidate_satisfies_satisfaction: Option<bool>,
+    pub local_candidate_disposition: Option<OracleCombatLocalCandidateDispositionV1>,
     pub advisor_nodes: u64,
     pub advisor_elapsed_ms: u64,
     pub advisor_active: bool,
@@ -1894,6 +1913,12 @@ fn combat_stage_trace_view_from_progress(
         plan_prefix_proposed_turns: progress.plan_prefix_proposed_turns,
         plan_prefix_proposed_actions: progress.plan_prefix_proposed_actions,
         plan_prefix_proposal_rejections: progress.plan_prefix_proposal_rejections,
+        local_candidate_final_hp: progress.local_candidate_final_hp,
+        local_candidate_action_count: progress.local_candidate_action_count,
+        local_candidate_potions_used: progress.local_candidate_potions_used,
+        local_candidate_potion_slots: progress.local_candidate_potion_slots,
+        local_candidate_satisfies_satisfaction: progress.local_candidate_satisfies_satisfaction,
+        local_candidate_disposition: progress.local_candidate_disposition,
         incumbent_discovery_source: progress.incumbent_discovery_source,
         incumbent_final_hp: progress.incumbent_final_hp,
         incumbent_action_count: progress.incumbent_action_count,
@@ -1953,6 +1978,12 @@ fn combat_progress_view_with_exit(
         plan_prefix_proposed_turns: progress.plan_prefix_proposed_turns,
         plan_prefix_proposed_actions: progress.plan_prefix_proposed_actions,
         plan_prefix_proposal_rejections: progress.plan_prefix_proposal_rejections,
+        local_candidate_final_hp: progress.local_candidate_final_hp,
+        local_candidate_action_count: progress.local_candidate_action_count,
+        local_candidate_potions_used: progress.local_candidate_potions_used,
+        local_candidate_potion_slots: progress.local_candidate_potion_slots,
+        local_candidate_satisfies_satisfaction: progress.local_candidate_satisfies_satisfaction,
+        local_candidate_disposition: progress.local_candidate_disposition,
         advisor_nodes: progress.advisor_nodes,
         advisor_elapsed_ms: progress.advisor_elapsed_ms,
         advisor_active: progress.advisor_active,

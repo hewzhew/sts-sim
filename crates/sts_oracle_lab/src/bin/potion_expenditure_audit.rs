@@ -12,7 +12,8 @@ use clap::Args;
 use serde::Serialize;
 use sts_combat_planner::{
     combat_plan_state_guide_policy_v1, CombatDecisionRoot, LocalTurnGraphWitnessInterruption,
-    LocalTurnGraphWitnessStatus, OracleCombatWitnessSatisfaction, TurnOptionAction,
+    LocalTurnGraphWitnessStatus, OracleCombatWitness, OracleCombatWitnessDiscoverySource,
+    OracleCombatWitnessSatisfaction, TurnOptionAction,
 };
 use sts_oracle_runtime::ai::card_semantics_v1::{
     potion_acquisition_traits_v1, PotionAcquisitionTraitV1,
@@ -40,20 +41,21 @@ use sts_oracle_runtime::content::potions::{Potion, PotionId};
 use sts_oracle_runtime::content::relics::{energy_master_delta, RelicId};
 use sts_oracle_runtime::eval::combat_case::{load_combat_case, CombatCase};
 use sts_oracle_runtime::eval::run_control::{
-    existing_combat_knowledge_policy_v1, oracle_potion_rescue_tier_v1, CombatSearchHpLossLimitV1,
-    CombatSearchStrategicHpQualityFactsV1, CombatVictoryContinuationFactsV1,
-    CombatVictoryHpCarryoverV1, OraclePotionRescueTierV1, COMBAT_QUALITY_HP_LIMIT_EVALUATOR_V1,
-    COMBAT_SURVIVAL_HP_LIMIT_EVALUATOR_V1, COMBAT_VICTORY_CONTINUATION_EVALUATOR_V1,
+    authorized_potion_trial_policy_v1, existing_combat_knowledge_policy_v1,
+    oracle_potion_rescue_tier_v1, CombatSearchHpLossLimitV1, CombatSearchStrategicHpQualityFactsV1,
+    CombatVictoryContinuationFactsV1, CombatVictoryHpCarryoverV1, OraclePotionRescueTierV1,
+    COMBAT_QUALITY_HP_LIMIT_EVALUATOR_V1, COMBAT_SURVIVAL_HP_LIMIT_EVALUATOR_V1,
+    COMBAT_VICTORY_CONTINUATION_EVALUATOR_V1,
 };
 use sts_oracle_runtime::sim::combat::{
-    CombatPosition, CombatStepLimits, CombatStepper, EngineCombatStepper,
+    CombatPosition, CombatStepLimits, CombatStepper, CombatTerminal, EngineCombatStepper,
 };
 use sts_oracle_runtime::state::core::ClientInput;
 
 use super::combat_graph_search_spec::LocalGraphSearchSpec;
 use super::combat_replay_tools::save_combat_inputs;
 
-const SCHEMA_NAME: &str = "OracleCombatCasePotionExpenditureAuditV13";
+const SCHEMA_NAME: &str = "OracleCombatCasePotionExpenditureAuditV14";
 
 #[derive(Debug, Args)]
 pub(super) struct CombatCasePotionExpenditureAuditArgs {
@@ -74,10 +76,18 @@ pub(super) struct CombatCasePotionExpenditureAuditArgs {
     /// `<lane-id>.actions.json` below this directory.
     #[arg(long, value_name = "DIRECTORY")]
     export_witness_actions_dir: Option<PathBuf>,
+    /// Lab-only parity control: replay and preload one exact winning action
+    /// list as the initial incumbent in every compatible lane.
+    #[arg(long, value_name = "ACTIONS_JSON")]
+    restore_witness_actions: Option<PathBuf>,
     /// Add the same typed combat-plan state guide used by production combat
     /// search while preserving independent exact potion-slot lanes.
     #[arg(long)]
     typed_plan_guide: bool,
+    /// Lab-only parity control: give each non-empty identity lane the same
+    /// unchanged-root potion challenge used by production run search.
+    #[arg(long)]
+    authorized_root_potion_trial: bool,
     /// Include explicit potion-discard actions. Disabled by default because a
     /// discard normally has no combat payoff; enable only for concrete slot
     /// generation or revive-priority cases.
@@ -86,6 +96,10 @@ pub(super) struct CombatCasePotionExpenditureAuditArgs {
     /// Exact generation work granted independently to every lane.
     #[arg(long, default_value_t = 250_000)]
     max_nodes: usize,
+    /// Lab-only parity control: use the production-style HP-loss satisfaction
+    /// instead of searching every lane until budget or exhaustion.
+    #[arg(long)]
+    max_hp_loss: Option<u32>,
     /// Scheduler selections granted independently to every lane.
     #[arg(long, default_value_t = 1_000_000)]
     max_selections: usize,
@@ -255,8 +269,11 @@ struct PotionAuditSearchSettingsV1 {
     max_lanes: usize,
     survival_reserve_hp: Option<i32>,
     typed_plan_guide: bool,
+    restore_witness_actions: Option<PathBuf>,
+    authorized_root_potion_trial: bool,
     include_discard_actions: bool,
     max_nodes_per_lane: usize,
+    max_hp_loss: Option<u32>,
     max_selections_per_lane: usize,
     wall_ms_per_lane: u64,
     max_engine_steps_per_transition: usize,
@@ -710,7 +727,7 @@ struct PotionRetainedValueEvidenceV1 {
 }
 
 #[derive(Clone, Debug, Serialize)]
-pub(super) struct CombatCasePotionExpenditureAuditV13 {
+pub(super) struct CombatCasePotionExpenditureAuditV14 {
     schema_name: &'static str,
     case: PathBuf,
     root_exact_state_hash: String,
@@ -731,16 +748,19 @@ pub(super) struct CombatCasePotionExpenditureAuditV13 {
 
 pub(super) fn run(
     args: CombatCasePotionExpenditureAuditArgs,
-) -> Result<CombatCasePotionExpenditureAuditV13, String> {
+) -> Result<CombatCasePotionExpenditureAuditV14, String> {
     let CombatCasePotionExpenditureAuditArgs {
         case,
         max_combination_size,
         max_lanes,
         survival_reserve_hp,
         export_witness_actions_dir,
+        restore_witness_actions,
         typed_plan_guide,
+        authorized_root_potion_trial,
         include_discard_actions,
         max_nodes,
+        max_hp_loss,
         max_selections,
         wall_ms_per_lane,
         max_engine_steps_per_transition,
@@ -785,16 +805,28 @@ pub(super) fn run(
         &loaded.position,
         run_level_projection,
     );
+    let restored_witness = restore_witness_actions
+        .as_deref()
+        .map(|path| {
+            load_exact_action_witness(&loaded.position, path, max_engine_steps_per_transition)
+        })
+        .transpose()?;
     let lane_specs = build_lane_specs(&root_potions, max_combination_size, max_lanes)?;
     let base_policy = existing_combat_knowledge_policy_v1();
-    let base_policy = if typed_plan_guide {
-        combat_plan_state_guide_policy_v1(base_policy)
-    } else {
-        base_policy
-    };
     let mut lanes = Vec::with_capacity(lane_specs.len());
 
     for lane in lane_specs {
+        let mut lane_policy = base_policy.clone();
+        if authorized_root_potion_trial && lane.allowed_slot_mask != 0 {
+            lane_policy = authorized_potion_trial_policy_v1(
+                lane_policy,
+                loaded.position.clone(),
+                lane.allowed_slot_mask,
+            );
+        }
+        if typed_plan_guide {
+            lane_policy = combat_plan_state_guide_policy_v1(lane_policy);
+        }
         let search_spec = LocalGraphSearchSpec::from_controls(
             max_nodes,
             max_selections,
@@ -805,8 +837,10 @@ pub(super) fn run(
             max_turn_depth,
             Some(lane.max_explicit_expenditures),
         );
-        let mut config =
-            search_spec.planner_config(OracleCombatWitnessSatisfaction::BudgetOrExhaustion);
+        let satisfaction = max_hp_loss
+            .map(OracleCombatWitnessSatisfaction::HpLossAtMost)
+            .unwrap_or(OracleCombatWitnessSatisfaction::BudgetOrExhaustion);
+        let mut config = search_spec.planner_config(satisfaction);
         config.generator.allowed_potion_slots = Some(lane.allowed_slot_mask);
         config.generator.allow_potion_discard = include_discard_actions;
         let lane_root = CombatDecisionRoot::new(loaded.position.clone())
@@ -820,8 +854,11 @@ pub(super) fn run(
         let mut session = sts_combat_planner::LocalTurnGraphWitnessSession::with_policy(
             lane_root,
             config,
-            base_policy.clone(),
+            lane_policy,
         );
+        if let Some(witness) = restored_witness.as_ref() {
+            session.restore_verified_witness(witness.clone())?;
+        }
         let started = Instant::now();
         let report = session.advance(search_spec.quantum(), &EngineCombatStepper);
         let elapsed_ms = duration_millis_u64(started.elapsed());
@@ -903,7 +940,7 @@ pub(super) fn run(
         })
         .collect();
 
-    Ok(CombatCasePotionExpenditureAuditV13 {
+    Ok(CombatCasePotionExpenditureAuditV14 {
         schema_name: SCHEMA_NAME,
         case,
         root_exact_state_hash,
@@ -920,15 +957,22 @@ pub(super) fn run(
             max_lanes,
             survival_reserve_hp,
             typed_plan_guide,
+            restore_witness_actions,
+            authorized_root_potion_trial,
             include_discard_actions,
             max_nodes_per_lane: max_nodes,
+            max_hp_loss,
             max_selections_per_lane: max_selections,
             wall_ms_per_lane,
             max_engine_steps_per_transition,
             uniform_exploration_ppm,
             generation_quantum_work,
             max_turn_depth,
-            satisfaction: "budget_or_exhaustion",
+            satisfaction: if max_hp_loss.is_some() {
+                "hp_loss_at_most"
+            } else {
+                "budget_or_exhaustion"
+            },
         },
         lanes,
         pareto_lane_ids,
@@ -948,6 +992,68 @@ pub(super) fn run(
             passive_consumption_handling:
                 "replay-detected; a disallowed passive expenditure makes the lane non-compliant",
         },
+    })
+}
+
+fn load_exact_action_witness(
+    start: &CombatPosition,
+    path: &std::path::Path,
+    max_engine_steps_per_transition: usize,
+) -> Result<OracleCombatWitness, String> {
+    let bytes = std::fs::read(path)
+        .map_err(|error| format!("failed to read restored witness actions: {error}"))?;
+    let inputs: Vec<ClientInput> = serde_json::from_slice(&bytes)
+        .map_err(|error| format!("failed to parse restored witness actions: {error}"))?;
+    if inputs.is_empty() {
+        return Err("restored witness action list is empty".to_owned());
+    }
+
+    let stepper = EngineCombatStepper;
+    let mut position = start.clone();
+    let mut actions = Vec::with_capacity(inputs.len());
+    let mut replay_engine_steps = 0usize;
+    for (index, input) in inputs.into_iter().enumerate() {
+        if stepper.choice_for_legal_input(&position, &input).is_none() {
+            return Err(format!(
+                "restored witness action {index} is not legal at its exact state"
+            ));
+        }
+        let result = stepper.apply_to_stable(
+            &position,
+            input.clone(),
+            CombatStepLimits {
+                max_engine_steps: max_engine_steps_per_transition,
+                deadline: None,
+            },
+        );
+        if result.truncated || result.timed_out {
+            return Err(format!(
+                "restored witness action {index} did not reach a stable state"
+            ));
+        }
+        replay_engine_steps = replay_engine_steps.saturating_add(result.engine_steps);
+        actions.push(TurnOptionAction {
+            input,
+            expected_successor_hash:
+                sts_oracle_runtime::ai::combat_state_key::combat_exact_state_hash_v2(
+                    &result.position.engine,
+                    &result.position.combat,
+                )
+                .into(),
+            engine_steps: result.engine_steps,
+        });
+        position = result.position;
+    }
+    if stepper.terminal(&position) != CombatTerminal::Win {
+        return Err("restored witness actions do not reach terminal victory".to_owned());
+    }
+
+    Ok(OracleCombatWitness {
+        negative_log_policy: actions.len() as f64,
+        actions,
+        final_position: position,
+        replay_engine_steps,
+        discovery_source: OracleCombatWitnessDiscoverySource::RestoredExactActions,
     })
 }
 

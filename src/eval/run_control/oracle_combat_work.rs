@@ -7,8 +7,7 @@ use super::combat_line_executor::apply_oracle_combat_witness;
 use super::combat_search::RunControlCombatWorkAdvanceV1;
 use super::combat_search_setup::prepare_search_combat;
 use super::oracle_combat_policy::{
-    authorized_potion_trial_policy_v1, existing_combat_rollout_witness_v1,
-    ExistingCombatKnowledgePolicy,
+    existing_combat_rollout_witness_v1, ExistingCombatKnowledgePolicy,
 };
 use super::progress_options::{RunControlCombatSearchQuantum, RunControlSearchCombatOptions};
 use super::session::{RunControlCombatSearchRejection, RunControlSession, RunProgressOutcome};
@@ -88,6 +87,15 @@ enum PortfolioWitnessSatisfactionV1 {
     HpLossAtMost(u32),
     PersistentRunValueGain,
     BudgetOrExhaustion,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum OracleCombatLocalCandidateDispositionV1 {
+    SelectedIncumbent,
+    RejectedPotionSpendMissesSatisfaction,
+    RejectedOutsidePotionContract,
+    RejectedByPortfolioComparison,
 }
 
 impl PortfolioMemberV1 {
@@ -192,6 +200,12 @@ pub(super) struct OracleRunCombatWorkProgressV1 {
     pub plan_prefix_proposed_turns: usize,
     pub plan_prefix_proposed_actions: usize,
     pub plan_prefix_proposal_rejections: usize,
+    pub local_candidate_final_hp: Option<i32>,
+    pub local_candidate_action_count: Option<usize>,
+    pub local_candidate_potions_used: Option<u32>,
+    pub local_candidate_potion_slots: Option<u64>,
+    pub local_candidate_satisfies_satisfaction: Option<bool>,
+    pub local_candidate_disposition: Option<OracleCombatLocalCandidateDispositionV1>,
     pub advisor_nodes: u64,
     pub advisor_elapsed_ms: u64,
     pub advisor_active: bool,
@@ -279,23 +293,11 @@ impl OracleRunCombatWorkV1 {
         let root = CombatDecisionRoot::new(prepared.start.clone())
             .map_err(|error| format!("invalid oracle combat root: {error:?}"))?;
         let policy = Arc::new(ExistingCombatKnowledgePolicy::default());
-        let mut policy = if let Some(guidance) = guidance {
+        let policy = if let Some(guidance) = guidance {
             guidance.policy(policy)?
         } else {
             policy
         };
-        if let Some(allowed_potion_slots) = prepared
-            .options
-            .allowed_potion_slots
-            .filter(|slots| *slots != 0)
-            .filter(|_| prepared.config.max_potions_used != Some(0))
-        {
-            policy = authorized_potion_trial_policy_v1(
-                policy,
-                prepared.start.clone(),
-                allowed_potion_slots,
-            );
-        }
         let policy = combat_plan_state_guide_policy_v1(policy);
         let portfolio_service_order = if prepared.start.combat.meta.is_boss_fight {
             PortfolioServiceOrderV1::LocalPrimary
@@ -1183,6 +1185,7 @@ impl OracleRunCombatWorkV1 {
         let local_progress = self.local_search.progress_snapshot();
         let search_progress = &local_progress;
         let initial_hp = self.start.combat.entities.player.current_hp;
+        let local_candidate = self.local_search.witness();
         let incumbent = self.best_witness();
         let incumbent_final_hp =
             incumbent.map(|witness| witness.final_position.combat.entities.player.current_hp);
@@ -1256,6 +1259,25 @@ impl OracleRunCombatWorkV1 {
             plan_prefix_proposed_turns: self.plan_prefix_proposed_turns,
             plan_prefix_proposed_actions: self.plan_prefix_proposed_actions,
             plan_prefix_proposal_rejections: self.plan_prefix_proposal_rejections,
+            local_candidate_final_hp: local_candidate
+                .map(|witness| witness.final_position.combat.entities.player.current_hp),
+            local_candidate_action_count: local_candidate.map(|witness| witness.actions.len()),
+            local_candidate_potions_used: local_candidate
+                .map(|witness| combat_witness_potion_expenditures(&self.start, witness)),
+            local_candidate_potion_slots: local_candidate
+                .map(|witness| combat_witness_potion_expenditure_slots(&self.start, witness)),
+            local_candidate_satisfies_satisfaction: local_candidate
+                .map(|witness| combat_witness_satisfies(self.satisfaction, &self.start, witness)),
+            local_candidate_disposition: combat_local_candidate_disposition(
+                &self.start,
+                self.satisfaction,
+                self.potion_spend_requires_satisfaction,
+                self.max_potions_used,
+                self.allowed_potion_slots,
+                self.allow_potion_discard,
+                local_candidate,
+                incumbent,
+            ),
             advisor_nodes: 0,
             advisor_elapsed_ms: 0,
             advisor_active: false,
@@ -1462,6 +1484,41 @@ fn combat_witness_better_with_potion_quality_gate(
         }
     }
     combat_witness_better(start, left, right)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn combat_local_candidate_disposition(
+    start: &crate::sim::combat::CombatPosition,
+    satisfaction: PortfolioWitnessSatisfactionV1,
+    potion_spend_requires_satisfaction: bool,
+    max_potions_used: Option<u32>,
+    allowed_potion_slots: Option<u64>,
+    allow_potion_discard: bool,
+    local_candidate: Option<&OracleCombatWitness>,
+    incumbent: Option<&OracleCombatWitness>,
+) -> Option<OracleCombatLocalCandidateDispositionV1> {
+    let local_candidate = local_candidate?;
+    if incumbent.is_some_and(|incumbent| std::ptr::eq(local_candidate, incumbent)) {
+        return Some(OracleCombatLocalCandidateDispositionV1::SelectedIncumbent);
+    }
+    if !combat_witness_within_potion_contract(
+        start,
+        local_candidate,
+        max_potions_used,
+        allowed_potion_slots,
+    ) || (!allow_potion_discard && combat_witness_uses_potion_discard(local_candidate))
+    {
+        return Some(OracleCombatLocalCandidateDispositionV1::RejectedOutsidePotionContract);
+    }
+    if potion_spend_requires_satisfaction
+        && combat_witness_potion_expenditures(start, local_candidate) > 0
+        && !combat_witness_satisfies(satisfaction, start, local_candidate)
+    {
+        return Some(
+            OracleCombatLocalCandidateDispositionV1::RejectedPotionSpendMissesSatisfaction,
+        );
+    }
+    Some(OracleCombatLocalCandidateDispositionV1::RejectedByPortfolioComparison)
 }
 
 fn combat_witness_ends_quality_refinement(
@@ -1868,6 +1925,32 @@ mod tests {
             &marginal_spend,
             &baseline,
         ));
+        assert_eq!(
+            combat_local_candidate_disposition(
+                &start,
+                satisfaction,
+                true,
+                Some(1),
+                Some(1),
+                false,
+                Some(&marginal_spend),
+                Some(&baseline),
+            ),
+            Some(OracleCombatLocalCandidateDispositionV1::RejectedPotionSpendMissesSatisfaction)
+        );
+        assert_eq!(
+            combat_local_candidate_disposition(
+                &start,
+                satisfaction,
+                true,
+                Some(1),
+                Some(1),
+                false,
+                Some(&baseline),
+                Some(&baseline),
+            ),
+            Some(OracleCombatLocalCandidateDispositionV1::SelectedIncumbent)
+        );
         assert!(combat_witness_better_with_potion_quality_gate(
             &start,
             satisfaction,

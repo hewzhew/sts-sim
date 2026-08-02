@@ -92,6 +92,13 @@ replay-verified witness also writes `<lane-id>.actions.json`. Use those exact
 inputs with `combat-case-plan-trace`, `--watch-actions`, or another replay
 surface instead of reconstructing a promising lane from display text.
 
+For one-factor production-parity diagnosis, `--max-hp-loss <N>` uses the same
+bounded HP satisfaction shape as strategic search, and
+`--restore-witness-actions <actions.json>` exact-replays one initial incumbent
+before every compatible lane. `--authorized-root-potion-trial` is an explicit
+laboratory ablation for the retired global root-weight floor; it is not active
+production policy and must not be read as permission to spend the potion.
+
 ### Fresh Potion Continuation Cases
 
 Use a fresh capsule path and two bounded phases when the investigation needs a

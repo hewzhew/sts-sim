@@ -155,10 +155,13 @@ pub use oracle_analysis_session::{
     ORACLE_ANALYSIS_SESSION_SCHEMA_VERSION,
 };
 pub use oracle_combat_policy::{
-    existing_combat_knowledge_policy_v1, existing_combat_rollout_lookahead_v1,
-    ExistingCombatKnowledgeAdvisorAdvanceV1, ExistingCombatKnowledgeAdvisorV1,
+    authorized_potion_trial_policy_v1, existing_combat_knowledge_policy_v1,
+    existing_combat_rollout_lookahead_v1, ExistingCombatKnowledgeAdvisorAdvanceV1,
+    ExistingCombatKnowledgeAdvisorV1,
 };
-pub use oracle_combat_work::OracleRunCombatWorkCheckpointV1;
+pub use oracle_combat_work::{
+    OracleCombatLocalCandidateDispositionV1, OracleRunCombatWorkCheckpointV1,
+};
 pub use oracle_neow::{
     expand_oracle_neow_candidates_v1, ordered_oracle_neow_root_candidate_ids_v1,
     CompletedNeowCandidateV1, NeowOracleExpansionV1, NeowOracleReplayStepV1,

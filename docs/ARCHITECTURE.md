@@ -181,12 +181,12 @@ at most `1 + 1 / active identities` allowances for non-Boss combat and
 caller's combat wall deadline remains authoritative. Slot order follows
 deterministic slot identity, not a potion value ranking.
 
-When an exact identity stage is opened, its admitted potion-use actions receive
-one explicit challenge at the unchanged combat root instead of inheriting the
-conservation policy's near-zero rejection weight. The challenge changes only
-search guidance inside that already-authorized slot mask: it does not make the
-action legal, alter later-turn timing, discard the protected clean incumbent,
-or authorize a spending witness that misses the owner's quality contract.
+Opening an exact identity stage changes the legal potion-slot contract, not the
+shared action prior. Production does not globally raise every admitted root
+potion action to the highest policy weight: that intervention can replace a
+useful sparse corridor with a worse potion-first corridor. A laboratory audit
+may opt into the old root challenge as an explicit A/B control, but its result
+is non-authoritative until selected exact sentinels justify a narrower policy.
 
 Semantic victory stages admit authorized potion use but omit explicit potion
 discard. Discard remains simulator-legal and an all-legal diagnostic may opt in
@@ -196,10 +196,13 @@ discard remain ineligible when restored under a semantic stage.
 
 Production combat progress carries the exact root hash and one compact typed
 trace row per served stage. A row freezes that stage's slot contract, charged
-local/discrepancy work, proposal counts, incumbent facts, quality satisfaction,
-remaining allowance, and exit reason. Completed rows survive workspace
-checkpoint restore. This trace is diagnostic evidence for locating an owner
-scheduling divergence; it does not rank potions or authorize a policy change.
+local/discrepancy work, proposal counts, the local graph's best exact candidate,
+its satisfaction and typed portfolio disposition, the selected incumbent,
+remaining allowance, and exit reason. Keeping both candidates distinguishes
+"search did not find it" from "the run-level quality gate rejected it."
+Completed rows survive workspace checkpoint restore. This trace is diagnostic
+evidence for locating an owner scheduling divergence; it does not rank potions
+or authorize a policy change.
 
 Pre-A5 Act 1/2 room Boss victories deterministically restore full HP while
 retaining the potion inventory. Owner-audit therefore searches those boundaries
