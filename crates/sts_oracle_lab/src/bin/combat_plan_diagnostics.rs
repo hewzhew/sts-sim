@@ -123,12 +123,41 @@ pub(super) fn run_trace(args: CombatCasePlanTraceArgs) -> Result<(), String> {
     let root_plan = combat_plan_projection_v1(&position);
     let mut trace = Vec::new();
     let mut consumed_actions = 0_usize;
+    let mut invalid_action = None;
 
     for (index, input) in inputs.into_iter().enumerate() {
         let before_hash = combat_exact_state_hash_v2(&position.engine, &position.combat);
         let before_state = combat_position_snapshot(&position);
         let label = combat_action_label(&position, &input);
         let action_key = combat_action_key(&position.combat, &input);
+        if stepper.choice_for_legal_input(&position, &input).is_none() {
+            invalid_action = Some(json!({
+                "action_index": index,
+                "label": label,
+                "action_key": action_key,
+                "input": input,
+                "before_exact_state_hash": before_hash,
+                "before_state": before_state,
+            }));
+            trace.push(json!({
+                "action_index": index,
+                "label": label,
+                "action_key": action_key,
+                "input": input,
+                "input_legal": false,
+                "before_exact_state_hash": before_hash,
+                "before_state": before_state,
+                "after_exact_state_hash": null,
+                "after_state": null,
+                "engine_steps": 0,
+                "truncated": false,
+                "timed_out": false,
+                "terminal": "Unresolved",
+                "plan_transition": null,
+                "successor_plan": null,
+            }));
+            break;
+        }
         let step = stepper.apply_to_stable(
             &position,
             input.clone(),
@@ -151,6 +180,7 @@ pub(super) fn run_trace(args: CombatCasePlanTraceArgs) -> Result<(), String> {
             "label": label,
             "action_key": action_key,
             "input": input,
+            "input_legal": true,
             "before_exact_state_hash": before_hash,
             "before_state": before_state,
             "after_exact_state_hash": after_hash,
@@ -171,8 +201,8 @@ pub(super) fn run_trace(args: CombatCasePlanTraceArgs) -> Result<(), String> {
 
     let final_terminal = combat_terminal(&position.engine, &position.combat);
     print_json(&json!({
-        "schema_name": "OracleCombatCasePlanTraceV2",
-        "schema_version": 2,
+        "schema_name": "OracleCombatCasePlanTraceV3",
+        "schema_version": 3,
         "case": case_path,
         "actions": action_paths,
         "runtime": oracle_lab_runtime_identity(),
@@ -182,6 +212,7 @@ pub(super) fn run_trace(args: CombatCasePlanTraceArgs) -> Result<(), String> {
             "ranking": false,
             "pruning": false,
             "caller_supplied_actions": true,
+            "exact_input_membership_required": true,
             "terminal_truth": "exact_simulator_only",
         },
         "root_exact_state_hash": root_exact_state_hash,
@@ -189,6 +220,8 @@ pub(super) fn run_trace(args: CombatCasePlanTraceArgs) -> Result<(), String> {
         "input_action_count": input_count,
         "consumed_action_count": consumed_actions,
         "unconsumed_action_count": input_count.saturating_sub(consumed_actions),
+        "valid_action_prefix": invalid_action.is_none(),
+        "invalid_action": invalid_action,
         "final_exact_state_hash": combat_exact_state_hash_v2(
             &position.engine,
             &position.combat,

@@ -81,6 +81,23 @@ pub fn handle_end_turn_trigger(state: &mut CombatState) {
     actions.extend(crate::content::stances::hooks::on_end_of_turn(state));
 
     state.queue_actions(actions);
+
+    // Java AbstractRoom.endTurn invokes every end-of-turn hook first, queues
+    // ClearCardQueueAction and DiscardAtEndOfTurnAction, then immediately calls
+    // AbstractCard.resetAttributes() across draw, discard, and hand before any
+    // queued action resolves. In particular, temporary costForTurn changes
+    // such as Mummified Hand must not survive into the next player turn.
+    // Exhaust is intentionally absent: Java resets only these three active
+    // piles. Rust's one-turn Retain flag remains for the later discard phase.
+    for card in state
+        .zones
+        .draw_pile
+        .iter_mut()
+        .chain(state.zones.discard_pile.iter_mut())
+        .chain(state.zones.hand.iter_mut())
+    {
+        card.reset_attributes_java();
+    }
 }
 
 pub fn handle_post_draw_trigger(state: &mut CombatState) {

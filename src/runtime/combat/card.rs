@@ -96,16 +96,14 @@ impl CombatCard {
 
     /// Java `AbstractCard.resetAttributes()` restores transient rendered values
     /// and resets `costForTurn` back to the combat cost. It does not clear
-    /// persistent combat cost changes or `freeToPlayOnce`.
+    /// persistent combat cost changes, `freeToPlayOnce`, or card-placement
+    /// flags such as one-turn Retain.
     pub fn reset_attributes_java(&mut self) {
         self.base_damage_mut = 0;
         self.base_block_mut = 0;
         self.base_magic_num_mut = 0;
         self.multi_damage.clear();
         self.cost_for_turn = None;
-        self.exhaust_override = None;
-        self.retain_override = None;
-        self.energy_on_use = 0;
     }
 
     /// Java `AbstractCard.makeSameInstanceOf()` is a stat-equivalent copy with

@@ -1409,6 +1409,32 @@ mod tests {
     }
 
     #[test]
+    fn end_turn_trigger_resets_temporary_costs_in_java_active_piles_before_discard() {
+        let mut combat_state = blank_test_combat();
+        let mut draw = CombatCard::new(CardId::Bash, 10);
+        draw.set_cost_for_turn_java(0);
+        let mut discard = CombatCard::new(CardId::Strike, 20);
+        discard.set_cost_for_turn_java(0);
+        let mut retained = CombatCard::new(CardId::Defend, 30);
+        retained.set_cost_for_turn_java(0);
+        retained.retain_override = Some(true);
+        combat_state.zones.draw_pile = vec![draw].into();
+        combat_state.zones.discard_pile = vec![discard].into();
+        combat_state.zones.hand = vec![retained];
+
+        crate::engine::action_handlers::cards::handle_end_turn_trigger(&mut combat_state);
+
+        assert_eq!(combat_state.zones.draw_pile[0].cost_for_turn, None);
+        assert_eq!(combat_state.zones.discard_pile[0].cost_for_turn, None);
+        assert_eq!(combat_state.zones.hand[0].cost_for_turn, None);
+        assert_eq!(
+            combat_state.zones.hand[0].retain_override,
+            Some(true),
+            "Java resetAttributes does not consume the one-turn Retain flag before DiscardAtEndOfTurnAction"
+        );
+    }
+
+    #[test]
     fn turn_transition_preserves_intrinsic_self_retain_cards() {
         let mut combat_state = blank_test_combat();
         combat_state.zones.hand = vec![
