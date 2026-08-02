@@ -71,11 +71,15 @@ combinations from one unchanged exact combat root:
 ```
 
 Every lane receives the same independent search allowance. The command filters
-explicit use/discard inputs by exact slot without deleting potions from the
-root, then replay-attributes actual consumption by potion UUID. This preserves
-potion-sensitive state and detects passive Fairy Potion use. A passive
-expenditure outside a lane's allowed slots marks that witness non-compliant
-instead of silently treating it as a no-potion result.
+explicit potion-use inputs by exact slot without deleting potions from the
+root, then replay-attributes actual consumption by potion UUID. Explicit
+discard is excluded by default because it normally has no combat payoff and can
+create a mechanically irrelevant duplicate search graph. Add
+`--include-discard-actions` only for a concrete slot-generation or
+Fairy-Potion/Lizard-Tail priority question. This preserves potion-sensitive
+state and detects passive Fairy Potion use. A passive expenditure outside a
+lane's allowed slots marks that witness non-compliant instead of silently
+treating it as a no-potion result.
 
 The report exposes final HP, final turn, action count, exact potion identities,
 an optional `--survival-reserve-hp`, and a Pareto frontier. A missing witness is

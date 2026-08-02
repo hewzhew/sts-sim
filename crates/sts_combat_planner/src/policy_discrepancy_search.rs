@@ -626,6 +626,11 @@ impl PolicyDiscrepancySession {
         position: &CombatPosition,
     ) -> (Vec<ConcreteCandidate>, Vec<LazyFamily>) {
         let mut surface = stepper.legal_action_surface(position);
+        if !self.config.allow_potion_discard {
+            surface
+                .atomic_actions
+                .retain(|input| !matches!(input, ClientInput::DiscardPotion(_)));
+        }
         if self.config.max_potions_used == Some(0) || self.config.allowed_potion_slots == Some(0) {
             surface.atomic_actions.retain(|input| {
                 !matches!(

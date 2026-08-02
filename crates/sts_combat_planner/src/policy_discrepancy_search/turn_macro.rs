@@ -83,6 +83,9 @@ impl PolicyDiscrepancySession {
             DepthBeamTurnConfig {
                 generator: TurnOptionGeneratorConfig {
                     max_engine_steps_per_transition: self.config.max_engine_steps_per_transition,
+                    allow_potion_expenditure: self.config.max_potions_used != Some(0),
+                    allow_potion_discard: self.config.allow_potion_discard,
+                    allowed_potion_slots: self.config.allowed_potion_slots,
                     ..TurnOptionGeneratorConfig::default()
                 },
                 partial_beam_width: config.partial_beam_width,

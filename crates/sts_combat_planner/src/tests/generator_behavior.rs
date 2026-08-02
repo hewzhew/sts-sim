@@ -332,6 +332,43 @@ fn explicit_zero_potion_generator_phase_removes_potion_expenditure_inputs() {
 }
 
 #[test]
+fn semantic_potion_generator_keeps_use_but_omits_discard() {
+    let mut combat = sts_core::test_support::blank_test_combat();
+    let mut monster = sts_core::test_support::planned_monster(EnemyId::JawWorm, 1);
+    monster.current_hp = 20;
+    monster.max_hp = 20;
+    combat.entities.monsters = vec![monster];
+    combat.entities.potions = vec![Some(Potion::new(PotionId::FirePotion, 7))];
+    combat.zones.hand.clear();
+    let root = CombatDecisionRoot::new(CombatPosition::new(EngineState::CombatPlayerTurn, combat))
+        .unwrap();
+    let stepper = EngineCombatStepper;
+    let mut session = TurnOptionGeneratorSession::new(
+        root,
+        TurnOptionGeneratorConfig {
+            max_engine_steps_per_transition: 256,
+            allow_potion_discard: false,
+            ..TurnOptionGeneratorConfig::default()
+        },
+    );
+
+    let report = session.advance(&stepper, CombatPlanningQuantum::deterministic(1_000, 8_192));
+    assert_eq!(report.status, TurnOptionGenerationStatus::Complete);
+    let inputs = session
+        .completed_options()
+        .iter()
+        .flat_map(|option| option.actions())
+        .map(|action| &action.input)
+        .collect::<Vec<_>>();
+    assert!(inputs
+        .iter()
+        .any(|input| matches!(input, ClientInput::UsePotion { .. })));
+    assert!(inputs
+        .iter()
+        .all(|input| !matches!(input, ClientInput::DiscardPotion(_))));
+}
+
+#[test]
 fn potion_slot_mask_filters_inputs_without_mutating_the_exact_root() {
     let mut combat = sts_core::test_support::blank_test_combat();
     let monster = sts_core::test_support::planned_monster(EnemyId::TheGuardian, 1);

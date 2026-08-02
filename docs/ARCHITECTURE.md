@@ -188,6 +188,12 @@ search guidance inside that already-authorized slot mask: it does not make the
 action legal, alter later-turn timing, discard the protected clean incumbent,
 or authorize a spending witness that misses the owner's quality contract.
 
+Semantic victory stages admit authorized potion use but omit explicit potion
+discard. Discard remains simulator-legal and an all-legal diagnostic may opt in
+for a concrete slot-generation or revive-priority case; it is not a generic
+way to diversify a sparse combat search. Checkpointed incumbents containing a
+discard remain ineligible when restored under a semantic stage.
+
 Production combat progress carries the exact root hash and one compact typed
 trace row per served stage. A row freezes that stage's slot contract, charged
 local/discrepancy work, proposal counts, incumbent facts, quality satisfaction,

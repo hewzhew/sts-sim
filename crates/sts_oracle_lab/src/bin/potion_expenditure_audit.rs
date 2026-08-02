@@ -53,7 +53,7 @@ use sts_oracle_runtime::state::core::ClientInput;
 use super::combat_graph_search_spec::LocalGraphSearchSpec;
 use super::combat_replay_tools::save_combat_inputs;
 
-const SCHEMA_NAME: &str = "OracleCombatCasePotionExpenditureAuditV12";
+const SCHEMA_NAME: &str = "OracleCombatCasePotionExpenditureAuditV13";
 
 #[derive(Debug, Args)]
 pub(super) struct CombatCasePotionExpenditureAuditArgs {
@@ -78,6 +78,11 @@ pub(super) struct CombatCasePotionExpenditureAuditArgs {
     /// search while preserving independent exact potion-slot lanes.
     #[arg(long)]
     typed_plan_guide: bool,
+    /// Include explicit potion-discard actions. Disabled by default because a
+    /// discard normally has no combat payoff; enable only for concrete slot
+    /// generation or revive-priority cases.
+    #[arg(long)]
+    include_discard_actions: bool,
     /// Exact generation work granted independently to every lane.
     #[arg(long, default_value_t = 250_000)]
     max_nodes: usize,
@@ -250,6 +255,7 @@ struct PotionAuditSearchSettingsV1 {
     max_lanes: usize,
     survival_reserve_hp: Option<i32>,
     typed_plan_guide: bool,
+    include_discard_actions: bool,
     max_nodes_per_lane: usize,
     max_selections_per_lane: usize,
     wall_ms_per_lane: u64,
@@ -704,7 +710,7 @@ struct PotionRetainedValueEvidenceV1 {
 }
 
 #[derive(Clone, Debug, Serialize)]
-pub(super) struct CombatCasePotionExpenditureAuditV12 {
+pub(super) struct CombatCasePotionExpenditureAuditV13 {
     schema_name: &'static str,
     case: PathBuf,
     root_exact_state_hash: String,
@@ -725,7 +731,7 @@ pub(super) struct CombatCasePotionExpenditureAuditV12 {
 
 pub(super) fn run(
     args: CombatCasePotionExpenditureAuditArgs,
-) -> Result<CombatCasePotionExpenditureAuditV12, String> {
+) -> Result<CombatCasePotionExpenditureAuditV13, String> {
     let CombatCasePotionExpenditureAuditArgs {
         case,
         max_combination_size,
@@ -733,6 +739,7 @@ pub(super) fn run(
         survival_reserve_hp,
         export_witness_actions_dir,
         typed_plan_guide,
+        include_discard_actions,
         max_nodes,
         max_selections,
         wall_ms_per_lane,
@@ -801,6 +808,7 @@ pub(super) fn run(
         let mut config =
             search_spec.planner_config(OracleCombatWitnessSatisfaction::BudgetOrExhaustion);
         config.generator.allowed_potion_slots = Some(lane.allowed_slot_mask);
+        config.generator.allow_potion_discard = include_discard_actions;
         let lane_root = CombatDecisionRoot::new(loaded.position.clone())
             .map_err(|error| format!("invalid potion audit lane root: {error:?}"))?;
         if lane_root.exact_state_hash() != root_exact_state_hash {
@@ -895,7 +903,7 @@ pub(super) fn run(
         })
         .collect();
 
-    Ok(CombatCasePotionExpenditureAuditV12 {
+    Ok(CombatCasePotionExpenditureAuditV13 {
         schema_name: SCHEMA_NAME,
         case,
         root_exact_state_hash,
@@ -912,6 +920,7 @@ pub(super) fn run(
             max_lanes,
             survival_reserve_hp,
             typed_plan_guide,
+            include_discard_actions,
             max_nodes_per_lane: max_nodes,
             max_selections_per_lane: max_selections,
             wall_ms_per_lane,

@@ -99,6 +99,7 @@ pub(super) fn run(args: CombatCasePolicyDiscrepancyArgs) -> Result<(), String> {
             ..PolicyDiscrepancyTurnMacroConfig::default()
         }),
         max_potions_used: None,
+        allow_potion_discard: true,
         allowed_potion_slots: None,
     };
     let trajectory_audit = if audit_actions.is_empty() {

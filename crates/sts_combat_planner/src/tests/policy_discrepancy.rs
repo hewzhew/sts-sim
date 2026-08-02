@@ -116,6 +116,49 @@ fn exact_slot_mask_filters_use_and_discard_without_filtering_other_actions() {
 }
 
 #[test]
+fn discrepancy_surface_can_disable_discard_without_changing_simulator_legality() {
+    let mut combat = sts_core::test_support::blank_test_combat();
+    let mut monster = sts_core::test_support::planned_monster(EnemyId::JawWorm, 1);
+    monster.current_hp = 6;
+    monster.max_hp = 6;
+    combat.entities.monsters = vec![monster];
+    combat.entities.potions = vec![Some(Potion::new(PotionId::EnergyPotion, 7))];
+    combat.zones.hand = vec![CombatCard::new(CardId::Strike, 1)];
+    let root = CombatDecisionRoot::new(CombatPosition::new(EngineState::CombatPlayerTurn, combat))
+        .expect("discard-policy root");
+    let actions = [
+        ClientInput::DiscardPotion(0),
+        ClientInput::PlayCard {
+            card_index: 0,
+            target: Some(1),
+        },
+    ];
+    let config = PolicyDiscrepancyConfig {
+        allow_potion_discard: false,
+        ..PolicyDiscrepancyConfig::default()
+    };
+    let mut blocked =
+        PolicyDiscrepancySession::with_policy(root.clone(), config, Arc::new(PreferPlayPolicy));
+
+    assert!(blocked
+        .audit_trajectory(&EngineCombatStepper, &actions)
+        .is_err());
+
+    let mut allowed = PolicyDiscrepancySession::with_policy(
+        root,
+        PolicyDiscrepancyConfig {
+            allow_potion_discard: true,
+            ..config
+        },
+        Arc::new(PreferPlayPolicy),
+    );
+    let audit = allowed
+        .audit_trajectory(&EngineCombatStepper, &actions)
+        .expect("all-legal discrepancy surface");
+    assert_eq!(audit.terminal, CombatTerminal::Win);
+}
+
+#[test]
 fn policy_discrepancy_search_follows_a_good_policy_to_terminal_truth() {
     let mut search = PolicyDiscrepancySession::with_policy(
         root(),

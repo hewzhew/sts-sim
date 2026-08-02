@@ -37,6 +37,10 @@ pub struct PolicyDiscrepancyConfig {
     /// Maximum potion resources expended by a terminal witness. Use and
     /// discard both count; over-budget wins do not terminate search.
     pub max_potions_used: Option<u32>,
+    /// Whether explicit potion-discard inputs belong to this search surface.
+    /// Keep true for all-legal diagnostics and false for semantic victory
+    /// search unless a concrete slot-generation or revive-order case opts in.
+    pub allow_potion_discard: bool,
     /// Optional exact slot mask for explicit potion use and discard actions.
     pub allowed_potion_slots: Option<u64>,
 }
@@ -49,6 +53,7 @@ impl Default for PolicyDiscrepancyConfig {
             max_greedy_actions_per_dive: 128,
             turn_macro: None,
             max_potions_used: None,
+            allow_potion_discard: true,
             allowed_potion_slots: None,
         }
     }

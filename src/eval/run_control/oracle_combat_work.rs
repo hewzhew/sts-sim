@@ -39,6 +39,7 @@ pub(super) struct OracleRunCombatWorkV1 {
     max_transition_steps: usize,
     max_potions_used: Option<u32>,
     allowed_potion_slots: Option<u64>,
+    allow_potion_discard: bool,
     potion_spend_requires_satisfaction: bool,
     protected_potion_free_incumbent: Option<OracleCombatWitness>,
     prior_stage_incumbent: Option<OracleCombatWitness>,
@@ -233,6 +234,10 @@ impl OracleRunCombatWorkV1 {
         let prepared = prepare_search_combat(session, options)?;
         let max_transition_steps = prepared.config.max_engine_steps_per_action.max(1);
         let max_work = prepared.config.max_nodes;
+        let allow_potion_discard = matches!(
+            prepared.config.potion_policy,
+            crate::ai::combat_search_v2::CombatSearchV2PotionPolicy::All
+        );
         let (satisfaction, planner_satisfaction) = match prepared.config.satisfaction {
             crate::ai::combat_search_v2::CombatSearchV2Satisfaction::BudgetOrExhaustion => {
                 (
@@ -303,6 +308,7 @@ impl OracleRunCombatWorkV1 {
                 generator: TurnOptionGeneratorConfig {
                     max_engine_steps_per_transition: max_transition_steps,
                     allow_potion_expenditure: prepared.config.max_potions_used != Some(0),
+                    allow_potion_discard,
                     allowed_potion_slots: prepared.options.allowed_potion_slots,
                     ..TurnOptionGeneratorConfig::default()
                 },
@@ -328,6 +334,7 @@ impl OracleRunCombatWorkV1 {
                     ..PolicyDiscrepancyTurnMacroConfig::default()
                 }),
                 max_potions_used: prepared.config.max_potions_used,
+                allow_potion_discard,
                 allowed_potion_slots: prepared.options.allowed_potion_slots,
                 ..PolicyDiscrepancyConfig::default()
             },
@@ -346,6 +353,7 @@ impl OracleRunCombatWorkV1 {
             max_transition_steps,
             max_potions_used: prepared.config.max_potions_used,
             allowed_potion_slots: prepared.options.allowed_potion_slots,
+            allow_potion_discard,
             potion_spend_requires_satisfaction: false,
             protected_potion_free_incumbent: None,
             prior_stage_incumbent: None,
@@ -1010,6 +1018,16 @@ impl OracleRunCombatWorkV1 {
         &mut self,
         inputs: &[ClientInput],
     ) -> Result<(), String> {
+        if !self.allow_potion_discard
+            && inputs
+                .iter()
+                .any(|input| matches!(input, ClientInput::DiscardPotion(_)))
+        {
+            return Err(
+                "oracle combat witness uses potion discard outside an all-legal search policy"
+                    .to_string(),
+            );
+        }
         let stepper = crate::sim::combat::EngineCombatStepper;
         let mut position = self.start.clone();
         let mut actions = Vec::with_capacity(inputs.len());
@@ -1118,6 +1136,7 @@ impl OracleRunCombatWorkV1 {
             )
         })
         .chain(self.prior_stage_incumbent.as_ref())
+        .filter(|witness| self.allow_potion_discard || !combat_witness_uses_potion_discard(witness))
         .reduce(|best, candidate| {
             if combat_witness_better_with_potion_quality_gate(
                 &self.start,
@@ -1492,6 +1511,13 @@ fn combat_witness_potion_expenditures(
         .try_into()
         .unwrap_or(u32::MAX);
     explicit_expenditures.max(missing_starting_resources)
+}
+
+fn combat_witness_uses_potion_discard(witness: &OracleCombatWitness) -> bool {
+    witness
+        .actions
+        .iter()
+        .any(|action| matches!(action.input, ClientInput::DiscardPotion(_)))
 }
 
 fn combat_witness_within_potion_contract(
@@ -1947,6 +1973,58 @@ mod tests {
         assert!(work.best_witness().is_none_or(|witness| {
             combat_witness_potion_expenditures(&work.start, witness) == 0
         }));
+    }
+
+    #[test]
+    fn exact_restored_discard_requires_an_all_legal_potion_policy() {
+        // Exercise the public exact-witness restoration boundary under both
+        // policy modes; filtering only generated actions would miss restores.
+        let mut session = one_strike_win_session();
+        let combat = &mut session.active_combat.as_mut().unwrap().combat_state;
+        let target = combat.entities.monsters[0].id;
+        combat.entities.potions = vec![Some(crate::content::potions::Potion::new(
+            crate::content::potions::PotionId::EnergyPotion,
+            7,
+        ))];
+        let actions = [
+            ClientInput::DiscardPotion(0),
+            ClientInput::PlayCard {
+                card_index: 0,
+                target: Some(target),
+            },
+        ];
+        let options = |potion_policy| RunControlSearchCombatOptions {
+            max_nodes: Some(16),
+            potion_policy: Some(potion_policy),
+            max_potions_used: Some(1),
+            allowed_potion_slots: Some(1),
+            satisfaction: Some(
+                crate::ai::combat_search_v2::CombatSearchV2Satisfaction::FirstCompleteWin,
+            ),
+            ..RunControlSearchCombatOptions::default()
+        };
+        let mut semantic = OracleRunCombatWorkV1::for_exact_action_witness_with_guidance(
+            &session,
+            options(crate::ai::combat_search_v2::CombatSearchV2PotionPolicy::SemanticBudgeted),
+            None,
+        )
+        .expect("semantic exact-witness work");
+
+        let error = semantic
+            .verify_and_restore_action_witness(&actions)
+            .expect_err("semantic victory search must omit explicit discard");
+        assert!(error.contains("outside an all-legal search policy"));
+
+        let mut all_legal = OracleRunCombatWorkV1::for_exact_action_witness_with_guidance(
+            &session,
+            options(crate::ai::combat_search_v2::CombatSearchV2PotionPolicy::All),
+            None,
+        )
+        .expect("all-legal exact-witness work");
+        all_legal
+            .verify_and_restore_action_witness(&actions)
+            .expect("all-legal discard witness");
+        assert!(all_legal.has_verified_witness());
     }
 
     #[test]

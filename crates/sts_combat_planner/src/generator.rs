@@ -784,6 +784,11 @@ impl TurnOptionGeneratorSession {
                 })
             });
         }
+        if !self.config.allow_potion_discard {
+            surface
+                .atomic_actions
+                .retain(|input| !matches!(input, ClientInput::DiscardPotion(_)));
+        }
         if self
             .max_potion_expenditures
             .is_some_and(|limit| partial.potion_expenditures >= limit)

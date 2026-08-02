@@ -128,6 +128,10 @@ pub struct TurnOptionGeneratorConfig {
     /// for an explicit zero-potion resource phase; ordinary search keeps the
     /// complete legal surface.
     pub allow_potion_expenditure: bool,
+    /// Whether explicit potion-discard inputs belong to the search surface.
+    /// Semantic victory search normally disables them while an all-legal
+    /// oracle may retain them for slot-generation or revive-priority cases.
+    pub allow_potion_discard: bool,
     /// Optional bit mask restricting potion use and discard inputs to exact
     /// slot indices while preserving the unchanged combat root.
     ///
@@ -143,6 +147,7 @@ impl Default for TurnOptionGeneratorConfig {
             max_engine_steps_per_transition: 512,
             uniform_exploration_ppm: 50_000,
             allow_potion_expenditure: true,
+            allow_potion_discard: true,
             allowed_potion_slots: None,
         }
     }

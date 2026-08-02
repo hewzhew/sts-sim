@@ -73,6 +73,9 @@ pub(super) fn policy_line_input_respects_potion_contract(
         input,
         ClientInput::UsePotion { .. } | ClientInput::DiscardPotion(_)
     );
+    if matches!(input, ClientInput::DiscardPotion(_)) && !generator_config.allow_potion_discard {
+        return false;
+    }
     !is_expenditure
         || generator_config.allow_potion_expenditure
             && crate::witness::potion_input_uses_allowed_slot(
@@ -128,6 +131,17 @@ mod tests {
         assert!(!policy_line_input_respects_potion_contract(
             &ClientInput::DiscardPotion(0),
             config,
+            Some(1),
+            0
+        ));
+        let semantic = TurnOptionGeneratorConfig {
+            allow_potion_discard: false,
+            allowed_potion_slots: Some(1_u64 << 1),
+            ..TurnOptionGeneratorConfig::default()
+        };
+        assert!(!policy_line_input_respects_potion_contract(
+            &ClientInput::DiscardPotion(1),
+            semantic,
             Some(1),
             0
         ));
