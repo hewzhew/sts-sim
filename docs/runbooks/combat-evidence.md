@@ -1,0 +1,246 @@
+# Combat Evidence And Offline Laboratories
+
+This runbook covers read-only or isolated exact-combat investigations. None of
+these commands changes production policy by itself. Treat a budget-limited
+missing witness as unknown and exact-replay every claimed win.
+
+The current schema name and version for each report are owned by its Rust
+producer. Keep output paths descriptive and version-independent so a schema
+revision cannot silently stale this recipe.
+
+## Batch Combat Evidence Audit
+
+Index local combat artifacts and replay exact case/action relationships:
+
+```powershell
+.\ol.cmd combat-evidence-audit --replay-untraced
+```
+
+The root defaults to `.oracle-lab`; omitting `--output` creates a fresh ignored
+report directory. Source artifacts are never rewritten.
+
+The scanner consumes producer-owned `*combat-evidence-manifest.json` files
+first. It validates the declared root, action identity and count, complete
+consumption, terminal outcome, and final player HP against the simulator. A
+manifest is evidence routing, not an override of replay truth.
+
+With `--replay-untraced`, the audit may also try unambiguous legacy pairings:
+same-stem files or a directory containing exactly one case. Missing,
+ambiguous, identity-mismatched, or illegal pairings remain explicit unknowns.
+
+The report directory contains:
+
+- `summary.json`: aggregate counts, runtime identity, and source fingerprint;
+- `evidence.jsonl`: normalized typed action transitions;
+- `fiend-fire-windows.json`: the maintained Fiend Fire diagnostic projection;
+- `unresolved.json`: evidence that could not be attributed or replayed.
+
+Every exact card transition records a typed preceding-card bypass when it can
+be constructed from exact card and target identity. Missing identity,
+illegality, transition limits, and trace-only evidence remain separate
+statuses.
+
+### Typed Query Batches
+
+Supply one `CombatEvidenceQueryBatchV1` document from a path or stdin:
+
+```powershell
+.\ol.cmd combat-evidence-audit --query-batch <query.json>
+Get-Content -Raw -LiteralPath <query.json> | .\ol.cmd combat-evidence-audit --query-batch -
+```
+
+Queries filter typed record outcome, current and previous same-turn card
+identity/type, target before/after state, HP and Block deltas, and the exact
+bypass result. Each query is bounded by its declared match limit. The command
+stores the normalized query batch and bounded typed results beside the report.
+It does not contain card-specific policy conclusions, search, or ranking.
+
+## Potion Expenditure Audit
+
+Compare no-potion, each initial potion, and optionally small combinations from
+one unchanged exact combat root:
+
+```powershell
+.\ol.cmd combat-case-potion-expenditure-audit `
+  --case <case.json> `
+  --max-combination-size 2 `
+  --export-witness-actions-dir <fresh-output-directory> `
+  --wall-ms-per-lane 10000
+```
+
+Every lane receives the same independent allowance. Explicit potion use is
+filtered by exact slot without deleting potions from the root; actual
+expenditure is replay-attributed by potion UUID. Passive Fairy Potion use is
+therefore visible. A passive expenditure outside the lane's allowed slots
+marks the witness non-compliant.
+
+Explicit discard is excluded by default because it usually adds a mechanically
+irrelevant duplicate search surface. Enable `--include-discard-actions` only
+for a concrete slot-generation or revive-priority question.
+
+The report includes final HP, final turn, action count, exact potion identity,
+an optional experimental survival reserve, and a Pareto frontier. Missing
+budget-limited witnesses do not establish potion value. Forced-rest avoidance,
+future elite plans, slot overflow, future shops, and encounter-specific
+preservation remain run-level questions unless exact continuation evidence is
+present.
+
+When witness export is enabled, each replay-verified lane writes an exact
+`<lane-id>.actions.json` plus a producer manifest after lane validation. Feed
+those actions directly to replay or trace commands instead of reconstructing
+a promising line from display text.
+
+For one-factor production-parity diagnosis:
+
+- `--max-hp-loss <N>` uses production-shaped HP satisfaction;
+- `--restore-witness-actions <actions.json>` preloads one exact incumbent in
+  every compatible lane;
+- `--authorized-root-potion-trial` is a laboratory ablation, never permission
+  to spend a potion in production.
+
+Production staging, quality satisfaction, survival floors, and potion
+admission are maintained in
+[../ARCHITECTURE.md](../ARCHITECTURE.md#runner-and-combat). Audit crossings are
+evidence about that owner contract, not standalone spend labels.
+
+## Fresh Owner-Generated Potion Case
+
+Use a fresh capsule and two bounded phases when the investigation needs a
+current owner-generated combat case with continuation context. The first phase
+acquires ordinary run resources; the second deliberately lowers combat search
+allowance so the next unresolved fight becomes a diagnostic case.
+
+```powershell
+$capsule = ".oracle-lab/collections/potion/<fresh-id>"
+if (Test-Path -LiteralPath $capsule) {
+  throw "choose a fresh capsule path: $capsule"
+}
+
+cargo run --quiet -p sts_oracle_tools --bin branch_tiny -- `
+  --seed <seed> --ascension 0 --objective first-terminal `
+  --generations 14 --max-branches 1 --auto-ops 512 `
+  --search-nodes 100 --search-ms 50 `
+  --rescue-search-nodes 300 --rescue-search-ms 100 `
+  --boss-search-nodes 300 --boss-search-ms 100 `
+  --wall-ms 10000 --run-capsule $capsule
+
+if (Test-Path -LiteralPath "$capsule/frontier.json") {
+  cargo run --quiet -p sts_oracle_tools --bin branch_tiny -- `
+    --continue-capsule $capsule --continue-slices 1 `
+    --generations 10 --max-branches 1 `
+    --search-nodes 1 --search-ms 1 `
+    --rescue-search-nodes 1 --rescue-search-ms 1 `
+    --boss-search-nodes 1 --boss-search-ms 1 `
+    --wall-ms 10000
+}
+```
+
+The one-node phase is a capture mechanism, not evidence that the fight is
+hard or unwinnable. Before interpreting a fresh case, require its saved search
+summaries to agree on the exact root and captured continuation facts. Legacy
+absence remains unavailable; never infer route, Boss, post-victory, owner HP,
+or supply facts from filenames or aggregate counts.
+
+Run the audit with version-independent report names:
+
+```powershell
+$case = Get-ChildItem -LiteralPath "$capsule/combat_cases" `
+  -Filter *.json -File | Select-Object -First 1
+
+cargo oracle-lab combat-case-potion-expenditure-audit `
+  --case $case.FullName `
+  --max-combination-size 1 --survival-reserve-hp 30 `
+  --max-nodes 5000 --max-selections 20000 `
+  --wall-ms-per-lane 500 `
+  > .oracle-lab/reports/<fresh-id>-potion-audit.json `
+  2> .oracle-lab/reports/<fresh-id>-potion-audit.log
+```
+
+Keep complete output under `.oracle-lab` and report only aggregate lane
+results. Route order is admitted only from typed ordering facts with retained
+modality and provenance. Do not turn an experimental reserve crossing into a
+spend verdict.
+
+## Policy Discrepancy Complete Wins
+
+Export a complete policy-discrepancy win with:
+
+```powershell
+.\ol.cmd combat-case-policy-discrepancy `
+  --case <case.json> `
+  --export-witness-actions <fresh-output>.actions.json
+```
+
+When search finds a complete exact-replayed win, the command writes the action
+array and a sibling producer manifest. The manifest names the caller-supplied
+case as its root, freezes the exact root and action identities, and records the
+replayed terminal outcome and final player HP. The command report returns both
+paths. If no witness is found, neither export is claimed.
+
+This contract applies only to the complete winning witness. A descendant
+`*.prefix.actions.json` still describes actions from an earlier original case
+to the adjacent descendant case; it is not a witness starting at that
+descendant and receives no manifest from this producer.
+
+## Historical Combat Witness Exports
+
+`export-historical-combat-witness` replays the journal to the selected combat
+root and writes a producer manifest beside the exported actions. This gives a
+later evidence audit exact case/action identity without filename inference.
+
+A local-graph `*.prefix.actions.json` beside a descendant case describes the
+path from the original root to that descendant. It must not be paired with the
+descendant case as though it started there. Such artifacts remain legacy
+evidence until their producer carries the original-case identity.
+
+## Combat Laboratory V1
+
+The Combat Laboratory is an offline mode of `combat_search_v2_driver`. Run the
+maintained seed006-derived Reptomancer pilot with:
+
+```powershell
+cargo run -p sts_oracle_tools --bin combat_search_v2_driver -- --lab-spec fixtures/combat_lab/seed006_reptomancer_8x2.lab.json --lab-output artifacts/runs/combat-lab-seed006-pilot --lab-samples 8
+```
+
+Rerun the same command and output directory to resume journaled cells. Increase
+only `--lab-samples` to extend the deterministic schedule. Resume rejects
+changes to the scenario, schedule, profiles, budget, schema, or source
+identity.
+
+Each laboratory directory contains:
+
+- `manifest.json`: immutable resolved experiment and provenance;
+- `cells.jsonl`: append-only raw evidence and evidence authority;
+- `checkpoint.json`: rebuildable resume accelerator;
+- `summary.json`: reproducible aggregate.
+
+Exact-replayed wins and losses are distinct from coverage limits and
+infrastructure errors. Read outcome rates with their coverage denominators.
+The pilot is explicitly seed006-derived and exact-state-oracle: it does not
+restore consumed campaign RNG or model a human-visible-information policy.
+
+## Campfire Threat Panel V1
+
+The offline Campfire panel compares every alignable exact candidate against a
+declared public encounter pool with matched analysis RNG and shuffle samples.
+It never reads the live hidden encounter queue or changes Campfire policy.
+
+```powershell
+cargo run -p sts_oracle_tools --release --bin combat_search_v2_driver -- --threat-panel-spec fixtures/campfire_threat_panel/seed006_pre_transient_reconstructed.panel.json --threat-panel-output artifacts/runs/campfire-threat-panel-seed006-pilot --threat-panel-samples 1
+```
+
+The fixture is reconstructed from recorded public deck and resource state. It
+does not claim the original hidden RNG or route map. Repeating the same command
+resumes completed cells; increasing only the sample target extends the fixed
+shuffle schedule.
+
+Read the two lenses separately:
+
+- `actual_consequence` retains each candidate's real post-Campfire resources;
+- `root_hp_capability` resets only current HP to isolate equal-starting-HP
+  mechanical capability.
+
+Direction reversals are encounter-specific evidence, not a global Campfire
+score. Coverage-limited rows may contain replayed candidates but do not prove
+search optimality. Historical artifacts remain readable; rerunning a removed
+profile requires the Git commit recorded in its manifest.

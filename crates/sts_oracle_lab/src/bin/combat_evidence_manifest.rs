@@ -18,6 +18,7 @@ pub(super) const COMBAT_EVIDENCE_MANIFEST_FILE_SUFFIX: &str = "combat-evidence-m
 #[serde(rename_all = "snake_case")]
 pub(super) enum CombatEvidenceProducerV1 {
     HistoricalCombatWitnessExport,
+    PolicyDiscrepancySearch,
     PotionExpenditureAudit,
 }
 

@@ -6,10 +6,19 @@ notes are not kept searchable; use git history for archaeology.
 ## Read These
 
 1. [ARCHITECTURE.md](ARCHITECTURE.md): ownership boundaries and design rules.
-2. [RUNBOOK.md](RUNBOOK.md): maintained commands and local verification.
+2. [RUNBOOK.md](RUNBOOK.md): compact command entry point and local verification.
 3. [TESTING.md](TESTING.md): test ownership, cleanup, and review standards.
 4. [Supported Surfaces](architecture/supported-surfaces.md): current runtime,
    diagnostic, and retirement classifications.
+
+## Operational Runbooks
+
+- [Combat Evidence And Offline Laboratories](runbooks/combat-evidence.md):
+  exact replay, typed evidence queries, potion lanes, and fixed-input labs.
+- [Oracle Operations](runbooks/oracle-operations.md): late-stop diagnosis,
+  resident sessions, durable seed panels, and artifact safety.
+- [Performance Investigation](runbooks/performance.md): identity-locked
+  benchmarks, native traces, and performance acceptance rules.
 
 ## Maintained Designs
 

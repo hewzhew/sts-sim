@@ -1,13 +1,46 @@
 # Runbook
 
-This file keeps current local commands in one place. It is command-oriented;
-architecture rules belong in [ARCHITECTURE.md](ARCHITECTURE.md).
+This file is the compact entry point for maintained local workflows. Keep it
+command-oriented and version-independent:
+
+- architecture and policy rules belong in [ARCHITECTURE.md](ARCHITECTURE.md);
+- test ownership belongs in [TESTING.md](TESTING.md);
+- detailed operational recipes belong in the
+  [runbooks](runbooks/README.md) directory;
+- CLI flags and emitted schema versions are owned by the corresponding Rust
+  command, not copied here.
+
+## Command Surfaces
+
+Use the narrowest maintained surface for the task:
+
+| Surface | Purpose |
+| --- | --- |
+| `branch_tiny` | One bounded owner-audit seed or capsule continuation. |
+| `branch_panel` | Small smoke, continuation, drain, or comparison panels. |
+| `combat_case_review` | Diagnostic review of one saved combat case. |
+| `combat_search_v2_driver` | Fixed combat starts, captures, benchmarks, and offline laboratories. |
+| `cargo oracle-lab` / `cargo ol` | Build-owning offline oracle commands. |
+| `.\ol.cmd` | Repeated offline oracle calls through the canonical artifact guard. |
+| `cargo ol-live` / `.\ol-live.cmd` | Resident oracle sessions. |
+| `.\ol-contract.cmd` | Narrow replay-verified exact-combat contracts. |
+
+The heavy `oracle_lab` and `oracle_lab_service` targets require the internal
+`canonical-oracle-artifacts` feature. Do not bypass the aliases with an
+ad-hoc Cargo build. The retired `fast-run` profile and target directory are
+not operational entry points.
+
+Detailed recipes:
+
+- [Combat Evidence And Offline Laboratories](runbooks/combat-evidence.md)
+- [Oracle Operations](runbooks/oracle-operations.md)
+- [Performance Investigation](runbooks/performance.md)
 
 ## Branch Tiny And Branch Panels
 
-`branch_tiny` is the lightweight owner-audit runner. It writes run capsules
-with `summary.json`, `path.json`, optional `frontier.json`, optional
-`terminal.json`, and combat cases when combat search blocks.
+`branch_tiny` writes run capsules with `summary.json`, `path.json`,
+optional `frontier.json`, optional `terminal.json`, and combat cases when
+combat search blocks.
 
 Run one seed:
 
@@ -22,7 +55,8 @@ Run a small panel:
 cargo run -p sts_oracle_tools --bin branch_panel -- panel smoke --seeds 1552225671 1552225672 1552225673 1552225674 1552225675 --capsule-root tools/artifacts/panels/current --max-branches 1 --slice-ms 60000
 ```
 
-Use the panel to classify blockers. Do not treat one seed as a strategy verdict.
+Use the panel to classify blockers. Do not treat one seed as a strategy
+verdict.
 
 For bounded continuation, use `drain`:
 
@@ -31,84 +65,39 @@ cargo run -p sts_oracle_tools --bin branch_panel -- panel drain --seeds 15522256
 ```
 
 The retired `tools/gap_panel.py` compatibility wrapper has been removed. Use
-`branch_panel` directly for all panel runs.
+`branch_panel` directly.
 
 ## Continue A Capsule
 
-When a capsule soft-stops with a frontier, continue from the capsule instead of
-rerunning from Neow:
+When a capsule soft-stops with a frontier, continue from that capsule instead
+of rerunning from Neow:
 
 ```powershell
 cargo run -p sts_oracle_tools --bin branch_tiny -- --continue-capsule <capsule-dir>
 ```
 
-Continuation may inherit relevant run-contract values such as `wall_ms` from
-the capsule manifest. Override only when the investigation needs a different
+Continuation may inherit run-contract values such as `wall_ms` from the
+capsule manifest. Override them only when the investigation needs a different
 contract.
 
-## Combat Case Review
+## Combat Case Work
 
-For saved combat gaps, start from the case:
+Start a diagnostic review from one saved case:
 
 ```powershell
 cargo run -p sts_oracle_tools --bin combat_case_review -- --case <case.json> --ladder
 ```
 
-Review output is diagnostic. It does not mutate runner policy and does not
-prove a deck is good or bad by itself.
+Review output is diagnostic. It does not mutate runner policy or prove that a
+deck is good or bad.
 
-### Batch Combat Evidence Audit
-
-Use one bounded command to index local combat artifacts and replay exact
-case/action relationships. The root defaults to `.oracle-lab`; omitting
-`--output` creates a fresh ignored report directory automatically:
+Index local combat evidence and replay exact relationships:
 
 ```powershell
 .\ol.cmd combat-evidence-audit --replay-untraced
 ```
 
-The scanner recognizes every filename ending in `trace.json`, including
-`*.plan-trace.json`. Trace-declared case/action paths are replayed exactly.
-It first consumes `*combat-evidence-manifest.json` producer declarations and
-revalidates their exact root hash, action hash/count, complete consumption,
-terminal outcome, and final player HP during replay. A missing path or identity
-mismatch remains explicit unresolved evidence; a manifest never overrides the
-simulator.
-With `--replay-untraced`, the command also tries only same-stem pairs and
-directories containing exactly one case; ambiguous or illegal legacy pairings
-remain explicit unknowns. Source artifacts are never rewritten.
-
-The output directory contains `summary.json`, normalized typed timelines in
-`evidence.jsonl`, `fiend-fire-windows.json`, and `unresolved.json`. Every exact
-card transition also records a typed `previous_card_bypass`: when possible it
-replays the same card from the boundary before the preceding same-turn card,
-using exact card UUID and target identity. Missing identity, illegality,
-transition limits, and trace-only evidence remain distinct typed statuses.
-The current summary freezes the canonical runtime identity and source-content
-fingerprint.
-
-Pass one `CombatEvidenceQueryBatchV1` document with `--query-batch <path>`, or
-use `--query-batch -` for stdin. A batch can contain up to 128 action-transition
-queries. Queries filter typed record outcome, current and previous same-turn
-card identity/type, target before/after state, HP/Block deltas, and the exact
-bypass result. Each query is bounded by `max_matches`; `query-results.json`
-contains bounded typed match projections, while the command summary returns
-match counts, exact-root-deduplicated counts, and truncation status directly.
-The normalized `query-batch.json` is saved beside the result even when stdin
-was used. The query engine does not contain card-specific policy conclusions,
-search, or ranking.
-
-The Fiend Fire audit requires an Attack to lower the eventual target's positive
-Block, the following Fiend Fire to make that target terminal-like, an immediate
-Fiend Fire counterfactual to remain non-terminal, and the supplied full line to
-replay to a win. Counts are deduplicated by exact root and action identity;
-independent-root counts, not duplicate lines, determine case diversity. This is
-diagnostic evidence and does not authorize a search or potion-policy change.
-
-### Potion Expenditure Audit
-
-Compare no-potion, each initial potion, and optionally small potion
-combinations from one unchanged exact combat root:
+Compare potion lanes from one unchanged exact root:
 
 ```powershell
 .\ol.cmd combat-case-potion-expenditure-audit `
@@ -118,167 +107,16 @@ combinations from one unchanged exact combat root:
   --wall-ms-per-lane 10000
 ```
 
-When `--export-witness-actions-dir` produces one or more verified witnesses,
-the audit writes `combat-evidence-manifest.json` into that directory after all
-lane validation succeeds. The manifest freezes the shared case/root, each lane
-action identity and outcome, the typed producer, canonical runtime identity,
-and runtime source fingerprint. New exports therefore do not require filename
-pairing inference during a later evidence audit.
-
-`export-historical-combat-witness` likewise writes a manifest named from its
-actions output after replaying the journal trajectory from the exported combat
-root. In contrast, a local-graph `*.prefix.actions.json` beside a descendant
-case describes the path **to** that descendant from the original case. It must
-not be paired with the descendant case as though it were a witness starting
-there; those exports remain explicit legacy evidence until their original-case
-identity is carried by the producer.
-
-Every lane receives the same independent search allowance. The command filters
-explicit potion-use inputs by exact slot without deleting potions from the
-root, then replay-attributes actual consumption by potion UUID. Explicit
-discard is excluded by default because it normally has no combat payoff and can
-create a mechanically irrelevant duplicate search graph. Add
-`--include-discard-actions` only for a concrete slot-generation or
-Fairy-Potion/Lizard-Tail priority question. This preserves potion-sensitive
-state and detects passive Fairy Potion use. A passive expenditure outside a
-lane's allowed slots marks that witness non-compliant instead of silently
-treating it as a no-potion result.
-
-The report exposes final HP, final turn, action count, exact potion identities,
-an optional `--survival-reserve-hp`, and a Pareto frontier. A missing witness is
-budget-unknown unless the lane reports `frontier_exhausted`. Continuation value
-such as forced-rest avoidance, future elite plans, potion-slot overflow, and
-encounter-specific preservation remains a run-level decision and is listed as
-unobserved rather than invented into one combat score.
-When `--export-witness-actions-dir` is present, every lane with a
-replay-verified witness also writes `<lane-id>.actions.json`. Use those exact
-inputs with `combat-case-plan-trace`, `--watch-actions`, or another replay
-surface instead of reconstructing a promising lane from display text.
-
-For one-factor production-parity diagnosis, `--max-hp-loss <N>` uses the same
-bounded HP satisfaction shape as strategic search, and
-`--restore-witness-actions <actions.json>` exact-replays one initial incumbent
-before every compatible lane. `--authorized-root-potion-trial` is an explicit
-laboratory ablation for the retired global root-weight floor; it is not active
-production policy and must not be read as permission to spend the potion.
-
-### Fresh Potion Continuation Cases
-
-Use a fresh capsule path and two bounded phases when the investigation needs a
-current owner-generated combat case with
-`PotionRunContinuationContextV1`. The first phase lets the run naturally
-acquire cards, relics, and potions. The second phase deliberately lowers search
-allowance so the next unresolved fight becomes a diagnostic case:
-
-```powershell
-$capsule = ".oracle-lab/collections/potion-v6/<fresh-id>"
-if (Test-Path -LiteralPath $capsule) {
-  throw "choose a fresh capsule path: $capsule"
-}
-
-cargo run --quiet -p sts_oracle_tools --bin branch_tiny -- `
-  --seed <seed> --ascension 0 --objective first-terminal `
-  --generations 14 --max-branches 1 --auto-ops 512 `
-  --search-nodes 100 --search-ms 50 `
-  --rescue-search-nodes 300 --rescue-search-ms 100 `
-  --boss-search-nodes 300 --boss-search-ms 100 `
-  --wall-ms 10000 --run-capsule $capsule
-
-if (Test-Path -LiteralPath "$capsule/frontier.json") {
-  cargo run --quiet -p sts_oracle_tools --bin branch_tiny -- `
-    --continue-capsule $capsule --continue-slices 1 `
-    --generations 10 --max-branches 1 `
-    --search-nodes 1 --search-ms 1 `
-    --rescue-search-nodes 1 --rescue-search-ms 1 `
-    --boss-search-nodes 1 --boss-search-ms 1 `
-    --wall-ms 10000
-}
-```
-
-The 1-node phase is a capture mechanism, not a claim that the combat is hard
-or unwinnable. Before auditing, require every saved search summary to contain
-one identical `before_combat_search` context. Current captures should also
-contain one identical `PotionContinuationPressureV1`; its absence is expected
-only for legacy cases. Fresh owner captures should additionally contain one
-identical `CombatVictoryContinuationFactsV1` produced by
-`strategic_combat_victory_reaches_full_heal_v1`; old cases keep that fact
-explicitly unavailable. Current captures also contain one identical
-`CombatSearchStrategicHpQualityFactsV1` holding the survival and search-quality
-HP-loss limits actually used by the owner. The V10 audit must report
-`validated_exact_root` with no run-context mismatches and a
-`continuation_pressure_projection` status of `validated_exact_root` with no
-pressure mismatches. A fresh capture should additionally report both
-`combat_victory_continuation_projection: validated_captured_fact` and
-`strategic_hp_quality_projection: validated_captured_fact`:
-
-```powershell
-$case = Get-ChildItem -LiteralPath "$capsule/combat_cases" `
-  -Filter *.json -File | Select-Object -First 1
-
-cargo oracle-lab combat-case-potion-expenditure-audit `
-  --case $case.FullName `
-  --max-combination-size 1 --survival-reserve-hp 30 `
-  --max-nodes 5000 --max-selections 20000 `
-  --wall-ms-per-lane 500 `
-  > .oracle-lab/reports/<fresh-id>-potion-v10.json `
-  2> .oracle-lab/reports/<fresh-id>-potion-v10.log
-```
-
-Keep complete JSON and build output under `.oracle-lab`; report only aggregate
-lane results. Do not upgrade a legacy case by guessing missing route, Boss,
-post-victory, owner-quality, or supply facts. V10 preserves the V8
-non-authoritative
-`spend_urgency_question` and places its configured reserve delta beside exact
-inventory/replacement pressure, supply facts, route count ranges, Coffee
-Dripper and recovery facts, current gold, explicit future shop and
-potion-identity unknowns, the captured combat-victory HP carryover fact, and
-the captured owner survival/search-quality limits. It reports whether the exact
-no-potion and candidate witnesses satisfy each limit and whether the candidate
-crosses from unsatisfied to satisfied. It does not assign an urgency score,
-spend threshold, or policy label.
-
-Pre-A5 Act 1/2 room-Boss full healing is admitted only when the run-control
-owner captured `guaranteed_full_heal_before_next_damage_bearing_decision` from
-the exact session. The audit validates evaluator identity, trace consistency,
-and necessary Boss/Act/Ascension conditions. It never reconstructs the room
-boundary from a filename, aggregate route counts, or `is_boss_fight` alone.
-Legacy absence stays `unavailable_legacy_case`; conflicting or structurally
-impossible claims are rejected and cannot enter question facts.
-
-Owner HP limits are admitted only when every saved summary agrees on evaluator,
-entry HP, and both typed limits at the exact root. The audit checks that a
-limited search-quality allowance is no looser than the survival allowance and
-that guaranteed-full-heal boundaries carry unlimited limits. It never
-reconstructs a production limit from `--survival-reserve-hp`; that flag remains
-an optional experimental comparison only. Crossing that configured reserve
-stays a continuation question rather than a `spend` verdict. Crossing the
-captured quality limit is evidence about the existing owner gate, not
-permission to spend.
-
-The production `ImproveVerifiedWin` stage keeps searching after a spending
-witness reaches the quality limit; only a clean potion-free quality witness may
-end that refinement early. At commit time, clean quality-reaching candidates
-prefer fewer potion uses before final HP and persistent payoff. This rule does
-not apply to `FindAnyWin` survival rescue. That rescue may miss the
-search-quality target, but its exact incumbent must still preserve the owner's
-captured strategic survival floor; guaranteed full-heal boundaries remain
-unlimited. Potion audit crossings should be interpreted against that staged
-contract, not as standalone spend labels.
-
-Route ordering in that question comes only from typed `OccursBefore` facts.
-`must`, `can`, and `cannot` retain their original modality and provenance;
-missing, conflicting, or `unknown` order is explicitly unavailable. Never infer
-"combat must occur before a campfire" merely because both count ranges are
-nonzero. Pressure is rebuilt from the validated saved context plus exact case
-gold and combat-root Coffee Dripper state; unavailable, conflicting, or
-non-reconstructible pressure yields an unavailable or rejected question and
-must not enter retained-value facts. Do not treat a budget-limited missing
-witness as potion evidence.
+Keep full JSON and build output below `.oracle-lab`; report aggregate lane
+results and a short failure tail. A missing budget-limited witness remains
+unknown. See [Combat Evidence And Offline
+Laboratories](runbooks/combat-evidence.md) for manifests, typed queries,
+fresh-case capture, potion interpretation, and laboratory artifacts.
 
 ## Combat Search Driver
 
-Use `combat_search_v2_driver` for fixed combat starts, captures, and benchmark
-suites:
+Use `combat_search_v2_driver` for fixed combat starts, captures, and
+benchmark suites:
 
 ```powershell
 cargo run -p sts_oracle_tools --release --bin combat_search_v2_driver -- --start-spec <path>
@@ -294,109 +132,66 @@ Common investigation switches include:
 --max-hp-loss <n|off>
 ```
 
-If combat search reports unresolved, it only failed to find an executable
-complete win under the current contract. It did not prove the fight unwinnable.
+If combat search reports unresolved, it failed to find an executable complete
+win under the current contract. It did not prove the fight unwinnable.
 
-### Combat Laboratory V1
-
-The Combat Laboratory is an offline mode of `combat_search_v2_driver`, not a
-new binary or a live run-control component. Run the maintained seed006-derived
-Reptomancer `8 x 2` pilot with:
-
-```powershell
-cargo run -p sts_oracle_tools --bin combat_search_v2_driver -- --lab-spec fixtures/combat_lab/seed006_reptomancer_8x2.lab.json --lab-output artifacts/runs/combat-lab-seed006-pilot --lab-samples 8
-```
-
-Rerun the same command and output directory to resume without repeating journaled
-cells. To extend the deterministic schedule, increase only `--lab-samples` (for
-example, from 8 to 16 or 32). A smaller requested target does not delete existing
-evidence. Resume rejects changes to the scenario, schedule, profiles, common
-budget, schema, or source identity.
-
-Each laboratory directory contains four contract/evidence files:
-
-- `manifest.json`: the immutable resolved experiment and source provenance;
-- `cells.jsonl`: the append-only raw evidence journal and evidence authority;
-- `checkpoint.json`: a rebuildable resume accelerator derived from the journal;
-- `summary.json`: a reproducible aggregate derived from the manifest and journal.
-
-`resolved_win` and `resolved_loss` are exact-replayed outcomes. A deadline, node
-cap, or missing complete replay is `coverage_limited`, not a proven loss;
-infrastructure errors are separate again. Read outcome rates together with the
-reported coverage denominators.
-
-V1 runs sequentially in one process: it compiles each shuffle sample once,
-clones that position across the two profiles, gives both profiles the same
-resource limits, records the row, and then advances. It does not invoke Cargo or
-relink per cell. Results are descriptive offline evidence only; they do not
-automatically update combat policy, route planning, card acquisition, or any
-other live decision.
-
-The pilot preserves the selected seed006 deck, resources, encounter, and a fresh
-laboratory base seed. It is explicitly `seed006_derived`: it does not infer the
-campaign RNG history that had already been consumed before the original combat.
-Both profiles are `exact_state_oracle` searches that may inspect hidden state,
-not human-visible-information policies.
-
-### Campfire Threat Panel V1
-
-The Campfire Threat Panel is the wider, offline Campfire microscope. It expands
-every alignable exact Campfire candidate against every encounter in a declared
-public pool, with matched analysis RNG and shuffle samples. It never reads the
-live run's hidden encounter queue and never updates live Campfire policy.
-The contract rejects wall-clock budgets: comparisons use deterministic node
-limits, and cells with identical exact-state fingerprints reuse one explicitly
-recorded search result rather than measuring scheduler noise twice.
-
-Run the reconstructed seed006 pre-Transient pilot with:
-
-```powershell
-cargo run -p sts_oracle_tools --release --bin combat_search_v2_driver -- --threat-panel-spec fixtures/campfire_threat_panel/seed006_pre_transient_reconstructed.panel.json --threat-panel-output artifacts/runs/campfire-threat-panel-seed006-pilot --threat-panel-samples 1
-```
-
-The fixture is explicitly reconstructed from recorded public deck/resources;
-it is not claimed to restore the campaign's consumed hidden RNG or route map.
-The manifest records this public context, the resolved encounter pool, all
-alignable subjects, typed candidate gaps, source identity, and fixed search
-contract. `cells.jsonl` is again the append-only evidence authority. Repeating
-the identical command resumes completed cells; increasing only the sample
-target extends the fixed shuffle schedule.
-
-Read the two lenses separately:
-
-- `actual_consequence` keeps each candidate's real post-Campfire HP/resources;
-- `root_hp_capability` resets only current HP to the public root, isolating what
-  the resulting deck can mechanically do at equal starting HP.
-
-Summaries remain stratified by encounter and subject. Pair deltas and direction
-reversals are evidence that a choice changes with the threat, not a hidden
-global Campfire score. Coverage-limited rows remain usable exact-replayed best
-candidates, but they are not proofs that search found the optimum.
-
-Historical artifacts remain readable and valid when a profile implementation is
-later removed. Rerunning that historical profile requires the Git commit recorded
-in its manifest; the current tree must not silently substitute a newer profile.
+The resumable Combat Laboratory and Campfire Threat Panel remain offline modes
+of this driver. Their maintained commands and artifact contracts are in
+[Combat Evidence And Offline Laboratories](runbooks/combat-evidence.md).
 
 ## Planner Capture Export
 
 The retired interactive driver no longer produces live `SessionTraceV1`
-captures. Existing schema-v6-through-v15 traces remain readable; schema v16
-keeps legacy exact-frontier evidence distinct from current work-item counts
-while capture moves to the
-atomic run-job journal. A rebuildable dataset and coverage report can still be
-exported from an existing typed trace under `artifacts/runs` with:
+captures. Existing compatible traces remain readable while capture moves to
+the atomic run-job journal. Export a dataset and coverage report from an
+existing typed trace with:
 
 ```powershell
 cargo run -p sts_oracle_tools --bin rl_dataset_export -- --input artifacts/runs/example/trace.json --out artifacts/runs/example/planner-dataset.json --planner-coverage-out artifacts/runs/example/planner-coverage.json
 ```
 
 The coverage report measures representation and linkage only. It does not rank
-decision sites, declare policy quality, or promote the recorded behavior to a
-correct-action label.
+decision sites or promote recorded behavior to a correct-action label.
+
+## Production Oracle Quick Start
+
+Diagnose a suspicious late stop before changing combat policy or starting a
+seed panel:
+
+```powershell
+.\ol.cmd diagnose-run-witness `
+  --workspace .oracle-lab/cases/<run>.workspace.json `
+  --node <node> --max-pivots 5 `
+  > .oracle-lab/reports/<fresh-id>.diagnosis.json
+```
+
+Create and run one exact F0 resident workspace:
+
+```powershell
+cargo oracle-lab new --seed 20260713009 --ascension 0 --workspace .oracle-lab/cases/seed009.workspace.json
+.\ol-live.cmd start --session seed009 --workspace .oracle-lab/cases/seed009.workspace.json
+.\ol-live.cmd live --session seed009 run --export-continuation .oracle-lab/cases/seed009.victory.continuation.json
+```
+
+Run consecutive seeds in one process instead of launching resident services
+from a PowerShell loop:
+
+```powershell
+cargo oracle-lab seed-panel `
+  --seed-start 20260713006 `
+  --ascension 0 `
+  --output-dir .oracle-lab/panels/a0-10
+```
+
+The maintained seed-panel defaults are 10 consecutive seeds, 30 seconds of run
+work per seed, and a 10-minute invocation wall. Resident lifecycle, durable
+resume rules, report locations, and diagnosis continuation are documented in
+[Oracle Operations](runbooks/oracle-operations.md).
 
 ## Verification
 
-For code changes:
+Start with the narrowest check that owns the changed surface. For code changes,
+the maintained broad handoff commands are:
 
 ```powershell
 cargo fmt --all -- --check
@@ -409,341 +204,12 @@ cargo build -p sts_oracle_tools --release --bin combat_search_v2_driver
 git diff --check
 ```
 
-On `x86_64-pc-windows-msvc`, the repository uses rustup's bundled `rust-lld`
-through `.cargo/config.toml`. Keep that override: it remains useful, but the
-primary rebuild fix is now the workspace boundary rather than a linker flag.
-
-### Compilation Boundaries
-
-The workspace has several deliberate production compilation units:
-
-- `sts_simulator` owns the stable simulator/domain and lower policy layers;
-- `sts_combat_strategy`, `sts_combat_planner`, and `sts_combat_legacy` isolate
-  typed combat knowledge, the current exact planner, and the retained legacy
-  capability surface;
-- `sts_combat_knowledge` owns the shared tactical priors consumed by both
-  run-control and exact combat tools;
-- `sts_combat_contract` is the narrow, replay-verified Boss-regression runner;
-  it intentionally excludes the run explorer, routes, shops, and continuations;
-- `sts_oracle_eval` owns optimized evaluation, exact-search orchestration, and
-  run-control;
-- `sts_oracle_runtime` owns branch execution, persistence, and resident service
-  orchestration;
-- `sts_oracle_lab` owns heavyweight offline and resident command hosts;
-- `oracle_lab_client` owns the lightweight repeated-command surface;
-- `sts_oracle_tools` is the thin Cargo host for maintained command adapters and
-  their cross-layer integration contracts; it has no library facade or policy
-  implementation.
-
-The root package deliberately keeps `autobins = false`, `autotests = false`,
-and remains the sole default member. Therefore bare `cargo test --lib` tests
-only the core package; it is not the complete workspace check. Use
-`cargo test-core <filter>` for core tests and `cargo test-control <filter>` for
-the retained combat-search capability package plus evaluation, run-control,
-and tool contracts. Naming `sts_combat_legacy` in the control alias is
-intentional: linking that dependency does not run its private unit tests. Use
-both aliases plus `cargo architecture` before handoff.
-
-## Iteration Ladder
-
-Use the smallest evidence surface that can distinguish the current
-hypotheses. More seeds do not repair a censored or ambiguous measurement.
-
-1. **Contract test, usually under 30 seconds.** Protect the exact ownership,
-   budget, replay, or stage-transition rule below the full runner.
-2. **Fixed combat root, normally under 60 seconds total.** Run one unchanged
-   `CombatCase` with one factor changed at a time. Compare exact root hash,
-   witness status, generation work, final HP, potion UUIDs, and replay
-   compliance. A missing budget-limited witness remains unknown.
-3. **Production parity, normally under two minutes.** Copy a saved workspace
-   to a fresh ignored path, restart only its current combat, advance the real
-   resident production portfolio, and replay-verify the committed journal.
-   This determines whether a component result survives owner scheduling,
-   staging, acceptance, and materialization. When isolated and production
-   witnesses diverge, compare the exact-root `stage_trace` first: stage slot,
-   charged local/discrepancy work, proposal counts, incumbent quality, and exit
-   reason locate the earliest production-side difference without another
-   parameter ablation.
-4. **Two to five contract-selected sentinels, normally under three minutes.**
-   Choose exact cases or saved run checkpoints that represent the changed
-   contract, a known success, a known hard unknown, and any observed
-   regression. Record why every sentinel is present. Do not substitute a
-   consecutive seed range for this selection.
-5. **Distribution panel.** Run 20 or more consecutive seeds only after the
-   lower layers pass and the remaining question is genuinely about outcome
-   frequency, path distribution, crashes, or long-run resource use. Treat it
-   as a milestone soak, usually about ten minutes at the maintained 30-second
-   per-seed wall, not as the normal edit-test loop.
-
-Every experiment should answer one declared question. Stop escalating when the
-first causal divergence is localized. Do not raise budgets merely because two
-algorithms both report unknown. A diagnostic lane must also be calibrated
-before its ranking is interpreted; for example, a lane that rewards potion
-count proves potion-action reachability but not potion quality.
-
-For a partial panel, preserve `panel.summary.json` and report completed seeds,
-elapsed time, changed outcomes, repeated censoring reasons, and errors. It is
-valid to terminate the process after a durable seed boundary when the remaining
-samples no longer justify their runtime.
-
-For a symbolized native CPU trace of the narrow combat contract, run
-`tools/perf/profile_combat_cpu.ps1`. Analyze an existing trace without another
-recording or elevation prompt with:
-
-```powershell
-.\tools\perf\summarize_combat_cpu.ps1 -Trace .profiles\combat-cpu-<id>.etl
-```
-
-The summary normalizes samples across only the recorded `combat_contract`
-processes, so unrelated machine activity cannot distort the reported hotspot
-percentages. The portable Microsoft-signed PerfView executable remains an
-ignored local analysis dependency under `.profiles\tools`.
-
-Each capture publishes its matching Rust PDB into an ignored, GUID-keyed local
-symbol cache before WPR starts. This keeps old traces symbolizable after later
-builds and avoids PerfView's unreliable adjacent-PDB matcher. The summarizer
-rejects reports with less than 95% resolved executable-exclusive samples rather
-than emitting a plausible-looking hotspot table made from unknown symbols.
-
-For the same canonical workload without WPR or elevation, use:
-
-```powershell
-.\tools\perf\benchmark_combat_contract.ps1
-```
-
-It builds the narrow profiling target once, performs warmup, reports batched
-process-wall timing, and rejects any iteration whose exact counters or witness
-differ. Both tools source `combat_contract_workload.ps1`, so their workload
-cannot silently drift apart.
-
-Both tools also write a content-addressed build receipt beside the profiling
-executable. `-SkipBuild` hashes the combat runner's complete Rust/Cargo source
-scope plus the executable and PDB, and refuses to run when any identity differs
-from that receipt. Rebuild without `-SkipBuild` after a source change; do not
-interpret a previously built experimental binary as the current checkout.
-
-Before changing state ownership or another cross-cutting hot path, run the
-small identity-locked combat panel:
-
-```powershell
-.\tools\perf\benchmark_combat_panel.ps1 -SkipBuild
-```
-
-It interleaves Hexaghost, Champ, Bronze Automaton, and Collector samples under
-the same 20,000-work contract. The cases cover a light state, a long combat, a
-large/expensive state, and a replay-verified witness. Timing is observational;
-deterministic counters and witness identity are checked against
-`combat_performance_panel.json` before a result is accepted.
-
-To diagnose transition ownership costs without putting clocks on the
-production stepper, run the same locked panel with sparse sampling:
-
-```powershell
-.\tools\perf\benchmark_combat_panel.ps1 -SkipBuild -ProfileTransitionCloneCost
-```
-
-The diagnostic samples one of every 16 applied transitions and reports
-`engine_clone_ns`, `combat_clone_ns`, and `transition_execution_ns`. Its wall
-time is instrumented; use the ordinary panel for performance acceptance.
-
-Oracle work uses one canonical `release` artifact. Build-owning commands use
-`cargo oracle-lab` or `cargo ol`; repeated offline calls use `.\ol.cmd`, and
-resident work uses `cargo ol-live` or `.\ol-live.cmd`. The retired `fast-run`
-profile and target directory are not valid operational entrypoints.
-Use `.\ol-contract.cmd` for the maintained exact-combat contracts. It compiles
-only simulator/core combat, the planner, shared tactical knowledge, and its
-thin runner; a planner edit therefore does not invalidate or link the full
-oracle run explorer.
-Pass `--write-witness-actions <path>` to save a replay-verified witness as an
-exact action array. The same file can be supplied later with
-`--watch-actions <path>` to inspect player-turn membership and work without
-reconstructing the line from display text. Use
-`--write-witness-trace <path>` when the investigation also needs resolved card
-or potion identity and compact before/after state for every exact action.
-The heavy `oracle_lab` and `oracle_lab_service` targets require the internal
-`canonical-oracle-artifacts` feature. This is intentional: an ad-hoc
-`cargo build -p sts_oracle_lab --bin oracle_lab` is rejected during Cargo
-target selection, before it can spend tens of seconds linking an artifact that
-the runtime profile guard would later refuse to execute.
-
-When a production run reaches a suspicious late stop, diagnose the committed
-history before changing combat policy or starting a seed panel:
-
-```powershell
-.\ol.cmd diagnose-run-witness `
-  --workspace .oracle-lab/cases/<run>.workspace.json `
-  --node <node> --max-pivots 5 `
-  --export-first-divergence-continuation `
-    .oracle-lab/cases/<fresh-id>.continuation.json `
-  > .oracle-lab/reports/<fresh-id>.diagnosis.json
-```
-
-The command performs exact journal replay without search. Its compact default
-reports the largest peak combat HP losses, lowest post-combat HP boundaries,
-largest recovery transitions, typed potion identity, nearby typed route/card/
-shop/Campfire choices, the combat-only HP lineage after the most recent full-HP
-reset, and the first decision where the current owner ranks a different
-candidate first. The HP epoch prevents an Act-transition heal from making an
-earlier large loss look like a direct cause of the current HP. `--details`
-additionally emits the complete combat timeline and every owner divergence. A
-divergence is a counterfactual candidate, not causal proof. Import the exported
-prefix into a fresh workspace, apply one
-alternative, and give only that branch a bounded downstream wall before
-escalating to more seeds:
-
-```powershell
-.\ol.cmd import --continuation .oracle-lab/cases/<fresh-id>.continuation.json `
-  --workspace .oracle-lab/cases/<fresh-id>.workspace.json
-.\ol.cmd choose --workspace .oracle-lab/cases/<fresh-id>.workspace.json `
-  --owner-rank 0
-```
-
-For a production-owner run, create and start one exact F0 workspace. The thin
-client sends one typed `run` transaction; the resident runtime owns the
-owner/search/accept loop in memory and saves once at the terminal or explicit
-stop boundary:
-
-```powershell
-cargo oracle-lab new --seed 20260713009 --ascension 0 --workspace .oracle-lab/cases/seed009.workspace.json
-.\ol-live.cmd start --session seed009 --workspace .oracle-lab/cases/seed009.workspace.json
-.\ol-live.cmd live --session seed009 run --export-continuation .oracle-lab/cases/seed009.victory.continuation.json
-```
-
-`live run` uses the maintained 5/15/30-second hallway/elite/boss budgets. It
-accepts only replay-verified combat incumbents. If a combat has no witness
-within its budget, or only has a witness below the owner's strategic survival
-floor, the command saves the resident workspace and stops at that exact combat
-with `combat_budget_unknown_without_witness` or
-`combat_budget_unknown_without_reserve_compliant_witness`; it does not restart,
-switch algorithms, or select a historical donor. At terminal victory it
-replays the complete committed journal from the canonical seed state inside
-the resident service, exports the exact continuation when requested, and
-returns `victory_verified`.
-
-Resident services autosave their workspace in place after every mutation and
-on shutdown. `live start` therefore accepts mutable workspaces only below the
-ignored `.oracle-lab/` state root. Committed witness fixtures and historical
-files below `target/` remain valid offline replay inputs, but resident startup
-rejects them before building or launching the service so verification cannot
-silently rewrite golden evidence.
-
-On Windows, the lightweight client parents a newly launched resident host to
-the interactive shell process. This lets one-shot Cargo, PowerShell, and tool
-callers return their first `started` response without remaining attached to the
-long-lived service process tree.
-
-For a consecutive multi-seed panel, do not launch resident services from a
-PowerShell loop. Use the single-process panel owner so each finished seed drops
-all search memory before the next seed, writes its report immediately, and
-retains a full workspace only for a real stop:
-
-```powershell
-cargo oracle-lab seed-panel `
-  --seed-start 20260713006 `
-  --ascension 0 `
-  --output-dir .oracle-lab/panels/a0-10
-```
-
-The safe daily default is 10 consecutive seeds, 30 seconds of total run work
-per seed, and at most 10 minutes for one process invocation. A deliberately
-larger `--count` remains resumable but still stops at that invocation cap.
-Pass `--invocation-wall-ms 0` only for an explicitly monitored uninterrupted
-run, or raise the cap to a known bound.
-
-Victories keep a compact report and exact replayable continuation under
-`reports/` and `witnesses/`. Budget or correctness stops keep a resumable
-workspace under `incomplete/`. Re-running the same command skips verified
-victories and stable exhausted stops; only wall/boundary interruptions resume
-automatically. Use `--retry-stopped` to re-enter a deterministic stop after
-deliberately changing its allowance, or `--force` to start the selected seeds
-from F0 again. `panel.summary.json` records the source commit, dirty state,
-budgets, per-seed outcome, remaining count, separate run/total timings, the
-workspace prepare, report write, workspace persistence, teardown, and residual
-phases, including checkpoint materialization versus atomic JSON write, and
-artifact paths after every completed seed. A top-level
-`interrupted / invocation_wall_budget` result is a successful durable slice,
-not a seed failure.
-
-The per-seed run wall bounds additional search and owner scheduling. If the
-last admitted combat search has already returned a verified incumbent, the
-autonomous runner atomically applies that exact line before recording a
-run-wall stop at the resulting boundary. The report records this as
-`incumbent_accepted_after_run_wall` and includes any resulting wall overshoot.
-
-Strategic Boss search does not open the complete multi-potion surface first.
-It tries a potion-free stage, then one exact stage per active potion identity,
-and only then a canonical multi-potion fallback when no earlier stage produced
-an acceptable witness. With `n` active identities, every stage receives one
-share of the configured allowance divided by `n + 1`; the caller's combat wall
-still bounds the complete sequence. This preserves genuinely necessary
-multi-potion rescue without letting its larger action surface hide a clean or
-single-potion win. Within each Boss stage, the local graph is the primary
-portfolio member. Policy discrepancy is served only after local completion
-when bounded stage allowance remains; non-Boss stages retain round-robin
-service.
-
-Full `combat-case` reports also include a read-only `storage` census. It
-separates live generator work from retained slot, exact-state index, scheduling
-heap, and graph-edge capacities, including the subset owned by already
-finished turn generators. It also distinguishes live from stale scheduling
-entries and reports the active-generator live-work distribution, so lazy queue
-garbage can be measured without changing service order. These values diagnose
-ownership and allocation shape only; no search budget, ordering, or witness
-contract reads them.
-
-Resident endpoints, immutable service images, and new local case artifacts
-live below the ignored `.oracle-lab/` state root. They are deliberately outside
-Cargo's `target/` tree so `cargo clean` cannot erase a live session or research
-checkpoint. Historical files below `target/oracle-cases/` remain readable but
-should not receive new output.
-
-`.\ol-live.cmd` always lets Cargo validate the lightweight client before
-execution; it never directly runs a possibly stale client binary. `live start`
-also compares an already-running endpoint's immutable service image with the
-current canonical host. A matching image is reused. A stale or legacy image is
-saved and shut down, then the same workspace is relaunched automatically with
-status `restarted_stale_runtime`. Exact run state and charged historical work
-survive this transition; an in-memory tactical frontier is deliberately
-restarted because it belongs to the old executable image.
-
-The command hosts in `sts_oracle_lab` are physically separate from the branch
-runtime, and optimized evaluation/run-control is a third compilation unit.
-On one Windows machine, an actual public run-control metadata edit rebuilt the
-former combined O2 runtime and host in 60.24 seconds: 53.1 of the runtime's
-57.8 seconds were code generation. After the measured split, the same class of
-warm edit rebuilt `sts_oracle_eval` in 8.37 seconds, the branch runtime in 2.55
-seconds, and the host in 1.95 seconds, with 10.76 seconds total wall time. A
-matched three-seed production panel retained identical boundaries, HP, combat
-counts, and owner-decision counts; total wall time changed from 10.606 to
-10.720 seconds, within persistence noise. These local numbers verify the
-invalidation boundary; they are not CI performance thresholds.
-
-The first build after introducing a new package still has to create its
-incremental cache and is not expected to match a warm edit. Use `release-final`
-only when the fully optimized deployment artifact is specifically required.
-Further package splits require another measured source-invalidation boundary.
-
-The exact-combat contract has a still narrower measured boundary. On the same
-Windows checkout, an actual source edit in `sts_combat_planner` followed by the
-managed-T4 contract rebuilt and ran in 3.85 seconds; the exact search itself
-took 0.38 seconds. The former heavyweight route spent about 20.8 seconds
-end-to-end after the same class of planner invalidation. These figures are
-local observations, not CI thresholds; the enforced architectural fact is
-that `sts_combat_contract` does not depend on `sts_oracle_runtime`.
-
-Splitting one Rust source file into modules improves ownership and review
-scope, but it does not create a new compilation unit: every module of one
-crate is still parsed and code-generated together. Claim a build-time
-improvement only after a measured crate-boundary change; do not infer one from
-smaller files.
-
-Do not configure a project-wide `sccache` wrapper for the canonical iterative
-build. A bounded Windows experiment restored the same empty target path in
-10.96 seconds after a 74.97-second cache fill (51 hits, 3 misses), but two
-different target paths produced zero hits even with normalized base
-directories. More importantly, the canonical `release` profile deliberately
-uses incremental compilation, which `sccache` cannot cache. Reconsider it for
-non-incremental CI or same-path disaster recovery, not routine local edits.
+The root package is the sole default member and disables automatic bins and
+integration tests. Bare `cargo test --lib` therefore checks only the core
+package. Use `cargo test-core <filter>` and `cargo test-control <filter>`
+for targeted tests, then broaden in proportion to risk. Compilation ownership
+and dependency direction are maintained in
+[ARCHITECTURE.md](ARCHITECTURE.md#cargo-package-boundary).
 
 For documentation-only changes:
 
@@ -754,3 +220,36 @@ git diff --check
 Run targeted tests only when the changed surface has a stable structural
 contract worth protecting. Do not add or preserve tests for retired probes,
 temporary reports, or prose-only behavior.
+
+## Iteration Ladder
+
+Use the smallest evidence surface that can distinguish the current hypotheses.
+More seeds do not repair a censored or ambiguous measurement.
+
+1. **Contract test, usually under 30 seconds.** Protect the exact ownership,
+   budget, replay, or stage-transition rule below the full runner.
+2. **Fixed combat root, normally under 60 seconds total.** Run one unchanged
+   `CombatCase` with one factor changed at a time. Compare exact root hash,
+   witness status, generation work, final HP, potion UUIDs, and replay
+   compliance. A missing budget-limited witness remains unknown.
+3. **Production parity, normally under two minutes.** Copy a saved workspace
+   to a fresh ignored path, restart only its current combat, advance the real
+   resident production portfolio, and replay-verify the committed journal.
+   When isolated and production witnesses diverge, compare the exact-root
+   `stage_trace` first.
+4. **Two to five contract-selected sentinels, normally under three minutes.**
+   Select a changed contract, a known success, a known hard unknown, and any
+   observed regression. Record why each sentinel is present.
+5. **Distribution panel.** Run 20 or more consecutive seeds only when the
+   lower layers pass and the remaining question is genuinely about outcome
+   frequency, path distribution, crashes, or long-run resource use.
+
+Every experiment should answer one declared question. Stop escalating when the
+first causal divergence is localized. Do not raise budgets merely because two
+algorithms both report unknown. Calibrate diagnostic lanes before interpreting
+their rankings.
+
+For a partial panel, preserve `panel.summary.json` and report completed seeds,
+elapsed time, changed outcomes, repeated censoring reasons, and errors. It is
+valid to stop after a durable seed boundary when the remaining samples no
+longer justify their runtime.

@@ -22,7 +22,7 @@ fn tracked_slime_boss_pair() -> PairCandidate {
 }
 
 #[test]
-fn typed_manifest_resolves_external_case_and_revalidates_identity() {
+fn typed_manifest_producers_resolve_external_case_and_revalidate_identity() {
     let baseline = tracked_slime_boss_pair();
     let expected = replay_pair(&baseline, 250).expect("tracked witness should replay");
     let suffix = SystemTime::now()
@@ -34,37 +34,44 @@ fn typed_manifest_resolves_external_case_and_revalidates_identity() {
         std::process::id()
     ));
     fs::create_dir_all(&root).unwrap();
-    let manifest_path = root.join("combat-evidence-manifest.json");
     let runtime_fingerprint = "0".repeat(128);
-    let value = serde_json::json!({
-        "schema_name": "CombatEvidenceManifestV1",
-        "schema_version": 1,
-        "producer": "potion_expenditure_audit",
-        "runtime": {},
-        "runtime_source_content_fingerprint": runtime_fingerprint,
-        "root_exact_state_hash": expected.root_exact_state_hash,
-        "case_path": baseline.case_path.canonicalize().unwrap(),
-        "entries": [{
-            "evidence_id": "no_potion",
-            "action_paths": [baseline.action_paths[0].canonicalize().unwrap()],
-            "action_sequence_blake2b_512": expected.action_sequence_blake2b_512,
-            "supplied_action_count": expected.supplied_action_count,
-            "expected_terminal": expected.final_terminal,
-            "expected_final_player_hp": expected.final_player_hp
-        }]
-    });
-    fs::write(&manifest_path, serde_json::to_vec_pretty(&value).unwrap()).unwrap();
-
     let current_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../..")
         .canonicalize()
         .unwrap();
-    let candidates = declared_manifest_pairs(&manifest_path, &root, &current_dir)
-        .expect("typed manifest should resolve");
-    assert_eq!(candidates.len(), 1);
-    let replayed = replay_pair(&candidates[0], 250).expect("manifest identity should revalidate");
-    assert!(replayed.provenance.contains("typed_evidence_manifest"));
-    assert_eq!(replayed.record_id, expected.record_id);
+    for producer in [
+        "historical_combat_witness_export",
+        "policy_discrepancy_search",
+        "potion_expenditure_audit",
+    ] {
+        let manifest_path = root.join(format!("{producer}.combat-evidence-manifest.json"));
+        let value = serde_json::json!({
+            "schema_name": "CombatEvidenceManifestV1",
+            "schema_version": 1,
+            "producer": producer,
+            "runtime": {},
+            "runtime_source_content_fingerprint": runtime_fingerprint,
+            "root_exact_state_hash": expected.root_exact_state_hash,
+            "case_path": baseline.case_path.canonicalize().unwrap(),
+            "entries": [{
+                "evidence_id": producer,
+                "action_paths": [baseline.action_paths[0].canonicalize().unwrap()],
+                "action_sequence_blake2b_512": expected.action_sequence_blake2b_512,
+                "supplied_action_count": expected.supplied_action_count,
+                "expected_terminal": expected.final_terminal,
+                "expected_final_player_hp": expected.final_player_hp
+            }]
+        });
+        fs::write(&manifest_path, serde_json::to_vec_pretty(&value).unwrap()).unwrap();
+
+        let candidates = declared_manifest_pairs(&manifest_path, &root, &current_dir)
+            .expect("typed manifest should resolve");
+        assert_eq!(candidates.len(), 1);
+        let replayed =
+            replay_pair(&candidates[0], 250).expect("manifest identity should revalidate");
+        assert!(replayed.provenance.contains("typed_evidence_manifest"));
+        assert_eq!(replayed.record_id, expected.record_id);
+    }
 
     fs::remove_dir_all(root).unwrap();
 }
