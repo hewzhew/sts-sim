@@ -25,6 +25,7 @@ use super::potion_expenditure_audit::CombatCasePotionExpenditureAuditArgs;
 use super::run_witness_suite::RunWitnessSuiteArgs;
 use super::turn_audits::{TurnActionAuditArgs, TurnPlanAuditArgs};
 use super::turn_membership_audit::TurnMembershipArgs;
+use super::turn_quality_corridor::TurnQualityCorridorArgs;
 use super::v2_capability_audit::V2CapabilityAuditArgs;
 
 #[derive(Debug, Parser)]
@@ -355,6 +356,9 @@ pub(super) enum Command {
     /// Audit the mature V2 bounded complete-turn proposer on one exact case.
     /// This is read-only evidence: it does not seed either production search.
     TurnPlanAudit(TurnPlanAuditArgs),
+    /// Explore exact complete-turn successors under separate unresolved-boundary
+    /// and post-victory HP floors. Any cap remains an explicit unknown.
+    TurnQualityCorridor(TurnQualityCorridorArgs),
     /// Generate complete-turn proposals with an independent action-depth beam.
     /// Finished short turns never displace still-live longer prefixes.
     DepthBeamTurnAudit(DepthBeamTurnAuditArgs),

@@ -42,6 +42,7 @@ mod run_witness_diagnosis_commands;
 mod run_witness_suite;
 mod turn_audits;
 mod turn_membership_audit;
+mod turn_quality_corridor;
 mod v2_capability_audit;
 mod workspace_commands;
 mod workspace_view;
@@ -304,6 +305,7 @@ fn main() -> Result<(), String> {
         }
         Command::TurnActionAudit(args) => turn_audits::run_action(args),
         Command::TurnPlanAudit(args) => turn_audits::run_plan(args),
+        Command::TurnQualityCorridor(args) => print_json(&turn_quality_corridor::run(args)?),
         Command::DepthBeamTurnAudit(args) => depth_beam_audits::run_turn(args),
         Command::TurnMembership(args) => turn_membership_audit::run(args),
         Command::V2CapabilityAudit(args) => v2_capability_audit::run(args),

@@ -421,6 +421,7 @@ version = "0.1.0"
 dependencies = [
  "blake2",
  "clap",
+ "flate2",
  "oracle_artifact_contract",
  "serde",
  "serde_json",

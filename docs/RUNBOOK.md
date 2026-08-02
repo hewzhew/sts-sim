@@ -119,6 +119,31 @@ Compare potion lanes from one unchanged exact root:
   --wall-ms-per-lane 10000
 ```
 
+Audit an exact descendant turn without first exporting another case. The plan
+audit defaults to no potions; `--potion-slot` opens only that zero-based
+concrete identity lane and disables discard:
+
+```powershell
+.\ol.cmd turn-action-audit --case <case.json> --actions <actions.json> --through <N>
+.\ol.cmd turn-plan-audit --case <case.json> --actions <actions.json> --through <N> --potion-slot 2
+.\ol.cmd turn-quality-corridor --case <case.json> --min-boundary-player-hp 14 --min-terminal-player-hp 20 --potion-slot 2 --max-turns 3
+```
+
+The corridor command deduplicates exact next-turn states. Its unresolved-turn
+floor and post-victory terminal floor are separate because victory relics and
+combat healing can increase HP. It reports every planner or frontier cap as
+censoring; only an uncensored exhausted boundary frontier supports a bounded
+non-existence conclusion under the declared intermediate floor.
+
+Use a fresh compressed checkpoint path when another turn would otherwise
+repeat earlier layers. Resume against the same case and enumeration identity;
+only `--max-turns` may increase:
+
+```powershell
+.\ol.cmd turn-quality-corridor <same-args> --checkpoint-out <depth-3.json.gz>
+.\ol.cmd turn-quality-corridor <same-args> --max-turns 4 --checkpoint-in <depth-3.json.gz> --checkpoint-out <depth-4.json.gz>
+```
+
 Keep full JSON and build output below `.oracle-lab`; report aggregate lane
 results and a short failure tail. A missing budget-limited witness remains
 unknown. See [Combat Evidence And Offline
