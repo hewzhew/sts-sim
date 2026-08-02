@@ -844,7 +844,7 @@ pub fn seed_oracle_run_explorer_v1(
             parent_branch_id: None,
             neow_root_candidate_id: candidate.root_candidate_id,
             neow_root_label: candidate.root_label,
-            state_fingerprint: run_session_fingerprint_v2(&session),
+            state_fingerprint: run_control_session_fingerprint_v2(&session),
             boundary: classify_run_boundary(&session),
             path_negative_log_policy: root_negative_log_policy,
             path_discrepancy: 0,
@@ -932,7 +932,7 @@ pub fn seed_oracle_run_explorer_from_session_v1(
         parent_branch_id: None,
         neow_root_candidate_id: "continued-exact-state".to_string(),
         neow_root_label: "continued exact state".to_string(),
-        state_fingerprint: run_session_fingerprint_v2(&session),
+        state_fingerprint: run_control_session_fingerprint_v2(&session),
         boundary: classify_run_boundary(&session),
         path_negative_log_policy: 0.0,
         path_discrepancy: 0,
@@ -1162,7 +1162,7 @@ fn duration_ms(duration: Duration) -> u64 {
 const ORACLE_RUN_STATE_FINGERPRINT_ALGORITHM_V1: &str = "blake2b_256_canonical_json_value_v1";
 const ORACLE_RUN_STATE_FINGERPRINT_ALGORITHM: &str = "blake2b_256_canonical_run_checkpoint_v2";
 
-pub(super) fn run_session_fingerprint_v2(session: &RunControlSession) -> String {
+pub fn run_control_session_fingerprint_v2(session: &RunControlSession) -> String {
     let mut normalized = session.clone();
     normalized.decision_step = 0;
     normalized.run_state.emitted_events.clear();
@@ -1171,6 +1171,10 @@ pub(super) fn run_session_fingerprint_v2(session: &RunControlSession) -> String 
     let mut checkpoint = RunControlSessionCheckpointV1::from_session(&normalized);
     checkpoint.clear_combat_diagnostics_for_external_checkpoint();
     canonical_oracle_hash(&checkpoint)
+}
+
+pub(super) fn run_session_fingerprint_v2(session: &RunControlSession) -> String {
+    run_control_session_fingerprint_v2(session)
 }
 
 fn canonical_oracle_hash<T: Serialize>(value: &T) -> String {

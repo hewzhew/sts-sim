@@ -241,6 +241,7 @@ pub(super) fn run(args: CombatCaseLocalGraphArgs) -> Result<(), String> {
     if full_health {
         loaded.position.combat.entities.player.current_hp =
             loaded.position.combat.entities.player.max_hp;
+        loaded.refresh_derived_summaries_and_clear_production_context();
     }
     let initial_hp = loaded.position.combat.entities.player.current_hp;
     let root_player_turn = loaded.position.combat.turn.turn_count;

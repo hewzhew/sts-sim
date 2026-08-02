@@ -6,6 +6,7 @@ use sts_simulator::eval::combat_case::{
     living_enemy_names, save_combat_case, CombatCase, CombatCaseBranchEvidence, CombatCaseGap,
     CombatCasePathStep, CombatCaseRngSummary, CombatCaseRunSummary, CombatCaseSource,
 };
+use sts_simulator::eval::combat_case_context::capture_combat_case_production_context_v1;
 use sts_simulator::runtime::combat::CombatState;
 use sts_simulator::sim::combat::CombatPosition;
 use sts_simulator::state::core::EngineState;
@@ -68,6 +69,10 @@ pub(super) fn save_combat_gap_case(
         position,
     );
     case.branch_evidence = Some(branch_evidence(branch));
+    case.production_context = Some(capture_combat_case_production_context_v1(
+        &case,
+        &branch.session,
+    )?);
     save_combat_case(&path, &case)?;
     Ok(Some(path))
 }

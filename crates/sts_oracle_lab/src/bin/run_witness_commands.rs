@@ -6,6 +6,7 @@ use sts_oracle_runtime::eval::combat_case::{
     save_combat_case, CombatCase, CombatCaseGap, CombatCasePathStep, CombatCaseRngSummary,
     CombatCaseRunSummary, CombatCaseSource,
 };
+use sts_oracle_runtime::eval::combat_case_context::capture_combat_case_production_context_v1;
 use sts_oracle_runtime::eval::run_control::{
     exact_audit_run_progress_journal_policy_v1, exact_replay_run_progress_journal_prefix_v1,
     exact_replay_run_progress_journal_v1, splice_exact_combat_resolution_v1,
@@ -237,7 +238,7 @@ pub(super) fn export_historical_combat(
             })),
         })
         .collect::<Vec<_>>();
-    let case = CombatCase::new(
+    let mut case = CombatCase::new(
         CombatCaseSource {
             seed: continuation.seed,
             ascension: continuation.ascension,
@@ -272,6 +273,10 @@ pub(super) fn export_historical_combat(
         CombatCaseRngSummary::from_pool(&historical.run_state.rng_pool),
         position,
     );
+    case.production_context = Some(capture_combat_case_production_context_v1(
+        &case,
+        &historical,
+    )?);
     let actions = resolution
         .trajectory
         .actions

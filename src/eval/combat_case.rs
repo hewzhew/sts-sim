@@ -6,6 +6,10 @@ use serde_json::Value;
 
 use crate::ai::strategy::trajectory_comparison::TrajectorySnapshot;
 use crate::content::monsters::EnemyId;
+use crate::eval::combat_case_context::{
+    validate_combat_case_production_context_v1, CombatCaseProductionContextV1,
+    CombatCaseReplayCapabilityV1,
+};
 use crate::eval::run_control::CombatSearchTraceSummary;
 use crate::runtime::combat::{CombatCard, CombatState};
 use crate::runtime::rng::RngPool;
@@ -23,6 +27,8 @@ pub struct CombatCase {
     pub combat: CombatCaseCombatSummary,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub branch_evidence: Option<CombatCaseBranchEvidence>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub production_context: Option<CombatCaseProductionContextV1>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub combat_search_attempts: Vec<CombatSearchTraceSummary>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -55,7 +61,7 @@ pub struct CombatCaseGap {
     pub rescue_search_ms: u64,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct CombatCaseRunSummary {
     pub act: u8,
     pub floor: i32,
@@ -67,7 +73,7 @@ pub struct CombatCaseRunSummary {
     pub potion_slots: usize,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct CombatCaseCombatSummary {
     pub engine_state: String,
     pub turn: u32,
@@ -82,7 +88,7 @@ pub struct CombatCaseCombatSummary {
     pub exhaust_count: usize,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct CombatCaseCardSummary {
     pub id: String,
     pub uuid: u32,
@@ -107,7 +113,7 @@ pub struct CombatCaseBranchEvidence {
     pub trajectory_snapshot: TrajectorySnapshot,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct CombatCaseRngSummary {
     pub monster_rng: u32,
     pub event_rng: u32,
@@ -142,12 +148,33 @@ impl CombatCase {
             run,
             combat: combat_summary(&position),
             branch_evidence: None,
+            production_context: None,
             combat_search_attempts,
             failed_search,
             path,
             run_rng,
             position,
         }
+    }
+
+    pub fn replay_capability_v1(&self) -> Result<CombatCaseReplayCapabilityV1, String> {
+        if self.production_context.is_some() {
+            validate_combat_case_production_context_v1(self)?;
+            Ok(CombatCaseReplayCapabilityV1::ExactProductionOwner)
+        } else {
+            Ok(CombatCaseReplayCapabilityV1::IsolatedProjection)
+        }
+    }
+
+    pub fn clear_production_context(&mut self) {
+        self.production_context = None;
+    }
+
+    pub fn refresh_derived_summaries_and_clear_production_context(&mut self) {
+        self.combat = combat_summary(&self.position);
+        self.run.hp = self.position.combat.entities.player.current_hp;
+        self.run.max_hp = self.position.combat.entities.player.max_hp;
+        self.clear_production_context();
     }
 }
 
@@ -326,6 +353,7 @@ mod tests {
         let value = serde_json::to_value(sample_case()).unwrap();
         let mut object = value.as_object().unwrap().clone();
         object.remove("branch_evidence");
+        object.remove("production_context");
         for step in object["path"].as_array_mut().unwrap() {
             step.as_object_mut().unwrap().remove("decision_evidence");
         }
@@ -333,6 +361,11 @@ mod tests {
         let restored: CombatCase = serde_json::from_value(Value::Object(object)).unwrap();
 
         assert!(restored.branch_evidence.is_none());
+        assert!(restored.production_context.is_none());
+        assert_eq!(
+            restored.replay_capability_v1().unwrap(),
+            CombatCaseReplayCapabilityV1::IsolatedProjection
+        );
         assert!(restored
             .path
             .iter()

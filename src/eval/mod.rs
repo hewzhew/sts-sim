@@ -10,6 +10,7 @@ pub mod campfire_threat_panel;
 pub mod combat_action_imitation;
 pub mod combat_capture;
 pub mod combat_case;
+pub mod combat_case_context;
 pub mod combat_guidance_bundle;
 pub mod combat_lab_v1;
 pub mod combat_search_v2;

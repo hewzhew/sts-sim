@@ -133,9 +133,7 @@ pub(super) fn export_descendant_combat_case(
 
     let mut exported = base.clone();
     exported.position = position;
-    exported.combat = sts_oracle_runtime::eval::combat_case::combat_summary(&exported.position);
-    exported.run.hp = exported.position.combat.entities.player.current_hp;
-    exported.run.max_hp = exported.position.combat.entities.player.max_hp;
+    exported.refresh_derived_summaries_and_clear_production_context();
     exported.gap.boundary = format!(
         "{} + {} exact descendant actions",
         exported.gap.boundary,

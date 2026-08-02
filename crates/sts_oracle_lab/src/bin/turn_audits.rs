@@ -282,10 +282,7 @@ pub(super) fn run_plan(args: TurnPlanAuditArgs) -> Result<(), String> {
         if let Some(path) = export_case.as_ref() {
             let mut exported = case.clone();
             exported.position = candidate.position.clone();
-            exported.combat =
-                sts_oracle_runtime::eval::combat_case::combat_summary(&exported.position);
-            exported.run.hp = exported.position.combat.entities.player.current_hp;
-            exported.run.max_hp = exported.position.combat.entities.player.max_hp;
+            exported.refresh_derived_summaries_and_clear_production_context();
             exported.gap.boundary =
                 format!("{} + audited turn plan rank {rank}", exported.gap.boundary);
             exported.gap.reason = "oracle_lab_turn_plan_audit_successor".to_string();

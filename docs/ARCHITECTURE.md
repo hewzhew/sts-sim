@@ -115,6 +115,14 @@ not by itself a deck-construction verdict.
 branch-tiny combat gap cannot be investigated from a saved case, fix the case
 payload or the review entrypoint instead of creating another report format.
 
+A case without a validated typed `production_context` supports isolated combat
+replay only. Exact production-owner restoration requires that context to bind
+the case's exact combat-root hash, normalized run-session fingerprint, and
+run-control checkpoint; all three identities must validate before use. A
+counterfactual or descendant case must clear this context when its position
+changes. Display paths, branch ids, filenames, and synthetic run projection do
+not upgrade a case to production parity.
+
 Potions are run resources. Combat may consider potion actions only when the
 runner explicitly opens a potion policy and budget. A diagnostic fact such as
 "potion rescue found a win" does not automatically mean the main runner should

@@ -7,6 +7,7 @@ use crate::eval::combat_case::{
     CombatCase, CombatCaseGap, CombatCasePathStep, CombatCaseRngSummary, CombatCaseRunSummary,
     CombatCaseSource,
 };
+use crate::eval::combat_case_context::capture_combat_case_production_context_v1;
 use crate::eval::combat_guidance_bundle::CombatGuidanceBundleV1;
 use crate::eval::combat_lab_v1::atomic_write_json;
 use crate::eval::run_control::{
@@ -478,7 +479,7 @@ pub fn recover_oracle_analysis_combat_case_v1(
     } else {
         (artifact.budget.hallway_nodes, artifact.budget.hallway_ms)
     };
-    Ok(CombatCase::new(
+    let mut case = CombatCase::new(
         source,
         CombatCaseGap {
             boundary: format!(
@@ -506,7 +507,9 @@ pub fn recover_oracle_analysis_combat_case_v1(
         path,
         CombatCaseRngSummary::from_pool(&session.run_state.rng_pool),
         position,
-    ))
+    );
+    case.production_context = Some(capture_combat_case_production_context_v1(&case, &session)?);
+    Ok(case)
 }
 
 fn validate_analysis_config(config: &OracleRunConfig) -> Result<(), String> {

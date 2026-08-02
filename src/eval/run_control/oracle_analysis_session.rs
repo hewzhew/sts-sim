@@ -17,6 +17,7 @@ use crate::eval::combat_case::{
     CombatCase, CombatCaseGap, CombatCasePathStep, CombatCaseRngSummary, CombatCaseRunSummary,
     CombatCaseSource,
 };
+use crate::eval::combat_case_context::capture_combat_case_production_context_v1;
 
 use super::oracle_combat_work::{
     OracleCombatLocalCandidateDispositionV1, OracleRunCombatWorkCheckpointV1,
@@ -840,7 +841,7 @@ impl OracleAnalysisSessionV1 {
                 })),
             })
             .collect();
-        Ok(CombatCase::new(
+        let mut case = CombatCase::new(
             CombatCaseSource {
                 seed,
                 ascension,
@@ -874,7 +875,12 @@ impl OracleAnalysisSessionV1 {
             path,
             CombatCaseRngSummary::from_pool(&branch.session.run_state.rng_pool),
             position,
-        ))
+        );
+        case.production_context = Some(capture_combat_case_production_context_v1(
+            &case,
+            &branch.session,
+        )?);
+        Ok(case)
     }
 
     pub fn tree(&self) -> OracleAnalysisTreeViewV1 {

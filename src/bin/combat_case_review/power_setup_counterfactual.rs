@@ -262,6 +262,7 @@ fn transform_case(
     if matches!(semantics, PowerSetupSemantics::OptimisticPreinstalled) {
         remove_free_play_costs(original, &mut case);
     }
+    case.refresh_derived_summaries_and_clear_production_context();
     let setup = setup_snapshot(&case.position.combat, applied_cards);
     Ok((case, setup))
 }

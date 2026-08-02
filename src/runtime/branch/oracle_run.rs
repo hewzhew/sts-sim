@@ -12,6 +12,7 @@ use crate::eval::combat_case::{
     CombatCase, CombatCaseGap, CombatCasePathStep, CombatCaseRngSummary, CombatCaseRunSummary,
     CombatCaseSource,
 };
+use crate::eval::combat_case_context::capture_combat_case_production_context_v1;
 use crate::eval::run_control::{
     drive_oracle_run_explorer_v1, expand_oracle_neow_candidates_v1,
     seed_oracle_run_explorer_from_checkpoint_v1, seed_oracle_run_explorer_from_session_v1,
@@ -388,27 +389,30 @@ fn finish_oracle_run_report(
     } else {
         explored.explorer.frontier_checkpoint()?
     };
-    let first_unresolved_combat_case = first_unresolved_combat_case(config, &explored);
+    let first_unresolved_combat_case = first_unresolved_combat_case(config, &explored)?;
     let selected = explored
         .witness()
         .or_else(|| explored.furthest_branch())
         .ok_or_else(|| "oracle run produced no materialized branch".to_string())?;
     let pending_combats = explored.explorer.pending_combat_summaries()?;
-    let selected_active_combat_case = pending_combats.first().and_then(|pending| {
-        explored
+    let selected_active_combat_case = if let Some(pending) = pending_combats.first() {
+        match explored
             .explorer
             .branches
             .iter()
             .find(|branch| branch.branch_id == pending.branch_id)
-            .and_then(|branch| {
-                combat_case_for_branch(
-                    config,
-                    branch,
-                    "bounded_run_stopped_with_active_combat".to_string(),
-                    pending.generation_work.min(usize::MAX as u64) as usize,
-                )
-            })
-    });
+        {
+            Some(branch) => combat_case_for_branch(
+                config,
+                branch,
+                "bounded_run_stopped_with_active_combat".to_string(),
+                pending.generation_work.min(usize::MAX as u64) as usize,
+            )?,
+            None => None,
+        }
+    } else {
+        None
+    };
     let journal = selected.journal.clone();
     let mut continuation_session = RunControlSessionCheckpointV1::from_session(&selected.session);
     continuation_session.clear_combat_diagnostics_for_external_checkpoint();
@@ -617,13 +621,18 @@ fn oracle_neow_root_progress(
 fn first_unresolved_combat_case(
     config: &OracleRunConfig,
     explored: &OracleRunExploreResultV1,
-) -> Option<CombatCase> {
-    let unresolved = explored.explorer.unresolved_combats.first()?;
-    let branch = explored
+) -> Result<Option<CombatCase>, String> {
+    let Some(unresolved) = explored.explorer.unresolved_combats.first() else {
+        return Ok(None);
+    };
+    let Some(branch) = explored
         .explorer
         .branches
         .iter()
-        .find(|branch| branch.branch_id == unresolved.branch_id)?;
+        .find(|branch| branch.branch_id == unresolved.branch_id)
+    else {
+        return Ok(None);
+    };
     combat_case_for_branch(
         config,
         branch,
@@ -637,8 +646,10 @@ fn combat_case_for_branch(
     branch: &OracleRunBranchV1,
     reason: String,
     search_nodes: usize,
-) -> Option<CombatCase> {
-    let active = branch.session.active_combat.as_ref()?;
+) -> Result<Option<CombatCase>, String> {
+    let Some(active) = branch.session.active_combat.as_ref() else {
+        return Ok(None);
+    };
     let position = CombatPosition::new(active.engine_state.clone(), active.combat_state.clone());
     let search_ms = if active.combat_state.meta.is_boss_fight {
         config.budget.boss_ms
@@ -647,7 +658,7 @@ fn combat_case_for_branch(
     } else {
         config.budget.hallway_ms
     };
-    Some(CombatCase::new(
+    let mut case = CombatCase::new(
         CombatCaseSource {
             seed: config.seed,
             ascension: config.ascension,
@@ -693,7 +704,12 @@ fn combat_case_for_branch(
             .collect(),
         CombatCaseRngSummary::from_pool(&branch.session.run_state.rng_pool),
         position,
-    ))
+    );
+    case.production_context = Some(capture_combat_case_production_context_v1(
+        &case,
+        &branch.session,
+    )?);
+    Ok(Some(case))
 }
 
 fn oracle_neow_frontier_summary(expansion: NeowOracleExpansionV1) -> OracleNeowFrontierSummaryV1 {

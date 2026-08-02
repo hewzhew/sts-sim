@@ -5,8 +5,7 @@ pub(super) fn combat_case_with_player_hp(case: &CombatCase, hp: i32) -> CombatCa
     let max_hp = case.position.combat.entities.player.max_hp.max(1);
     let hp = hp.clamp(1, max_hp);
     case.position.combat.entities.player.current_hp = hp;
-    case.run.hp = hp;
-    case.combat.hp = hp;
+    case.refresh_derived_summaries_and_clear_production_context();
     case
 }
 
