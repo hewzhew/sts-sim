@@ -857,6 +857,31 @@ fn block_skill_precedes_payable_retaliation_attack_when_order_saves_hp() {
 }
 
 #[test]
+fn block_skill_precedes_payable_lethal_retaliation_attack_when_order_saves_hp() {
+    let mut combat = retaliation_ordering_combat(4, 13);
+    combat.entities.monsters[0].current_hp = 1;
+
+    let flame = flame_priority(&combat);
+    let lethal = priority_for_input(
+        &EngineState::CombatPlayerTurn,
+        &combat,
+        &ClientInput::PlayCard {
+            card_index: 0,
+            target: Some(1),
+        },
+        CombatSearchV2PhaseGuardPolicy::Default,
+        CombatSearchV2SetupBiasPolicy::Default,
+    );
+
+    assert_eq!(lethal.role, ActionOrderingRole::LethalCard);
+    assert_eq!(
+        flame.role,
+        ActionOrderingRole::CurrentTurnRetaliationProtection
+    );
+    assert!(flame > lethal);
+}
+
+#[test]
 fn retaliation_protection_requires_both_cards_to_be_payable() {
     let combat = retaliation_ordering_combat(3, 13);
 

@@ -6,7 +6,11 @@ pub(super) const ROLE_SUSTAINED_MITIGATION: i32 = 95;
 pub(super) const ROLE_KEY_SETUP_CARD: i32 = 90;
 pub(super) const ROLE_TACTICAL_POTION_BASE: i32 = 60;
 pub(super) const ROLE_PREVENT_HP_LOSS: i32 = 85;
-pub(super) const ROLE_CURRENT_TURN_RETALIATION_PROTECTION: i32 = ROLE_PREVENT_HP_LOSS;
+// This role is emitted only after exact order projection proves that the
+// defensive card and a retaliation-triggering attack are both payable and
+// that defense-first preserves more HP. Keep it ahead of the attack's lethal
+// label so target death does not erase the already-projected retaliation.
+pub(super) const ROLE_CURRENT_TURN_RETALIATION_PROTECTION: i32 = ROLE_LETHAL_CARD + 1;
 pub(super) const ROLE_CURRENT_TURN_ATTACK_SETUP: i32 = 80;
 pub(super) const ROLE_DEFERRED_SETUP: i32 = 75;
 pub(super) const ROLE_IMMEDIATE_ACTION_SUPPLY: i32 = 70;
