@@ -253,7 +253,8 @@ pub use route_policy_prior::{
 pub use run_policy_evidence::{
     exact_run_policy_decision_v1, run_policy_state_delta_v1, run_policy_state_evidence_v1,
     ExactRunPolicyActionSuccessorV1, ExactRunPolicyDecisionV1, RunPolicyCapabilityChangeV1,
-    RunPolicyStateDeltaV1, RunPolicyStateEvidenceV1, RunPolicyThreatGapKeyV1,
+    RunPolicyCapabilityRuleChangeV1, RunPolicyStateDeltaV1, RunPolicyStateEvidenceV1,
+    RunPolicyThreatGapKeyV1,
 };
 pub use run_policy_prior::{
     positive_ranked_run_policy_prior_v1, RunActionPriorV1, RunPolicyCandidateV1,

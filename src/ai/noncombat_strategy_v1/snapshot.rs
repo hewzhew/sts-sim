@@ -1,3 +1,4 @@
+use super::coverage::FRONTLOAD_SUPPORTED_TOTAL_DAMAGE_V1;
 use super::formation::assess_deck_formation_v1;
 use super::pressure::{pressure_from_need_v1, route_pressure_v1};
 use super::route_package::assess_route_packages_v1;
@@ -39,7 +40,7 @@ fn frontload_survival_plan(
     route: Option<&StrategyRouteFutureV1>,
 ) -> DeckPlanHypothesisV1 {
     let route_pressure = route_pressure_v1(route);
-    let low_damage = deck.total_attack_damage < 45;
+    let low_damage = deck.total_attack_damage < FRONTLOAD_SUPPORTED_TOTAL_DAMAGE_V1;
     let support = if route_pressure == StrategyPlanPressureV1::High || low_damage {
         StrategyPlanSupportV1::Strong
     } else if route_pressure == StrategyPlanPressureV1::Medium {

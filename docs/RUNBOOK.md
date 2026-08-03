@@ -302,11 +302,12 @@ cargo oracle-lab card-reward-path `
 ```
 
 The complete typed deck, relic, potion, candidate, owner-band, and applied-edge
-evidence is written to the fresh output path. Capability improvements retain
-the evaluator's typed before/after inputs, so a count-driven promotion can be
-audited without reopening strategy source. Stdout stays a compact artifact
-receipt. For an active resident session, use `card-reward-path` through the
-matching `ol-live` surface with the same optional `--output` behavior.
+evidence is written to the fresh output path. Capability rule changes retain
+the evaluator's typed before/after inputs even when coverage does not improve,
+so a count-only change can be audited without reopening strategy source.
+Stdout stays a compact artifact receipt. For an active resident session, use
+`card-reward-path` through the matching `ol-live` surface with the same
+optional `--output` behavior.
 
 Run consecutive seeds in one process instead of launching resident services
 from a PowerShell loop:

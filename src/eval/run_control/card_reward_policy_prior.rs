@@ -3,6 +3,7 @@ use std::collections::BTreeSet;
 
 use serde::Serialize;
 
+use crate::ai::analysis::card_semantics::{card_definition_with_upgrades, DuplicateBehavior};
 use crate::ai::block_plan_profile_v1::{block_plan_profile_v1, BlockPlanProfileV1};
 use crate::ai::boss_mechanics_v1::{
     boss_mechanic_pressure_profile_v1, BossEncounterTargetTopologyV1, BossMechanicPressurePointV1,
@@ -47,7 +48,7 @@ use super::{
 };
 
 pub const EXACT_CARD_REWARD_POLICY_AUDIT_SCHEMA_NAME: &str = "ExactCardRewardPolicyAudit";
-pub const EXACT_CARD_REWARD_POLICY_AUDIT_SCHEMA_VERSION: u32 = 2;
+pub const EXACT_CARD_REWARD_POLICY_AUDIT_SCHEMA_VERSION: u32 = 4;
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -103,6 +104,7 @@ pub struct CardRewardPolicyActionEvidenceV1 {
     pub expensive_short_debuff_overlap: bool,
     pub access_conflict_or_redundancy: bool,
     pub mummified_hand_power_tempo: Option<MummifiedHandPowerTempoV1>,
+    pub mummified_hand_stacking_duplicate_support: bool,
     /// The known act boss punishes playing powers and this candidate is a
     /// shared-analysis minor power without an exact strategic improvement.
     pub boss_power_tax_conflict: bool,
@@ -148,6 +150,7 @@ pub struct CardRewardPolicyAuditCandidateV1 {
     pub band: CardRewardPolicyBandV1,
     pub closed_threat_gaps: Vec<super::RunPolicyThreatGapKeyV1>,
     pub capability_improvements: Vec<super::RunPolicyCapabilityChangeV1>,
+    pub capability_rule_changes: Vec<super::RunPolicyCapabilityRuleChangeV1>,
     pub resolved_formation_needs:
         Vec<crate::ai::noncombat_strategy_v1::StrategyDeckFormationNeedV1>,
     pub added_formation_strengths: Vec<StrategyPackageIdV2>,
@@ -157,6 +160,7 @@ pub struct CardRewardPolicyAuditCandidateV1 {
     pub expensive_short_debuff_overlap: bool,
     pub access_conflict_or_redundancy: bool,
     pub mummified_hand_power_tempo: Option<MummifiedHandPowerTempoV1>,
+    pub mummified_hand_stacking_duplicate_support: bool,
     pub boss_power_tax_conflict: bool,
     pub random_target_frontload_reliable: bool,
     pub added_deck_shape_risks: Vec<DeckShapeRiskV1>,
@@ -220,6 +224,7 @@ impl ExactCardRewardPolicyDecisionV1 {
                     band: evidence.band,
                     closed_threat_gaps: evidence.delta.closed_threat_gaps.clone(),
                     capability_improvements: evidence.delta.capability_improvements.clone(),
+                    capability_rule_changes: evidence.delta.capability_rule_changes.clone(),
                     resolved_formation_needs: evidence.delta.resolved_formation_needs.clone(),
                     added_formation_strengths: evidence.delta.added_formation_strengths.clone(),
                     introduces_unsupported_mechanics: evidence.introduces_unsupported_mechanics,
@@ -229,6 +234,8 @@ impl ExactCardRewardPolicyDecisionV1 {
                     expensive_short_debuff_overlap: evidence.expensive_short_debuff_overlap,
                     access_conflict_or_redundancy: evidence.access_conflict_or_redundancy,
                     mummified_hand_power_tempo: evidence.mummified_hand_power_tempo,
+                    mummified_hand_stacking_duplicate_support: evidence
+                        .mummified_hand_stacking_duplicate_support,
                     boss_power_tax_conflict: evidence.boss_power_tax_conflict,
                     random_target_frontload_reliable: evidence.random_target_frontload_reliable,
                     added_deck_shape_risks: evidence.added_deck_shape_risks.clone(),
@@ -418,14 +425,22 @@ fn card_reward_action_evidence_v1(
                     relic.id == crate::content::relics::RelicId::RunicPyramid
                 })
     );
-    let duplicate_low_marginal = duplicate_low_marginal_v1(&acquisition, &delta);
-    let expensive_short_debuff_overlap = expensive_short_debuff_overlap_v1(parent, &acquisition);
     let mummified_hand_power_tempo = match &acquisition {
         CardRewardPolicyAcquisitionV1::Card { card, upgrades, .. } => {
             mummified_hand_power_tempo_v1(&parent.run_state, *card, *upgrades)
         }
         _ => None,
     };
+    let mummified_hand_stacking_duplicate_support = mummified_hand_stacking_duplicate_support_v1(
+        &acquisition,
+        mummified_hand_power_tempo.as_ref(),
+    );
+    let duplicate_low_marginal = duplicate_low_marginal_v1(
+        &acquisition,
+        &delta,
+        mummified_hand_stacking_duplicate_support,
+    );
+    let expensive_short_debuff_overlap = expensive_short_debuff_overlap_v1(parent, &acquisition);
     let access_conflict_or_redundancy = matches!(
         &acquisition,
         CardRewardPolicyAcquisitionV1::Card {
@@ -523,6 +538,7 @@ fn card_reward_action_evidence_v1(
         expensive_short_debuff_overlap,
         access_conflict_or_redundancy,
         mummified_hand_power_tempo,
+        mummified_hand_stacking_duplicate_support,
         boss_power_tax_conflict,
         random_target_frontload_reliable,
         added_deck_shape_risks,
@@ -538,6 +554,7 @@ fn card_reward_action_evidence_v1(
 fn duplicate_low_marginal_v1(
     acquisition: &CardRewardPolicyAcquisitionV1,
     delta: &RunPolicyStateDeltaV1,
+    mummified_hand_stacking_duplicate_support: bool,
 ) -> bool {
     let CardRewardPolicyAcquisitionV1::Card {
         card,
@@ -549,7 +566,7 @@ fn duplicate_low_marginal_v1(
     else {
         return false;
     };
-    if *copies_before == 0 {
+    if *copies_before == 0 || mummified_hand_stacking_duplicate_support {
         return false;
     }
 
@@ -590,6 +607,42 @@ fn duplicate_low_marginal_v1(
         && tactical_coverage_only
         && no_new_strategic_shape
         && only_reinforces_supported_capabilities
+}
+
+fn mummified_hand_stacking_duplicate_support_v1(
+    acquisition: &CardRewardPolicyAcquisitionV1,
+    tempo: Option<&MummifiedHandPowerTempoV1>,
+) -> bool {
+    let CardRewardPolicyAcquisitionV1::Card {
+        card,
+        upgrades,
+        copies_before,
+        component_signals,
+        ..
+    } = acquisition
+    else {
+        return false;
+    };
+    let Some(tempo) = tempo else {
+        return false;
+    };
+
+    *copies_before > 0
+        && tempo.card == *card
+        && tempo.eligible_positive_cost_cards > 0
+        && card_definition_with_upgrades(*card, *upgrades)
+            .duplicate_behaviors
+            .iter()
+            .any(|behavior| {
+                matches!(
+                    behavior,
+                    DuplicateBehavior::StackingHandler | DuplicateBehavior::StackingOutput
+                )
+            })
+        && component_signals
+            .positive_signals
+            .iter()
+            .any(|signal| is_concrete_package_support_signal_v1(*signal))
 }
 
 fn expensive_short_debuff_overlap_v1(
@@ -1323,6 +1376,7 @@ mod tests {
         assert_eq!(tempo.card, CardId::DarkEmbrace);
         assert_eq!(tempo.paid_cost, 2);
         assert!(tempo.eligible_positive_cost_cards > 0);
+        assert!(dark_embrace.mummified_hand_stacking_duplicate_support);
         assert!(!dark_embrace.duplicate_low_marginal);
         assert_ne!(dark_embrace.band, CardRewardPolicyBandV1::Liability);
         assert!(
@@ -1339,6 +1393,30 @@ mod tests {
             "evidence={:#?}",
             decision.evidence
         );
+    }
+
+    #[test]
+    fn mummified_hand_does_not_rescue_a_redundant_installed_rule() {
+        let mut session = reward_session(&[(CardId::Corruption, 0)]);
+        session
+            .run_state
+            .relics
+            .push(RelicState::new(RelicId::MummifiedHand));
+        session.run_state.master_deck = owned_deck(&[
+            (CardId::Strike, 0),
+            (CardId::Defend, 0),
+            (CardId::Defend, 0),
+            (CardId::Defend, 0),
+            (CardId::Corruption, 0),
+            (CardId::DarkEmbrace, 0),
+        ]);
+
+        let decision = decision(&session);
+        let corruption = card_evidence(&decision, CardId::Corruption);
+        assert!(corruption.mummified_hand_power_tempo.is_some());
+        assert!(!corruption.mummified_hand_stacking_duplicate_support);
+        assert!(corruption.duplicate_low_marginal);
+        assert_eq!(corruption.band, CardRewardPolicyBandV1::Liability);
     }
 
     #[test]
@@ -1570,17 +1648,18 @@ mod tests {
     }
 
     #[test]
-    fn duplicate_second_wind_improvement_carries_typed_rule_inputs() {
+    fn duplicate_second_wind_count_change_stays_visible_without_capability_promotion() {
         let session = a1f10_mummified_hand_session(&[(CardId::SecondWind, 0)]);
 
         let decision = decision(&session);
         let second_wind = card_evidence(&decision, CardId::SecondWind);
-        let improvement = second_wind
+        assert!(second_wind.delta.capability_improvements.is_empty());
+        let change = second_wind
             .delta
-            .capability_improvements
+            .capability_rule_changes
             .iter()
             .find(|change| change.capability == StrategyCapabilityKindV1::LongFightScaling)
-            .expect("duplicate Second Wind should expose the current long-fight promotion");
+            .expect("duplicate Second Wind should retain its typed long-fight input change");
         let input = |inputs: &[crate::ai::noncombat_strategy_v1::StrategyCapabilityInputV1],
                      kind| {
             inputs
@@ -1589,36 +1668,38 @@ mod tests {
                 .map(|input| input.value)
         };
 
-        assert_eq!(improvement.before, StrategyCapabilityCoverageV1::Supported);
-        assert_eq!(improvement.after, StrategyCapabilityCoverageV1::Strong);
+        assert_eq!(change.before, StrategyCapabilityCoverageV1::Strong);
+        assert_eq!(change.after, StrategyCapabilityCoverageV1::Strong);
         assert_eq!(
             input(
-                &improvement.before_inputs,
+                &change.before_inputs,
                 crate::ai::noncombat_strategy_v1::StrategyCapabilityInputKindV1::ExhaustGenerators,
             ),
             Some(1)
         );
         assert_eq!(
             input(
-                &improvement.after_inputs,
+                &change.after_inputs,
                 crate::ai::noncombat_strategy_v1::StrategyCapabilityInputKindV1::ExhaustGenerators,
             ),
             Some(2)
         );
         assert_eq!(
             input(
-                &improvement.before_inputs,
-                crate::ai::noncombat_strategy_v1::StrategyCapabilityInputKindV1::ExhaustPayoffs,
+                &change.before_inputs,
+                crate::ai::noncombat_strategy_v1::StrategyCapabilityInputKindV1::RepeatableExhaustConverters,
             ),
             Some(1)
         );
         assert_eq!(
             input(
-                &improvement.after_inputs,
-                crate::ai::noncombat_strategy_v1::StrategyCapabilityInputKindV1::ExhaustPayoffs,
+                &change.after_inputs,
+                crate::ai::noncombat_strategy_v1::StrategyCapabilityInputKindV1::RepeatableExhaustConverters,
             ),
-            Some(1)
+            Some(2)
         );
+        assert!(second_wind.duplicate_low_marginal);
+        assert_eq!(second_wind.band, CardRewardPolicyBandV1::Liability);
     }
 
     #[test]

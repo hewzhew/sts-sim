@@ -4,6 +4,7 @@ use crate::ai::analysis::card_semantics::{
 use crate::ai::card_analysis_v1::card_analysis_profile_v1;
 use crate::ai::card_semantics_v1::{
     card_mechanics_profile_v1, card_reward_facts_v1, CardRewardPickDependencyV1,
+    CardRewardStatusPersistenceV1,
 };
 use crate::content::cards::{CardId, CardType};
 use crate::runtime::combat::CombatCard;
@@ -30,6 +31,16 @@ struct CapabilityFacts {
     draw_sources: usize,
     energy_sources: usize,
     exhaust_generators: usize,
+    repeatable_exhaust_converters: usize,
+    one_shot_exhaust_generators: usize,
+    exhaust_fuel_cards: usize,
+    targeted_exhaust_converters: usize,
+    non_attack_exhaust_converters: usize,
+    corruption_exhaust_converters: usize,
+    any_card_exhaust_fuel: usize,
+    non_attack_exhaust_fuel: usize,
+    skill_exhaust_fuel: usize,
+    generated_exhaust_fuel_per_cycle: usize,
     broad_exhaust_generators: usize,
     exhaust_payoffs: usize,
     exhaust_block_payoffs: usize,
@@ -37,6 +48,9 @@ struct CapabilityFacts {
     dense_card_sources: usize,
     retaliation_safe_sources: usize,
 }
+
+pub(super) const FRONTLOAD_SUPPORTED_TOTAL_DAMAGE_V1: i32 = 50;
+const FRONTLOAD_STRONG_TOTAL_DAMAGE_V1: i32 = 80;
 
 pub fn threat_coverage_from_run_state_v1(
     run_state: &RunState,
@@ -73,7 +87,43 @@ fn capability_facts_from_run_state(run_state: &RunState) -> CapabilityFacts {
         facts.draw_sources +=
             usize::from(observed.draw_cards > i32::from(mechanics.hand_topdeck_selection));
         facts.energy_sources += usize::from(observed.energy_gain > 0);
-        facts.exhaust_generators += usize::from(observed.exhausts_other_cards);
+        let is_exhaust_converter =
+            observed.exhausts_other_cards || observed.card == CardId::Corruption;
+        let is_targeted_exhaust_converter = matches!(
+            observed.card,
+            CardId::BurningPact | CardId::TrueGrit | CardId::Recycle
+        );
+        let is_non_attack_exhaust_converter =
+            matches!(observed.card, CardId::SecondWind | CardId::SeverSoul);
+        let is_corruption_exhaust_converter = observed.card == CardId::Corruption;
+        let is_repeatable_exhaust_converter = is_targeted_exhaust_converter
+            || is_non_attack_exhaust_converter
+            || is_corruption_exhaust_converter;
+        facts.exhaust_generators += usize::from(is_exhaust_converter);
+        facts.repeatable_exhaust_converters += usize::from(is_repeatable_exhaust_converter);
+        facts.one_shot_exhaust_generators +=
+            usize::from(is_exhaust_converter && !is_repeatable_exhaust_converter);
+        facts.targeted_exhaust_converters += usize::from(is_targeted_exhaust_converter);
+        facts.non_attack_exhaust_converters += usize::from(is_non_attack_exhaust_converter);
+        facts.corruption_exhaust_converters += usize::from(is_corruption_exhaust_converter);
+        let is_candidate_fuel =
+            observed.card_type != CardType::Power && !is_exhaust_converter && !observed.exhausts;
+        facts.any_card_exhaust_fuel += usize::from(is_candidate_fuel);
+        facts.non_attack_exhaust_fuel +=
+            usize::from(is_candidate_fuel && observed.card_type != CardType::Attack);
+        facts.skill_exhaust_fuel +=
+            usize::from(is_candidate_fuel && observed.card_type == CardType::Skill);
+        facts.generated_exhaust_fuel_per_cycle =
+            facts.generated_exhaust_fuel_per_cycle.saturating_add(
+                observed
+                    .status_injections
+                    .iter()
+                    .filter(|injection| {
+                        injection.persistence == CardRewardStatusPersistenceV1::Persistent
+                    })
+                    .map(|injection| usize::try_from(injection.count.max(0)).unwrap_or(usize::MAX))
+                    .fold(0usize, usize::saturating_add),
+            );
         facts.broad_exhaust_generators += usize::from(
             card_analysis_profile_v1(observed.card, card.upgrades)
                 .is_block_plan_broad_exhaust_source,
@@ -115,6 +165,15 @@ fn capability_facts_from_run_state(run_state: &RunState) -> CapabilityFacts {
                 ),
         );
     }
+    facts.exhaust_fuel_cards = [
+        (facts.targeted_exhaust_converters > 0).then_some(facts.any_card_exhaust_fuel),
+        (facts.non_attack_exhaust_converters > 0).then_some(facts.non_attack_exhaust_fuel),
+        (facts.corruption_exhaust_converters > 0).then_some(facts.skill_exhaust_fuel),
+    ]
+    .into_iter()
+    .flatten()
+    .max()
+    .unwrap_or(0);
     facts
 }
 
@@ -359,6 +418,19 @@ fn capability_inputs(kind: Kind, facts: &CapabilityFacts) -> Vec<Input> {
             count(InputKind::ScalingSources, facts.scaling_sources),
             count(InputKind::ScalingPayoffs, facts.scaling_payoffs),
             count(InputKind::ExhaustGenerators, facts.exhaust_generators),
+            count(
+                InputKind::RepeatableExhaustConverters,
+                facts.repeatable_exhaust_converters,
+            ),
+            count(
+                InputKind::OneShotExhaustGenerators,
+                facts.one_shot_exhaust_generators,
+            ),
+            count(InputKind::ExhaustFuelCards, facts.exhaust_fuel_cards),
+            count(
+                InputKind::GeneratedExhaustFuelPerCycle,
+                facts.generated_exhaust_fuel_per_cycle,
+            ),
             count(InputKind::ExhaustPayoffs, facts.exhaust_payoffs),
         ],
         Kind::DrawEnergyConsistency => vec![
@@ -398,9 +470,12 @@ fn count_coverage(count: usize) -> Coverage {
 }
 
 fn frontload_coverage(facts: &CapabilityFacts) -> Coverage {
-    if facts.best_single_hit >= 20 || facts.single_target_damage >= 80 {
+    if facts.best_single_hit >= 20 || facts.single_target_damage >= FRONTLOAD_STRONG_TOTAL_DAMAGE_V1
+    {
         Coverage::Strong
-    } else if facts.best_single_hit >= 12 || facts.single_target_damage >= 50 {
+    } else if facts.best_single_hit >= 12
+        || facts.single_target_damage >= FRONTLOAD_SUPPORTED_TOTAL_DAMAGE_V1
+    {
         Coverage::Supported
     } else if facts.single_target_damage > 0 {
         Coverage::Thin
@@ -435,10 +510,10 @@ fn long_fight_coverage(facts: &CapabilityFacts) -> Coverage {
     let direct_scaling_supported = facts.scaling_sources > 0;
     let direct_scaling_engine = facts.scaling_sources > 0 && facts.scaling_payoffs > 0;
     let exhaust_engine = facts.exhaust_generators > 0 && facts.exhaust_payoffs > 0;
-    if facts.scaling_sources >= 2
-        || direct_scaling_engine
-        || (exhaust_engine && facts.exhaust_generators + facts.exhaust_payoffs >= 3)
-    {
+    let repeatable_exhaust_engine = facts.repeatable_exhaust_converters > 0
+        && facts.exhaust_payoffs > 0
+        && (facts.exhaust_fuel_cards >= 3 || facts.generated_exhaust_fuel_per_cycle > 0);
+    if facts.scaling_sources >= 2 || direct_scaling_engine || repeatable_exhaust_engine {
         Coverage::Strong
     } else if direct_scaling_supported || exhaust_engine {
         Coverage::Supported

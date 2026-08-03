@@ -1,3 +1,4 @@
+use super::coverage::FRONTLOAD_SUPPORTED_TOTAL_DAMAGE_V1;
 use super::pressure::route_pressure_v1;
 use super::types::{
     DeckPlanHypothesisV1, StrategyDeckFactsV1, StrategyDeckFormationNeedV1,
@@ -117,7 +118,9 @@ fn needs_frontload(
     route: Option<&StrategyRouteFutureV1>,
     route_pressure: StrategyPlanPressureV1,
 ) -> bool {
-    if deck.total_attack_damage < 45 || route_pressure == StrategyPlanPressureV1::High {
+    if deck.total_attack_damage < FRONTLOAD_SUPPORTED_TOTAL_DAMAGE_V1
+        || route_pressure == StrategyPlanPressureV1::High
+    {
         return true;
     }
     let Some(route) = route else {

@@ -1,5 +1,7 @@
 use sts_oracle_runtime::ai::noncombat_strategy_v1::{
-    threat_coverage_from_run_state_v1, StrategyThreatProfileV1, StrategyThreatSourceRecordV1,
+    build_run_strategy_snapshot_from_run_state_v2, threat_coverage_from_run_state_v1,
+    StrategyCapabilityCoverageV1, StrategyCapabilityInputKindV1, StrategyCapabilityKindV1,
+    StrategyDeckFormationNeedV1, StrategyThreatProfileV1, StrategyThreatSourceRecordV1,
     StrategyThreatSourceV1, StrategyThreatTagV1,
 };
 use sts_oracle_runtime::content::cards::CardId;
@@ -74,6 +76,22 @@ fn exact_deck_strength_down_closes_high_incoming_gap() {
 }
 
 #[test]
+fn low_impact_attack_addition_does_not_clear_frontload_formation_need() {
+    for card in [CardId::Anger, CardId::PerfectedStrike] {
+        let mut run = RunState::new(1, 0, false, "Ironclad");
+        run.add_card_to_deck(card);
+        let formation = build_run_strategy_snapshot_from_run_state_v2(&run).formation_summary();
+
+        assert!(
+            formation
+                .needs
+                .contains(&StrategyDeckFormationNeedV1::Frontload),
+            "{card:?} only moves the aggregate damage fact from 42 to 48"
+        );
+    }
+}
+
+#[test]
 fn incomplete_exhaust_package_does_not_claim_long_fight_coverage() {
     let threats = one_threat(
         StrategyThreatSourceV1::ActBoss,
@@ -94,6 +112,133 @@ fn incomplete_exhaust_package_does_not_claim_long_fight_coverage() {
         StrategyThreatSourceV1::ActBoss,
         StrategyThreatTagV1::LongFightScaling
     ));
+    assert_eq!(
+        complete
+            .capability(StrategyCapabilityKindV1::LongFightScaling)
+            .expect("long-fight capability")
+            .coverage,
+        StrategyCapabilityCoverageV1::Strong,
+        "a repeatable converter with starter fuel and an exhaust payoff is a mature engine"
+    );
+}
+
+#[test]
+fn second_wind_engine_is_mature_before_a_duplicate_converter_copy() {
+    let threats = one_threat(
+        StrategyThreatSourceV1::ActBoss,
+        "TheChamp",
+        StrategyThreatTagV1::LongFightScaling,
+    );
+    let mut run = RunState::new(1, 0, false, "Ironclad");
+    run.add_card_to_deck(CardId::PowerThrough);
+    run.add_card_to_deck(CardId::SecondWind);
+    run.add_card_to_deck(CardId::DarkEmbrace);
+
+    let supported = threat_coverage_from_run_state_v1(&run, &threats);
+    assert_eq!(
+        supported
+            .capability(StrategyCapabilityKindV1::LongFightScaling)
+            .expect("long-fight capability")
+            .coverage,
+        StrategyCapabilityCoverageV1::Strong
+    );
+
+    run.add_card_to_deck(CardId::SecondWind);
+    let duplicate = threat_coverage_from_run_state_v1(&run, &threats);
+    let long_fight = duplicate
+        .capability(StrategyCapabilityKindV1::LongFightScaling)
+        .expect("long-fight capability");
+    let input = |kind| {
+        long_fight
+            .inputs
+            .iter()
+            .find(|input| input.input == kind)
+            .map(|input| input.value)
+    };
+
+    assert_eq!(long_fight.coverage, StrategyCapabilityCoverageV1::Strong);
+    assert_eq!(
+        input(StrategyCapabilityInputKindV1::OneShotExhaustGenerators),
+        Some(0)
+    );
+    assert_eq!(
+        input(StrategyCapabilityInputKindV1::RepeatableExhaustConverters),
+        Some(2)
+    );
+    assert_eq!(
+        input(StrategyCapabilityInputKindV1::GeneratedExhaustFuelPerCycle),
+        Some(2)
+    );
+}
+
+#[test]
+fn second_wind_does_not_count_attacks_as_exhaust_fuel() {
+    let threats = one_threat(
+        StrategyThreatSourceV1::ActBoss,
+        "TheChamp",
+        StrategyThreatTagV1::LongFightScaling,
+    );
+    let mut run = RunState::new(1, 0, false, "Ironclad");
+    run.master_deck = [
+        CardId::Strike,
+        CardId::Strike,
+        CardId::Strike,
+        CardId::SecondWind,
+        CardId::DarkEmbrace,
+    ]
+    .into_iter()
+    .enumerate()
+    .map(|(index, card)| CombatCard::new(card, index as u32))
+    .collect();
+
+    let coverage = threat_coverage_from_run_state_v1(&run, &threats);
+    let long_fight = coverage
+        .capability(StrategyCapabilityKindV1::LongFightScaling)
+        .expect("long-fight capability");
+    let fuel = long_fight
+        .inputs
+        .iter()
+        .find(|input| input.input == StrategyCapabilityInputKindV1::ExhaustFuelCards)
+        .map(|input| input.value);
+
+    assert_eq!(fuel, Some(0));
+    assert_eq!(long_fight.coverage, StrategyCapabilityCoverageV1::Supported);
+}
+
+#[test]
+fn duplicate_one_shot_exhaust_generators_do_not_mature_long_fight_engine() {
+    let threats = one_threat(
+        StrategyThreatSourceV1::ActBoss,
+        "TheChamp",
+        StrategyThreatTagV1::LongFightScaling,
+    );
+    let mut run = RunState::new(1, 0, false, "Ironclad");
+    run.add_card_to_deck(CardId::PowerThrough);
+    run.add_card_to_deck(CardId::FiendFire);
+    run.add_card_to_deck(CardId::FiendFire);
+    run.add_card_to_deck(CardId::DarkEmbrace);
+
+    let coverage = threat_coverage_from_run_state_v1(&run, &threats);
+    let long_fight = coverage
+        .capability(StrategyCapabilityKindV1::LongFightScaling)
+        .expect("long-fight capability");
+    let input = |kind| {
+        long_fight
+            .inputs
+            .iter()
+            .find(|input| input.input == kind)
+            .map(|input| input.value)
+    };
+
+    assert_eq!(long_fight.coverage, StrategyCapabilityCoverageV1::Supported);
+    assert_eq!(
+        input(StrategyCapabilityInputKindV1::OneShotExhaustGenerators),
+        Some(2)
+    );
+    assert_eq!(
+        input(StrategyCapabilityInputKindV1::RepeatableExhaustConverters),
+        Some(0)
+    );
 }
 
 #[test]

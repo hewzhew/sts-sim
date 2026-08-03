@@ -65,6 +65,16 @@ pub struct RunPolicyCapabilityChangeV1 {
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
+pub struct RunPolicyCapabilityRuleChangeV1 {
+    pub capability: StrategyCapabilityKindV1,
+    pub before: StrategyCapabilityCoverageV1,
+    pub after: StrategyCapabilityCoverageV1,
+    pub before_inputs: Vec<StrategyCapabilityInputV1>,
+    pub after_inputs: Vec<StrategyCapabilityInputV1>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct RunPolicyThreatGapKeyV1 {
     pub tag: StrategyThreatTagV1,
     pub source: StrategyThreatSourceV1,
@@ -80,6 +90,7 @@ pub struct RunPolicyStateDeltaV1 {
     pub deck_size_delta: isize,
     pub closed_threat_gaps: Vec<RunPolicyThreatGapKeyV1>,
     pub capability_improvements: Vec<RunPolicyCapabilityChangeV1>,
+    pub capability_rule_changes: Vec<RunPolicyCapabilityRuleChangeV1>,
     pub resolved_formation_needs: Vec<StrategyDeckFormationNeedV1>,
     pub added_formation_strengths: Vec<StrategyPackageIdV2>,
 }
@@ -106,7 +117,7 @@ pub fn run_policy_state_delta_v1(
         .iter()
         .map(|capability| (capability.capability, capability))
         .collect::<BTreeMap<_, _>>();
-    let capability_improvements = after
+    let capability_rule_changes = after
         .threat_coverage
         .capabilities
         .iter()
@@ -115,16 +126,28 @@ pub fn run_policy_state_delta_v1(
             let previous_coverage = previous
                 .map(|evidence| evidence.coverage)
                 .unwrap_or(StrategyCapabilityCoverageV1::Unknown);
-            (coverage_strength(capability.coverage) > coverage_strength(previous_coverage))
-                .then_some(RunPolicyCapabilityChangeV1 {
+            let previous_inputs = previous
+                .map(|evidence| evidence.inputs.clone())
+                .unwrap_or_default();
+            (capability.coverage != previous_coverage || capability.inputs != previous_inputs)
+                .then_some(RunPolicyCapabilityRuleChangeV1 {
                     capability: capability.capability,
                     before: previous_coverage,
                     after: capability.coverage,
-                    before_inputs: previous
-                        .map(|evidence| evidence.inputs.clone())
-                        .unwrap_or_default(),
+                    before_inputs: previous_inputs,
                     after_inputs: capability.inputs.clone(),
                 })
+        })
+        .collect::<Vec<_>>();
+    let capability_improvements = capability_rule_changes
+        .iter()
+        .filter(|change| coverage_strength(change.after) > coverage_strength(change.before))
+        .map(|change| RunPolicyCapabilityChangeV1 {
+            capability: change.capability,
+            before: change.before,
+            after: change.after,
+            before_inputs: change.before_inputs.clone(),
+            after_inputs: change.after_inputs.clone(),
         })
         .collect();
 
@@ -157,6 +180,7 @@ pub fn run_policy_state_delta_v1(
             })
             .collect(),
         capability_improvements,
+        capability_rule_changes,
         resolved_formation_needs: before
             .formation
             .needs
