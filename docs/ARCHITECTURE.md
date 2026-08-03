@@ -134,7 +134,11 @@ cost-two-or-more tactical candidate whose only semantic roles are frontload,
 Weak, and Vulnerable stays speculative when one of its one-turn debuffs
 duplicates an owned source of the same debuff. The gate is duration- and
 upgrade-sensitive, and its typed audit fact must remain separate from the
-underlying capability delta.
+underlying capability delta. Exact duplicates whose only additional value is
+a light AoE tactical bundle are likewise low-marginal when their apparent
+improvements merely promote already-supported source counts to strong. The
+first light AoE source remains eligible to close a real gap, and intrinsically
+strong AoE is outside this duplicate gate.
 
 A candidate that injects a persistent Status directly into the draw pile also
 carries a typed handling assessment. Evolve draw recovery and Medical Kit's

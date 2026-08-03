@@ -558,6 +558,7 @@ fn duplicate_low_marginal_v1(
 ) -> bool {
     let CardRewardPolicyAcquisitionV1::Card {
         card,
+        upgrades,
         copies_before,
         semantics,
         ..
@@ -581,6 +582,7 @@ fn duplicate_low_marginal_v1(
             matches!(
                 role,
                 CardRewardSemanticRoleV1::FrontloadDamage
+                    | CardRewardSemanticRoleV1::AoeDamage
                     | CardRewardSemanticRoleV1::Vulnerable
                     | CardRewardSemanticRoleV1::Weak
             )
@@ -593,7 +595,15 @@ fn duplicate_low_marginal_v1(
             ) && change.after == StrategyCapabilityCoverageV1::Strong
         });
 
-    get_card_definition(*card).cost >= 2
+    let has_aoe_role = semantics
+        .roles
+        .contains(&CardRewardSemanticRoleV1::AoeDamage);
+    let expensive_tactical_duplicate = get_card_definition(*card).cost >= 2 && !has_aoe_role;
+    let light_aoe_duplicate = has_aoe_role
+        && card_analysis_profile_v1(*card, *upgrades).aoe_support
+            == CardAnalysisAoeSupportV1::Present;
+
+    (expensive_tactical_duplicate || light_aoe_duplicate)
         && tactical_coverage_only
         && no_new_strategic_shape
         && only_reinforces_supported_capabilities
@@ -1496,6 +1506,83 @@ mod tests {
         assert!(
             wild.band < CardRewardPolicyBandV1::SpeculativeAddition,
             "covered status must preserve the underlying supported band: {wild:#?}"
+        );
+    }
+
+    #[test]
+    fn f11_second_light_aoe_does_not_turn_source_count_into_strategic_strength() {
+        let session = a1f11_mummified_hand_session(&[
+            (CardId::WildStrike, 0),
+            (CardId::ThunderClap, 0),
+            (CardId::Warcry, 0),
+        ]);
+
+        let decision = decision(&session);
+        let thunder_clap = card_evidence(&decision, CardId::ThunderClap);
+
+        assert!(thunder_clap.duplicate_low_marginal);
+        assert!(thunder_clap
+            .delta
+            .capability_improvements
+            .iter()
+            .all(|change| {
+                change.before == StrategyCapabilityCoverageV1::Supported
+                    && change.after == StrategyCapabilityCoverageV1::Strong
+            }));
+        assert_eq!(thunder_clap.band, CardRewardPolicyBandV1::Liability);
+        assert!(
+            position(&decision, |key| matches!(
+                key,
+                DecisionCandidateKey::CardRewardSkip { .. }
+            )) < position(&decision, |key| matches!(
+                key,
+                DecisionCandidateKey::CardRewardPick {
+                    card: CardId::ThunderClap,
+                    ..
+                }
+            )),
+            "evidence={:#?}",
+            decision.evidence
+        );
+    }
+
+    #[test]
+    fn first_light_aoe_source_can_still_close_an_act_one_gap() {
+        let mut session = reward_session(&[(CardId::ThunderClap, 0)]);
+        session.run_state.act_num = 1;
+        session.run_state.floor_num = 4;
+        session.run_state.boss_key = Some(EncounterId::SlimeBoss);
+        session.run_state.master_deck = owned_deck(&[
+            (CardId::Strike, 0),
+            (CardId::Strike, 0),
+            (CardId::Strike, 0),
+            (CardId::Strike, 0),
+            (CardId::Strike, 0),
+            (CardId::Defend, 0),
+            (CardId::Defend, 0),
+            (CardId::Defend, 0),
+            (CardId::Defend, 0),
+            (CardId::Bash, 0),
+        ]);
+
+        let decision = decision(&session);
+        let thunder_clap = card_evidence(&decision, CardId::ThunderClap);
+
+        assert!(!thunder_clap.duplicate_low_marginal);
+        assert!(thunder_clap.band < CardRewardPolicyBandV1::PreserveDeckQuality);
+        assert!(
+            position(&decision, |key| matches!(
+                key,
+                DecisionCandidateKey::CardRewardPick {
+                    card: CardId::ThunderClap,
+                    ..
+                }
+            )) < position(&decision, |key| matches!(
+                key,
+                DecisionCandidateKey::CardRewardSkip { .. }
+            )),
+            "evidence={:#?}",
+            decision.evidence
         );
     }
 
