@@ -31,7 +31,7 @@ use super::combat_policy_controls::load_action_imitation_policy;
 use super::exact_turn_corridor::load as load_exact_turn_corridor;
 use super::guidance_artifact_commands::load_value_prototype;
 use super::print_json;
-use super::turn_audits::single_potion_slot_mask;
+use super::turn_audits::potion_slot_mask;
 
 #[derive(Debug, Args)]
 pub(super) struct CombatCaseLocalGraphArgs {
@@ -160,10 +160,11 @@ pub(super) struct CombatCaseLocalGraphArgs {
     /// a terminal witness is accepted.
     #[arg(long, default_value = "0")]
     max_potions_used: Option<u32>,
-    /// Restrict newly generated potion actions to one exact zero-based slot.
-    /// This is a search contract, not a trace-only filter.
+    /// Restrict newly generated potion actions to exact zero-based slots.
+    /// Repeat the flag to admit a specific combination. This is a search
+    /// contract, not a trace-only filter.
     #[arg(long)]
-    potion_slot: Option<usize>,
+    potion_slot: Vec<usize>,
     /// All-legal diagnostic control: admit explicit potion discard actions.
     /// Semantic victory search omits them by default because discarding is not
     /// a generic way to diversify a sparse search.
@@ -282,7 +283,7 @@ pub(super) fn run(args: CombatCaseLocalGraphArgs) -> Result<(), String> {
     }
     let initial_hp = loaded.position.combat.entities.player.current_hp;
     let root_player_turn = loaded.position.combat.turn.turn_count;
-    if potion_slot.is_some() && max_potions_used == Some(0) {
+    if !potion_slot.is_empty() && max_potions_used == Some(0) {
         return Err("--potion-slot requires a positive --max-potions-used".to_string());
     }
     if initial_expansion_work == Some(0) {
@@ -297,7 +298,9 @@ pub(super) fn run(args: CombatCaseLocalGraphArgs) -> Result<(), String> {
     if boost_guide_lane.is_some() && boost_guide_lane == omit_guide_lane {
         return Err("--boost-guide-lane cannot name the omitted guide lane".to_string());
     }
-    let allowed_potion_slots = potion_slot.map(single_potion_slot_mask).transpose()?;
+    let allowed_potion_slots = (!potion_slot.is_empty())
+        .then(|| potion_slot_mask(&potion_slot))
+        .transpose()?;
     let execution_profile = LocalGraphExecutionProfile::from_controls(
         anchor_only,
         root_turn_anchor_only,

@@ -154,6 +154,12 @@ pub(super) fn single_potion_slot_mask(slot: usize) -> Result<u64, String> {
         .ok_or_else(|| format!("--potion-slot {slot} exceeds the 64-slot mask"))
 }
 
+pub(super) fn potion_slot_mask(slots: &[usize]) -> Result<u64, String> {
+    slots.iter().try_fold(0_u64, |mask, slot| {
+        single_potion_slot_mask(*slot).map(|slot_mask| mask | slot_mask)
+    })
+}
+
 #[derive(Debug, Args)]
 pub(super) struct TurnActionAuditArgs {
     #[arg(long)]
@@ -705,6 +711,13 @@ mod tests {
         assert_eq!(single_potion_slot_mask(0), Ok(1));
         assert_eq!(single_potion_slot_mask(2), Ok(4));
         assert!(single_potion_slot_mask(64).is_err());
+    }
+
+    #[test]
+    fn concrete_potion_lane_combines_and_deduplicates_exact_slots() {
+        assert_eq!(potion_slot_mask(&[0, 2]), Ok(5));
+        assert_eq!(potion_slot_mask(&[2, 2]), Ok(4));
+        assert!(potion_slot_mask(&[0, 64]).is_err());
     }
 
     #[test]

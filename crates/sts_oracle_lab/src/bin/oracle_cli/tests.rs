@@ -39,3 +39,20 @@ fn drive_parses_optional_full_ledger_output() {
 
     assert_eq!(output, Some(PathBuf::from("drive.json")));
 }
+
+#[test]
+fn combat_case_parses_repeated_exact_potion_slots() {
+    Cli::try_parse_from([
+        "oracle_lab",
+        "combat-case",
+        "--case",
+        "fight.case.json",
+        "--max-potions-used",
+        "2",
+        "--potion-slot",
+        "0",
+        "--potion-slot",
+        "2",
+    ])
+    .expect("a bounded potion combination should parse");
+}
