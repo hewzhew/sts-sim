@@ -21,17 +21,6 @@ use super::workspace_view;
 
 #[derive(Serialize)]
 #[serde(deny_unknown_fields)]
-struct CardRewardPathAuditWriteReceiptV1<'a> {
-    schema_name: &'static str,
-    schema_version: u32,
-    target_node_id: usize,
-    boundary_count: usize,
-    candidate_count: usize,
-    output: &'a Path,
-}
-
-#[derive(Serialize)]
-#[serde(deny_unknown_fields)]
 struct WorkspaceCompactionReceiptV1<'a> {
     schema_name: &'static str,
     schema_version: u32,
@@ -237,39 +226,6 @@ pub(super) fn view(workspace: &Path, node: Option<usize>) -> Result<Value, Strin
     encode(workspace_view::selected(&analysis, node)?)
 }
 
-pub(super) fn card_reward_path(
-    workspace: &Path,
-    node: Option<usize>,
-    output: Option<&Path>,
-) -> Result<Value, String> {
-    let analysis = load_oracle_analysis_workspace_v1(workspace)?;
-    let target_node_id = node.unwrap_or_else(|| analysis.session.cursor_node_id());
-    let report = analysis.session.card_reward_path_audit(target_node_id)?;
-    let Some(output) = output else {
-        return encode(report);
-    };
-    if output.exists() {
-        return Err(format!(
-            "card reward path audit output already exists: '{}'",
-            output.display()
-        ));
-    }
-
-    atomic_write_json(output, &report)?;
-    encode(CardRewardPathAuditWriteReceiptV1 {
-        schema_name: "OracleAnalysisCardRewardPathAuditWriteReceipt",
-        schema_version: 1,
-        target_node_id,
-        boundary_count: report.boundaries.len(),
-        candidate_count: report
-            .boundaries
-            .iter()
-            .map(|boundary| boundary.audit.candidates.len())
-            .sum(),
-        output,
-    })
-}
-
 pub(super) fn status(workspace: &Path, node: Option<usize>, limit: usize) -> Result<Value, String> {
     let analysis = load_oracle_analysis_workspace_v1(workspace)?;
     let view = workspace_view::selected(&analysis, node)?;
@@ -279,98 +235,6 @@ pub(super) fn status(workspace: &Path, node: Option<usize>, limit: usize) -> Res
         limit,
         &current_owner_order,
     ))
-}
-
-pub(super) fn choose(
-    workspace: &Path,
-    owner_rank: u64,
-    expected_node: Option<usize>,
-) -> Result<Value, String> {
-    let mut analysis = load_oracle_analysis_workspace_v1(workspace)?;
-    if let Some(expected) = expected_node {
-        let actual = analysis.session.cursor_node_id();
-        if expected != actual {
-            return Err(format!(
-                "oracle choose expected cursor node {expected}, but current cursor is {actual}"
-            ));
-        }
-    }
-    let current = analysis.view()?;
-    let current_owner_order = workspace_view::current_owner_order(&analysis, current.node_id)?;
-    let owner_rank = usize::try_from(owner_rank)
-        .map_err(|_| "oracle choose owner rank exceeds platform usize".to_string())?;
-    let candidate_id = current_owner_order.get(owner_rank).ok_or_else(|| {
-        format!(
-            "oracle node {} current owner has no candidate at rank {owner_rank}",
-            current.node_id
-        )
-    })?;
-    let matches = current
-        .choices
-        .iter()
-        .filter(|choice| &choice.candidate_id == candidate_id)
-        .collect::<Vec<_>>();
-    let [choice] = matches.as_slice() else {
-        return Err(format!(
-            "oracle node {} has {} materialized choices for current-owner candidate '{}'; expected exactly one",
-            current.node_id,
-            matches.len(),
-            candidate_id,
-        ));
-    };
-    let view = analysis.try_choice(&choice.choice_ref.clone())?;
-    save_oracle_analysis_workspace_v1(workspace, &analysis)?;
-    let current_owner_order = workspace_view::current_owner_order(&analysis, view.node_id)?;
-    Ok(workspace_view::compact_node(&view, 8, &current_owner_order))
-}
-
-pub(super) fn owner(workspace: &Path, steps: u8) -> Result<Value, String> {
-    let mut analysis = load_oracle_analysis_workspace_v1(workspace)?;
-    let mut applied = Vec::new();
-    let mut stopped = "step_limit";
-    for _ in 0..steps {
-        let current = analysis.view()?;
-        let current_owner_order = workspace_view::current_owner_order(&analysis, current.node_id)?;
-        let Some(candidate_id) = current_owner_order.first() else {
-            stopped = "no_owner_choice";
-            break;
-        };
-        let choices = current
-            .choices
-            .iter()
-            .filter(|choice| &choice.candidate_id == candidate_id)
-            .collect::<Vec<_>>();
-        let [choice] = choices.as_slice() else {
-            return Err(format!(
-                "oracle node {} has {} materialized choices for current-owner candidate '{}'; expected exactly one",
-                current.node_id,
-                choices.len(),
-                candidate_id,
-            ));
-        };
-        let candidate_id = choice.candidate_id.clone();
-        let label = choice.label.clone();
-        let choice_ref = choice.choice_ref.clone();
-        applied.push(json!({
-            "node": current.node_id,
-            "candidate_id": candidate_id,
-            "label": label,
-            "materialized_owner_rank": choice.owner_rank,
-        }));
-        analysis.try_choice(&choice_ref)?;
-    }
-    if !applied.is_empty() {
-        save_oracle_analysis_workspace_v1(workspace, &analysis)?;
-    }
-    let final_view = analysis.view()?;
-    let current_owner_order = workspace_view::current_owner_order(&analysis, final_view.node_id)?;
-    Ok(json!({
-        "requested_steps": steps,
-        "applied_count": applied.len(),
-        "applied": applied,
-        "stopped": stopped,
-        "status": workspace_view::compact_node(&final_view, 8, &current_owner_order),
-    }))
 }
 
 pub(super) fn timeline(

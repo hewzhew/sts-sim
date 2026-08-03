@@ -313,6 +313,18 @@ Stdout stays a compact artifact receipt. For an active resident session, use
 `card-reward-path` through the matching `ol-live` surface with the same
 optional `--output` behavior.
 
+Explain the current route owner's full typed context and candidate ordering at
+one exact retained map node without starting a resident service:
+
+```powershell
+cargo oracle-lab route-policy-audit `
+  --workspace .oracle-lab/cases/<run>.workspace.json `
+  --node <workspace-local-node>
+```
+
+Omit `--node` to audit the current cursor. This command is read-only and emits
+the same route-policy evidence as the resident `route` command.
+
 When an analysis workspace has accumulated many historical variations, create
 a fresh active workbench from one exact committed node without modifying or
 overwriting the source:

@@ -29,6 +29,7 @@ use super::turn_membership_audit::TurnMembershipArgs;
 use super::turn_quality_corridor::{TurnQualityCorridorArgs, TurnQualityFrontierArgs};
 use super::v2_capability_audit::V2CapabilityAuditArgs;
 use super::workspace_drive::OracleDriveBoundaryArg;
+use super::workspace_policy_audits::{CardRewardPathArgs, RoutePolicyAuditArgs};
 
 #[derive(Debug, Parser)]
 #[command(
@@ -413,18 +414,8 @@ pub(super) enum Command {
         #[arg(long)]
         node: Option<usize>,
     },
-    /// Audit every card-reward surface on one exact retained path in a single
-    /// read-only workspace load. Defaults to the current cursor.
-    CardRewardPath {
-        #[arg(long)]
-        workspace: PathBuf,
-        #[arg(long)]
-        node: Option<usize>,
-        /// Write the complete typed report here and print only a compact
-        /// artifact receipt, keeping large evidence out of the terminal.
-        #[arg(long)]
-        output: Option<PathBuf>,
-    },
+    RoutePolicyAudit(RoutePolicyAuditArgs),
+    CardRewardPath(CardRewardPathArgs),
     /// Show a compact actionable summary of the current or selected node.
     Status {
         #[arg(long)]

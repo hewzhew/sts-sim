@@ -10,6 +10,9 @@ use crate::ai::route_window_facts::{
     build_route_path_family_from_target, RouteWindowCoverageKind, RouteWindowFactsConfig,
     RouteWindowPath, RouteWindowPathFamily,
 };
+use crate::ai::strategy::boss_encounter_readiness::{
+    boss_encounter_readiness_v1, BossEncounterPreparationBandV1, BossEncounterReadinessV1,
+};
 use crate::content::relics::RelicId;
 use crate::state::core::EngineState;
 use crate::state::map::node::RoomType;
@@ -21,6 +24,7 @@ use super::{
 };
 
 const ROUTE_PATH_BUDGET_V1: usize = 2_000;
+const RECENT_COMBAT_HIGH_ATTRITION_MAX_HP_DENOMINATOR_V1: i32 = 6;
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -50,7 +54,7 @@ pub enum RoutePolicyArrivalV1 {
     Other,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct RoutePolicyContextV1 {
     pub act: u8,
@@ -61,6 +65,8 @@ pub struct RoutePolicyContextV1 {
     pub critical_recovery: bool,
     pub recovery_pressure: bool,
     pub shop_conversion_support: StrategyPlanSupportV1,
+    pub recent_combat_hp_loss: Option<i32>,
+    pub boss_encounter_readiness: BossEncounterReadinessV1,
     pub pending_rewards_only_unclaimable_potions: bool,
 }
 
@@ -203,7 +209,7 @@ impl ExactRoutePolicyDecisionV1 {
             })
             .collect::<Result<Vec<_>, String>>()?;
         Ok(ExactRoutePolicyAuditV1 {
-            context: self.context,
+            context: self.context.clone(),
             candidates,
         })
     }
@@ -239,10 +245,10 @@ pub fn exact_route_policy_decision_v1(
         .iter()
         .enumerate()
         .map(|(surface_index, successor)| {
-            route_action_evidence_v1(session, successor, surface_index, context)
+            route_action_evidence_v1(session, successor, surface_index, &context)
         })
         .collect::<Result<Vec<_>, _>>()?;
-    evidence.sort_by(|left, right| compare_route_evidence(left, right, context));
+    evidence.sort_by(|left, right| compare_route_evidence(left, right, &context));
     let prior = positive_ranked_run_policy_prior_v1(
         legal,
         evidence
@@ -302,6 +308,10 @@ fn route_policy_context_v1(session: &RunControlSession) -> RoutePolicyContextV1 
         critical_recovery: max_hp > 0 && current_hp.saturating_mul(3) <= max_hp,
         recovery_pressure: max_hp > 0 && current_hp.saturating_mul(2) <= max_hp,
         shop_conversion_support: strategy.support(StrategyPackageIdV2::GoldPlan),
+        recent_combat_hp_loss: session
+            .recent_combat_attrition()
+            .map(|attrition| attrition.raw_hp_loss),
+        boss_encounter_readiness: boss_encounter_readiness_v1(&session.run_state),
         pending_rewards_only_unclaimable_potions:
             map_overlay_pending_rewards_only_unclaimable_potions(session),
     }
@@ -320,7 +330,7 @@ fn route_action_evidence_v1(
     parent: &RunControlSession,
     successor: &ExactRunPolicyActionSuccessorV1,
     surface_index: usize,
-    context: RoutePolicyContextV1,
+    context: &RoutePolicyContextV1,
 ) -> Result<RoutePolicyActionEvidenceV1, String> {
     let candidate_key = successor.candidate_key.clone().ok_or_else(|| {
         format!(
@@ -509,7 +519,7 @@ fn summarize_path(path: &RouteWindowPath) -> PathStats {
 
 fn route_policy_band_v1(
     action: &RoutePolicyActionV1,
-    context: RoutePolicyContextV1,
+    context: &RoutePolicyContextV1,
 ) -> RoutePolicyBandV1 {
     let RoutePolicyActionV1::Select {
         room_type, path, ..
@@ -555,14 +565,28 @@ fn route_policy_band_v1(
     RoutePolicyBandV1::Ordinary
 }
 
-fn a0_act1_elite_growth_is_supported(context: RoutePolicyContextV1) -> bool {
+fn a0_act1_elite_growth_is_supported(context: &RoutePolicyContextV1) -> bool {
     context.act == 1
         && context.ascension == 0
         && context.max_hp > 0
         && context.current_hp.saturating_mul(4) >= context.max_hp.saturating_mul(3)
+        && !recent_combat_attrition_is_high(context)
+        && !context
+            .boss_encounter_readiness
+            .preparation
+            .requires_resource_preservation()
 }
 
-fn shop_conversion_is_supported(context: RoutePolicyContextV1) -> bool {
+fn recent_combat_attrition_is_high(context: &RoutePolicyContextV1) -> bool {
+    context.max_hp > 0
+        && context.recent_combat_hp_loss.is_some_and(|loss| {
+            loss.max(0)
+                .saturating_mul(RECENT_COMBAT_HIGH_ATTRITION_MAX_HP_DENOMINATOR_V1)
+                >= context.max_hp
+        })
+}
+
+fn shop_conversion_is_supported(context: &RoutePolicyContextV1) -> bool {
     matches!(
         context.shop_conversion_support,
         StrategyPlanSupportV1::Plausible | StrategyPlanSupportV1::Strong
@@ -572,7 +596,7 @@ fn shop_conversion_is_supported(context: RoutePolicyContextV1) -> bool {
 fn compare_route_evidence(
     left: &RoutePolicyActionEvidenceV1,
     right: &RoutePolicyActionEvidenceV1,
-    context: RoutePolicyContextV1,
+    context: &RoutePolicyContextV1,
 ) -> Ordering {
     left.band
         .cmp(&right.band)
@@ -583,7 +607,7 @@ fn compare_route_evidence(
 fn compare_route_actions(
     left: &RoutePolicyActionV1,
     right: &RoutePolicyActionV1,
-    context: RoutePolicyContextV1,
+    context: &RoutePolicyContextV1,
 ) -> Ordering {
     let (
         RoutePolicyActionV1::Select {
@@ -616,6 +640,23 @@ fn compare_route_actions(
         });
     if context.recovery_pressure && survival != Ordering::Equal {
         return survival;
+    }
+
+    let boss_preparation = if matches!(
+        context.boss_encounter_readiness.preparation,
+        BossEncounterPreparationBandV1::Exposed | BossEncounterPreparationBandV1::PotionBacked
+    ) {
+        right_path
+            .max_campfires
+            .cmp(&left_path.max_campfires)
+            .then_with(|| right_path.min_campfires.cmp(&left_path.min_campfires))
+            .then_with(|| left_path.min_elites.cmp(&right_path.min_elites))
+            .then_with(|| left_path.max_elites.cmp(&right_path.max_elites))
+    } else {
+        Ordering::Equal
+    };
+    if boss_preparation != Ordering::Equal {
+        return boss_preparation;
     }
 
     let shop = if shop_conversion_is_supported(context) {
@@ -811,7 +852,7 @@ mod tests {
         assert_eq!(
             route_policy_band_v1(
                 &action,
-                RoutePolicyContextV1 {
+                &RoutePolicyContextV1 {
                     act: 2,
                     ascension: 0,
                     current_hp: 70,
@@ -820,6 +861,8 @@ mod tests {
                     critical_recovery: false,
                     recovery_pressure: false,
                     shop_conversion_support: StrategyPlanSupportV1::Blocked,
+                    recent_combat_hp_loss: None,
+                    boss_encounter_readiness: BossEncounterReadinessV1::default(),
                     pending_rewards_only_unclaimable_potions: false,
                 }
             ),
@@ -838,6 +881,8 @@ mod tests {
             critical_recovery: false,
             recovery_pressure: false,
             shop_conversion_support: StrategyPlanSupportV1::Blocked,
+            recent_combat_hp_loss: None,
+            boss_encounter_readiness: BossEncounterReadinessV1::default(),
             pending_rewards_only_unclaimable_potions: false,
         };
         let elite = route_action(
@@ -863,8 +908,8 @@ mod tests {
             },
         );
 
-        let elite_band = route_policy_band_v1(&elite, context);
-        let event_band = route_policy_band_v1(&event, context);
+        let elite_band = route_policy_band_v1(&elite, &context);
+        let event_band = route_policy_band_v1(&event, &context);
         assert_eq!(elite_band, RoutePolicyBandV1::Ordinary);
         assert_eq!(event_band, RoutePolicyBandV1::FlexibleGrowth);
         assert!(event_band < elite_band);
@@ -892,11 +937,13 @@ mod tests {
             critical_recovery: false,
             recovery_pressure: false,
             shop_conversion_support: StrategyPlanSupportV1::Blocked,
+            recent_combat_hp_loss: None,
+            boss_encounter_readiness: BossEncounterReadinessV1::default(),
             pending_rewards_only_unclaimable_potions: false,
         };
 
         assert_eq!(
-            route_policy_band_v1(&action, context),
+            route_policy_band_v1(&action, &context),
             RoutePolicyBandV1::EliteGrowth
         );
     }
@@ -921,11 +968,164 @@ mod tests {
             critical_recovery: false,
             recovery_pressure: false,
             shop_conversion_support: StrategyPlanSupportV1::Blocked,
+            recent_combat_hp_loss: None,
+            boss_encounter_readiness: BossEncounterReadinessV1::default(),
             pending_rewards_only_unclaimable_potions: false,
         };
 
         assert_eq!(
-            route_policy_band_v1(&action, context),
+            route_policy_band_v1(&action, &context),
+            RoutePolicyBandV1::Ordinary
+        );
+    }
+
+    #[test]
+    fn potion_backed_slime_boss_plan_does_not_fund_direct_elite_growth() {
+        let action = route_action(
+            RoomType::MonsterRoomElite,
+            RoutePolicyArrivalV1::Combat,
+            RoutePolicyPathEvidenceV1 {
+                min_elites: 1,
+                max_elites: 1,
+                min_campfires: 1,
+                max_campfires: 1,
+                ..RoutePolicyPathEvidenceV1::default()
+            },
+        );
+        let context = RoutePolicyContextV1 {
+            act: 1,
+            ascension: 0,
+            current_hp: 65,
+            max_hp: 85,
+            gold: 41,
+            critical_recovery: false,
+            recovery_pressure: false,
+            shop_conversion_support: StrategyPlanSupportV1::Blocked,
+            recent_combat_hp_loss: Some(7),
+            boss_encounter_readiness: BossEncounterReadinessV1 {
+                boss: Some(crate::content::monsters::factory::EncounterId::SlimeBoss),
+                preparation: BossEncounterPreparationBandV1::PotionBacked,
+                ..BossEncounterReadinessV1::default()
+            },
+            pending_rewards_only_unclaimable_potions: false,
+        };
+
+        assert_eq!(
+            route_policy_band_v1(&action, &context),
+            RoutePolicyBandV1::Ordinary
+        );
+    }
+
+    #[test]
+    fn established_slime_boss_plan_keeps_the_bounded_elite_growth_prior() {
+        let action = route_action(
+            RoomType::MonsterRoomElite,
+            RoutePolicyArrivalV1::Combat,
+            RoutePolicyPathEvidenceV1 {
+                min_elites: 1,
+                max_elites: 1,
+                ..RoutePolicyPathEvidenceV1::default()
+            },
+        );
+        let context = RoutePolicyContextV1 {
+            act: 1,
+            ascension: 0,
+            current_hp: 65,
+            max_hp: 85,
+            gold: 41,
+            critical_recovery: false,
+            recovery_pressure: false,
+            shop_conversion_support: StrategyPlanSupportV1::Blocked,
+            recent_combat_hp_loss: Some(7),
+            boss_encounter_readiness: BossEncounterReadinessV1 {
+                boss: Some(crate::content::monsters::factory::EncounterId::SlimeBoss),
+                preparation: BossEncounterPreparationBandV1::Established,
+                ..BossEncounterReadinessV1::default()
+            },
+            pending_rewards_only_unclaimable_potions: false,
+        };
+
+        assert_eq!(
+            route_policy_band_v1(&action, &context),
+            RoutePolicyBandV1::EliteGrowth
+        );
+    }
+
+    #[test]
+    fn exposed_boss_plan_prefers_campfire_scope_over_optional_elite_count() {
+        let monster = route_action(
+            RoomType::MonsterRoom,
+            RoutePolicyArrivalV1::Combat,
+            RoutePolicyPathEvidenceV1 {
+                min_elites: 0,
+                max_elites: 2,
+                min_campfires: 1,
+                max_campfires: 2,
+                ..RoutePolicyPathEvidenceV1::default()
+            },
+        );
+        let campfire = route_action(
+            RoomType::RestRoom,
+            RoutePolicyArrivalV1::Campfire,
+            RoutePolicyPathEvidenceV1 {
+                min_elites: 0,
+                max_elites: 1,
+                min_campfires: 3,
+                max_campfires: 3,
+                ..RoutePolicyPathEvidenceV1::default()
+            },
+        );
+        let context = RoutePolicyContextV1 {
+            act: 1,
+            ascension: 0,
+            current_hp: 73,
+            max_hp: 85,
+            gold: 29,
+            critical_recovery: false,
+            recovery_pressure: false,
+            shop_conversion_support: StrategyPlanSupportV1::Blocked,
+            recent_combat_hp_loss: Some(10),
+            boss_encounter_readiness: BossEncounterReadinessV1 {
+                boss: Some(crate::content::monsters::factory::EncounterId::SlimeBoss),
+                preparation: BossEncounterPreparationBandV1::Exposed,
+                ..BossEncounterReadinessV1::default()
+            },
+            pending_rewards_only_unclaimable_potions: false,
+        };
+
+        assert_eq!(
+            compare_route_actions(&campfire, &monster, &context),
+            Ordering::Less
+        );
+    }
+
+    #[test]
+    fn high_recent_raw_attrition_blocks_the_elite_growth_label() {
+        let action = route_action(
+            RoomType::MonsterRoomElite,
+            RoutePolicyArrivalV1::Combat,
+            RoutePolicyPathEvidenceV1 {
+                min_elites: 1,
+                max_elites: 1,
+                ..RoutePolicyPathEvidenceV1::default()
+            },
+        );
+        let context = RoutePolicyContextV1 {
+            act: 1,
+            ascension: 0,
+            current_hp: 84,
+            max_hp: 85,
+            gold: 0,
+            critical_recovery: false,
+            recovery_pressure: false,
+            shop_conversion_support: StrategyPlanSupportV1::Blocked,
+            recent_combat_hp_loss: Some(15),
+            boss_encounter_readiness: BossEncounterReadinessV1::default(),
+            pending_rewards_only_unclaimable_potions: false,
+        };
+
+        assert_eq!(
+            route_policy_band_v1(&action, &context),
             RoutePolicyBandV1::Ordinary
         );
     }
@@ -998,6 +1198,8 @@ mod tests {
             critical_recovery: false,
             recovery_pressure: false,
             shop_conversion_support: StrategyPlanSupportV1::Plausible,
+            recent_combat_hp_loss: None,
+            boss_encounter_readiness: BossEncounterReadinessV1::default(),
             pending_rewards_only_unclaimable_potions: false,
         };
         let shop = route_action(
@@ -1027,8 +1229,8 @@ mod tests {
             },
         );
 
-        let shop_band = route_policy_band_v1(&shop, context);
-        let flexible_band = route_policy_band_v1(&flexible, context);
+        let shop_band = route_policy_band_v1(&shop, &context);
+        let flexible_band = route_policy_band_v1(&flexible, &context);
 
         assert_eq!(shop_band, RoutePolicyBandV1::Ordinary);
         assert_eq!(flexible_band, RoutePolicyBandV1::FlexibleGrowth);

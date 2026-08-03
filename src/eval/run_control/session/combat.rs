@@ -131,6 +131,10 @@ impl RunControlSession {
         self.combat_outcomes.last()
     }
 
+    pub fn recent_combat_attrition(&self) -> Option<super::RecentCombatAttritionV1> {
+        self.recent_combat_attrition
+    }
+
     pub fn last_completed_combat_automation_trajectory(
         &self,
     ) -> Option<&CombatAutomationTrajectoryRecordV1> {

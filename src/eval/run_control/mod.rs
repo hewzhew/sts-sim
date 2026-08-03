@@ -262,9 +262,9 @@ pub use run_policy_prior::{
     RunPolicyPriorFnV1, RunPolicyPriorV1,
 };
 pub use session::{
-    canonical_player_class, RunControlAutoAppliedKindV1, RunControlAutoAppliedStepV1,
-    RunControlCombatSearchRejection, RunControlConfig, RunControlSession,
-    RunControlSessionCheckpointV1, RunProgressOutcome, ShopVisitContextV1,
+    canonical_player_class, RecentCombatAttritionV1, RunControlAutoAppliedKindV1,
+    RunControlAutoAppliedStepV1, RunControlCombatSearchRejection, RunControlConfig,
+    RunControlSession, RunControlSessionCheckpointV1, RunProgressOutcome, ShopVisitContextV1,
 };
 pub use session_trace::{
     load_session_trace_v1, SessionTraceArtifactKind, SessionTraceArtifactRefV1,

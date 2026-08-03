@@ -67,6 +67,9 @@ impl BossMechanicPressureProfileV1 {
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum BossMechanicPressurePointV1 {
+    OpeningBurstCheck,
+    SplitControlWindow,
+    PostSplitControl,
     PowerPlayPenalty,
     DarkEchoBlockCheck,
     EnemyStrengthMultiHitExposure,
@@ -87,6 +90,9 @@ pub enum BossMechanicPressurePointV1 {
 impl BossMechanicPressurePointV1 {
     pub fn label(self) -> &'static str {
         match self {
+            Self::OpeningBurstCheck => "opening_burst_check",
+            Self::SplitControlWindow => "split_control_window",
+            Self::PostSplitControl => "post_split_control",
             Self::PowerPlayPenalty => "power_play_penalty",
             Self::DarkEchoBlockCheck => "dark_echo_block_check",
             Self::EnemyStrengthMultiHitExposure => "enemy_strength_multi_hit_exposure",
@@ -141,6 +147,8 @@ impl BossMechanicRedFlagV1 {
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum BossMechanicMissingAnswerV1 {
+    SplitTimingPlan,
+    PostSplitDamagePlan,
     PhasePowerPlan,
     DarkEchoBlockPlan,
     TimeWarpCounterPlan,
@@ -158,6 +166,8 @@ pub enum BossMechanicMissingAnswerV1 {
 impl BossMechanicMissingAnswerV1 {
     pub fn label(self) -> &'static str {
         match self {
+            Self::SplitTimingPlan => "split_timing_plan",
+            Self::PostSplitDamagePlan => "post_split_damage_plan",
             Self::PhasePowerPlan => "phase_power_plan",
             Self::DarkEchoBlockPlan => "dark_echo_block_plan",
             Self::TimeWarpCounterPlan => "time_warp_counter_plan",
@@ -176,6 +186,8 @@ impl BossMechanicMissingAnswerV1 {
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum BossMechanicBiasV1 {
+    PreferSplitControl,
+    PreferPostSplitAoe,
     DelayMinorPowers,
     PreferHighImpactPerCard,
     PreferArtifactStrip,
@@ -190,6 +202,8 @@ pub enum BossMechanicBiasV1 {
 impl BossMechanicBiasV1 {
     pub fn label(self) -> &'static str {
         match self {
+            Self::PreferSplitControl => "prefer_split_control",
+            Self::PreferPostSplitAoe => "prefer_post_split_aoe",
             Self::DelayMinorPowers => "delay_minor_powers",
             Self::PreferHighImpactPerCard => "prefer_high_impact_per_card",
             Self::PreferArtifactStrip => "prefer_artifact_strip",
@@ -238,6 +252,7 @@ pub fn boss_mechanic_pressure_profile_v1(
     };
 
     match boss {
+        EncounterId::SlimeBoss => slime_boss_pressure(&facts, &mut profile),
         EncounterId::AwakenedOne => awakened_one_pressure(&facts, &mut profile),
         EncounterId::TimeEater => time_eater_pressure(&facts, &mut profile),
         EncounterId::DonuAndDeca => donu_deca_pressure(&facts, &mut profile),
@@ -249,6 +264,27 @@ pub fn boss_mechanic_pressure_profile_v1(
 
     profile.dedup();
     profile
+}
+
+fn slime_boss_pressure(
+    facts: &BossMechanicDeckFactsV1,
+    profile: &mut BossMechanicPressureProfileV1,
+) {
+    profile.push_pressure(BossMechanicPressurePointV1::OpeningBurstCheck);
+    profile.push_pressure(BossMechanicPressurePointV1::SplitControlWindow);
+    profile.push_pressure(BossMechanicPressurePointV1::PostSplitControl);
+    profile.push_bias(BossMechanicBiasV1::PreferSplitControl);
+
+    if facts.transition_burst_count == 0 {
+        profile.push_missing_answer(BossMechanicMissingAnswerV1::SplitTimingPlan);
+        profile.push_red_flag(BossMechanicRedFlagV1::NoHalfHpBurstPlan);
+    }
+    if facts.aoe_count == 0 {
+        profile.push_missing_answer(BossMechanicMissingAnswerV1::PostSplitDamagePlan);
+        profile.push_red_flag(BossMechanicRedFlagV1::SplitDamageWithoutAoe);
+    } else {
+        profile.push_bias(BossMechanicBiasV1::PreferPostSplitAoe);
+    }
 }
 
 pub fn boss_target_topology_v1(boss: EncounterId) -> BossEncounterTargetTopologyV1 {
@@ -660,6 +696,33 @@ mod tests {
         assert!(!profile.has_missing_answer(BossMechanicMissingAnswerV1::ExecuteBlockPlan));
         assert!(!profile.has_red_flag(BossMechanicRedFlagV1::PrematureChampTransitionRisk));
         assert!(!profile.has_red_flag(BossMechanicRedFlagV1::NoExecuteBlockPlan));
+    }
+
+    #[test]
+    fn slime_boss_profile_exposes_split_timing_and_post_split_answers() {
+        let mut run = RunState::new(744270980, 0, false, "Ironclad");
+        run.act_num = 1;
+        run.floor_num = 12;
+        run.boss_key = Some(EncounterId::SlimeBoss);
+        replace_deck(
+            &mut run,
+            &[
+                CardId::Strike,
+                CardId::Defend,
+                CardId::Bash,
+                CardId::DarkEmbrace,
+            ],
+        );
+
+        let profile = boss_mechanic_pressure_profile_v1(&run, EncounterId::SlimeBoss);
+
+        assert!(profile.has_pressure(BossMechanicPressurePointV1::OpeningBurstCheck));
+        assert!(profile.has_pressure(BossMechanicPressurePointV1::SplitControlWindow));
+        assert!(profile.has_pressure(BossMechanicPressurePointV1::PostSplitControl));
+        assert!(profile.has_missing_answer(BossMechanicMissingAnswerV1::SplitTimingPlan));
+        assert!(profile.has_missing_answer(BossMechanicMissingAnswerV1::PostSplitDamagePlan));
+        assert!(profile.has_red_flag(BossMechanicRedFlagV1::NoHalfHpBurstPlan));
+        assert!(profile.has_red_flag(BossMechanicRedFlagV1::SplitDamageWithoutAoe));
     }
 
     #[test]

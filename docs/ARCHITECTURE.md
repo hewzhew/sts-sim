@@ -104,9 +104,21 @@ instead of evaluating the card surface against a stale pre-reward run state.
 The current route owner has one deliberately narrow elite-growth prior: on
 ascension 0 during Act 1, a direct elite arrival may enter the typed
 `EliteGrowth` band only while current HP is at least three quarters of maximum
-HP. Recovery and funded-liquidity bands still take precedence. This is a
-public-state behavior prior, not a claim that an elite is safe, a hidden-future
-lookup, or a substitute for measuring the resulting continuation.
+HP, recent durable combat attrition is not high when that fact is available,
+and the visible Slime Boss plan is not exposed or potion-backed. An unresolved
+or potion-backed Slime Boss plan also makes same-band route comparisons protect
+campfire scope before optional elite count. Recovery and funded-liquidity bands
+still take precedence. This is a public-state behavior prior, not a claim that
+an elite is safe, a hidden-future lookup, or a substitute for measuring the
+resulting continuation.
+
+Slime Boss preparation is a shared typed strategy fact. It records capability
+coverage, static attack inventory, exact damage-potion identities, and whether
+two distinct potions can cover the opening and post-split stages. Static attack
+inventory is not presented as an exact three-turn simulation. `PotionBacked`
+means that continuation resources are carrying an unresolved deck plan; it is
+not equivalent to `Established` and is not permission to spend those resources
+on an avoidable elite.
 
 Card-taking owners share the strategy-layer acquisition contract. A shop
 adapter must pass the currently available purge price as an explicit
@@ -539,6 +551,12 @@ witnesses against those captured limits, but it must not reconstruct the limits
 from final HP, a hand-configured reserve, or a copied policy formula. Crossing a
 quality limit is diagnostic evidence that a local improvement matters to the
 current owner contract; it is not by itself authority to spend a potion.
+
+The most recent completed combat's start HP, pre-relic end-combat HP, raw loss,
+turn count, and potion count are a compact owner fact rather than a diagnostic
+trace. This fact survives external checkpoints even when detailed combat
+outcomes and search traces are cleared. Legacy checkpoints without it remain
+explicitly unavailable; route policy must not reconstruct it from net map HP.
 
 ## Prohibited Crossings
 

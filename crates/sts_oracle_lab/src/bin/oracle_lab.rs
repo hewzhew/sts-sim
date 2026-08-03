@@ -47,6 +47,8 @@ mod turn_quality_corridor;
 mod v2_capability_audit;
 mod workspace_commands;
 mod workspace_drive;
+mod workspace_owner_commands;
+mod workspace_policy_audits;
 mod workspace_view;
 
 use canonical_launch::{
@@ -341,14 +343,13 @@ fn main() -> Result<(), String> {
         Command::View { workspace, node } => {
             print_json(&workspace_commands::view(&workspace, node)?)
         }
-        Command::CardRewardPath {
-            workspace,
-            node,
-            output,
-        } => print_json(&workspace_commands::card_reward_path(
-            &workspace,
-            node,
-            output.as_deref(),
+        Command::RoutePolicyAudit(args) => {
+            print_json(&workspace_policy_audits::route(&args.workspace, args.node)?)
+        }
+        Command::CardRewardPath(args) => print_json(&workspace_policy_audits::card_reward_path(
+            &args.workspace,
+            args.node,
+            args.output.as_deref(),
         )?),
         Command::Status {
             workspace,
@@ -359,9 +360,11 @@ fn main() -> Result<(), String> {
             workspace,
             owner_rank,
             node,
-        } => print_json(&workspace_commands::choose(&workspace, owner_rank, node)?),
+        } => print_json(&workspace_owner_commands::choose(
+            &workspace, owner_rank, node,
+        )?),
         Command::Owner { workspace, steps } => {
-            print_json(&workspace_commands::owner(&workspace, steps)?)
+            print_json(&workspace_owner_commands::owner(&workspace, steps)?)
         }
         Command::Drive {
             workspace,

@@ -102,8 +102,8 @@ fn axes_for_missing_answer(answer: BossMechanicMissingAnswerV1) -> Vec<PressureA
         HasteBurstOrSetupPlan | ChampTransitionBurst => {
             vec![PressureAxis::ResolutionTempo, PressureAxis::GrowthHorizon]
         }
-        FocusedKillOrderPlan => vec![PressureAxis::ResolutionTempo],
-        CollectorMinionPlan => vec![PressureAxis::MultiTargetControl],
+        SplitTimingPlan | FocusedKillOrderPlan => vec![PressureAxis::ResolutionTempo],
+        PostSplitDamagePlan | CollectorMinionPlan => vec![PressureAxis::MultiTargetControl],
         Block50OrKillBeforeBeam => vec![PressureAxis::DelayCapacity, PressureAxis::ResolutionTempo],
         StasisRecoveryPlan => vec![PressureAxis::Deployability],
         PhasePowerPlan | TimeWarpCounterPlan | ArtifactStripPlan | TurnFourDebuffPlan => Vec::new(),

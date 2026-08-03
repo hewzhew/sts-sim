@@ -577,7 +577,17 @@ impl RunControlSession {
                 "seed-{}-combat-{}",
                 self.run_state.seed, self.combat_sequence
             );
-            self.combat_outcomes.finish(case_id, finished);
+            let outcome = self.combat_outcomes.finish(case_id, finished);
+            self.recent_combat_attrition = Some(super::RecentCombatAttritionV1 {
+                act: self.run_state.act_num,
+                floor: self.run_state.floor_num,
+                combat_sequence: self.combat_sequence,
+                start_hp: outcome.start_hp,
+                end_combat_hp: outcome.final_hp,
+                raw_hp_loss: outcome.hp_loss,
+                turns: outcome.turns,
+                potions_used: outcome.potions_used,
+            });
             self.last_completed_combat_sequence = Some(self.combat_sequence);
             self.last_completed_combat_source = Some(completion_source);
         }

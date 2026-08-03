@@ -102,3 +102,22 @@ fn repack_workspace_parses_source_and_fresh_output() {
     assert_eq!(workspace, PathBuf::from("historical.workspace.json"));
     assert_eq!(output, PathBuf::from("pooled.workspace.json"));
 }
+
+#[test]
+fn route_policy_audit_parses_an_optional_exact_node() {
+    let cli = Cli::try_parse_from([
+        "oracle_lab",
+        "route-policy-audit",
+        "--workspace",
+        "run.workspace.json",
+        "--node",
+        "186",
+    ])
+    .expect("route policy audit should parse");
+    let Command::RoutePolicyAudit(args) = cli.command else {
+        panic!("expected route policy audit command");
+    };
+
+    assert_eq!(args.workspace, PathBuf::from("run.workspace.json"));
+    assert_eq!(args.node, Some(186));
+}

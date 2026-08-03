@@ -78,6 +78,7 @@ pub struct RunControlSession {
     last_combat_automation_sequence: Option<u64>,
     last_combat_automation_trajectory: Option<CombatAutomationTrajectoryRecordV1>,
     last_capture_case: Option<LastBenchmarkCaptureCase>,
+    recent_combat_attrition: Option<RecentCombatAttritionV1>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Deserialize, Serialize)]
@@ -129,6 +130,19 @@ pub(in crate::eval::run_control) enum CombatCompletionSource {
     SearchCombat,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct RecentCombatAttritionV1 {
+    pub act: u8,
+    pub floor: i32,
+    pub combat_sequence: u64,
+    pub start_hp: i32,
+    pub end_combat_hp: i32,
+    pub raw_hp_loss: i32,
+    pub turns: u32,
+    pub potions_used: u32,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct RunControlSessionCheckpointV1 {
     engine_state: EngineState,
@@ -152,6 +166,7 @@ pub struct RunControlSessionCheckpointV1 {
     last_combat_automation_sequence: Option<u64>,
     last_combat_automation_trajectory: Option<CombatAutomationTrajectoryRecordV1>,
     last_capture_case: Option<LastBenchmarkCaptureCase>,
+    recent_combat_attrition: Option<RecentCombatAttritionV1>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Deserialize, Serialize)]
@@ -179,6 +194,8 @@ struct RunControlSessionCheckpointExtrasV1 {
     last_combat_automation_trajectory: Option<CombatAutomationTrajectoryRecordV1>,
     #[serde(skip_serializing_if = "Option::is_none")]
     last_capture_case: Option<LastBenchmarkCaptureCase>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    recent_combat_attrition: Option<RecentCombatAttritionV1>,
 }
 
 impl RunControlSessionCheckpointExtrasV1 {
@@ -204,6 +221,7 @@ impl Serialize for RunControlSessionCheckpointV1 {
             last_combat_automation_sequence: self.last_combat_automation_sequence,
             last_combat_automation_trajectory: self.last_combat_automation_trajectory.clone(),
             last_capture_case: self.last_capture_case.clone(),
+            recent_combat_attrition: self.recent_combat_attrition,
         };
         let extras = (!extras.is_empty()).then_some(extras);
         (
@@ -271,6 +289,7 @@ fn compact_checkpoint_from_values(
         last_combat_automation_sequence: extras.last_combat_automation_sequence,
         last_combat_automation_trajectory: extras.last_combat_automation_trajectory,
         last_capture_case: extras.last_capture_case,
+        recent_combat_attrition: extras.recent_combat_attrition,
     })
 }
 
@@ -324,6 +343,8 @@ struct RunControlSessionCheckpointLegacyV1 {
     last_combat_automation_trajectory: Option<CombatAutomationTrajectoryRecordV1>,
     #[serde(default)]
     last_capture_case: Option<LastBenchmarkCaptureCase>,
+    #[serde(default)]
+    recent_combat_attrition: Option<RecentCombatAttritionV1>,
 }
 
 impl RunControlSessionCheckpointLegacyV1 {
@@ -350,6 +371,7 @@ impl RunControlSessionCheckpointLegacyV1 {
             last_combat_automation_sequence: self.last_combat_automation_sequence,
             last_combat_automation_trajectory: self.last_combat_automation_trajectory,
             last_capture_case: self.last_capture_case,
+            recent_combat_attrition: self.recent_combat_attrition,
         }
     }
 }
@@ -599,6 +621,7 @@ impl RunControlSession {
             last_combat_automation_sequence: None,
             last_combat_automation_trajectory: None,
             last_capture_case: None,
+            recent_combat_attrition: None,
         }
     }
 
@@ -696,6 +719,7 @@ impl RunControlSessionCheckpointV1 {
             last_combat_automation_sequence: session.last_combat_automation_sequence,
             last_combat_automation_trajectory: session.last_combat_automation_trajectory.clone(),
             last_capture_case: session.last_capture_case.clone(),
+            recent_combat_attrition: session.recent_combat_attrition,
         }
     }
 
@@ -703,6 +727,10 @@ impl RunControlSessionCheckpointV1 {
         &self,
     ) -> Option<&CombatAutomationTrajectoryRecordV1> {
         self.last_combat_automation_trajectory.as_ref()
+    }
+
+    pub fn recent_combat_attrition(&self) -> Option<RecentCombatAttritionV1> {
+        self.recent_combat_attrition
     }
 
     pub fn take_last_combat_automation_trajectory_record(
@@ -827,6 +855,7 @@ impl RunControlSessionCheckpointV1 {
             last_combat_automation_sequence: self.last_combat_automation_sequence,
             last_combat_automation_trajectory: self.last_combat_automation_trajectory,
             last_capture_case: self.last_capture_case,
+            recent_combat_attrition: self.recent_combat_attrition,
         })
     }
 }

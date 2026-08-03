@@ -70,6 +70,7 @@ fn add_boss_threats(boss: EncounterId, profile: &mut StrategyThreatProfileV1) {
                 "SlimeBoss",
                 &[
                     StrategyThreatTagV1::SplitThreshold,
+                    StrategyThreatTagV1::TimedDamageRace,
                     StrategyThreatTagV1::StatusFlood,
                     StrategyThreatTagV1::AoEValuable,
                     StrategyThreatTagV1::HighIncomingDamage,

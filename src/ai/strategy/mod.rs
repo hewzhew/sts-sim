@@ -7,6 +7,7 @@
 
 pub mod acquisition;
 pub mod boss_damage_plan;
+pub mod boss_encounter_readiness;
 pub mod boss_scaling_evidence;
 pub mod boss_survival_evidence;
 pub mod campfire_upgrade_quality;

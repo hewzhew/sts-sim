@@ -18,6 +18,32 @@ use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 #[test]
+fn external_checkpoint_preserves_recent_attrition_as_an_owner_fact() {
+    let mut session = test_session_with_first_monster_room();
+    let fact = RecentCombatAttritionV1 {
+        act: 1,
+        floor: 7,
+        combat_sequence: 3,
+        start_hp: 77,
+        end_combat_hp: 67,
+        raw_hp_loss: 10,
+        turns: 4,
+        potions_used: 0,
+    };
+    session.recent_combat_attrition = Some(fact);
+    let mut checkpoint = RunControlSessionCheckpointV1::from_session(&session);
+
+    checkpoint.clear_combat_diagnostics_for_external_checkpoint();
+    let encoded = serde_json::to_vec(&checkpoint).expect("serialize external checkpoint");
+    let decoded: RunControlSessionCheckpointV1 =
+        serde_json::from_slice(&encoded).expect("restore external checkpoint");
+    let restored = decoded.into_session().expect("hydrate run-control session");
+
+    assert_eq!(restored.recent_combat_attrition(), Some(fact));
+    assert!(restored.last_combat_baseline().is_none());
+}
+
+#[test]
 fn run_control_search_combat_applies_complete_winning_trajectory() {
     let mut session = test_session_with_first_monster_room();
     session
@@ -42,6 +68,15 @@ fn run_control_search_combat_applies_complete_winning_trajectory() {
     assert!(outcome.message.contains("turn_plan_seeded="));
     assert!(outcome.message.contains("pending_high_fanout="));
     assert!(outcome.action_result.is_some());
+    let baseline = session
+        .last_combat_baseline()
+        .expect("resolved combat should retain its diagnostic baseline");
+    let attrition = session
+        .recent_combat_attrition()
+        .expect("resolved combat should retain durable attrition");
+    assert_eq!(attrition.start_hp, baseline.start_hp);
+    assert_eq!(attrition.end_combat_hp, baseline.final_hp);
+    assert_eq!(attrition.raw_hp_loss, baseline.hp_loss);
     let Some(resolution) = outcome.single_combat_resolution() else {
         panic!("committed winning search should preserve one combat resolution");
     };
