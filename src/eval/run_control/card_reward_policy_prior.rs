@@ -1743,6 +1743,70 @@ mod tests {
     }
 
     #[test]
+    fn coarse_frontload_gap_does_not_erase_unfunded_strength_payoff_debt() {
+        // This exact early deck makes Heavy Blade's base damage close coarse
+        // threat gaps even though the card still has no strength generator.
+        let mut session = reward_session(&[
+            (CardId::Dropkick, 0),
+            (CardId::HeavyBlade, 0),
+            (CardId::Clash, 0),
+        ]);
+        session.run_state.act_num = 1;
+        session.run_state.floor_num = 3;
+        session.run_state.boss_key = Some(EncounterId::SlimeBoss);
+        session.run_state.master_deck = owned_deck(&[
+            (CardId::Strike, 0),
+            (CardId::Strike, 0),
+            (CardId::Strike, 0),
+            (CardId::Strike, 0),
+            (CardId::Strike, 0),
+            (CardId::Defend, 0),
+            (CardId::Defend, 0),
+            (CardId::Defend, 0),
+            (CardId::Defend, 0),
+            (CardId::Bash, 0),
+            (CardId::PowerThrough, 0),
+        ]);
+
+        let decision = decision(&session);
+        let heavy_blade = card_evidence(&decision, CardId::HeavyBlade);
+        assert!(!heavy_blade.delta.closed_threat_gaps.is_empty());
+        assert!(heavy_blade.improves_threat_relevant_capability);
+        assert_eq!(heavy_blade.band, CardRewardPolicyBandV1::Liability);
+        assert!(matches!(
+            &heavy_blade.acquisition,
+            CardRewardPolicyAcquisitionV1::Card {
+                component_signals,
+                ..
+            } if component_signals
+                .debt_signals
+                .contains(&CardComponentSignalKindV1::StrengthPayoffUnsupported)
+        ));
+        assert_eq!(
+            card_evidence(&decision, CardId::Clash).band,
+            CardRewardPolicyBandV1::Liability
+        );
+        assert_eq!(
+            card_evidence(&decision, CardId::Dropkick).band,
+            CardRewardPolicyBandV1::Liability
+        );
+        assert!(
+            position(&decision, |key| matches!(
+                key,
+                DecisionCandidateKey::CardRewardSkip { .. }
+            )) < position(&decision, |key| matches!(
+                key,
+                DecisionCandidateKey::CardRewardPick {
+                    card: CardId::HeavyBlade,
+                    ..
+                }
+            )),
+            "evidence={:#?}",
+            decision.evidence
+        );
+    }
+
+    #[test]
     fn ethereal_dazed_does_not_enter_persistent_draw_pile_gate() {
         let session = reward_session(&[(CardId::RecklessCharge, 0)]);
         let decision = decision(&session);
