@@ -61,17 +61,26 @@ pub(super) fn drive(
                 ));
             };
             let source_node_id = current.node_id;
+            let source = compact_drive_source(&current);
             let candidate_id = choice.candidate_id.clone();
-            let materialized_owner_rank = choice.owner_rank;
             let choice_ref = choice.choice_ref.clone();
+            let decision_kind = choice.kind.clone();
+            let action = choice.action.clone();
+            let materialized_owner_rank = choice.owner_rank;
             let result = analysis.try_choice(&choice_ref)?;
+            let state_delta = compact_drive_state_delta(&current, &result);
             save_oracle_analysis_workspace_v1(workspace, &analysis)?;
             events.push(json!({
                 "kind": "owner_decision",
                 "step_index": step_index,
                 "source_node_id": source_node_id,
+                "source": source,
                 "candidate_id": candidate_id,
+                "choice_ref": choice_ref,
+                "decision_kind": decision_kind,
+                "action": action,
                 "materialized_owner_rank": materialized_owner_rank,
+                "state_delta": state_delta,
                 "result": compact_drive_boundary(&result),
             }));
             continue;
@@ -86,6 +95,7 @@ pub(super) fn drive(
             stop = OracleAnalysisDriveStopV1::WallLimit;
             break;
         }
+        let source = compact_drive_source(&current);
         let (report, result) = analysis.advance(OracleAnalysisAdvanceRequestV1 {
             max_quanta,
             quantum_nodes,
@@ -118,6 +128,7 @@ pub(super) fn drive(
             "kind": "combat_advance",
             "step_index": step_index,
             "source_node_id": report.source_node_id,
+            "source": source,
             "status": report.status,
             "quanta_served": report.quanta_served,
             "elapsed_ms": report.elapsed_ms,
@@ -148,12 +159,76 @@ pub(super) fn drive(
 fn compact_drive_boundary(view: &OracleAnalysisNodeViewV1) -> Value {
     json!({
         "node": view.node_id,
+        "state_fingerprint": view.state_fingerprint,
         "boundary": view.boundary,
         "act": view.act,
         "floor": view.floor,
         "hp": view.current_hp,
         "max_hp": view.max_hp,
         "gold": view.gold,
+    })
+}
+
+fn compact_drive_source(view: &OracleAnalysisNodeViewV1) -> Value {
+    let mut source = compact_drive_boundary(view);
+    if let Some(fields) = source.as_object_mut() {
+        fields.insert("event".to_string(), json!(view.event));
+        fields.insert("encounter".to_string(), json!(view.encounter));
+    }
+    source
+}
+
+fn compact_drive_state_delta(
+    source: &OracleAnalysisNodeViewV1,
+    result: &OracleAnalysisNodeViewV1,
+) -> Value {
+    let deck_added = result
+        .deck
+        .iter()
+        .filter(|card| !source.deck.iter().any(|before| before.uuid == card.uuid))
+        .collect::<Vec<_>>();
+    let deck_removed = source
+        .deck
+        .iter()
+        .filter(|card| !result.deck.iter().any(|after| after.uuid == card.uuid))
+        .collect::<Vec<_>>();
+    let deck_changed = result
+        .deck
+        .iter()
+        .filter_map(|after| {
+            source
+                .deck
+                .iter()
+                .find(|before| before.uuid == after.uuid && *before != after)
+                .map(|before| json!({ "before": before, "after": after }))
+        })
+        .collect::<Vec<_>>();
+    let relics_added = result
+        .relics
+        .iter()
+        .filter(|relic| !source.relics.iter().any(|before| before.id == relic.id))
+        .collect::<Vec<_>>();
+    let relics_removed = source
+        .relics
+        .iter()
+        .filter(|relic| !result.relics.iter().any(|after| after.id == relic.id))
+        .collect::<Vec<_>>();
+    let potion_slots = (source.potions != result.potions).then(|| {
+        json!({
+            "before": source.potions,
+            "after": result.potions,
+        })
+    });
+    json!({
+        "current_hp": result.current_hp - source.current_hp,
+        "max_hp": result.max_hp - source.max_hp,
+        "gold": result.gold - source.gold,
+        "deck_added": deck_added,
+        "deck_removed": deck_removed,
+        "deck_changed": deck_changed,
+        "relics_added": relics_added,
+        "relics_removed": relics_removed,
+        "potion_slots": potion_slots,
     })
 }
 

@@ -81,7 +81,9 @@ the bounded drive surface:
 uses ordinary non-improving combat advance, and saves after every mutation.
 It stops on its total wall/step limit, a boundary without an owner answer, or
 an unresolved combat attempt. Its event ledger is execution evidence, not a
-teacher label or a strategy verdict.
+teacher label or a strategy verdict. Owner events retain the exact choice ref,
+typed action, source fingerprint, and resource delta; combat events retain the
+typed source encounter and exact combat-root identity.
 
 ## Continue A Capsule
 
