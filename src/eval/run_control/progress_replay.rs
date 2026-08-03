@@ -1,7 +1,8 @@
-use std::collections::BTreeMap;
+use std::{cell::RefCell, collections::BTreeMap};
 
 use serde::{Deserialize, Serialize};
 
+use crate::ai::combat_state_key::combat_exact_state_hash_v2;
 use crate::content::potions::PotionId;
 
 use super::combat_line_executor::drawn_cards_from_action_result;
@@ -66,6 +67,55 @@ pub struct RunWitnessResourceSnapshotV1 {
     pub potions: Vec<Option<RunWitnessPotionSnapshotV1>>,
 }
 
+pub const RUN_WITNESS_JOURNAL_FINGERPRINT_ALGORITHM_V1: &str =
+    "blake2b_256_canonical_run_progress_journal_v1";
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct RunWitnessLineIdentityV1 {
+    pub seed: u64,
+    pub ascension: u8,
+    pub journal_entries: usize,
+    pub journal_fingerprint_algorithm: String,
+    pub journal_fingerprint: String,
+    pub final_session_fingerprint: String,
+    pub final_resources: RunWitnessResourceSnapshotV1,
+    pub final_engine_state: String,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RunWitnessCombatRootOriginV1 {
+    JournalEntryBefore,
+    FinalActiveCombat,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct RunWitnessCombatRootIdentityV1 {
+    pub origin: RunWitnessCombatRootOriginV1,
+    pub journal_entry: Option<usize>,
+    pub journal_prefix_entries: usize,
+    pub journal_prefix_fingerprint: String,
+    pub run_session_fingerprint: String,
+    pub root_exact_state_hash: String,
+    pub boundary: Option<String>,
+    pub resources: RunWitnessResourceSnapshotV1,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct ExactRunWitnessIdentityReportV1 {
+    pub replay: ExactRunProgressReplayReportV1,
+    pub line_identity: RunWitnessLineIdentityV1,
+    pub combat_roots: Vec<RunWitnessCombatRootIdentityV1>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct ExactRunWitnessCombatRootCensusV1 {
+    pub replay: Option<ExactRunProgressReplayReportV1>,
+    pub line_identity: Option<RunWitnessLineIdentityV1>,
+    pub replay_error: Option<String>,
+    pub combat_roots: Vec<RunWitnessCombatRootIdentityV1>,
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct RunWitnessStrategicDecisionV1 {
     pub journal_entry: usize,
@@ -84,6 +134,7 @@ pub struct RunWitnessCombatTimelineEntryV1 {
     pub encounter: String,
     pub resolution_kind: String,
     pub source: String,
+    pub root_identity: RunWitnessCombatRootIdentityV1,
     pub action_count: usize,
     pub hp_before: i32,
     pub minimum_combat_hp: i32,
@@ -128,8 +179,10 @@ pub struct RunWitnessCurrentHpEpochV1 {
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct ExactRunWitnessDiagnosisReportV1 {
     pub replay: ExactRunProgressReplayReportV1,
+    pub line_identity: RunWitnessLineIdentityV1,
     pub policy: ExactRunWitnessPolicyAuditReportV1,
     pub combat_timeline: Vec<RunWitnessCombatTimelineEntryV1>,
+    pub current_combat_root: Option<RunWitnessCombatRootIdentityV1>,
     pub highest_peak_hp_loss_combats: Vec<RunWitnessCombatTimelineEntryV1>,
     pub lowest_post_combat_hp_combats: Vec<RunWitnessCombatTimelineEntryV1>,
     pub recovery_pivots: Vec<RunWitnessRecoveryPivotV1>,
@@ -169,7 +222,101 @@ pub fn exact_replay_run_progress_journal_v1(
         expected_final,
         |_, _, _| Ok(()),
         |_, _, _| Ok(()),
+        |_, _, _| Ok(()),
     )
+}
+
+pub fn run_progress_journal_fingerprint_v1(journal: &RunProgressJournalV1) -> String {
+    crate::eval::fingerprint::hash_serializable(journal)
+}
+
+pub fn run_progress_journal_prefix_fingerprint_v1(
+    journal: &RunProgressJournalV1,
+    prefix_entries: usize,
+) -> Result<String, String> {
+    if prefix_entries > journal.len() {
+        return Err(format!(
+            "journal prefix length {prefix_entries} exceeds journal length {}",
+            journal.len()
+        ));
+    }
+    let prefix =
+        RunProgressJournalV1::from_committed_steps(journal.entries()[..prefix_entries].to_vec())?;
+    Ok(run_progress_journal_fingerprint_v1(&prefix))
+}
+
+pub fn exact_replay_run_progress_journal_identity_v1(
+    seed: u64,
+    ascension: u8,
+    journal: &RunProgressJournalV1,
+    expected_final: &RunControlSession,
+) -> Result<ExactRunWitnessIdentityReportV1, String> {
+    let census =
+        exact_census_run_progress_journal_combat_roots_v1(seed, ascension, journal, expected_final);
+    let replay = census.replay.ok_or_else(|| {
+        census.replay_error.unwrap_or_else(|| {
+            "run witness combat-root census produced no replay result".to_string()
+        })
+    })?;
+    let line_identity = census.line_identity.ok_or_else(|| {
+        "run witness combat-root census produced no line identity after exact replay".to_string()
+    })?;
+    Ok(ExactRunWitnessIdentityReportV1 {
+        replay,
+        line_identity,
+        combat_roots: census.combat_roots,
+    })
+}
+
+pub fn exact_census_run_progress_journal_combat_roots_v1(
+    seed: u64,
+    ascension: u8,
+    journal: &RunProgressJournalV1,
+    expected_final: &RunControlSession,
+) -> ExactRunWitnessCombatRootCensusV1 {
+    let combat_roots = RefCell::new(Vec::new());
+    let replay = exact_replay_run_progress_journal_observed_v1(
+        seed,
+        ascension,
+        journal,
+        expected_final,
+        |entry_index, entry, session| {
+            if let RunProgressStepV1::CombatResolution(record) = entry {
+                combat_roots
+                    .borrow_mut()
+                    .push(run_witness_combat_root_identity_v1(
+                        journal,
+                        entry_index,
+                        record,
+                        session,
+                    )?);
+            }
+            Ok(())
+        },
+        |_, _, _| Ok(()),
+        |_, _, _| Ok(()),
+    );
+    let mut combat_roots = combat_roots.into_inner();
+    let (replay, line_identity, replay_error) = match replay {
+        Ok(replay) => {
+            match run_witness_final_active_combat_root_identity_v1(journal, expected_final) {
+                Ok(current) => {
+                    combat_roots.extend(current);
+                    let line_identity =
+                        run_witness_line_identity_v1(&replay, journal, expected_final);
+                    (Some(replay), Some(line_identity), None)
+                }
+                Err(error) => (None, None, Some(error)),
+            }
+        }
+        Err(error) => (None, None, Some(error)),
+    };
+    ExactRunWitnessCombatRootCensusV1 {
+        replay,
+        line_identity,
+        replay_error,
+        combat_roots,
+    }
 }
 
 /// Replays a committed journal up to, but not including, one entry and
@@ -232,6 +379,7 @@ where
         expected_final,
         decision_order,
         |_, _, _| Ok(()),
+        |_, _, _| Ok(()),
     )
 }
 
@@ -257,6 +405,7 @@ where
     let mut strategic_decisions_since_combat = Vec::new();
     let mut combat_timeline = Vec::new();
     let mut recovery_pivots = Vec::new();
+    let combat_root_identities = RefCell::new(BTreeMap::new());
 
     let policy = exact_audit_run_progress_journal_policy_observed_v1(
         seed,
@@ -264,6 +413,15 @@ where
         journal,
         expected_final,
         decision_order,
+        |entry_index, entry, session| {
+            if let RunProgressStepV1::CombatResolution(record) = entry {
+                combat_root_identities.borrow_mut().insert(
+                    entry_index,
+                    run_witness_combat_root_identity_v1(journal, entry_index, record, session)?,
+                );
+            }
+            Ok(())
+        },
         |entry_index, entry, session| {
             let after_resources = run_witness_resource_snapshot_v1(session);
             let full_hp_reset = establishes_full_hp_reset_v1(&before_resources, &after_resources);
@@ -290,6 +448,15 @@ where
                     }
                 }
                 RunProgressStepV1::CombatResolution(record) => {
+                    let root_identity = combat_root_identities
+                        .borrow()
+                        .get(&entry_index)
+                        .cloned()
+                        .ok_or_else(|| {
+                            format!(
+                                "journal entry {entry_index} combat root identity was not captured"
+                            )
+                        })?;
                     let minimum_combat_hp = record
                         .trajectory
                         .actions
@@ -308,6 +475,7 @@ where
                         encounter: combat_encounter_label_v1(record),
                         resolution_kind: format!("{:?}", record.kind),
                         source: record.trajectory.source.label().to_string(),
+                        root_identity,
                         action_count: record.trajectory.action_count,
                         hp_before: before_resources.current_hp,
                         minimum_combat_hp,
@@ -377,11 +545,16 @@ where
         current: before_resources,
         combat_timeline: hp_epoch_combats,
     };
+    let line_identity = run_witness_line_identity_v1(&policy.replay, journal, expected_final);
+    let current_combat_root =
+        run_witness_final_active_combat_root_identity_v1(journal, expected_final)?;
 
     Ok(ExactRunWitnessDiagnosisReportV1 {
         replay: policy.replay.clone(),
+        line_identity,
         policy,
         combat_timeline,
+        current_combat_root,
         highest_peak_hp_loss_combats,
         lowest_post_combat_hp_combats,
         recovery_pivots,
@@ -389,15 +562,17 @@ where
     })
 }
 
-fn exact_audit_run_progress_journal_policy_observed_v1<F, G>(
+fn exact_audit_run_progress_journal_policy_observed_v1<B, F, G>(
     seed: u64,
     ascension: u8,
     journal: &RunProgressJournalV1,
     expected_final: &RunControlSession,
     mut decision_order: F,
+    before_entry: B,
     after_entry: G,
 ) -> Result<ExactRunWitnessPolicyAuditReportV1, String>
 where
+    B: FnMut(usize, &RunProgressStepV1, &RunControlSession) -> Result<(), String>,
     F: FnMut(&RunControlSession) -> Vec<String>,
     G: FnMut(usize, &RunProgressStepV1, &RunControlSession) -> Result<(), String>,
 {
@@ -407,6 +582,7 @@ where
         ascension,
         journal,
         expected_final,
+        before_entry,
         |entry_index, session, record| {
             let owner_order = decision_order(session);
             let selected_id = record.selection.candidate_id.clone();
@@ -528,6 +704,91 @@ fn run_witness_resource_snapshot_v1(session: &RunControlSession) -> RunWitnessRe
             })
             .collect(),
     }
+}
+
+fn run_witness_line_identity_v1(
+    replay: &ExactRunProgressReplayReportV1,
+    journal: &RunProgressJournalV1,
+    expected_final: &RunControlSession,
+) -> RunWitnessLineIdentityV1 {
+    RunWitnessLineIdentityV1 {
+        seed: replay.seed,
+        ascension: replay.ascension,
+        journal_entries: replay.journal_entries,
+        journal_fingerprint_algorithm: RUN_WITNESS_JOURNAL_FINGERPRINT_ALGORITHM_V1.to_string(),
+        journal_fingerprint: run_progress_journal_fingerprint_v1(journal),
+        final_session_fingerprint: replay.final_fingerprint.clone(),
+        final_resources: run_witness_resource_snapshot_v1(expected_final),
+        final_engine_state: replay.engine_state.clone(),
+    }
+}
+
+fn run_witness_combat_root_identity_v1(
+    journal: &RunProgressJournalV1,
+    journal_entry: usize,
+    record: &RunCombatResolutionV1,
+    session: &RunControlSession,
+) -> Result<RunWitnessCombatRootIdentityV1, String> {
+    if !record.before.active_combat {
+        return Err(format!(
+            "journal entry {journal_entry} combat record has an inactive before-boundary"
+        ));
+    }
+    run_witness_active_combat_root_identity_v1(
+        journal,
+        journal_entry,
+        RunWitnessCombatRootOriginV1::JournalEntryBefore,
+        Some(journal_entry),
+        Some(record.before.location.clone()),
+        session,
+    )
+}
+
+fn run_witness_final_active_combat_root_identity_v1(
+    journal: &RunProgressJournalV1,
+    session: &RunControlSession,
+) -> Result<Option<RunWitnessCombatRootIdentityV1>, String> {
+    if session.active_combat.is_none() {
+        return Ok(None);
+    }
+    run_witness_active_combat_root_identity_v1(
+        journal,
+        journal.len(),
+        RunWitnessCombatRootOriginV1::FinalActiveCombat,
+        None,
+        None,
+        session,
+    )
+    .map(Some)
+}
+
+fn run_witness_active_combat_root_identity_v1(
+    journal: &RunProgressJournalV1,
+    journal_prefix_entries: usize,
+    origin: RunWitnessCombatRootOriginV1,
+    journal_entry: Option<usize>,
+    boundary: Option<String>,
+    session: &RunControlSession,
+) -> Result<RunWitnessCombatRootIdentityV1, String> {
+    let active = session.active_combat.as_ref().ok_or_else(|| {
+        format!("combat root at journal prefix {journal_prefix_entries} has no active combat")
+    })?;
+    Ok(RunWitnessCombatRootIdentityV1 {
+        origin,
+        journal_entry,
+        journal_prefix_entries,
+        journal_prefix_fingerprint: run_progress_journal_prefix_fingerprint_v1(
+            journal,
+            journal_prefix_entries,
+        )?,
+        run_session_fingerprint: run_session_fingerprint_v2(session),
+        root_exact_state_hash: combat_exact_state_hash_v2(
+            &active.engine_state,
+            &active.combat_state,
+        ),
+        boundary,
+        resources: run_witness_resource_snapshot_v1(session),
+    })
 }
 
 fn establishes_full_hp_reset_v1(
@@ -669,15 +930,17 @@ pub fn splice_exact_combat_resolution_v1(
     Ok((journal, replay))
 }
 
-fn exact_replay_run_progress_journal_observed_v1<F, G>(
+fn exact_replay_run_progress_journal_observed_v1<B, F, G>(
     seed: u64,
     ascension: u8,
     journal: &RunProgressJournalV1,
     expected_final: &RunControlSession,
+    mut before_entry: B,
     mut before_decision: F,
     mut after_entry: G,
 ) -> Result<ExactRunProgressReplayReportV1, String>
 where
+    B: FnMut(usize, &RunProgressStepV1, &RunControlSession) -> Result<(), String>,
     F: FnMut(usize, &RunControlSession, &RunDecisionTransactionV1) -> Result<(), String>,
     G: FnMut(usize, &RunProgressStepV1, &RunControlSession) -> Result<(), String>,
 {
@@ -685,6 +948,7 @@ where
     let mut counters = ExactReplayCountersV1::default();
 
     for (entry_index, entry) in journal.entries().iter().enumerate() {
+        before_entry(entry_index, entry, &session)?;
         apply_exact_progress_entry_v1(
             entry_index,
             entry,
@@ -917,6 +1181,33 @@ mod tests {
     }
 
     #[test]
+    fn empty_witness_identity_binds_the_journal_and_final_session() {
+        let seed = 20260713006;
+        let journal = RunProgressJournalV1::default();
+        let expected_final = RunControlSession::new(RunControlConfig {
+            seed,
+            ascension_level: 0,
+            ..RunControlConfig::default()
+        });
+        let report =
+            exact_replay_run_progress_journal_identity_v1(seed, 0, &journal, &expected_final)
+                .unwrap();
+
+        assert_eq!(report.line_identity.seed, seed);
+        assert_eq!(report.line_identity.ascension, 0);
+        assert_eq!(report.line_identity.journal_entries, 0);
+        assert_eq!(
+            report.line_identity.journal_fingerprint,
+            run_progress_journal_fingerprint_v1(&journal)
+        );
+        assert_eq!(
+            report.line_identity.final_session_fingerprint,
+            report.replay.final_fingerprint
+        );
+        assert!(report.combat_roots.is_empty());
+    }
+
+    #[test]
     fn empty_witness_diagnosis_is_compact_exact_and_search_free() {
         let seed = 20260713006;
         let expected_final = RunControlSession::new(RunControlConfig {
@@ -935,6 +1226,11 @@ mod tests {
         .unwrap();
 
         assert_eq!(report.replay.journal_entries, 0);
+        assert_eq!(report.line_identity.journal_entries, 0);
+        assert_eq!(
+            report.line_identity.final_session_fingerprint,
+            report.replay.final_fingerprint
+        );
         assert!(report.policy.first_divergence.is_none());
         assert!(report.combat_timeline.is_empty());
         assert!(report.highest_peak_hp_loss_combats.is_empty());

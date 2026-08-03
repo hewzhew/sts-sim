@@ -1,9 +1,12 @@
 use std::path::Path;
 
 use serde_json::{json, Value};
+use sts_oracle_runtime::eval::combat_case::load_combat_case;
+use sts_oracle_runtime::eval::combat_case_context::combat_case_replay_identity_v1;
 use sts_oracle_runtime::eval::run_control::{
-    exact_diagnose_run_progress_journal_v1, exact_replay_run_progress_journal_prefix_v1,
-    RunControlSessionCheckpointV1, RunProgressJournalV1, RunWitnessCombatTimelineEntryV1,
+    exact_census_run_progress_journal_combat_roots_v1, exact_diagnose_run_progress_journal_v1,
+    exact_replay_run_progress_journal_prefix_v1, RunControlSessionCheckpointV1,
+    RunProgressJournalV1, RunWitnessCombatRootIdentityV1, RunWitnessCombatTimelineEntryV1,
 };
 use sts_oracle_runtime::runtime::branch::{
     current_oracle_candidate_order_v1, load_oracle_analysis_workspace_v1,
@@ -13,6 +16,7 @@ use sts_oracle_runtime::runtime::branch::{
 pub(super) fn diagnose(
     workspace: &Path,
     node: usize,
+    case: Option<&Path>,
     max_pivots: usize,
     details: bool,
     first_divergence_continuation_output: Option<&Path>,
@@ -20,6 +24,23 @@ pub(super) fn diagnose(
     let analysis = load_oracle_analysis_workspace_v1(workspace)?;
     let continuation = analysis.continuation(node)?;
     let expected_final = continuation.session.clone().into_session()?;
+    let case_origin = case
+        .map(|case| {
+            let census = exact_census_run_progress_journal_combat_roots_v1(
+                continuation.seed,
+                continuation.ascension,
+                &continuation.journal,
+                &expected_final,
+            );
+            match_combat_case_origin(
+                case,
+                continuation.seed,
+                continuation.ascension,
+                &census.combat_roots,
+                census.replay_error.as_deref(),
+            )
+        })
+        .transpose()?;
     let report = exact_diagnose_run_progress_journal_v1(
         analysis.seed,
         analysis.ascension,
@@ -80,6 +101,7 @@ pub(super) fn diagnose(
     } else {
         json!({
             "replay": report.replay,
+            "line_identity": report.line_identity,
             "policy": {
                 "decisions_with_owner_preferences": report.policy.decisions_with_owner_preferences,
                 "decisions_without_owner_preferences": report.policy.decisions_without_owner_preferences,
@@ -92,6 +114,7 @@ pub(super) fn diagnose(
                 "combat_sources": report.policy.combat_sources,
             },
             "combat_count": report.combat_timeline.len(),
+            "current_combat_root": report.current_combat_root,
             "highest_peak_hp_loss_combats": report.highest_peak_hp_loss_combats
                 .iter()
                 .map(compact_combat_pivot)
@@ -115,10 +138,12 @@ pub(super) fn diagnose(
     };
 
     Ok(json!({
-        "schema_name": "ExactOracleRunWitnessDiagnosisV1",
-        "schema_version": 1,
+        "schema_name": "ExactOracleRunWitnessDiagnosisV2",
+        "schema_version": 2,
         "workspace": workspace,
         "node_id": node,
+        "node_identity_scope": "workspace_local_only",
+        "case_origin": case_origin,
         "max_pivots": max_pivots.max(1),
         "report": report,
         "first_divergence_continuation": divergence_continuation,
@@ -128,6 +153,7 @@ pub(super) fn diagnose(
 fn compact_combat_pivot(entry: &RunWitnessCombatTimelineEntryV1) -> Value {
     json!({
         "journal_entry": entry.journal_entry,
+        "root_identity": entry.root_identity,
         "act": entry.act,
         "floor": entry.floor,
         "encounter": entry.encounter,
@@ -151,4 +177,86 @@ fn compact_combat_pivot(entry: &RunWitnessCombatTimelineEntryV1) -> Value {
             }))
             .collect::<Vec<_>>(),
     })
+}
+
+fn match_combat_case_origin(
+    case_path: &Path,
+    seed: u64,
+    ascension: u8,
+    roots: &[RunWitnessCombatRootIdentityV1],
+    replay_error: Option<&str>,
+) -> Result<Value, String> {
+    let case = load_combat_case(case_path)?;
+    if case.source.seed != seed || case.source.ascension != ascension {
+        return Err(format!(
+            "combat case origin mismatch: selected run is seed {seed} ascension {ascension}, but case is seed {} ascension {}",
+            case.source.seed, case.source.ascension
+        ));
+    }
+    let case_identity = combat_case_replay_identity_v1(&case)?;
+    let case_run_fingerprint = case_identity.run_session_fingerprint.as_deref().ok_or_else(|| {
+        format!(
+            "combat case {} has no exact production run-session fingerprint; state-only or derived cases cannot be matched to a run witness",
+            case_path.display()
+        )
+    })?;
+    let matches = roots
+        .iter()
+        .filter(|entry| {
+            entry.root_exact_state_hash == case_identity.root_exact_state_hash
+                && entry.run_session_fingerprint == case_run_fingerprint
+        })
+        .collect::<Vec<_>>();
+    match matches.as_slice() {
+        [entry] => {
+            if let Some(replay_error) = replay_error {
+                return Err(format!(
+                    "combat case origin matched, but the selected run witness failed exact replay after that root: {replay_error}"
+                ));
+            }
+            Ok(json!({
+                "status": "matched",
+                "case": case_path,
+                "case_identity": case_identity,
+                "matched_journal_entry": entry.journal_entry,
+                "matched_root_identity": entry,
+            }))
+        }
+        [] => {
+            let candidates = roots
+                .iter()
+                .filter(|root| {
+                    root.resources.act == case.run.act && root.resources.floor == case.run.floor
+                })
+                .take(8)
+                .map(|root| {
+                    json!({
+                        "origin": root.origin,
+                        "journal_entry": root.journal_entry,
+                        "boundary": root.boundary,
+                        "root_exact_state_hash": root.root_exact_state_hash,
+                        "run_session_fingerprint": root.run_session_fingerprint,
+                    })
+                })
+                .collect::<Vec<_>>();
+            let candidates = serde_json::to_string(&candidates)
+                .map_err(|error| format!("failed to encode origin candidates: {error}"))?;
+            let replay_status = replay_error.map_or_else(
+                || "selected run witness replay completed".to_string(),
+                |error| format!("selected run witness replay stopped early: {error}"),
+            );
+            Err(format!(
+                "combat case origin mismatch: {} did not match any validated combat root; {replay_status}; same-floor candidates={candidates}",
+                case_path.display()
+            ))
+        }
+        entries => Err(format!(
+            "combat case origin is ambiguous: {} matches journal entries {:?}",
+            case_path.display(),
+            entries
+                .iter()
+                .map(|entry| entry.journal_entry)
+                .collect::<Vec<_>>()
+        )),
+    }
 }

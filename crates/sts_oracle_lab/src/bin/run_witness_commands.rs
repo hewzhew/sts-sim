@@ -8,9 +8,11 @@ use sts_oracle_runtime::eval::combat_case::{
 };
 use sts_oracle_runtime::eval::combat_case_context::capture_oracle_analysis_combat_case_production_context_v1;
 use sts_oracle_runtime::eval::run_control::{
-    exact_audit_run_progress_journal_policy_v1, exact_replay_run_progress_journal_prefix_v1,
-    exact_replay_run_progress_journal_v1, splice_exact_combat_resolution_v1,
-    RunControlSessionCheckpointV1, RunProgressJournalV1, RunProgressStepV1,
+    exact_audit_run_progress_journal_policy_v1, exact_census_run_progress_journal_combat_roots_v1,
+    exact_replay_run_progress_journal_identity_v1, exact_replay_run_progress_journal_prefix_v1,
+    exact_replay_run_progress_journal_v1, run_progress_journal_fingerprint_v1,
+    splice_exact_combat_resolution_v1, RunControlSessionCheckpointV1, RunProgressJournalV1,
+    RunProgressStepV1,
 };
 use sts_oracle_runtime::runtime::branch::{
     current_oracle_candidate_order_v1, load_oracle_analysis_workspace_v1,
@@ -36,11 +38,22 @@ pub(super) fn export_continuation(
     let node = node.unwrap_or_else(|| analysis.session.cursor_node_id());
     let continuation = analysis.continuation(node)?;
     let journal_entries = continuation.journal.entries().len();
+    let expected_final = continuation.session.clone().into_session()?;
+    let census = exact_census_run_progress_journal_combat_roots_v1(
+        continuation.seed,
+        continuation.ascension,
+        &continuation.journal,
+        &expected_final,
+    );
     save_oracle_run_continuation_v1(output, &continuation)?;
     Ok(json!({
-        "schema_name": "OracleAnalysisContinuationExportV1",
+        "schema_name": "OracleAnalysisContinuationExportV2",
+        "schema_version": 2,
         "workspace": workspace,
         "node_id": node,
+        "node_identity_scope": "workspace_local_only",
+        "line_identity": census.line_identity,
+        "replay_error": census.replay_error,
         "output": output,
         "journal_entries": journal_entries,
     }))
@@ -65,6 +78,12 @@ pub(super) fn export_prefix(
     let prefix = RunProgressJournalV1::from_committed_steps(
         continuation.journal.entries()[..journal_entry].to_vec(),
     )?;
+    let prefix_identity = exact_replay_run_progress_journal_identity_v1(
+        continuation.seed,
+        continuation.ascension,
+        &prefix,
+        &historical,
+    )?;
     let mut checkpoint = RunControlSessionCheckpointV1::from_session(&historical);
     checkpoint.clear_combat_diagnostics_for_external_checkpoint();
     let output_continuation = OracleRunContinuationV1 {
@@ -79,11 +98,14 @@ pub(super) fn export_prefix(
     save_oracle_run_continuation_v1(output, &output_continuation)?;
 
     Ok(json!({
-        "schema_name": "ExactOracleRunWitnessPrefixExportV1",
-        "schema_version": 1,
+        "schema_name": "ExactOracleRunWitnessPrefixExportV2",
+        "schema_version": 2,
         "workspace": workspace,
         "node_id": node,
+        "node_identity_scope": "workspace_local_only",
         "journal_entry": journal_entry,
+        "source_journal_fingerprint": run_progress_journal_fingerprint_v1(&continuation.journal),
+        "line_identity": prefix_identity.line_identity,
         "output": output,
         "journal_entries": output_continuation.journal.len(),
         "act": historical.run_state.act_num,
@@ -252,6 +274,20 @@ pub(super) fn export_historical_combat(
         .cloned()
         .ok_or_else(|| format!("journal entry {journal_entry} is not a combat resolution"))?;
     let expected_final = continuation.session.clone().into_session()?;
+    let source_census = exact_census_run_progress_journal_combat_roots_v1(
+        continuation.seed,
+        continuation.ascension,
+        &continuation.journal,
+        &expected_final,
+    );
+    let root_identity = source_census
+        .combat_roots
+        .iter()
+        .find(|root| root.journal_entry == Some(journal_entry))
+        .cloned()
+        .ok_or_else(|| {
+            format!("journal entry {journal_entry} has no captured combat root identity")
+        })?;
     let historical = exact_replay_run_progress_journal_prefix_v1(
         continuation.seed,
         continuation.ascension,
@@ -363,11 +399,15 @@ pub(super) fn export_historical_combat(
         )?],
     )?;
     Ok(json!({
-        "schema_name": "HistoricalCombatWitnessExportV2",
-        "schema_version": 2,
+        "schema_name": "HistoricalCombatWitnessExportV3",
+        "schema_version": 3,
         "workspace": workspace,
         "node_id": node,
+        "node_identity_scope": "workspace_local_only",
         "journal_entry": journal_entry,
+        "source_line_identity": source_census.line_identity,
+        "source_replay_error": source_census.replay_error,
+        "combat_root_identity": root_identity,
         "source": resolution.trajectory.source.label(),
         "case_output": case_output,
         "actions_output": actions_output,

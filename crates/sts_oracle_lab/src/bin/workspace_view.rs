@@ -1,6 +1,12 @@
+use std::collections::BTreeMap;
+use std::path::Path;
+
 use serde_json::{json, Value};
 use sts_oracle_runtime::eval::combat_case::CombatCase;
-use sts_oracle_runtime::eval::run_control::{OracleAnalysisNodeViewV1, RunProgressStepV1};
+use sts_oracle_runtime::eval::run_control::{
+    exact_replay_run_progress_journal_identity_v1, OracleAnalysisNodeViewV1, RunProgressStepV1,
+    RunWitnessCombatRootOriginV1,
+};
 use sts_oracle_runtime::runtime::branch::OracleAnalysisWorkspaceV1;
 
 pub(super) fn selected(
@@ -69,48 +75,83 @@ pub(super) fn compact_node(view: &OracleAnalysisNodeViewV1, limit: usize) -> Val
 
 pub(super) fn compact_timeline(
     analysis: &OracleAnalysisWorkspaceV1,
+    workspace: &Path,
     node: usize,
     tail: usize,
 ) -> Result<Value, String> {
-    let entries = analysis.session.journal_entries(node)?;
+    let continuation = analysis.continuation(node)?;
+    let expected_final = continuation.session.clone().into_session()?;
+    let identity = exact_replay_run_progress_journal_identity_v1(
+        continuation.seed,
+        continuation.ascension,
+        &continuation.journal,
+        &expected_final,
+    )?;
+    let combat_roots = identity
+        .combat_roots
+        .iter()
+        .filter_map(|root| root.journal_entry.map(|entry| (entry, root)))
+        .collect::<BTreeMap<_, _>>();
+    let current_combat_root = identity
+        .combat_roots
+        .iter()
+        .find(|root| root.origin == RunWitnessCombatRootOriginV1::FinalActiveCombat);
+    let entries = continuation.journal.entries();
     let start = entries.len().saturating_sub(tail);
     let compact = entries[start..]
         .iter()
         .enumerate()
-        .map(|(offset, entry)| match entry {
-            RunProgressStepV1::Decision(record) => json!({
-                "journal_index": start + offset,
-                "kind": "decision",
-                "location": record.before.location,
-                "title": record.before.title,
-                "chosen": record.result.chosen_label,
-                "candidates": record.before.candidates.iter().map(|candidate| &candidate.label).collect::<Vec<_>>(),
-            }),
-            RunProgressStepV1::ForcedTransition(record) => json!({
-                "journal_index": start + offset,
-                "kind": "forced_transition",
-                "location": record.before.location,
-                "title": record.before.title,
-            }),
-            RunProgressStepV1::CombatResolution(record) => json!({
-                "journal_index": start + offset,
-                "kind": "combat_resolution",
-                "location": record.before.location,
-                "title": record.before.title,
-                "resolution": record.kind,
-                "actions": record.trajectory.action_count,
-                "changes": record.result.changes,
-            }),
-            RunProgressStepV1::Stop(record) => json!({
-                "journal_index": start + offset,
-                "kind": "stop",
-                "stop_kind": record.kind,
-                "reason": record.reason,
-            }),
+        .map(|(offset, entry)| -> Result<Value, String> {
+            let journal_index = start + offset;
+            match entry {
+                RunProgressStepV1::Decision(record) => Ok(json!({
+                    "journal_index": journal_index,
+                    "kind": "decision",
+                    "location": record.before.location,
+                    "title": record.before.title,
+                    "chosen": record.result.chosen_label,
+                    "candidates": record.before.candidates.iter().map(|candidate| &candidate.label).collect::<Vec<_>>(),
+                })),
+                RunProgressStepV1::ForcedTransition(record) => Ok(json!({
+                    "journal_index": journal_index,
+                    "kind": "forced_transition",
+                    "location": record.before.location,
+                    "title": record.before.title,
+                })),
+                RunProgressStepV1::CombatResolution(record) => {
+                    let root_identity = combat_roots.get(&journal_index).ok_or_else(|| {
+                        format!(
+                            "journal entry {journal_index} has no captured combat root identity"
+                        )
+                    })?;
+                    Ok(json!({
+                        "journal_index": journal_index,
+                        "kind": "combat_resolution",
+                        "root_identity": root_identity,
+                        "location": record.before.location,
+                        "title": record.before.title,
+                        "resolution": record.kind,
+                        "actions": record.trajectory.action_count,
+                        "changes": record.result.changes,
+                    }))
+                }
+                RunProgressStepV1::Stop(record) => Ok(json!({
+                    "journal_index": journal_index,
+                    "kind": "stop",
+                    "stop_kind": record.kind,
+                    "reason": record.reason,
+                })),
+            }
         })
-        .collect::<Vec<_>>();
+        .collect::<Result<Vec<_>, _>>()?;
     Ok(json!({
+        "schema_name": "OracleAnalysisTimelineV2",
+        "schema_version": 2,
+        "workspace": workspace,
         "node": node,
+        "node_identity_scope": "workspace_local_only",
+        "line_identity": identity.line_identity,
+        "current_combat_root": current_combat_root,
         "total_entries": entries.len(),
         "returned_entries": compact.len(),
         "entries": compact,

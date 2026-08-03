@@ -24,7 +24,8 @@ distribution panel:
 ```powershell
 .\ol.cmd diagnose-run-witness `
   --workspace .oracle-lab/cases/<run>.workspace.json `
-  --node <node> --max-pivots 5 `
+  --node <node> --case .oracle-lab/cases/<combat>.case.json `
+  --max-pivots 5 `
   --export-first-divergence-continuation `
     .oracle-lab/cases/<fresh-id>.continuation.json `
   > .oracle-lab/reports/<fresh-id>.diagnosis.json
@@ -36,6 +37,21 @@ recoveries, potion identity, nearby typed run choices, HP lineage since the
 latest full-HP reset, and the first current-owner ranking divergence. Use
 `--details` only when the complete combat timeline and all divergences are
 needed.
+
+`--case` is optional when no cross-artifact claim is being made. When present,
+it is a fail-closed origin check: the case needs exact production context and
+must match one combat timeline entry by both exact combat-state hash and
+run-session fingerprint. Seed, floor, a workspace-local node id, and filenames
+are not sufficient identity. A mismatch reports only a bounded set of
+same-floor candidate roots and does not continue as if the case belonged to
+the selected history.
+
+The selected checkpoint's unresolved combat uses the typed
+`final_active_combat` origin rather than a fabricated journal entry. If an old
+witness stops replaying before the requested case boundary, the command names
+both facts: no validated root matched before the replay failure, and the
+specific replay failure remains visible. That is a fail-closed unknown, not a
+claim that the unreachable remainder was audited.
 
 A divergence is a counterfactual candidate, not causal proof. Import the exact
 prefix into a fresh workspace, apply one alternative, and give only that

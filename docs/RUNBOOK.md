@@ -103,6 +103,22 @@ state-only cases are rejected rather than combined with inferred owner defaults.
 Review output is diagnostic. It does not mutate runner policy or prove that a
 deck is good or bad.
 
+Before combining a run witness with a saved combat case, lock their exact
+origin instead of trusting a seed, node number, floor, or filename:
+
+```powershell
+.\ol.cmd diagnose-run-witness `
+  --workspace <run.workspace.json> --node <workspace-local-node> `
+  --case <case.json>
+```
+
+The case must carry exact production context and match one unambiguous combat
+root by both combat-state hash and run-session fingerprint. A node id is local
+to one workspace. `timeline` emits the selected line fingerprint and embeds
+the corresponding exact root identity in every returned combat entry.
+An unresolved combat at the selected final checkpoint is represented as the
+typed `final_active_combat` origin with no fabricated journal-entry number.
+
 Index local combat evidence and replay exact relationships:
 
 ```powershell

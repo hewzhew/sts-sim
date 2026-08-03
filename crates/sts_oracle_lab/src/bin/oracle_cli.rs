@@ -125,6 +125,10 @@ pub(super) enum Command {
         workspace: PathBuf,
         #[arg(long, default_value_t = 0)]
         node: usize,
+        /// Verify that this exact production CombatCase originated at one
+        /// unambiguous combat root in the selected run witness.
+        #[arg(long)]
+        case: Option<PathBuf>,
         /// Number of highest-loss, lowest-HP, and recovery pivots to retain.
         #[arg(long, default_value_t = 5)]
         max_pivots: usize,

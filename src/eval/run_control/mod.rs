@@ -216,13 +216,18 @@ pub use progress_options::{
     RunControlHpLossLimit, RunControlRouteAutomationMode, RunControlSearchCombatOptions,
 };
 pub use progress_replay::{
-    exact_audit_run_progress_journal_policy_v1, exact_diagnose_run_progress_journal_v1,
+    exact_audit_run_progress_journal_policy_v1, exact_census_run_progress_journal_combat_roots_v1,
+    exact_diagnose_run_progress_journal_v1, exact_replay_run_progress_journal_identity_v1,
     exact_replay_run_progress_journal_prefix_v1, exact_replay_run_progress_journal_v1,
+    run_progress_journal_fingerprint_v1, run_progress_journal_prefix_fingerprint_v1,
     splice_exact_combat_resolution_v1, ExactRunProgressReplayReportV1,
-    ExactRunWitnessDiagnosisReportV1, ExactRunWitnessPolicyAuditReportV1,
-    RunWitnessCombatTimelineEntryV1, RunWitnessCurrentHpEpochV1, RunWitnessFullHpResetV1,
+    ExactRunWitnessCombatRootCensusV1, ExactRunWitnessDiagnosisReportV1,
+    ExactRunWitnessIdentityReportV1, ExactRunWitnessPolicyAuditReportV1,
+    RunWitnessCombatRootIdentityV1, RunWitnessCombatRootOriginV1, RunWitnessCombatTimelineEntryV1,
+    RunWitnessCurrentHpEpochV1, RunWitnessFullHpResetV1, RunWitnessLineIdentityV1,
     RunWitnessPotionSnapshotV1, RunWitnessRecoveryPivotV1, RunWitnessResourceSnapshotV1,
     RunWitnessStrategicDecisionV1, WitnessPolicyDecisionAuditV1,
+    RUN_WITNESS_JOURNAL_FINGERPRINT_ALGORITHM_V1,
 };
 pub use progress_step::{RunControlAutoStopKind, RunControlAutoStopV1, RunProgressStepV1};
 pub use registry::{add_case_to_benchmark_registry, BenchmarkCasePaths};

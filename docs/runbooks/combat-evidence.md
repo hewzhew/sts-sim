@@ -215,6 +215,15 @@ do not use this manifest contract.
 `export-historical-combat-witness` replays the journal to the selected combat
 root and writes a producer manifest beside the exported actions. This gives a
 later evidence audit exact case/action identity without filename inference.
+Its command report also carries the source line identity and the selected
+combat-root identity. Node ids remain workspace-local and must not be used to
+join reports from different workspace files.
+
+Before using an independently saved case beside a run witness, run
+`diagnose-run-witness --case <case.json>`. The origin check requires the case's
+typed production context and matches both its exact combat-state hash and its
+run-session fingerprint against one replayed journal entry. A state-only or
+derived case is deliberately rejected rather than attributed by seed/floor.
 
 A local-graph `*.prefix.actions.json` beside a descendant case describes the
 path from the original root to that descendant. It must not be paired with the

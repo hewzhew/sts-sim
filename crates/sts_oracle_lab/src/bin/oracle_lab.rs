@@ -151,12 +151,14 @@ fn main() -> Result<(), String> {
         Command::DiagnoseRunWitness {
             workspace,
             node,
+            case,
             max_pivots,
             details,
             export_first_divergence_continuation,
         } => print_json(&run_witness_diagnosis_commands::diagnose(
             &workspace,
             node,
+            case.as_deref(),
             max_pivots,
             details,
             export_first_divergence_continuation.as_deref(),

@@ -105,7 +105,7 @@ pub(super) fn timeline(
     if tail == 0 || tail > 500 {
         return Err("timeline tail must be in 1..=500".to_string());
     }
-    workspace_view::compact_timeline(&analysis, node, tail)
+    workspace_view::compact_timeline(&analysis, workspace, node, tail)
 }
 
 pub(super) fn export_combat_case(
