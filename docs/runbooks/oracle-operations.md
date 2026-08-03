@@ -34,9 +34,10 @@ distribution panel:
 This command performs exact journal replay without search. Its compact output
 reports the largest combat HP losses, lowest post-combat HP boundaries,
 recoveries, potion identity, nearby typed run choices, HP lineage since the
-latest full-HP reset, and the first current-owner ranking divergence. Use
-`--details` only when the complete combat timeline and all divergences are
-needed.
+latest full-HP reset, and the first current-owner ranking divergence. It also
+reports the first unclassified divergence after preserving but stepping past
+a narrow typed `same_potion_kind_discard` identity difference. Use `--details`
+only when the complete combat timeline and all divergences are needed.
 
 `--case` is optional when no cross-artifact claim is being made. When present,
 it is a fail-closed origin check: the case needs exact production context and

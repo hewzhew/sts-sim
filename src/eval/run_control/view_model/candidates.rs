@@ -322,11 +322,22 @@ fn reward_candidates(
         return candidates;
     }
 
+    let potion_claim_changes_state = session.run_state.find_empty_potion_slot().is_some()
+        || session
+            .run_state
+            .relics
+            .iter()
+            .any(|relic| relic.id == RelicId::Sozu);
     let mut candidates = reward
         .items
         .iter()
         .enumerate()
-        .map(|(idx, item)| {
+        .filter_map(|(idx, item)| {
+            if matches!(item, crate::state::rewards::RewardItem::Potion { .. })
+                && !potion_claim_changes_state
+            {
+                return None;
+            }
             let mut candidate = candidate(
                 idx.to_string(),
                 reward_item_label(item),
@@ -340,7 +351,7 @@ fn reward_candidates(
             }
             candidate.resolution =
                 CandidateResolution::from_reward_item(item, reward, &session.run_state);
-            candidate
+            Some(candidate)
         })
         .collect::<Vec<_>>();
     if reward.has_card_reward_item()
@@ -1310,6 +1321,12 @@ mod tests {
         session.engine_state = EngineState::RewardScreen(reward);
 
         let candidates = decision_candidates(&session);
+        assert!(
+            !candidates.iter().any(|candidate| {
+                candidate.action.executable_input() == Some(ClientInput::ClaimReward(0))
+            }),
+            "a full belt must not expose a potion claim that leaves the state unchanged"
+        );
         let discard = candidates
             .iter()
             .find(|candidate| candidate.id == "discard-potion-0")
@@ -1340,6 +1357,39 @@ mod tests {
                 potion_id: PotionId::CultistPotion
             }]
         ));
+    }
+
+    #[test]
+    fn sozu_potion_claim_remains_executable_because_it_consumes_the_reward() {
+        let mut session = RunControlSession::new(Default::default());
+        session
+            .run_state
+            .relics
+            .push(RelicState::new(RelicId::Sozu));
+        session.run_state.potions = vec![
+            Some(Potion::new(PotionId::Elixir, 10)),
+            Some(Potion::new(PotionId::FairyPotion, 20)),
+            Some(Potion::new(PotionId::GamblersBrew, 30)),
+        ];
+        let original_potions = session.run_state.potions.clone();
+        let mut reward = RewardState::new();
+        reward.items = vec![RewardItem::Potion {
+            potion_id: PotionId::CultistPotion,
+        }];
+        session.engine_state = EngineState::RewardScreen(reward);
+
+        decision_candidates(&session)
+            .into_iter()
+            .find(|candidate| {
+                candidate.action.executable_input() == Some(ClientInput::ClaimReward(0))
+            })
+            .expect("Sozu claim consumes the blocked potion reward and must remain executable");
+
+        session
+            .apply_decision_action(RunDecisionAction::Input(ClientInput::ClaimReward(0)))
+            .expect("the Sozu potion claim should change the reward surface");
+        assert_eq!(session.run_state.potions, original_potions);
+        assert!(matches!(session.engine_state, EngineState::MapNavigation));
     }
 
     #[test]

@@ -43,11 +43,25 @@ pub struct WitnessPolicyDecisionAuditV1 {
     pub location: String,
     pub chosen_candidate_id: String,
     pub chosen_label: String,
+    pub recorded_chosen_key: Option<DecisionCandidateKey>,
+    pub current_chosen_key: Option<DecisionCandidateKey>,
     pub owner_rank: Option<usize>,
     pub owner_candidate_count: usize,
     pub owner_first_candidate_id: Option<String>,
     pub owner_first_label: Option<String>,
+    pub current_owner_first_key: Option<DecisionCandidateKey>,
+    pub owner_first_relation: RunWitnessOwnerFirstRelationV1,
     pub resources: RunWitnessResourceSnapshotV1,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RunWitnessOwnerFirstRelationV1 {
+    ExactCandidate,
+    SamePotionKindDiscard,
+    DifferentCandidate,
+    TypedIdentityUnavailable,
+    NoOwnerCandidate,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
@@ -199,7 +213,9 @@ pub struct ExactRunWitnessPolicyAuditReportV1 {
     pub choices_absent_from_owner_preferences: usize,
     pub discrepancy_sum: usize,
     pub max_owner_rank: Option<usize>,
+    pub same_potion_kind_discard_choices: usize,
     pub first_divergence: Option<WitnessPolicyDecisionAuditV1>,
+    pub first_unclassified_divergence: Option<WitnessPolicyDecisionAuditV1>,
     pub divergences: Vec<WitnessPolicyDecisionAuditV1>,
     pub combat_sources: BTreeMap<String, usize>,
 }
@@ -589,22 +605,49 @@ where
             let owner_rank = owner_order
                 .iter()
                 .position(|candidate_id| candidate_id == &selected_id);
-            let chosen_label = record
+            let selected_candidate = record
                 .before
                 .candidates
                 .iter()
-                .find(|candidate| candidate.candidate_id == selected_id)
+                .find(|candidate| candidate.candidate_id == selected_id);
+            let chosen_label = selected_candidate
                 .map(|candidate| candidate.label.clone())
                 .unwrap_or_else(|| selected_id.clone());
+            let recorded_chosen_key =
+                selected_candidate.and_then(|candidate| candidate.key.clone());
             let owner_first_candidate_id = owner_order.first().cloned();
-            let owner_first_label = owner_first_candidate_id.as_ref().and_then(|candidate_id| {
-                record
-                    .before
-                    .candidates
-                    .iter()
-                    .find(|candidate| &candidate.candidate_id == candidate_id)
-                    .map(|candidate| candidate.label.clone())
-            });
+            let recorded_owner_first_candidate =
+                owner_first_candidate_id.as_ref().and_then(|candidate_id| {
+                    record
+                        .before
+                        .candidates
+                        .iter()
+                        .find(|candidate| &candidate.candidate_id == candidate_id)
+                });
+            let owner_first_label =
+                recorded_owner_first_candidate.map(|candidate| candidate.label.clone());
+            let current_surface = super::build_decision_surface(session);
+            let current_chosen_key = current_surface
+                .view
+                .candidates
+                .iter()
+                .find(|candidate| candidate.id == selected_id)
+                .and_then(|candidate| candidate.key.clone());
+            let current_owner_first_key =
+                owner_first_candidate_id.as_ref().and_then(|candidate_id| {
+                    current_surface
+                        .view
+                        .candidates
+                        .iter()
+                        .find(|candidate| &candidate.id == candidate_id)
+                        .and_then(|candidate| candidate.key.clone())
+                });
+            let owner_first_relation = classify_owner_first_relation_v1(
+                &selected_id,
+                current_chosen_key.as_ref(),
+                owner_first_candidate_id.as_deref(),
+                current_owner_first_key.as_ref(),
+            );
             decision_audits.push(WitnessPolicyDecisionAuditV1 {
                 journal_entry: entry_index,
                 decision_ordinal: decision_audits.len(),
@@ -614,10 +657,14 @@ where
                 location: record.before.location.clone(),
                 chosen_candidate_id: selected_id,
                 chosen_label,
+                recorded_chosen_key,
+                current_chosen_key,
                 owner_rank,
                 owner_candidate_count: owner_order.len(),
                 owner_first_candidate_id,
                 owner_first_label,
+                current_owner_first_key,
+                owner_first_relation,
                 resources: run_witness_resource_snapshot_v1(session),
             });
             Ok(())
@@ -652,6 +699,12 @@ where
         .iter()
         .filter_map(|audit| audit.owner_rank)
         .max();
+    let same_potion_kind_discard_choices = decision_audits
+        .iter()
+        .filter(|audit| {
+            audit.owner_first_relation == RunWitnessOwnerFirstRelationV1::SamePotionKindDiscard
+        })
+        .count();
     let divergences = decision_audits
         .into_iter()
         .filter(|audit| {
@@ -660,6 +713,12 @@ where
         })
         .collect::<Vec<_>>();
     let first_divergence = divergences.first().cloned();
+    let first_unclassified_divergence = divergences
+        .iter()
+        .find(|audit| {
+            audit.owner_first_relation != RunWitnessOwnerFirstRelationV1::SamePotionKindDiscard
+        })
+        .cloned();
     let mut combat_sources = BTreeMap::new();
     for entry in journal.entries() {
         if let RunProgressStepV1::CombatResolution(record) = entry {
@@ -678,10 +737,45 @@ where
         choices_absent_from_owner_preferences,
         discrepancy_sum,
         max_owner_rank,
+        same_potion_kind_discard_choices,
         first_divergence,
+        first_unclassified_divergence,
         divergences,
         combat_sources,
     })
+}
+
+fn classify_owner_first_relation_v1(
+    chosen_candidate_id: &str,
+    chosen_key: Option<&DecisionCandidateKey>,
+    owner_first_candidate_id: Option<&str>,
+    owner_first_key: Option<&DecisionCandidateKey>,
+) -> RunWitnessOwnerFirstRelationV1 {
+    let Some(owner_first_candidate_id) = owner_first_candidate_id else {
+        return RunWitnessOwnerFirstRelationV1::NoOwnerCandidate;
+    };
+    if chosen_candidate_id == owner_first_candidate_id {
+        return RunWitnessOwnerFirstRelationV1::ExactCandidate;
+    }
+    if matches!(
+        (chosen_key, owner_first_key),
+        (
+            Some(DecisionCandidateKey::RunPotionDiscard {
+                potion: chosen_potion,
+                ..
+            }),
+            Some(DecisionCandidateKey::RunPotionDiscard {
+                potion: owner_potion,
+                ..
+            })
+        ) if chosen_potion == owner_potion
+    ) {
+        return RunWitnessOwnerFirstRelationV1::SamePotionKindDiscard;
+    }
+    if chosen_key.is_none() || owner_first_key.is_none() {
+        return RunWitnessOwnerFirstRelationV1::TypedIdentityUnavailable;
+    }
+    RunWitnessOwnerFirstRelationV1::DifferentCandidate
 }
 
 fn run_witness_resource_snapshot_v1(session: &RunControlSession) -> RunWitnessResourceSnapshotV1 {
@@ -1154,6 +1248,57 @@ fn decision_boundaries_match(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn owner_relation_classifies_same_kind_potion_discards_without_collapsing_other_potions() {
+        let older_fear = DecisionCandidateKey::RunPotionDiscard {
+            slot: 0,
+            potion: PotionId::FearPotion,
+            uuid: 10,
+        };
+        let newer_fear = DecisionCandidateKey::RunPotionDiscard {
+            slot: 1,
+            potion: PotionId::FearPotion,
+            uuid: 20,
+        };
+        let fire = DecisionCandidateKey::RunPotionDiscard {
+            slot: 2,
+            potion: PotionId::FirePotion,
+            uuid: 30,
+        };
+
+        assert_eq!(
+            classify_owner_first_relation_v1(
+                "discard-potion-0",
+                Some(&older_fear),
+                Some("discard-potion-1"),
+                Some(&newer_fear),
+            ),
+            RunWitnessOwnerFirstRelationV1::SamePotionKindDiscard
+        );
+        assert_eq!(
+            classify_owner_first_relation_v1(
+                "discard-potion-0",
+                Some(&older_fear),
+                Some("discard-potion-2"),
+                Some(&fire),
+            ),
+            RunWitnessOwnerFirstRelationV1::DifferentCandidate
+        );
+        assert_eq!(
+            classify_owner_first_relation_v1("leave", None, Some("leave"), None),
+            RunWitnessOwnerFirstRelationV1::ExactCandidate
+        );
+        assert_eq!(
+            classify_owner_first_relation_v1(
+                "discard-potion-0",
+                None,
+                Some("discard-potion-1"),
+                Some(&newer_fear),
+            ),
+            RunWitnessOwnerFirstRelationV1::TypedIdentityUnavailable
+        );
+    }
 
     #[test]
     fn empty_witness_policy_audit_is_exact_and_search_free() {

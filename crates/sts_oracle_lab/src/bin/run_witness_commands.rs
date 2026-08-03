@@ -177,7 +177,9 @@ pub(super) fn audit_policy(workspace: &Path, node: usize, details: bool) -> Resu
             "choices_absent_from_owner_preferences": report.choices_absent_from_owner_preferences,
             "discrepancy_sum": report.discrepancy_sum,
             "max_owner_rank": report.max_owner_rank,
+            "same_potion_kind_discard_choices": report.same_potion_kind_discard_choices,
             "first_divergence": report.first_divergence,
+            "first_unclassified_divergence": report.first_unclassified_divergence,
             "combat_sources": report.combat_sources,
         })
     };
