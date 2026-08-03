@@ -32,8 +32,9 @@ use crate::ai::noncombat_strategy_v1::{
 use crate::ai::strategy::boss_damage_plan::{
     assess_boss_damage_plan_v1, BossDamagePlanEngineReliabilityV1, BossDamagePlanReadinessV1,
 };
+use crate::ai::strategy::power_tempo::{mummified_hand_power_tempo_v1, MummifiedHandPowerTempoV1};
 use crate::ai::strength_profile_v1::card_unlocks_convertible_strength_payoff_v1;
-use crate::content::cards::CardId;
+use crate::content::cards::{get_card_definition, CardId};
 use crate::runtime::combat::CombatCard;
 use crate::state::rewards::RewardCard;
 
@@ -92,6 +93,7 @@ pub struct CardRewardPolicyActionEvidenceV1 {
     pub introduces_undigested_status_burden: bool,
     pub duplicate_low_marginal: bool,
     pub access_conflict_or_redundancy: bool,
+    pub mummified_hand_power_tempo: Option<MummifiedHandPowerTempoV1>,
     /// The known act boss punishes playing powers and this candidate is a
     /// shared-analysis minor power without an exact strategic improvement.
     pub boss_power_tax_conflict: bool,
@@ -140,6 +142,7 @@ pub struct CardRewardPolicyAuditCandidateV1 {
     pub introduces_undigested_status_burden: bool,
     pub duplicate_low_marginal: bool,
     pub access_conflict_or_redundancy: bool,
+    pub mummified_hand_power_tempo: Option<MummifiedHandPowerTempoV1>,
     pub boss_power_tax_conflict: bool,
     pub random_target_frontload_reliable: bool,
     pub added_deck_shape_risks: Vec<String>,
@@ -227,6 +230,7 @@ impl ExactCardRewardPolicyDecisionV1 {
                         .introduces_undigested_status_burden,
                     duplicate_low_marginal: evidence.duplicate_low_marginal,
                     access_conflict_or_redundancy: evidence.access_conflict_or_redundancy,
+                    mummified_hand_power_tempo: evidence.mummified_hand_power_tempo,
                     boss_power_tax_conflict: evidence.boss_power_tax_conflict,
                     random_target_frontload_reliable: evidence.random_target_frontload_reliable,
                     added_deck_shape_risks: evidence
@@ -419,17 +423,13 @@ fn card_reward_action_evidence_v1(
                     relic.id == crate::content::relics::RelicId::RunicPyramid
                 })
     );
-    let duplicate_low_marginal = matches!(
-        &acquisition,
-        CardRewardPolicyAcquisitionV1::Card {
-            copies_before,
-            ..
-        } if *copies_before > 0
-            && delta.closed_threat_gaps.is_empty()
-            && delta.capability_improvements.is_empty()
-            && delta.resolved_formation_needs.is_empty()
-            && delta.added_formation_strengths.is_empty()
-    );
+    let duplicate_low_marginal = duplicate_low_marginal_v1(&acquisition, &delta);
+    let mummified_hand_power_tempo = match &acquisition {
+        CardRewardPolicyAcquisitionV1::Card { card, upgrades, .. } => {
+            mummified_hand_power_tempo_v1(&parent.run_state, *card, *upgrades)
+        }
+        _ => None,
+    };
     let access_conflict_or_redundancy = matches!(
         &acquisition,
         CardRewardPolicyAcquisitionV1::Card {
@@ -512,6 +512,7 @@ fn card_reward_action_evidence_v1(
         introduces_undigested_status_burden,
         duplicate_low_marginal,
         access_conflict_or_redundancy,
+        mummified_hand_power_tempo,
         boss_power_tax_conflict,
         random_target_frontload_reliable,
         added_deck_shape_risks,
@@ -521,6 +522,53 @@ fn card_reward_action_evidence_v1(
         upgrade_investment_support,
         surface_index,
     })
+}
+
+fn duplicate_low_marginal_v1(
+    acquisition: &CardRewardPolicyAcquisitionV1,
+    delta: &RunPolicyStateDeltaV1,
+) -> bool {
+    let CardRewardPolicyAcquisitionV1::Card {
+        card,
+        copies_before,
+        semantics,
+        ..
+    } = acquisition
+    else {
+        return false;
+    };
+    if *copies_before == 0 {
+        return false;
+    }
+
+    let no_new_strategic_shape = delta.closed_threat_gaps.is_empty()
+        && delta.resolved_formation_needs.is_empty()
+        && delta.added_formation_strengths.is_empty();
+    if no_new_strategic_shape && delta.capability_improvements.is_empty() {
+        return true;
+    }
+
+    let tactical_coverage_only = !semantics.roles.is_empty()
+        && semantics.roles.iter().all(|role| {
+            matches!(
+                role,
+                CardRewardSemanticRoleV1::FrontloadDamage
+                    | CardRewardSemanticRoleV1::Vulnerable
+                    | CardRewardSemanticRoleV1::Weak
+            )
+        });
+    let only_reinforces_supported_capabilities = !delta.capability_improvements.is_empty()
+        && delta.capability_improvements.iter().all(|change| {
+            matches!(
+                change.before,
+                StrategyCapabilityCoverageV1::Supported | StrategyCapabilityCoverageV1::Strong
+            ) && change.after == StrategyCapabilityCoverageV1::Strong
+        });
+
+    get_card_definition(*card).cost >= 2
+        && tactical_coverage_only
+        && no_new_strategic_shape
+        && only_reinforces_supported_capabilities
 }
 
 fn boss_damage_plan_improvement_v1(
@@ -910,6 +958,18 @@ mod tests {
         session
     }
 
+    fn owned_deck(cards: &[(CardId, u8)]) -> Vec<CombatCard> {
+        cards
+            .iter()
+            .enumerate()
+            .map(|(index, (card, upgrades))| {
+                let mut owned = CombatCard::new(*card, index as u32);
+                owned.upgrades = *upgrades;
+                owned
+            })
+            .collect()
+    }
+
     fn policy_candidates<'a>(
         surface: &'a super::super::DecisionSurface,
     ) -> Vec<RunPolicyCandidateV1<'a>> {
@@ -967,6 +1027,104 @@ mod tests {
                 )
             })
             .expect("card evidence")
+    }
+
+    #[test]
+    fn second_expensive_tactical_coverage_loses_to_preserving_deck_quality() {
+        // Preserve the exact A1F10 public deck shape: the first Uppercut has
+        // already supplied its tactical roles before the duplicate is offered.
+        let mut session = reward_session(&[(CardId::Uppercut, 0)]);
+        session.run_state.act_num = 1;
+        session.run_state.floor_num = 10;
+        session.run_state.boss_key = Some(EncounterId::SlimeBoss);
+        session.run_state.current_hp = 53;
+        session.run_state.max_hp = 85;
+        session
+            .run_state
+            .relics
+            .push(RelicState::new(RelicId::MummifiedHand));
+        session.run_state.master_deck = owned_deck(&[
+            (CardId::Strike, 0),
+            (CardId::Strike, 0),
+            (CardId::Strike, 0),
+            (CardId::Strike, 0),
+            (CardId::Strike, 0),
+            (CardId::Defend, 0),
+            (CardId::Defend, 0),
+            (CardId::Defend, 0),
+            (CardId::Defend, 0),
+            (CardId::Bash, 0),
+            (CardId::PowerThrough, 0),
+            (CardId::Uppercut, 0),
+            (CardId::SecondWind, 0),
+            (CardId::Cleave, 0),
+            (CardId::ShrugItOff, 0),
+            (CardId::DarkEmbrace, 0),
+        ]);
+
+        let decision = decision(&session);
+        let uppercut = card_evidence(&decision, CardId::Uppercut);
+        assert!(uppercut.duplicate_low_marginal, "uppercut={uppercut:#?}");
+        assert_eq!(uppercut.band, CardRewardPolicyBandV1::Liability);
+        assert!(
+            position(&decision, |key| matches!(
+                key,
+                DecisionCandidateKey::CardRewardSkip { .. }
+            )) < position(&decision, |key| matches!(
+                key,
+                DecisionCandidateKey::CardRewardPick {
+                    card: CardId::Uppercut,
+                    ..
+                }
+            )),
+            "evidence={:#?}",
+            decision.evidence
+        );
+    }
+
+    #[test]
+    fn supported_second_exhaust_power_keeps_typed_mummified_hand_tempo() {
+        let mut session = reward_session(&[(CardId::DarkEmbrace, 0)]);
+        session.run_state.act_num = 1;
+        session.run_state.floor_num = 13;
+        session.run_state.boss_key = Some(EncounterId::SlimeBoss);
+        session
+            .run_state
+            .relics
+            .push(RelicState::new(RelicId::MummifiedHand));
+        session.run_state.master_deck = owned_deck(&[
+            (CardId::Strike, 0),
+            (CardId::Defend, 0),
+            (CardId::Bash, 0),
+            (CardId::PowerThrough, 0),
+            (CardId::SecondWind, 0),
+            (CardId::DarkEmbrace, 0),
+        ]);
+
+        let decision = decision(&session);
+        let dark_embrace = card_evidence(&decision, CardId::DarkEmbrace);
+        let tempo = dark_embrace
+            .mummified_hand_power_tempo
+            .expect("Power candidate with Mummified Hand should expose typed tempo");
+        assert_eq!(tempo.card, CardId::DarkEmbrace);
+        assert_eq!(tempo.paid_cost, 2);
+        assert!(tempo.eligible_positive_cost_cards > 0);
+        assert!(!dark_embrace.duplicate_low_marginal);
+        assert_ne!(dark_embrace.band, CardRewardPolicyBandV1::Liability);
+        assert!(
+            position(&decision, |key| matches!(
+                key,
+                DecisionCandidateKey::CardRewardPick {
+                    card: CardId::DarkEmbrace,
+                    ..
+                }
+            )) < position(&decision, |key| matches!(
+                key,
+                DecisionCandidateKey::CardRewardSkip { .. }
+            )),
+            "evidence={:#?}",
+            decision.evidence
+        );
     }
 
     #[test]

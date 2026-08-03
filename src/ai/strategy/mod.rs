@@ -24,6 +24,7 @@ pub mod deck_strategic_deficit;
 pub mod exhaust_corruption_assessment;
 pub mod package_state;
 pub mod package_transition;
+pub mod power_tempo;
 pub mod pressure_assessment;
 pub mod relic_expendability;
 pub mod reward_admission;

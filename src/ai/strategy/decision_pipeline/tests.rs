@@ -555,7 +555,8 @@ fn shop_boss_scaling_repair_remains_mainline() {
         shop_card_in_context_with_price(context_at_entry, &deck, CardId::DemonForm, 0, 139);
     assert_eq!(demon_form.lane, CandidateLane::Mainline);
 
-    let context_after_cleanup = DecisionPipelineContext::shop(context_at_entry.deck_plan, 213);
+    let context_after_cleanup =
+        DecisionPipelineContext::shop_with_purge_reserve(context_at_entry.deck_plan, 213, None);
     let demon_after_cleanup =
         shop_card_in_context_with_price(context_after_cleanup, &deck, CardId::DemonForm, 0, 139);
     assert_eq!(
@@ -1581,7 +1582,7 @@ fn cheap_survival_access_shop_admission_reaches_mainline_lane() {
             has_runic_pyramid: false,
         },
     );
-    let context = DecisionPipelineContext::shop(plan, 43);
+    let context = DecisionPipelineContext::shop_with_purge_reserve(plan, 43, None);
 
     let shrug = shop_card_in_context_with_price(context, &deck, CardId::ShrugItOff, 0, 25);
 

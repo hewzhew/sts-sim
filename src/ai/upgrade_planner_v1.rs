@@ -6,9 +6,11 @@ use crate::ai::card_analysis_v1::{
     card_analysis_profile_v1, CardAnalysisDeckSourceV1, CardAnalysisProfileV1,
     CardAnalysisUpgradeRedundancyGroupV1, CardAnalysisUpgradeStackBehaviorV1,
 };
+use crate::ai::card_semantics_v1::{card_reward_semantic_profile_v1, CardRewardSemanticRoleV1};
 use crate::ai::combat_upgrade_coverage_v1::{
     combat_upgrade_coverage_profile_v1, CombatUpgradeCoverageProfileV1, CombatUpgradeScopeV1,
 };
+use crate::ai::strategy::power_tempo::mummified_hand_power_tempo_v1;
 use crate::content::cards::{get_card_definition, upgraded_base_cost_override, CardId};
 use crate::content::monsters::factory::EncounterId;
 use crate::content::relics::RelicId;
@@ -49,6 +51,7 @@ pub enum UpgradeDebtKindV1 {
     HyperbeamBlock,
     PhaseBurst,
     ExecuteBlock,
+    PowerSetupTempo,
     AccessRecovery,
     ScalingSetup,
     DebuffCoverage,
@@ -236,6 +239,7 @@ impl UpgradeDebtKindV1 {
             Self::HyperbeamBlock => "hyperbeam_block",
             Self::PhaseBurst => "phase_burst",
             Self::ExecuteBlock => "execute_block",
+            Self::PowerSetupTempo => "power_setup_tempo",
             Self::AccessRecovery => "access_recovery",
             Self::ScalingSetup => "scaling_setup",
             Self::DebuffCoverage => "debuff_coverage",
@@ -360,6 +364,7 @@ fn upgrade_debt_strategy_tag_priority(debt: UpgradeDebtKindV1) -> u8 {
         UpgradeDebtKindV1::ExecuteBlock => 85,
         UpgradeDebtKindV1::ScalingSetup => 80,
         UpgradeDebtKindV1::DebuffCoverage => 75,
+        UpgradeDebtKindV1::PowerSetupTempo => 72,
         UpgradeDebtKindV1::AccessRecovery => 70,
         UpgradeDebtKindV1::ControlledExhaust => 65,
         UpgradeDebtKindV1::TransitionalFrontload => 50,
@@ -602,7 +607,7 @@ fn redundancy_profile(run_state: &RunState, card: CardId) -> RedundancyProfileV1
     let existing_group_count = run_state
         .master_deck
         .iter()
-        .filter(|entry| redundancy_group(entry.id) == group)
+        .filter(|entry| card_supplies_redundancy_group(entry.id, group))
         .count();
     let saturated =
         redundancy_saturated(group, stack_behavior, same_card_count, existing_group_count);
@@ -629,6 +634,21 @@ fn redundancy_profile(run_state: &RunState, card: CardId) -> RedundancyProfileV1
         existing_group_count,
         saturated,
         notes,
+    }
+}
+
+fn card_supplies_redundancy_group(card: CardId, group: RedundancyGroupV1) -> bool {
+    match group {
+        RedundancyGroupV1::VulnerableApplication => {
+            card_analysis_profile_v1(card, 0).vulnerable_support
+                != crate::ai::card_analysis_v1::CardAnalysisVulnerableSupportV1::None
+        }
+        RedundancyGroupV1::WeakApplication => {
+            card_reward_semantic_profile_v1(&crate::state::rewards::RewardCard::new(card, 0))
+                .roles
+                .contains(&CardRewardSemanticRoleV1::Weak)
+        }
+        _ => redundancy_group(card) == group,
     }
 }
 
@@ -812,6 +832,27 @@ fn build_upgrade_debt_ledger(
         UpgradeDebtSeverityV1::UsefulSoon,
         pressure_label(run_state, "access recovery"),
         "unpaid access upgrade slows setup and recovery from poor draws",
+    );
+    add_debt_if_candidates(
+        &mut debts,
+        UpgradeDebtKindV1::PowerSetupTempo,
+        candidates,
+        |candidate| {
+            candidate.mechanical_delta.cost_delta > 0
+                && candidate.roles.iter().any(|role| {
+                    matches!(
+                        role,
+                        UpgradeRoleV1::CoreMechanic
+                            | UpgradeRoleV1::EngineEnabler
+                            | UpgradeRoleV1::Scaling
+                    )
+                })
+                && mummified_hand_power_tempo_v1(run_state, candidate.card, candidate.upgrades)
+                    .is_some()
+        },
+        UpgradeDebtSeverityV1::UsefulSoon,
+        pressure_label(run_state, "Mummified Hand power setup tempo"),
+        "unpaid Power cost reduction delays both the engine and its Mummified Hand trigger",
     );
     add_debt_if_candidates(
         &mut debts,
@@ -1217,13 +1258,16 @@ fn card_label(card: CardId, upgrades: u8) -> String {
 fn is_starter(card: CardId) -> bool {
     matches!(
         card_analysis_profile_v1(card, 0).source,
-        CardAnalysisDeckSourceV1::StarterStrike | CardAnalysisDeckSourceV1::StarterDefend
+        CardAnalysisDeckSourceV1::StarterStrike
+            | CardAnalysisDeckSourceV1::StarterDefend
+            | CardAnalysisDeckSourceV1::StarterUnique
     )
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::content::relics::RelicState;
 
     #[test]
     fn apparition_upgrade_delta_keeps_ethereal_distinct_from_exhaust() {
@@ -1320,6 +1364,64 @@ mod tests {
             .debts
             .iter()
             .any(|debt| debt.kind == UpgradeDebtKindV1::ControlledExhaust));
+    }
+
+    #[test]
+    fn mummified_hand_exhaust_deck_prefers_survival_upgrade_over_redundant_bash() {
+        // Keep the complete A1F15 public deck because duplicate debuff
+        // coverage, exhaust support, and Mummified Hand tempo interact.
+        let mut run = RunState::new(20260730007, 0, false, "Ironclad");
+        run.act_num = 1;
+        run.floor_num = 15;
+        run.current_hp = 72;
+        run.max_hp = 85;
+        run.boss_key = Some(EncounterId::SlimeBoss);
+        run.relics.push(RelicState::new(RelicId::MummifiedHand));
+        run.master_deck = [
+            CardId::Strike,
+            CardId::Strike,
+            CardId::Strike,
+            CardId::Strike,
+            CardId::Strike,
+            CardId::Defend,
+            CardId::Defend,
+            CardId::Defend,
+            CardId::Defend,
+            CardId::Bash,
+            CardId::PowerThrough,
+            CardId::Uppercut,
+            CardId::SecondWind,
+            CardId::Cleave,
+            CardId::ShrugItOff,
+            CardId::DarkEmbrace,
+            CardId::Uppercut,
+            CardId::WildStrike,
+            CardId::DarkEmbrace,
+            CardId::DemonForm,
+        ]
+        .into_iter()
+        .enumerate()
+        .map(|(index, card)| CombatCard::new(card, index as u32))
+        .collect();
+
+        let plan = plan_upgrades_v1(&run);
+        let bash = plan
+            .candidates
+            .iter()
+            .find(|candidate| candidate.card == CardId::Bash)
+            .expect("Bash upgrade candidate");
+        let dark_embrace = plan
+            .candidates
+            .iter()
+            .find(|candidate| candidate.card == CardId::DarkEmbrace)
+            .expect("Dark Embrace upgrade candidate");
+
+        assert_eq!(plan.best_smith, Some(10), "plan={plan:#?}");
+        assert!(dark_embrace
+            .pays_debts
+            .contains(&UpgradeDebtKindV1::PowerSetupTempo));
+        assert!(bash.roles.contains(&UpgradeRoleV1::LowMarginalRepeat));
+        assert!(bash.verdict <= UpgradeVerdictV1::Defer);
     }
 
     #[test]

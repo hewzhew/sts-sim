@@ -785,7 +785,6 @@ fn is_upgrade_consistency_v1(card: CardId) -> bool {
     matches!(
         card,
         CardId::PommelStrike
-            | CardId::ShrugItOff
             | CardId::Warcry
             | CardId::BattleTrance
             | CardId::BurningPact

@@ -103,6 +103,32 @@ HP. Recovery and funded-liquidity bands still take precedence. This is a
 public-state behavior prior, not a claim that an elite is safe, a hidden-future
 lookup, or a substitute for measuring the resulting continuation.
 
+Card-taking owners share the strategy-layer acquisition contract. A shop
+adapter must pass the currently available purge price as an explicit
+opportunity cost; it must not assume that a purge is still available after it
+has already been used. A shared `NoPolicySupport` result is absence of shared
+support, so a scene may retain a purchase only when it has stronger typed
+durable-asset evidence such as efficient access, persistent required-capability
+improvement, package support, or new upgrade scope. A purchase that consumes a
+live purge reserve for only scene-local tactical gap coverage remains
+speculative. After a visit has already spent gold, another card or potion with
+neither shared acquisition support nor durable-asset evidence also remains
+speculative; affordability by itself is not a bundle plan. Random card
+discovery potions are not existing-deck access and cannot claim draw/energy
+consistency coverage from that discovery trait alone.
+
+Relic-sensitive card value also stays typed and public-state-only. Mummified
+Hand power tempo records the candidate Power's paid base cost and the number of
+owned positive-cost cards that can receive its trigger. Reward and upgrade
+owners may consume that fact; they must not infer the relic interaction from a
+display label or promote every Power without its package and boss context.
+
+Upgrade redundancy is measured across cards that provide the same capability,
+not only duplicate card ids. Weak and Vulnerable duration providers therefore
+share coverage groups. Upgrade roles must describe what the upgrade changes:
+a card that already draws but whose upgrade changes only Block does not pay an
+access-recovery debt.
+
 ## Runner And Combat
 
 The runner owns run progression:

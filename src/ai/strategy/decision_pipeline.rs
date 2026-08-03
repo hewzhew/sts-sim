@@ -27,6 +27,7 @@ use crate::content::relics::RelicId;
 pub struct DecisionPipelineContext {
     pub deck_plan: DeckPlanSnapshot,
     pub gold: Option<i32>,
+    pub purge_reserve: Option<i32>,
 }
 
 impl DecisionPipelineContext {
@@ -34,13 +35,23 @@ impl DecisionPipelineContext {
         Self {
             deck_plan,
             gold: None,
+            purge_reserve: None,
         }
     }
 
     pub fn shop(deck_plan: DeckPlanSnapshot, gold: i32) -> Self {
+        Self::shop_with_purge_reserve(deck_plan, gold, Some(75))
+    }
+
+    pub fn shop_with_purge_reserve(
+        deck_plan: DeckPlanSnapshot,
+        gold: i32,
+        purge_reserve: Option<i32>,
+    ) -> Self {
         Self {
             deck_plan,
             gold: Some(gold),
+            purge_reserve,
         }
     }
 }
@@ -605,7 +616,12 @@ fn shop_card_acquisition_filter(
         return FilterDecision::Pass;
     }
     let report = assess_card_acquisition(
-        AcquisitionContext::shop(context.deck_plan, gold, price),
+        AcquisitionContext::shop_with_purge_reserve(
+            context.deck_plan,
+            gold,
+            price,
+            context.purge_reserve,
+        ),
         card,
         upgrades,
         admission,
@@ -1094,7 +1110,12 @@ fn acquisition_lane_cap(
             (
                 card,
                 upgrades,
-                AcquisitionContext::shop(context.deck_plan, gold, price),
+                AcquisitionContext::shop_with_purge_reserve(
+                    context.deck_plan,
+                    gold,
+                    price,
+                    context.purge_reserve,
+                ),
             )
         }
         _ => return None,

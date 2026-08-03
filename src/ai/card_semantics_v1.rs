@@ -97,6 +97,7 @@ pub enum PotionAcquisitionTraitV1 {
     EnergyBurst,
     StrengthGain,
     CardAccess,
+    CardDiscovery,
     ActionAmplifier,
     DeathInsurance,
     DebuffControl,
@@ -485,12 +486,11 @@ pub fn potion_acquisition_traits_v1(potion: PotionId) -> Vec<PotionAcquisitionTr
         PotionId::EnergyPotion => {
             push_potion_trait(&mut traits, PotionAcquisitionTraitV1::EnergyBurst);
         }
-        PotionId::GamblersBrew
-        | PotionId::LiquidMemories
-        | PotionId::PowerPotion
-        | PotionId::SkillPotion
-        | PotionId::AttackPotion => {
+        PotionId::GamblersBrew | PotionId::LiquidMemories => {
             push_potion_trait(&mut traits, PotionAcquisitionTraitV1::CardAccess);
+        }
+        PotionId::PowerPotion | PotionId::SkillPotion | PotionId::AttackPotion => {
+            push_potion_trait(&mut traits, PotionAcquisitionTraitV1::CardDiscovery);
         }
         PotionId::DuplicationPotion => {
             push_potion_trait(&mut traits, PotionAcquisitionTraitV1::ActionAmplifier);
@@ -580,6 +580,17 @@ mod tests {
         assert!(!fear.contains(&PotionAcquisitionTraitV1::WeakControl));
         assert!(weaken.contains(&PotionAcquisitionTraitV1::WeakControl));
         assert!(!weaken.contains(&PotionAcquisitionTraitV1::VulnerableSetup));
+    }
+
+    #[test]
+    fn random_card_potions_are_discovery_not_existing_deck_access() {
+        let attack = potion_acquisition_traits_v1(PotionId::AttackPotion);
+        let liquid_memories = potion_acquisition_traits_v1(PotionId::LiquidMemories);
+
+        assert!(attack.contains(&PotionAcquisitionTraitV1::CardDiscovery));
+        assert!(!attack.contains(&PotionAcquisitionTraitV1::CardAccess));
+        assert!(liquid_memories.contains(&PotionAcquisitionTraitV1::CardAccess));
+        assert!(!liquid_memories.contains(&PotionAcquisitionTraitV1::CardDiscovery));
     }
 
     #[test]

@@ -10,6 +10,7 @@ use crate::ai::strategy::reward_admission::{
     RewardAdmission, RewardAdmissionClass, RewardAdmissionReason,
 };
 use crate::content::cards::{get_card_definition, CardId};
+use serde::Serialize;
 
 const CHEAP_SHOP_CARD_PRICE: i32 = 35;
 const SHOP_PURGE_RESERVE: i32 = 75;
@@ -29,9 +30,22 @@ impl AcquisitionContext {
     }
 
     pub fn shop(deck_plan: DeckPlanSnapshot, gold: i32, price: i32) -> Self {
+        Self::shop_with_purge_reserve(deck_plan, gold, price, Some(SHOP_PURGE_RESERVE))
+    }
+
+    pub fn shop_with_purge_reserve(
+        deck_plan: DeckPlanSnapshot,
+        gold: i32,
+        price: i32,
+        purge_reserve: Option<i32>,
+    ) -> Self {
         Self {
             deck_plan,
-            source: AcquisitionContextSource::Shop { gold, price },
+            source: AcquisitionContextSource::Shop {
+                gold,
+                price,
+                purge_reserve,
+            },
         }
     }
 }
@@ -39,7 +53,11 @@ impl AcquisitionContext {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum AcquisitionContextSource {
     Reward,
-    Shop { gold: i32, price: i32 },
+    Shop {
+        gold: i32,
+        price: i32,
+        purge_reserve: Option<i32>,
+    },
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -58,9 +76,11 @@ pub enum AcquisitionCost {
     },
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum AcquisitionOpportunityCost {
     None,
+    NoPurgeAvailable,
     Cheap,
     PreservesPurgeReserve,
     SpendsPurgeReserve,
@@ -95,7 +115,8 @@ pub struct AcquisitionStrategicDelta {
     pub adds_deployability_debt: bool,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum AcquisitionPolicyVerdict {
     AutoAcquire,
     ContextTake,
@@ -110,7 +131,8 @@ impl AcquisitionPolicyVerdict {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum AcquisitionPolicyReason {
     PremiumCard,
     UpgradedShopCard,
@@ -129,7 +151,8 @@ pub enum AcquisitionPolicyReason {
     NoPolicySupport,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct AcquisitionPolicyDecision {
     pub verdict: AcquisitionPolicyVerdict,
     pub reason: AcquisitionPolicyReason,
@@ -221,7 +244,7 @@ fn acquisition_source(source: AcquisitionContextSource) -> AcquisitionSource {
 fn acquisition_cost(source: AcquisitionContextSource) -> AcquisitionCost {
     match source {
         AcquisitionContextSource::Reward => AcquisitionCost::Free,
-        AcquisitionContextSource::Shop { gold, price } => AcquisitionCost::Gold {
+        AcquisitionContextSource::Shop { gold, price, .. } => AcquisitionCost::Gold {
             price,
             gold_before: gold,
             gold_after: gold.saturating_sub(price),
@@ -232,15 +255,24 @@ fn acquisition_cost(source: AcquisitionContextSource) -> AcquisitionCost {
 fn acquisition_opportunity_cost(source: AcquisitionContextSource) -> AcquisitionOpportunityCost {
     match source {
         AcquisitionContextSource::Reward => AcquisitionOpportunityCost::None,
+        AcquisitionContextSource::Shop {
+            gold,
+            price,
+            purge_reserve: Some(purge_reserve),
+        } if gold.saturating_sub(price) < purge_reserve => {
+            AcquisitionOpportunityCost::SpendsPurgeReserve
+        }
         AcquisitionContextSource::Shop { price, .. } if price <= CHEAP_SHOP_CARD_PRICE => {
             AcquisitionOpportunityCost::Cheap
         }
-        AcquisitionContextSource::Shop { gold, price }
-            if gold.saturating_sub(price) >= SHOP_PURGE_RESERVE =>
-        {
-            AcquisitionOpportunityCost::PreservesPurgeReserve
-        }
-        AcquisitionContextSource::Shop { .. } => AcquisitionOpportunityCost::SpendsPurgeReserve,
+        AcquisitionContextSource::Shop {
+            purge_reserve: Some(_),
+            ..
+        } => AcquisitionOpportunityCost::PreservesPurgeReserve,
+        AcquisitionContextSource::Shop {
+            purge_reserve: None,
+            ..
+        } => AcquisitionOpportunityCost::NoPurgeAvailable,
     }
 }
 
@@ -849,7 +881,7 @@ mod tests {
         let admission = assess_reward_admission_from_master_deck(&master_deck, candidate, 0);
 
         assess_card_acquisition(
-            AcquisitionContext::shop(plan, 43, price),
+            AcquisitionContext::shop_with_purge_reserve(plan, 43, price, None),
             candidate,
             0,
             &admission,

@@ -198,6 +198,7 @@ fn potion_answer_axes(potion: crate::content::potions::PotionId) -> Vec<Pressure
             | PotionAcquisitionTraitV1::DeathInsurance => Some(PressureAxis::DelayCapacity),
             PotionAcquisitionTraitV1::EnergyBurst
             | PotionAcquisitionTraitV1::CardAccess
+            | PotionAcquisitionTraitV1::CardDiscovery
             | PotionAcquisitionTraitV1::ActionAmplifier
             | PotionAcquisitionTraitV1::DebuffControl => Some(PressureAxis::Deployability),
             PotionAcquisitionTraitV1::StrengthGain => Some(PressureAxis::GrowthHorizon),

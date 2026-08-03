@@ -31,6 +31,13 @@ use crate::ai::noncombat_strategy_v1::{
 use crate::ai::route_window_facts::{
     build_route_path_family_from_target, route_window_targets, RouteWindowFactsConfig,
 };
+use crate::ai::strategy::acquisition::{
+    assess_card_acquisition, evaluate_deck_construction_contract, AcquisitionContext,
+    AcquisitionOpportunityCost, AcquisitionPolicyDecision, AcquisitionPolicyReason,
+    AcquisitionPolicyVerdict,
+};
+use crate::ai::strategy::deck_plan::DeckPlanSnapshot;
+use crate::ai::strategy::reward_admission::assess_reward_admission_from_master_deck;
 use crate::ai::strength_profile_v1::card_unlocks_convertible_strength_payoff_v1;
 use crate::content::cards::{get_card_definition, CardId};
 use crate::content::potions::PotionId;
@@ -126,6 +133,10 @@ pub struct ShopPolicyActionEvidenceV1 {
     pub added_deck_shape_risks: Vec<DeckShapeRiskV1>,
     pub introduces_package_debt: bool,
     pub redundant_upgrade_access: bool,
+    pub card_acquisition_policy: Option<AcquisitionPolicyDecision>,
+    pub card_acquisition_opportunity_cost: Option<AcquisitionOpportunityCost>,
+    pub spent_gold_before_action: bool,
+    pub durable_asset_support: bool,
     pub purge_target_loss: Option<DeckMutationTargetLossTierV1>,
     surface_index: usize,
 }
@@ -163,6 +174,11 @@ pub struct ShopPolicyAuditCandidateV1 {
     pub added_deck_shape_risks: Vec<String>,
     pub introduces_package_debt: bool,
     pub redundant_upgrade_access: bool,
+    pub card_acquisition_verdict: Option<AcquisitionPolicyVerdict>,
+    pub card_acquisition_reason: Option<AcquisitionPolicyReason>,
+    pub card_acquisition_opportunity_cost: Option<AcquisitionOpportunityCost>,
+    pub spent_gold_before_action: bool,
+    pub durable_asset_support: bool,
     pub purge_target_loss: Option<String>,
     pub surface_index: usize,
     pub prior_probability: f64,
@@ -264,6 +280,15 @@ impl ExactShopPolicyDecisionV1 {
                         .collect(),
                     introduces_package_debt: evidence.introduces_package_debt,
                     redundant_upgrade_access: evidence.redundant_upgrade_access,
+                    card_acquisition_verdict: evidence
+                        .card_acquisition_policy
+                        .map(|policy| policy.verdict),
+                    card_acquisition_reason: evidence
+                        .card_acquisition_policy
+                        .map(|policy| policy.reason),
+                    card_acquisition_opportunity_cost: evidence.card_acquisition_opportunity_cost,
+                    spent_gold_before_action: evidence.spent_gold_before_action,
+                    durable_asset_support: evidence.durable_asset_support,
                     purge_target_loss: evidence.purge_target_loss.map(|value| format!("{value:?}")),
                     surface_index: evidence.surface_index,
                     prior_probability,
@@ -312,6 +337,7 @@ pub fn exact_shop_policy_decision_v1(
     let startup = deck_startup_profile_v1(&session.run_state);
     let deck_shape = deck_shape_profile_v1(&session.run_state);
     let block_plan = block_plan_profile_v1(&session.run_state);
+    let deck_plan = DeckPlanSnapshot::from_run_state(&session.run_state);
     let mut evidence = exact
         .actions
         .iter()
@@ -327,6 +353,7 @@ pub fn exact_shop_policy_decision_v1(
                 &startup,
                 &deck_shape,
                 &block_plan,
+                deck_plan,
             )
         })
         .collect::<Result<Vec<_>, _>>()?;
@@ -378,12 +405,15 @@ fn shop_action_evidence_v1(
     startup: &DeckStartupProfileV1,
     deck_shape: &DeckShapeProfileV1,
     block_plan: &BlockPlanProfileV1,
+    deck_plan: DeckPlanSnapshot,
 ) -> Result<ShopPolicyActionEvidenceV1, String> {
     let candidate_key = action
         .candidate_key
         .clone()
         .ok_or_else(|| format!("shop candidate '{}' has no typed key", action.candidate_id))?;
     let acquisition = acquisition_v1(parent, &candidate_key, formation_needs, startup, block_plan)?;
+    let (card_acquisition_policy, card_acquisition_opportunity_cost) =
+        card_acquisition_policy_v1(parent, &candidate_key, &acquisition, deck_plan);
     let delta = run_policy_state_delta_v1(&decision.before, &action.after);
     let closed_threat_gaps = delta.closed_threat_gaps;
     let capability_improvements = delta.capability_improvements;
@@ -446,6 +476,15 @@ fn shop_action_evidence_v1(
         _ => None,
     };
     let followup = followup_v1(&action.exact.session.engine_state);
+    let spent_gold_before_action = parent
+        .shop_visit_context()
+        .is_some_and(|context| context.spent_gold_in_visit);
+    let durable_asset_support = first_copy_efficient_access(&acquisition)
+        || !reinforced_threat_capabilities.is_empty()
+        || !matched_consumable_capabilities.is_empty()
+        || !added_formation_strengths.is_empty()
+        || upgrade_scope_after > upgrade_scope_before
+        || strategic_acquisition_supported(parent, &acquisition, followup);
     let opens_only_unclaimable_potion_rewards =
         super::reward_auto::reward_surface_has_only_unclaimable_potions(&action.exact.session);
     let gold_spent = decision
@@ -484,6 +523,10 @@ fn shop_action_evidence_v1(
         !added_deck_shape_risks.is_empty(),
         introduces_package_debt,
         redundant_upgrade_access,
+        card_acquisition_policy,
+        card_acquisition_opportunity_cost,
+        spent_gold_before_action,
+        durable_asset_support,
         purge_target_loss,
     );
 
@@ -509,9 +552,56 @@ fn shop_action_evidence_v1(
         added_deck_shape_risks,
         introduces_package_debt,
         redundant_upgrade_access,
+        card_acquisition_policy,
+        card_acquisition_opportunity_cost,
+        spent_gold_before_action,
+        durable_asset_support,
         purge_target_loss,
         surface_index,
     })
+}
+
+fn card_acquisition_policy_v1(
+    parent: &RunControlSession,
+    candidate_key: &DecisionCandidateKey,
+    acquisition: &ShopPolicyAcquisitionV1,
+    deck_plan: DeckPlanSnapshot,
+) -> (
+    Option<AcquisitionPolicyDecision>,
+    Option<AcquisitionOpportunityCost>,
+) {
+    let (
+        DecisionCandidateKey::ShopBuyCard { price, .. },
+        ShopPolicyAcquisitionV1::Card { card, upgrades, .. },
+    ) = (candidate_key, acquisition)
+    else {
+        return (None, None);
+    };
+    let purge_reserve = match &parent.engine_state {
+        EngineState::Shop(shop)
+            if shop.purge_available && parent.run_state.gold >= shop.purge_cost =>
+        {
+            Some(shop.purge_cost)
+        }
+        _ => None,
+    };
+    let admission =
+        assess_reward_admission_from_master_deck(&parent.run_state.master_deck, *card, *upgrades);
+    let report = assess_card_acquisition(
+        AcquisitionContext::shop_with_purge_reserve(
+            deck_plan,
+            parent.run_state.gold,
+            *price,
+            purge_reserve,
+        ),
+        *card,
+        *upgrades,
+        &admission,
+    );
+    (
+        Some(evaluate_deck_construction_contract(&report)),
+        Some(report.opportunity_cost),
+    )
 }
 
 fn acquisition_v1(
@@ -675,6 +765,7 @@ fn potion_capabilities(trait_: PotionAcquisitionTraitV1) -> Vec<StrategyCapabili
         Trait::EnergyBurst | Trait::CardAccess | Trait::ActionAmplifier => {
             vec![Capability::DrawEnergyConsistency]
         }
+        Trait::CardDiscovery => Vec::new(),
         Trait::DeathInsurance | Trait::EscapeTool => vec![Capability::SustainedDefense],
         Trait::DebuffControl => vec![Capability::DebuffResilience],
     }
@@ -700,6 +791,10 @@ fn shop_policy_band_v1(
     introduces_deck_shape_risk: bool,
     introduces_package_debt: bool,
     redundant_upgrade_access: bool,
+    card_acquisition_policy: Option<AcquisitionPolicyDecision>,
+    card_acquisition_opportunity_cost: Option<AcquisitionOpportunityCost>,
+    spent_gold_before_action: bool,
+    durable_asset_support: bool,
     purge_target_loss: Option<DeckMutationTargetLossTierV1>,
 ) -> ShopPolicyBandV1 {
     if opens_only_unclaimable_potion_rewards {
@@ -719,8 +814,37 @@ fn shop_policy_band_v1(
         || introduces_deck_shape_risk
         || introduces_package_debt
         || redundant_upgrade_access
+        || matches!(
+            card_acquisition_policy,
+            Some(AcquisitionPolicyDecision {
+                verdict: AcquisitionPolicyVerdict::Reject,
+                reason,
+            }) if reason != AcquisitionPolicyReason::NoPolicySupport
+        )
     {
         return ShopPolicyBandV1::Liability;
+    }
+    if matches!(
+        card_acquisition_policy.map(|policy| policy.verdict),
+        Some(AcquisitionPolicyVerdict::SkipPreferred)
+    ) {
+        return ShopPolicyBandV1::SpeculativePurchase;
+    }
+    if card_acquisition_opportunity_cost == Some(AcquisitionOpportunityCost::SpendsPurgeReserve)
+        && card_acquisition_policy.is_some_and(|policy| !policy.allows_acquisition())
+        && !durable_asset_support
+    {
+        return ShopPolicyBandV1::SpeculativePurchase;
+    }
+    if spent_gold_before_action
+        && matches!(
+            acquisition,
+            ShopPolicyAcquisitionV1::Card { .. } | ShopPolicyAcquisitionV1::Potion { .. }
+        )
+        && !card_acquisition_policy.is_some_and(AcquisitionPolicyDecision::allows_acquisition)
+        && !durable_asset_support
+    {
+        return ShopPolicyBandV1::SpeculativePurchase;
     }
     if !closed_threat_gaps.is_empty() {
         return ShopPolicyBandV1::CloseThreatGap;
@@ -754,6 +878,12 @@ fn shop_policy_band_v1(
     }
     if matches!(acquisition, ShopPolicyAcquisitionV1::Leave) {
         return ShopPolicyBandV1::PreserveResources;
+    }
+    if matches!(
+        card_acquisition_policy.map(|policy| policy.verdict),
+        Some(AcquisitionPolicyVerdict::Reject)
+    ) {
+        return ShopPolicyBandV1::Liability;
     }
     ShopPolicyBandV1::SpeculativePurchase
 }
@@ -957,7 +1087,7 @@ mod tests {
     use super::*;
     use crate::content::monsters::factory::EncounterId;
     use crate::content::potions::{Potion, PotionId};
-    use crate::eval::run_control::{build_decision_surface, RunControlConfig};
+    use crate::eval::run_control::{build_decision_surface, RunControlConfig, ShopVisitContextV1};
     use crate::runtime::combat::CombatCard;
     use crate::state::map::node::{MapEdge, MapRoomNode, RoomType};
     use crate::state::map::state::MapState;
@@ -1245,6 +1375,197 @@ mod tests {
             candidate_band(&duplicate, CardId::BattleTrance),
             ShopPolicyBandV1::AmplifyStrategicAccess
         );
+    }
+
+    #[test]
+    fn purge_reserve_demotes_expensive_hard_gap_without_erasing_supported_shop_assets() {
+        // Keep the complete A1F4 deck: starter density drives both the typed
+        // strategic gaps and the still-available low-loss purge alternative.
+        let mut session = RunControlSession::new(RunControlConfig::default());
+        session.run_state.act_num = 1;
+        session.run_state.floor_num = 4;
+        session.run_state.boss_key = Some(EncounterId::SlimeBoss);
+        session.run_state.current_hp = 85;
+        session.run_state.max_hp = 85;
+        session.run_state.gold = 135;
+        session.run_state.master_deck = [
+            CardId::Strike,
+            CardId::Strike,
+            CardId::Strike,
+            CardId::Strike,
+            CardId::Strike,
+            CardId::Defend,
+            CardId::Defend,
+            CardId::Defend,
+            CardId::Defend,
+            CardId::Bash,
+            CardId::PowerThrough,
+        ]
+        .into_iter()
+        .enumerate()
+        .map(|(index, card)| CombatCard::new(card, index as u32))
+        .collect();
+        let mut shop = ShopState::new();
+        shop.purge_cost = 75;
+        shop.cards.extend([
+            ShopCard {
+                card_id: CardId::Uppercut,
+                upgrades: 0,
+                price: 69,
+                can_buy: true,
+                blocked_reason: None,
+            },
+            ShopCard {
+                card_id: CardId::SecondWind,
+                upgrades: 0,
+                price: 35,
+                can_buy: true,
+                blocked_reason: None,
+            },
+        ]);
+        shop.potions.push(ShopPotion {
+            potion_id: PotionId::AttackPotion,
+            price: 52,
+            can_buy: true,
+            blocked_reason: None,
+        });
+        session.engine_state = EngineState::Shop(shop);
+
+        let surface = build_decision_surface(&session);
+        let legal = policy_candidates(&surface);
+        let decision = exact_shop_policy_decision_v1(&session, &legal).expect("A1F4 shop policy");
+        let uppercut = decision
+            .evidence
+            .iter()
+            .find(|candidate| {
+                matches!(
+                    candidate.candidate_key,
+                    DecisionCandidateKey::ShopBuyCard {
+                        card: CardId::Uppercut,
+                        ..
+                    }
+                )
+            })
+            .expect("Uppercut evidence");
+
+        assert_eq!(
+            uppercut.card_acquisition_policy,
+            Some(AcquisitionPolicyDecision {
+                verdict: AcquisitionPolicyVerdict::Reject,
+                reason: AcquisitionPolicyReason::NoPolicySupport,
+            })
+        );
+        assert_eq!(
+            uppercut.card_acquisition_opportunity_cost,
+            Some(AcquisitionOpportunityCost::SpendsPurgeReserve)
+        );
+        assert_eq!(uppercut.band, ShopPolicyBandV1::SpeculativePurchase);
+        assert_eq!(
+            candidate_band(&decision, CardId::SecondWind),
+            ShopPolicyBandV1::EstablishStrategicAsset
+        );
+        let attack_potion_position = decision
+            .evidence
+            .iter()
+            .position(|candidate| {
+                matches!(
+                    candidate.candidate_key,
+                    DecisionCandidateKey::ShopBuyPotion {
+                        potion: PotionId::AttackPotion,
+                        ..
+                    }
+                )
+            })
+            .expect("Attack Potion position");
+        let attack_potion = &decision.evidence[attack_potion_position];
+        assert!(matches!(
+            &attack_potion.acquisition,
+            ShopPolicyAcquisitionV1::Potion { traits, .. }
+                if traits.contains(&PotionAcquisitionTraitV1::CardDiscovery)
+                    && !traits.contains(&PotionAcquisitionTraitV1::CardAccess)
+        ));
+        assert!(attack_potion.matched_consumable_capabilities.is_empty());
+        assert_eq!(attack_potion.band, ShopPolicyBandV1::SpeculativePurchase);
+        assert!(
+            candidate_position(&decision, CardId::SecondWind)
+                < candidate_position(&decision, CardId::Uppercut),
+            "evidence={:#?}",
+            decision.evidence
+        );
+        assert!(candidate_position(&decision, CardId::SecondWind) < attack_potion_position);
+        assert!(
+            decision.evidence.iter().position(|candidate| matches!(
+                candidate.candidate_key,
+                DecisionCandidateKey::ShopLeave
+            )) < Some(candidate_position(&decision, CardId::Uppercut))
+        );
+    }
+
+    #[test]
+    fn additional_marginal_purchase_cannot_empty_a_shop_visit_after_prior_spend() {
+        // Model the exact post-bundle shape: the remaining card looks locally
+        // affordable only because the visit already consumed 87 of 135 gold.
+        let mut session = RunControlSession::new(RunControlConfig::default());
+        session.run_state.act_num = 1;
+        session.run_state.floor_num = 4;
+        session.run_state.gold = 48;
+        session.run_state.master_deck = [
+            CardId::Strike,
+            CardId::Strike,
+            CardId::Defend,
+            CardId::Defend,
+            CardId::Bash,
+            CardId::PowerThrough,
+            CardId::SecondWind,
+        ]
+        .into_iter()
+        .enumerate()
+        .map(|(index, card)| CombatCard::new(card, index as u32))
+        .collect();
+        let mut shop = ShopState::new();
+        shop.purge_available = false;
+        shop.cards.push(ShopCard {
+            card_id: CardId::WildStrike,
+            upgrades: 0,
+            price: 47,
+            can_buy: true,
+            blocked_reason: None,
+        });
+        session.engine_state = EngineState::Shop(shop);
+        session.shop_visit_context = Some(ShopVisitContextV1 {
+            entry_act: 1,
+            entry_floor: 4,
+            entry_gold: 135,
+            maw_bank_live_at_entry: false,
+            membership_card_owned_at_entry: false,
+            spent_gold_in_visit: true,
+        });
+
+        let surface = build_decision_surface(&session);
+        let legal = policy_candidates(&surface);
+        let decision = exact_shop_policy_decision_v1(&session, &legal)
+            .expect("post-purchase marginal shop policy");
+        let wild_strike = decision
+            .evidence
+            .iter()
+            .find(|candidate| {
+                matches!(
+                    candidate.candidate_key,
+                    DecisionCandidateKey::ShopBuyCard {
+                        card: CardId::WildStrike,
+                        ..
+                    }
+                )
+            })
+            .expect("Wild Strike evidence");
+
+        assert!(wild_strike.spent_gold_before_action);
+        assert!(!wild_strike.durable_asset_support);
+        assert_eq!(wild_strike.band, ShopPolicyBandV1::SpeculativePurchase);
+        assert!(matches!(
+            decision.evidence[0].candidate_key,
+            DecisionCandidateKey::ShopLeave
+        ));
     }
 
     #[test]
