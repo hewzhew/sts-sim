@@ -103,7 +103,8 @@ pub use card_reward_policy_prior::{
     exact_card_reward_policy_prior_v1, CardRewardBossDamagePlanImprovementV1,
     CardRewardPolicyAcquisitionV1, CardRewardPolicyActionEvidenceV1,
     CardRewardPolicyAuditCandidateV1, CardRewardPolicyBandV1, ExactCardRewardPolicyAuditV1,
-    ExactCardRewardPolicyDecisionV1,
+    ExactCardRewardPolicyDecisionV1, EXACT_CARD_REWARD_POLICY_AUDIT_SCHEMA_NAME,
+    EXACT_CARD_REWARD_POLICY_AUDIT_SCHEMA_VERSION,
 };
 pub use combat_case_adjudication::{
     adjudicate_combat_case_line_v1, CombatCaseAdjudicationProbeV1, COMBAT_CASE_PROJECTION_TRUST_V1,
@@ -147,11 +148,15 @@ pub use forced_transition::{
 };
 pub use oracle_analysis_session::{
     OracleAnalysisAdvanceReportV1, OracleAnalysisAdvanceRequestV1, OracleAnalysisAdvanceStatusV1,
+    OracleAnalysisCardRewardApplicationUnknownV1, OracleAnalysisCardRewardApplicationV1,
+    OracleAnalysisCardRewardPathAuditV1, OracleAnalysisCardRewardPathBoundaryV1,
     OracleAnalysisChildViewV1, OracleAnalysisChoiceViewV1, OracleAnalysisCombatJobCheckpointV1,
     OracleAnalysisCombatProgressV1, OracleAnalysisCombatStageExitV1,
     OracleAnalysisCombatStageTraceV1, OracleAnalysisEdgeKindV1, OracleAnalysisEdgeV1,
     OracleAnalysisNodeSummaryV1, OracleAnalysisNodeViewV1, OracleAnalysisSessionCheckpointV1,
-    OracleAnalysisSessionV1, OracleAnalysisTreeViewV1, ORACLE_ANALYSIS_SESSION_SCHEMA_NAME,
+    OracleAnalysisSessionV1, OracleAnalysisTreeViewV1,
+    ORACLE_ANALYSIS_CARD_REWARD_PATH_AUDIT_SCHEMA_NAME,
+    ORACLE_ANALYSIS_CARD_REWARD_PATH_AUDIT_SCHEMA_VERSION, ORACLE_ANALYSIS_SESSION_SCHEMA_NAME,
     ORACLE_ANALYSIS_SESSION_SCHEMA_VERSION,
 };
 pub use oracle_combat_policy::{

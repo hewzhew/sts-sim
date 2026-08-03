@@ -6,8 +6,10 @@ use crate::ai::deck_startup_profile_v1::{
 };
 use crate::ai::noncombat_strategy_v1::StrategyDeckFormationNeedV1;
 use crate::content::cards::CardId;
+use serde::Serialize;
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum CardComponentRoleV1 {
     Enabler,
     Payoff,
@@ -17,7 +19,8 @@ pub enum CardComponentRoleV1 {
     Liability,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum CardComponentSignalKindV1 {
     FormationNeedCoverage,
     DamageMitigation,
@@ -103,7 +106,8 @@ pub struct CardComponentSignalContextV1 {
     pub candidate_unlocks_convertible_strength_payoff: bool,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct CardComponentSignalReportV1 {
     pub card: CardId,
     pub roles: Vec<CardComponentRoleV1>,

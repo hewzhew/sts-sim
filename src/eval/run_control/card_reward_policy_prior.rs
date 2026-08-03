@@ -46,6 +46,9 @@ use super::{
     RunControlSession, RunPolicyCandidateV1, RunPolicyPriorV1, RunPolicyStateDeltaV1,
 };
 
+pub const EXACT_CARD_REWARD_POLICY_AUDIT_SCHEMA_NAME: &str = "ExactCardRewardPolicyAudit";
+pub const EXACT_CARD_REWARD_POLICY_AUDIT_SCHEMA_VERSION: u32 = 1;
+
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum CardRewardPolicyBandV1 {
@@ -60,7 +63,8 @@ pub enum CardRewardPolicyBandV1 {
     Liability,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum CardRewardPolicyAcquisitionV1 {
     Card {
         card: CardId,
@@ -140,12 +144,13 @@ pub struct CardRewardPolicyAuditCandidateV1 {
     pub candidate_id: String,
     pub label: String,
     pub candidate_key: DecisionCandidateKey,
-    pub acquisition: String,
+    pub acquisition: CardRewardPolicyAcquisitionV1,
     pub band: CardRewardPolicyBandV1,
-    pub closed_threat_gaps: Vec<String>,
-    pub capability_improvements: Vec<String>,
-    pub resolved_formation_needs: Vec<String>,
-    pub added_formation_strengths: Vec<String>,
+    pub closed_threat_gaps: Vec<super::RunPolicyThreatGapKeyV1>,
+    pub capability_improvements: Vec<super::RunPolicyCapabilityChangeV1>,
+    pub resolved_formation_needs:
+        Vec<crate::ai::noncombat_strategy_v1::StrategyDeckFormationNeedV1>,
+    pub added_formation_strengths: Vec<StrategyPackageIdV2>,
     pub introduces_unsupported_mechanics: bool,
     pub introduces_undigested_status_burden: bool,
     pub duplicate_low_marginal: bool,
@@ -154,12 +159,12 @@ pub struct CardRewardPolicyAuditCandidateV1 {
     pub mummified_hand_power_tempo: Option<MummifiedHandPowerTempoV1>,
     pub boss_power_tax_conflict: bool,
     pub random_target_frontload_reliable: bool,
-    pub added_deck_shape_risks: Vec<String>,
+    pub added_deck_shape_risks: Vec<DeckShapeRiskV1>,
     pub persistent_draw_pile_status: Option<PersistentDrawPileStatusAssessmentV1>,
     pub improves_threat_relevant_capability: bool,
     pub amplifies_existing_answers: bool,
     pub boss_damage_plan_improvement: Option<CardRewardBossDamagePlanImprovementV1>,
-    pub upgrade_investment_support: Option<String>,
+    pub upgrade_investment_support: Option<StrategyPlanSupportV1>,
     pub surface_index: usize,
     pub prior_probability: f64,
 }
@@ -167,6 +172,8 @@ pub struct CardRewardPolicyAuditCandidateV1 {
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct ExactCardRewardPolicyAuditV1 {
+    pub schema_name: &'static str,
+    pub schema_version: u32,
     pub current_hp: i32,
     pub max_hp: i32,
     pub gold: i32,
@@ -209,32 +216,12 @@ impl ExactCardRewardPolicyDecisionV1 {
                     candidate_id: evidence.candidate_id.clone(),
                     label: legal_candidate.label.to_string(),
                     candidate_key: evidence.candidate_key.clone(),
-                    acquisition: format!("{:?}", evidence.acquisition),
+                    acquisition: evidence.acquisition.clone(),
                     band: evidence.band,
-                    closed_threat_gaps: evidence
-                        .delta
-                        .closed_threat_gaps
-                        .iter()
-                        .map(|value| format!("{value:?}"))
-                        .collect(),
-                    capability_improvements: evidence
-                        .delta
-                        .capability_improvements
-                        .iter()
-                        .map(|value| format!("{value:?}"))
-                        .collect(),
-                    resolved_formation_needs: evidence
-                        .delta
-                        .resolved_formation_needs
-                        .iter()
-                        .map(|value| format!("{value:?}"))
-                        .collect(),
-                    added_formation_strengths: evidence
-                        .delta
-                        .added_formation_strengths
-                        .iter()
-                        .map(|value| format!("{value:?}"))
-                        .collect(),
+                    closed_threat_gaps: evidence.delta.closed_threat_gaps.clone(),
+                    capability_improvements: evidence.delta.capability_improvements.clone(),
+                    resolved_formation_needs: evidence.delta.resolved_formation_needs.clone(),
+                    added_formation_strengths: evidence.delta.added_formation_strengths.clone(),
                     introduces_unsupported_mechanics: evidence.introduces_unsupported_mechanics,
                     introduces_undigested_status_burden: evidence
                         .introduces_undigested_status_burden,
@@ -244,19 +231,13 @@ impl ExactCardRewardPolicyDecisionV1 {
                     mummified_hand_power_tempo: evidence.mummified_hand_power_tempo,
                     boss_power_tax_conflict: evidence.boss_power_tax_conflict,
                     random_target_frontload_reliable: evidence.random_target_frontload_reliable,
-                    added_deck_shape_risks: evidence
-                        .added_deck_shape_risks
-                        .iter()
-                        .map(|value| format!("{value:?}"))
-                        .collect(),
+                    added_deck_shape_risks: evidence.added_deck_shape_risks.clone(),
                     persistent_draw_pile_status: evidence.persistent_draw_pile_status.clone(),
                     improves_threat_relevant_capability: evidence
                         .improves_threat_relevant_capability,
                     amplifies_existing_answers: evidence.amplifies_existing_answers,
                     boss_damage_plan_improvement: evidence.boss_damage_plan_improvement,
-                    upgrade_investment_support: evidence
-                        .upgrade_investment_support
-                        .map(|value| format!("{value:?}")),
+                    upgrade_investment_support: evidence.upgrade_investment_support,
                     surface_index: evidence.surface_index,
                     prior_probability,
                 })
@@ -264,6 +245,8 @@ impl ExactCardRewardPolicyDecisionV1 {
             .collect::<Result<Vec<_>, String>>()?;
 
         Ok(ExactCardRewardPolicyAuditV1 {
+            schema_name: EXACT_CARD_REWARD_POLICY_AUDIT_SCHEMA_NAME,
+            schema_version: EXACT_CARD_REWARD_POLICY_AUDIT_SCHEMA_VERSION,
             current_hp: self.exact.before.resources.current_hp,
             max_hp: self.exact.before.resources.max_hp,
             gold: self.exact.before.resources.gold,

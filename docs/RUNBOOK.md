@@ -292,6 +292,20 @@ cargo oracle-lab new --seed 20260713009 --ascension 0 --workspace .oracle-lab/ca
 .\ol-live.cmd live --session seed009 run --export-continuation .oracle-lab/cases/seed009.victory.continuation.json
 ```
 
+Audit every materialized card-reward choice on the current exact path without
+guessing node ids or opening the workspace checkpoint:
+
+```powershell
+cargo oracle-lab card-reward-path `
+  --workspace .oracle-lab/cases/<run>.workspace.json `
+  --output .oracle-lab/reports/<fresh-id>.card-rewards.json
+```
+
+The complete typed deck, relic, potion, candidate, owner-band, and applied-edge
+evidence is written to the fresh output path; stdout stays a compact artifact
+receipt. For an active resident session, use `card-reward-path` through the
+matching `ol-live` surface with the same optional `--output` behavior.
+
 Run consecutive seeds in one process instead of launching resident services
 from a PowerShell loop:
 

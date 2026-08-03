@@ -37,6 +37,15 @@ use super::{
     RunProgressJournalV1, RunProgressStepV1,
 };
 
+mod card_reward_path;
+
+pub use card_reward_path::{
+    OracleAnalysisCardRewardApplicationUnknownV1, OracleAnalysisCardRewardApplicationV1,
+    OracleAnalysisCardRewardPathAuditV1, OracleAnalysisCardRewardPathBoundaryV1,
+    ORACLE_ANALYSIS_CARD_REWARD_PATH_AUDIT_SCHEMA_NAME,
+    ORACLE_ANALYSIS_CARD_REWARD_PATH_AUDIT_SCHEMA_VERSION,
+};
+
 pub const ORACLE_ANALYSIS_SESSION_SCHEMA_NAME: &str = "OracleAnalysisSession";
 pub const ORACLE_ANALYSIS_SESSION_SCHEMA_VERSION: u32 = 1;
 

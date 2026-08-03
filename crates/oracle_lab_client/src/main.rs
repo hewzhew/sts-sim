@@ -121,6 +121,16 @@ enum LiveCommand {
         #[arg(long)]
         node: Option<usize>,
     },
+    /// Audit every exact card-reward surface on the retained path ending at
+    /// the selected node. Defaults to the resident cursor.
+    CardRewardPath {
+        #[arg(long)]
+        node: Option<usize>,
+        /// Write the complete typed report here and print only a compact
+        /// receipt, keeping large evidence out of the terminal.
+        #[arg(long)]
+        output: Option<PathBuf>,
+    },
     /// Explain the exact campfire owner's complete ranked evidence at a campfire node.
     Campfire {
         #[arg(long)]
@@ -315,6 +325,38 @@ fn run_live_command(endpoint: &Path, command: LiveCommand) -> Result<(), String>
                 endpoint,
                 OracleAnalysisServiceCommandV1::CardRewardPolicyAudit { node },
             )?)
+        }
+        LiveCommand::CardRewardPath { node, output } => {
+            let node = resolve_live_node(endpoint, node)?;
+            let report = live_call(
+                endpoint,
+                OracleAnalysisServiceCommandV1::CardRewardPathAudit { node },
+            )?;
+            if let Some(output) = output {
+                write_fresh_json(&output, &report)?;
+                print_json(&json!({
+                    "schema_name": "OracleAnalysisCardRewardPathAuditWriteReceipt",
+                    "schema_version": 1,
+                    "target_node_id": node,
+                    "boundary_count": report
+                        .get("boundaries")
+                        .and_then(Value::as_array)
+                        .map_or(0, Vec::len),
+                    "candidate_count": report
+                        .get("boundaries")
+                        .and_then(Value::as_array)
+                        .map_or(0, |boundaries| boundaries
+                            .iter()
+                            .filter_map(|boundary| boundary.get("audit"))
+                            .filter_map(|audit| audit.get("candidates"))
+                            .filter_map(Value::as_array)
+                            .map(Vec::len)
+                            .sum::<usize>()),
+                    "output": output,
+                }))
+            } else {
+                print_json(&report)
+            }
         }
         LiveCommand::Campfire { node } => {
             let node = resolve_live_node(endpoint, node)?;
@@ -1317,6 +1359,45 @@ fn validate_canonical_launch(canonical_oracle: bool) -> Result<(), String> {
 
 fn repository_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..")
+}
+
+fn write_fresh_json<T: Serialize>(output: &Path, value: &T) -> Result<(), String> {
+    if let Some(parent) = output
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+    {
+        fs::create_dir_all(parent).map_err(|error| {
+            format!(
+                "failed to create oracle artifact directory '{}': {error}",
+                parent.display()
+            )
+        })?;
+    }
+    let mut file = fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(output)
+        .map_err(|error| {
+            format!(
+                "failed to create fresh oracle artifact '{}': {error}",
+                output.display()
+            )
+        })?;
+    if let Err(error) = serde_json::to_writer(&mut file, value)
+        .map_err(|error| format!("failed to serialize oracle artifact: {error}"))
+        .and_then(|_| {
+            writeln!(&mut file)
+                .map_err(|error| format!("failed to finish oracle artifact: {error}"))
+        })
+        .and_then(|_| {
+            file.sync_all()
+                .map_err(|error| format!("failed to sync oracle artifact: {error}"))
+        })
+    {
+        let _ = fs::remove_file(output);
+        return Err(error);
+    }
+    Ok(())
 }
 
 fn print_json<T: Serialize>(value: &T) -> Result<(), String> {

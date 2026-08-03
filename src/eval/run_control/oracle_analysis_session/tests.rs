@@ -3,8 +3,9 @@ use super::*;
 use crate::content::potions::{Potion, PotionId};
 use crate::eval::run_control::{
     positive_ranked_run_policy_prior_v1, seed_oracle_run_explorer_from_session_v1,
-    OracleRunCombatQualityPolicyV1, RunControlConfig, RunControlSearchCombatOptions,
-    RunControlSession, RunPolicyCandidateV1, RunPolicyPriorFnV1, RunPolicyPriorV1,
+    DecisionCandidateKey, OracleRunCombatQualityPolicyV1, RunControlConfig,
+    RunControlSearchCombatOptions, RunControlSession, RunPolicyCandidateV1, RunPolicyPriorFnV1,
+    RunPolicyPriorV1,
 };
 use crate::runtime::combat::CombatCard;
 use crate::state::core::{
@@ -12,6 +13,7 @@ use crate::state::core::{
     RunPendingChoiceReason, RunPendingChoiceState,
 };
 use crate::state::map::node::RoomType;
+use crate::state::rewards::{RewardCard, RewardItem, RewardState};
 use crate::state::selection::DomainEventSource;
 
 fn parameterized_selection_analysis() -> OracleAnalysisSessionV1 {
@@ -43,6 +45,101 @@ fn parameterized_selection_analysis_with_prior(
     .expect("seed parameterized analysis");
     OracleAnalysisSessionV1::from_explorer(explorer, Some(0), combat_budgets, decision_prior, None)
         .expect("parameterized analysis")
+}
+
+fn card_reward_analysis() -> OracleAnalysisSessionV1 {
+    let mut run = RunControlSession::new(RunControlConfig::default());
+    run.run_state.act_num = 1;
+    run.run_state.floor_num = 3;
+    run.run_state.master_deck = (0..5)
+        .map(|uuid| CombatCard::new(crate::content::cards::CardId::Strike, uuid))
+        .collect();
+    let cards = vec![
+        RewardCard::new(crate::content::cards::CardId::PommelStrike, 0),
+        RewardCard::new(crate::content::cards::CardId::SecondWind, 0),
+    ];
+    let mut reward = RewardState::new();
+    reward.items = vec![RewardItem::Card {
+        cards: cards.clone(),
+    }];
+    reward.pending_card_choice = Some(cards);
+    reward.pending_card_reward_index = Some(0);
+    run.engine_state = EngineState::RewardScreen(reward);
+
+    let combat_budgets =
+        OracleRunCombatBudgetsV1::uniform(RunControlSearchCombatOptions::default());
+    let explorer = seed_oracle_run_explorer_from_session_v1(
+        run,
+        RunProgressJournalV1::default(),
+        &combat_budgets,
+        None,
+    )
+    .expect("seed card reward analysis");
+    OracleAnalysisSessionV1::from_explorer(explorer, Some(0), combat_budgets, None, None)
+        .expect("card reward analysis")
+}
+
+#[test]
+fn card_reward_path_audit_batches_typed_boundaries_and_applied_identity() {
+    let mut analysis = card_reward_analysis();
+    let root = analysis
+        .card_reward_path_audit(0)
+        .expect("root card reward path audit");
+    assert_eq!(root.target_node_id, 0);
+    assert_eq!(root.boundaries.len(), 1);
+    assert_eq!(root.boundaries[0].node_id, 0);
+    assert_eq!(root.boundaries[0].floor, 3);
+    assert_eq!(root.boundaries[0].deck.len(), 5);
+    assert_eq!(
+        root.boundaries[0].application,
+        OracleAnalysisCardRewardApplicationV1::Uncommitted
+    );
+    let pommel = root.boundaries[0]
+        .audit
+        .candidates
+        .iter()
+        .find(|candidate| {
+            matches!(
+                candidate.candidate_key,
+                DecisionCandidateKey::CardRewardPick {
+                    card: crate::content::cards::CardId::PommelStrike,
+                    ..
+                }
+            )
+        })
+        .expect("typed Pommel Strike candidate");
+    assert!(matches!(
+        pommel.acquisition,
+        super::super::CardRewardPolicyAcquisitionV1::Card {
+            card: crate::content::cards::CardId::PommelStrike,
+            ..
+        }
+    ));
+
+    let view = analysis.view_node(0).expect("root card reward view");
+    let choice_ref = view
+        .choices
+        .iter()
+        .find(|choice| choice.candidate_id == pommel.candidate_id)
+        .expect("Pommel Strike retained choice")
+        .choice_ref
+        .clone();
+    let child_node_id = analysis
+        .try_choice(&choice_ref)
+        .expect("apply Pommel Strike choice");
+    let committed = analysis
+        .card_reward_path_audit(child_node_id)
+        .expect("committed card reward path audit");
+    let OracleAnalysisCardRewardApplicationV1::Applied {
+        candidate_id,
+        current_owner_rank,
+        ..
+    } = &committed.boundaries[0].application
+    else {
+        panic!("committed card reward must retain applied identity")
+    };
+    assert_eq!(candidate_id, &pommel.candidate_id);
+    assert_eq!(*current_owner_rank, pommel.owner_rank);
 }
 
 fn reject_child_decision_supply(

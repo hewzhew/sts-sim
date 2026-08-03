@@ -2,6 +2,7 @@ use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 use serde_json::{json, Value};
+use sts_oracle_runtime::eval::combat_lab_v1::atomic_write_json;
 use sts_oracle_runtime::eval::run_control::OracleAnalysisAdvanceRequestV1;
 use sts_oracle_runtime::runtime::branch::{
     load_oracle_analysis_workspace_v1, oracle_live_combat_diagnostic_v1,
@@ -11,9 +12,53 @@ use sts_oracle_runtime::state::core::ClientInput;
 
 use super::workspace_view;
 
+#[derive(Serialize)]
+#[serde(deny_unknown_fields)]
+struct CardRewardPathAuditWriteReceiptV1<'a> {
+    schema_name: &'static str,
+    schema_version: u32,
+    target_node_id: usize,
+    boundary_count: usize,
+    candidate_count: usize,
+    output: &'a Path,
+}
+
 pub(super) fn view(workspace: &Path, node: Option<usize>) -> Result<Value, String> {
     let analysis = load_oracle_analysis_workspace_v1(workspace)?;
     encode(workspace_view::selected(&analysis, node)?)
+}
+
+pub(super) fn card_reward_path(
+    workspace: &Path,
+    node: Option<usize>,
+    output: Option<&Path>,
+) -> Result<Value, String> {
+    let analysis = load_oracle_analysis_workspace_v1(workspace)?;
+    let target_node_id = node.unwrap_or_else(|| analysis.session.cursor_node_id());
+    let report = analysis.session.card_reward_path_audit(target_node_id)?;
+    let Some(output) = output else {
+        return encode(report);
+    };
+    if output.exists() {
+        return Err(format!(
+            "card reward path audit output already exists: '{}'",
+            output.display()
+        ));
+    }
+
+    atomic_write_json(output, &report)?;
+    encode(CardRewardPathAuditWriteReceiptV1 {
+        schema_name: "OracleAnalysisCardRewardPathAuditWriteReceipt",
+        schema_version: 1,
+        target_node_id,
+        boundary_count: report.boundaries.len(),
+        candidate_count: report
+            .boundaries
+            .iter()
+            .map(|boundary| boundary.audit.candidates.len())
+            .sum(),
+        output,
+    })
 }
 
 pub(super) fn status(workspace: &Path, node: Option<usize>, limit: usize) -> Result<Value, String> {

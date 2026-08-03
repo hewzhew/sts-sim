@@ -1,5 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
+use serde::Serialize;
+
 use crate::ai::combat_upgrade_coverage_v1::{
     combat_upgrade_coverage_profile_v1, CombatUpgradeCoverageProfileV1,
 };
@@ -51,21 +53,24 @@ pub struct ExactRunPolicyDecisionV1 {
     pub actions: Vec<ExactRunPolicyActionSuccessorV1>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct RunPolicyCapabilityChangeV1 {
     pub capability: StrategyCapabilityKindV1,
     pub before: StrategyCapabilityCoverageV1,
     pub after: StrategyCapabilityCoverageV1,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct RunPolicyThreatGapKeyV1 {
     pub tag: StrategyThreatTagV1,
     pub source: StrategyThreatSourceV1,
     pub subject: String,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct RunPolicyStateDeltaV1 {
     pub gold_delta: i32,
     pub hp_gain: i32,

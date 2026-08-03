@@ -395,6 +395,18 @@ pub(super) enum Command {
         #[arg(long)]
         node: Option<usize>,
     },
+    /// Audit every card-reward surface on one exact retained path in a single
+    /// read-only workspace load. Defaults to the current cursor.
+    CardRewardPath {
+        #[arg(long)]
+        workspace: PathBuf,
+        #[arg(long)]
+        node: Option<usize>,
+        /// Write the complete typed report here and print only a compact
+        /// artifact receipt, keeping large evidence out of the terminal.
+        #[arg(long)]
+        output: Option<PathBuf>,
+    },
     /// Show a compact actionable summary of the current or selected node.
     Status {
         #[arg(long)]

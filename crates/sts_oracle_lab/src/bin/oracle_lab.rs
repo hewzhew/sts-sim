@@ -331,6 +331,15 @@ fn main() -> Result<(), String> {
         Command::View { workspace, node } => {
             print_json(&workspace_commands::view(&workspace, node)?)
         }
+        Command::CardRewardPath {
+            workspace,
+            node,
+            output,
+        } => print_json(&workspace_commands::card_reward_path(
+            &workspace,
+            node,
+            output.as_deref(),
+        )?),
         Command::Status {
             workspace,
             node,
