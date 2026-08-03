@@ -142,9 +142,13 @@ if (Test-Path -LiteralPath "$capsule/frontier.json") {
 
 The one-node phase is a capture mechanism, not evidence that the fight is
 hard or unwinnable. Before interpreting a fresh case, require its saved search
-summaries to agree on the exact root and captured continuation facts. Legacy
-absence remains unavailable; never infer route, Boss, post-victory, owner HP,
-or supply facts from filenames or aggregate counts.
+summaries to agree on the exact root and captured continuation facts. When no
+search summary carries those facts, the audit may reconstruct them from an
+exact production-owner checkpoint only after the owner, run-session, and
+combat-root identities validate; the report marks that source as
+`reconstructed_production_context`. Cases without such a validated checkpoint
+remain unavailable. Never infer route, Boss, post-victory, owner HP, or supply
+facts from filenames or aggregate counts.
 
 Run the audit with version-independent report names:
 

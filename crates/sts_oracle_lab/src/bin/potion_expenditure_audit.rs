@@ -40,13 +40,15 @@ use sts_oracle_runtime::content::cards::{get_card_definition, is_starter_basic, 
 use sts_oracle_runtime::content::potions::{Potion, PotionId};
 use sts_oracle_runtime::content::relics::{energy_master_delta, RelicId};
 use sts_oracle_runtime::eval::combat_case::{load_combat_case, CombatCase};
+use sts_oracle_runtime::eval::combat_case_context::restore_combat_case_oracle_analysis_owner_v1;
 use sts_oracle_runtime::eval::run_control::{
     authorized_potion_trial_policy_v1, existing_combat_knowledge_policy_v1,
     oracle_potion_rescue_tier_v1, CombatSearchHpLossLimitV1, CombatSearchStrategicHpQualityFactsV1,
-    CombatVictoryContinuationFactsV1, CombatVictoryHpCarryoverV1, OraclePotionRescueTierV1,
-    COMBAT_QUALITY_HP_LIMIT_EVALUATOR_V1, COMBAT_SURVIVAL_HP_LIMIT_EVALUATOR_V1,
-    COMBAT_VICTORY_CONTINUATION_EVALUATOR_V1,
+    CombatSearchTraceSummary, CombatVictoryContinuationFactsV1, CombatVictoryHpCarryoverV1,
+    OraclePotionRescueTierV1, COMBAT_QUALITY_HP_LIMIT_EVALUATOR_V1,
+    COMBAT_SURVIVAL_HP_LIMIT_EVALUATOR_V1, COMBAT_VICTORY_CONTINUATION_EVALUATOR_V1,
 };
+use sts_oracle_runtime::runtime::branch::reconstruct_oracle_combat_context_trace_v1;
 use sts_oracle_runtime::sim::combat::{
     CombatPosition, CombatStepLimits, CombatStepper, CombatTerminal, EngineCombatStepper,
 };
@@ -738,6 +740,7 @@ pub(super) struct CombatCasePotionExpenditureAuditV14 {
     initial_hp: i32,
     initial_player_turn: u32,
     root_potions: Vec<PotionResourceV1>,
+    production_context_reconstruction: ProductionContextReconstructionV1,
     continuation_context: PotionContinuationContextV1,
     continuation_pressure_projection: PotionContinuationPressureProjectionV1,
     combat_victory_continuation_projection: CombatVictoryContinuationProjectionV1,
@@ -748,6 +751,21 @@ pub(super) struct CombatCasePotionExpenditureAuditV14 {
     lanes: Vec<PotionAuditLaneResultV1>,
     pareto_lane_ids: Vec<String>,
     limitations: PotionAuditLimitationsV1,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum ProductionContextReconstructionStatusV1 {
+    NotAvailable,
+    ValidatedExactRoot,
+    Rejected,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+struct ProductionContextReconstructionV1 {
+    status: ProductionContextReconstructionStatusV1,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    error: Option<String>,
 }
 
 pub(super) fn run(
@@ -782,21 +800,66 @@ pub(super) fn run(
     }
 
     let loaded = load_combat_case(&case)?;
+    let (reconstructed_context_trace, production_context_reconstruction) = if loaded
+        .production_context
+        .as_ref()
+        .and_then(|context| context.production_owner.as_ref())
+        .is_none()
+    {
+        (
+            None,
+            ProductionContextReconstructionV1 {
+                status: ProductionContextReconstructionStatusV1::NotAvailable,
+                error: None,
+            },
+        )
+    } else {
+        match restore_combat_case_oracle_analysis_owner_v1(&loaded)
+            .and_then(|(session, _)| reconstruct_oracle_combat_context_trace_v1(&session))
+        {
+            Ok(trace) => (
+                Some(trace),
+                ProductionContextReconstructionV1 {
+                    status: ProductionContextReconstructionStatusV1::ValidatedExactRoot,
+                    error: None,
+                },
+            ),
+            Err(error) => (
+                None,
+                ProductionContextReconstructionV1 {
+                    status: ProductionContextReconstructionStatusV1::Rejected,
+                    error: Some(error),
+                },
+            ),
+        }
+    };
     let root = CombatDecisionRoot::new(loaded.position.clone())
         .map_err(|error| format!("invalid potion audit combat root: {error:?}"))?;
     let root_exact_state_hash = root.exact_state_hash().to_owned();
     let initial_hp = loaded.position.combat.entities.player.current_hp;
     let initial_player_turn = loaded.position.combat.turn.turn_count;
     let root_potions = root_potion_resources(&loaded.position)?;
-    let run_level_projection = project_saved_run_continuation_context(&loaded);
+    let run_level_projection = project_saved_run_continuation_context_with_reconstructed(
+        &loaded,
+        reconstructed_context_trace.as_ref(),
+    );
     let continuation_pressure_projection =
-        project_saved_potion_continuation_pressure(&loaded, &run_level_projection);
+        project_saved_potion_continuation_pressure_with_reconstructed(
+            &loaded,
+            &run_level_projection,
+            reconstructed_context_trace.as_ref(),
+        );
     let combat_victory_continuation_projection =
-        project_saved_combat_victory_continuation(&loaded, &run_level_projection);
-    let strategic_hp_quality_projection = project_saved_strategic_hp_quality(
+        project_saved_combat_victory_continuation_with_reconstructed(
+            &loaded,
+            &run_level_projection,
+            reconstructed_context_trace.as_ref(),
+        );
+    let strategic_hp_quality_projection = project_saved_strategic_hp_quality_with_reconstructed(
         &loaded,
         &run_level_projection,
         &combat_victory_continuation_projection,
+        reconstructed_context_trace.as_ref(),
     );
     let run_level_projection_for_evidence = run_level_projection.clone();
     let continuation_pressure_projection_for_evidence = continuation_pressure_projection.clone();
@@ -974,6 +1037,7 @@ pub(super) fn run(
         initial_hp,
         initial_player_turn,
         root_potions,
+        production_context_reconstruction,
         continuation_context,
         continuation_pressure_projection,
         combat_victory_continuation_projection,
@@ -1158,24 +1222,88 @@ fn potion_continuation_context(
     }
 }
 
-fn project_saved_run_continuation_context(case: &CombatCase) -> PotionRunContinuationProjectionV1 {
-    let from_attempt = case
+struct SelectedContextTrace<'a> {
+    source: &'static str,
+    attempt_index: Option<usize>,
+    trace: &'a CombatSearchTraceSummary,
+}
+
+fn select_context_trace<'a>(
+    case: &'a CombatCase,
+    reconstructed: Option<&'a CombatSearchTraceSummary>,
+    has_fact: impl Fn(&CombatSearchTraceSummary) -> bool,
+) -> Option<SelectedContextTrace<'a>> {
+    if let Some((index, trace)) = case
         .combat_search_attempts
         .iter()
         .enumerate()
         .rev()
-        .find(|(_, attempt)| attempt.potion_continuation_context.is_some());
-    let (source, attempt_index, attempt) = match from_attempt {
-        Some((index, attempt)) => (Some("combat_search_attempts"), Some(index), Some(attempt)),
-        None => (
-            Some("failed_search"),
-            None,
-            case.failed_search
-                .as_ref()
-                .filter(|attempt| attempt.potion_continuation_context.is_some()),
-        ),
-    };
-    let Some(attempt) = attempt else {
+        .find(|(_, trace)| has_fact(trace))
+    {
+        return Some(SelectedContextTrace {
+            source: "combat_search_attempts",
+            attempt_index: Some(index),
+            trace,
+        });
+    }
+    if let Some(trace) = case.failed_search.as_ref().filter(|trace| has_fact(trace)) {
+        return Some(SelectedContextTrace {
+            source: "failed_search",
+            attempt_index: None,
+            trace,
+        });
+    }
+    reconstructed
+        .filter(|trace| has_fact(trace))
+        .map(|trace| SelectedContextTrace {
+            source: "reconstructed_production_context",
+            attempt_index: None,
+            trace,
+        })
+}
+
+#[cfg(test)]
+fn project_saved_run_continuation_context(case: &CombatCase) -> PotionRunContinuationProjectionV1 {
+    project_saved_run_continuation_context_with_reconstructed(case, None)
+}
+
+#[cfg(test)]
+fn project_saved_potion_continuation_pressure(
+    case: &CombatCase,
+    run_level_projection: &PotionRunContinuationProjectionV1,
+) -> PotionContinuationPressureProjectionV1 {
+    project_saved_potion_continuation_pressure_with_reconstructed(case, run_level_projection, None)
+}
+
+#[cfg(test)]
+fn project_saved_combat_victory_continuation(
+    case: &CombatCase,
+    run_level_projection: &PotionRunContinuationProjectionV1,
+) -> CombatVictoryContinuationProjectionV1 {
+    project_saved_combat_victory_continuation_with_reconstructed(case, run_level_projection, None)
+}
+
+#[cfg(test)]
+fn project_saved_strategic_hp_quality(
+    case: &CombatCase,
+    run_level_projection: &PotionRunContinuationProjectionV1,
+    combat_victory_projection: &CombatVictoryContinuationProjectionV1,
+) -> StrategicHpQualityProjectionV1 {
+    project_saved_strategic_hp_quality_with_reconstructed(
+        case,
+        run_level_projection,
+        combat_victory_projection,
+        None,
+    )
+}
+
+fn project_saved_run_continuation_context_with_reconstructed(
+    case: &CombatCase,
+    reconstructed: Option<&CombatSearchTraceSummary>,
+) -> PotionRunContinuationProjectionV1 {
+    let Some(selected) = select_context_trace(case, reconstructed, |trace| {
+        trace.potion_continuation_context.is_some()
+    }) else {
         return PotionRunContinuationProjectionV1 {
             status: PotionRunContinuationProjectionStatusV1::UnavailableLegacyCase,
             source: None,
@@ -1186,6 +1314,7 @@ fn project_saved_run_continuation_context(case: &CombatCase) -> PotionRunContinu
             captured_context: None,
         };
     };
+    let attempt = selected.trace;
     let context = attempt
         .potion_continuation_context
         .as_ref()
@@ -1218,8 +1347,8 @@ fn project_saved_run_continuation_context(case: &CombatCase) -> PotionRunContinu
 
     PotionRunContinuationProjectionV1 {
         status,
-        source,
-        attempt_index,
+        source: Some(selected.source),
+        attempt_index: selected.attempt_index,
         attempt_source: Some(attempt.source.clone()),
         attempt_lane: attempt.lane.clone(),
         mismatches,
@@ -1227,27 +1356,14 @@ fn project_saved_run_continuation_context(case: &CombatCase) -> PotionRunContinu
     }
 }
 
-fn project_saved_potion_continuation_pressure(
+fn project_saved_potion_continuation_pressure_with_reconstructed(
     case: &CombatCase,
     run_level_projection: &PotionRunContinuationProjectionV1,
+    reconstructed: Option<&CombatSearchTraceSummary>,
 ) -> PotionContinuationPressureProjectionV1 {
-    let from_attempt = case
-        .combat_search_attempts
-        .iter()
-        .enumerate()
-        .rev()
-        .find(|(_, attempt)| attempt.potion_continuation_pressure.is_some());
-    let (source, attempt_index, attempt) = match from_attempt {
-        Some((index, attempt)) => (Some("combat_search_attempts"), Some(index), Some(attempt)),
-        None => (
-            Some("failed_search"),
-            None,
-            case.failed_search
-                .as_ref()
-                .filter(|attempt| attempt.potion_continuation_pressure.is_some()),
-        ),
-    };
-    let Some(attempt) = attempt else {
+    let Some(selected) = select_context_trace(case, reconstructed, |trace| {
+        trace.potion_continuation_pressure.is_some()
+    }) else {
         return PotionContinuationPressureProjectionV1 {
             status: PotionContinuationPressureProjectionStatusV1::UnavailableLegacyCase,
             source: None,
@@ -1258,6 +1374,7 @@ fn project_saved_potion_continuation_pressure(
             captured_pressure: None,
         };
     };
+    let attempt = selected.trace;
     let pressure = attempt
         .potion_continuation_pressure
         .as_ref()
@@ -1329,8 +1446,8 @@ fn project_saved_potion_continuation_pressure(
 
     PotionContinuationPressureProjectionV1 {
         status,
-        source,
-        attempt_index,
+        source: Some(selected.source),
+        attempt_index: selected.attempt_index,
         attempt_source: Some(attempt.source.clone()),
         attempt_lane: attempt.lane.clone(),
         mismatches,
@@ -1338,27 +1455,14 @@ fn project_saved_potion_continuation_pressure(
     }
 }
 
-fn project_saved_combat_victory_continuation(
+fn project_saved_combat_victory_continuation_with_reconstructed(
     case: &CombatCase,
     run_level_projection: &PotionRunContinuationProjectionV1,
+    reconstructed: Option<&CombatSearchTraceSummary>,
 ) -> CombatVictoryContinuationProjectionV1 {
-    let from_attempt = case
-        .combat_search_attempts
-        .iter()
-        .enumerate()
-        .rev()
-        .find(|(_, attempt)| attempt.combat_victory_continuation.is_some());
-    let (source, attempt_index, attempt) = match from_attempt {
-        Some((index, attempt)) => (Some("combat_search_attempts"), Some(index), Some(attempt)),
-        None => (
-            Some("failed_search"),
-            None,
-            case.failed_search
-                .as_ref()
-                .filter(|attempt| attempt.combat_victory_continuation.is_some()),
-        ),
-    };
-    let Some(attempt) = attempt else {
+    let Some(selected) = select_context_trace(case, reconstructed, |trace| {
+        trace.combat_victory_continuation.is_some()
+    }) else {
         return CombatVictoryContinuationProjectionV1 {
             status: CombatVictoryContinuationProjectionStatusV1::UnavailableLegacyCase,
             source: None,
@@ -1369,6 +1473,7 @@ fn project_saved_combat_victory_continuation(
             captured_facts: None,
         };
     };
+    let attempt = selected.trace;
     let facts = attempt
         .combat_victory_continuation
         .as_ref()
@@ -1457,8 +1562,8 @@ fn project_saved_combat_victory_continuation(
 
     CombatVictoryContinuationProjectionV1 {
         status,
-        source,
-        attempt_index,
+        source: Some(selected.source),
+        attempt_index: selected.attempt_index,
         attempt_source: Some(attempt.source.clone()),
         attempt_lane: attempt.lane.clone(),
         mismatches,
@@ -1466,28 +1571,15 @@ fn project_saved_combat_victory_continuation(
     }
 }
 
-fn project_saved_strategic_hp_quality(
+fn project_saved_strategic_hp_quality_with_reconstructed(
     case: &CombatCase,
     run_level_projection: &PotionRunContinuationProjectionV1,
     combat_victory_projection: &CombatVictoryContinuationProjectionV1,
+    reconstructed: Option<&CombatSearchTraceSummary>,
 ) -> StrategicHpQualityProjectionV1 {
-    let from_attempt = case
-        .combat_search_attempts
-        .iter()
-        .enumerate()
-        .rev()
-        .find(|(_, attempt)| attempt.strategic_hp_quality.is_some());
-    let (source, attempt_index, attempt) = match from_attempt {
-        Some((index, attempt)) => (Some("combat_search_attempts"), Some(index), Some(attempt)),
-        None => (
-            Some("failed_search"),
-            None,
-            case.failed_search
-                .as_ref()
-                .filter(|attempt| attempt.strategic_hp_quality.is_some()),
-        ),
-    };
-    let Some(attempt) = attempt else {
+    let Some(selected) = select_context_trace(case, reconstructed, |trace| {
+        trace.strategic_hp_quality.is_some()
+    }) else {
         return StrategicHpQualityProjectionV1 {
             status: StrategicHpQualityProjectionStatusV1::UnavailableLegacyCase,
             source: None,
@@ -1498,6 +1590,7 @@ fn project_saved_strategic_hp_quality(
             captured_facts: None,
         };
     };
+    let attempt = selected.trace;
     let facts = attempt
         .strategic_hp_quality
         .as_ref()
@@ -1624,8 +1717,8 @@ fn project_saved_strategic_hp_quality(
 
     StrategicHpQualityProjectionV1 {
         status,
-        source,
-        attempt_index,
+        source: Some(selected.source),
+        attempt_index: selected.attempt_index,
         attempt_source: Some(attempt.source.clone()),
         attempt_lane: attempt.lane.clone(),
         mismatches,
@@ -3433,6 +3526,54 @@ mod tests {
             .mismatches
             .iter()
             .any(|mismatch| mismatch.field == "trace_context_consistency"));
+    }
+
+    #[test]
+    fn exact_production_context_can_replace_missing_search_trace_facts() {
+        let mut case = combat_case_with_trace_run_context();
+        let mut reconstructed = case.combat_search_attempts.remove(0);
+        case.failed_search = None;
+        reconstructed.source = "reconstructed_exact_production_context".to_string();
+
+        let run_projection =
+            project_saved_run_continuation_context_with_reconstructed(&case, Some(&reconstructed));
+        let pressure_projection = project_saved_potion_continuation_pressure_with_reconstructed(
+            &case,
+            &run_projection,
+            Some(&reconstructed),
+        );
+        let victory_projection = project_saved_combat_victory_continuation_with_reconstructed(
+            &case,
+            &run_projection,
+            Some(&reconstructed),
+        );
+        let quality_projection = project_saved_strategic_hp_quality_with_reconstructed(
+            &case,
+            &run_projection,
+            &victory_projection,
+            Some(&reconstructed),
+        );
+
+        assert_eq!(
+            run_projection.status,
+            PotionRunContinuationProjectionStatusV1::ValidatedExactRoot
+        );
+        assert_eq!(
+            run_projection.source,
+            Some("reconstructed_production_context")
+        );
+        assert_eq!(
+            pressure_projection.status,
+            PotionContinuationPressureProjectionStatusV1::ValidatedExactRoot
+        );
+        assert_eq!(
+            victory_projection.status,
+            CombatVictoryContinuationProjectionStatusV1::ValidatedCapturedFact
+        );
+        assert_eq!(
+            quality_projection.status,
+            StrategicHpQualityProjectionStatusV1::ValidatedCapturedFact
+        );
     }
 
     #[test]

@@ -193,6 +193,51 @@ impl OwnerAuditRuntime {
     }
 }
 
+/// Reconstructs the strategic facts captured when the production combat owner
+/// opens an exact combat. Callers must first restore and validate the exact
+/// production session; this helper never infers context from display text.
+pub fn reconstruct_oracle_combat_context_trace_v1(
+    session: &sts_simulator::eval::run_control::RunControlSession,
+) -> Result<sts_simulator::eval::run_control::CombatSearchTraceSummary, String> {
+    let active_combat = session
+        .active_combat
+        .as_ref()
+        .ok_or_else(|| "oracle combat context reconstruction requires active combat".to_string())?;
+    let potion_continuation_context =
+        sts_simulator::ai::potion_continuation_context_v1::potion_run_continuation_context_v1(
+            &session.run_state,
+            &active_combat.combat_state,
+        );
+    let potion_continuation_pressure =
+        sts_simulator::ai::potion_continuation_pressure_v1::potion_continuation_pressure_v1(
+            &session.run_state,
+            &potion_continuation_context,
+        );
+    let combat_victory_continuation = sts_simulator::eval::run_control::
+        CombatVictoryContinuationFactsV1::from_guaranteed_room_boss_full_heal(
+            sts_simulator::eval::run_control::strategic_combat_victory_reaches_full_heal_v1(
+                session,
+            ),
+        );
+    let (entry_current_hp, entry_max_hp) = session.visible_player_hp();
+    let strategic_hp_quality =
+        sts_simulator::eval::run_control::CombatSearchStrategicHpQualityFactsV1::from_owner_limits(
+            entry_current_hp,
+            entry_max_hp,
+            combat_search_survival::owner_audit_hp_loss_limit(session),
+            combat_search_survival::owner_audit_search_quality_loss_target(session),
+        );
+
+    Ok(sts_simulator::eval::run_control::CombatSearchTraceSummary {
+        source: "reconstructed_exact_production_context".to_string(),
+        potion_continuation_context: Some(potion_continuation_context),
+        potion_continuation_pressure: Some(potion_continuation_pressure),
+        combat_victory_continuation: Some(combat_victory_continuation),
+        strategic_hp_quality: Some(strategic_hp_quality),
+        ..sts_simulator::eval::run_control::CombatSearchTraceSummary::default()
+    })
+}
+
 /// Adapts the current production owners into a complete positive-support
 /// policy prior. The exact decision model still owns legality and successor
 /// construction; this legacy adapter only guides exploration order.
