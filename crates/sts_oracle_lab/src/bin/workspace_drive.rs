@@ -34,6 +34,7 @@ pub(super) fn drive(
         return Err("oracle drive requires positive step, quantum, and wall budgets".to_string());
     }
     let mut analysis = load_oracle_analysis_workspace_v1(workspace)?;
+    let initial = compact_drive_initial(&analysis.view()?);
     let started = Instant::now();
     let mut events = Vec::new();
     let mut stop = OracleAnalysisDriveStopV1::StepLimit;
@@ -147,6 +148,7 @@ pub(super) fn drive(
         "schema_name": "OracleAnalysisDriveV1",
         "schema_version": 1,
         "workspace": workspace,
+        "initial": initial,
         "requested_max_steps": max_steps,
         "completed_steps": events.len(),
         "elapsed_ms": elapsed_millis(started),
@@ -176,6 +178,16 @@ fn compact_drive_source(view: &OracleAnalysisNodeViewV1) -> Value {
         fields.insert("encounter".to_string(), json!(view.encounter));
     }
     source
+}
+
+fn compact_drive_initial(view: &OracleAnalysisNodeViewV1) -> Value {
+    let mut initial = compact_drive_source(view);
+    if let Some(fields) = initial.as_object_mut() {
+        fields.insert("deck".to_string(), json!(view.deck));
+        fields.insert("relics".to_string(), json!(view.relics));
+        fields.insert("potions".to_string(), json!(view.potions));
+    }
+    initial
 }
 
 fn compact_drive_state_delta(
