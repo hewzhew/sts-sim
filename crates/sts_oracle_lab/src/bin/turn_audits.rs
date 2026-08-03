@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 
 use clap::Args;
 use serde_json::{json, Value};
-use sts_combat_planner::CombatPolicyChoice;
+use sts_combat_planner::{CombatPolicyChoice, SelectionTransactionCursor};
 use sts_oracle_runtime::eval::combat_case::{load_combat_case, save_combat_case};
 use sts_oracle_runtime::eval::run_control::existing_combat_knowledge_policy_v1;
 use sts_oracle_runtime::sim::combat::{CombatStepLimits, CombatStepper, EngineCombatStepper};
@@ -168,6 +168,10 @@ pub(super) struct TurnActionAuditArgs {
     through: usize,
     #[arg(long, default_value_t = 250)]
     max_engine_steps_per_transition: usize,
+    /// Maximum number of concrete inputs materialized from each structured
+    /// selection family. The report declares any omitted remainder.
+    #[arg(long, default_value_t = 256)]
+    max_structured_members_per_family: usize,
 }
 
 pub(super) fn run_action(args: TurnActionAuditArgs) -> Result<(), String> {
@@ -177,6 +181,7 @@ pub(super) fn run_action(args: TurnActionAuditArgs) -> Result<(), String> {
         actions,
         through,
         max_engine_steps_per_transition,
+        max_structured_members_per_family,
     } = args;
     let case = load_combat_case(&case)?;
     let position = replay_optional_prefix(
@@ -293,6 +298,104 @@ pub(super) fn run_action(args: TurnActionAuditArgs) -> Result<(), String> {
                 .iter()
                 .filter(|candidate| **candidate > raw_weight)
                 .count();
+            let member_policy_applied = family.declared_min == 1 && family.effective_max == 1;
+            let (total_member_count, members, members_truncated, enumeration_gap) =
+                match SelectionTransactionCursor::new(family) {
+                    Ok(mut cursor) => {
+                        let total = cursor.remaining_input_count();
+                        let members = std::iter::from_fn(|| cursor.next_input())
+                            .take(max_structured_members_per_family.max(1))
+                            .collect::<Vec<_>>();
+                        let truncated = members.len() < total;
+                        (total, members, truncated, None)
+                    }
+                    Err(kind) => (0, Vec::new(), false, Some(format!("{kind:?}"))),
+                };
+            let raw_member_weights = (member_policy_applied && !members_truncated)
+                .then(|| policy.structured_selection_member_weights(&position, family, &members));
+            let member_weights_complete = raw_member_weights
+                .as_ref()
+                .is_some_and(|weights| weights.len() == members.len())
+                && !members_truncated;
+            let effective_member_weights = raw_member_weights.as_ref().map(|weights| {
+                if weights.len() == members.len() {
+                    weights
+                        .iter()
+                        .map(|weight| {
+                            if weight.is_finite() && *weight > 0.0 {
+                                *weight
+                            } else {
+                                1.0
+                            }
+                        })
+                        .collect::<Vec<_>>()
+                } else {
+                    vec![1.0; members.len()]
+                }
+            });
+            let member_probabilities = if member_policy_applied && member_weights_complete {
+                let weights = effective_member_weights
+                    .as_ref()
+                    .expect("complete member weights are present");
+                let total = weights.iter().sum::<f64>();
+                let uniform = 1.0 / weights.len().max(1) as f64;
+                Some(
+                    weights
+                        .iter()
+                        .map(|weight| 0.95 * (*weight / total) + 0.05 * uniform)
+                        .collect::<Vec<_>>(),
+                )
+            } else {
+                None
+            };
+            let members = members
+                .iter()
+                .enumerate()
+                .map(|(member_index, input)| {
+                    let effective_weight = effective_member_weights
+                        .as_ref()
+                        .and_then(|weights| weights.get(member_index))
+                        .copied();
+                    let ordinal_rank = member_weights_complete.then(|| {
+                        1 + effective_member_weights
+                            .as_ref()
+                            .expect("complete member weights are present")
+                            .iter()
+                            .filter(|candidate| Some(**candidate) > effective_weight)
+                            .count()
+                    });
+                    let selected_card_uuids = match input {
+                        ClientInput::SubmitSelection(resolution) => {
+                            Some(resolution.selected_card_uuids())
+                        }
+                        _ => None,
+                    };
+                    let selected_scry_indices = match input {
+                        ClientInput::SubmitScryDiscard(indices) => Some(indices.as_slice()),
+                        _ => None,
+                    };
+                    json!({
+                        "canonical_index": member_index,
+                        "input": input,
+                        "key": combat_action_key(&position.combat, input),
+                        "selected_card_uuids": selected_card_uuids,
+                        "selected_scry_indices": selected_scry_indices,
+                        "raw_weight": raw_member_weights
+                            .as_ref()
+                            .and_then(|weights| weights.get(member_index))
+                            .filter(|weight| weight.is_finite())
+                            .copied(),
+                        "effective_weight": effective_weight,
+                        "conditional_probability": member_probabilities
+                            .as_ref()
+                            .and_then(|probabilities| probabilities.get(member_index))
+                            .copied()
+                            .or_else(|| (!member_policy_applied && total_member_count > 0)
+                                .then_some(1.0 / total_member_count as f64)),
+                        "ordinal_rank": ordinal_rank,
+                    })
+                })
+                .collect::<Vec<_>>();
             json!({
                 "family_index": index,
                 "reason": format!("{:?}", family.reason),
@@ -302,13 +405,22 @@ pub(super) fn run_action(args: TurnActionAuditArgs) -> Result<(), String> {
                 "raw_weight": raw_weight,
                 "probability": probabilities[weight_index],
                 "ordinal_rank": rank,
+                "member_policy_applied": member_policy_applied,
+                "total_member_count": total_member_count,
+                "reported_member_count": members.len(),
+                "members_truncated": members_truncated,
+                "member_weights_complete": member_weights_complete,
+                "enumeration_gap": enumeration_gap,
+                "members": members,
             })
         })
         .collect::<Vec<_>>();
     print_json(&json!({
         "schema_name": "OracleTurnActionAuditV1",
-        "schema_version": 2,
+        "schema_version": 3,
         "through": through,
+        "max_engine_steps_per_transition": max_engine_steps_per_transition,
+        "max_structured_members_per_family": max_structured_members_per_family,
         "position_hash": sts_oracle_runtime::ai::combat_state_key::combat_exact_state_hash_v2(
             &position.engine,
             &position.combat,

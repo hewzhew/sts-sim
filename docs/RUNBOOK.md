@@ -130,6 +130,19 @@ concrete identity lane and disables discard:
 .\ol.cmd turn-quality-frontier --case <case.json> --checkpoint <depth-N.json.gz> --export-representatives-dir <fresh-dir> --probe-next-turn-roots 512
 ```
 
+Compare two caller-supplied exact routes from the same unchanged combat root:
+
+```powershell
+.\ol.cmd combat-case-route-compare `
+  --case <case.json> `
+  --route-a-actions <route-a.actions.json> `
+  --route-b-actions <route-b.actions.json>
+```
+
+The comparison is neutral replay evidence: it reports the shared action prefix,
+first divergence, aligned typed turn boundaries, and state deltas. It does not
+search, rank either route, prune alternatives, or create a teacher label.
+
 The corridor command deduplicates exact next-turn states. Its unresolved-turn
 floor and post-victory terminal floor are separate because victory relics and
 combat healing can increase HP. It reports every planner or frontier cap as

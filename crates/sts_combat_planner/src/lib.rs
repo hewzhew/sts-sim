@@ -53,6 +53,7 @@ pub use policy_discrepancy_search::{
 pub use replay::{
     replay_turn_option, ReplayError, ReplayFailure, ReplayLimits, VerifiedTurnOptionReplay,
 };
+pub use selection_transaction::SelectionTransactionCursor;
 pub use types::{
     CombatDecisionRoot, CombatDecisionRootError, CombatPlanningCounters, CombatPlanningQuantum,
     CompleteTurnOption, CompleteTurnOptionBoundary, GenerationInterruption, ReplaySuccessorHash,

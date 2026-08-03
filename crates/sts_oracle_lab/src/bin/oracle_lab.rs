@@ -27,6 +27,7 @@ mod combat_plan_diagnostics;
 mod combat_planning_view;
 mod combat_policy_controls;
 mod combat_replay_tools;
+mod combat_route_compare;
 mod combat_trace_view;
 mod depth_beam_audits;
 mod exact_combat_evidence;
@@ -298,6 +299,7 @@ fn main() -> Result<(), String> {
         Command::CombatCaseOwnerParity(args) => print_json(&combat_case_owner_parity::run(args)?),
         Command::CombatCasePlanAnnotations(args) => combat_plan_diagnostics::run_annotations(args),
         Command::CombatCasePlanTrace(args) => combat_plan_diagnostics::run_trace(args),
+        Command::CombatCaseRouteCompare(args) => print_json(&combat_route_compare::run(args)?),
         Command::CombatEvidenceAudit(args) => print_json(&combat_evidence_audit::run(args)?),
         Command::CombatCasePolicyDiscrepancy(args) => policy_discrepancy_search::run(args),
         Command::CombatCasePotionExpenditureAudit(args) => {

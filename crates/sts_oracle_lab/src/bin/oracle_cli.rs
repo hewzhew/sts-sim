@@ -17,6 +17,7 @@ use super::combat_case_local_graph::CombatCaseLocalGraphArgs;
 use super::combat_case_owner_parity::CombatCaseOwnerParityArgs;
 use super::combat_evidence_audit::CombatEvidenceAuditArgs;
 use super::combat_plan_diagnostics::{CombatCasePlanAnnotationsArgs, CombatCasePlanTraceArgs};
+use super::combat_route_compare::CombatCaseRouteCompareArgs;
 use super::depth_beam_audits::DepthBeamTurnAuditArgs;
 use super::guidance_combination_audit::GuidanceCombinationAuditArgs;
 use super::oracle_seed_panel::OracleSeedPanelArgs;
@@ -186,6 +187,10 @@ pub(super) enum Command {
     /// This is a read-only trace: actions are supplied by the caller, never
     /// selected or ranked by this command.
     CombatCasePlanTrace(CombatCasePlanTraceArgs),
+    /// Compare two caller-supplied exact routes from one unchanged combat
+    /// root. The report aligns typed turn boundaries without ranking either
+    /// route or inferring that one is a teacher label.
+    CombatCaseRouteCompare(CombatCaseRouteCompareArgs),
     /// Batch-index exact combat artifacts and execute bounded typed transition queries.
     CombatEvidenceAudit(CombatEvidenceAuditArgs),
     /// Follow the action policy to terminal states and search complete

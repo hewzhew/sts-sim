@@ -9,8 +9,13 @@ use sts_core::state::selection::{SelectionResolution, SelectionScope};
 
 use super::types::TurnOptionGenerationGapKind;
 
+/// Lazily enumerates the exact concrete inputs represented by one structured
+/// combat selection family.
+///
+/// Consumers should keep their own materialization limit. The cursor reports
+/// the complete remaining count without requiring every input to be stored.
 #[derive(Clone, Debug)]
-pub(super) struct SelectionTransactionCursor {
+pub struct SelectionTransactionCursor {
     encoding: CombatSelectionInputEncodingV2,
     candidates: Vec<SelectionCandidate>,
     min_len: usize,
@@ -26,7 +31,7 @@ struct SelectionCandidate {
 }
 
 impl SelectionTransactionCursor {
-    pub(super) fn new(
+    pub fn new(
         family: &CombatSelectionActionFamilyV2,
     ) -> Result<Self, TurnOptionGenerationGapKind> {
         if !matches!(family.selection_status, CombatSelectionStatusV2::Enabled) {
@@ -85,7 +90,7 @@ impl SelectionTransactionCursor {
         })
     }
 
-    pub(super) fn next_input(&mut self) -> Option<ClientInput> {
+    pub fn next_input(&mut self) -> Option<ClientInput> {
         let indices = self.next_indices.clone()?;
         let input = self.compile(&indices);
         self.next_indices =
@@ -94,11 +99,11 @@ impl SelectionTransactionCursor {
         Some(input)
     }
 
-    pub(super) fn remaining_input_count(&self) -> usize {
+    pub fn remaining_input_count(&self) -> usize {
         self.remaining_input_count
     }
 
-    pub(super) fn is_exhausted(&self) -> bool {
+    pub fn is_exhausted(&self) -> bool {
         self.next_indices.is_none()
     }
 
