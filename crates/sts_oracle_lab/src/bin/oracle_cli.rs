@@ -437,6 +437,10 @@ pub(super) enum Command {
     Drive {
         #[arg(long)]
         workspace: PathBuf,
+        /// Write the complete event ledger here. Stdout remains a compact
+        /// execution receipt whether or not this is supplied.
+        #[arg(long)]
+        output: Option<PathBuf>,
         #[arg(long, default_value_t = 64, value_parser = clap::value_parser!(u16).range(1..=256))]
         max_steps: u16,
         #[arg(long, default_value_t = 32)]
@@ -607,24 +611,4 @@ pub(super) fn parse() -> (bool, Command) {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn drive_parses_typed_stop_boundary() {
-        let cli = Cli::try_parse_from([
-            "oracle_lab",
-            "drive",
-            "--workspace",
-            "case.workspace.json",
-            "--stop-at",
-            "map-decision",
-        ])
-        .expect("typed drive boundary should parse");
-        let Command::Drive { stop_at, .. } = cli.command else {
-            panic!("expected drive command");
-        };
-
-        assert_eq!(stop_at, Some(OracleDriveBoundaryArg::MapDecision));
-    }
-}
+mod tests;

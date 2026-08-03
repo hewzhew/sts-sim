@@ -74,7 +74,7 @@ the bounded drive surface:
 ```powershell
 .\ol.cmd drive --workspace <workspace.json> `
   --max-steps 64 --wall-ms 60000 `
-  > .oracle-lab/reports/<fresh-id>.drive.json
+  --output .oracle-lab/reports/<fresh-id>.drive.json
 ```
 
 `drive` recomputes each non-combat decision through the current typed owner,
@@ -86,7 +86,8 @@ evidence, not a teacher label or a strategy verdict. Owner events retain the
 exact choice ref, typed action, source fingerprint, and resource delta; combat
 events retain the typed source encounter and exact combat-root identity. One
 typed initial deck/relic/potion snapshot makes those deltas self-contained
-without repeating full inventories on every event.
+without repeating full inventories on every event. Stdout is always a compact
+execution receipt; pass `--output` when the complete event ledger is needed.
 
 ## Continue A Capsule
 

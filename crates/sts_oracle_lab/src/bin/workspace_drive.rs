@@ -3,6 +3,7 @@ use std::{path::Path, time::Instant};
 use clap::ValueEnum;
 use serde::Serialize;
 use serde_json::{json, Value};
+use sts_oracle_runtime::eval::combat_lab_v1::atomic_write_json;
 use sts_oracle_runtime::eval::run_control::{
     OracleAnalysisAdvanceRequestV1, OracleAnalysisAdvanceStatusV1, OracleAnalysisNodeViewV1,
     OracleRunBoundaryV1,
@@ -59,6 +60,7 @@ enum OracleAnalysisDriveStopV1 {
 #[allow(clippy::too_many_arguments)]
 pub(super) fn drive(
     workspace: &Path,
+    output: Option<&Path>,
     max_steps: u16,
     max_quanta: usize,
     quantum_nodes: usize,
@@ -69,10 +71,21 @@ pub(super) fn drive(
     if max_steps == 0 || max_quanta == 0 || quantum_nodes == 0 || quantum_ms == 0 || wall_ms == 0 {
         return Err("oracle drive requires positive step, quantum, and wall budgets".to_string());
     }
+    if let Some(output) = output {
+        if output.exists() {
+            return Err(format!(
+                "oracle drive output already exists: '{}'",
+                output.display()
+            ));
+        }
+    }
     let mut analysis = load_oracle_analysis_workspace_v1(workspace)?;
     let initial = compact_drive_initial(&analysis.view()?);
     let started = Instant::now();
     let mut events = Vec::new();
+    let mut owner_decision_count = 0usize;
+    let mut combat_advance_count = 0usize;
+    let mut last_combat = None;
     let mut stop = OracleAnalysisDriveStopV1::StepLimit;
 
     for step_index in 0..max_steps {
@@ -124,6 +137,7 @@ pub(super) fn drive(
                 "state_delta": state_delta,
                 "result": compact_drive_boundary(&result),
             }));
+            owner_decision_count += 1;
             continue;
         }
 
@@ -149,6 +163,22 @@ pub(super) fn drive(
             report.status,
             OracleAnalysisAdvanceStatusV1::BoundaryReached { .. }
         );
+        last_combat = report.combat.as_ref().map(|combat| {
+            json!({
+                "root_exact_state_hash": combat.root_exact_state_hash,
+                "stage_count": combat.stage_trace.len(),
+                "generation_work": combat.generation_work,
+                "exact_states": combat.exact_states,
+                "max_player_turn": combat.max_player_turn,
+                "incumbent_final_hp": combat.incumbent_final_hp,
+                "incumbent_hp_loss": combat.incumbent_hp_loss,
+                "incumbent_action_count": combat.incumbent_action_count,
+                "incumbent_potions_used": combat.incumbent_potions_used,
+                "incumbent_potion_slots": combat.incumbent_potion_slots,
+                "incumbent_satisfies_satisfaction": combat.incumbent_satisfies_satisfaction,
+                "incumbent_ends_quality_refinement": combat.incumbent_ends_quality_refinement,
+            })
+        });
         let combat = report.combat.as_ref().map(|combat| {
             json!({
                 "root_exact_state_hash": combat.root_exact_state_hash,
@@ -176,6 +206,7 @@ pub(super) fn drive(
             "combat": combat,
             "result": compact_drive_boundary(&result),
         }));
+        combat_advance_count += 1;
         if !boundary_reached {
             stop = OracleAnalysisDriveStopV1::CombatUnresolved;
             break;
@@ -184,18 +215,38 @@ pub(super) fn drive(
 
     let final_view = analysis.view()?;
     let current_owner_order = workspace_view::current_owner_order(&analysis, final_view.node_id)?;
-    Ok(json!({
+    let completed_steps = events.len();
+    let elapsed_ms = elapsed_millis(started);
+    let final_boundary = compact_drive_boundary(&final_view);
+    let report = json!({
         "schema_name": "OracleAnalysisDriveV1",
         "schema_version": 1,
         "workspace": workspace,
         "initial": initial,
         "requested_max_steps": max_steps,
         "requested_stop_boundary": stop_at,
-        "completed_steps": events.len(),
-        "elapsed_ms": elapsed_millis(started),
+        "completed_steps": completed_steps,
+        "elapsed_ms": elapsed_ms,
         "stop": stop,
         "events": events,
         "status": workspace_view::compact_node(&final_view, 8, &current_owner_order),
+    });
+    if let Some(output) = output {
+        atomic_write_json(output, &report)?;
+    }
+
+    Ok(json!({
+        "schema_name": "OracleAnalysisDriveReceipt",
+        "schema_version": 1,
+        "workspace": workspace,
+        "output": output,
+        "completed_steps": completed_steps,
+        "owner_decision_count": owner_decision_count,
+        "combat_advance_count": combat_advance_count,
+        "elapsed_ms": elapsed_ms,
+        "stop": stop,
+        "final": final_boundary,
+        "last_combat": last_combat,
     }))
 }
 

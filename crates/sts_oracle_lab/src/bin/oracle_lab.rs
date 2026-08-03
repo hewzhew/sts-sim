@@ -355,6 +355,7 @@ fn main() -> Result<(), String> {
         }
         Command::Drive {
             workspace,
+            output,
             max_steps,
             max_quanta,
             quantum_nodes,
@@ -363,6 +364,7 @@ fn main() -> Result<(), String> {
             stop_at,
         } => print_json(&workspace_drive::drive(
             &workspace,
+            output.as_deref(),
             max_steps,
             max_quanta,
             quantum_nodes,
