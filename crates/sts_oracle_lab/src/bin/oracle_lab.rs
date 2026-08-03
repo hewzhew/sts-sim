@@ -46,6 +46,7 @@ mod turn_membership_audit;
 mod turn_quality_corridor;
 mod v2_capability_audit;
 mod workspace_commands;
+mod workspace_drive;
 mod workspace_view;
 
 use canonical_launch::{
@@ -343,6 +344,21 @@ fn main() -> Result<(), String> {
         Command::Owner { workspace, steps } => {
             print_json(&workspace_commands::owner(&workspace, steps)?)
         }
+        Command::Drive {
+            workspace,
+            max_steps,
+            max_quanta,
+            quantum_nodes,
+            quantum_ms,
+            wall_ms,
+        } => print_json(&workspace_drive::drive(
+            &workspace,
+            max_steps,
+            max_quanta,
+            quantum_nodes,
+            quantum_ms,
+            wall_ms,
+        )?),
         Command::Timeline {
             workspace,
             node,

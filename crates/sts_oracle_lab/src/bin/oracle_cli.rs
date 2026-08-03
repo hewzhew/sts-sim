@@ -419,6 +419,22 @@ pub(super) enum Command {
         #[arg(long, default_value_t = 1, value_parser = clap::value_parser!(u8).range(1..=64))]
         steps: u8,
     },
+    /// Alternate current typed owner decisions and ordinary combat advances
+    /// in one resident process, saving after every mutation.
+    Drive {
+        #[arg(long)]
+        workspace: PathBuf,
+        #[arg(long, default_value_t = 64, value_parser = clap::value_parser!(u16).range(1..=256))]
+        max_steps: u16,
+        #[arg(long, default_value_t = 32)]
+        max_quanta: usize,
+        #[arg(long, default_value_t = 50_000)]
+        quantum_nodes: usize,
+        #[arg(long, default_value_t = 1_000)]
+        quantum_ms: u64,
+        #[arg(long, default_value_t = 60_000)]
+        wall_ms: u64,
+    },
     /// Print a compact tail of the committed run journal.
     Timeline {
         #[arg(long)]

@@ -22,6 +22,7 @@ Use the narrowest maintained surface for the task:
 | `combat_search_v2_driver` | Fixed combat starts, captures, benchmarks, and offline laboratories. |
 | `cargo oracle-lab` / `cargo ol` | Build-owning offline oracle commands. |
 | `.\ol.cmd` | Repeated offline oracle calls through the canonical artifact guard. |
+| `.\ol.cmd drive` | Bounded current-owner and ordinary-combat progression in one process. |
 | `cargo ol-live` / `.\ol-live.cmd` | Resident oracle sessions. |
 | `.\ol-contract.cmd` | Narrow replay-verified exact-combat contracts. |
 
@@ -66,6 +67,21 @@ cargo run -p sts_oracle_tools --bin branch_panel -- panel drain --seeds 15522256
 
 The retired `tools/gap_panel.py` compatibility wrapper has been removed. Use
 `branch_panel` directly.
+
+For one exact workspace, avoid shell-level `owner`/`advance` alternation with
+the bounded drive surface:
+
+```powershell
+.\ol.cmd drive --workspace <workspace.json> `
+  --max-steps 64 --wall-ms 60000 `
+  > .oracle-lab/reports/<fresh-id>.drive.json
+```
+
+`drive` recomputes each non-combat decision through the current typed owner,
+uses ordinary non-improving combat advance, and saves after every mutation.
+It stops on its total wall/step limit, a boundary without an owner answer, or
+an unresolved combat attempt. Its event ledger is execution evidence, not a
+teacher label or a strategy verdict.
 
 ## Continue A Capsule
 

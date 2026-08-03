@@ -4,8 +4,8 @@ use serde::Serialize;
 use serde_json::{json, Value};
 use sts_oracle_runtime::eval::run_control::OracleAnalysisAdvanceRequestV1;
 use sts_oracle_runtime::runtime::branch::{
-    current_oracle_candidate_order_v1, load_oracle_analysis_workspace_v1,
-    oracle_live_combat_diagnostic_v1, save_oracle_analysis_workspace_v1, OracleAnalysisWorkspaceV1,
+    load_oracle_analysis_workspace_v1, oracle_live_combat_diagnostic_v1,
+    save_oracle_analysis_workspace_v1, OracleAnalysisWorkspaceV1,
 };
 use sts_oracle_runtime::state::core::ClientInput;
 
@@ -19,7 +19,7 @@ pub(super) fn view(workspace: &Path, node: Option<usize>) -> Result<Value, Strin
 pub(super) fn status(workspace: &Path, node: Option<usize>, limit: usize) -> Result<Value, String> {
     let analysis = load_oracle_analysis_workspace_v1(workspace)?;
     let view = workspace_view::selected(&analysis, node)?;
-    let current_owner_order = current_owner_order_at(&analysis, view.node_id)?;
+    let current_owner_order = workspace_view::current_owner_order(&analysis, view.node_id)?;
     Ok(workspace_view::compact_node(
         &view,
         limit,
@@ -42,7 +42,7 @@ pub(super) fn choose(
         }
     }
     let current = analysis.view()?;
-    let current_owner_order = current_owner_order_at(&analysis, current.node_id)?;
+    let current_owner_order = workspace_view::current_owner_order(&analysis, current.node_id)?;
     let owner_rank = usize::try_from(owner_rank)
         .map_err(|_| "oracle choose owner rank exceeds platform usize".to_string())?;
     let candidate_id = current_owner_order.get(owner_rank).ok_or_else(|| {
@@ -66,7 +66,7 @@ pub(super) fn choose(
     };
     let view = analysis.try_choice(&choice.choice_ref.clone())?;
     save_oracle_analysis_workspace_v1(workspace, &analysis)?;
-    let current_owner_order = current_owner_order_at(&analysis, view.node_id)?;
+    let current_owner_order = workspace_view::current_owner_order(&analysis, view.node_id)?;
     Ok(workspace_view::compact_node(&view, 8, &current_owner_order))
 }
 
@@ -76,7 +76,7 @@ pub(super) fn owner(workspace: &Path, steps: u8) -> Result<Value, String> {
     let mut stopped = "step_limit";
     for _ in 0..steps {
         let current = analysis.view()?;
-        let current_owner_order = current_owner_order_at(&analysis, current.node_id)?;
+        let current_owner_order = workspace_view::current_owner_order(&analysis, current.node_id)?;
         let Some(candidate_id) = current_owner_order.first() else {
             stopped = "no_owner_choice";
             break;
@@ -109,7 +109,7 @@ pub(super) fn owner(workspace: &Path, steps: u8) -> Result<Value, String> {
         save_oracle_analysis_workspace_v1(workspace, &analysis)?;
     }
     let final_view = analysis.view()?;
-    let current_owner_order = current_owner_order_at(&analysis, final_view.node_id)?;
+    let current_owner_order = workspace_view::current_owner_order(&analysis, final_view.node_id)?;
     Ok(json!({
         "requested_steps": steps,
         "applied_count": applied.len(),
@@ -117,14 +117,6 @@ pub(super) fn owner(workspace: &Path, steps: u8) -> Result<Value, String> {
         "stopped": stopped,
         "status": workspace_view::compact_node(&final_view, 8, &current_owner_order),
     }))
-}
-
-fn current_owner_order_at(
-    analysis: &OracleAnalysisWorkspaceV1,
-    node: usize,
-) -> Result<Vec<String>, String> {
-    let session = analysis.continuation(node)?.session.into_session()?;
-    Ok(current_oracle_candidate_order_v1(&session))
 }
 
 pub(super) fn timeline(

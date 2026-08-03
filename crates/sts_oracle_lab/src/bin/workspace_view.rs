@@ -7,7 +7,20 @@ use sts_oracle_runtime::eval::run_control::{
     exact_replay_run_progress_journal_identity_v1, OracleAnalysisNodeViewV1, RunProgressStepV1,
     RunWitnessCombatRootOriginV1,
 };
-use sts_oracle_runtime::runtime::branch::OracleAnalysisWorkspaceV1;
+use sts_oracle_runtime::runtime::branch::{
+    current_oracle_candidate_order_v1, OracleAnalysisWorkspaceV1,
+};
+
+pub(super) fn current_owner_order(
+    analysis: &OracleAnalysisWorkspaceV1,
+    node: usize,
+) -> Result<Vec<String>, String> {
+    let session = analysis.continuation(node)?.session.into_session()?;
+    if session.active_combat.is_some() {
+        return Ok(Vec::new());
+    }
+    Ok(current_oracle_candidate_order_v1(&session))
+}
 
 pub(super) fn selected(
     analysis: &OracleAnalysisWorkspaceV1,
