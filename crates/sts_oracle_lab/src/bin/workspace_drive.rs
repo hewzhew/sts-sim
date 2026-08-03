@@ -1,5 +1,6 @@
 use std::{path::Path, time::Instant};
 
+use clap::ValueEnum;
 use serde::Serialize;
 use serde_json::{json, Value};
 use sts_oracle_runtime::eval::run_control::{
@@ -12,11 +13,45 @@ use sts_oracle_runtime::runtime::branch::{
 
 use super::workspace_view;
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
+pub(super) enum OracleDriveBoundaryArg {
+    MapDecision,
+    Combat,
+    Reward,
+    Event,
+    Shop,
+    Campfire,
+    RunChoice,
+    Treasure,
+    BossRelic,
+    TerminalVictory,
+    TerminalDefeat,
+}
+
+impl From<OracleDriveBoundaryArg> for OracleRunBoundaryV1 {
+    fn from(value: OracleDriveBoundaryArg) -> Self {
+        match value {
+            OracleDriveBoundaryArg::MapDecision => Self::MapDecision,
+            OracleDriveBoundaryArg::Combat => Self::Combat,
+            OracleDriveBoundaryArg::Reward => Self::Reward,
+            OracleDriveBoundaryArg::Event => Self::Event,
+            OracleDriveBoundaryArg::Shop => Self::Shop,
+            OracleDriveBoundaryArg::Campfire => Self::Campfire,
+            OracleDriveBoundaryArg::RunChoice => Self::RunChoice,
+            OracleDriveBoundaryArg::Treasure => Self::Treasure,
+            OracleDriveBoundaryArg::BossRelic => Self::BossRelic,
+            OracleDriveBoundaryArg::TerminalVictory => Self::TerminalVictory,
+            OracleDriveBoundaryArg::TerminalDefeat => Self::TerminalDefeat,
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Serialize)]
 #[serde(rename_all = "snake_case")]
 enum OracleAnalysisDriveStopV1 {
     StepLimit,
     WallLimit,
+    TargetBoundary,
     NoOwnerChoice,
     CombatUnresolved,
 }
@@ -29,6 +64,7 @@ pub(super) fn drive(
     quantum_nodes: usize,
     quantum_ms: u64,
     wall_ms: u64,
+    stop_at: Option<OracleRunBoundaryV1>,
 ) -> Result<Value, String> {
     if max_steps == 0 || max_quanta == 0 || quantum_nodes == 0 || quantum_ms == 0 || wall_ms == 0 {
         return Err("oracle drive requires positive step, quantum, and wall budgets".to_string());
@@ -46,6 +82,10 @@ pub(super) fn drive(
             break;
         }
         let current = analysis.view()?;
+        if stop_at == Some(current.boundary) {
+            stop = OracleAnalysisDriveStopV1::TargetBoundary;
+            break;
+        }
         let current_owner_order = workspace_view::current_owner_order(&analysis, current.node_id)?;
         if let Some(candidate_id) = current_owner_order.first() {
             let matches = current
@@ -150,6 +190,7 @@ pub(super) fn drive(
         "workspace": workspace,
         "initial": initial,
         "requested_max_steps": max_steps,
+        "requested_stop_boundary": stop_at,
         "completed_steps": events.len(),
         "elapsed_ms": elapsed_millis(started),
         "stop": stop,

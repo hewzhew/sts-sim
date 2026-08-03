@@ -28,6 +28,7 @@ use super::turn_audits::{TurnActionAuditArgs, TurnPlanAuditArgs};
 use super::turn_membership_audit::TurnMembershipArgs;
 use super::turn_quality_corridor::{TurnQualityCorridorArgs, TurnQualityFrontierArgs};
 use super::v2_capability_audit::V2CapabilityAuditArgs;
+use super::workspace_drive::OracleDriveBoundaryArg;
 
 #[derive(Debug, Parser)]
 #[command(
@@ -434,6 +435,9 @@ pub(super) enum Command {
         quantum_ms: u64,
         #[arg(long, default_value_t = 60_000)]
         wall_ms: u64,
+        /// Stop before executing the first step at this typed run boundary.
+        #[arg(long, value_enum)]
+        stop_at: Option<OracleDriveBoundaryArg>,
     },
     /// Print a compact tail of the committed run journal.
     Timeline {
@@ -588,4 +592,27 @@ impl BudgetArgs {
 pub(super) fn parse() -> (bool, Command) {
     let cli = Cli::parse();
     (cli.canonical_oracle, cli.command)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn drive_parses_typed_stop_boundary() {
+        let cli = Cli::try_parse_from([
+            "oracle_lab",
+            "drive",
+            "--workspace",
+            "case.workspace.json",
+            "--stop-at",
+            "map-decision",
+        ])
+        .expect("typed drive boundary should parse");
+        let Command::Drive { stop_at, .. } = cli.command else {
+            panic!("expected drive command");
+        };
+
+        assert_eq!(stop_at, Some(OracleDriveBoundaryArg::MapDecision));
+    }
 }

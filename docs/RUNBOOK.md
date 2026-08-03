@@ -80,12 +80,13 @@ the bounded drive surface:
 `drive` recomputes each non-combat decision through the current typed owner,
 uses ordinary non-improving combat advance, and saves after every mutation.
 It stops on its total wall/step limit, a boundary without an owner answer, or
-an unresolved combat attempt. Its event ledger is execution evidence, not a
-teacher label or a strategy verdict. Owner events retain the exact choice ref,
-typed action, source fingerprint, and resource delta; combat events retain the
-typed source encounter and exact combat-root identity. One typed initial
-deck/relic/potion snapshot makes those deltas self-contained without repeating
-full inventories on every event.
+an unresolved combat attempt. Pass `--stop-at shop` (or another typed boundary)
+to stop before the first step at that boundary. Its event ledger is execution
+evidence, not a teacher label or a strategy verdict. Owner events retain the
+exact choice ref, typed action, source fingerprint, and resource delta; combat
+events retain the typed source encounter and exact combat-root identity. One
+typed initial deck/relic/potion snapshot makes those deltas self-contained
+without repeating full inventories on every event.
 
 ## Continue A Capsule
 

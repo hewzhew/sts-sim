@@ -351,6 +351,7 @@ fn main() -> Result<(), String> {
             quantum_nodes,
             quantum_ms,
             wall_ms,
+            stop_at,
         } => print_json(&workspace_drive::drive(
             &workspace,
             max_steps,
@@ -358,6 +359,7 @@ fn main() -> Result<(), String> {
             quantum_nodes,
             quantum_ms,
             wall_ms,
+            stop_at.map(Into::into),
         )?),
         Command::Timeline {
             workspace,
