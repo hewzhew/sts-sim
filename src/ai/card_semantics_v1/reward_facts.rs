@@ -68,8 +68,8 @@ fn hit_count(card_id: CardId, upgrades: i32, damage_per_hit: i32) -> i32 {
 
 fn draw_cards(card_id: CardId, magic: i32) -> i32 {
     match card_id {
-        CardId::PommelStrike
-        | CardId::ShrugItOff
+        CardId::PommelStrike => magic,
+        CardId::ShrugItOff
         | CardId::Finesse
         | CardId::FlashOfSteel
         | CardId::DeepBreath
@@ -283,6 +283,15 @@ mod tests {
         let facts = card_reward_facts_v1(&RewardCard::new(CardId::SeeingRed, 0));
 
         assert_eq!(facts.energy_gain, 2);
+    }
+
+    #[test]
+    fn pommel_strike_facts_preserve_the_draw_upgrade() {
+        let base = card_reward_facts_v1(&RewardCard::new(CardId::PommelStrike, 0));
+        let upgraded = card_reward_facts_v1(&RewardCard::new(CardId::PommelStrike, 1));
+
+        assert_eq!(base.draw_cards, 1);
+        assert_eq!(upgraded.draw_cards, 2);
     }
 
     #[test]
