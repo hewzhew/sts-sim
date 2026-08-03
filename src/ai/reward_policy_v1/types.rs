@@ -5,6 +5,7 @@ use crate::ai::noncombat_decision_v1::{
     NONCOMBAT_DECISION_RECORD_SCHEMA_NAME, NONCOMBAT_DECISION_RECORD_SCHEMA_VERSION,
 };
 use crate::ai::noncombat_strategy_v1::StrategyPlanSupportV1;
+use crate::content::potions::PotionId;
 use crate::state::rewards::RewardItem;
 
 #[derive(Clone, Debug, PartialEq)]
@@ -21,6 +22,7 @@ pub struct RewardCandidateEvidenceV1 {
     pub index: usize,
     pub candidate_id: String,
     pub label: String,
+    pub potion_id: Option<PotionId>,
     pub class: RewardPolicyClassV1,
     pub support_gate: StrategyPlanSupportV1,
     pub evidence: Vec<String>,

@@ -1,5 +1,5 @@
 use crate::ai::noncombat_strategy_v1::StrategyPlanSupportV1;
-use crate::content::potions::get_potion_definition;
+use crate::content::potions::{get_potion_definition, PotionId};
 use crate::content::relics::RelicId;
 use crate::state::rewards::{RewardItem, RewardState};
 use crate::state::run::RunState;
@@ -51,6 +51,10 @@ pub fn plan_reward_decision_v1(
     context: &RewardDecisionContextV1,
     config: &RewardPolicyConfigV1,
 ) -> RewardDecisionV1 {
+    let claimable_fruit_juice = context.candidates.iter().any(|candidate| {
+        candidate.class == RewardPolicyClassV1::PotionWithEmptySlot
+            && candidate.potion_id == Some(PotionId::FruitJuice)
+    });
     let action = if context.pending_card_choice_open {
         RewardPolicyActionV1::Stop {
             reason: "reward policy stopped because a card reward choice is open".to_string(),
@@ -59,7 +63,15 @@ pub fn plan_reward_decision_v1(
         context
             .candidates
             .iter()
-            .find_map(|candidate| low_agency_claim_action(candidate, config))
+            .find_map(|candidate| {
+                if claimable_fruit_juice
+                    && candidate.class == RewardPolicyClassV1::PotionWithEmptySlot
+                    && candidate.potion_id != Some(PotionId::FruitJuice)
+                {
+                    return None;
+                }
+                low_agency_claim_action(candidate, config)
+            })
             .unwrap_or_else(|| RewardPolicyActionV1::Stop {
                 reason: stop_reason(context),
             })
@@ -126,6 +138,10 @@ fn candidate_evidence(
         index,
         candidate_id: reward_candidate_id(index, item),
         label: reward_item_label(item),
+        potion_id: match item {
+            RewardItem::Potion { potion_id } => Some(*potion_id),
+            _ => None,
+        },
         class,
         support_gate,
         evidence,

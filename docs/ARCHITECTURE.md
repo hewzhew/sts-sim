@@ -491,6 +491,13 @@ identity, and an incoming Strength Potion may replace Fear Potion only when
 card semantics confirm both a concrete Strength payoff and deck-based
 Vulnerable coverage. All other full-inventory comparisons remain unresolved.
 
+Before replacement is necessary, reward transaction order must preserve
+deterministic run resources. When a claimable Fruit Juice shares one reward
+surface with ordinary potion rewards, the reward owner claims Fruit Juice
+first so the existing potion-space step can realize it before any remaining
+reward would require replacement. This ordering is driven by typed potion
+identity, not reward labels.
+
 Event-origin deck selections must include the event's typed post-selection
 effect instead of treating every `PurgeNonBottled` boundary as an ordinary
 cleanup. Bonfire sacrifice ordering may prefer a selectable Uncommon or Rare

@@ -573,6 +573,7 @@ fn planner_action_for_candidate(
             | DecisionCandidateKey::RouteCancel
             | DecisionCandidateKey::RunPotionUse { .. }
             | DecisionCandidateKey::RunPotionDiscard { .. }
+            | DecisionCandidateKey::RewardPotionClaim { .. }
             | DecisionCandidateKey::CampfireRest
             | DecisionCandidateKey::CampfireSmith { .. }
             | DecisionCandidateKey::CampfireDig

@@ -76,6 +76,10 @@ pub enum DecisionCandidateKey {
         potion: PotionId,
         uuid: u32,
     },
+    RewardPotionClaim {
+        reward_item_index: usize,
+        potion: PotionId,
+    },
     EventOption {
         event_id: EventId,
         screen: usize,

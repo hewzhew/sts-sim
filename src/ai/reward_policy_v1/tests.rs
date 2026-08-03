@@ -65,6 +65,32 @@ fn reward_policy_claims_potion_only_when_empty_slot_is_available() {
 }
 
 #[test]
+fn reward_policy_claims_fruit_juice_before_other_potions_on_the_same_surface() {
+    let mut run = test_run();
+    run.potions = vec![Some(Potion::new(PotionId::FearPotion, 1)), None, None];
+    let reward = reward_state(vec![
+        RewardItem::Potion {
+            potion_id: PotionId::FearPotion,
+        },
+        RewardItem::Potion {
+            potion_id: PotionId::FirePotion,
+        },
+        RewardItem::Potion {
+            potion_id: PotionId::FruitJuice,
+        },
+    ]);
+
+    let context = build_reward_decision_context_v1(&run, &reward);
+    let decision = plan_reward_decision_v1(&context, &RewardPolicyConfigV1::default());
+
+    assert!(matches!(
+        decision.action,
+        RewardPolicyActionV1::Claim { index: 2, .. }
+    ));
+    assert_eq!(context.candidates[2].potion_id, Some(PotionId::FruitJuice));
+}
+
+#[test]
 fn reward_policy_does_not_duplicate_potion_suffix_in_labels() {
     let run = test_run();
     let reward = reward_state(vec![RewardItem::Potion {

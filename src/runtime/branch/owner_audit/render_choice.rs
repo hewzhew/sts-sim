@@ -81,6 +81,10 @@ fn render_choice_key_timeline(key: &DecisionCandidateKey) -> String {
         DecisionCandidateKey::RunPotionDiscard { slot, potion, uuid } => {
             format!("discard run potion {slot} {potion:?}#{uuid}")
         }
+        DecisionCandidateKey::RewardPotionClaim {
+            reward_item_index,
+            potion,
+        } => format!("claim potion reward {reward_item_index} {potion:?}"),
         DecisionCandidateKey::EventOption {
             option_index,
             action,

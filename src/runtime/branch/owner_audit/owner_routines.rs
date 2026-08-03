@@ -160,6 +160,70 @@ mod tests {
     }
 
     #[test]
+    fn reward_policy_routine_preserves_all_lab_potions_by_claiming_fruit_juice_first() {
+        let mut session = reward_session(vec![
+            RewardItem::Potion {
+                potion_id: PotionId::FearPotion,
+            },
+            RewardItem::Potion {
+                potion_id: PotionId::FirePotion,
+            },
+            RewardItem::Potion {
+                potion_id: PotionId::FruitJuice,
+            },
+        ]);
+        session.run_state.potions = vec![
+            Some(sts_simulator::content::potions::Potion::new(
+                PotionId::FearPotion,
+                1,
+            )),
+            None,
+            None,
+        ];
+        let before_max_hp = session.run_state.max_hp;
+
+        let actions = (0..4)
+            .map(|_| {
+                apply_owner_routine(&mut session, OwnerRoutine::RewardPolicyStep)
+                    .expect("the Lab reward transaction should remain owner-resolvable")
+                    .single_decision_transaction()
+                    .expect("each owner step should commit exactly one decision")
+                    .action
+                    .clone()
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            actions,
+            vec![
+                RunDecisionAction::Input(ClientInput::ClaimReward(2)),
+                RunDecisionAction::Input(ClientInput::ClaimReward(0)),
+                RunDecisionAction::Input(ClientInput::UsePotion {
+                    potion_index: 1,
+                    target: None,
+                }),
+                RunDecisionAction::Input(ClientInput::ClaimReward(0)),
+            ]
+        );
+        assert_eq!(session.run_state.max_hp, before_max_hp + 5);
+        assert_eq!(session.run_state.current_hp, before_max_hp + 5);
+        assert_eq!(
+            session
+                .run_state
+                .potions
+                .iter()
+                .map(|potion| potion.as_ref().map(|potion| potion.id))
+                .collect::<Vec<_>>(),
+            vec![
+                Some(PotionId::FearPotion),
+                Some(PotionId::FirePotion),
+                Some(PotionId::FearPotion),
+            ]
+        );
+        assert!(matches!(session.engine_state, EngineState::MapNavigation));
+    }
+
+    #[test]
     fn sozu_blocked_potion_uses_public_exit_without_deleting_reward() {
         let mut session = reward_session(vec![RewardItem::Potion {
             potion_id: PotionId::EnergyPotion,

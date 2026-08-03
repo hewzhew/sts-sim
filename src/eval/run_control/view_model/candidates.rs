@@ -6,7 +6,7 @@ use crate::runtime::combat::CardPileView;
 use crate::sim::combat_legal_actions::engine_atomic_actions;
 use crate::state::core::{CampfireChoice, ClientInput, EngineState, PendingChoice, PileType};
 use crate::state::events::{EventOption, EventOptionTransition};
-use crate::state::rewards::{BossRelicChoiceState, RewardState};
+use crate::state::rewards::{BossRelicChoiceState, RewardItem, RewardState};
 use crate::state::selection::{SelectionResolution, SelectionScope};
 use std::collections::BTreeMap;
 
@@ -333,9 +333,7 @@ fn reward_candidates(
         .iter()
         .enumerate()
         .filter_map(|(idx, item)| {
-            if matches!(item, crate::state::rewards::RewardItem::Potion { .. })
-                && !potion_claim_changes_state
-            {
+            if matches!(item, RewardItem::Potion { .. }) && !potion_claim_changes_state {
                 return None;
             }
             let mut candidate = candidate(
@@ -344,10 +342,19 @@ fn reward_candidates(
                 ClientInput::ClaimReward(idx),
                 None::<String>,
             );
-            if matches!(item, crate::state::rewards::RewardItem::Card { .. }) {
-                candidate.key = Some(DecisionCandidateKey::CardRewardOpen {
-                    reward_item_index: idx,
-                });
+            match item {
+                RewardItem::Card { .. } => {
+                    candidate.key = Some(DecisionCandidateKey::CardRewardOpen {
+                        reward_item_index: idx,
+                    });
+                }
+                RewardItem::Potion { potion_id } => {
+                    candidate.key = Some(DecisionCandidateKey::RewardPotionClaim {
+                        reward_item_index: idx,
+                        potion: *potion_id,
+                    });
+                }
+                _ => {}
             }
             candidate.resolution =
                 CandidateResolution::from_reward_item(item, reward, &session.run_state);
@@ -1357,6 +1364,31 @@ mod tests {
                 potion_id: PotionId::CultistPotion
             }]
         ));
+    }
+
+    #[test]
+    fn claimable_potion_reward_carries_typed_reward_identity() {
+        let mut session = RunControlSession::new(Default::default());
+        let mut reward = RewardState::new();
+        reward.items = vec![RewardItem::Potion {
+            potion_id: PotionId::FruitJuice,
+        }];
+        session.engine_state = EngineState::RewardScreen(reward);
+
+        let claim = decision_candidates(&session)
+            .into_iter()
+            .find(|candidate| {
+                candidate.action.executable_input() == Some(ClientInput::ClaimReward(0))
+            })
+            .expect("an empty potion slot should expose the claim");
+
+        assert_eq!(
+            claim.key,
+            Some(DecisionCandidateKey::RewardPotionClaim {
+                reward_item_index: 0,
+                potion: PotionId::FruitJuice,
+            })
+        );
     }
 
     #[test]
