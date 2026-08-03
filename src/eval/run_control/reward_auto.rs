@@ -2,6 +2,8 @@ use crate::ai::reward_policy_v1::{
     build_reward_decision_context_v1, plan_reward_decision_v1, RewardPolicyActionV1,
     RewardPolicyClassV1, RewardPolicyConfigV1,
 };
+use crate::ai::strategy::deck_role_inventory::DeckRoleInventory;
+use crate::content::potions::PotionId;
 use crate::content::relics::RelicId;
 use crate::state::core::{ClientInput, EngineState};
 use crate::state::rewards::{RewardCard, RewardItem, RewardState};
@@ -9,6 +11,7 @@ use crate::state::run::RunState;
 
 use super::session::{RunControlSession, RunProgressOutcome};
 use super::trace_annotation::RunControlTraceAnnotationV1;
+use super::DecisionCandidateKey;
 
 #[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
 pub struct RewardAutomationConfig {
@@ -79,6 +82,11 @@ struct RewardPolicyPlan {
     trace_annotation: RunControlTraceAnnotationV1,
 }
 
+struct RewardPotionSpacePlan {
+    key: DecisionCandidateKey,
+    input: ClientInput,
+}
+
 impl RewardAutomationConfig {
     pub fn summary(&self) -> String {
         format!(
@@ -119,16 +127,19 @@ pub fn apply_reward_policy_step(
 pub fn apply_reward_potion_space_step(
     session: &mut RunControlSession,
 ) -> Result<Option<RunProgressOutcome>, String> {
-    let Some(input) = reward_potion_space_use_input(session) else {
+    let Some(plan) = reward_potion_space_plan(session) else {
         return Ok(None);
     };
-    let action = super::RunDecisionAction::Input(input);
+    let action = super::RunDecisionAction::Input(plan.input);
     let surface = super::build_decision_surface(session);
     let matches = surface
         .view
         .candidates
         .iter()
-        .filter(|candidate| candidate.action.executable_action().as_ref() == Some(&action))
+        .filter(|candidate| {
+            candidate.key.as_ref() == Some(&plan.key)
+                && candidate.action.executable_action().as_ref() == Some(&action)
+        })
         .collect::<Vec<_>>();
     let [candidate] = matches.as_slice() else {
         return Err(format!(
@@ -142,9 +153,7 @@ pub fn apply_reward_potion_space_step(
         .map(Some)
 }
 
-pub(in crate::eval::run_control) fn reward_potion_space_use_input(
-    session: &RunControlSession,
-) -> Option<ClientInput> {
+fn reward_potion_space_plan(session: &RunControlSession) -> Option<RewardPotionSpacePlan> {
     let reward = match &session.engine_state {
         EngineState::RewardScreen(reward) => reward,
         EngineState::RewardOverlay { reward_state, .. } => reward_state,
@@ -168,24 +177,113 @@ pub(in crate::eval::run_control) fn reward_potion_space_use_input(
         .event_state
         .as_ref()
         .is_some_and(|event| event.id == crate::state::events::EventId::WeMeetAgain);
+    if let Some((potion_index, potion)) =
+        session
+            .run_state
+            .potions
+            .iter()
+            .enumerate()
+            .find_map(|(potion_index, potion)| {
+                let potion = potion.as_ref()?;
+                (potion.id == crate::content::potions::PotionId::FruitJuice
+                    && potion.can_use
+                    && crate::content::potions::potion_can_use_out_of_combat(
+                        potion.id,
+                        is_we_meet_again,
+                    ))
+                .then_some((potion_index, potion))
+            })
+    {
+        return Some(RewardPotionSpacePlan {
+            key: DecisionCandidateKey::RunPotionUse {
+                slot: potion_index,
+                potion: potion.id,
+                uuid: potion.uuid,
+            },
+            input: ClientInput::UsePotion {
+                potion_index,
+                target: None,
+            },
+        });
+    }
+
+    if !crate::content::potions::potion_can_discard_in_event(is_we_meet_again) {
+        return None;
+    }
+    let incoming_potions = reward
+        .items
+        .iter()
+        .filter_map(|item| match item {
+            RewardItem::Potion { potion_id } => Some(*potion_id),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+
+    if incoming_potions.contains(&PotionId::FruitJuice) {
+        if let Some((slot, potion)) = newest_discardable_duplicate_potion(session) {
+            return Some(discard_potion_space_plan(slot, potion));
+        }
+    }
+
+    if incoming_potions.contains(&PotionId::StrengthPotion) {
+        let roles = DeckRoleInventory::from_deck(&session.run_state.master_deck);
+        if roles.strength_payoff_units > 0 && roles.vulnerable_units > 0 {
+            if let Some((slot, potion)) = session
+                .run_state
+                .potions
+                .iter()
+                .enumerate()
+                .filter_map(|(slot, potion)| {
+                    let potion = potion.as_ref()?;
+                    (potion.id == PotionId::FearPotion && potion.can_discard)
+                        .then_some((slot, potion))
+                })
+                .max_by_key(|(_, potion)| potion.uuid)
+            {
+                return Some(discard_potion_space_plan(slot, potion));
+            }
+        }
+    }
+    None
+}
+
+fn newest_discardable_duplicate_potion(
+    session: &RunControlSession,
+) -> Option<(usize, &crate::content::potions::Potion)> {
     session
         .run_state
         .potions
         .iter()
         .enumerate()
-        .find_map(|(potion_index, potion)| {
+        .filter_map(|(slot, potion)| {
             let potion = potion.as_ref()?;
-            (potion.id == crate::content::potions::PotionId::FruitJuice
-                && potion.can_use
-                && crate::content::potions::potion_can_use_out_of_combat(
-                    potion.id,
-                    is_we_meet_again,
-                ))
-            .then_some(ClientInput::UsePotion {
-                potion_index,
-                target: None,
-            })
+            let copies = session
+                .run_state
+                .potions
+                .iter()
+                .filter(|candidate| {
+                    candidate
+                        .as_ref()
+                        .is_some_and(|candidate| candidate.id == potion.id)
+                })
+                .count();
+            (copies > 1 && potion.can_discard).then_some((slot, potion))
         })
+        .max_by_key(|(_, potion)| potion.uuid)
+}
+
+fn discard_potion_space_plan(
+    slot: usize,
+    potion: &crate::content::potions::Potion,
+) -> RewardPotionSpacePlan {
+    RewardPotionSpacePlan {
+        key: DecisionCandidateKey::RunPotionDiscard {
+            slot,
+            potion: potion.id,
+            uuid: potion.uuid,
+        },
+        input: ClientInput::DiscardPotion(slot),
+    }
 }
 
 pub fn reward_surface_has_only_unclaimable_potions(session: &RunControlSession) -> bool {
@@ -386,6 +484,102 @@ mod tests {
     }
 
     #[test]
+    fn reward_potion_space_step_discards_newest_duplicate_for_fruit_juice() {
+        let mut session = reward_screen_session(vec![RewardItem::Potion {
+            potion_id: PotionId::FruitJuice,
+        }]);
+        session.run_state.potions = vec![
+            Some(crate::content::potions::Potion::new(
+                PotionId::FearPotion,
+                11,
+            )),
+            Some(crate::content::potions::Potion::new(
+                PotionId::FearPotion,
+                19,
+            )),
+            Some(crate::content::potions::Potion::new(
+                PotionId::FirePotion,
+                7,
+            )),
+        ];
+
+        let discarded = apply_reward_potion_space_step(&mut session)
+            .expect("potion-space policy should inspect duplicate inventory")
+            .expect("Fruit Juice should justify discarding the newest duplicate");
+
+        assert!(session.run_state.potions[1].is_none());
+        assert_eq!(
+            session.run_state.potions[0]
+                .as_ref()
+                .map(|potion| (potion.id, potion.uuid)),
+            Some((PotionId::FearPotion, 11))
+        );
+        assert_reward_owner_transaction(&discarded, 0, 1);
+
+        apply_reward_policy_step(&mut session)
+            .expect("reward policy should inspect the opened slot")
+            .expect("Fruit Juice should be claimed on the next atomic step");
+        assert_eq!(
+            session.run_state.potions[1]
+                .as_ref()
+                .map(|potion| potion.id),
+            Some(PotionId::FruitJuice)
+        );
+    }
+
+    #[test]
+    fn reward_potion_space_step_replaces_covered_fear_with_strength_payoff() {
+        use crate::content::cards::CardId;
+        use crate::runtime::combat::CombatCard;
+
+        let mut session = full_belt_strength_reward_session();
+        session.run_state.master_deck = vec![
+            CombatCard::new(CardId::Bash, 101),
+            CombatCard::new(CardId::SwordBoomerang, 102),
+        ];
+
+        let discarded = apply_reward_potion_space_step(&mut session)
+            .expect("potion-space policy should inspect Strength support")
+            .expect("covered Fear should be replaced for a concrete Strength payoff");
+
+        assert!(session.run_state.potions[1].is_none());
+        assert_reward_owner_transaction(&discarded, 0, 1);
+        apply_reward_policy_step(&mut session)
+            .expect("reward policy should inspect the opened slot")
+            .expect("Strength should be claimed on the next atomic step");
+        assert_eq!(
+            session.run_state.potions[1]
+                .as_ref()
+                .map(|potion| potion.id),
+            Some(PotionId::StrengthPotion)
+        );
+    }
+
+    #[test]
+    fn reward_potion_space_step_keeps_fear_without_both_semantic_dependencies() {
+        use crate::content::cards::CardId;
+        use crate::runtime::combat::CombatCard;
+
+        for deck in [
+            vec![CombatCard::new(CardId::SwordBoomerang, 101)],
+            vec![CombatCard::new(CardId::Bash, 102)],
+        ] {
+            let mut session = full_belt_strength_reward_session();
+            session.run_state.master_deck = deck;
+
+            assert!(apply_reward_potion_space_step(&mut session)
+                .expect("potion-space policy should inspect incomplete support")
+                .is_none());
+            assert_eq!(
+                session.run_state.potions[1]
+                    .as_ref()
+                    .map(|potion| potion.id),
+                Some(PotionId::FearPotion)
+            );
+        }
+    }
+
+    #[test]
     fn reward_policy_leaves_sozu_blocked_potion_for_explicit_exit() {
         let mut session = reward_screen_session(vec![RewardItem::Potion {
             potion_id: PotionId::EnergyPotion,
@@ -560,6 +754,27 @@ mod tests {
         let mut rewards = RewardState::new();
         rewards.items = items;
         session.engine_state = EngineState::RewardScreen(rewards);
+        session
+    }
+
+    fn full_belt_strength_reward_session() -> RunControlSession {
+        let mut session = reward_screen_session(vec![RewardItem::Potion {
+            potion_id: PotionId::StrengthPotion,
+        }]);
+        session.run_state.potions = vec![
+            Some(crate::content::potions::Potion::new(
+                PotionId::AncientPotion,
+                1,
+            )),
+            Some(crate::content::potions::Potion::new(
+                PotionId::FearPotion,
+                2,
+            )),
+            Some(crate::content::potions::Potion::new(
+                PotionId::AttackPotion,
+                3,
+            )),
+        ];
         session
     }
 }

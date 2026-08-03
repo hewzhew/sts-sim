@@ -571,6 +571,8 @@ fn planner_action_for_candidate(
         Some(
             DecisionCandidateKey::RouteSelect { .. }
             | DecisionCandidateKey::RouteCancel
+            | DecisionCandidateKey::RunPotionUse { .. }
+            | DecisionCandidateKey::RunPotionDiscard { .. }
             | DecisionCandidateKey::CampfireRest
             | DecisionCandidateKey::CampfireSmith { .. }
             | DecisionCandidateKey::CampfireDig

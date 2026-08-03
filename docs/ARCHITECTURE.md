@@ -405,6 +405,24 @@ threshold. Route order must come from a typed modal ordering fact; aggregate
 room counts cannot establish order. Missing, unknown, conflicting, or
 root-mismatched evidence remains explicitly unavailable or rejected.
 
+Reward-screen potion replacement belongs to the run-control reward owner. A
+replacement must select a typed slot, potion identity, and UUID; the runtime
+must not recover that identity from a label or generic discard command. The
+owner may replace only when a bounded public-state contract discharges the
+specific opportunity cost. The current production contract is deliberately
+narrow: an incoming Fruit Juice may replace the newest duplicate inventory
+identity, and an incoming Strength Potion may replace Fear Potion only when
+card semantics confirm both a concrete Strength payoff and deck-based
+Vulnerable coverage. All other full-inventory comparisons remain unresolved.
+
+Event-origin deck selections must include the event's typed post-selection
+effect instead of treating every `PurgeNonBottled` boundary as an ordinary
+cleanup. Bonfire sacrifice ordering may prefer a selectable Uncommon or Rare
+card without a core-function or unsupported-loss classification when its
+exact public-state recovery is at least the owner's strategic reserve
+magnitude, even if current HP has not yet crossed below that reserve. Mark of
+the Bloom remains an explicit healing blocker in that projection.
+
 Deterministic post-victory HP carryover is also an owner-captured fact. In
 particular, an offline audit must not infer a room-Boss act-transition heal from
 an encounter name, floor number, or combat `is_boss` flag. The run-control

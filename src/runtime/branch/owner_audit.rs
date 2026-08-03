@@ -200,6 +200,24 @@ pub(super) fn legacy_oracle_policy_prior_v1(
     session: &sts_simulator::eval::run_control::RunControlSession,
     legal: &[sts_simulator::eval::run_control::RunPolicyCandidateV1<'_>],
 ) -> Result<sts_simulator::eval::run_control::RunPolicyPriorV1, String> {
+    let immediate_run_potion_ids = legal
+        .iter()
+        .filter(|candidate| {
+            matches!(
+                candidate.action,
+                sts_simulator::eval::run_control::RunDecisionAction::Input(
+                    sts_simulator::state::core::ClientInput::UsePotion { target: None, .. }
+                )
+            )
+        })
+        .map(|candidate| candidate.candidate_id.to_string())
+        .collect::<Vec<_>>();
+    if !immediate_run_potion_ids.is_empty() {
+        return sts_simulator::eval::run_control::positive_ranked_run_policy_prior_v1(
+            legal,
+            immediate_run_potion_ids,
+        );
+    }
     if matches!(
         session.engine_state,
         sts_simulator::state::core::EngineState::Shop(_)
@@ -430,6 +448,57 @@ mod tests {
 
         assert_eq!(audited, legal_ids);
         assert_eq!(audited.len(), 2);
+    }
+
+    #[test]
+    fn current_owner_realizes_fruit_juice_before_map_travel() {
+        use sts_simulator::content::potions::{Potion, PotionId};
+        use sts_simulator::eval::run_control::{RunControlConfig, RunControlSession};
+        use sts_simulator::state::core::EngineState;
+
+        let mut session = RunControlSession::new(RunControlConfig::default());
+        session.engine_state = EngineState::MapNavigation;
+        session.run_state.potions = vec![Some(Potion::new(PotionId::FruitJuice, 10))];
+
+        let ordered = current_oracle_candidate_order_v1(&session);
+
+        assert_eq!(
+            ordered.first().map(String::as_str),
+            Some("use-run-potion-0")
+        );
+    }
+
+    #[test]
+    fn current_owner_replaces_covered_fear_with_strength_reward() {
+        use sts_simulator::content::cards::CardId;
+        use sts_simulator::content::potions::{Potion, PotionId};
+        use sts_simulator::eval::run_control::{RunControlConfig, RunControlSession};
+        use sts_simulator::runtime::combat::CombatCard;
+        use sts_simulator::state::core::EngineState;
+        use sts_simulator::state::rewards::{RewardItem, RewardState};
+
+        let mut session = RunControlSession::new(RunControlConfig::default());
+        session.run_state.potions = vec![
+            Some(Potion::new(PotionId::AncientPotion, 1)),
+            Some(Potion::new(PotionId::FearPotion, 2)),
+            Some(Potion::new(PotionId::AttackPotion, 3)),
+        ];
+        session.run_state.master_deck = vec![
+            CombatCard::new(CardId::Bash, 101),
+            CombatCard::new(CardId::SwordBoomerang, 102),
+        ];
+        let mut reward = RewardState::new();
+        reward.items = vec![RewardItem::Potion {
+            potion_id: PotionId::StrengthPotion,
+        }];
+        session.engine_state = EngineState::RewardScreen(reward);
+
+        let ordered = current_oracle_candidate_order_v1(&session);
+
+        assert_eq!(
+            ordered.first().map(String::as_str),
+            Some("discard-potion-1")
+        );
     }
 
     #[test]

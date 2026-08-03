@@ -66,6 +66,16 @@ pub enum DecisionCandidateKey {
         has_emerald_key: bool,
     },
     RouteCancel,
+    RunPotionUse {
+        slot: usize,
+        potion: PotionId,
+        uuid: u32,
+    },
+    RunPotionDiscard {
+        slot: usize,
+        potion: PotionId,
+        uuid: u32,
+    },
     EventOption {
         event_id: EventId,
         screen: usize,

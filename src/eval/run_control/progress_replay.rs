@@ -567,6 +567,8 @@ fn is_strategic_decision_key_v1(key: &DecisionCandidateKey) -> bool {
     matches!(
         key,
         DecisionCandidateKey::RouteSelect { .. }
+            | DecisionCandidateKey::RunPotionUse { .. }
+            | DecisionCandidateKey::RunPotionDiscard { .. }
             | DecisionCandidateKey::EventOption { .. }
             | DecisionCandidateKey::CardRewardPick { .. }
             | DecisionCandidateKey::CardRewardSingingBowl { .. }

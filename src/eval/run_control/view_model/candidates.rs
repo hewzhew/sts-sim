@@ -1,4 +1,4 @@
-use crate::content::potions::get_potion_definition;
+use crate::content::potions::{get_potion_definition, PotionId};
 use crate::content::relics::RelicId;
 use crate::eval::event_boundary_classifier_v1::classify_event_option_boundary_v1;
 use crate::eval::run_control::RunDecisionAction;
@@ -124,25 +124,31 @@ fn map_candidates(session: &RunControlSession) -> Vec<DecisionCandidate> {
         session.run_state.map.current_y + 1
     };
     if target_y == 15 {
-        return with_map_overlay_back_candidate(
+        return with_immediate_map_potion_candidate(
             session,
-            vec![keyed_candidate(
-                "0",
-                "Boss room",
-                DecisionCandidateKey::RouteSelect {
-                    x: 0,
-                    y: 15,
-                    room_type: Some(crate::state::map::node::RoomType::MonsterRoomBoss),
-                    uses_wing_boots: false,
-                    has_emerald_key: false,
-                },
-                ClientInput::SelectMapNode(0),
-                Some("boss"),
-            )],
+            with_map_overlay_back_candidate(
+                session,
+                vec![keyed_candidate(
+                    "0",
+                    "Boss room",
+                    DecisionCandidateKey::RouteSelect {
+                        x: 0,
+                        y: 15,
+                        room_type: Some(crate::state::map::node::RoomType::MonsterRoomBoss),
+                        uses_wing_boots: false,
+                        has_emerald_key: false,
+                    },
+                    ClientInput::SelectMapNode(0),
+                    Some("boss"),
+                )],
+            ),
         );
     }
     let Some(row) = session.run_state.map.graph.get(target_y as usize) else {
-        return with_map_overlay_back_candidate(session, Vec::new());
+        return with_immediate_map_potion_candidate(
+            session,
+            with_map_overlay_back_candidate(session, Vec::new()),
+        );
     };
     let has_wing_boots_charge = session
         .run_state
@@ -188,7 +194,47 @@ fn map_candidates(session: &RunControlSession) -> Vec<DecisionCandidate> {
             }
         })
         .collect();
-    with_map_overlay_back_candidate(session, candidates)
+    with_immediate_map_potion_candidate(
+        session,
+        with_map_overlay_back_candidate(session, candidates),
+    )
+}
+
+fn with_immediate_map_potion_candidate(
+    session: &RunControlSession,
+    mut candidates: Vec<DecisionCandidate>,
+) -> Vec<DecisionCandidate> {
+    let Some((slot, potion)) =
+        session
+            .run_state
+            .potions
+            .iter()
+            .enumerate()
+            .find_map(|(slot, potion)| {
+                let potion = potion.as_ref()?;
+                (potion.id == PotionId::FruitJuice && potion.can_use).then_some((slot, potion))
+            })
+    else {
+        return candidates;
+    };
+    candidates.insert(
+        0,
+        keyed_candidate(
+            format!("use-run-potion-{slot}"),
+            "Use Fruit Juice",
+            DecisionCandidateKey::RunPotionUse {
+                slot,
+                potion: potion.id,
+                uuid: potion.uuid,
+            },
+            ClientInput::UsePotion {
+                potion_index: slot,
+                target: None,
+            },
+            Some("realizes a deterministic run-level resource"),
+        ),
+    );
+    candidates
 }
 
 fn with_map_overlay_back_candidate(
@@ -327,13 +373,34 @@ fn reward_candidates(
         .items
         .iter()
         .any(|item| matches!(item, crate::state::rewards::RewardItem::Potion { .. }));
-    if let Some(input) = super::super::reward_auto::reward_potion_space_use_input(session) {
-        let ClientInput::UsePotion { potion_index, .. } = input else {
-            unreachable!("reward potion-space helper must return a potion-use input");
-        };
-        candidates.push(candidate(
+    if let Some((potion_index, potion)) =
+        session
+            .run_state
+            .potions
+            .iter()
+            .enumerate()
+            .find_map(|(slot, potion)| {
+                let potion = potion.as_ref()?;
+                (has_unclaimed_potion
+                    && potion.id == PotionId::FruitJuice
+                    && potion.can_use
+                    && crate::content::potions::potion_can_use_out_of_combat(
+                        potion.id,
+                        session.run_state.event_state.as_ref().is_some_and(|event| {
+                            event.id == crate::state::events::EventId::WeMeetAgain
+                        }),
+                    ))
+                .then_some((slot, potion))
+            })
+    {
+        candidates.push(keyed_candidate(
             format!("use-potion-{potion_index}"),
             "Use Fruit Juice to make room for potion reward",
+            DecisionCandidateKey::RunPotionUse {
+                slot: potion_index,
+                potion: potion.id,
+                uuid: potion.uuid,
+            },
             ClientInput::UsePotion {
                 potion_index,
                 target: None,
@@ -353,12 +420,17 @@ fn reward_candidates(
         candidates.extend(session.run_state.potions.iter().enumerate().filter_map(
             |(slot, potion)| {
                 let potion = potion.as_ref().filter(|potion| potion.can_discard)?;
-                Some(candidate(
+                Some(keyed_candidate(
                     format!("discard-potion-{slot}"),
                     format!(
                         "Discard {} to make room for potion reward",
                         get_potion_definition(potion.id).name
                     ),
+                    DecisionCandidateKey::RunPotionDiscard {
+                        slot,
+                        potion: potion.id,
+                        uuid: potion.uuid,
+                    },
                     ClientInput::DiscardPotion(slot),
                     Some("the unclaimed potion reward remains available"),
                 ))
@@ -1246,6 +1318,14 @@ mod tests {
             discard.action.executable_input(),
             Some(ClientInput::DiscardPotion(0))
         );
+        assert_eq!(
+            discard.key,
+            Some(DecisionCandidateKey::RunPotionDiscard {
+                slot: 0,
+                potion: PotionId::Elixir,
+                uuid: 10,
+            })
+        );
 
         session
             .apply_decision_action(RunDecisionAction::Input(ClientInput::DiscardPotion(0)))
@@ -1288,6 +1368,45 @@ mod tests {
                 target: None,
             })
         );
+        assert_eq!(
+            use_fruit_juice.key,
+            Some(DecisionCandidateKey::RunPotionUse {
+                slot: 0,
+                potion: PotionId::FruitJuice,
+                uuid: 10,
+            })
+        );
+    }
+
+    #[test]
+    fn map_exposes_and_executes_immediate_fruit_juice_use() {
+        let mut session = RunControlSession::new(Default::default());
+        session.engine_state = EngineState::MapNavigation;
+        session.run_state.potions = vec![Some(Potion::new(PotionId::FruitJuice, 10))];
+
+        let candidates = decision_candidates(&session);
+        let use_fruit_juice = candidates
+            .iter()
+            .find(|candidate| candidate.id == "use-run-potion-0")
+            .expect("map should expose immediate Fruit Juice realization");
+        assert_eq!(
+            use_fruit_juice.key,
+            Some(DecisionCandidateKey::RunPotionUse {
+                slot: 0,
+                potion: PotionId::FruitJuice,
+                uuid: 10,
+            })
+        );
+
+        session
+            .apply_decision_action(RunDecisionAction::Input(ClientInput::UsePotion {
+                potion_index: 0,
+                target: None,
+            }))
+            .expect("map Fruit Juice use should be executable");
+        assert_eq!(session.run_state.current_hp, 85);
+        assert_eq!(session.run_state.max_hp, 85);
+        assert!(session.run_state.potions[0].is_none());
     }
 
     #[test]

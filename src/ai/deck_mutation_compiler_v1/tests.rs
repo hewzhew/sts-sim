@@ -141,6 +141,54 @@ fn critical_bonfire_offer_trades_a_redundant_uncommon_for_full_recovery() {
 }
 
 #[test]
+fn material_bonfire_recovery_outranks_a_common_cleanup_above_reserve() {
+    let mut run_state = RunState::new(1, 0, false, "Ironclad");
+    run_state.act_num = 3;
+    run_state.floor_num = 36;
+    run_state.current_hp = 30;
+    run_state.max_hp = 85;
+    run_state.master_deck = vec![
+        CombatCard::new(CardId::Cleave, 1),
+        CombatCard::new(CardId::Uppercut, 2),
+        CombatCard::new(CardId::Uppercut, 3),
+        CombatCard::new(CardId::FiendFire, 4),
+    ];
+    let choice = RunPendingChoiceState {
+        min_choices: 1,
+        max_choices: 1,
+        reason: RunPendingChoiceReason::PurgeNonBottled,
+        source: DomainEventSource::Event(EventId::BonfireElementals),
+        return_state: Box::new(EngineState::EventRoom),
+    };
+
+    let decision = compile_deck_mutation_decision_v1(
+        &run_state,
+        &choice,
+        DeckMutationCompilerRequestV1::committed_forced_execute_one(),
+    );
+    let selected = decision
+        .selected_plan
+        .as_ref()
+        .expect("bonfire sacrifice target");
+
+    assert_eq!(
+        selected.step.cards[0].card,
+        CardId::Uppercut,
+        "{}",
+        render_compiled_deck_mutation_decision_v1(&decision)
+    );
+    assert_eq!(selected.role, DeckMutationPlanRoleV1::PolicyPreferred);
+    assert!(decision
+        .candidate_plans
+        .iter()
+        .find(|candidate| candidate.step.cards[0].card == CardId::FiendFire)
+        .is_some_and(|candidate| {
+            candidate.step.cards[0].target_loss.tier == DeckMutationTargetLossTierV1::CoreFunctional
+                && candidate.role != DeckMutationPlanRoleV1::PolicyPreferred
+        }));
+}
+
+#[test]
 fn healthy_bonfire_offer_keeps_the_ordinary_low_loss_removal_order() {
     let mut run_state = RunState::new(1, 0, false, "Ironclad");
     run_state.current_hp = 70;
@@ -150,6 +198,41 @@ fn healthy_bonfire_offer_keeps_the_ordinary_low_loss_removal_order() {
         CombatCard::new(CardId::DarkEmbrace, 2),
         CombatCard::new(CardId::DarkEmbrace, 3),
     ];
+    let choice = RunPendingChoiceState {
+        min_choices: 1,
+        max_choices: 1,
+        reason: RunPendingChoiceReason::PurgeNonBottled,
+        source: DomainEventSource::Event(EventId::BonfireElementals),
+        return_state: Box::new(EngineState::EventRoom),
+    };
+
+    let decision = compile_deck_mutation_decision_v1(
+        &run_state,
+        &choice,
+        DeckMutationCompilerRequestV1::committed_forced_execute_one(),
+    );
+
+    assert_eq!(
+        decision.selected_plan.unwrap().step.cards[0].card,
+        CardId::Strike
+    );
+}
+
+#[test]
+fn bonfire_recovery_order_respects_mark_of_the_bloom() {
+    use crate::content::relics::{RelicId, RelicState};
+
+    let mut run_state = RunState::new(1, 0, false, "Ironclad");
+    run_state.current_hp = 12;
+    run_state.max_hp = 80;
+    run_state.master_deck = vec![
+        CombatCard::new(CardId::Strike, 1),
+        CombatCard::new(CardId::DarkEmbrace, 2),
+        CombatCard::new(CardId::DarkEmbrace, 3),
+    ];
+    run_state
+        .relics
+        .push(RelicState::new(RelicId::MarkOfTheBloom));
     let choice = RunPendingChoiceState {
         min_choices: 1,
         max_choices: 1,

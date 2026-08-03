@@ -75,6 +75,12 @@ fn render_choice_key_timeline(key: &DecisionCandidateKey) -> String {
             }
         ),
         DecisionCandidateKey::RouteCancel => "return to rewards".to_string(),
+        DecisionCandidateKey::RunPotionUse { slot, potion, uuid } => {
+            format!("use run potion {slot} {potion:?}#{uuid}")
+        }
+        DecisionCandidateKey::RunPotionDiscard { slot, potion, uuid } => {
+            format!("discard run potion {slot} {potion:?}#{uuid}")
+        }
         DecisionCandidateKey::EventOption {
             option_index,
             action,

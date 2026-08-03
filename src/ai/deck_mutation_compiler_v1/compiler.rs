@@ -11,6 +11,7 @@ use crate::ai::upgrade_planner_v1::{
     plan_upgrades_v1, upgrade_candidate_score_hint_v1, UpgradeCandidateV1,
 };
 use crate::content::cards::{get_card_definition, CardId, CardRarity, CardTag, CardType};
+use crate::content::relics::RelicId;
 use crate::runtime::combat::CombatCard;
 use crate::state::core::{RunPendingChoiceReason, RunPendingChoiceState};
 use crate::state::events::EventId;
@@ -59,6 +60,7 @@ struct BonfireOfferContextV1 {
     current_hp: i32,
     max_hp: i32,
     reserve_floor: i32,
+    healing_blocked: bool,
 }
 
 pub fn compile_deck_mutation_decision_v1(
@@ -757,6 +759,10 @@ fn bonfire_offer_context_v1(
         current_hp: run_state.current_hp,
         max_hp: run_state.max_hp,
         reserve_floor: budget.hp.reserve_floor,
+        healing_blocked: run_state
+            .relics
+            .iter()
+            .any(|relic| relic.id == RelicId::MarkOfTheBloom),
     })
 }
 
@@ -769,13 +775,16 @@ fn apply_bonfire_offer_recovery_v1(
         return;
     };
     let rarity = get_card_definition(card.card).rarity;
-    let (projected_hp, projected_max_hp) = match rarity {
-        CardRarity::Basic | CardRarity::Curse => (context.current_hp, context.max_hp),
-        CardRarity::Common | CardRarity::Special => {
+    let (projected_hp, projected_max_hp) = match (rarity, context.healing_blocked) {
+        (CardRarity::Basic | CardRarity::Curse, _) => (context.current_hp, context.max_hp),
+        (CardRarity::Common | CardRarity::Special, false) => {
             ((context.current_hp + 5).min(context.max_hp), context.max_hp)
         }
-        CardRarity::Uncommon => (context.max_hp, context.max_hp),
-        CardRarity::Rare => (context.max_hp + 10, context.max_hp + 10),
+        (CardRarity::Common | CardRarity::Special, true) => (context.current_hp, context.max_hp),
+        (CardRarity::Uncommon, false) => (context.max_hp, context.max_hp),
+        (CardRarity::Uncommon, true) => (context.current_hp, context.max_hp),
+        (CardRarity::Rare, false) => (context.max_hp + 10, context.max_hp + 10),
+        (CardRarity::Rare, true) => (context.current_hp + 10, context.max_hp + 10),
     };
     candidate.reasons.push(format!(
         "bonfire_offer_reward rarity={rarity:?} projected_hp={projected_hp}/{projected_max_hp} reserve_floor={}",
@@ -785,18 +794,38 @@ fn apply_bonfire_offer_recovery_v1(
     let crosses_survival_reserve = context.current_hp < context.reserve_floor
         && projected_hp >= context.reserve_floor
         && projected_hp > context.current_hp;
-    if !crosses_survival_reserve || candidate.role == DeckMutationPlanRoleV1::Blocked {
+    let recovery_hp = projected_hp.saturating_sub(context.current_hp);
+    let material_full_recovery = matches!(rarity, CardRarity::Uncommon | CardRarity::Rare)
+        && recovery_hp >= context.reserve_floor.max(1);
+    let loses_core_function = matches!(
+        card.target_loss.tier,
+        DeckMutationTargetLossTierV1::CoreFunctional | DeckMutationTargetLossTierV1::Unsupported
+    );
+    if (!crosses_survival_reserve && !material_full_recovery)
+        || candidate.role == DeckMutationPlanRoleV1::Blocked
+        || loses_core_function
+    {
         return;
     }
 
     candidate.role = DeckMutationPlanRoleV1::PolicyPreferred;
     candidate.confidence = 0.82;
-    candidate.score_hint = candidate.score_hint.saturating_add(10_000);
+    candidate.score_hint = candidate
+        .score_hint
+        .saturating_add(10_000)
+        .saturating_add(recovery_hp.saturating_mul(100));
     candidate.allowed_consumers = allowed_consumers(reason, candidate.role, candidate);
-    candidate.reasons.push(format!(
-        "bonfire_offer_crosses_survival_reserve current_hp={} projected_hp={} reserve_floor={}",
-        context.current_hp, projected_hp, context.reserve_floor
-    ));
+    candidate.reasons.push(if crosses_survival_reserve {
+        format!(
+            "bonfire_offer_crosses_survival_reserve current_hp={} projected_hp={} reserve_floor={}",
+            context.current_hp, projected_hp, context.reserve_floor
+        )
+    } else {
+        format!(
+            "bonfire_offer_material_full_recovery current_hp={} projected_hp={} recovery_hp={} reserve_floor={}",
+            context.current_hp, projected_hp, recovery_hp, context.reserve_floor
+        )
+    });
 }
 
 fn evaluate_candidate_for_reason(
