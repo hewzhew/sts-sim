@@ -573,6 +573,7 @@ fn compact_live_node(node: &Value, limit: usize) -> Value {
         "boundary": node.get("boundary"),
         "event": node.get("event"),
         "choice_count": choice_count,
+        "owner_rank_scope": node.get("owner_rank_scope"),
         "choices_shown": choices.len(),
         "choices_truncated": choice_count > choices.len() as u64,
         "choices": choices,

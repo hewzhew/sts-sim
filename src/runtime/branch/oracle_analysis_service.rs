@@ -342,22 +342,46 @@ fn execute_command(
             } else {
                 workspace.view()?
             };
-            (node_summary(&view), false, false, false)
+            (current_node_summary(workspace, &view)?, false, false, false)
         }
         OracleAnalysisServiceCommandV1::Explain { node, owner_rank } => {
             let view = workspace.session.view_node(node)?;
+            let current_owner_order = workspace.session.current_candidate_order(node)?;
+            let candidate_id = current_owner_order
+                .get(usize::try_from(owner_rank).map_err(|_| {
+                    format!("owner rank {owner_rank} does not fit the current platform")
+                })?)
+                .ok_or_else(|| {
+                    format!(
+                        "oracle node {node} has no current owner candidate at rank {owner_rank}"
+                    )
+                })?;
             let matching = view
                 .choices
                 .iter()
-                .filter(|choice| choice.owner_rank == owner_rank)
+                .filter(|choice| choice.candidate_id == *candidate_id)
                 .collect::<Vec<_>>();
             let [choice] = matching.as_slice() else {
                 return Err(format!(
-                    "oracle node {node} has {} choices with owner rank {owner_rank}; expected exactly one",
-                    matching.len()
+                    "oracle node {node} has {} materialized choices for current-owner candidate '{}'; expected exactly one",
+                    matching.len(),
+                    candidate_id,
                 ));
             };
-            (to_value(choice)?, false, false, false)
+            let mut result = to_value(choice)?;
+            let object = result
+                .as_object_mut()
+                .ok_or_else(|| "oracle choice did not serialize as an object".to_string())?;
+            object.insert(
+                "materialized_owner_rank".to_string(),
+                json!(choice.owner_rank),
+            );
+            object.insert("owner_rank".to_string(), json!(owner_rank));
+            object.insert(
+                "owner_rank_changed".to_string(),
+                json!(choice.owner_rank != owner_rank),
+            );
+            (result, false, false, false)
         }
         OracleAnalysisServiceCommandV1::RoutePolicyAudit { node } => (
             to_value(&workspace.session.route_policy_audit(node)?)?,
@@ -395,8 +419,9 @@ fn execute_command(
             (to_value(workspace.session.tree())?, false, false, false)
         }
         OracleAnalysisServiceCommandV1::Try { choice_ref } => {
-            let view = workspace.try_choice(&choice_ref)?;
-            (node_summary(&view), true, false, false)
+            workspace.try_choice(&choice_ref)?;
+            let view = workspace.view()?;
+            (current_node_summary(workspace, &view)?, true, false, false)
         }
         OracleAnalysisServiceCommandV1::Choose { node, owner_rank } => {
             let current_node = workspace.session.cursor_node_id();
@@ -406,24 +431,36 @@ fn execute_command(
                 ));
             }
             let current = workspace.view()?;
+            let current_owner_order = workspace.session.current_candidate_order(node)?;
+            let candidate_id = current_owner_order
+                .get(usize::try_from(owner_rank).map_err(|_| {
+                    format!("owner rank {owner_rank} does not fit the current platform")
+                })?)
+                .ok_or_else(|| {
+                    format!(
+                        "oracle node {node} has no current owner candidate at rank {owner_rank}"
+                    )
+                })?;
             let matching = current
                 .choices
                 .iter()
-                .filter(|choice| choice.owner_rank == owner_rank)
+                .filter(|choice| choice.candidate_id == *candidate_id)
                 .collect::<Vec<_>>();
             let [choice] = matching.as_slice() else {
                 return Err(format!(
-                    "oracle node {node} has {} choices with owner rank {owner_rank}; expected exactly one",
-                    matching.len()
+                    "oracle node {node} has {} materialized choices for current-owner candidate '{}'; expected exactly one",
+                    matching.len(),
+                    candidate_id,
                 ));
             };
             let choice_ref = choice.choice_ref.clone();
-            let view = workspace.try_choice(&choice_ref)?;
-            (node_summary(&view), true, false, false)
+            workspace.try_choice(&choice_ref)?;
+            let view = workspace.view()?;
+            (current_node_summary(workspace, &view)?, true, false, false)
         }
         OracleAnalysisServiceCommandV1::Owner { steps } => {
             let batch = apply_owner_steps(workspace, steps)?;
-            let status = node_summary(&batch.current);
+            let status = current_node_summary(workspace, &batch.current)?;
             (
                 json!({
                     "requested_steps": steps,
@@ -516,7 +553,7 @@ fn execute_command(
                     "completed": stopped.is_none(),
                     "applied": applied,
                     "stopped": stopped,
-                    "node": node_summary(&view),
+                    "node": current_node_summary(workspace, &view)?,
                 }),
                 !applied.is_empty(),
                 false,
@@ -525,19 +562,23 @@ fn execute_command(
         }
         OracleAnalysisServiceCommandV1::Focus { node } => {
             workspace.session.focus_node(node)?;
-            (node_summary(&workspace.view()?), true, false, false)
+            let view = workspace.view()?;
+            (current_node_summary(workspace, &view)?, true, false, false)
         }
         OracleAnalysisServiceCommandV1::Follow { edge } => {
             workspace.session.follow_edge(edge)?;
-            (node_summary(&workspace.view()?), true, false, false)
+            let view = workspace.view()?;
+            (current_node_summary(workspace, &view)?, true, false, false)
         }
         OracleAnalysisServiceCommandV1::Back => {
             workspace.session.back()?;
-            (node_summary(&workspace.view()?), true, false, false)
+            let view = workspace.view()?;
+            (current_node_summary(workspace, &view)?, true, false, false)
         }
         OracleAnalysisServiceCommandV1::Promote => {
             workspace.session.promote_cursor();
-            (node_summary(&workspace.view()?), true, false, false)
+            let view = workspace.view()?;
+            (current_node_summary(workspace, &view)?, true, false, false)
         }
         OracleAnalysisServiceCommandV1::Advance {
             max_quanta,
@@ -560,23 +601,26 @@ fn execute_command(
                 improve_incumbent,
             })?;
             (
-                json!({"report": report, "node": node_transition_summary(&view)}),
+                json!({"report": report, "node": current_node_transition_summary(workspace, &view)?}),
                 true,
                 false,
                 false,
             )
         }
         OracleAnalysisServiceCommandV1::AcceptCombat => {
-            let view = workspace.accept_combat_incumbent()?;
-            (node_summary(&view), true, false, false)
+            workspace.accept_combat_incumbent()?;
+            let view = workspace.view()?;
+            (current_node_summary(workspace, &view)?, true, false, false)
         }
         OracleAnalysisServiceCommandV1::EscapeCombat => {
-            let view = workspace.accept_smoke_bomb_escape()?;
-            (node_summary(&view), true, false, false)
+            workspace.accept_smoke_bomb_escape()?;
+            let view = workspace.view()?;
+            (current_node_summary(workspace, &view)?, true, false, false)
         }
         OracleAnalysisServiceCommandV1::RestartCombat => {
             workspace.session.restart_cursor_combat_search()?;
-            (node_summary(&workspace.view()?), true, false, false)
+            let view = workspace.view()?;
+            (current_node_summary(workspace, &view)?, true, false, false)
         }
         OracleAnalysisServiceCommandV1::History { node } => {
             let node = node.unwrap_or_else(|| workspace.session.cursor_node_id());
@@ -856,18 +900,31 @@ fn to_value<T: Serialize>(value: T) -> Result<Value, String> {
         .map_err(|error| format!("failed to serialize oracle service result: {error}"))
 }
 
-fn node_summary(view: &OracleAnalysisNodeViewV1) -> Value {
+fn current_node_summary(
+    workspace: &OracleAnalysisWorkspaceV1,
+    view: &OracleAnalysisNodeViewV1,
+) -> Result<Value, String> {
+    let current_owner_order = workspace.session.current_candidate_order(view.node_id)?;
+    Ok(node_summary(view, &current_owner_order))
+}
+
+fn node_summary(view: &OracleAnalysisNodeViewV1, current_owner_order: &[String]) -> Value {
     let choices = view
         .choices
         .iter()
         .map(|choice| {
             let annotation_kind = choice.annotation.as_ref().and_then(annotation_kind);
+            let current_owner_rank = current_owner_order
+                .iter()
+                .position(|candidate_id| candidate_id == &choice.candidate_id);
             json!({
                 "choice_ref": choice.choice_ref,
                 "kind": choice.kind,
                 "candidate_id": choice.candidate_id,
                 "label": choice.label,
-                "owner_rank": choice.owner_rank,
+                "owner_rank": current_owner_rank,
+                "materialized_owner_rank": choice.owner_rank,
+                "owner_rank_changed": current_owner_rank != usize::try_from(choice.owner_rank).ok(),
                 "path_discrepancy": choice.path_discrepancy,
                 "annotation_kind": annotation_kind,
             })
@@ -899,6 +956,7 @@ fn node_summary(view: &OracleAnalysisNodeViewV1) -> Value {
         "gold": view.gold,
         "event": view.event,
         "choice_count": choices.len(),
+        "owner_rank_scope": "current_policy_recomputed_by_candidate_id",
         "choices": choices,
         "child_count": children.len(),
         "children": children,
@@ -907,13 +965,16 @@ fn node_summary(view: &OracleAnalysisNodeViewV1) -> Value {
     })
 }
 
-fn node_transition_summary(view: &OracleAnalysisNodeViewV1) -> Value {
-    let mut summary = node_summary(view);
+fn current_node_transition_summary(
+    workspace: &OracleAnalysisWorkspaceV1,
+    view: &OracleAnalysisNodeViewV1,
+) -> Result<Value, String> {
+    let mut summary = current_node_summary(workspace, view)?;
     if let Some(object) = summary.as_object_mut() {
         object.remove("combat");
         object.remove("encounter");
     }
-    summary
+    Ok(summary)
 }
 
 fn annotation_kind<T: Serialize>(annotation: &T) -> Option<String> {

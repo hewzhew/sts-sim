@@ -1051,6 +1051,44 @@ impl OracleAnalysisSessionV1 {
         })
     }
 
+    /// Recompute the current policy order for one retained exact node.
+    ///
+    /// Stored lazy decisions retain the policy ranks from materialization.
+    /// Execution surfaces must join this fresh order back to those decisions
+    /// by candidate id instead of treating the historical rank as authority.
+    pub fn current_candidate_order(&self, node_id: usize) -> Result<Vec<String>, String> {
+        let branch = self.require_branch(node_id)?;
+        let surface = build_decision_surface(&branch.session);
+        let legal = surface
+            .view
+            .candidates
+            .iter()
+            .filter_map(|candidate| {
+                candidate
+                    .action
+                    .executable_action_ref()
+                    .map(|action| RunPolicyCandidateV1 {
+                        candidate_id: &candidate.id,
+                        label: &candidate.label,
+                        action,
+                    })
+            })
+            .collect::<Vec<_>>();
+        if legal.is_empty() {
+            return Ok(Vec::new());
+        }
+        let decision_prior = self.decision_prior.ok_or_else(|| {
+            format!("oracle analysis node {node_id} has no current decision prior")
+        })?;
+        let prior = decision_prior(&branch.session, &legal)?;
+        prior.validate_for(&legal)?;
+        Ok(prior
+            .entries
+            .into_iter()
+            .map(|entry| entry.candidate_id)
+            .collect())
+    }
+
     pub fn route_policy_audit(&self, node_id: usize) -> Result<ExactRoutePolicyAuditV1, String> {
         let branch = self.require_branch(node_id)?;
         let surface = build_decision_surface(&branch.session);

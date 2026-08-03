@@ -41,23 +41,32 @@ fn apply_owner_steps_from(
     let mut stopped = "step_limit".to_string();
     visited_nodes.insert(current.node_id);
     for _ in 0..steps {
-        let matching = current
-            .choices
-            .iter()
-            .filter(|choice| choice.owner_rank == 0)
-            .collect::<Vec<_>>();
-        let [choice] = matching.as_slice() else {
+        let current_owner_order = workspace.session.current_candidate_order(current.node_id)?;
+        let Some(current_candidate_id) = current_owner_order.first() else {
             stopped = if current.choices.is_empty() {
                 "no_choices".to_string()
             } else {
-                format!("rank_zero_choice_count={}", matching.len())
+                "current_owner_order_empty".to_string()
             };
+            break;
+        };
+        let matching = current
+            .choices
+            .iter()
+            .filter(|choice| choice.candidate_id == *current_candidate_id)
+            .collect::<Vec<_>>();
+        let [choice] = matching.as_slice() else {
+            stopped = format!(
+                "current_owner_candidate_join_count={} candidate_id={current_candidate_id}",
+                matching.len()
+            );
             break;
         };
         let parent_node_id = current.node_id;
         let candidate_id = choice.candidate_id.clone();
         let label = choice.label.clone();
         let choice_ref = choice.choice_ref.clone();
+        let materialized_owner_rank = choice.owner_rank;
         let next = match workspace.try_choice(&choice_ref) {
             Ok(next) => next,
             Err(error) => {
@@ -74,6 +83,8 @@ fn apply_owner_steps_from(
             "node": parent_node_id,
             "candidate_id": candidate_id,
             "label": label,
+            "owner_rank": 0,
+            "materialized_owner_rank": materialized_owner_rank,
         }));
         if !visited_nodes.insert(current.node_id) {
             stopped = format!("owner_node_cycle={}", current.node_id);
@@ -554,6 +565,7 @@ mod tests {
         apply_owner_steps, combat_incumbent_needs_acceptance, run_oracle_analysis_to_stop_v1,
         run_wall_budget_reached, AutonomousRunTiming, OracleAutonomousRunConfigV1,
     };
+    use crate::content::cards::CardId;
     use crate::content::potions::{Potion, PotionId};
     use crate::eval::run_control::{
         positive_ranked_run_policy_prior_v1, seed_oracle_run_explorer_from_session_v1,
@@ -563,7 +575,7 @@ mod tests {
     use crate::runtime::branch::oracle_run::oracle_run_combat_budgets_v1;
     use crate::runtime::branch::{OracleAnalysisWorkspaceV1, OracleRunBudget, OracleRunConfig};
     use crate::state::core::EngineState;
-    use crate::state::rewards::{RewardItem, RewardState};
+    use crate::state::rewards::{RewardCard, RewardItem, RewardState};
     use crate::state::shop::ShopState;
 
     #[test]
@@ -582,6 +594,86 @@ mod tests {
         assert_eq!(batch.current.boundary, reloaded.boundary);
         assert_eq!(batch.current.current_hp, reloaded.current_hp);
         assert_eq!(batch.applied_count, batch.applied.len());
+    }
+
+    #[test]
+    fn owner_batch_joins_current_policy_to_stale_choices_by_candidate_id() {
+        fn materialized_first_prior(
+            _session: &RunControlSession,
+            legal: &[RunPolicyCandidateV1<'_>],
+        ) -> Result<RunPolicyPriorV1, String> {
+            positive_ranked_run_policy_prior_v1(
+                legal,
+                legal
+                    .first()
+                    .map(|candidate| candidate.candidate_id.to_string()),
+            )
+        }
+
+        fn current_skip_prior(
+            _session: &RunControlSession,
+            legal: &[RunPolicyCandidateV1<'_>],
+        ) -> Result<RunPolicyPriorV1, String> {
+            positive_ranked_run_policy_prior_v1(legal, ["skip-card-reward".to_string()])
+        }
+
+        let cards = vec![
+            RewardCard::new(CardId::Cleave, 0),
+            RewardCard::new(CardId::IronWave, 0),
+        ];
+        let mut reward = RewardState::new();
+        reward.items = vec![RewardItem::Card {
+            cards: cards.clone(),
+        }];
+        reward.pending_card_choice = Some(cards);
+        reward.pending_card_reward_index = Some(0);
+        let mut session = RunControlSession::new(RunControlConfig::default());
+        session.engine_state = EngineState::RewardScreen(reward);
+
+        let config = OracleRunConfig {
+            seed: 20260803001,
+            ascension: 0,
+            budget: OracleRunBudget::default(),
+        };
+        let combat_budgets = oracle_run_combat_budgets_v1(&config);
+        let explorer = seed_oracle_run_explorer_from_session_v1(
+            session,
+            RunProgressJournalV1::default(),
+            &combat_budgets,
+            Some(materialized_first_prior),
+        )
+        .expect("stale-rank test explorer");
+        let analysis = OracleAnalysisSessionV1::from_explorer(
+            explorer,
+            None,
+            combat_budgets,
+            Some(current_skip_prior),
+            None,
+        )
+        .expect("stale-rank test analysis session");
+        let mut workspace = OracleAnalysisWorkspaceV1 {
+            seed: config.seed,
+            ascension: config.ascension,
+            budget: config.budget,
+            combat_guidance_bundle: None,
+            session: analysis,
+        };
+        let materialized = workspace.view().expect("materialized reward view");
+        assert_ne!(
+            materialized
+                .choices
+                .iter()
+                .find(|choice| choice.owner_rank == 0)
+                .map(|choice| choice.candidate_id.as_str()),
+            Some("skip-card-reward")
+        );
+
+        let batch = apply_owner_steps(&mut workspace, 1).expect("current-owner step");
+
+        assert_eq!(batch.applied_count, 1);
+        assert_eq!(batch.applied[0]["candidate_id"], "skip-card-reward");
+        assert_eq!(batch.applied[0]["owner_rank"], 0);
+        assert_ne!(batch.applied[0]["materialized_owner_rank"], 0);
     }
 
     #[test]

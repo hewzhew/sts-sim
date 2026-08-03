@@ -2,9 +2,9 @@ use super::*;
 
 use crate::content::potions::{Potion, PotionId};
 use crate::eval::run_control::{
-    seed_oracle_run_explorer_from_session_v1, OracleRunCombatQualityPolicyV1, RunControlConfig,
-    RunControlSearchCombatOptions, RunControlSession, RunPolicyCandidateV1, RunPolicyPriorFnV1,
-    RunPolicyPriorV1,
+    positive_ranked_run_policy_prior_v1, seed_oracle_run_explorer_from_session_v1,
+    OracleRunCombatQualityPolicyV1, RunControlConfig, RunControlSearchCombatOptions,
+    RunControlSession, RunPolicyCandidateV1, RunPolicyPriorFnV1, RunPolicyPriorV1,
 };
 use crate::runtime::combat::CombatCard;
 use crate::state::core::{
@@ -50,6 +50,53 @@ fn reject_child_decision_supply(
     _legal: &[RunPolicyCandidateV1<'_>],
 ) -> Result<RunPolicyPriorV1, String> {
     Err("injected child decision-supply failure".to_string())
+}
+
+fn reverse_candidate_prior(
+    _session: &RunControlSession,
+    legal: &[RunPolicyCandidateV1<'_>],
+) -> Result<RunPolicyPriorV1, String> {
+    positive_ranked_run_policy_prior_v1(
+        legal,
+        legal
+            .iter()
+            .rev()
+            .map(|candidate| candidate.candidate_id.to_string()),
+    )
+}
+
+#[test]
+fn current_candidate_order_recomputes_a_retained_surface_by_candidate_id() {
+    let analysis = parameterized_selection_analysis_with_prior(Some(reverse_candidate_prior));
+    let branch = analysis.require_branch(0).expect("retained root");
+    let surface = build_decision_surface(&branch.session);
+    let expected = surface
+        .view
+        .candidates
+        .iter()
+        .filter(|candidate| candidate.action.executable_action_ref().is_some())
+        .rev()
+        .map(|candidate| candidate.id.clone())
+        .collect::<Vec<_>>();
+    let materialized = analysis
+        .view_node(0)
+        .expect("materialized root view")
+        .choices
+        .into_iter()
+        .map(|choice| choice.candidate_id)
+        .collect::<Vec<_>>();
+
+    assert_eq!(
+        analysis
+            .current_candidate_order(0)
+            .expect("current candidate order"),
+        expected
+    );
+    assert_ne!(
+        materialized.first(),
+        expected.first(),
+        "the fixture must preserve a stale materialized rank to exercise recomputation"
+    );
 }
 
 fn combat_analysis(
