@@ -161,6 +161,17 @@ fn main() -> Result<(), String> {
             details,
             export_first_divergence_continuation.as_deref(),
         )?),
+        Command::ExportRunWitnessPrefix {
+            workspace,
+            node,
+            journal_entry,
+            output,
+        } => print_json(&run_witness_commands::export_prefix(
+            &workspace,
+            node,
+            journal_entry,
+            &output,
+        )?),
         Command::VerifyRunWitnessSuite { args } => {
             print_json(&run_witness_suite::verify_run_witness_suite(args)?)
         }

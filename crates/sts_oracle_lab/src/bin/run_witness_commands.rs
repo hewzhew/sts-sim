@@ -46,6 +46,53 @@ pub(super) fn export_continuation(
     }))
 }
 
+pub(super) fn export_prefix(
+    workspace: &Path,
+    node: usize,
+    journal_entry: usize,
+    output: &Path,
+) -> Result<Value, String> {
+    let analysis = load_oracle_analysis_workspace_v1(workspace)?;
+    let continuation = analysis.continuation(node)?;
+    let expected_final = continuation.session.clone().into_session()?;
+    let historical = exact_replay_run_progress_journal_prefix_v1(
+        continuation.seed,
+        continuation.ascension,
+        &continuation.journal,
+        &expected_final,
+        journal_entry,
+    )?;
+    let prefix = RunProgressJournalV1::from_committed_steps(
+        continuation.journal.entries()[..journal_entry].to_vec(),
+    )?;
+    let mut checkpoint = RunControlSessionCheckpointV1::from_session(&historical);
+    checkpoint.clear_combat_diagnostics_for_external_checkpoint();
+    let output_continuation = OracleRunContinuationV1 {
+        schema_name: continuation.schema_name,
+        schema_version: continuation.schema_version,
+        seed: continuation.seed,
+        ascension: continuation.ascension,
+        journal: prefix,
+        session: checkpoint,
+        explorer_frontier: None,
+    };
+    save_oracle_run_continuation_v1(output, &output_continuation)?;
+
+    Ok(json!({
+        "schema_name": "ExactOracleRunWitnessPrefixExportV1",
+        "schema_version": 1,
+        "workspace": workspace,
+        "node_id": node,
+        "journal_entry": journal_entry,
+        "output": output,
+        "journal_entries": output_continuation.journal.len(),
+        "act": historical.run_state.act_num,
+        "floor": historical.run_state.floor_num,
+        "current_hp": historical.run_state.current_hp,
+        "max_hp": historical.run_state.max_hp,
+    }))
+}
+
 pub(super) fn recover_combat_case(
     workspace: &Path,
     branch: usize,

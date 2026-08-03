@@ -48,6 +48,21 @@ branch a bounded downstream wall:
   --owner-rank 0
 ```
 
+When the decision under investigation is not a current-owner divergence,
+export its exact historical boundary directly instead of editing a
+continuation or reconstructing state from display text:
+
+```powershell
+.\ol.cmd export-run-witness-prefix `
+  --workspace .oracle-lab/cases/<run>.workspace.json `
+  --node <node> --journal-entry <entry> `
+  --output .oracle-lab/cases/<fresh-id>.continuation.json
+```
+
+The exported continuation stops immediately before the selected committed
+journal entry and clears combat-local diagnostic state. Import it into a fresh
+workspace before creating counterfactual children.
+
 ## Run One Resident Seed
 
 Create and start one exact F0 workspace, then send one typed resident run

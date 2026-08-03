@@ -137,6 +137,19 @@ pub(super) enum Command {
         #[arg(long)]
         export_first_divergence_continuation: Option<PathBuf>,
     },
+    /// Exact-replay a saved run up to one journal boundary and export that
+    /// historical prefix as an importable continuation.
+    ExportRunWitnessPrefix {
+        #[arg(long)]
+        workspace: PathBuf,
+        #[arg(long, default_value_t = 0)]
+        node: usize,
+        /// Stop immediately before this committed journal entry.
+        #[arg(long)]
+        journal_entry: usize,
+        #[arg(long)]
+        output: PathBuf,
+    },
     /// Replay a versioned set of exact F0-to-Act-3 witnesses in one process.
     ///
     /// The optional owner audit is diagnostic only: historical policy
