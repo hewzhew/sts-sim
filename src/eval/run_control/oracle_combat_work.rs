@@ -16,17 +16,19 @@ use crate::eval::combat_guidance_bundle::CombatGuidanceBundleV1;
 use crate::state::core::ClientInput;
 use serde::{Deserialize, Serialize};
 use sts_combat_planner::{
-    combat_plan_state_guide_policy_v1, CombatDecisionRoot, LocalTurnGraphRootActionFamilySnapshot,
-    LocalTurnGraphWitnessConfig, LocalTurnGraphWitnessQuantum, LocalTurnGraphWitnessSession,
-    LocalTurnGraphWitnessStatus, OracleCombatDeepStateSnapshot, OracleCombatWitness,
-    OracleCombatWitnessDiscoverySource, OracleCombatWitnessSatisfaction,
-    OracleCombatWitnessStateProgressSnapshot, PolicyDiscrepancyConfig, PolicyDiscrepancyQuantum,
-    PolicyDiscrepancySession, PolicyDiscrepancyStatus, PolicyDiscrepancyTurnMacroConfig,
-    TurnOptionAction, TurnOptionGeneratorConfig, DEFAULT_BACKED_GENERATION_QUANTUM_WORK,
+    combat_plan_state_guide_policy_v1, CombatDecisionRoot, LocalTurnGraphGuideServiceBias,
+    LocalTurnGraphRootActionFamilySnapshot, LocalTurnGraphWitnessConfig,
+    LocalTurnGraphWitnessQuantum, LocalTurnGraphWitnessSession, LocalTurnGraphWitnessStatus,
+    OracleCombatDeepStateSnapshot, OracleCombatWitness, OracleCombatWitnessDiscoverySource,
+    OracleCombatWitnessSatisfaction, OracleCombatWitnessStateProgressSnapshot,
+    PolicyDiscrepancyConfig, PolicyDiscrepancyQuantum, PolicyDiscrepancySession,
+    PolicyDiscrepancyStatus, PolicyDiscrepancyTurnMacroConfig, TurnOptionAction,
+    TurnOptionGeneratorConfig, DEFAULT_BACKED_GENERATION_QUANTUM_WORK,
 };
 
 pub(super) struct OracleRunCombatWorkV1 {
     start: crate::sim::combat::CombatPosition,
+    guide_service_bias: Option<LocalTurnGraphGuideServiceBias>,
     local_search: LocalTurnGraphWitnessSession,
     discrepancy_search: PolicyDiscrepancySession,
     portfolio_service_order: PortfolioServiceOrderV1,
@@ -157,6 +159,7 @@ pub struct OracleRunCombatWorkCheckpointV1 {
 #[derive(Clone, Debug)]
 pub(super) struct OracleRunCombatWorkProgressV1 {
     pub root_exact_state_hash: String,
+    pub guide_service_bias: Option<LocalTurnGraphGuideServiceBias>,
     /// Work charged by earlier search attempts whose frontier was not
     /// serialized and therefore is not present in the current session.
     pub historical_generation_work: u64,
@@ -294,6 +297,8 @@ impl OracleRunCombatWorkV1 {
         };
         let root = CombatDecisionRoot::new(prepared.start.clone())
             .map_err(|error| format!("invalid oracle combat root: {error:?}"))?;
+        let guide_service_bias =
+            sts_combat_knowledge::existing_combat_guide_service_bias_v1(&prepared.start);
         let policy = Arc::new(ExistingCombatKnowledgePolicy::default());
         let policy = if let Some(guidance) = guidance {
             guidance.policy(policy)?
@@ -318,6 +323,7 @@ impl OracleRunCombatWorkV1 {
                 },
                 generation_quantum_work: 4,
                 backed_generation_quantum_work: DEFAULT_BACKED_GENERATION_QUANTUM_WORK,
+                guide_service_bias,
                 initial_expansion_work: 64,
                 root_initial_expansion_work: 2_048,
                 lookahead_max_evaluations: 384,
@@ -346,6 +352,7 @@ impl OracleRunCombatWorkV1 {
         );
         let mut work = Self {
             start: prepared.start,
+            guide_service_bias,
             local_search,
             discrepancy_search,
             portfolio_service_order,
@@ -1202,6 +1209,7 @@ impl OracleRunCombatWorkV1 {
                 &self.start.engine,
                 &self.start.combat,
             ),
+            guide_service_bias: self.guide_service_bias,
             historical_generation_work: self.prior_generation_work,
             current_search_generation_work: current_generation_work,
             generation_work: self
@@ -1757,6 +1765,20 @@ mod tests {
                 room_type: crate::state::map::node::RoomType::MonsterRoom,
             }),
         ));
+        session
+    }
+
+    fn darkling_combat_session() -> RunControlSession {
+        let mut session = hallway_combat_session();
+        let combat = &mut session.active_combat.as_mut().unwrap().combat_state;
+        combat.entities.monsters = (0..3)
+            .map(|index| {
+                let mut monster =
+                    crate::test_support::test_monster(crate::content::monsters::EnemyId::Darkling);
+                monster.id = index + 1;
+                monster
+            })
+            .collect();
         session
     }
 
@@ -2783,6 +2805,28 @@ mod tests {
             &work.start,
             &profitable
         ));
+    }
+
+    #[test]
+    fn production_darkling_work_reports_its_typed_guide_service_bias() {
+        let session = darkling_combat_session();
+        let work = OracleRunCombatWorkV1::new_with_policy_proposal(
+            &session,
+            RunControlSearchCombatOptions {
+                max_nodes: Some(16),
+                ..RunControlSearchCombatOptions::default()
+            },
+            false,
+            None,
+        )
+        .expect("Darkling combat should create a portfolio");
+
+        let bias = work
+            .progress()
+            .guide_service_bias
+            .expect("Darkling production work should report its service bias");
+        assert_eq!(bias.lane, sts_combat_planner::CombatGuideLaneId::new(2));
+        assert_eq!(bias.extra_services_per_cycle, 2);
     }
 
     #[test]

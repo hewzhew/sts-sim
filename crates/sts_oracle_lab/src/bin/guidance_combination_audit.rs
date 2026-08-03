@@ -223,9 +223,10 @@ pub(super) fn run(
         false,
         None,
         None,
+        None,
     );
     let execution_profile =
-        LocalGraphExecutionProfile::from_controls(false, false, false, false, false)?;
+        LocalGraphExecutionProfile::from_controls(false, false, false, false, false, None)?;
 
     let controls = vec![
         run_control(

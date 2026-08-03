@@ -4,7 +4,8 @@ use std::path::Path;
 use std::sync::Arc;
 
 use sts_combat_planner::{
-    CombatActionPolicy, CombatPolicyChoice, CombatStateGuide, SharedCombatActionPolicy,
+    CombatActionPolicy, CombatGuideLaneId, CombatPolicyChoice, CombatStateGuide,
+    SharedCombatActionPolicy,
 };
 use sts_oracle_runtime::eval::combat_action_imitation::{
     combat_action_imitation_policy_v1, CombatActionImitationArtifactV1,
@@ -17,6 +18,11 @@ struct AnchorOnlyPolicy {
 
 struct RootTurnAnchorOnlyPolicy {
     root_player_turn: u32,
+    base: SharedCombatActionPolicy,
+}
+
+struct OmitGuideLanePolicy {
+    lane: CombatGuideLaneId,
     base: SharedCombatActionPolicy,
 }
 
@@ -116,4 +122,49 @@ pub(super) fn root_turn_anchor_only_policy(
         root_player_turn,
         base,
     })
+}
+
+impl CombatActionPolicy for OmitGuideLanePolicy {
+    fn weights(
+        &self,
+        position: &sts_oracle_runtime::sim::combat::CombatPosition,
+        choices: &[CombatPolicyChoice<'_>],
+    ) -> Vec<f64> {
+        self.base.weights(position, choices)
+    }
+
+    fn structured_selection_member_weights(
+        &self,
+        position: &sts_oracle_runtime::sim::combat::CombatPosition,
+        family: &sts_oracle_runtime::sim::combat_action_surface::CombatSelectionActionFamilyV2,
+        members: &[ClientInput],
+    ) -> Vec<f64> {
+        self.base
+            .structured_selection_member_weights(position, family, members)
+    }
+
+    fn state_guides(
+        &self,
+        position: &sts_oracle_runtime::sim::combat::CombatPosition,
+    ) -> Vec<CombatStateGuide> {
+        let mut guides = self.base.state_guides(position);
+        guides.retain(|guide| guide.lane != self.lane);
+        guides
+    }
+
+    fn turn_generation_guides(
+        &self,
+        position: &sts_oracle_runtime::sim::combat::CombatPosition,
+    ) -> Vec<CombatStateGuide> {
+        let mut guides = self.base.turn_generation_guides(position);
+        guides.retain(|guide| guide.lane != self.lane);
+        guides
+    }
+}
+
+pub(super) fn omit_guide_lane_policy(
+    lane: CombatGuideLaneId,
+    base: SharedCombatActionPolicy,
+) -> SharedCombatActionPolicy {
+    Arc::new(OmitGuideLanePolicy { lane, base })
 }

@@ -244,6 +244,15 @@ laboratory hosts use the same planner constant. Full local-graph reports retain
 the effective value in their search specification so budget-cliff comparisons
 remain reconstructible.
 
+An encounter-owned typed service bias may give one existing guide lane a
+bounded number of additional turns in that rotation. It does not duplicate
+guide entries: each selected boundary remains one-shot, receives the same
+quantum, and then leaves completeness to the anchor. The default planner has no
+bias. Production currently concentrates the survival view for an all-Darkling
+group because reincarnation loops make raw turn horizon unbounded; laboratory
+controls may omit or reweight a typed lane for fixed-root attribution. The
+effective production bias is retained in each stage trace.
+
 During `ImproveVerifiedWin`, a quality-reaching spending witness remains an
 exact candidate but cannot by itself end the refinement quantum. Early
 satisfaction requires a clean potion-free witness at the same quality target.
@@ -292,10 +301,11 @@ discard remain ineligible when restored under a semantic stage.
 
 Production combat progress carries the exact root hash and one compact typed
 trace row per served stage. A row freezes that stage's slot contract, charged
-local/discrepancy work, proposal counts, the local graph's best exact candidate,
-its satisfaction and typed portfolio disposition, the selected incumbent,
-remaining allowance, and exit reason. Keeping both candidates distinguishes
-"search did not find it" from "the run-level quality gate rejected it."
+local/discrepancy work, effective guide-service bias, proposal counts, the local
+graph's best exact candidate, its satisfaction and typed portfolio disposition,
+the selected incumbent, remaining allowance, and exit reason. Keeping both
+candidates distinguishes "search did not find it" from "the run-level quality
+gate rejected it."
 Completed rows survive workspace checkpoint restore. This trace is diagnostic
 evidence for locating an owner scheduling divergence; it does not rank potions
 or authorize a policy change.

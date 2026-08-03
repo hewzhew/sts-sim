@@ -123,10 +123,19 @@ pub enum OracleAnalysisCombatStageExitV1 {
     SetupOrMechanicsError,
 }
 
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct OracleAnalysisCombatGuideServiceBiasV1 {
+    pub lane: u32,
+    pub extra_services_per_cycle: usize,
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct OracleAnalysisCombatStageTraceV1 {
     pub stage: u8,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub guide_service_bias: Option<OracleAnalysisCombatGuideServiceBiasV1>,
     pub max_potions_used: Option<u32>,
     pub allowed_potion_slots: Option<u64>,
     pub potion_spend_requires_satisfaction: bool,
@@ -1928,6 +1937,12 @@ fn combat_stage_trace_view_from_progress(
 ) -> OracleAnalysisCombatStageTraceV1 {
     OracleAnalysisCombatStageTraceV1 {
         stage: job.stage,
+        guide_service_bias: progress.guide_service_bias.map(|bias| {
+            OracleAnalysisCombatGuideServiceBiasV1 {
+                lane: bias.lane.value(),
+                extra_services_per_cycle: bias.extra_services_per_cycle,
+            }
+        }),
         max_potions_used: job.work.max_potions_used(),
         allowed_potion_slots: job.work.allowed_potion_slots(),
         potion_spend_requires_satisfaction: progress.potion_spend_requires_satisfaction,

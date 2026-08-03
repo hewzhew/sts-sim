@@ -218,6 +218,14 @@ slot contract; an already-consumed descendant can remain potion-free:
 .\ol.cmd combat-case-local-graph --case <root.case.json> --satisfy-min-final-hp 20 --max-potions-used 1 --potion-slot 2
 ```
 
+For one-factor attribution inside the local graph, `--omit-guide-lane <N>`
+removes one positive typed guide lane without changing action legality or
+terminal truth. `--boost-guide-lane <N> --boost-guide-extra-services <K>` gives
+that existing lane `K` additional boundary-selection turns per rotation while
+keeping every entry one-shot and every service quantum unchanged. These are
+lab controls: they are recorded in `execution_profile` / `search_spec`, cannot
+be combined with `--anchor-only`, and the boosted lane cannot also be omitted.
+
 Keep full JSON and build output below `.oracle-lab`; report aggregate lane
 results and a short failure tail. A missing budget-limited witness remains
 unknown. See [Combat Evidence And Offline

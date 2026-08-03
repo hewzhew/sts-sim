@@ -908,6 +908,7 @@ pub(super) fn run(
             include_discard_actions,
             Some(lane.allowed_slot_mask),
             None,
+            None,
         );
         let satisfaction = max_hp_loss
             .map(OracleCombatWitnessSatisfaction::HpLossAtMost)

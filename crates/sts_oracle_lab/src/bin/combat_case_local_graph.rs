@@ -25,7 +25,7 @@ use super::combat_graph_report::{
     local_graph_full_report, local_graph_trace_report, LocalGraphCounterfactual,
     LocalGraphFullReportOptions, LocalGraphReportData, LocalGraphRunIdentity,
 };
-use super::combat_graph_search_spec::LocalGraphSearchSpec;
+use super::combat_graph_search_spec::{LocalGraphGuideServiceBiasSpec, LocalGraphSearchSpec};
 use super::combat_planning_view::combat_plan_transition_portfolio_v1;
 use super::combat_policy_controls::load_action_imitation_policy;
 use super::exact_turn_corridor::load as load_exact_turn_corridor;
@@ -83,6 +83,11 @@ pub(super) struct CombatCaseLocalGraphArgs {
     /// legality, exact-state identity and terminal truth remain unchanged.
     #[arg(long, conflicts_with = "anchor_only")]
     typed_plan_guide: bool,
+    /// Lab-only ablation of one positive typed boundary-guide lane id. This
+    /// changes no action weights, legal actions, exact identity, or terminal
+    /// authority.
+    #[arg(long, conflicts_with = "anchor_only")]
+    omit_guide_lane: Option<u32>,
     /// Opt-in lab control: order concrete members of structured selections
     /// using encounter-owned plan timing. This does not add a state guide.
     #[arg(long)]
@@ -173,6 +178,14 @@ pub(super) struct CombatCaseLocalGraphArgs {
     uniform_exploration_ppm: u32,
     #[arg(long, default_value_t = 4)]
     generation_quantum_work: usize,
+    /// Lab-only scheduler A/B: give this positive typed boundary-guide lane
+    /// additional one-shot services per round-robin cycle.
+    #[arg(long, conflicts_with = "anchor_only")]
+    boost_guide_lane: Option<u32>,
+    /// Additional service turns granted to `--boost-guide-lane` in each
+    /// cycle. Zero preserves the ordinary planner scheduler.
+    #[arg(long, default_value_t = 0, requires = "boost_guide_lane")]
+    boost_guide_extra_services: usize,
     /// Lab A/B control for the deterministic first service granted to a newly
     /// selected exact turn-boundary node. Omit to retain the planner default.
     #[arg(long)]
@@ -226,6 +239,7 @@ pub(super) fn run(args: CombatCaseLocalGraphArgs) -> Result<(), String> {
         watch_corridor_actions,
         plan_transition_annotations,
         typed_plan_guide,
+        omit_guide_lane,
         typed_plan_selection_timing,
         plan_compatible_policy_line,
         plan_compatible_suffix_work,
@@ -246,6 +260,8 @@ pub(super) fn run(args: CombatCaseLocalGraphArgs) -> Result<(), String> {
         max_engine_steps_per_transition,
         uniform_exploration_ppm,
         generation_quantum_work,
+        boost_guide_lane,
+        boost_guide_extra_services,
         initial_expansion_work,
         max_turn_depth,
         full_health,
@@ -272,6 +288,15 @@ pub(super) fn run(args: CombatCaseLocalGraphArgs) -> Result<(), String> {
     if initial_expansion_work == Some(0) {
         return Err("--initial-expansion-work must be positive".to_string());
     }
+    if boost_guide_lane == Some(0) {
+        return Err("--boost-guide-lane must be positive".to_string());
+    }
+    if boost_guide_lane.is_some() && boost_guide_extra_services == 0 {
+        return Err("--boost-guide-extra-services must be positive".to_string());
+    }
+    if boost_guide_lane.is_some() && boost_guide_lane == omit_guide_lane {
+        return Err("--boost-guide-lane cannot name the omitted guide lane".to_string());
+    }
     let allowed_potion_slots = potion_slot.map(single_potion_slot_mask).transpose()?;
     let execution_profile = LocalGraphExecutionProfile::from_controls(
         anchor_only,
@@ -279,6 +304,7 @@ pub(super) fn run(args: CombatCaseLocalGraphArgs) -> Result<(), String> {
         rollout_lookahead,
         typed_plan_guide,
         typed_plan_selection_timing,
+        omit_guide_lane,
     )?;
     let search_spec = LocalGraphSearchSpec::from_controls(
         max_nodes,
@@ -292,6 +318,8 @@ pub(super) fn run(args: CombatCaseLocalGraphArgs) -> Result<(), String> {
         include_discard_actions,
         allowed_potion_slots,
         initial_expansion_work,
+        boost_guide_lane
+            .map(|lane| LocalGraphGuideServiceBiasSpec::new(lane, boost_guide_extra_services)),
     );
     let search_root_position = loaded.position.clone();
     let watched_corridor = if watch_corridor_actions.is_empty() {

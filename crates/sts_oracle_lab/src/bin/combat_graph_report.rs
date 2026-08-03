@@ -299,7 +299,7 @@ mod tests {
                     elapsed: Duration::from_millis(7),
                     satisfaction: OracleCombatWitnessSatisfaction::FirstWitness,
                     execution_profile: LocalGraphExecutionProfile::from_controls(
-                        false, false, false, false, false,
+                        false, false, false, false, false, None,
                     )
                     .expect("fixture execution profile"),
                     search_spec: LocalGraphSearchSpec::from_controls(
@@ -312,6 +312,7 @@ mod tests {
                         9,
                         Some(2),
                         false,
+                        None,
                         None,
                         None,
                     ),

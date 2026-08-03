@@ -6,8 +6,10 @@ use std::time::Instant;
 use sts_combat_legacy::ai::combat_search_v2::oracle_action_policy;
 use sts_combat_planner::{
     CombatActionPolicy, CombatGuideLaneId, CombatLookaheadEvaluation, CombatLookaheadEvaluator,
-    CombatPolicyChoice, CombatStateGuide, CombatStateGuideRank, SharedCombatActionPolicy,
+    CombatPolicyChoice, CombatStateGuide, CombatStateGuideRank, LocalTurnGraphGuideServiceBias,
+    SharedCombatActionPolicy,
 };
+use sts_core::content::monsters::EnemyId;
 use sts_core::sim::combat::CombatPosition;
 use sts_core::sim::combat_action_surface::CombatSelectionActionFamilyV2;
 use sts_core::state::core::ClientInput;
@@ -41,6 +43,28 @@ struct ExistingCombatRolloutLookaheadV1;
 
 pub fn existing_combat_knowledge_policy_v1() -> sts_combat_planner::SharedCombatActionPolicy {
     Arc::new(ExistingCombatKnowledgePolicy)
+}
+
+/// Encounter-owned service concentration for a sparse semantic corridor.
+///
+/// Darklings can turn raw long-horizon exploration into an arbitrarily deep
+/// reincarnation loop. The existing survival guide preserves the bounded
+/// healthy-state corridor, but one equal service per guide reaches that
+/// corridor too late under the ordinary allowance. Give that existing typed
+/// view two additional one-shot services without changing its rank, action
+/// weights, legal surface, or terminal authority.
+pub fn existing_combat_guide_service_bias_v1(
+    position: &CombatPosition,
+) -> Option<LocalTurnGraphGuideServiceBias> {
+    let monsters = &position.combat.entities.monsters;
+    (monsters.len() >= 2
+        && monsters
+            .iter()
+            .all(|monster| EnemyId::from_id(monster.monster_type) == Some(EnemyId::Darkling)))
+    .then_some(LocalTurnGraphGuideServiceBias {
+        lane: GUIDE_SURVIVAL,
+        extra_services_per_cycle: 2,
+    })
 }
 
 pub fn authorized_potion_trial_policy_v1(
@@ -262,5 +286,32 @@ mod tests {
         let mut later = root;
         later.combat.entities.player.block = 1;
         assert_eq!(policy.weights(&later, &choices), vec![1.0e-6, 1.0, 0.5]);
+    }
+
+    #[test]
+    fn darkling_group_concentrates_existing_survival_service_only() {
+        let mut combat = sts_core::test_support::blank_test_combat();
+        combat.entities.monsters = (0..3)
+            .map(|index| {
+                let mut monster = sts_core::test_support::test_monster(EnemyId::Darkling);
+                monster.id = index + 1;
+                monster
+            })
+            .collect();
+        let position = CombatPosition::new(EngineState::CombatPlayerTurn, combat);
+
+        assert_eq!(
+            existing_combat_guide_service_bias_v1(&position),
+            Some(LocalTurnGraphGuideServiceBias {
+                lane: GUIDE_SURVIVAL,
+                extra_services_per_cycle: 2,
+            })
+        );
+
+        let ordinary = CombatPosition::new(
+            EngineState::CombatPlayerTurn,
+            sts_core::test_support::blank_test_combat(),
+        );
+        assert_eq!(existing_combat_guide_service_bias_v1(&ordinary), None);
     }
 }

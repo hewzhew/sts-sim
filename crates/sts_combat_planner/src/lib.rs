@@ -28,7 +28,7 @@ pub use generator::{
     LiveActionTransitionSnapshot, TurnOptionGeneratorSession, DETAIL_TIMING_SAMPLE_INTERVAL,
 };
 pub use local_turn_graph_search::{
-    LocalTurnGraphEdgeSnapshot, LocalTurnGraphGuideServiceSnapshot,
+    LocalTurnGraphEdgeSnapshot, LocalTurnGraphGuideServiceBias, LocalTurnGraphGuideServiceSnapshot,
     LocalTurnGraphPlanAnnotationEnableError, LocalTurnGraphPlanTransitionEdgeSnapshot,
     LocalTurnGraphPolicyLineReport, LocalTurnGraphRetainedGuidePromiseSnapshot,
     LocalTurnGraphRootActionFamilySnapshot, LocalTurnGraphStateSnapshot,

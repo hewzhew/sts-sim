@@ -93,7 +93,8 @@ impl LocalTurnGraphWitnessSession {
             synced_gaps: 0,
             exhausted: false,
         };
-        let mut shared_agenda = SharedBoundaryAgenda::new(lookahead_evaluator.is_some());
+        let mut shared_agenda =
+            SharedBoundaryAgenda::new(lookahead_evaluator.is_some(), config.guide_service_bias);
         shared_agenda.publish_node(0, &root_node, root_lookahead_pending_lane);
         Self {
             original_root,

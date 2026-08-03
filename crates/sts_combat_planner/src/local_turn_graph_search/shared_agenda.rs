@@ -77,6 +77,7 @@ pub(super) struct SharedBoundaryAgenda {
     guides: BTreeMap<CombatGuideLaneId, BTreeSet<GuideEntry>>,
     next_view: usize,
     lookahead_enabled: bool,
+    guide_service_bias: Option<LocalTurnGraphGuideServiceBias>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -93,12 +94,16 @@ pub(super) struct SharedAnchorPosition {
 }
 
 impl SharedBoundaryAgenda {
-    pub(super) fn new(lookahead_enabled: bool) -> Self {
+    pub(super) fn new(
+        lookahead_enabled: bool,
+        guide_service_bias: Option<LocalTurnGraphGuideServiceBias>,
+    ) -> Self {
         Self {
             anchor: BinaryHeap::new(),
             guides: BTreeMap::new(),
             next_view: 0,
             lookahead_enabled,
+            guide_service_bias,
         }
     }
 
@@ -198,6 +203,15 @@ impl SharedBoundaryAgenda {
             views.push(LocalServiceView::LookaheadEvaluation);
         }
         views.extend(self.guides.keys().copied().map(LocalServiceView::Guide));
+        if let Some(bias) = self
+            .guide_service_bias
+            .filter(|bias| self.guides.contains_key(&bias.lane))
+        {
+            views.extend(std::iter::repeat_n(
+                LocalServiceView::Guide(bias.lane),
+                bias.extra_services_per_cycle,
+            ));
+        }
         let view = views[self.next_view % views.len()];
         self.next_view = self.next_view.saturating_add(1);
         view
@@ -208,6 +222,11 @@ impl SharedBoundaryAgenda {
             .len()
             .saturating_add(1)
             .saturating_add(usize::from(self.lookahead_enabled))
+            .saturating_add(
+                self.guide_service_bias
+                    .filter(|bias| self.guides.contains_key(&bias.lane))
+                    .map_or(0, |bias| bias.extra_services_per_cycle),
+            )
     }
 
     pub(super) fn select_anchor(&mut self, nodes: &[GraphNode]) -> Option<usize> {
@@ -383,5 +402,25 @@ mod tests {
             },
         ]);
         assert_eq!(entries.pop().map(|entry| entry.node_id), Some(2));
+    }
+
+    #[test]
+    fn boosted_guide_receives_only_the_configured_extra_service_turns() {
+        let lane = CombatGuideLaneId::new(2);
+        let mut agenda = SharedBoundaryAgenda::new(
+            false,
+            Some(LocalTurnGraphGuideServiceBias {
+                lane,
+                extra_services_per_cycle: 2,
+            }),
+        );
+        agenda.guides.insert(lane, BTreeSet::new());
+
+        assert_eq!(agenda.view_count(), 4);
+        assert_eq!(agenda.next_service_view(), LocalServiceView::Anchor);
+        assert_eq!(agenda.next_service_view(), LocalServiceView::Guide(lane));
+        assert_eq!(agenda.next_service_view(), LocalServiceView::Guide(lane));
+        assert_eq!(agenda.next_service_view(), LocalServiceView::Guide(lane));
+        assert_eq!(agenda.next_service_view(), LocalServiceView::Anchor);
     }
 }

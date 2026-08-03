@@ -1,5 +1,6 @@
 use crate::types::TurnOptionGeneratorConfig;
 use crate::witness::OracleCombatWitnessSatisfaction;
+use crate::CombatGuideLaneId;
 
 /// Coherent work granted by one guide-selected boundary service.
 ///
@@ -8,6 +9,12 @@ use crate::witness::OracleCombatWitnessSatisfaction;
 /// boundary productive without letting a few one-shot guide entries consume
 /// the entire bounded allowance before later high-ranked states are visited.
 pub const DEFAULT_BACKED_GENERATION_QUANTUM_WORK: usize = 128;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct LocalTurnGraphGuideServiceBias {
+    pub lane: CombatGuideLaneId,
+    pub extra_services_per_cycle: usize,
+}
 
 /// Resumable search over a shared graph of exact player-turn boundaries.
 ///
@@ -24,6 +31,12 @@ pub struct LocalTurnGraphWitnessConfig {
     /// exact boundary. A guide services a shared state once; repeated and
     /// exhaustive coverage remains owned by the anchor queue.
     pub backed_generation_quantum_work: usize,
+    /// Optional typed scheduler control that gives one existing boundary guide
+    /// additional service turns per round-robin cycle. The lane still owns
+    /// one-shot entries and every selected boundary receives the ordinary
+    /// guide quantum. The default is disabled; an explicit typed caller may
+    /// opt one encounter into a measured service concentration.
+    pub guide_service_bias: Option<LocalTurnGraphGuideServiceBias>,
     /// Deterministic work reserved for the first expansion of a selected exact
     /// turn-boundary node. Later resumptions return to the small quantum.
     pub initial_expansion_work: usize,
@@ -52,6 +65,7 @@ impl Default for LocalTurnGraphWitnessConfig {
             generator: TurnOptionGeneratorConfig::default(),
             generation_quantum_work: 4,
             backed_generation_quantum_work: DEFAULT_BACKED_GENERATION_QUANTUM_WORK,
+            guide_service_bias: None,
             initial_expansion_work: 64,
             root_initial_expansion_work: 2_048,
             lookahead_max_evaluations: 384,
