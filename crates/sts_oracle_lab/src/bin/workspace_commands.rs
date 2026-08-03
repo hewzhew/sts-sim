@@ -4,8 +4,8 @@ use serde::Serialize;
 use serde_json::{json, Value};
 use sts_oracle_runtime::eval::run_control::OracleAnalysisAdvanceRequestV1;
 use sts_oracle_runtime::runtime::branch::{
-    load_oracle_analysis_workspace_v1, oracle_live_combat_diagnostic_v1,
-    save_oracle_analysis_workspace_v1, OracleAnalysisWorkspaceV1,
+    current_oracle_candidate_order_v1, load_oracle_analysis_workspace_v1,
+    oracle_live_combat_diagnostic_v1, save_oracle_analysis_workspace_v1, OracleAnalysisWorkspaceV1,
 };
 use sts_oracle_runtime::state::core::ClientInput;
 
@@ -19,7 +19,12 @@ pub(super) fn view(workspace: &Path, node: Option<usize>) -> Result<Value, Strin
 pub(super) fn status(workspace: &Path, node: Option<usize>, limit: usize) -> Result<Value, String> {
     let analysis = load_oracle_analysis_workspace_v1(workspace)?;
     let view = workspace_view::selected(&analysis, node)?;
-    Ok(workspace_view::compact_node(&view, limit))
+    let current_owner_order = current_owner_order_at(&analysis, view.node_id)?;
+    Ok(workspace_view::compact_node(
+        &view,
+        limit,
+        &current_owner_order,
+    ))
 }
 
 pub(super) fn choose(
@@ -37,21 +42,32 @@ pub(super) fn choose(
         }
     }
     let current = analysis.view()?;
+    let current_owner_order = current_owner_order_at(&analysis, current.node_id)?;
+    let owner_rank = usize::try_from(owner_rank)
+        .map_err(|_| "oracle choose owner rank exceeds platform usize".to_string())?;
+    let candidate_id = current_owner_order.get(owner_rank).ok_or_else(|| {
+        format!(
+            "oracle node {} current owner has no candidate at rank {owner_rank}",
+            current.node_id
+        )
+    })?;
     let matches = current
         .choices
         .iter()
-        .filter(|choice| choice.owner_rank == owner_rank)
+        .filter(|choice| &choice.candidate_id == candidate_id)
         .collect::<Vec<_>>();
     let [choice] = matches.as_slice() else {
         return Err(format!(
-            "oracle node {} has {} choices with owner rank {owner_rank}; expected exactly one",
+            "oracle node {} has {} materialized choices for current-owner candidate '{}'; expected exactly one",
             current.node_id,
-            matches.len()
+            matches.len(),
+            candidate_id,
         ));
     };
     let view = analysis.try_choice(&choice.choice_ref.clone())?;
     save_oracle_analysis_workspace_v1(workspace, &analysis)?;
-    Ok(workspace_view::compact_node(&view, 8))
+    let current_owner_order = current_owner_order_at(&analysis, view.node_id)?;
+    Ok(workspace_view::compact_node(&view, 8, &current_owner_order))
 }
 
 pub(super) fn owner(workspace: &Path, steps: u8) -> Result<Value, String> {
@@ -60,18 +76,23 @@ pub(super) fn owner(workspace: &Path, steps: u8) -> Result<Value, String> {
     let mut stopped = "step_limit";
     for _ in 0..steps {
         let current = analysis.view()?;
+        let current_owner_order = current_owner_order_at(&analysis, current.node_id)?;
+        let Some(candidate_id) = current_owner_order.first() else {
+            stopped = "no_owner_choice";
+            break;
+        };
         let choices = current
             .choices
             .iter()
-            .filter(|choice| choice.owner_rank == 0)
+            .filter(|choice| &choice.candidate_id == candidate_id)
             .collect::<Vec<_>>();
         let [choice] = choices.as_slice() else {
-            stopped = if choices.is_empty() {
-                "no_owner_choice"
-            } else {
-                "ambiguous_owner_choice"
-            };
-            break;
+            return Err(format!(
+                "oracle node {} has {} materialized choices for current-owner candidate '{}'; expected exactly one",
+                current.node_id,
+                choices.len(),
+                candidate_id,
+            ));
         };
         let candidate_id = choice.candidate_id.clone();
         let label = choice.label.clone();
@@ -80,19 +101,30 @@ pub(super) fn owner(workspace: &Path, steps: u8) -> Result<Value, String> {
             "node": current.node_id,
             "candidate_id": candidate_id,
             "label": label,
+            "materialized_owner_rank": choice.owner_rank,
         }));
         analysis.try_choice(&choice_ref)?;
     }
     if !applied.is_empty() {
         save_oracle_analysis_workspace_v1(workspace, &analysis)?;
     }
+    let final_view = analysis.view()?;
+    let current_owner_order = current_owner_order_at(&analysis, final_view.node_id)?;
     Ok(json!({
         "requested_steps": steps,
         "applied_count": applied.len(),
         "applied": applied,
         "stopped": stopped,
-        "status": workspace_view::compact_node(&analysis.view()?, 8),
+        "status": workspace_view::compact_node(&final_view, 8, &current_owner_order),
     }))
+}
+
+fn current_owner_order_at(
+    analysis: &OracleAnalysisWorkspaceV1,
+    node: usize,
+) -> Result<Vec<String>, String> {
+    let session = analysis.continuation(node)?.session.into_session()?;
+    Ok(current_oracle_candidate_order_v1(&session))
 }
 
 pub(super) fn timeline(

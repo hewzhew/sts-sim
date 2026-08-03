@@ -86,9 +86,22 @@ Non-combat decision records must stay hidden-free:
 - declared distributions and beliefs are allowed,
 - privileged simulator futures are forbidden.
 
+Persisted analysis nodes may retain the owner rank observed when their choice
+surface was materialized, but an active `owner` or rank-based steering command
+must recompute the current typed owner order and join it to that exact surface
+by candidate id. Display labels and stale numeric ranks are not execution
+authority.
+
 Automation should stop when the current site lacks a bounded policy answer. Do
 not encode stale global rules such as "shops always stop" or "events always
 stop"; each high-agency site needs its own owner/compiler boundary.
+
+The current route owner has one deliberately narrow elite-growth prior: on
+ascension 0 during Act 1, a direct elite arrival may enter the typed
+`EliteGrowth` band only while current HP is at least three quarters of maximum
+HP. Recovery and funded-liquidity bands still take precedence. This is a
+public-state behavior prior, not a claim that an elite is safe, a hidden-future
+lookup, or a substitute for measuring the resulting continuation.
 
 ## Runner And Combat
 

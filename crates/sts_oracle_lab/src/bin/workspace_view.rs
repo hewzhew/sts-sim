@@ -20,18 +20,27 @@ pub(super) fn selected(
     }
 }
 
-pub(super) fn compact_node(view: &OracleAnalysisNodeViewV1, limit: usize) -> Value {
+pub(super) fn compact_node(
+    view: &OracleAnalysisNodeViewV1,
+    limit: usize,
+    current_owner_order: &[String],
+) -> Value {
     let choices = view
         .choices
         .iter()
         .take(limit)
         .map(|choice| {
+            let current_owner_rank = current_owner_order
+                .iter()
+                .position(|candidate_id| candidate_id == &choice.candidate_id);
             json!({
                 "choice_ref": choice.choice_ref,
                 "kind": choice.kind,
                 "candidate_id": choice.candidate_id,
                 "label": choice.label,
-                "owner_rank": choice.owner_rank,
+                "owner_rank": current_owner_rank,
+                "materialized_owner_rank": choice.owner_rank,
+                "owner_rank_changed": current_owner_rank != usize::try_from(choice.owner_rank).ok(),
                 "path_discrepancy": choice.path_discrepancy,
             })
         })
@@ -63,6 +72,7 @@ pub(super) fn compact_node(view: &OracleAnalysisNodeViewV1, limit: usize) -> Val
         "choice_count": view.choices.len(),
         "choices_shown": choices.len(),
         "choices_truncated": view.choices.len() > choices.len(),
+        "owner_rank_scope": "current_policy_recomputed_by_candidate_id",
         "choices": choices,
         "child_count": view.children.len(),
         "children_shown": children.len(),

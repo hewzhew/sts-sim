@@ -119,6 +119,14 @@ the corresponding exact root identity in every returned combat entry.
 An unresolved combat at the selected final checkpoint is represented as the
 typed `final_active_combat` origin with no fabricated journal-entry number.
 
+Workspace nodes retain the owner ranks that were materialized when the node
+was created. `status`, `owner`, and `choose --owner-rank` therefore recompute
+the current owner ordering from the node's exact session and join it back to
+the persisted choice surface by candidate id. Compact status keeps the old
+value as `materialized_owner_rank` and emits the current value as
+`owner_rank`; raw `view` remains a materialized tree view. A missing or
+ambiguous candidate-id join fails instead of falling back to a label.
+
 Index local combat evidence and replay exact relationships:
 
 ```powershell
