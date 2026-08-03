@@ -16,9 +16,9 @@ use crate::ai::card_component_signal_v1::{
     CardComponentSignalKindV1, CardComponentSignalReportV1,
 };
 use crate::ai::card_semantics_v1::{
-    card_access_evidence_v1, card_reward_semantic_profile_v1, CardAccessEvidenceV1,
-    CardAccessLeverageV1, CardRewardPickDependencyV1, CardRewardSemanticProfileV1,
-    CardRewardSemanticRoleV1,
+    card_access_evidence_v1, card_reward_facts_v1, card_reward_semantic_profile_v1,
+    CardAccessEvidenceV1, CardAccessLeverageV1, CardRewardPickDependencyV1,
+    CardRewardSemanticProfileV1, CardRewardSemanticRoleV1,
 };
 use crate::ai::deck_shape_v1::{
     deck_shape_candidate_delta_v1, deck_shape_profile_v1, DeckShapeProfileV1, DeckShapeRiskV1,
@@ -92,6 +92,9 @@ pub struct CardRewardPolicyActionEvidenceV1 {
     pub introduces_unsupported_mechanics: bool,
     pub introduces_undigested_status_burden: bool,
     pub duplicate_low_marginal: bool,
+    /// A costly tactical card only adds one-turn debuff coverage already
+    /// present in the owned deck.
+    pub expensive_short_debuff_overlap: bool,
     pub access_conflict_or_redundancy: bool,
     pub mummified_hand_power_tempo: Option<MummifiedHandPowerTempoV1>,
     /// The known act boss punishes playing powers and this candidate is a
@@ -141,6 +144,7 @@ pub struct CardRewardPolicyAuditCandidateV1 {
     pub introduces_unsupported_mechanics: bool,
     pub introduces_undigested_status_burden: bool,
     pub duplicate_low_marginal: bool,
+    pub expensive_short_debuff_overlap: bool,
     pub access_conflict_or_redundancy: bool,
     pub mummified_hand_power_tempo: Option<MummifiedHandPowerTempoV1>,
     pub boss_power_tax_conflict: bool,
@@ -229,6 +233,7 @@ impl ExactCardRewardPolicyDecisionV1 {
                     introduces_undigested_status_burden: evidence
                         .introduces_undigested_status_burden,
                     duplicate_low_marginal: evidence.duplicate_low_marginal,
+                    expensive_short_debuff_overlap: evidence.expensive_short_debuff_overlap,
                     access_conflict_or_redundancy: evidence.access_conflict_or_redundancy,
                     mummified_hand_power_tempo: evidence.mummified_hand_power_tempo,
                     boss_power_tax_conflict: evidence.boss_power_tax_conflict,
@@ -424,6 +429,7 @@ fn card_reward_action_evidence_v1(
                 })
     );
     let duplicate_low_marginal = duplicate_low_marginal_v1(&acquisition, &delta);
+    let expensive_short_debuff_overlap = expensive_short_debuff_overlap_v1(parent, &acquisition);
     let mummified_hand_power_tempo = match &acquisition {
         CardRewardPolicyAcquisitionV1::Card { card, upgrades, .. } => {
             mummified_hand_power_tempo_v1(&parent.run_state, *card, *upgrades)
@@ -493,6 +499,7 @@ fn card_reward_action_evidence_v1(
         introduces_unsupported_mechanics,
         introduces_undigested_status_burden,
         duplicate_low_marginal,
+        expensive_short_debuff_overlap,
         access_conflict_or_redundancy,
         boss_power_tax_conflict,
         random_target_frontload_reliable,
@@ -511,6 +518,7 @@ fn card_reward_action_evidence_v1(
         introduces_unsupported_mechanics,
         introduces_undigested_status_burden,
         duplicate_low_marginal,
+        expensive_short_debuff_overlap,
         access_conflict_or_redundancy,
         mummified_hand_power_tempo,
         boss_power_tax_conflict,
@@ -569,6 +577,40 @@ fn duplicate_low_marginal_v1(
         && tactical_coverage_only
         && no_new_strategic_shape
         && only_reinforces_supported_capabilities
+}
+
+fn expensive_short_debuff_overlap_v1(
+    parent: &RunControlSession,
+    acquisition: &CardRewardPolicyAcquisitionV1,
+) -> bool {
+    let CardRewardPolicyAcquisitionV1::Card {
+        card,
+        upgrades,
+        semantics,
+        ..
+    } = acquisition
+    else {
+        return false;
+    };
+    let candidate = card_reward_facts_v1(&RewardCard::new(*card, *upgrades));
+    let tactical_debuff_only = !semantics.roles.is_empty()
+        && semantics.roles.iter().all(|role| {
+            matches!(
+                role,
+                CardRewardSemanticRoleV1::FrontloadDamage
+                    | CardRewardSemanticRoleV1::Vulnerable
+                    | CardRewardSemanticRoleV1::Weak
+            )
+        });
+    if candidate.cost < 2 || !tactical_debuff_only {
+        return false;
+    }
+
+    parent.run_state.master_deck.iter().any(|owned| {
+        let owned = card_reward_facts_v1(&RewardCard::new(owned.id, owned.upgrades));
+        (candidate.vulnerable == 1 && owned.vulnerable > 0)
+            || (candidate.weak == 1 && owned.weak > 0)
+    })
 }
 
 fn boss_damage_plan_improvement_v1(
@@ -669,6 +711,7 @@ fn card_reward_band_v1(
     unsupported: bool,
     status_burden: bool,
     duplicate_low_marginal: bool,
+    expensive_short_debuff_overlap: bool,
     access_conflict_or_redundancy: bool,
     boss_power_tax_conflict: bool,
     random_target_frontload_reliable: bool,
@@ -716,6 +759,8 @@ fn card_reward_band_v1(
             {
                 CardRewardPolicyBandV1::Liability
             } else if boss_power_tax_conflict {
+                CardRewardPolicyBandV1::SpeculativeAddition
+            } else if expensive_short_debuff_overlap {
                 CardRewardPolicyBandV1::SpeculativeAddition
             } else if !delta.closed_threat_gaps.is_empty() {
                 CardRewardPolicyBandV1::CloseThreatGap
@@ -970,6 +1015,38 @@ mod tests {
             .collect()
     }
 
+    fn a1f10_mummified_hand_session(cards: &[(CardId, u8)]) -> RunControlSession {
+        let mut session = reward_session(cards);
+        session.run_state.act_num = 1;
+        session.run_state.floor_num = 10;
+        session.run_state.boss_key = Some(EncounterId::SlimeBoss);
+        session.run_state.current_hp = 45;
+        session.run_state.max_hp = 85;
+        session
+            .run_state
+            .relics
+            .push(RelicState::new(RelicId::MummifiedHand));
+        session.run_state.master_deck = owned_deck(&[
+            (CardId::Strike, 0),
+            (CardId::Strike, 0),
+            (CardId::Strike, 0),
+            (CardId::Strike, 0),
+            (CardId::Strike, 0),
+            (CardId::Defend, 0),
+            (CardId::Defend, 0),
+            (CardId::Defend, 0),
+            (CardId::Defend, 0),
+            (CardId::Bash, 0),
+            (CardId::PowerThrough, 0),
+            (CardId::SecondWind, 0),
+            (CardId::ThunderClap, 0),
+            (CardId::Anger, 0),
+            (CardId::ShrugItOff, 0),
+            (CardId::DarkEmbrace, 0),
+        ]);
+        session
+    }
+
     fn policy_candidates<'a>(
         surface: &'a super::super::DecisionSurface,
     ) -> Vec<RunPolicyCandidateV1<'a>> {
@@ -1080,6 +1157,65 @@ mod tests {
             "evidence={:#?}",
             decision.evidence
         );
+    }
+
+    #[test]
+    fn expensive_short_debuff_overlap_loses_to_preserving_deck_quality() {
+        let session = a1f10_mummified_hand_session(&[
+            (CardId::Flex, 0),
+            (CardId::Uppercut, 0),
+            (CardId::RecklessCharge, 0),
+        ]);
+
+        let decision = decision(&session);
+        let uppercut = card_evidence(&decision, CardId::Uppercut);
+        assert!(uppercut.expensive_short_debuff_overlap);
+        assert_eq!(uppercut.band, CardRewardPolicyBandV1::SpeculativeAddition);
+        assert!(
+            position(&decision, |key| matches!(
+                key,
+                DecisionCandidateKey::CardRewardSkip { .. }
+            )) < position(&decision, |key| matches!(
+                key,
+                DecisionCandidateKey::CardRewardPick {
+                    card: CardId::Uppercut,
+                    ..
+                }
+            )),
+            "evidence={:#?}",
+            decision.evidence
+        );
+    }
+
+    #[test]
+    fn upgraded_debuff_duration_does_not_trigger_short_overlap_gate() {
+        let session = a1f10_mummified_hand_session(&[(CardId::Uppercut, 1)]);
+
+        let decision = decision(&session);
+        let uppercut = card_evidence(&decision, CardId::Uppercut);
+        assert!(!uppercut.expensive_short_debuff_overlap);
+        assert_eq!(uppercut.band, CardRewardPolicyBandV1::CloseThreatGap);
+    }
+
+    #[test]
+    fn expensive_short_debuff_without_owned_source_does_not_trigger_overlap_gate() {
+        let mut session = a1f10_mummified_hand_session(&[(CardId::Uppercut, 0)]);
+        session.run_state.master_deck = owned_deck(&[
+            (CardId::Strike, 0),
+            (CardId::Strike, 0),
+            (CardId::Strike, 0),
+            (CardId::Strike, 0),
+            (CardId::Strike, 0),
+            (CardId::Defend, 0),
+            (CardId::Defend, 0),
+            (CardId::Defend, 0),
+            (CardId::Defend, 0),
+        ]);
+
+        let decision = decision(&session);
+        let uppercut = card_evidence(&decision, CardId::Uppercut);
+        assert!(!uppercut.expensive_short_debuff_overlap);
+        assert_eq!(uppercut.band, CardRewardPolicyBandV1::CloseThreatGap);
     }
 
     #[test]

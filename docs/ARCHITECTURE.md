@@ -129,6 +129,13 @@ share coverage groups. Upgrade roles must describe what the upgrade changes:
 a card that already draws but whose upgrade changes only Block does not pay an
 access-recovery debt.
 
+Card-reward gap closure remains subject to typed marginal-quality gates. A
+cost-two-or-more tactical candidate whose only semantic roles are frontload,
+Weak, and Vulnerable stays speculative when one of its one-turn debuffs
+duplicates an owned source of the same debuff. The gate is duration- and
+upgrade-sensitive, and its typed audit fact must remain separate from the
+underlying capability delta.
+
 ## Runner And Combat
 
 The runner owns run progression:
