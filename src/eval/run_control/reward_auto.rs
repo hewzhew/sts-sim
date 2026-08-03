@@ -226,8 +226,23 @@ fn reward_potion_space_plan(session: &RunControlSession) -> Option<RewardPotionS
         .collect::<Vec<_>>();
 
     if incoming_potions.contains(&PotionId::FruitJuice) {
-        if let Some((slot, potion)) = newest_discardable_duplicate_potion(session) {
+        if let Some((slot, potion)) = newest_discardable_duplicate_potion(session, None) {
             return Some(discard_potion_space_plan(slot, potion));
+        }
+    }
+
+    if incoming_potions.contains(&PotionId::GamblersBrew) {
+        let roles = DeckRoleInventory::from_deck(&session.run_state.master_deck);
+        // Hand realignment is a concrete engine resource here; two native
+        // Vulnerable sources plus the retained Fear preserve coverage.
+        let has_live_exhaust_engine =
+            roles.exhaust_payoff_units > 0 && roles.broad_exhaust_units > 0;
+        if has_live_exhaust_engine && roles.vulnerable_units >= 2 {
+            if let Some((slot, potion)) =
+                newest_discardable_duplicate_potion(session, Some(PotionId::FearPotion))
+            {
+                return Some(discard_potion_space_plan(slot, potion));
+            }
         }
     }
 
@@ -255,6 +270,7 @@ fn reward_potion_space_plan(session: &RunControlSession) -> Option<RewardPotionS
 
 fn newest_discardable_duplicate_potion(
     session: &RunControlSession,
+    required_id: Option<PotionId>,
 ) -> Option<(usize, &crate::content::potions::Potion)> {
     session
         .run_state
@@ -263,6 +279,9 @@ fn newest_discardable_duplicate_potion(
         .enumerate()
         .filter_map(|(slot, potion)| {
             let potion = potion.as_ref()?;
+            if required_id.is_some_and(|required_id| potion.id != required_id) {
+                return None;
+            }
             let copies = session
                 .run_state
                 .potions
@@ -534,6 +553,64 @@ mod tests {
     }
 
     #[test]
+    fn reward_potion_space_step_replaces_duplicate_fear_with_gamblers_brew_for_exhaust_engine() {
+        use crate::content::cards::CardId;
+        use crate::runtime::combat::CombatCard;
+
+        let mut session = full_belt_gamblers_reward_session();
+        session.run_state.master_deck = vec![
+            CombatCard::new(CardId::Bash, 101),
+            CombatCard::new(CardId::ThunderClap, 102),
+            CombatCard::new(CardId::DarkEmbrace, 103),
+            CombatCard::new(CardId::SecondWind, 104),
+            CombatCard::new(CardId::PowerThrough, 105),
+        ];
+
+        let discarded = apply_reward_potion_space_step(&mut session)
+            .expect("potion-space policy should inspect hand-stability support")
+            .expect("the live exhaust engine should replace its newest duplicate Fear");
+
+        assert!(session.run_state.potions[1].is_none());
+        assert_reward_owner_transaction(&discarded, 0, 1);
+        apply_reward_policy_step(&mut session)
+            .expect("reward policy should inspect the opened slot")
+            .expect("Gambler's Brew should be claimed on the next atomic step");
+        assert_eq!(
+            session.run_state.potions[1]
+                .as_ref()
+                .map(|potion| potion.id),
+            Some(PotionId::GamblersBrew)
+        );
+    }
+
+    #[test]
+    fn gamblers_brew_does_not_replace_duplicate_fear_without_engine_and_vulnerable_coverage() {
+        use crate::content::cards::CardId;
+        use crate::runtime::combat::CombatCard;
+
+        for deck in [
+            vec![
+                CombatCard::new(CardId::Bash, 101),
+                CombatCard::new(CardId::ThunderClap, 102),
+                CombatCard::new(CardId::SecondWind, 103),
+            ],
+            vec![
+                CombatCard::new(CardId::Bash, 104),
+                CombatCard::new(CardId::DarkEmbrace, 105),
+                CombatCard::new(CardId::SecondWind, 106),
+            ],
+        ] {
+            let mut session = full_belt_gamblers_reward_session();
+            session.run_state.master_deck = deck;
+
+            assert!(apply_reward_potion_space_step(&mut session)
+                .expect("potion-space policy should inspect incomplete support")
+                .is_none());
+            assert!(session.run_state.potions.iter().all(Option::is_some));
+        }
+    }
+
+    #[test]
     fn reward_potion_space_step_replaces_covered_fear_with_strength_payoff() {
         use crate::content::cards::CardId;
         use crate::runtime::combat::CombatCard;
@@ -779,6 +856,27 @@ mod tests {
             Some(crate::content::potions::Potion::new(
                 PotionId::AttackPotion,
                 3,
+            )),
+        ];
+        session
+    }
+
+    fn full_belt_gamblers_reward_session() -> RunControlSession {
+        let mut session = reward_screen_session(vec![RewardItem::Potion {
+            potion_id: PotionId::GamblersBrew,
+        }]);
+        session.run_state.potions = vec![
+            Some(crate::content::potions::Potion::new(
+                PotionId::FearPotion,
+                11,
+            )),
+            Some(crate::content::potions::Potion::new(
+                PotionId::FearPotion,
+                19,
+            )),
+            Some(crate::content::potions::Potion::new(
+                PotionId::FirePotion,
+                7,
             )),
         ];
         session
