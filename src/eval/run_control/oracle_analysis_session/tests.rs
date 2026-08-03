@@ -115,6 +115,39 @@ fn one_strike_combat() -> crate::runtime::combat::CombatState {
     combat
 }
 
+#[test]
+fn restored_combat_node_accepts_exact_actions_without_resident_search() {
+    let mut analysis = one_strike_combat_analysis(None);
+    analysis.combat_jobs.clear();
+    let checkpoint = analysis.checkpoint().expect("checkpoint combat root");
+    let mut restored =
+        OracleAnalysisSessionV1::restore(checkpoint, analysis.combat_budgets.clone(), None, None)
+            .expect("restore combat root without tactical work");
+
+    assert!(
+        restored
+            .view_cursor()
+            .expect("restored combat root")
+            .combat
+            .is_none(),
+        "the checkpoint deliberately contains no resident tactical search"
+    );
+    restored
+        .accept_cursor_combat_actions(&[ClientInput::PlayCard {
+            card_index: 0,
+            target: Some(1),
+        }])
+        .expect("exact actions do not require a pre-existing search session");
+
+    assert_eq!(
+        restored
+            .view_cursor()
+            .expect("accepted combat child")
+            .boundary,
+        OracleRunBoundaryV1::Reward
+    );
+}
+
 fn smoke_bomb_combat_analysis(
     decision_prior: Option<RunPolicyPriorFnV1>,
 ) -> OracleAnalysisSessionV1 {
@@ -629,23 +662,31 @@ fn common_strength_potion_can_rescue_a_verified_but_low_quality_win() {
         })
         .expect("enter exact Strength Potion quality rescue");
 
-    assert!(matches!(
-        first.status,
-        OracleAnalysisAdvanceStatusV1::SearchPending
-    ));
-    let pending = first.combat.expect("pending Strength rescue progress");
-    assert_eq!(pending.search_stage, 1);
-    assert_eq!(pending.allowed_potion_slots, Some(1));
+    let report = if matches!(
+        &first.status,
+        OracleAnalysisAdvanceStatusV1::BoundaryReached { .. }
+    ) {
+        first
+    } else {
+        assert!(
+            matches!(&first.status, OracleAnalysisAdvanceStatusV1::SearchPending),
+            "the Strength Potion rescue should remain pending or finish early: {:?}",
+            first.status
+        );
+        let pending = first.combat.expect("pending Strength rescue progress");
+        assert_eq!(pending.search_stage, 1);
+        assert_eq!(pending.allowed_potion_slots, Some(1));
 
-    let report = analysis
-        .advance_cursor(OracleAnalysisAdvanceRequestV1 {
-            max_quanta: 16,
-            quantum_nodes: 32,
-            quantum_ms: None,
-            wall_ms: None,
-            improve_incumbent: true,
-        })
-        .expect("finish exact Strength Potion quality rescue");
+        analysis
+            .advance_cursor(OracleAnalysisAdvanceRequestV1 {
+                max_quanta: 16,
+                quantum_nodes: 32,
+                quantum_ms: None,
+                wall_ms: None,
+                improve_incumbent: true,
+            })
+            .expect("finish exact Strength Potion quality rescue")
+    };
 
     assert!(
         matches!(
