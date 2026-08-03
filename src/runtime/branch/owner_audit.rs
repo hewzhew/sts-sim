@@ -284,6 +284,12 @@ pub(super) fn legacy_oracle_policy_prior_v1(
     if session.engine_state.is_map_surface() {
         return sts_simulator::eval::run_control::exact_route_policy_prior_v1(session, legal);
     }
+    if sts_simulator::eval::run_control::reward_policy_has_claimable_step(session)? {
+        return sts_simulator::eval::run_control::positive_ranked_run_policy_prior_v1(
+            legal,
+            legacy_oracle_preferred_candidate_ids_v1(session),
+        );
+    }
     let card_reward_ids = sts_simulator::eval::run_control::build_decision_surface(session)
         .view
         .candidates

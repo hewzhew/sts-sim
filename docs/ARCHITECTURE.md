@@ -96,6 +96,11 @@ Automation should stop when the current site lacks a bounded policy answer. Do
 not encode stale global rules such as "shops always stop" or "events always
 stop"; each high-agency site needs its own owner/compiler boundary.
 
+On an ordinary reward screen, the reward owner claims typed low-agency public
+resources before opening a nested card-reward choice. This lets the card owner
+observe already-claimed gold, non-conflicting relics, and empty-slot potions
+instead of evaluating the card surface against a stale pre-reward run state.
+
 The current route owner has one deliberately narrow elite-growth prior: on
 ascension 0 during Act 1, a direct elite arrival may enter the typed
 `EliteGrowth` band only while current HP is at least three quarters of maximum

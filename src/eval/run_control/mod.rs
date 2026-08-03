@@ -242,7 +242,7 @@ pub use render::{
     render_run_control_details, render_run_control_raw, render_run_control_state,
 };
 pub use reward_auto::{
-    apply_reward_policy_step, apply_reward_potion_space_step,
+    apply_reward_policy_step, apply_reward_potion_space_step, reward_policy_has_claimable_step,
     reward_surface_has_only_unclaimable_potions, RewardAutomationConfig,
 };
 pub use route_policy_prior::{

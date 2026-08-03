@@ -124,6 +124,12 @@ pub fn apply_reward_policy_step(
     Ok(Some(transaction.project_progress_outcome(session)))
 }
 
+/// Reports whether the current reward surface has one low-agency claim that
+/// the reward policy can apply before a nested strategy boundary is opened.
+pub fn reward_policy_has_claimable_step(session: &RunControlSession) -> Result<bool, String> {
+    Ok(next_reward_policy_claim(session)?.is_some())
+}
+
 pub fn apply_reward_potion_space_step(
     session: &mut RunControlSession,
 ) -> Result<Option<RunProgressOutcome>, String> {
