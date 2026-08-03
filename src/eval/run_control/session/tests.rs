@@ -44,6 +44,32 @@ fn external_checkpoint_preserves_recent_attrition_as_an_owner_fact() {
 }
 
 #[test]
+fn exact_replay_preserves_legacy_unknown_recent_attrition_without_weakening_known_facts() {
+    let fact = RecentCombatAttritionV1 {
+        act: 1,
+        floor: 7,
+        combat_sequence: 3,
+        start_hp: 77,
+        end_combat_hp: 67,
+        raw_hp_loss: 10,
+        turns: 4,
+        potions_used: 0,
+    };
+    let expected_unknown = test_session_with_first_monster_room();
+    let mut replay = expected_unknown.clone();
+    replay.recent_combat_attrition = Some(fact);
+
+    replay.preserve_recent_combat_attrition_availability_from(&expected_unknown);
+    assert_eq!(replay.recent_combat_attrition(), None);
+
+    let mut expected_known = expected_unknown;
+    expected_known.recent_combat_attrition = Some(fact);
+    replay.recent_combat_attrition = Some(fact);
+    replay.preserve_recent_combat_attrition_availability_from(&expected_known);
+    assert_eq!(replay.recent_combat_attrition(), Some(fact));
+}
+
+#[test]
 fn run_control_search_combat_applies_complete_winning_trajectory() {
     let mut session = test_session_with_first_monster_room();
     session

@@ -1050,6 +1050,7 @@ where
             &mut counters,
             &mut before_decision,
         )?;
+        session.preserve_recent_combat_attrition_availability_from(expected_final);
         after_entry(entry_index, entry, &session)?;
     }
 

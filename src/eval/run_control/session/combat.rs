@@ -135,6 +135,18 @@ impl RunControlSession {
         self.recent_combat_attrition
     }
 
+    pub(in crate::eval::run_control) fn preserve_recent_combat_attrition_availability_from(
+        &mut self,
+        expected: &Self,
+    ) {
+        // Exact replay can derive this fact from combat-resolution entries even
+        // when a legacy checkpoint predates the durable field. Keep the saved
+        // unknown explicit instead of silently backfilling historical state.
+        if expected.recent_combat_attrition.is_none() {
+            self.recent_combat_attrition = None;
+        }
+    }
+
     pub fn last_completed_combat_automation_trajectory(
         &self,
     ) -> Option<&CombatAutomationTrajectoryRecordV1> {
