@@ -136,6 +136,15 @@ duplicates an owned source of the same debuff. The gate is duration- and
 upgrade-sensitive, and its typed audit fact must remain separate from the
 underlying capability delta.
 
+A candidate that injects a persistent Status directly into the draw pile also
+carries a typed handling assessment. Evolve draw recovery and Medical Kit's
+unrestricted Status exhaust count as covered; hand-exhaust cards and
+Fire Breathing count only as conditional because the required pieces still
+have to meet in combat. Exhaust payoffs are supporting evidence, not handling
+by themselves. Conditional or unsupported persistent draw-pile pollution may
+not use a coarse capability delta to rise above the speculative band. Ethereal
+Statuses and injections into other zones remain outside this gate.
+
 ## Runner And Combat
 
 The runner owns run progression:

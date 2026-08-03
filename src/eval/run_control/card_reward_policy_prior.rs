@@ -21,7 +21,9 @@ use crate::ai::card_semantics_v1::{
     CardRewardSemanticProfileV1, CardRewardSemanticRoleV1,
 };
 use crate::ai::deck_shape_v1::{
-    deck_shape_candidate_delta_v1, deck_shape_profile_v1, DeckShapeProfileV1, DeckShapeRiskV1,
+    deck_shape_candidate_delta_v1, deck_shape_profile_v1,
+    persistent_draw_pile_status_assessment_v1, DeckShapeProfileV1, DeckShapeRiskV1,
+    PersistentDrawPileStatusAssessmentV1, PersistentDrawPileStatusHandlingV1,
 };
 use crate::ai::deck_startup_profile_v1::{deck_startup_profile_v1, DeckStartupProfileV1};
 use crate::ai::noncombat_strategy_v1::{
@@ -107,6 +109,9 @@ pub struct CardRewardPolicyActionEvidenceV1 {
     /// reward owner to rediscover card-specific playability and saturation
     /// rules through coarse threat thresholds.
     pub added_deck_shape_risks: Vec<DeckShapeRiskV1>,
+    /// Candidate-local assessment of persistent statuses shuffled directly
+    /// into the draw pile and the owned deck's typed ways to absorb them.
+    pub persistent_draw_pile_status: Option<PersistentDrawPileStatusAssessmentV1>,
     pub improves_threat_relevant_capability: bool,
     pub amplifies_existing_answers: bool,
     /// A shared boss-damage-plan improvement introduced by this exact card.
@@ -150,6 +155,7 @@ pub struct CardRewardPolicyAuditCandidateV1 {
     pub boss_power_tax_conflict: bool,
     pub random_target_frontload_reliable: bool,
     pub added_deck_shape_risks: Vec<String>,
+    pub persistent_draw_pile_status: Option<PersistentDrawPileStatusAssessmentV1>,
     pub improves_threat_relevant_capability: bool,
     pub amplifies_existing_answers: bool,
     pub boss_damage_plan_improvement: Option<CardRewardBossDamagePlanImprovementV1>,
@@ -243,6 +249,7 @@ impl ExactCardRewardPolicyDecisionV1 {
                         .iter()
                         .map(|value| format!("{value:?}"))
                         .collect(),
+                    persistent_draw_pile_status: evidence.persistent_draw_pile_status.clone(),
                     improves_threat_relevant_capability: evidence
                         .improves_threat_relevant_capability,
                     amplifies_existing_answers: evidence.amplifies_existing_answers,
@@ -472,6 +479,15 @@ fn card_reward_action_evidence_v1(
         | CardRewardPolicyAcquisitionV1::Skip
         | CardRewardPolicyAcquisitionV1::OpenReward => Vec::new(),
     };
+    let persistent_draw_pile_status = match &acquisition {
+        CardRewardPolicyAcquisitionV1::Card { card, upgrades, .. } => {
+            let facts = card_reward_facts_v1(&RewardCard::new(*card, *upgrades));
+            persistent_draw_pile_status_assessment_v1(&parent.run_state, &facts.status_injections)
+        }
+        CardRewardPolicyAcquisitionV1::SingingBowl
+        | CardRewardPolicyAcquisitionV1::Skip
+        | CardRewardPolicyAcquisitionV1::OpenReward => None,
+    };
     let improves_threat_relevant_capability = !threat_relevant_capability_improvements_v1(
         &decision.before.threats,
         &decision.before.threat_coverage,
@@ -507,7 +523,10 @@ fn card_reward_action_evidence_v1(
         improves_threat_relevant_capability,
         amplifies_existing_answers,
     );
-    let band = apply_upgrade_investment_gate_v1(base_band, upgrade_investment_support);
+    let band = apply_upgrade_investment_gate_v1(
+        apply_persistent_draw_pile_status_gate_v1(base_band, persistent_draw_pile_status.as_ref()),
+        upgrade_investment_support,
+    );
 
     Ok(CardRewardPolicyActionEvidenceV1 {
         candidate_id: action.candidate_id.clone(),
@@ -524,6 +543,7 @@ fn card_reward_action_evidence_v1(
         boss_power_tax_conflict,
         random_target_frontload_reliable,
         added_deck_shape_risks,
+        persistent_draw_pile_status,
         improves_threat_relevant_capability,
         amplifies_existing_answers,
         boss_damage_plan_improvement,
@@ -649,6 +669,19 @@ fn apply_upgrade_investment_gate_v1(
         Some(StrategyPlanSupportV1::Weak | StrategyPlanSupportV1::Blocked) => {
             CardRewardPolicyBandV1::Liability
         }
+    }
+}
+
+fn apply_persistent_draw_pile_status_gate_v1(
+    base_band: CardRewardPolicyBandV1,
+    assessment: Option<&PersistentDrawPileStatusAssessmentV1>,
+) -> CardRewardPolicyBandV1 {
+    match assessment.map(|assessment| assessment.handling) {
+        None | Some(PersistentDrawPileStatusHandlingV1::Covered) => base_band,
+        Some(
+            PersistentDrawPileStatusHandlingV1::Unsupported
+            | PersistentDrawPileStatusHandlingV1::Conditional,
+        ) => base_band.max(CardRewardPolicyBandV1::SpeculativeAddition),
     }
 }
 
@@ -1047,6 +1080,18 @@ mod tests {
         session
     }
 
+    fn a1f11_mummified_hand_session(cards: &[(CardId, u8)]) -> RunControlSession {
+        let mut session = a1f10_mummified_hand_session(cards);
+        session.run_state.floor_num = 11;
+        session.run_state.current_hp = 37;
+        session.run_state.gold = 159;
+        session
+            .run_state
+            .master_deck
+            .push(CombatCard::new(CardId::RecklessCharge, 10_001));
+        session
+    }
+
     fn policy_candidates<'a>(
         surface: &'a super::super::DecisionSurface,
     ) -> Vec<RunPolicyCandidateV1<'a>> {
@@ -1325,7 +1370,7 @@ mod tests {
     }
 
     #[test]
-    fn urgent_frontload_gap_still_precedes_access_amplification() {
+    fn covered_urgent_frontload_gap_still_precedes_access_amplification() {
         let mut session = reward_session(&[(CardId::WildStrike, 0), (CardId::BattleTrance, 0)]);
         session.run_state.act_num = 1;
         session.run_state.floor_num = 1;
@@ -1343,6 +1388,7 @@ mod tests {
             CardId::Defend,
             CardId::Defend,
             CardId::Bash,
+            CardId::Evolve,
         ]
         .into_iter()
         .enumerate()
@@ -1350,6 +1396,14 @@ mod tests {
         .collect();
 
         let decision = decision(&session);
+        assert_eq!(
+            card_evidence(&decision, CardId::WildStrike)
+                .persistent_draw_pile_status
+                .as_ref()
+                .expect("Wild Strike persistent status assessment")
+                .handling,
+            PersistentDrawPileStatusHandlingV1::Covered
+        );
         assert_eq!(
             card_evidence(&decision, CardId::WildStrike).band,
             CardRewardPolicyBandV1::CloseThreatGap
@@ -1370,6 +1424,89 @@ mod tests {
             )),
             "evidence={:#?}",
             decision.evidence
+        );
+    }
+
+    #[test]
+    fn f11_persistent_wound_stays_speculative_with_only_conditional_hand_exhaust() {
+        let session = a1f11_mummified_hand_session(&[
+            (CardId::WildStrike, 0),
+            (CardId::ThunderClap, 0),
+            (CardId::Warcry, 0),
+        ]);
+
+        let decision = decision(&session);
+        let wild = card_evidence(&decision, CardId::WildStrike);
+        let assessment = wild
+            .persistent_draw_pile_status
+            .as_ref()
+            .expect("Wild Strike persistent status assessment");
+
+        assert_eq!(
+            assessment.handling,
+            PersistentDrawPileStatusHandlingV1::Conditional
+        );
+        assert_eq!(assessment.conditional_hand_exhaust_count, 1);
+        assert!(
+            !wild.delta.closed_threat_gaps.is_empty()
+                || wild.improves_threat_relevant_capability,
+            "the gate should remain meaningful even when coarse capability deltas favor Wild Strike"
+        );
+        assert_eq!(wild.band, CardRewardPolicyBandV1::SpeculativeAddition);
+        assert!(
+            position(&decision, |key| matches!(
+                key,
+                DecisionCandidateKey::CardRewardSkip { .. }
+            )) < position(&decision, |key| matches!(
+                key,
+                DecisionCandidateKey::CardRewardPick {
+                    card: CardId::WildStrike,
+                    ..
+                }
+            )),
+            "evidence={:#?}",
+            decision.evidence
+        );
+    }
+
+    #[test]
+    fn f11_evolve_covers_persistent_wound_without_status_gate_demotion() {
+        let mut session = a1f11_mummified_hand_session(&[
+            (CardId::WildStrike, 0),
+            (CardId::ThunderClap, 0),
+            (CardId::Warcry, 0),
+        ]);
+        session
+            .run_state
+            .master_deck
+            .push(CombatCard::new(CardId::Evolve, 10_002));
+
+        let decision = decision(&session);
+        let wild = card_evidence(&decision, CardId::WildStrike);
+        let assessment = wild
+            .persistent_draw_pile_status
+            .as_ref()
+            .expect("Wild Strike persistent status assessment");
+
+        assert_eq!(
+            assessment.handling,
+            PersistentDrawPileStatusHandlingV1::Covered
+        );
+        assert_eq!(assessment.draw_recovery_count, 1);
+        assert!(
+            wild.band < CardRewardPolicyBandV1::SpeculativeAddition,
+            "covered status must preserve the underlying supported band: {wild:#?}"
+        );
+    }
+
+    #[test]
+    fn ethereal_dazed_does_not_enter_persistent_draw_pile_gate() {
+        let session = reward_session(&[(CardId::RecklessCharge, 0)]);
+        let decision = decision(&session);
+
+        assert_eq!(
+            card_evidence(&decision, CardId::RecklessCharge).persistent_draw_pile_status,
+            None
         );
     }
 
@@ -2479,6 +2616,9 @@ mod tests {
             CardId::Defend,
             CardId::Bash,
             CardId::Berserk,
+            // Isolate the ordinary-frontload contract from the independent
+            // persistent draw-pile status gate.
+            CardId::Evolve,
         ]
         .into_iter()
         .enumerate()

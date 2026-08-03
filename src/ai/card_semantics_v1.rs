@@ -132,12 +132,38 @@ pub struct CardRewardFactsV1 {
     pub exhausts: bool,
     pub exhausts_other_cards: bool,
     pub adds_status_cards: i32,
+    #[serde(default)]
+    pub status_injections: Vec<CardRewardStatusInjectionV1>,
     pub upgrades_cards: bool,
     pub is_random_output: bool,
     pub has_conditional_playability: bool,
     pub is_aoe: bool,
     pub pick_dependencies: Vec<CardRewardPickDependencyV1>,
     pub unsupported_mechanics: Vec<String>,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CardRewardStatusDestinationV1 {
+    DrawPile,
+    Hand,
+    DiscardPile,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CardRewardStatusPersistenceV1 {
+    Persistent,
+    Ethereal,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct CardRewardStatusInjectionV1 {
+    pub card: CardId,
+    pub count: i32,
+    pub destination: CardRewardStatusDestinationV1,
+    pub persistence: CardRewardStatusPersistenceV1,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]

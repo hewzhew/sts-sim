@@ -5,7 +5,10 @@ use crate::ai::analysis::card_semantics::{
 use crate::content::cards::{get_card_definition, CardId};
 use crate::state::rewards::RewardCard;
 
-use super::{CardRewardDamageFactsV1, CardRewardFactsV1, CardRewardPickDependencyV1};
+use super::{
+    CardRewardDamageFactsV1, CardRewardFactsV1, CardRewardPickDependencyV1,
+    CardRewardStatusDestinationV1, CardRewardStatusInjectionV1, CardRewardStatusPersistenceV1,
+};
 
 pub fn card_reward_facts_v1(card: &RewardCard) -> CardRewardFactsV1 {
     let def = get_card_definition(card.id);
@@ -36,6 +39,7 @@ pub fn card_reward_facts_v1(card: &RewardCard) -> CardRewardFactsV1 {
         exhausts: def.exhaust,
         exhausts_other_cards: exhausts_other_cards(card.id),
         adds_status_cards: adds_status_cards(card.id),
+        status_injections: status_injections(card.id),
         upgrades_cards: upgrades_cards(card.id),
         is_random_output: is_random_output(card.id),
         has_conditional_playability: has_conditional_playability(card.id),
@@ -144,6 +148,40 @@ fn adds_status_cards(card_id: CardId) -> i32 {
         CardId::Immolate => 1,
         _ => 0,
     }
+}
+
+fn status_injections(card_id: CardId) -> Vec<CardRewardStatusInjectionV1> {
+    use CardRewardStatusDestinationV1::{DiscardPile, DrawPile, Hand};
+    use CardRewardStatusPersistenceV1::{Ethereal, Persistent};
+
+    let injection = match card_id {
+        CardId::WildStrike => CardRewardStatusInjectionV1 {
+            card: CardId::Wound,
+            count: 1,
+            destination: DrawPile,
+            persistence: Persistent,
+        },
+        CardId::RecklessCharge => CardRewardStatusInjectionV1 {
+            card: CardId::Dazed,
+            count: 1,
+            destination: DrawPile,
+            persistence: Ethereal,
+        },
+        CardId::PowerThrough => CardRewardStatusInjectionV1 {
+            card: CardId::Wound,
+            count: 2,
+            destination: Hand,
+            persistence: Persistent,
+        },
+        CardId::Immolate => CardRewardStatusInjectionV1 {
+            card: CardId::Burn,
+            count: 1,
+            destination: DiscardPile,
+            persistence: Persistent,
+        },
+        _ => return Vec::new(),
+    };
+    vec![injection]
 }
 
 fn upgrades_cards(card_id: CardId) -> bool {
@@ -277,6 +315,55 @@ mod tests {
                     .contains(&CardRewardPickDependencyV1::StrengthScaling),
                 "{card:?} should inherit strength payoff semantics from its damage model"
             );
+        }
+    }
+
+    #[test]
+    fn status_injections_preserve_destination_and_persistence() {
+        let cases = [
+            (
+                CardId::WildStrike,
+                CardId::Wound,
+                1,
+                CardRewardStatusDestinationV1::DrawPile,
+                CardRewardStatusPersistenceV1::Persistent,
+            ),
+            (
+                CardId::RecklessCharge,
+                CardId::Dazed,
+                1,
+                CardRewardStatusDestinationV1::DrawPile,
+                CardRewardStatusPersistenceV1::Ethereal,
+            ),
+            (
+                CardId::PowerThrough,
+                CardId::Wound,
+                2,
+                CardRewardStatusDestinationV1::Hand,
+                CardRewardStatusPersistenceV1::Persistent,
+            ),
+            (
+                CardId::Immolate,
+                CardId::Burn,
+                1,
+                CardRewardStatusDestinationV1::DiscardPile,
+                CardRewardStatusPersistenceV1::Persistent,
+            ),
+        ];
+
+        for (card, status, count, destination, persistence) in cases {
+            let facts = card_reward_facts_v1(&RewardCard::new(card, 0));
+            assert_eq!(
+                facts.status_injections,
+                vec![CardRewardStatusInjectionV1 {
+                    card: status,
+                    count,
+                    destination,
+                    persistence,
+                }],
+                "card={card:?}"
+            );
+            assert_eq!(facts.adds_status_cards, count);
         }
     }
 }

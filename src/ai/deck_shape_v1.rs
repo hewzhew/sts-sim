@@ -1,3 +1,6 @@
+use crate::ai::card_semantics_v1::{
+    CardRewardStatusDestinationV1, CardRewardStatusInjectionV1, CardRewardStatusPersistenceV1,
+};
 use crate::content::cards::{get_card_definition, CardId, CardType};
 use crate::content::relics::RelicId;
 use crate::state::run::RunState;
@@ -31,6 +34,26 @@ pub struct DeckShapeCandidateDeltaV1 {
     pub candidate: CardId,
     pub risks: Vec<DeckShapeRiskV1>,
     pub labels: Vec<&'static str>,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PersistentDrawPileStatusHandlingV1 {
+    Unsupported,
+    Conditional,
+    Covered,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct PersistentDrawPileStatusAssessmentV1 {
+    pub injections: Vec<CardRewardStatusInjectionV1>,
+    pub handling: PersistentDrawPileStatusHandlingV1,
+    pub draw_recovery_count: u8,
+    pub unrestricted_handling_count: u8,
+    pub conditional_hand_exhaust_count: u8,
+    pub status_payoff_count: u8,
+    pub exhaust_payoff_count: u8,
 }
 
 impl DeckShapeCandidateDeltaV1 {
@@ -182,6 +205,71 @@ pub fn deck_shape_candidate_delta_v1(
     delta
 }
 
+pub fn persistent_draw_pile_status_assessment_v1(
+    run_state: &RunState,
+    status_injections: &[CardRewardStatusInjectionV1],
+) -> Option<PersistentDrawPileStatusAssessmentV1> {
+    let injections = status_injections
+        .iter()
+        .copied()
+        .filter(|injection| {
+            injection.destination == CardRewardStatusDestinationV1::DrawPile
+                && injection.persistence == CardRewardStatusPersistenceV1::Persistent
+        })
+        .collect::<Vec<_>>();
+    if injections.is_empty() {
+        return None;
+    }
+
+    let mut draw_recovery_count = 0_u8;
+    let unrestricted_handling_count = run_state
+        .relics
+        .iter()
+        .filter(|relic| relic.id == RelicId::MedicalKit)
+        .count()
+        .min(u8::MAX as usize) as u8;
+    let mut conditional_hand_exhaust_count = 0_u8;
+    let mut status_payoff_count = 0_u8;
+    let mut exhaust_payoff_count = run_state
+        .relics
+        .iter()
+        .filter(|relic| matches!(relic.id, RelicId::DeadBranch | RelicId::CharonsAshes))
+        .count()
+        .min(u8::MAX as usize) as u8;
+
+    for card in &run_state.master_deck {
+        match card.id {
+            CardId::Evolve => draw_recovery_count = draw_recovery_count.saturating_add(1),
+            CardId::FireBreathing => status_payoff_count = status_payoff_count.saturating_add(1),
+            card if is_conditional_status_hand_exhaust_card(card) => {
+                conditional_hand_exhaust_count = conditional_hand_exhaust_count.saturating_add(1);
+            }
+            card if is_exhaust_payoff_card(card) => {
+                exhaust_payoff_count = exhaust_payoff_count.saturating_add(1);
+            }
+            _ => {}
+        }
+    }
+
+    let handling = if unrestricted_handling_count > 0 || draw_recovery_count > 0 {
+        PersistentDrawPileStatusHandlingV1::Covered
+    } else if conditional_hand_exhaust_count > 0 || status_payoff_count > 0 {
+        PersistentDrawPileStatusHandlingV1::Conditional
+    } else {
+        PersistentDrawPileStatusHandlingV1::Unsupported
+    };
+
+    Some(PersistentDrawPileStatusAssessmentV1 {
+        injections,
+        handling,
+        draw_recovery_count,
+        unrestricted_handling_count,
+        conditional_hand_exhaust_count,
+        status_payoff_count,
+        exhaust_payoff_count,
+    })
+}
+
 pub fn is_exhaust_enabler_card(card: CardId) -> bool {
     matches!(
         card,
@@ -197,6 +285,17 @@ pub fn is_exhaust_enabler_card(card: CardId) -> bool {
 
 pub fn is_exhaust_payoff_card(card: CardId) -> bool {
     matches!(card, CardId::FeelNoPain | CardId::DarkEmbrace)
+}
+
+fn is_conditional_status_hand_exhaust_card(card: CardId) -> bool {
+    matches!(
+        card,
+        CardId::BurningPact
+            | CardId::TrueGrit
+            | CardId::SecondWind
+            | CardId::FiendFire
+            | CardId::SeverSoul
+    )
 }
 
 pub fn is_status_generator_card(card: CardId) -> bool {
@@ -227,4 +326,90 @@ fn clash_debt_after_candidate(profile: &DeckShapeProfileV1) -> bool {
     profile.curse_count > 0
         || profile.non_attack_count.saturating_add(1) >= 8
         || profile.status_generator_count > 0
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ai::card_semantics_v1::card_reward_facts_v1;
+    use crate::content::relics::RelicState;
+    use crate::runtime::combat::CombatCard;
+    use crate::state::rewards::RewardCard;
+
+    fn assessment(
+        run_state: &RunState,
+        candidate: CardId,
+    ) -> Option<PersistentDrawPileStatusAssessmentV1> {
+        let facts = card_reward_facts_v1(&RewardCard::new(candidate, 0));
+        persistent_draw_pile_status_assessment_v1(run_state, &facts.status_injections)
+    }
+
+    #[test]
+    fn persistent_draw_pile_status_without_handling_is_unsupported() {
+        let run_state = RunState::new(1, 0, false, "Ironclad");
+
+        let assessment = assessment(&run_state, CardId::WildStrike)
+            .expect("Wild Strike injects a persistent draw-pile status");
+
+        assert_eq!(
+            assessment.handling,
+            PersistentDrawPileStatusHandlingV1::Unsupported
+        );
+        assert_eq!(assessment.injections[0].card, CardId::Wound);
+    }
+
+    #[test]
+    fn hand_exhaust_is_conditional_but_exhaust_payoff_alone_is_not_handling() {
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        run_state.master_deck = vec![
+            CombatCard::new(CardId::SecondWind, 1),
+            CombatCard::new(CardId::DarkEmbrace, 2),
+        ];
+
+        let conditional = assessment(&run_state, CardId::WildStrike)
+            .expect("Wild Strike injects a persistent draw-pile status");
+
+        assert_eq!(
+            conditional.handling,
+            PersistentDrawPileStatusHandlingV1::Conditional
+        );
+        assert_eq!(conditional.conditional_hand_exhaust_count, 1);
+        assert_eq!(conditional.exhaust_payoff_count, 1);
+
+        run_state.master_deck = vec![CombatCard::new(CardId::DarkEmbrace, 2)];
+        assert_eq!(
+            assessment(&run_state, CardId::WildStrike)
+                .expect("Wild Strike assessment")
+                .handling,
+            PersistentDrawPileStatusHandlingV1::Unsupported
+        );
+    }
+
+    #[test]
+    fn draw_recovery_or_unrestricted_handling_covers_persistent_status() {
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        run_state.master_deck = vec![CombatCard::new(CardId::Evolve, 1)];
+        assert_eq!(
+            assessment(&run_state, CardId::WildStrike)
+                .expect("Wild Strike assessment")
+                .handling,
+            PersistentDrawPileStatusHandlingV1::Covered
+        );
+
+        run_state.master_deck.clear();
+        run_state.relics.push(RelicState::new(RelicId::MedicalKit));
+        let assessment =
+            assessment(&run_state, CardId::WildStrike).expect("Wild Strike assessment");
+        assert_eq!(
+            assessment.handling,
+            PersistentDrawPileStatusHandlingV1::Covered
+        );
+        assert_eq!(assessment.unrestricted_handling_count, 1);
+    }
+
+    #[test]
+    fn ethereal_draw_pile_status_does_not_create_persistent_assessment() {
+        let run_state = RunState::new(1, 0, false, "Ironclad");
+        assert_eq!(assessment(&run_state, CardId::RecklessCharge), None);
+    }
 }
