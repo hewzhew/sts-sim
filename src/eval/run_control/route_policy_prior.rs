@@ -536,7 +536,9 @@ fn route_policy_band_v1(
     {
         return RoutePolicyBandV1::LiquidityConversion;
     }
-    if *room_type == Some(RoomType::MonsterRoomElite) && a0_act1_elite_growth_is_supported(context)
+    if *room_type == Some(RoomType::MonsterRoomElite)
+        && path.min_elites == 1
+        && a0_act1_elite_growth_is_supported(context)
     {
         return RoutePolicyBandV1::EliteGrowth;
     }
@@ -826,7 +828,7 @@ mod tests {
     }
 
     #[test]
-    fn healthy_a0_act1_direct_elite_outranks_optional_growth() {
+    fn healthy_a0_act1_forced_double_elite_does_not_outrank_optional_growth() {
         let context = RoutePolicyContextV1 {
             act: 1,
             ascension: 0,
@@ -863,9 +865,40 @@ mod tests {
 
         let elite_band = route_policy_band_v1(&elite, context);
         let event_band = route_policy_band_v1(&event, context);
-        assert_eq!(elite_band, RoutePolicyBandV1::EliteGrowth);
+        assert_eq!(elite_band, RoutePolicyBandV1::Ordinary);
         assert_eq!(event_band, RoutePolicyBandV1::FlexibleGrowth);
-        assert!(elite_band < event_band);
+        assert!(event_band < elite_band);
+    }
+
+    #[test]
+    fn healthy_a0_act1_single_forced_elite_keeps_growth_priority() {
+        let action = route_action(
+            RoomType::MonsterRoomElite,
+            RoutePolicyArrivalV1::Combat,
+            RoutePolicyPathEvidenceV1 {
+                min_elites: 1,
+                max_elites: 2,
+                min_campfires: 1,
+                max_campfires: 2,
+                ..RoutePolicyPathEvidenceV1::default()
+            },
+        );
+        let context = RoutePolicyContextV1 {
+            act: 1,
+            ascension: 0,
+            current_hp: 84,
+            max_hp: 85,
+            gold: 37,
+            critical_recovery: false,
+            recovery_pressure: false,
+            shop_conversion_support: StrategyPlanSupportV1::Blocked,
+            pending_rewards_only_unclaimable_potions: false,
+        };
+
+        assert_eq!(
+            route_policy_band_v1(&action, context),
+            RoutePolicyBandV1::EliteGrowth
+        );
     }
 
     #[test]
