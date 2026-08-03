@@ -12,6 +12,7 @@ use crate::state::run::RunState;
 
 use super::types::{
     StrategyCapabilityCoverageV1 as Coverage, StrategyCapabilityEvidenceV1 as Capability,
+    StrategyCapabilityInputKindV1 as InputKind, StrategyCapabilityInputV1 as Input,
     StrategyCapabilityKindV1 as Kind, StrategyDeckFactsV1, StrategyThreatCoverageGapV1,
     StrategyThreatCoverageLedgerV1, StrategyThreatProfileV1, StrategyThreatTagV1 as Tag,
 };
@@ -41,6 +42,10 @@ pub fn threat_coverage_from_run_state_v1(
     run_state: &RunState,
     threats: &StrategyThreatProfileV1,
 ) -> StrategyThreatCoverageLedgerV1 {
+    ledger_from_capability_facts(capability_facts_from_run_state(run_state), threats)
+}
+
+fn capability_facts_from_run_state(run_state: &RunState) -> CapabilityFacts {
     let mut facts = CapabilityFacts::default();
     for card in &run_state.master_deck {
         let card = RewardCard::new(card.id, card.upgrades);
@@ -110,7 +115,7 @@ pub fn threat_coverage_from_run_state_v1(
                 ),
         );
     }
-    ledger_from_capability_facts(facts, threats)
+    facts
 }
 
 pub fn threat_coverage_from_deck_facts_v1(
@@ -186,6 +191,7 @@ fn ledger_from_capability_facts(
             capability(
                 Kind::SingleTargetFrontload,
                 frontload_coverage(&facts),
+                &facts,
                 vec![format!(
                     "single_target_damage={} best_single_hit={}",
                     facts.single_target_damage, facts.best_single_hit
@@ -194,11 +200,13 @@ fn ledger_from_capability_facts(
             capability(
                 Kind::MultiTargetControl,
                 count_coverage(facts.aoe_sources),
+                &facts,
                 vec![format!("aoe_sources={}", facts.aoe_sources)],
             ),
             capability(
                 Kind::SustainedDefense,
                 defense_coverage(&facts),
+                &facts,
                 vec![format!(
                     "block_total={} weak_sources={} strength_down_sources={} broad_exhaust_generators={} exhaust_block_payoffs={}",
                     facts.block_total,
@@ -211,6 +219,7 @@ fn ledger_from_capability_facts(
             capability(
                 Kind::LongFightScaling,
                 long_fight_coverage(&facts),
+                &facts,
                 vec![format!(
                     "scaling_sources={} scaling_payoffs={} exhaust_generators={} exhaust_payoffs={}",
                     facts.scaling_sources,
@@ -222,6 +231,7 @@ fn ledger_from_capability_facts(
             capability(
                 Kind::DrawEnergyConsistency,
                 consistency_coverage(&facts),
+                &facts,
                 vec![format!(
                     "draw_sources={} energy_sources={} exhaust_generators={}",
                     facts.draw_sources, facts.energy_sources, facts.exhaust_generators
@@ -230,6 +240,7 @@ fn ledger_from_capability_facts(
             capability(
                 Kind::PhaseControl,
                 phase_coverage(&facts),
+                &facts,
                 vec![format!(
                     "best_single_hit={} draw_sources={} scaling_sources={}",
                     facts.best_single_hit, facts.draw_sources, facts.scaling_sources
@@ -238,6 +249,7 @@ fn ledger_from_capability_facts(
             capability(
                 Kind::DebuffResilience,
                 artifact_strip_coverage(facts.debuff_sources),
+                &facts,
                 vec![format!(
                     "independent_debuff_applications={}",
                     facts.debuff_sources
@@ -246,11 +258,13 @@ fn ledger_from_capability_facts(
             capability(
                 Kind::CardPlayEfficiency,
                 count_coverage(facts.dense_card_sources),
+                &facts,
                 vec![format!("dense_card_sources={}", facts.dense_card_sources)],
             ),
             capability(
                 Kind::RetaliationSafeDamage,
                 count_coverage(facts.retaliation_safe_sources),
+                &facts,
                 vec![format!(
                     "retaliation_safe_damage_sources={}",
                     facts.retaliation_safe_sources
@@ -259,6 +273,7 @@ fn ledger_from_capability_facts(
             capability(
                 Kind::TimedDamageRace,
                 timed_race_coverage(&facts),
+                &facts,
                 vec![format!(
                     "single_target_damage={} draw_sources={} energy_sources={}",
                     facts.single_target_damage, facts.draw_sources, facts.energy_sources
@@ -302,11 +317,75 @@ fn ledger_from_capability_facts(
     ledger
 }
 
-fn capability(kind: Kind, coverage: Coverage, evidence: Vec<String>) -> Capability {
+fn capability(
+    kind: Kind,
+    coverage: Coverage,
+    facts: &CapabilityFacts,
+    evidence: Vec<String>,
+) -> Capability {
     Capability {
         capability: kind,
         coverage,
+        inputs: capability_inputs(kind, facts),
         evidence,
+    }
+}
+
+fn capability_inputs(kind: Kind, facts: &CapabilityFacts) -> Vec<Input> {
+    let count = |input, value: usize| Input {
+        input,
+        value: i32::try_from(value).unwrap_or(i32::MAX),
+    };
+    let scalar = |input, value| Input { input, value };
+
+    match kind {
+        Kind::SingleTargetFrontload => vec![
+            scalar(InputKind::SingleTargetDamage, facts.single_target_damage),
+            scalar(InputKind::BestSingleHit, facts.best_single_hit),
+        ],
+        Kind::MultiTargetControl => vec![count(InputKind::AoeSources, facts.aoe_sources)],
+        Kind::SustainedDefense => vec![
+            scalar(InputKind::BlockTotal, facts.block_total),
+            count(InputKind::WeakSources, facts.weak_sources),
+            count(InputKind::StrengthDownSources, facts.strength_down_sources),
+            count(InputKind::ExhaustGenerators, facts.exhaust_generators),
+            count(
+                InputKind::BroadExhaustGenerators,
+                facts.broad_exhaust_generators,
+            ),
+            count(InputKind::ExhaustBlockPayoffs, facts.exhaust_block_payoffs),
+        ],
+        Kind::LongFightScaling => vec![
+            count(InputKind::ScalingSources, facts.scaling_sources),
+            count(InputKind::ScalingPayoffs, facts.scaling_payoffs),
+            count(InputKind::ExhaustGenerators, facts.exhaust_generators),
+            count(InputKind::ExhaustPayoffs, facts.exhaust_payoffs),
+        ],
+        Kind::DrawEnergyConsistency => vec![
+            count(InputKind::DrawSources, facts.draw_sources),
+            count(InputKind::EnergySources, facts.energy_sources),
+            count(InputKind::ExhaustGenerators, facts.exhaust_generators),
+        ],
+        Kind::PhaseControl => vec![
+            scalar(InputKind::BestSingleHit, facts.best_single_hit),
+            count(InputKind::DrawSources, facts.draw_sources),
+            count(InputKind::ScalingSources, facts.scaling_sources),
+        ],
+        Kind::DebuffResilience => vec![count(InputKind::DebuffSources, facts.debuff_sources)],
+        Kind::CardPlayEfficiency => {
+            vec![count(InputKind::DenseCardSources, facts.dense_card_sources)]
+        }
+        Kind::RetaliationSafeDamage => vec![count(
+            InputKind::RetaliationSafeSources,
+            facts.retaliation_safe_sources,
+        )],
+        Kind::TimedDamageRace => vec![
+            scalar(InputKind::SingleTargetDamage, facts.single_target_damage),
+            scalar(InputKind::BestSingleHit, facts.best_single_hit),
+            count(InputKind::DrawSources, facts.draw_sources),
+            count(InputKind::EnergySources, facts.energy_sources),
+            count(InputKind::ExhaustGenerators, facts.exhaust_generators),
+        ],
     }
 }
 

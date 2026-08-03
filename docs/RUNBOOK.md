@@ -302,7 +302,9 @@ cargo oracle-lab card-reward-path `
 ```
 
 The complete typed deck, relic, potion, candidate, owner-band, and applied-edge
-evidence is written to the fresh output path; stdout stays a compact artifact
+evidence is written to the fresh output path. Capability improvements retain
+the evaluator's typed before/after inputs, so a count-driven promotion can be
+audited without reopening strategy source. Stdout stays a compact artifact
 receipt. For an active resident session, use `card-reward-path` through the
 matching `ol-live` surface with the same optional `--output` behavior.
 

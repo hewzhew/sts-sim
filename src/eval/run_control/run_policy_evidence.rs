@@ -7,10 +7,10 @@ use crate::ai::combat_upgrade_coverage_v1::{
 };
 use crate::ai::noncombat_strategy_v1::{
     build_run_strategy_snapshot_from_run_state_v2, StrategyCapabilityCoverageV1,
-    StrategyCapabilityKindV1, StrategyDeckFactsV1, StrategyDeckFormationNeedV1,
-    StrategyFormationSummaryV2, StrategyPackageIdV2, StrategyResourceFactsV2,
-    StrategyThreatCoverageLedgerV1, StrategyThreatProfileV1, StrategyThreatSourceV1,
-    StrategyThreatTagV1,
+    StrategyCapabilityInputV1, StrategyCapabilityKindV1, StrategyDeckFactsV1,
+    StrategyDeckFormationNeedV1, StrategyFormationSummaryV2, StrategyPackageIdV2,
+    StrategyResourceFactsV2, StrategyThreatCoverageLedgerV1, StrategyThreatProfileV1,
+    StrategyThreatSourceV1, StrategyThreatTagV1,
 };
 
 use super::{
@@ -59,6 +59,8 @@ pub struct RunPolicyCapabilityChangeV1 {
     pub capability: StrategyCapabilityKindV1,
     pub before: StrategyCapabilityCoverageV1,
     pub after: StrategyCapabilityCoverageV1,
+    pub before_inputs: Vec<StrategyCapabilityInputV1>,
+    pub after_inputs: Vec<StrategyCapabilityInputV1>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -102,24 +104,27 @@ pub fn run_policy_state_delta_v1(
         .threat_coverage
         .capabilities
         .iter()
-        .map(|capability| (capability.capability, capability.coverage))
+        .map(|capability| (capability.capability, capability))
         .collect::<BTreeMap<_, _>>();
     let capability_improvements = after
         .threat_coverage
         .capabilities
         .iter()
         .filter_map(|capability| {
-            let previous = before_by_kind
-                .get(&capability.capability)
-                .copied()
+            let previous = before_by_kind.get(&capability.capability).copied();
+            let previous_coverage = previous
+                .map(|evidence| evidence.coverage)
                 .unwrap_or(StrategyCapabilityCoverageV1::Unknown);
-            (coverage_strength(capability.coverage) > coverage_strength(previous)).then_some(
-                RunPolicyCapabilityChangeV1 {
+            (coverage_strength(capability.coverage) > coverage_strength(previous_coverage))
+                .then_some(RunPolicyCapabilityChangeV1 {
                     capability: capability.capability,
-                    before: previous,
+                    before: previous_coverage,
                     after: capability.coverage,
-                },
-            )
+                    before_inputs: previous
+                        .map(|evidence| evidence.inputs.clone())
+                        .unwrap_or_default(),
+                    after_inputs: capability.inputs.clone(),
+                })
         })
         .collect();
 

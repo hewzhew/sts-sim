@@ -357,10 +357,41 @@ impl StrategyCapabilityCoverageV1 {
     }
 }
 
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum StrategyCapabilityInputKindV1 {
+    SingleTargetDamage,
+    BestSingleHit,
+    AoeSources,
+    BlockTotal,
+    WeakSources,
+    StrengthDownSources,
+    ScalingSources,
+    ScalingPayoffs,
+    DrawSources,
+    EnergySources,
+    ExhaustGenerators,
+    BroadExhaustGenerators,
+    ExhaustPayoffs,
+    ExhaustBlockPayoffs,
+    DebuffSources,
+    DenseCardSources,
+    RetaliationSafeSources,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct StrategyCapabilityInputV1 {
+    pub input: StrategyCapabilityInputKindV1,
+    pub value: i32,
+}
+
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct StrategyCapabilityEvidenceV1 {
     pub capability: StrategyCapabilityKindV1,
     pub coverage: StrategyCapabilityCoverageV1,
+    #[serde(skip)]
+    pub inputs: Vec<StrategyCapabilityInputV1>,
     pub evidence: Vec<String>,
 }
 

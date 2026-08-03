@@ -21,13 +21,13 @@ pub use run_snapshot::{
 pub use snapshot_v2::build_run_strategy_snapshot_v2;
 pub use types::{
     RunStrategySnapshotV2, StrategyCandidateFactsV1, StrategyCandidatePlanDeltaV1,
-    StrategyCapabilityCoverageV1, StrategyCapabilityEvidenceV1, StrategyCapabilityKindV1,
-    StrategyDeckFactsV1, StrategyDeckFormationNeedV1, StrategyDeckFormationStageV1,
-    StrategyFormationSummaryV2, StrategyPackageDomainV2, StrategyPackageGapV2, StrategyPackageIdV2,
-    StrategyPackageV2, StrategyPlanEffectV1, StrategyPlanSupportV1, StrategyResourceFactsV2,
-    StrategyRouteFutureV1, StrategyThreatCoverageGapV1, StrategyThreatCoverageLedgerV1,
-    StrategyThreatProfileV1, StrategyThreatSourceRecordV1, StrategyThreatSourceV1,
-    StrategyThreatTagV1,
+    StrategyCapabilityCoverageV1, StrategyCapabilityEvidenceV1, StrategyCapabilityInputKindV1,
+    StrategyCapabilityInputV1, StrategyCapabilityKindV1, StrategyDeckFactsV1,
+    StrategyDeckFormationNeedV1, StrategyDeckFormationStageV1, StrategyFormationSummaryV2,
+    StrategyPackageDomainV2, StrategyPackageGapV2, StrategyPackageIdV2, StrategyPackageV2,
+    StrategyPlanEffectV1, StrategyPlanSupportV1, StrategyResourceFactsV2, StrategyRouteFutureV1,
+    StrategyThreatCoverageGapV1, StrategyThreatCoverageLedgerV1, StrategyThreatProfileV1,
+    StrategyThreatSourceRecordV1, StrategyThreatSourceV1, StrategyThreatTagV1,
 };
 
 #[cfg(test)]

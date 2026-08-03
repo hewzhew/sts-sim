@@ -47,7 +47,7 @@ use super::{
 };
 
 pub const EXACT_CARD_REWARD_POLICY_AUDIT_SCHEMA_NAME: &str = "ExactCardRewardPolicyAudit";
-pub const EXACT_CARD_REWARD_POLICY_AUDIT_SCHEMA_VERSION: u32 = 1;
+pub const EXACT_CARD_REWARD_POLICY_AUDIT_SCHEMA_VERSION: u32 = 2;
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -1570,6 +1570,58 @@ mod tests {
     }
 
     #[test]
+    fn duplicate_second_wind_improvement_carries_typed_rule_inputs() {
+        let session = a1f10_mummified_hand_session(&[(CardId::SecondWind, 0)]);
+
+        let decision = decision(&session);
+        let second_wind = card_evidence(&decision, CardId::SecondWind);
+        let improvement = second_wind
+            .delta
+            .capability_improvements
+            .iter()
+            .find(|change| change.capability == StrategyCapabilityKindV1::LongFightScaling)
+            .expect("duplicate Second Wind should expose the current long-fight promotion");
+        let input = |inputs: &[crate::ai::noncombat_strategy_v1::StrategyCapabilityInputV1],
+                     kind| {
+            inputs
+                .iter()
+                .find(|input| input.input == kind)
+                .map(|input| input.value)
+        };
+
+        assert_eq!(improvement.before, StrategyCapabilityCoverageV1::Supported);
+        assert_eq!(improvement.after, StrategyCapabilityCoverageV1::Strong);
+        assert_eq!(
+            input(
+                &improvement.before_inputs,
+                crate::ai::noncombat_strategy_v1::StrategyCapabilityInputKindV1::ExhaustGenerators,
+            ),
+            Some(1)
+        );
+        assert_eq!(
+            input(
+                &improvement.after_inputs,
+                crate::ai::noncombat_strategy_v1::StrategyCapabilityInputKindV1::ExhaustGenerators,
+            ),
+            Some(2)
+        );
+        assert_eq!(
+            input(
+                &improvement.before_inputs,
+                crate::ai::noncombat_strategy_v1::StrategyCapabilityInputKindV1::ExhaustPayoffs,
+            ),
+            Some(1)
+        );
+        assert_eq!(
+            input(
+                &improvement.after_inputs,
+                crate::ai::noncombat_strategy_v1::StrategyCapabilityInputKindV1::ExhaustPayoffs,
+            ),
+            Some(1)
+        );
+    }
+
+    #[test]
     fn first_light_aoe_source_can_still_close_an_act_one_gap() {
         let mut session = reward_session(&[(CardId::ThunderClap, 0)]);
         session.run_state.act_num = 1;
@@ -2730,6 +2782,8 @@ mod tests {
                 capability: StrategyCapabilityKindV1::LongFightScaling,
                 before: StrategyCapabilityCoverageV1::Thin,
                 after: StrategyCapabilityCoverageV1::Supported,
+                before_inputs: Vec::new(),
+                after_inputs: Vec::new(),
             },
         );
         assert!(
