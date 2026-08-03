@@ -234,6 +234,30 @@ impl OracleAnalysisWorkspaceV1 {
         })
     }
 
+    /// Build a fresh one-node workbench from one exact committed node.
+    ///
+    /// The source remains unchanged. Historical variations are intentionally
+    /// omitted, while the selected session and its committed journal remain
+    /// exact. Resident combat search is rejected because its in-memory
+    /// frontier is not represented by an ordinary run continuation.
+    pub fn compact_from_node(&self, node_id: usize) -> Result<Self, String> {
+        if self.session.has_resident_combat_search(node_id)? {
+            return Err(format!(
+                "oracle analysis node {node_id} has resident combat search; accept or restart that search before compacting"
+            ));
+        }
+        let continuation = self.continuation(node_id)?;
+        Self::from_continuation_with_combat_guidance(
+            OracleRunConfig {
+                seed: self.seed,
+                ascension: self.ascension,
+                budget: self.budget,
+            },
+            continuation,
+            self.combat_guidance_bundle.clone(),
+        )
+    }
+
     pub fn restore(artifact: OracleAnalysisWorkspaceArtifactV1) -> Result<Self, String> {
         if artifact.schema_name != ORACLE_ANALYSIS_WORKSPACE_SCHEMA_NAME
             || artifact.schema_version != ORACLE_ANALYSIS_WORKSPACE_SCHEMA_VERSION
@@ -442,11 +466,10 @@ pub fn recover_oracle_analysis_combat_case_v1(
             artifact.schema_name, artifact.schema_version
         ));
     }
-    let saved = artifact
-        .session
-        .explorer
+    let explorer = &artifact.session.explorer;
+    let saved = explorer
         .branches
-        .into_iter()
+        .iter()
         .find(|branch| branch.branch_id == branch_id)
         .ok_or_else(|| format!("oracle analysis workspace has no branch {branch_id}"))?;
     let source = CombatCaseSource {
@@ -456,7 +479,7 @@ pub fn recover_oracle_analysis_combat_case_v1(
         branch_id: saved.branch_id,
         parent_id: saved.parent_branch_id,
     };
-    let session = saved.session.into_session()?;
+    let session = explorer.hydrated_branch_session(saved)?.into_session()?;
     let position = session.current_active_combat_position()?;
     let (search_nodes, search_ms) = if position.combat.meta.is_boss_fight {
         (artifact.budget.boss_nodes, artifact.budget.boss_ms)

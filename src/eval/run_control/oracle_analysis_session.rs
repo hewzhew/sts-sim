@@ -733,6 +733,11 @@ impl OracleAnalysisSessionV1 {
         ))
     }
 
+    pub fn has_resident_combat_search(&self, node_id: usize) -> Result<bool, String> {
+        self.require_branch(node_id)?;
+        Ok(self.combat_jobs.contains_key(&node_id))
+    }
+
     pub fn combat_trajectory(
         &self,
         node_id: usize,

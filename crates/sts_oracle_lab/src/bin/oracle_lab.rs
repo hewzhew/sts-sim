@@ -132,6 +132,16 @@ fn main() -> Result<(), String> {
         } => print_json(&run_witness_commands::export_continuation(
             &workspace, node, &output,
         )?),
+        Command::CompactWorkspace {
+            workspace,
+            node,
+            output,
+        } => print_json(&workspace_commands::compact_workspace(
+            &workspace, node, &output,
+        )?),
+        Command::RepackWorkspace { workspace, output } => {
+            print_json(&workspace_commands::repack_workspace(&workspace, &output)?)
+        }
         Command::RecoverCombatCase {
             workspace,
             branch,

@@ -26,9 +26,9 @@ mod decision_supply;
 mod scheduling;
 
 pub use checkpoint::{
-    OracleRunActiveCombatCheckpointV1, OracleRunBranchCheckpointV1,
+    OracleRunActiveCombatCheckpointV1, OracleRunBranchCheckpointV1, OracleRunCheckpointPayloadsV1,
     OracleRunDeferredCombatCheckpointV1, OracleRunExplorerCheckpointV1,
-    OracleRunJournalNodeCheckpointV1,
+    OracleRunJournalNodeCheckpointV1, OracleRunSessionPayloadRefsV1,
 };
 pub use checkpoint_restore::seed_oracle_run_explorer_from_checkpoint_v1;
 use combat_completion::FinishedOracleCombatV1;

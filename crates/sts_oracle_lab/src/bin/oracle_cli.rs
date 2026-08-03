@@ -89,6 +89,24 @@ pub(super) enum Command {
         #[arg(long)]
         output: PathBuf,
     },
+    /// Create a fresh one-node workspace from an exact committed node.
+    /// The source workspace is never modified and the output must not exist.
+    CompactWorkspace {
+        #[arg(long)]
+        workspace: PathBuf,
+        #[arg(long)]
+        node: Option<usize>,
+        #[arg(long)]
+        output: PathBuf,
+    },
+    /// Rewrite a workspace with the current pooled checkpoint format while
+    /// preserving its complete variation tree. The source is never modified.
+    RepackWorkspace {
+        #[arg(long)]
+        workspace: PathBuf,
+        #[arg(long)]
+        output: PathBuf,
+    },
     /// Recover one exact combat branch from a stale analysis workspace without
     /// restoring or validating unrelated frontier branches.
     RecoverCombatCase {

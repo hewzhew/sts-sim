@@ -82,6 +82,53 @@ fn take_next_scheduled_work_for_test(
 }
 
 #[test]
+fn legacy_inline_explorer_checkpoint_remains_readable_after_payload_pooling() {
+    let mut explorer = OracleRunExplorerV1::empty();
+    let mut root = test_branch(0, None);
+    root.state_fingerprint = run_session_fingerprint_v2(&root.session);
+    explorer.accept_branch(root).expect("root branch");
+    let mut child = test_branch(1, Some(0));
+    child.session.run_state.gold += 1;
+    child.replay.push(OracleRunReplayStepV1 {
+        candidate_id: "legacy-child".to_string(),
+        label: "legacy child".to_string(),
+        action: RunDecisionAction::Input(ClientInput::Proceed),
+    });
+    child.state_fingerprint = run_session_fingerprint_v2(&child.session);
+    explorer.accept_branch(child).expect("child branch");
+    explorer.next_branch_id = 2;
+
+    let mut checkpoint = explorer.analysis_checkpoint().expect("pooled checkpoint");
+    let payloads = checkpoint.payloads.clone();
+    for branch in &mut checkpoint.branches {
+        let mut session = branch.session.clone();
+        payloads
+            .hydrate_session(&mut session, &branch.session_payload_refs)
+            .expect("hydrate legacy inline session");
+        branch.session = session;
+        branch.session_payload_refs = OracleRunSessionPayloadRefsV1::default();
+        branch.replay = payloads
+            .restore_replay(std::mem::take(&mut branch.replay), branch.replay_tip)
+            .expect("hydrate legacy inline replay");
+        branch.replay_tip = None;
+    }
+    checkpoint.payloads = OracleRunCheckpointPayloadsV1::default();
+
+    let encoded = serde_json::to_vec(&checkpoint).expect("serialize legacy inline checkpoint");
+    let decoded: OracleRunExplorerCheckpointV1 =
+        serde_json::from_slice(&encoded).expect("deserialize legacy inline checkpoint");
+    let restored = seed_oracle_run_explorer_from_checkpoint_v1(
+        decoded,
+        &OracleRunCombatBudgetsV1::uniform(RunControlSearchCombatOptions::default()),
+    )
+    .expect("restore legacy inline checkpoint");
+
+    assert_eq!(restored.branches.len(), 2);
+    assert_eq!(restored.branches[1].replay.len(), 1);
+    assert_eq!(restored.branches[1].session.run_state.gold, 100);
+}
+
+#[test]
 fn drive_reports_work_exhausted_without_consuming_service() {
     let result =
         drive_oracle_run_explorer_v1(OracleRunExplorerV1::empty(), test_explore_budget(None))

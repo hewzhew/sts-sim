@@ -428,6 +428,21 @@ Default reports should reference state, journal, checkpoint, and diagnostics
 instead of inlining large payloads. Compression is not a license to store
 unbounded data.
 
+An oracle analysis workspace is an editable variation workbench, not the
+archive authority for every state it has ever materialized. Explorer
+checkpoints externalize map graphs, map state, decks, relics, potions, and run
+schedules into typed content-addressed payload tables. Replay steps and emitted
+events use shared prefix DAGs. Payload hashes declare their algorithm and are
+validated during hydration; legacy inline checkpoints remain readable.
+
+A fresh active workspace may also be rebuilt from one exact committed node
+after journal and final-state fingerprints are verified; the historical
+workspace remains immutable evidence. This bounds the active edit loop without
+pretending that a one-node continuation preserves the discarded variation DAG
+or resident combat-search frontier. Repacking only changes storage and retains
+the complete variation DAG; compaction deliberately starts a new one-node
+workbench. Neither operation overwrites its source.
+
 ## Journal And Candidate Identity
 
 Decision history belongs in the journal. It records:

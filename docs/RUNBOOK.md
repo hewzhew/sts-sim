@@ -310,6 +310,39 @@ Stdout stays a compact artifact receipt. For an active resident session, use
 `card-reward-path` through the matching `ol-live` surface with the same
 optional `--output` behavior.
 
+When an analysis workspace has accumulated many historical variations, create
+a fresh active workbench from one exact committed node without modifying or
+overwriting the source:
+
+```powershell
+cargo oracle-lab compact-workspace `
+  --workspace .oracle-lab/cases/<historical>.workspace.json `
+  --node <workspace-local-node> `
+  --output .oracle-lab/cases/<fresh-active>.workspace.json
+```
+
+The output path must be fresh. The command exact-replays the committed journal,
+rebuilds a one-node workspace, reloads the written artifact, and requires the
+same journal and final-state fingerprints before reporting success. Historical
+variations remain only in the unchanged source workspace. A selected node with
+resident combat search is rejected because ordinary run continuations do not
+preserve that search frontier.
+
+To migrate an older large workspace to pooled checkpoint storage while
+preserving every variation, use a fresh output path:
+
+```powershell
+cargo oracle-lab repack-workspace `
+  --workspace .oracle-lab/cases/<historical>.workspace.json `
+  --output .oracle-lab/cases/<pooled>.workspace.json
+```
+
+`repack-workspace` writes the current content-addressed payload format, verifies
+the written JSON against the exact generated artifact, restores it through the
+typed workspace loader, and requires the complete variation tree to match.
+Unlike `compact-workspace`, it retains the entire variation DAG. Both commands
+leave the source untouched and reject an existing output path.
+
 Run consecutive seeds in one process instead of launching resident services
 from a PowerShell loop:
 

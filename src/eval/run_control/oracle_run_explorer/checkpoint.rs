@@ -1,5 +1,9 @@
 use super::*;
 
+mod payloads;
+
+pub use payloads::{OracleRunCheckpointPayloadsV1, OracleRunSessionPayloadRefsV1};
+
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct OracleRunBranchCheckpointV1 {
@@ -14,9 +18,16 @@ pub struct OracleRunBranchCheckpointV1 {
     pub path_depth: u64,
     pub replay: Vec<OracleRunReplayStepV1>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub replay_tip: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub journal: Option<RunProgressJournalV1>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub journal_tip: Option<usize>,
+    #[serde(
+        default,
+        skip_serializing_if = "OracleRunSessionPayloadRefsV1::is_empty"
+    )]
+    pub session_payload_refs: OracleRunSessionPayloadRefsV1,
     pub session: RunControlSessionCheckpointV1,
 }
 
@@ -64,6 +75,11 @@ pub struct OracleRunExplorerCheckpointV1 {
     pub deferred_combats: Vec<OracleRunDeferredCombatCheckpointV1>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub journal_nodes: Vec<OracleRunJournalNodeCheckpointV1>,
+    #[serde(
+        default,
+        skip_serializing_if = "OracleRunCheckpointPayloadsV1::is_empty"
+    )]
+    pub payloads: OracleRunCheckpointPayloadsV1,
     #[serde(default)]
     pub combat_search_restarts: usize,
     /// The last top-level Neow option that received strategic service.
@@ -149,6 +165,7 @@ impl OracleRunExplorerV1 {
             .collect::<BTreeMap<_, _>>();
         let mut checkpointed_journals = BTreeMap::<usize, (Option<usize>, usize)>::new();
         let mut branches = Vec::with_capacity(branch_ids.len());
+        let mut payloads = OracleRunCheckpointPayloadsV1::default();
         for branch_id in branch_ids {
             let branch = branch_by_id
                 .get(&branch_id)
@@ -188,8 +205,10 @@ impl OracleRunExplorerV1 {
                 journal_tip = Some(node_id);
             }
             checkpointed_journals.insert(branch_id, (journal_tip, entries.len()));
+            let replay_tip = payloads.intern_replay(&branch.replay);
             let mut session = RunControlSessionCheckpointV1::from_session(&branch.session);
             session.clear_combat_diagnostics_for_external_checkpoint();
+            let session_payload_refs = payloads.externalize_session(&mut session)?;
             branches.push(OracleRunBranchCheckpointV1 {
                 branch_id: branch.branch_id,
                 parent_branch_id: branch.parent_branch_id,
@@ -200,9 +219,11 @@ impl OracleRunExplorerV1 {
                 path_negative_log_policy: branch.path_negative_log_policy,
                 path_discrepancy: branch.path_discrepancy,
                 path_depth: branch.path_depth,
-                replay: branch.replay.clone(),
+                replay: Vec::new(),
+                replay_tip,
                 journal: None,
                 journal_tip,
+                session_payload_refs,
                 session,
             });
         }
@@ -224,10 +245,23 @@ impl OracleRunExplorerV1 {
                 })
                 .collect(),
             journal_nodes,
+            payloads,
             combat_search_restarts: self.combat_search_restarts,
             last_served_neow_root: self.last_served_neow_root.clone(),
             unresolved_combats: self.unresolved_combats.clone(),
         })
+    }
+}
+
+impl OracleRunExplorerCheckpointV1 {
+    pub fn hydrated_branch_session(
+        &self,
+        branch: &OracleRunBranchCheckpointV1,
+    ) -> Result<RunControlSessionCheckpointV1, String> {
+        let mut session = branch.session.clone();
+        self.payloads
+            .hydrate_session(&mut session, &branch.session_payload_refs)?;
+        Ok(session)
     }
 }
 

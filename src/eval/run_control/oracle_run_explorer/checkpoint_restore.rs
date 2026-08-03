@@ -15,6 +15,7 @@ pub fn seed_oracle_run_explorer_from_checkpoint_v1(
         active_combat,
         deferred_combats,
         journal_nodes,
+        payloads,
         combat_search_restarts,
         last_served_neow_root,
         unresolved_combats,
@@ -36,7 +37,10 @@ pub fn seed_oracle_run_explorer_from_checkpoint_v1(
     for saved in branches {
         let journal =
             checkpoint::restore_frontier_journal(saved.journal, saved.journal_tip, &journal_nodes)?;
-        let session = saved.session.into_session()?;
+        let replay = payloads.restore_replay(saved.replay, saved.replay_tip)?;
+        let mut session_checkpoint = saved.session;
+        payloads.hydrate_session(&mut session_checkpoint, &saved.session_payload_refs)?;
+        let session = session_checkpoint.into_session()?;
         let actual_fingerprint = run_session_fingerprint_v2(&session);
         if !migrate_state_fingerprints && actual_fingerprint != saved.state_fingerprint {
             return Err(format!(
@@ -54,7 +58,7 @@ pub fn seed_oracle_run_explorer_from_checkpoint_v1(
             path_negative_log_policy: saved.path_negative_log_policy,
             path_discrepancy: saved.path_discrepancy,
             path_depth: saved.path_depth,
-            replay: saved.replay,
+            replay,
             journal,
             session,
         };

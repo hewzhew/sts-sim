@@ -1,4 +1,7 @@
 use sts_oracle_runtime::eval::combat_guidance_bundle::CombatValuePrototypeArtifactV1;
+use sts_oracle_runtime::eval::run_control::{
+    exact_replay_run_progress_journal_v1, run_progress_journal_fingerprint_v1,
+};
 use sts_oracle_runtime::runtime::branch::{
     OracleAnalysisWorkspaceArtifactV1, OracleAnalysisWorkspaceV1, OracleRunBudget, OracleRunConfig,
 };
@@ -93,4 +96,102 @@ fn engine_owned_checkpoint_roundtrips_navigation_and_rejects_tampered_choices() 
         restored.session.back().expect("restored back"),
         root.node_id
     );
+}
+
+#[test]
+fn compact_workspace_keeps_one_exact_committed_node_and_its_journal() {
+    let mut workspace = workspace();
+    let root = workspace.view().expect("root view");
+    let choice = root.choices.first().expect("root choice").clone();
+    let child = workspace
+        .try_choice(&choice.choice_ref)
+        .expect("materialize child");
+    assert!(workspace.session.tree().nodes.len() > 1);
+
+    let source = workspace
+        .continuation(child.node_id)
+        .expect("source continuation");
+    let source_expected = source
+        .session
+        .clone()
+        .into_session()
+        .expect("source session");
+    let source_replay = exact_replay_run_progress_journal_v1(
+        source.seed,
+        source.ascension,
+        &source.journal,
+        &source_expected,
+    )
+    .expect("source replay");
+
+    let compact = workspace
+        .compact_from_node(child.node_id)
+        .expect("compact workspace");
+    assert_eq!(compact.session.tree().nodes.len(), 1);
+    let compact_node_id = compact.session.cursor_node_id();
+    let compact_continuation = compact
+        .continuation(compact_node_id)
+        .expect("compact continuation");
+    let compact_expected = compact_continuation
+        .session
+        .clone()
+        .into_session()
+        .expect("compact session");
+    let compact_replay = exact_replay_run_progress_journal_v1(
+        compact_continuation.seed,
+        compact_continuation.ascension,
+        &compact_continuation.journal,
+        &compact_expected,
+    )
+    .expect("compact replay");
+
+    assert_eq!(source_replay, compact_replay);
+    assert_eq!(
+        run_progress_journal_fingerprint_v1(&source.journal),
+        run_progress_journal_fingerprint_v1(&compact_continuation.journal)
+    );
+}
+
+#[test]
+fn workspace_checkpoint_pools_branch_payloads_and_rejects_tampering() {
+    let mut workspace = workspace();
+    let root = workspace.view().expect("root view");
+    let choice = root.choices.first().expect("root choice").clone();
+    workspace
+        .try_choice(&choice.choice_ref)
+        .expect("materialize child");
+
+    let artifact = workspace.artifact().expect("pooled artifact");
+    let explorer = &artifact.session.explorer;
+    assert!(explorer.branches.len() > 1);
+    assert_eq!(explorer.payloads.map_graphs.len(), 1);
+    assert!(explorer.payloads.maps.len() < explorer.branches.len());
+    assert!(explorer
+        .branches
+        .iter()
+        .all(|branch| branch.session_payload_refs.map_id.is_some()));
+    assert!(explorer
+        .branches
+        .iter()
+        .all(|branch| branch.replay.is_empty()));
+
+    let mut missing_algorithm = artifact.clone();
+    missing_algorithm
+        .session
+        .explorer
+        .payloads
+        .fingerprint_algorithm = None;
+    let error = match OracleAnalysisWorkspaceV1::restore(missing_algorithm) {
+        Ok(_) => panic!("pooled payloads without a declared hash algorithm must not restore"),
+        Err(error) => error,
+    };
+    assert!(error.contains("fingerprint algorithm is missing"));
+
+    let mut tampered = artifact;
+    tampered.session.explorer.payloads.maps[0].map.current_x += 1;
+    let error = match OracleAnalysisWorkspaceV1::restore(tampered) {
+        Ok(_) => panic!("tampered pooled map must not restore"),
+        Err(error) => error,
+    };
+    assert!(error.contains("fingerprint validation"));
 }
