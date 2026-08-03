@@ -123,6 +123,13 @@ owned positive-cost cards that can receive its trigger. Reward and upgrade
 owners may consume that fact; they must not infer the relic interaction from a
 display label or promote every Power without its package and boss context.
 
+Card-reward ordering preserves policy bands and exact threat-gap closure before
+using narrower tie-breaks. Within the same band and after those gap comparisons,
+a typed Boss damage-plan improvement takes precedence over the raw count of
+generic capability improvements. This tie-break may distinguish an established
+long-fight engine from several coarse capability promotions, but it must not
+promote a candidate across a stronger band or a real threat-gap closure.
+
 Upgrade redundancy is measured across cards that provide the same capability,
 not only duplicate card ids. Weak and Vulnerable duration providers therefore
 share coverage groups. Upgrade roles must describe what the upgrade changes:

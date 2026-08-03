@@ -967,6 +967,12 @@ fn compare_card_reward_evidence(
         })
         .then_with(|| {
             right
+                .boss_damage_plan_improvement
+                .is_some()
+                .cmp(&left.boss_damage_plan_improvement.is_some())
+        })
+        .then_with(|| {
+            right
                 .delta
                 .capability_improvements
                 .len()
@@ -985,12 +991,6 @@ fn compare_card_reward_evidence(
                 .added_formation_strengths
                 .len()
                 .cmp(&left.delta.added_formation_strengths.len())
-        })
-        .then_with(|| {
-            right
-                .boss_damage_plan_improvement
-                .is_some()
-                .cmp(&left.boss_damage_plan_improvement.is_some())
         })
         .then_with(|| {
             right
@@ -1099,6 +1099,46 @@ mod tests {
             .run_state
             .master_deck
             .push(CombatCard::new(CardId::RecklessCharge, 10_001));
+        session
+    }
+
+    fn a2f20_champ_without_damage_engine_session(cards: &[(CardId, u8)]) -> RunControlSession {
+        let mut session = reward_session(cards);
+        session.run_state.act_num = 2;
+        session.run_state.floor_num = 20;
+        session.run_state.boss_key = Some(EncounterId::TheChamp);
+        session.run_state.current_hp = 60;
+        session.run_state.max_hp = 85;
+        session.run_state.gold = 105;
+        session.run_state.relics = vec![
+            RelicState::new(RelicId::BurningBlood),
+            RelicState::new(RelicId::OrnamentalFan),
+            RelicState::new(RelicId::MummifiedHand),
+            RelicState::new(RelicId::PenNib),
+            RelicState::new(RelicId::RunicCube),
+            RelicState::new(RelicId::OrangePellets),
+        ];
+        session.run_state.master_deck = owned_deck(&[
+            (CardId::Strike, 0),
+            (CardId::Strike, 0),
+            (CardId::Strike, 0),
+            (CardId::Strike, 0),
+            (CardId::Defend, 0),
+            (CardId::Defend, 0),
+            (CardId::Defend, 0),
+            (CardId::Defend, 0),
+            (CardId::Bash, 0),
+            (CardId::PowerThrough, 0),
+            (CardId::SecondWind, 0),
+            (CardId::ThunderClap, 0),
+            (CardId::Anger, 0),
+            (CardId::ShrugItOff, 0),
+            (CardId::DarkEmbrace, 0),
+            (CardId::RecklessCharge, 0),
+            (CardId::DarkEmbrace, 0),
+            (CardId::FiendFire, 0),
+            (CardId::Cleave, 0),
+        ]);
         session
     }
 
@@ -1812,6 +1852,60 @@ mod tests {
                 }
             )),
             "the shared reliability repair must break the same-band surface tie; evidence={:#?}",
+            decision.evidence
+        );
+    }
+
+    #[test]
+    fn known_champ_engine_repair_precedes_generic_capability_count() {
+        let session = a2f20_champ_without_damage_engine_session(&[
+            (CardId::Clothesline, 0),
+            (CardId::DemonForm, 0),
+            (CardId::Havoc, 0),
+        ]);
+
+        let decision = decision(&session);
+        let clothesline = card_evidence(&decision, CardId::Clothesline);
+        let demon_form = card_evidence(&decision, CardId::DemonForm);
+
+        assert_eq!(
+            clothesline.band,
+            CardRewardPolicyBandV1::EstablishStrategicAsset
+        );
+        assert_eq!(
+            demon_form.band,
+            CardRewardPolicyBandV1::EstablishStrategicAsset
+        );
+        assert!(
+            clothesline.delta.capability_improvements.len()
+                > demon_form.delta.capability_improvements.len(),
+            "the fixture must preserve the misleading generic-count advantage"
+        );
+        assert_eq!(
+            demon_form.boss_damage_plan_improvement,
+            Some(CardRewardBossDamagePlanImprovementV1 {
+                before_readiness: BossDamagePlanReadinessV1::Support,
+                after_readiness: BossDamagePlanReadinessV1::Engine,
+                before_reliability: BossDamagePlanEngineReliabilityV1::None,
+                after_reliability: BossDamagePlanEngineReliabilityV1::Established,
+            })
+        );
+        assert_eq!(clothesline.boss_damage_plan_improvement, None);
+        assert!(
+            position(&decision, |key| matches!(
+                key,
+                DecisionCandidateKey::CardRewardPick {
+                    card: CardId::DemonForm,
+                    ..
+                }
+            )) < position(&decision, |key| matches!(
+                key,
+                DecisionCandidateKey::CardRewardPick {
+                    card: CardId::Clothesline,
+                    ..
+                }
+            )),
+            "the exact known-Boss engine repair should beat a larger count of generic capability changes; evidence={:#?}",
             decision.evidence
         );
     }
