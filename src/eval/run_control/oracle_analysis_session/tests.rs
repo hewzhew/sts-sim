@@ -117,6 +117,16 @@ fn card_reward_path_audit_batches_typed_boundaries_and_applied_identity() {
     ));
 
     let view = analysis.view_node(0).expect("root card reward view");
+    let expected_cards = vec![
+        RewardCard::new(crate::content::cards::CardId::PommelStrike, 0),
+        RewardCard::new(crate::content::cards::CardId::SecondWind, 0),
+    ];
+    let reward = view.reward.as_ref().expect("typed reward state");
+    assert_eq!(reward.pending_card_choice.as_ref(), Some(&expected_cards));
+    assert!(matches!(
+        reward.items.as_slice(),
+        [RewardItem::Card { cards: offered }] if offered == &expected_cards
+    ));
     let choice_ref = view
         .choices
         .iter()

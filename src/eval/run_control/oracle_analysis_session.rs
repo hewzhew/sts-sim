@@ -10,7 +10,8 @@ use crate::content::{cards, monsters::EnemyId};
 use crate::runtime::combat::CombatCard;
 use crate::runtime::monster_move::MonsterMoveSpec;
 use crate::sim::combat::CombatPosition;
-use crate::state::core::ClientInput;
+use crate::state::core::{ClientInput, EngineState};
+use crate::state::rewards::RewardState;
 
 use crate::eval::combat_case::{
     CombatCase, CombatCaseGap, CombatCaseRngSummary, CombatCaseRunSummary, CombatCaseSource,
@@ -356,6 +357,7 @@ pub struct OracleAnalysisNodeViewV1 {
     pub deck: Vec<CombatCard>,
     pub relics: Vec<RelicState>,
     pub potions: Vec<Option<Potion>>,
+    pub reward: Option<RewardState>,
     pub replay_len: usize,
     pub recent_replay: Vec<OracleRunReplayStepV1>,
     pub choices: Vec<OracleAnalysisChoiceViewV1>,
@@ -1037,6 +1039,11 @@ impl OracleAnalysisSessionV1 {
                     .collect(),
             }
         });
+        let reward = match &branch.session.engine_state {
+            EngineState::RewardScreen(reward) => Some(reward.clone()),
+            EngineState::RewardOverlay { reward_state, .. } => Some(reward_state.clone()),
+            _ => None,
+        };
         Ok(OracleAnalysisNodeViewV1 {
             node_id,
             canonical_parent_node_id: branch.parent_branch_id,
@@ -1064,6 +1071,7 @@ impl OracleAnalysisSessionV1 {
             deck: run.master_deck.clone(),
             relics: run.relics.clone(),
             potions: run.potions.clone(),
+            reward,
             replay_len,
             recent_replay,
             choices,

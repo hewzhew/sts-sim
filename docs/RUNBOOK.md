@@ -148,6 +148,9 @@ the persisted choice surface by candidate id. Compact status keeps the old
 value as `materialized_owner_rank` and emits the current value as
 `owner_rank`; raw `view` remains a materialized tree view. A missing or
 ambiguous candidate-id join fails instead of falling back to a label.
+Compact status also carries the exact state fingerprint, deck, relics, potion
+slots, keys, and current typed reward state. Policy investigation should not
+reopen the workspace checkpoint to recover those facts.
 
 Index local combat evidence and replay exact relationships:
 
