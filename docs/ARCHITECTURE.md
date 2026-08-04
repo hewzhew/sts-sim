@@ -349,6 +349,17 @@ Accepted combat lines must be exact executable lines from the current combat
 state. Frontiers, near misses, rollout samples, and dirty diagnostic lines are
 evidence, not runnable campaign actions.
 
+The complete-turn planner retains exact terminal witnesses on a typed
+non-dominated frontier instead of collapsing every victory into its local
+HP-first view. The retained facts include final and maximum HP, recoverable
+gold (including pending `StolenGold` rewards), persistent card growth,
+external burdens, potion expenditure, and action count. The planner's selected
+`witness` remains a compatibility view for tactical progress; it is not the
+run-level continuation decision. Run control owns adjudication across the
+frontier with its existing satisfaction, potion-quality, and continuation
+contracts. Diagnostic reports may expose compact terminal-outcome summaries,
+but must not duplicate every retained action line.
+
 An autonomous run wall stops additional search and owner scheduling; it does
 not discard a verified incumbent returned by the final admitted search call.
 Runtime first materializes that exact combat line as one atomic transaction,

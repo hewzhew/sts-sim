@@ -214,9 +214,116 @@ pub(super) fn witness_better_with_potion_budget(
     ) == std::cmp::Ordering::Greater
 }
 
-pub(super) fn terminal_candidate_could_improve_witness(
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub(super) struct WitnessAdmission {
+    pub(super) frontier_changed: bool,
+    pub(super) selected_changed: bool,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct WitnessOutcomeResources {
+    final_hp: i32,
+    persistent: sts_core::ai::combat_persistent_outcome_v1::CombatPersistentOutcomeV1,
+    potion_expenditures: u32,
+    action_count: usize,
+}
+
+impl WitnessOutcomeResources {
+    fn from_witness(root: &CombatPosition, witness: &OracleCombatWitness) -> Self {
+        Self::from_parts(root, &witness.final_position, &witness.actions)
+    }
+
+    fn from_parts(
+        root: &CombatPosition,
+        final_position: &CombatPosition,
+        actions: &[TurnOptionAction],
+    ) -> Self {
+        Self {
+            final_hp: final_position.combat.entities.player.current_hp,
+            persistent:
+                sts_core::ai::combat_persistent_outcome_v1::CombatPersistentOutcomeV1::from_combat(
+                    &final_position.combat,
+                ),
+            potion_expenditures: crate::witness::trajectory_potion_contract_usage(
+                root,
+                actions,
+                final_position,
+            )
+            .expenditures,
+            action_count: actions.len(),
+        }
+    }
+
+    fn strictly_dominates(self, other: Self) -> bool {
+        self.final_hp >= other.final_hp
+            && self.persistent.dominates_or_equals(other.persistent)
+            && self.potion_expenditures <= other.potion_expenditures
+            && self.action_count <= other.action_count
+            && self != other
+    }
+}
+
+pub(super) fn remember_nondominated_witness(
     root: &CombatPosition,
-    current: &OracleCombatWitness,
+    frontier: &mut Vec<OracleCombatWitness>,
+    candidate: &OracleCombatWitness,
+) -> bool {
+    let candidate_resources = WitnessOutcomeResources::from_witness(root, candidate);
+    if frontier.iter().any(|existing| {
+        WitnessOutcomeResources::from_witness(root, existing)
+            .strictly_dominates(candidate_resources)
+    }) {
+        return false;
+    }
+
+    if let Some(equal_index) = frontier.iter().position(|existing| {
+        WitnessOutcomeResources::from_witness(root, existing) == candidate_resources
+    }) {
+        if witness_better_with_potion_budget(root, candidate, &frontier[equal_index], None) {
+            frontier[equal_index] = candidate.clone();
+            return true;
+        }
+        return false;
+    }
+
+    frontier.retain(|existing| {
+        !candidate_resources
+            .strictly_dominates(WitnessOutcomeResources::from_witness(root, existing))
+    });
+    frontier.push(candidate.clone());
+    true
+}
+
+pub(super) fn terminal_outcome_snapshot(
+    root: &CombatPosition,
+    witness: &OracleCombatWitness,
+    selected_by_local_hp_view: bool,
+) -> LocalTurnGraphTerminalOutcomeSnapshotV1 {
+    let persistent =
+        sts_core::ai::combat_persistent_outcome_v1::CombatPersistentOutcomeV1::from_combat(
+            &witness.final_position.combat,
+        );
+    LocalTurnGraphTerminalOutcomeSnapshotV1 {
+        selected_by_local_hp_view,
+        final_hp: witness.final_position.combat.entities.player.current_hp,
+        final_max_hp: persistent.max_hp,
+        recoverable_gold_delta: persistent.recoverable_gold_delta,
+        recoverable_stolen_gold:
+            sts_core::ai::combat_persistent_outcome_v1::recoverable_stolen_gold(
+                &witness.final_position.combat,
+            ),
+        ritual_dagger_value: persistent.ritual_dagger_value,
+        genetic_algorithm_value: persistent.genetic_algorithm_value,
+        external_burden_count: persistent.external_burden_count,
+        potion_expenditures: witness_potion_expenditures(root, witness),
+        action_count: witness.actions.len(),
+        negative_log_policy: witness.negative_log_policy,
+    }
+}
+
+pub(super) fn terminal_candidate_could_improve_witness_frontier(
+    root: &CombatPosition,
+    current_frontier: &[OracleCombatWitness],
     candidate_final_position: &CombatPosition,
     candidate_actions: &[TurnOptionAction],
     candidate_negative_log_policy: f64,
@@ -228,21 +335,35 @@ pub(super) fn terminal_candidate_could_improve_witness(
         candidate_final_position,
     )
     .expenditures;
-    let current_potions = witness_potion_expenditures(root, current);
+    if max_potions_used.is_some_and(|limit| candidate_potions > limit) {
+        return false;
+    }
+    let candidate_resources =
+        WitnessOutcomeResources::from_parts(root, candidate_final_position, candidate_actions);
+    if current_frontier.iter().any(|current| {
+        WitnessOutcomeResources::from_witness(root, current).strictly_dominates(candidate_resources)
+    }) {
+        return false;
+    }
+    let Some(equal) = current_frontier.iter().find(|current| {
+        WitnessOutcomeResources::from_witness(root, current) == candidate_resources
+    }) else {
+        return true;
+    };
     observable_witness_quality_order(
         ObservableWitnessQuality {
-            within_budget: max_potions_used.is_none_or(|limit| candidate_potions <= limit),
+            within_budget: true,
             final_hp: candidate_final_position.combat.entities.player.current_hp,
             action_count: candidate_actions.len(),
             negative_log_policy: candidate_negative_log_policy,
             potion_expenditures: candidate_potions,
         },
         ObservableWitnessQuality {
-            within_budget: max_potions_used.is_none_or(|limit| current_potions <= limit),
-            final_hp: current.final_position.combat.entities.player.current_hp,
-            action_count: current.actions.len(),
-            negative_log_policy: current.negative_log_policy,
-            potion_expenditures: current_potions,
+            within_budget: true,
+            final_hp: equal.final_position.combat.entities.player.current_hp,
+            action_count: equal.actions.len(),
+            negative_log_policy: equal.negative_log_policy,
+            potion_expenditures: witness_potion_expenditures(root, equal),
         },
     ) == std::cmp::Ordering::Greater
 }
@@ -411,49 +532,136 @@ mod tests {
         let current = witness(50, false);
 
         let candidate = witness(49, false);
-        assert!(!terminal_candidate_could_improve_witness(
+        assert!(!terminal_candidate_could_improve_witness_frontier(
             &root,
-            &current,
+            std::slice::from_ref(&current),
             &candidate.final_position,
             &candidate.actions,
             0.5,
             None
         ));
         let candidate = witness(51, true);
-        assert!(terminal_candidate_could_improve_witness(
+        assert!(terminal_candidate_could_improve_witness_frontier(
             &root,
-            &current,
+            std::slice::from_ref(&current),
             &candidate.final_position,
             &candidate.actions,
             20.0,
             None
         ));
         let candidate = witness(50, false);
-        assert!(terminal_candidate_could_improve_witness(
+        assert!(terminal_candidate_could_improve_witness_frontier(
             &root,
-            &current,
+            std::slice::from_ref(&current),
             &candidate.final_position,
             &candidate.actions,
             0.5,
             None
         ));
-        assert!(!terminal_candidate_could_improve_witness(
+        assert!(!terminal_candidate_could_improve_witness_frontier(
             &root,
-            &current,
+            std::slice::from_ref(&current),
             &candidate.final_position,
             &candidate.actions,
             1.0,
             None
         ));
         let candidate = witness(51, true);
-        assert!(!terminal_candidate_could_improve_witness(
+        assert!(!terminal_candidate_could_improve_witness_frontier(
             &root,
-            &current,
+            std::slice::from_ref(&current),
             &candidate.final_position,
             &candidate.actions,
             0.5,
             Some(0),
         ));
+    }
+
+    #[test]
+    fn lower_hp_recoverable_gold_outcome_survives_terminal_frontier_filter() {
+        let root = CombatPosition::new(
+            EngineState::CombatPlayerTurn,
+            sts_core::test_support::blank_test_combat(),
+        );
+        let mut escaped = witness(82, false);
+        escaped
+            .final_position
+            .combat
+            .entities
+            .player
+            .gold_delta_this_combat = -75;
+        let mut killed = witness(71, false);
+        killed
+            .final_position
+            .combat
+            .entities
+            .player
+            .gold_delta_this_combat = -75;
+        killed
+            .final_position
+            .combat
+            .runtime
+            .pending_rewards
+            .push(sts_core::state::rewards::RewardItem::StolenGold { amount: 75 });
+
+        assert!(terminal_candidate_could_improve_witness_frontier(
+            &root,
+            std::slice::from_ref(&escaped),
+            &killed.final_position,
+            &killed.actions,
+            killed.negative_log_policy,
+            Some(0),
+        ));
+
+        let mut frontier = vec![escaped];
+        assert!(remember_nondominated_witness(&root, &mut frontier, &killed));
+        assert_eq!(frontier.len(), 2);
+    }
+
+    #[test]
+    fn potion_for_recoverable_gold_remains_a_run_control_tradeoff() {
+        let mut start_combat = sts_core::test_support::blank_test_combat();
+        start_combat.entities.potions = vec![Some(Potion::new(PotionId::FirePotion, 9))];
+        let root = CombatPosition::new(EngineState::CombatPlayerTurn, start_combat);
+        let mut escaped = witness(82, false);
+        escaped.final_position.combat.entities.potions =
+            vec![Some(Potion::new(PotionId::FirePotion, 9))];
+        escaped
+            .final_position
+            .combat
+            .entities
+            .player
+            .gold_delta_this_combat = -75;
+        let mut killed_with_potion = witness(82, true);
+        killed_with_potion
+            .final_position
+            .combat
+            .entities
+            .player
+            .gold_delta_this_combat = -75;
+        killed_with_potion
+            .final_position
+            .combat
+            .runtime
+            .pending_rewards
+            .push(sts_core::state::rewards::RewardItem::StolenGold { amount: 75 });
+
+        assert!(terminal_candidate_could_improve_witness_frontier(
+            &root,
+            std::slice::from_ref(&escaped),
+            &killed_with_potion.final_position,
+            &killed_with_potion.actions,
+            killed_with_potion.negative_log_policy,
+            Some(1),
+        ));
+
+        let mut frontier = vec![escaped];
+        assert!(remember_nondominated_witness(
+            &root,
+            &mut frontier,
+            &killed_with_potion,
+        ));
+        assert_eq!(frontier.len(), 2);
     }
 
     #[test]
@@ -473,17 +681,17 @@ mod tests {
             &implicit_fairy,
             Some(1),
         ));
-        assert!(!terminal_candidate_could_improve_witness(
+        assert!(!terminal_candidate_could_improve_witness_frontier(
             &root,
-            &clean,
+            std::slice::from_ref(&clean),
             &implicit_fairy.final_position,
             &implicit_fairy.actions,
             implicit_fairy.negative_log_policy,
             Some(1),
         ));
-        assert!(terminal_candidate_could_improve_witness(
+        assert!(terminal_candidate_could_improve_witness_frontier(
             &root,
-            &implicit_fairy,
+            std::slice::from_ref(&implicit_fairy),
             &clean.final_position,
             &clean.actions,
             clean.negative_log_policy,

@@ -96,6 +96,7 @@ mod tests {
             root_children: 0,
             generation_gaps: Vec::new(),
             witness: None,
+            witness_frontier: Vec::new(),
         }
     }
 

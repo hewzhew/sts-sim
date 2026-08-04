@@ -1130,37 +1130,62 @@ impl OracleRunCombatWorkV1 {
     }
 
     fn best_witness(&self) -> Option<&OracleCombatWitness> {
-        [
-            self.local_search.witness(),
-            self.discrepancy_witness.as_ref(),
-            self.policy_witness.as_ref(),
-            self.protected_potion_free_incumbent.as_ref(),
-        ]
-        .into_iter()
-        .flatten()
-        .filter(|witness| {
-            combat_witness_within_potion_contract(
-                &self.start,
-                witness,
-                self.max_potions_used,
-                self.allowed_potion_slots,
+        self.local_search
+            .witness_frontier()
+            .iter()
+            .chain(
+                [
+                    self.discrepancy_witness.as_ref(),
+                    self.policy_witness.as_ref(),
+                    self.protected_potion_free_incumbent.as_ref(),
+                ]
+                .into_iter()
+                .flatten(),
             )
-        })
-        .chain(self.prior_stage_incumbent.as_ref())
-        .filter(|witness| self.allow_potion_discard || !combat_witness_uses_potion_discard(witness))
-        .reduce(|best, candidate| {
-            if combat_witness_better_with_potion_quality_gate(
-                &self.start,
-                self.satisfaction,
-                self.potion_spend_requires_satisfaction,
-                candidate,
-                best,
-            ) {
-                candidate
-            } else {
-                best
-            }
-        })
+            .filter(|witness| {
+                combat_witness_within_potion_contract(
+                    &self.start,
+                    witness,
+                    self.max_potions_used,
+                    self.allowed_potion_slots,
+                )
+            })
+            .chain(self.prior_stage_incumbent.as_ref())
+            .filter(|witness| {
+                self.allow_potion_discard || !combat_witness_uses_potion_discard(witness)
+            })
+            .reduce(|best, candidate| {
+                if combat_witness_better_with_potion_quality_gate(
+                    &self.start,
+                    self.satisfaction,
+                    self.potion_spend_requires_satisfaction,
+                    candidate,
+                    best,
+                ) {
+                    candidate
+                } else {
+                    best
+                }
+            })
+    }
+
+    fn best_local_witness(&self) -> Option<&OracleCombatWitness> {
+        self.local_search
+            .witness_frontier()
+            .iter()
+            .reduce(|best, candidate| {
+                if combat_witness_better_with_potion_quality_gate(
+                    &self.start,
+                    self.satisfaction,
+                    self.potion_spend_requires_satisfaction,
+                    candidate,
+                    best,
+                ) {
+                    candidate
+                } else {
+                    best
+                }
+            })
     }
 
     pub(super) fn quantum_count(&self) -> usize {
@@ -1194,7 +1219,7 @@ impl OracleRunCombatWorkV1 {
         let local_progress = self.local_search.progress_snapshot();
         let search_progress = &local_progress;
         let initial_hp = self.start.combat.entities.player.current_hp;
-        let local_candidate = self.local_search.witness();
+        let local_candidate = self.best_local_witness();
         let incumbent = self.best_witness();
         let incumbent_final_hp =
             incumbent.map(|witness| witness.final_position.combat.entities.player.current_hp);
@@ -3011,6 +3036,108 @@ mod tests {
         assert!(
             !combat_witness_quality_better(reckless_profitable_lethal, ordinary_lethal),
             "persistent payoff is run value, not permission to discard more HP than it gains"
+        );
+    }
+
+    #[test]
+    fn portfolio_prefers_recoverable_stolen_gold_over_smaller_hp_escape_margin() {
+        let session = hallway_combat_session();
+        let start = session
+            .current_active_combat_position()
+            .expect("hallway combat root");
+        let mut escaped = synthetic_witness(&start, 82, false);
+        escaped
+            .final_position
+            .combat
+            .entities
+            .player
+            .gold_delta_this_combat = -75;
+        let mut killed = synthetic_witness(&start, 71, false);
+        killed
+            .final_position
+            .combat
+            .entities
+            .player
+            .gold_delta_this_combat = -75;
+        killed
+            .final_position
+            .combat
+            .runtime
+            .pending_rewards
+            .push(crate::state::rewards::RewardItem::StolenGold { amount: 75 });
+
+        assert!(combat_witness_better(&start, &killed, &escaped));
+        assert!(!combat_witness_better(&start, &escaped, &killed));
+    }
+
+    #[test]
+    fn production_selects_recoverable_gold_from_local_terminal_frontier() {
+        let session = hallway_combat_session();
+        let start = session
+            .current_active_combat_position()
+            .expect("hallway combat root");
+        let mut work = OracleRunCombatWorkV1::for_exact_action_witness_with_guidance(
+            &session,
+            RunControlSearchCombatOptions {
+                max_nodes: Some(1),
+                max_potions_used: Some(0),
+                satisfaction: Some(
+                    crate::ai::combat_search_v2::CombatSearchV2Satisfaction::BudgetOrExhaustion,
+                ),
+                ..RunControlSearchCombatOptions::default()
+            },
+            None,
+        )
+        .expect("production combat work");
+
+        let mut escaped = synthetic_witness(&start, 82, false);
+        escaped
+            .final_position
+            .combat
+            .entities
+            .player
+            .gold_delta_this_combat = -75;
+        let mut killed = synthetic_witness(&start, 71, false);
+        killed
+            .final_position
+            .combat
+            .entities
+            .player
+            .gold_delta_this_combat = -75;
+        killed
+            .final_position
+            .combat
+            .runtime
+            .pending_rewards
+            .push(crate::state::rewards::RewardItem::StolenGold { amount: 75 });
+        for witness in [&mut escaped, &mut killed] {
+            let monster = witness
+                .final_position
+                .combat
+                .entities
+                .monsters
+                .first_mut()
+                .expect("terminal monster");
+            monster.current_hp = 0;
+            monster.is_dying = true;
+        }
+
+        work.local_search
+            .restore_verified_witness(escaped)
+            .expect("escape outcome remains an exact terminal victory");
+        work.local_search
+            .restore_verified_witness(killed)
+            .expect("recovered-gold outcome remains an exact terminal victory");
+
+        assert_eq!(work.local_search.witness_frontier().len(), 2);
+        let selected = work.best_witness().expect("production incumbent");
+        assert_eq!(
+            selected.final_position.combat.entities.player.current_hp,
+            71
+        );
+        assert_eq!(
+            crate::ai::combat_search_v2::recoverable_stolen_gold(&selected.final_position.combat),
+            75
         );
     }
 

@@ -133,6 +133,27 @@ fn win_candidate_frontier_does_not_collapse_distinct_persistent_payoffs() {
 }
 
 #[test]
+fn win_candidate_frontier_preserves_hp_recoverable_gold_tradeoff() {
+    let mut candidates = Vec::new();
+    let mut escaped = test_node();
+    escaped.combat.entities.player.current_hp = 82;
+    escaped.combat.entities.player.gold_delta_this_combat = -75;
+
+    let mut killed = test_node();
+    killed.combat.entities.player.current_hp = 71;
+    killed.combat.entities.player.gold_delta_this_combat = -75;
+    killed
+        .combat
+        .runtime
+        .pending_rewards
+        .push(crate::state::rewards::RewardItem::StolenGold { amount: 75 });
+
+    assert!(remember_win_candidate(&mut candidates, &escaped));
+    assert!(remember_win_candidate(&mut candidates, &killed));
+    assert_eq!(candidates.len(), 2);
+}
+
+#[test]
 fn frontier_priority_uses_sustained_mitigation_after_raw_enemy_progress() {
     let mut better_progress = test_node();
     let mut monster = test_monster(EnemyId::TheGuardian);

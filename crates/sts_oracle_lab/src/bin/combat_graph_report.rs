@@ -106,6 +106,7 @@ pub(super) fn local_graph_trace_report(data: &LocalGraphReportData<'_>) -> Value
             "action_count": witness.actions.len(),
             "trace": compact_combat_trace(data.diagnostics.witness_trace.as_ref()),
         })),
+        "terminal_outcome_frontier": &data.report.witness_frontier,
         "exported_witness_actions": data.exports.witness_actions,
         "exported_witness_manifest": data.exports.witness_manifest,
         "exported_deepest_survival_case": data.exports.deepest_survival_case,
@@ -150,6 +151,7 @@ fn full_counter_report(report: &LocalTurnGraphWitnessReport) -> Value {
         "terminal_win_options": report.counters.terminal_win_options,
         "witness_replay_attempts": report.counters.witness_replay_attempts,
         "witness_replay_improvements": report.counters.witness_replay_improvements,
+        "witness_frontier_changes": report.counters.witness_frontier_changes,
         "witness_replay_dominated_skips": report.counters.witness_replay_dominated_skips,
     })
 }
@@ -221,6 +223,7 @@ pub(super) fn local_graph_full_report(
         "progress": progress,
         "storage": data.storage,
         "witness_trace": data.diagnostics.witness_trace,
+        "terminal_outcome_frontier": &data.report.witness_frontier,
         "generation_gap_count": data.report.generation_gaps.len(),
         "watched_states": data.observation.watched_states,
         "watched_corridor": watched_corridor,
@@ -241,7 +244,10 @@ pub(super) fn local_graph_full_report(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sts_combat_planner::{LocalTurnGraphWitnessCounters, LocalTurnGraphWitnessStatus};
+    use sts_combat_planner::{
+        LocalTurnGraphTerminalOutcomeSnapshotV1, LocalTurnGraphWitnessCounters,
+        LocalTurnGraphWitnessStatus,
+    };
 
     struct Fixture {
         report: LocalTurnGraphWitnessReport,
@@ -265,6 +271,7 @@ mod tests {
                     root_children: 0,
                     generation_gaps: Vec::new(),
                     witness: None,
+                    witness_frontier: Vec::new(),
                 },
                 progress: OracleCombatWitnessProgressSnapshot::default(),
                 storage: LocalTurnGraphStorageSnapshot::default(),
@@ -347,6 +354,31 @@ mod tests {
         assert!(report["witness"].is_null());
         assert!(report.get("watched_states").is_none());
         assert!(report.get("performance_profile").is_none());
+    }
+
+    #[test]
+    fn trace_terminal_frontier_contains_typed_outcomes_not_action_lines() {
+        let mut fixture = Fixture::new();
+        fixture.report.witness_frontier = vec![LocalTurnGraphTerminalOutcomeSnapshotV1 {
+            selected_by_local_hp_view: false,
+            final_hp: 71,
+            final_max_hp: 85,
+            recoverable_gold_delta: 0,
+            recoverable_stolen_gold: 75,
+            ritual_dagger_value: 0,
+            genetic_algorithm_value: 0,
+            external_burden_count: 0,
+            potion_expenditures: 0,
+            action_count: 19,
+            negative_log_policy: 4.5,
+        }];
+
+        let report = local_graph_trace_report(&fixture.data());
+        let outcome = &report["terminal_outcome_frontier"][0];
+        assert_eq!(outcome["final_hp"], 71);
+        assert_eq!(outcome["recoverable_stolen_gold"], 75);
+        assert!(outcome.get("actions").is_none());
+        assert!(outcome.get("trace").is_none());
     }
 
     #[test]

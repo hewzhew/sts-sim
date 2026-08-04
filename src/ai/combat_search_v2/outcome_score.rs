@@ -1,7 +1,4 @@
 use super::*;
-use crate::content::cards::{get_card_definition, CardType};
-use crate::content::relics::RelicId;
-use crate::runtime::combat::MetaChange;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) struct CombatOutcomeScore {
@@ -22,7 +19,7 @@ impl CombatOutcomeScore {
         let persistent_run_value = super::external_payoff::persistent_run_value(&node.combat);
         Self {
             terminal_rank: terminal_rank(terminal_label(&node.engine, &node.combat)),
-            run_hygiene: -external_burden_count(&node.combat),
+            run_hygiene: -super::external_payoff::external_burden_count(&node.combat),
             persistent_adjusted_hp: node
                 .combat
                 .entities
@@ -81,34 +78,14 @@ impl PartialOrd for CombatOutcomeScore {
 }
 
 pub(super) fn external_burden_count(combat: &CombatState) -> i32 {
-    let curse_additions = combat
-        .meta
-        .meta_changes
-        .iter()
-        .filter(|change| {
-            matches!(
-                change,
-                MetaChange::AddCardToMasterDeck(card_id)
-                    if get_card_definition(*card_id).card_type == CardType::Curse
-            )
-        })
-        .count() as i32;
-    let omamori_charges = combat
-        .entities
-        .player
-        .relics
-        .iter()
-        .find(|relic| relic.id == RelicId::Omamori && !relic.used_up)
-        .map(|relic| relic.counter.max(0))
-        .unwrap_or_default();
-    curse_additions.saturating_sub(omamori_charges).max(0)
+    super::external_payoff::external_burden_count(combat)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::content::cards::CardId;
-    use crate::content::relics::RelicState;
+    use crate::content::relics::{RelicId, RelicState};
     use crate::runtime::combat::MetaChange;
     use crate::test_support::blank_test_combat;
 
@@ -201,7 +178,10 @@ mod tests {
             .relics
             .push(RelicState::new(RelicId::Omamori));
 
-        assert_eq!(external_burden_count(&combat), 0);
+        assert_eq!(
+            super::super::external_payoff::external_burden_count(&combat),
+            0
+        );
 
         combat
             .meta
@@ -212,7 +192,10 @@ mod tests {
             .meta_changes
             .push(MetaChange::AddCardToMasterDeck(CardId::Doubt));
 
-        assert_eq!(external_burden_count(&combat), 1);
+        assert_eq!(
+            super::super::external_payoff::external_burden_count(&combat),
+            1
+        );
     }
 
     impl SearchNode {

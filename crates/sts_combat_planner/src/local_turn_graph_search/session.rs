@@ -117,12 +117,17 @@ impl LocalTurnGraphWitnessSession {
             generation_gaps: Vec::new(),
             root_action_families: Vec::new(),
             witness: None,
+            witness_frontier: Vec::new(),
             replay_failure: None,
         }
     }
 
     pub fn witness(&self) -> Option<&OracleCombatWitness> {
         self.witness.as_ref()
+    }
+
+    pub fn witness_frontier(&self) -> &[OracleCombatWitness] {
+        &self.witness_frontier
     }
 
     /// Offers one complete tactical line as an untrusted candidate.
@@ -153,7 +158,7 @@ impl LocalTurnGraphWitnessSession {
             .used
             .engine_steps
             .saturating_add(witness.replay_engine_steps);
-        Ok(self.remember_witness(witness))
+        Ok(self.remember_witness(witness).selected_changed)
     }
 
     pub fn restore_verified_witness(&mut self, witness: OracleCombatWitness) -> Result<(), String> {
@@ -200,26 +205,41 @@ impl LocalTurnGraphWitnessSession {
         }
     }
 
-    pub(super) fn remember_witness(&mut self, witness: OracleCombatWitness) -> bool {
+    pub(super) fn remember_witness(&mut self, witness: OracleCombatWitness) -> WitnessAdmission {
         if !witness_within_potion_contract(
             &self.original_root,
             &witness,
             self.config.max_potions_used,
             self.config.generator.allowed_potion_slots,
         ) {
-            return false;
+            return WitnessAdmission::default();
         }
-        let replace = self.witness.as_ref().is_none_or(|current| {
-            witness_better_with_potion_budget(
+        let frontier_changed = remember_nondominated_witness(
+            &self.original_root,
+            &mut self.witness_frontier,
+            &witness,
+        );
+        let selected = self.witness_frontier.iter().reduce(|best, candidate| {
+            if witness_better_with_potion_budget(
                 &self.original_root,
-                &witness,
-                current,
+                candidate,
+                best,
                 self.config.max_potions_used,
-            )
+            ) {
+                candidate
+            } else {
+                best
+            }
         });
-        if replace {
-            self.witness = Some(witness);
+        let selected_changed = match (self.witness.as_ref(), selected) {
+            (None, Some(_)) => true,
+            (Some(current), Some(next)) => current.actions != next.actions,
+            _ => false,
+        };
+        self.witness = selected.cloned();
+        WitnessAdmission {
+            frontier_changed,
+            selected_changed,
         }
-        replace
     }
 }

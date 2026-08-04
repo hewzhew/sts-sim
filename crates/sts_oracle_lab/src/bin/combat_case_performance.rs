@@ -250,6 +250,7 @@ pub(super) fn local_graph_performance_profile(
             "terminal_win_options": counters.terminal_win_options,
             "witness_replay_attempts": counters.witness_replay_attempts,
             "witness_replay_improvements": counters.witness_replay_improvements,
+            "witness_frontier_changes": counters.witness_frontier_changes,
             "witness_replay_dominated_skips": counters.witness_replay_dominated_skips,
             "completed_turn_options": counters.completed_turn_options,
             "exact_nodes": counters.exact_nodes,
@@ -382,6 +383,7 @@ mod tests {
             root_children: 0,
             generation_gaps: Vec::new(),
             witness: None,
+            witness_frontier: Vec::new(),
         }
     }
 

@@ -9,6 +9,7 @@ mod scheduling;
 mod session;
 mod shared_agenda;
 mod storage_diagnostics;
+mod terminal_outcome;
 
 pub use config::{
     LocalTurnGraphGuideServiceBias, LocalTurnGraphWitnessConfig,
@@ -19,6 +20,7 @@ pub use reporting::*;
 use scheduling::*;
 use shared_agenda::SharedBoundaryAgenda;
 pub use storage_diagnostics::LocalTurnGraphStorageSnapshot;
+pub use terminal_outcome::LocalTurnGraphTerminalOutcomeSnapshotV1;
 
 use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::sync::Arc;
@@ -205,6 +207,11 @@ pub struct LocalTurnGraphWitnessSession {
     generation_gaps: Vec<TurnOptionGenerationGap>,
     root_action_families: Vec<LocalRootActionFamilyAccumulator>,
     witness: Option<OracleCombatWitness>,
+    /// Exact terminal outcomes that are not strictly dominated on typed
+    /// combat-resource dimensions. The selected `witness` remains the local
+    /// HP-first compatibility view; run-control may adjudicate this frontier
+    /// with continuation context.
+    witness_frontier: Vec<OracleCombatWitness>,
     replay_failure: Option<OracleCombatWitnessReplayError>,
 }
 

@@ -7,6 +7,7 @@ pub mod card_analysis_v1;
 pub mod card_component_signal_v1;
 pub mod card_semantics_v1;
 pub mod combat_belief;
+pub mod combat_persistent_outcome_v1;
 pub mod combat_public_observation;
 #[cfg_attr(not(test), allow(dead_code))]
 pub mod combat_state_key;

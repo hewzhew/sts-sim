@@ -478,6 +478,19 @@ impl LocalTurnGraphWitnessSession {
             root_children: self.nodes[0].children.len(),
             generation_gaps: self.generation_gaps.clone(),
             witness: self.witness.clone(),
+            witness_frontier: self
+                .witness_frontier
+                .iter()
+                .map(|witness| {
+                    terminal_outcome_snapshot(
+                        &self.original_root,
+                        witness,
+                        self.witness
+                            .as_ref()
+                            .is_some_and(|selected| selected.actions == witness.actions),
+                    )
+                })
+                .collect(),
         }
     }
 }

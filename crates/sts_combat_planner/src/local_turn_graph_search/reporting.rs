@@ -7,6 +7,8 @@ use sts_core::state::core::ClientInput;
 use crate::types::{TurnOptionAction, TurnOptionGenerationGap};
 use crate::witness::{OracleCombatWitness, OracleCombatWitnessReplayError};
 
+use super::LocalTurnGraphTerminalOutcomeSnapshotV1;
+
 #[derive(Clone, Copy, Debug)]
 pub struct LocalTurnGraphWitnessQuantum {
     pub additional_selections: usize,
@@ -65,6 +67,9 @@ pub struct LocalTurnGraphWitnessCounters {
     pub witness_replay_attempts: usize,
     /// Authoritative replays that replaced the retained incumbent witness.
     pub witness_replay_improvements: usize,
+    /// Authoritative replays that added or improved one typed non-dominated
+    /// terminal outcome, even when the local HP-first view did not change.
+    pub witness_frontier_changes: usize,
     /// Terminal candidates proven unable to improve the incumbent before
     /// paying for authoritative replay.
     pub witness_replay_dominated_skips: usize,
@@ -213,6 +218,7 @@ pub struct LocalTurnGraphWitnessReport {
     pub root_children: usize,
     pub generation_gaps: Vec<TurnOptionGenerationGap>,
     pub witness: Option<OracleCombatWitness>,
+    pub witness_frontier: Vec<LocalTurnGraphTerminalOutcomeSnapshotV1>,
 }
 
 /// Exact work used to materialize one bounded policy mainline at player-turn

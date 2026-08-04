@@ -248,16 +248,14 @@ impl LocalTurnGraphWitnessSession {
                     actions.extend_from_slice(option.actions());
                     let negative_log_policy =
                         prefix_negative_log_policy + option.negative_log_policy();
-                    let candidate_is_dominated = self.witness.as_ref().is_some_and(|current| {
-                        !terminal_candidate_could_improve_witness(
-                            &self.original_root,
-                            current,
-                            option.exact_successor(),
-                            &actions,
-                            negative_log_policy,
-                            self.config.max_potions_used,
-                        )
-                    });
+                    let candidate_is_dominated = !terminal_candidate_could_improve_witness_frontier(
+                        &self.original_root,
+                        &self.witness_frontier,
+                        option.exact_successor(),
+                        &actions,
+                        negative_log_policy,
+                        self.config.max_potions_used,
+                    );
                     self.performance_timing.admission_witness_filter_elapsed_ns = self
                         .performance_timing
                         .admission_witness_filter_elapsed_ns
@@ -270,7 +268,7 @@ impl LocalTurnGraphWitnessSession {
                     self.used.witness_replay_attempts =
                         self.used.witness_replay_attempts.saturating_add(1);
                     let witness_replay_started = Instant::now();
-                    let improved = match replay_witness(
+                    let admission = match replay_witness(
                         &self.original_root,
                         &actions,
                         negative_log_policy,
@@ -280,12 +278,16 @@ impl LocalTurnGraphWitnessSession {
                         Ok(witness) => self.remember_witness(witness),
                         Err(error) => {
                             self.replay_failure = Some(error);
-                            false
+                            WitnessAdmission::default()
                         }
                     };
-                    if improved {
+                    if admission.selected_changed {
                         self.used.witness_replay_improvements =
                             self.used.witness_replay_improvements.saturating_add(1);
+                    }
+                    if admission.frontier_changed {
+                        self.used.witness_frontier_changes =
+                            self.used.witness_frontier_changes.saturating_add(1);
                     }
                     self.performance_timing.admission_witness_replay_elapsed_ns = self
                         .performance_timing

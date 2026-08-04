@@ -687,6 +687,7 @@ fn run(args: Cli) -> Result<(), String> {
                 "terminal_win_options": report.counters.terminal_win_options,
                 "witness_replay_attempts": report.counters.witness_replay_attempts,
                 "witness_replay_improvements": report.counters.witness_replay_improvements,
+                "witness_frontier_changes": report.counters.witness_frontier_changes,
                 "witness_replay_dominated_skips": report.counters.witness_replay_dominated_skips,
             },
             "timing_ns": timing,
