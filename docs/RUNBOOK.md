@@ -346,6 +346,9 @@ receipt, and the corresponding `back` receipt, carry the source and selected
 scratch node ids, the selected parent, and the latest scratch node count. They
 do not repeat the selected node's combat state. Use `--full` after a client
 restart, context loss, or any other cache miss.
+Resident execute/autosave timing is carried separately in the raw service
+response envelope and does not inflate normal typed `ol-live` results. Use the
+low-level `call` surface only when transport timing itself is under diagnosis.
 Structured Hand/Grid/Scry inputs use local domain indices and are returned in
 bounded pages; use `--selection-offset` and `--selection-limit` without
 materializing the complete combination space.

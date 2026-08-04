@@ -11,7 +11,7 @@ use serde_json::{json, Value};
 pub use oracle_lab_protocol::resolve_owned_resident_workspace;
 pub use oracle_lab_protocol::{
     call_oracle_analysis_tcp_v1, OracleAnalysisServiceCommandV1, OracleAnalysisServiceEndpointV1,
-    OracleAnalysisServiceRequestV1, OracleAnalysisServiceResponseV1,
+    OracleAnalysisServiceRequestV1, OracleAnalysisServiceResponseV1, OracleAnalysisServiceTimingV1,
     ORACLE_ANALYSIS_SERVICE_ENDPOINT_SCHEMA, ORACLE_ANALYSIS_SERVICE_ENDPOINT_SCHEMA_VERSION,
     ORACLE_ANALYSIS_SERVICE_PROTOCOL, ORACLE_ANALYSIS_SERVICE_PROTOCOL_VERSION,
 };
@@ -175,6 +175,7 @@ impl OracleAnalysisServiceState {
                 "cursor_node_id": self.workspace.session.cursor_node_id(),
                 "mainline_node_id": self.workspace.session.mainline_node_id(),
             }),
+            None,
         )
     }
 
@@ -212,7 +213,7 @@ impl OracleAnalysisServiceState {
             );
         }
         let execute_started = Instant::now();
-        let mut command = match execute_command(&mut self.workspace, request.command) {
+        let command = match execute_command(&mut self.workspace, request.command) {
             Ok(command) => command,
             Err(error) => {
                 return (
@@ -253,16 +254,6 @@ impl OracleAnalysisServiceState {
             autosave_elapsed_ms = elapsed_millis(autosave_started);
             self.saved_revision = self.revision;
         }
-        if let Some(result) = command.result.as_object_mut() {
-            result.insert(
-                "service_timing".to_string(),
-                json!({
-                    "execute_ms": execute_elapsed_ms,
-                    "autosave_ms": autosave_elapsed_ms,
-                    "total_ms": execute_elapsed_ms.saturating_add(autosave_elapsed_ms),
-                }),
-            );
-        }
         let event = if command.shutdown {
             "shutdown"
         } else {
@@ -275,6 +266,11 @@ impl OracleAnalysisServiceState {
                 self.revision,
                 self.saved_revision,
                 command.result,
+                Some(OracleAnalysisServiceTimingV1 {
+                    execute_ms: execute_elapsed_ms,
+                    autosave_ms: autosave_elapsed_ms,
+                    total_ms: execute_elapsed_ms.saturating_add(autosave_elapsed_ms),
+                }),
             ),
             command.shutdown,
         )
@@ -1170,6 +1166,7 @@ fn success_response(
     revision: u64,
     saved_revision: u64,
     result: Value,
+    timing: Option<OracleAnalysisServiceTimingV1>,
 ) -> OracleAnalysisServiceResponseV1 {
     OracleAnalysisServiceResponseV1 {
         protocol: ORACLE_ANALYSIS_SERVICE_PROTOCOL.to_string(),
@@ -1179,6 +1176,7 @@ fn success_response(
         ok: true,
         revision,
         saved_revision,
+        timing,
         result: Some(result),
         error: None,
     }
@@ -1199,6 +1197,7 @@ fn error_response(
         ok: false,
         revision,
         saved_revision,
+        timing: None,
         result: None,
         error: Some(error),
     }

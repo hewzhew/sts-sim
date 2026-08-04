@@ -492,6 +492,10 @@ request a complete action successor or navigation frame for recovery or
 diagnostics. CLI JSON is compact by default, so whitespace is not part of the
 agent transport cost. Deltas and navigation receipts are response projections,
 not persisted scratch history.
+Resident execution and autosave timing belongs to the protocol response
+envelope, not to the decision observation, delta, or navigation receipt. Typed
+live commands print only the result projection; raw protocol callers retain the
+timing metadata for performance diagnosis.
 Scratch navigation never creates run variations. A bounded
 descendant search may append a replay-verified potion-free suffix to scratch,
 but only an explicit terminal-victory commit may materialize the complete root

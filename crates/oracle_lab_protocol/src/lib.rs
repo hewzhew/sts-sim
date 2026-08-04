@@ -364,6 +364,14 @@ const fn default_combat_scratch_wall_ms() -> u64 {
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
+pub struct OracleAnalysisServiceTimingV1 {
+    pub execute_ms: u64,
+    pub autosave_ms: u64,
+    pub total_ms: u64,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct OracleAnalysisServiceResponseV1 {
     pub protocol: String,
     pub protocol_version: u32,
@@ -373,6 +381,8 @@ pub struct OracleAnalysisServiceResponseV1 {
     pub ok: bool,
     pub revision: u64,
     pub saved_revision: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub timing: Option<OracleAnalysisServiceTimingV1>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub result: Option<Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -525,6 +535,11 @@ mod tests {
                 ok: true,
                 revision: 0,
                 saved_revision: 0,
+                timing: Some(OracleAnalysisServiceTimingV1 {
+                    execute_ms: 2,
+                    autosave_ms: 3,
+                    total_ms: 5,
+                }),
                 result: Some(json!({"alive": true})),
                 error: None,
             };
@@ -539,6 +554,10 @@ mod tests {
             .expect("call loopback service");
         assert!(response.ok);
         assert_eq!(response.result, Some(json!({"alive": true})));
+        let timing = response.timing.expect("typed service timing");
+        assert_eq!(timing.execute_ms, 2);
+        assert_eq!(timing.autosave_ms, 3);
+        assert_eq!(timing.total_ms, 5);
         server.join().expect("join test server");
         let _ = fs::remove_file(endpoint_path);
     }

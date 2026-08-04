@@ -285,6 +285,8 @@ fn resident_service_keeps_combat_scratch_alive_across_typed_calls() {
         play.result.as_ref().expect("scratch play result")["scratch_node_count"],
         2
     );
+    assert!(play.result.as_ref().expect("scratch play result")["service_timing"].is_null());
+    assert!(play.timing.is_some());
     let end = call_oracle_analysis_tcp_v1(
         &endpoint_path,
         r#"{"id":"scratch-end","command":"combat_scratch_end"}"#,
