@@ -244,6 +244,7 @@ version = "0.1.0"
 dependencies = [
  "clap",
  "fs2",
+ "libc",
  "oracle_artifact_contract",
  "oracle_lab_protocol",
  "serde",

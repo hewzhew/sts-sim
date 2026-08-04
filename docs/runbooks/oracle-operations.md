@@ -119,6 +119,10 @@ start` compares an existing endpoint's immutable service image with the current
 canonical host: a matching image is reused; a stale image is saved and replaced
 while exact run state and charged historical work remain durable. In-memory
 tactical frontier work belongs to the old image and is deliberately restarted.
+With exactly one validated endpoint below `.oracle-lab/sessions` whose service
+process is still alive, repeated `live` calls may omit the session name. Stale
+endpoint files are ignored; no active endpoint or more than one active endpoint
+is an explicit error rather than an implicit selection.
 
 ## Consecutive Seed Panels
 

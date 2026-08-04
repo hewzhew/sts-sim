@@ -16,8 +16,8 @@ use windows_sys::Win32::System::Threading::{
     CreateProcessW, DeleteProcThreadAttributeList, GetExitCodeProcess,
     InitializeProcThreadAttributeList, OpenProcess, UpdateProcThreadAttribute, WaitForSingleObject,
     CREATE_BREAKAWAY_FROM_JOB, DETACHED_PROCESS, EXTENDED_STARTUPINFO_PRESENT,
-    PROCESS_CREATE_PROCESS, PROCESS_INFORMATION, PROC_THREAD_ATTRIBUTE_PARENT_PROCESS,
-    STARTUPINFOEXW,
+    PROCESS_CREATE_PROCESS, PROCESS_INFORMATION, PROCESS_QUERY_LIMITED_INFORMATION,
+    PROCESS_SYNCHRONIZE, PROC_THREAD_ATTRIBUTE_PARENT_PROCESS, STARTUPINFOEXW,
 };
 #[cfg(windows)]
 use windows_sys::Win32::UI::WindowsAndMessaging::{GetShellWindow, GetWindowThreadProcessId};
@@ -29,6 +29,38 @@ pub(super) struct ResidentProcess {
     process: OwnedHandle,
     #[cfg(windows)]
     process_id: u32,
+}
+
+#[cfg(windows)]
+pub(super) fn process_is_running(process_id: u32) -> bool {
+    // SAFETY: query-only access to an OS process id does not transfer ownership.
+    let handle = unsafe {
+        OpenProcess(
+            PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_SYNCHRONIZE,
+            0,
+            process_id,
+        )
+    };
+    if handle.is_null() {
+        return false;
+    }
+    // SAFETY: `handle` is valid until the matching CloseHandle below.
+    let wait = unsafe { WaitForSingleObject(handle, 0) };
+    // SAFETY: `handle` was returned by OpenProcess in this function.
+    unsafe { CloseHandle(handle) };
+    wait == WAIT_TIMEOUT
+}
+
+#[cfg(unix)]
+pub(super) fn process_is_running(process_id: u32) -> bool {
+    // SAFETY: signal 0 performs an existence/permission check without sending a signal.
+    let result = unsafe { libc::kill(process_id as libc::pid_t, 0) };
+    result == 0 || std::io::Error::last_os_error().raw_os_error() == Some(libc::EPERM)
+}
+
+#[cfg(not(any(unix, windows)))]
+pub(super) fn process_is_running(_process_id: u32) -> bool {
+    false
 }
 
 impl ResidentProcess {

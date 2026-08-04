@@ -317,6 +317,15 @@ run tree:
 The canonical client still validates its own path and depfile before contacting
 the resident service; if it is missing or stale, rebuild it once with
 `cargo build --release -p oracle_lab_client --bin oracle_lab_client`.
+When exactly one validated resident endpoint still names a live service
+process, routine `live` calls may omit `--session <name>`; stale endpoint files
+are ignored, and zero or multiple active sessions require an explicit session
+or endpoint:
+
+```powershell
+.\ol-live.cmd live scratch observe
+.\ol-live.cmd live scratch card --from <scratch-node> --hand <hand-index> [--target <monster-index>]
+```
 
 Action commands return a compact typed delta by default. `back` and `focus`
 return a typed navigation receipt that selects an already cached immutable

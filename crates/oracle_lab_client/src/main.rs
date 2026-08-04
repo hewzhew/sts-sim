@@ -1612,10 +1612,66 @@ fn resolve_endpoint_argument(
     match (endpoint, session) {
         (Some(endpoint), None) => Ok(endpoint),
         (None, Some(session)) => session_endpoint_path(&session),
-        (None, None) => Err("oracle_lab live requires --session or --endpoint".to_string()),
+        (None, None) => implicit_session_endpoint_path(&oracle_lab_state_root().join("sessions")),
         (Some(_), Some(_)) => {
             Err("oracle_lab live accepts only one of --session or --endpoint".to_string())
         }
+    }
+}
+
+fn implicit_session_endpoint_path(sessions_root: &Path) -> Result<PathBuf, String> {
+    let entries = match fs::read_dir(sessions_root) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {
+            return Err(
+                "oracle_lab live requires --session or --endpoint because no active resident session exists"
+                    .to_string(),
+            );
+        }
+        Err(error) => {
+            return Err(format!(
+                "failed to inspect resident sessions at {}: {error}",
+                sessions_root.display()
+            ));
+        }
+    };
+    let endpoints = entries
+        .filter_map(Result::ok)
+        .map(|entry| entry.path())
+        .filter(|path| {
+            path.is_file()
+                && path
+                    .file_name()
+                    .and_then(|name| name.to_str())
+                    .is_some_and(|name| name.ends_with(".endpoint.json"))
+        })
+        .filter(|path| endpoint_process_is_running(path))
+        .collect::<Vec<_>>();
+    select_implicit_session_endpoint(endpoints)
+}
+
+fn endpoint_process_is_running(endpoint_path: &Path) -> bool {
+    let endpoint = fs::read(endpoint_path)
+        .ok()
+        .and_then(|bytes| serde_json::from_slice::<OracleAnalysisServiceEndpointV1>(&bytes).ok());
+    endpoint.is_some_and(|endpoint| {
+        oracle_lab_protocol::validate_endpoint(&endpoint).is_ok()
+            && resident_process::process_is_running(endpoint.process_id)
+    })
+}
+
+fn select_implicit_session_endpoint(mut endpoints: Vec<PathBuf>) -> Result<PathBuf, String> {
+    endpoints.sort();
+    match endpoints.as_slice() {
+        [endpoint] => Ok(endpoint.clone()),
+        [] => Err(
+            "oracle_lab live requires --session or --endpoint because no active resident session exists"
+                .to_string(),
+        ),
+        _ => Err(format!(
+            "oracle_lab live requires --session or --endpoint because {} active resident sessions exist",
+            endpoints.len()
+        )),
     }
 }
 
@@ -1744,6 +1800,70 @@ fn print_json<T: Serialize>(value: &T) -> Result<(), String> {
 mod tests {
     use super::*;
     use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[test]
+    fn implicit_live_session_requires_exactly_one_endpoint() {
+        assert!(resident_process::process_is_running(std::process::id()));
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system clock after epoch")
+            .as_nanos();
+        let directory = std::env::temp_dir().join(format!(
+            "sts-oracle-client-session-selection-{}-{nonce}",
+            std::process::id()
+        ));
+        fs::create_dir_all(&directory).expect("create session selection fixture");
+
+        let missing = implicit_session_endpoint_path(&directory)
+            .expect_err("missing session must remain explicit");
+        assert!(missing.contains("no active resident session"));
+
+        let ignored = directory.join("notes.json");
+        fs::write(&ignored, b"{}").expect("write ignored non-endpoint file");
+        let endpoint_fixture = |process_id| OracleAnalysisServiceEndpointV1 {
+            schema_name: oracle_lab_protocol::ORACLE_ANALYSIS_SERVICE_ENDPOINT_SCHEMA.to_string(),
+            schema_version: oracle_lab_protocol::ORACLE_ANALYSIS_SERVICE_ENDPOINT_SCHEMA_VERSION,
+            address: "127.0.0.1:1".parse().expect("static loopback address"),
+            auth_token: "fixture-token".to_string(),
+            workspace: directory.join("fixture.workspace.json"),
+            process_id,
+            executable: None,
+        };
+        let stale_path = directory.join("stale.endpoint.json");
+        fs::write(
+            &stale_path,
+            serde_json::to_vec(&endpoint_fixture(u32::MAX)).expect("encode stale endpoint"),
+        )
+        .expect("write stale endpoint fixture");
+        let stale = implicit_session_endpoint_path(&directory)
+            .expect_err("stale endpoint must not become an implicit session");
+        assert!(stale.contains("no active resident session"));
+
+        let only = directory.join("alpha.endpoint.json");
+        fs::write(
+            &only,
+            serde_json::to_vec(&endpoint_fixture(std::process::id()))
+                .expect("encode live endpoint"),
+        )
+        .expect("write only live endpoint fixture");
+        assert_eq!(
+            implicit_session_endpoint_path(&directory).expect("select only live endpoint"),
+            only
+        );
+
+        let second = directory.join("beta.endpoint.json");
+        fs::write(
+            &second,
+            serde_json::to_vec(&endpoint_fixture(std::process::id()))
+                .expect("encode second live endpoint"),
+        )
+        .expect("write second live endpoint fixture");
+        let ambiguous = implicit_session_endpoint_path(&directory)
+            .expect_err("multiple live endpoints must remain explicit");
+        assert!(ambiguous.contains("2 active resident sessions"));
+
+        fs::remove_dir_all(&directory).expect("remove session selection fixture");
+    }
 
     #[test]
     fn typed_mutations_hold_one_process_scoped_session_lease() {
