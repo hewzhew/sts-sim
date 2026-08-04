@@ -198,6 +198,16 @@ pub enum OracleAnalysisServiceCommandV1 {
         #[serde(default = "default_combat_scratch_selection_limit")]
         selection_limit: usize,
     },
+    CombatScratchHandCard {
+        scratch_node: u64,
+        hand_index: usize,
+        #[serde(default)]
+        target_index: Option<usize>,
+        #[serde(default)]
+        selection_offset: usize,
+        #[serde(default = "default_combat_scratch_selection_limit")]
+        selection_limit: usize,
+    },
     CombatScratchPotion {
         scratch_node: u64,
         potion_uuid: u32,
@@ -208,8 +218,19 @@ pub enum OracleAnalysisServiceCommandV1 {
         #[serde(default = "default_combat_scratch_selection_limit")]
         selection_limit: usize,
     },
-    CombatScratchEnd {
+    CombatScratchPotionSlot {
         scratch_node: u64,
+        potion_slot: usize,
+        #[serde(default)]
+        target_index: Option<usize>,
+        #[serde(default)]
+        selection_offset: usize,
+        #[serde(default = "default_combat_scratch_selection_limit")]
+        selection_limit: usize,
+    },
+    CombatScratchEnd {
+        #[serde(default)]
+        scratch_node: Option<u64>,
         #[serde(default)]
         selection_offset: usize,
         #[serde(default = "default_combat_scratch_selection_limit")]
@@ -602,6 +623,62 @@ mod tests {
                 scratch_node: 7,
                 card_uuid: 10006,
                 target: None,
+                selection_offset: 0,
+                selection_limit: 24,
+            }
+        ));
+
+        let hand_card = serde_json::from_value::<OracleAnalysisServiceCommandV1>(json!({
+            "command": "combat_scratch_hand_card",
+            "scratch_node": 7,
+            "hand_index": 2,
+            "target_index": 0,
+        }))
+        .expect("parse node-local combat scratch card");
+        assert!(matches!(
+            hand_card,
+            OracleAnalysisServiceCommandV1::CombatScratchHandCard {
+                scratch_node: 7,
+                hand_index: 2,
+                target_index: Some(0),
+                selection_offset: 0,
+                selection_limit: 24,
+            }
+        ));
+        assert!(
+            serde_json::from_value::<OracleAnalysisServiceCommandV1>(json!({
+                "command": "combat_scratch_hand_card",
+                "hand_index": 2,
+            }))
+            .is_err()
+        );
+
+        let potion = serde_json::from_value::<OracleAnalysisServiceCommandV1>(json!({
+            "command": "combat_scratch_potion_slot",
+            "scratch_node": 9,
+            "potion_slot": 1,
+            "target_index": 0,
+        }))
+        .expect("parse node-local combat scratch potion");
+        assert!(matches!(
+            potion,
+            OracleAnalysisServiceCommandV1::CombatScratchPotionSlot {
+                scratch_node: 9,
+                potion_slot: 1,
+                target_index: Some(0),
+                selection_offset: 0,
+                selection_limit: 24,
+            }
+        ));
+
+        let end = serde_json::from_value::<OracleAnalysisServiceCommandV1>(json!({
+            "command": "combat_scratch_end",
+        }))
+        .expect("parse cursor-local combat scratch end turn");
+        assert!(matches!(
+            end,
+            OracleAnalysisServiceCommandV1::CombatScratchEnd {
+                scratch_node: None,
                 selection_offset: 0,
                 selection_limit: 24,
             }

@@ -242,10 +242,31 @@ fn resident_service_keeps_combat_scratch_alive_across_typed_calls() {
     let start = call_oracle_analysis_tcp_v1(&endpoint_path, &start_request)
         .expect("start resident scratch");
     assert!(start.ok);
+    let start_result = start.result.as_ref().expect("scratch start result");
+    let encoded_start = start_result.to_string();
+    assert!(!encoded_start.contains("\"uuid\""));
+    assert!(!encoded_start.contains("\"entity_id\""));
+    let card = start_result["hand"]
+        .as_array()
+        .expect("scratch hand")
+        .iter()
+        .find(|card| {
+            card["playable_without_target"].as_bool() == Some(true)
+                || card["playable_target_indices"]
+                    .as_array()
+                    .is_some_and(|targets| !targets.is_empty())
+        })
+        .expect("at least one locally playable opening card");
+    let target_index = card["playable_target_indices"]
+        .as_array()
+        .and_then(|targets| targets.first())
+        .and_then(serde_json::Value::as_u64);
     let play_request = json!({
         "id": "scratch-play",
-        "command": "combat_scratch_end",
+        "command": "combat_scratch_hand_card",
         "scratch_node": 0,
+        "hand_index": card["hand_index"],
+        "target_index": target_index,
     })
     .to_string();
     let play = call_oracle_analysis_tcp_v1(&endpoint_path, &play_request)
@@ -255,6 +276,17 @@ fn resident_service_keeps_combat_scratch_alive_across_typed_calls() {
     assert_eq!(
         play.result.as_ref().expect("scratch play result")["scratch_node_count"],
         2
+    );
+    let end = call_oracle_analysis_tcp_v1(
+        &endpoint_path,
+        r#"{"id":"scratch-end","command":"combat_scratch_end"}"#,
+    )
+    .expect("end turn from resident scratch cursor");
+    assert!(end.ok);
+    assert_eq!(end.revision, 3);
+    assert_eq!(
+        end.result.as_ref().expect("scratch end result")["scratch_node_count"],
+        3
     );
     let tree = call_oracle_analysis_tcp_v1(
         &endpoint_path,
@@ -266,7 +298,7 @@ fn resident_service_keeps_combat_scratch_alive_across_typed_calls() {
             .as_ref()
             .and_then(|result| result["nodes"].as_array())
             .map(Vec::len),
-        Some(2)
+        Some(3)
     );
     call_oracle_analysis_tcp_v1(&endpoint_path, r#"{"command":"shutdown"}"#)
         .expect("shutdown resident scratch service");
@@ -285,7 +317,7 @@ fn resident_service_keeps_combat_scratch_alive_across_typed_calls() {
             .expect("persisted combat scratch")
             .nodes
             .len(),
-        2
+        3
     );
     let _ = fs::remove_file(workspace_path);
 }

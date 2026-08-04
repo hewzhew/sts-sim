@@ -303,8 +303,8 @@ run tree:
 ```powershell
 .\ol-live.cmd live --session seed009 scratch start --node <combat-node>
 .\ol-live.cmd live --session seed009 scratch observe
-.\ol-live.cmd live --session seed009 scratch card --from <scratch-node> --uuid <card-uuid> [--target <entity-id>]
-.\ol-live.cmd live --session seed009 scratch potion --from <scratch-node> --uuid <potion-uuid> [--target <entity-id>]
+.\ol-live.cmd live --session seed009 scratch card --from <scratch-node> --hand <hand-index> [--target <monster-index>]
+.\ol-live.cmd live --session seed009 scratch potion --from <scratch-node> --slot <potion-slot> [--target <monster-index>]
 .\ol-live.cmd live --session seed009 scratch end --from <scratch-node>
 .\ol-live.cmd live --session seed009 scratch selection --from <scratch-node> --family <index> --input <index>
 .\ol-live.cmd live --session seed009 scratch back
@@ -314,17 +314,25 @@ run tree:
 `observe` is the agent-play projection: it omits fingerprint and display-key
 duplication while retaining current combat relic counters, effective card
 costs, a top-first draw pile, complete locked monster move steps, thief runtime
-state, and typed legal inputs. Normal play addresses stable card and potion
-UUIDs directly; `atomic` remains a short fallback for other atomic inputs.
-Every play command binds to the immutable source scratch node and may fork
-directly from any retained node; an invalid source, identity, target, or index
-fails without moving the current cursor.
+state, and typed legal inputs. Hand cards, occupied potion slots, and monsters
+carry observation-local indices; playable cards and usable potions expose their
+legal local monster targets. Card and potion commands require the source node,
+so a stale hand or target index cannot silently apply to a later observation.
+The runtime resolves local indices to exact internal identities before applying
+the action. `end` may omit `--from` to use the current cursor; `atomic` remains a
+short fallback for other atomic inputs. Every selector may fork directly from
+any retained node, and an invalid source, identity, target, or index fails
+without moving the current cursor.
 
 `focus --scratch-node <id>` moves among retained scratch branches. Structured
-Hand/Grid/Scry inputs are returned in bounded pages; use `--selection-offset`
-and `--selection-limit` without materializing the complete combination space.
+`focus` and `back` return the same compact decision projection as `observe`.
+Structured Hand/Grid/Scry inputs use local domain indices and are returned in
+bounded pages; use `--selection-offset` and `--selection-limit` without
+materializing the complete combination space.
 The longer exact-hash action refs remain available through `status` and `play`
-for compatibility and low-level diagnostics.
+for compatibility and low-level diagnostics. Hidden `--uuid` card and potion
+selectors remain accepted with exact entity targets for old diagnostic callers,
+but are not part of the normal observation-driven interface.
 
 Ask the existing portfolio for one deliberately small potion-free suffix from
 the current scratch node only when manual play needs help:

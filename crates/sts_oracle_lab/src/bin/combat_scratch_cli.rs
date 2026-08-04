@@ -37,23 +37,27 @@ pub(super) enum CombatScratchCommand {
         #[command(flatten)]
         page: CombatScratchPageArgs,
     },
-    /// Play the exact hand card identity from any retained scratch node.
+    /// Play one node-local hand index; hidden UUID compatibility remains diagnostic-only.
     Card {
         #[arg(long)]
         from: u64,
-        #[arg(long)]
-        uuid: u32,
+        #[arg(long, required_unless_present = "uuid", conflicts_with = "uuid")]
+        hand: Option<usize>,
+        #[arg(long, hide = true, conflicts_with = "hand")]
+        uuid: Option<u32>,
         #[arg(long)]
         target: Option<usize>,
         #[command(flatten)]
         page: CombatScratchPageArgs,
     },
-    /// Use the exact potion identity from any retained scratch node.
+    /// Use one node-local potion slot; hidden UUID compatibility remains diagnostic-only.
     Potion {
         #[arg(long)]
         from: u64,
-        #[arg(long)]
-        uuid: u32,
+        #[arg(long, required_unless_present = "uuid", conflicts_with = "uuid")]
+        slot: Option<usize>,
+        #[arg(long, hide = true, conflicts_with = "slot")]
+        uuid: Option<u32>,
         #[arg(long)]
         target: Option<usize>,
         #[command(flatten)]
@@ -62,7 +66,7 @@ pub(super) enum CombatScratchCommand {
     /// End the turn directly from any retained scratch node.
     End {
         #[arg(long)]
-        from: u64,
+        from: Option<u64>,
         #[command(flatten)]
         page: CombatScratchPageArgs,
     },

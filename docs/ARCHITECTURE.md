@@ -470,13 +470,17 @@ node and its exact root hash. The root position remains owned by that run node;
 each scratch child persists only its parent id, one typed `ClientInput`, and the
 exact successor hash. Restore topologically replays every delta from the bound
 root and rejects missing parents, cycles, illegal inputs, transition truncation,
-or hash drift. Agent play uses typed card UUID, potion UUID, end-turn, atomic,
-and structured-selection selectors bound to an immutable scratch node id;
-selectors can fork directly from retained nodes and never resolve display
-labels. Its compact observation retains exact decision facts,
-including effective card costs, top-first draw order, combat relic state,
-locked monster move steps, and relevant monster runtime state, while omitting
-fingerprint and display-key duplication. Scratch navigation never creates run variations. A bounded
+or hash drift. Normal agent play uses node-local hand, potion-slot, and monster
+indices paired with an immutable scratch node id. The runtime resolves that
+pair to exact card UUID, potion UUID, and monster entity identity before checking
+legality; a local index never becomes durable identity or resolves a display
+label. End-turn, atomic, and structured-selection selectors follow the same
+node-bound rule, and selectors can fork directly from retained nodes. The
+diagnostic view retains internal identities and exact-hash action refs, but the
+compact observation omits them and exposes effective card costs, legal local
+targets, a top-first draw order, combat relic state, locked monster move steps,
+relevant monster runtime state, and node-local structured-selection domains.
+Scratch navigation never creates run variations. A bounded
 descendant search may append a replay-verified potion-free suffix to scratch,
 but only an explicit terminal-victory commit may materialize the complete root
 prefix as one atomic combat witness and clear the scratch DAG. Run journals do

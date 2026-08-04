@@ -470,6 +470,13 @@ impl OracleAnalysisSessionV1 {
             .map(Into::into)
     }
 
+    pub fn combat_scratch_cursor_node_id(&self) -> Result<u64, String> {
+        self.combat_scratch
+            .as_ref()
+            .map(|scratch| scratch.cursor_scratch_node_id)
+            .ok_or_else(|| "oracle analysis workspace has no active combat scratch".to_string())
+    }
+
     pub fn play_combat_scratch_action(
         &mut self,
         action_ref: &str,

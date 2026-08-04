@@ -83,12 +83,19 @@ fn combat_scratch_short_selector_forks_from_a_retained_node_and_observes_decisio
     assert_eq!(root.position.player.relics[0].id, RelicId::PenNib);
     assert_eq!(root.position.hand[0].effective_cost, 1);
     assert!(!root.position.monsters[0].planned_steps.is_empty());
+    let root_decision = analysis
+        .combat_scratch_decision_view(0, 16)
+        .expect("observe local scratch capabilities");
+    assert_eq!(root_decision.hand[0].hand_index, 0);
+    assert!(!root_decision.hand[0].playable_without_target);
+    assert_eq!(root_decision.hand[0].playable_target_indices, vec![0]);
+    assert_eq!(root_decision.monsters[0].monster_index, 0);
 
     let end_turn = OracleAnalysisCombatScratchActionSelectorV1::EndTurn { scratch_node_id: 0 };
-    let strike = OracleAnalysisCombatScratchActionSelectorV1::Card {
+    let strike = OracleAnalysisCombatScratchActionSelectorV1::HandCard {
         scratch_node_id: 0,
-        card_uuid: root.position.hand[0].card.uuid,
-        target: Some(1),
+        hand_index: 0,
+        target_index: Some(0),
     };
     analysis
         .play_combat_scratch_selector(end_turn, 0, 16)
@@ -102,6 +109,24 @@ fn combat_scratch_short_selector_forks_from_a_retained_node_and_observes_decisio
 
     let before_invalid = serde_json::to_value(analysis.checkpoint().expect("before bad identity"))
         .expect("serialize before bad identity");
+    let error = analysis
+        .play_combat_scratch_selector(
+            OracleAnalysisCombatScratchActionSelectorV1::HandCard {
+                scratch_node_id: 0,
+                hand_index: usize::MAX,
+                target_index: None,
+            },
+            0,
+            16,
+        )
+        .expect_err("unknown node-local hand index must fail");
+    assert!(error.contains("local card index"), "{error}");
+    assert_eq!(
+        serde_json::to_value(analysis.checkpoint().expect("after bad local index"))
+            .expect("serialize after bad local index"),
+        before_invalid,
+        "a rejected local selector must not move the cursor or mutate scratch"
+    );
     let error = analysis
         .play_combat_scratch_selector(
             OracleAnalysisCombatScratchActionSelectorV1::Card {
@@ -127,6 +152,8 @@ fn combat_scratch_short_selector_forks_from_a_retained_node_and_observes_decisio
     let encoded = serde_json::to_value(decision).expect("serialize decision view");
     assert!(encoded.get("position").is_none());
     assert!(encoded.get("draw_pile_top_first").is_some());
+    assert!(!encoded.to_string().contains("\"uuid\""));
+    assert!(!encoded.to_string().contains("\"entity_id\""));
     assert!(encoded["atomic_actions"]
         .as_array()
         .expect("decision actions")
@@ -349,6 +376,25 @@ fn combat_scratch_pages_structured_selection_inputs_without_eager_storage() {
         .nodes
         .iter()
         .all(|node| node.input.is_none()));
+    let decision = analysis
+        .combat_scratch_decision_view(0, 2)
+        .expect("project structured local selections");
+    let decision_family = &decision.selection_families[0];
+    assert_eq!(
+        decision_family
+            .domain
+            .iter()
+            .map(|candidate| candidate.domain_index)
+            .collect::<Vec<_>>(),
+        vec![0, 1, 2]
+    );
+    assert!(decision_family
+        .actions
+        .iter()
+        .flat_map(|action| action.selected_domain_indices.iter())
+        .all(|domain_index| *domain_index < 3));
+    let encoded = serde_json::to_string(&decision).expect("encode structured local selections");
+    assert!(!encoded.contains("uuid"), "{encoded}");
 
     let second_page = analysis
         .combat_scratch_view(2, 2)

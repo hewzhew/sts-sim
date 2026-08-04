@@ -144,6 +144,22 @@ pub(super) fn resolve_action_selector(
                 .ok_or_else(|| format!("combat scratch hand has no card uuid {card_uuid}"))?;
             ClientInput::PlayCard { card_index, target }
         }
+        OracleAnalysisCombatScratchActionSelectorV1::HandCard {
+            hand_index,
+            target_index,
+            ..
+        } => {
+            if position.combat.zones.hand.get(hand_index).is_none() {
+                return Err(format!(
+                    "combat scratch hand has no local card index {hand_index}"
+                ));
+            }
+            let target = local_monster_entity_id(position, target_index)?;
+            ClientInput::PlayCard {
+                card_index: hand_index,
+                target,
+            }
+        }
         OracleAnalysisCombatScratchActionSelectorV1::Potion {
             potion_uuid,
             target,
@@ -167,12 +183,51 @@ pub(super) fn resolve_action_selector(
                 target,
             }
         }
+        OracleAnalysisCombatScratchActionSelectorV1::PotionSlot {
+            potion_slot,
+            target_index,
+            ..
+        } => {
+            if !position
+                .combat
+                .entities
+                .potions
+                .get(potion_slot)
+                .is_some_and(Option::is_some)
+            {
+                return Err(format!(
+                    "combat scratch inventory has no potion in local slot {potion_slot}"
+                ));
+            }
+            let target = local_monster_entity_id(position, target_index)?;
+            ClientInput::UsePotion {
+                potion_index: potion_slot,
+                target,
+            }
+        }
         OracleAnalysisCombatScratchActionSelectorV1::EndTurn { .. } => ClientInput::EndTurn,
     };
     if !EngineCombatStepper.is_legal_action(position, &input) {
         return Err("combat scratch selector no longer resolves to a legal input".to_string());
     }
     Ok(input)
+}
+
+fn local_monster_entity_id(
+    position: &CombatPosition,
+    target_index: Option<usize>,
+) -> Result<Option<usize>, String> {
+    target_index
+        .map(|monster_index| {
+            position
+                .combat
+                .entities
+                .monsters
+                .get(monster_index)
+                .map(|monster| monster.id)
+                .ok_or_else(|| format!("combat scratch has no local monster index {monster_index}"))
+        })
+        .transpose()
 }
 
 pub(super) fn resolve_action_ref(

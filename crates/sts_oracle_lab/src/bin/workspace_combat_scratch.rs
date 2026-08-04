@@ -50,12 +50,14 @@ pub(super) fn execute(workspace: &Path, command: CombatScratchCommand) -> Result
         ),
         CombatScratchCommand::Card {
             from,
+            hand,
             uuid,
             target,
             page,
         } => card(
             workspace,
             from,
+            hand,
             uuid,
             target,
             page.selection_offset,
@@ -63,12 +65,14 @@ pub(super) fn execute(workspace: &Path, command: CombatScratchCommand) -> Result
         ),
         CombatScratchCommand::Potion {
             from,
+            slot,
             uuid,
             target,
             page,
         } => potion(
             workspace,
             from,
+            slot,
             uuid,
             target,
             page.selection_offset,
@@ -203,53 +207,65 @@ pub(super) fn atomic(
 pub(super) fn card(
     workspace: &Path,
     from: u64,
-    uuid: u32,
+    hand: Option<usize>,
+    uuid: Option<u32>,
     target: Option<usize>,
     selection_offset: usize,
     selection_limit: usize,
 ) -> Result<Value, String> {
-    apply_selector(
-        workspace,
-        OracleAnalysisCombatScratchActionSelectorV1::Card {
+    let selector = match (hand, uuid) {
+        (Some(hand_index), None) => OracleAnalysisCombatScratchActionSelectorV1::HandCard {
             scratch_node_id: from,
-            card_uuid: uuid,
+            hand_index,
+            target_index: target,
+        },
+        (None, Some(card_uuid)) => OracleAnalysisCombatScratchActionSelectorV1::Card {
+            scratch_node_id: from,
+            card_uuid,
             target,
         },
-        selection_offset,
-        selection_limit,
-    )
+        _ => return Err("choose exactly one of --hand or --uuid".to_string()),
+    };
+    apply_selector(workspace, selector, selection_offset, selection_limit)
 }
 
 pub(super) fn potion(
     workspace: &Path,
     from: u64,
-    uuid: u32,
+    slot: Option<usize>,
+    uuid: Option<u32>,
     target: Option<usize>,
     selection_offset: usize,
     selection_limit: usize,
 ) -> Result<Value, String> {
-    apply_selector(
-        workspace,
-        OracleAnalysisCombatScratchActionSelectorV1::Potion {
+    let selector = match (slot, uuid) {
+        (Some(potion_slot), None) => OracleAnalysisCombatScratchActionSelectorV1::PotionSlot {
             scratch_node_id: from,
-            potion_uuid: uuid,
+            potion_slot,
+            target_index: target,
+        },
+        (None, Some(potion_uuid)) => OracleAnalysisCombatScratchActionSelectorV1::Potion {
+            scratch_node_id: from,
+            potion_uuid,
             target,
         },
-        selection_offset,
-        selection_limit,
-    )
+        _ => return Err("choose exactly one of --slot or --uuid".to_string()),
+    };
+    apply_selector(workspace, selector, selection_offset, selection_limit)
 }
 
 pub(super) fn end(
     workspace: &Path,
-    from: u64,
+    from: Option<u64>,
     selection_offset: usize,
     selection_limit: usize,
 ) -> Result<Value, String> {
+    let analysis = load_oracle_analysis_workspace_v1(workspace)?;
+    let source = from.unwrap_or(analysis.session.combat_scratch_cursor_node_id()?);
     apply_selector(
         workspace,
         OracleAnalysisCombatScratchActionSelectorV1::EndTurn {
-            scratch_node_id: from,
+            scratch_node_id: source,
         },
         selection_offset,
         selection_limit,
@@ -299,9 +315,10 @@ pub(super) fn back(
     selection_limit: usize,
 ) -> Result<Value, String> {
     mutate(workspace, |analysis| {
-        analysis
+        let view = analysis
             .session
-            .back_combat_scratch(selection_offset, selection_limit)
+            .back_combat_scratch(selection_offset, selection_limit)?;
+        Ok(OracleAnalysisCombatScratchDecisionViewV1::from(view))
     })
 }
 
@@ -312,9 +329,12 @@ pub(super) fn focus(
     selection_limit: usize,
 ) -> Result<Value, String> {
     mutate(workspace, |analysis| {
-        analysis
-            .session
-            .focus_combat_scratch_node(scratch_node, selection_offset, selection_limit)
+        let view = analysis.session.focus_combat_scratch_node(
+            scratch_node,
+            selection_offset,
+            selection_limit,
+        )?;
+        Ok(OracleAnalysisCombatScratchDecisionViewV1::from(view))
     })
 }
 
