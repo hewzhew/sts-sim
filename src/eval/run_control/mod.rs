@@ -290,9 +290,9 @@ pub(crate) use shop_legal::{
 };
 pub use shop_policy_prior::{
     exact_shop_policy_audit_v1, exact_shop_policy_decision_v1, exact_shop_policy_prior_v1,
-    ExactShopPolicyAuditV1, ExactShopPolicyDecisionV1, ShopPolicyAcquisitionV1,
-    ShopPolicyActionEvidenceV1, ShopPolicyAuditCandidateV1, ShopPolicyBandV1,
-    ShopPolicyCapabilityChangeV1, ShopPolicyFollowupV1, ShopPolicyThreatGapKeyV1,
+    AcquisitionRequirementSupportV1, ExactShopPolicyAuditV1, ExactShopPolicyDecisionV1,
+    ShopPolicyAcquisitionV1, ShopPolicyActionEvidenceV1, ShopPolicyAuditCandidateV1,
+    ShopPolicyBandV1, ShopPolicyCapabilityChangeV1, ShopPolicyFollowupV1, ShopPolicyThreatGapKeyV1,
 };
 pub use strategic_checkpoint_probe::{
     run_strategic_checkpoint_probe_decomposition_v1, StrategicCheckpointProbeDecompositionV1,

@@ -108,6 +108,7 @@ pub enum PotionAcquisitionTraitV1 {
 pub enum AcquisitionRequirementV1 {
     XCostPayoff,
     DuplicateTarget,
+    AttackSkillPowerSameTurn,
     LowHpDeathInsurance,
     RouteEscapeValue,
 }
@@ -479,6 +480,9 @@ pub fn relic_acquisition_requirements_v1(relic: RelicId) -> Vec<AcquisitionRequi
     match relic {
         RelicId::ChemicalX => vec![AcquisitionRequirementV1::XCostPayoff],
         RelicId::DollysMirror => vec![AcquisitionRequirementV1::DuplicateTarget],
+        RelicId::OrangePellets => {
+            vec![AcquisitionRequirementV1::AttackSkillPowerSameTurn]
+        }
         _ => Vec::new(),
     }
 }
@@ -631,6 +635,8 @@ mod tests {
             .contains(&AcquisitionRequirementV1::XCostPayoff));
         assert!(relic_acquisition_requirements_v1(RelicId::DollysMirror)
             .contains(&AcquisitionRequirementV1::DuplicateTarget));
+        assert!(relic_acquisition_requirements_v1(RelicId::OrangePellets)
+            .contains(&AcquisitionRequirementV1::AttackSkillPowerSameTurn));
         assert!(potion_acquisition_traits_v1(PotionId::SmokeBomb)
             .contains(&PotionAcquisitionTraitV1::EscapeTool));
         assert!(potion_acquisition_requirements_v1(PotionId::FairyPotion)

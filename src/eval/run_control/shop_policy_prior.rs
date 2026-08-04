@@ -9,11 +9,11 @@ use crate::ai::card_component_signal_v1::{
     CardComponentSignalContextV1, CardComponentSignalReportV1,
 };
 use crate::ai::card_semantics_v1::{
-    card_access_evidence_v1, card_reward_semantic_profile_v1, potion_acquisition_requirements_v1,
-    potion_acquisition_traits_v1, relic_acquisition_requirements_v1, relic_acquisition_traits_v1,
-    AcquisitionRequirementV1, CardAccessEvidenceV1, CardAccessLeverageV1,
-    CardRewardSemanticProfileV1, CardRewardSemanticRoleV1, PotionAcquisitionTraitV1,
-    RelicAcquisitionTraitV1,
+    card_access_evidence_v1, card_reward_facts_v1, card_reward_semantic_profile_v1,
+    potion_acquisition_requirements_v1, potion_acquisition_traits_v1,
+    relic_acquisition_requirements_v1, relic_acquisition_traits_v1, AcquisitionRequirementV1,
+    CardAccessEvidenceV1, CardAccessLeverageV1, CardRewardSemanticProfileV1,
+    CardRewardSemanticRoleV1, PotionAcquisitionTraitV1, RelicAcquisitionTraitV1,
 };
 use crate::ai::combat_upgrade_coverage_v1::CombatUpgradeScopeV1;
 use crate::ai::deck_mutation_compiler_v1::{
@@ -39,11 +39,13 @@ use crate::ai::strategy::acquisition::{
 use crate::ai::strategy::deck_plan::DeckPlanSnapshot;
 use crate::ai::strategy::reward_admission::assess_reward_admission_from_master_deck;
 use crate::ai::strength_profile_v1::card_unlocks_convertible_strength_payoff_v1;
-use crate::content::cards::{get_card_definition, CardId};
+use crate::content::cards::{get_card_definition, upgrade_card_once_java, CardId, CardType};
 use crate::content::potions::PotionId;
-use crate::content::relics::RelicId;
+use crate::content::relics::{energy_master_delta, RelicId};
+use crate::runtime::combat::CombatCard;
 use crate::state::core::EngineState;
 use crate::state::rewards::RewardCard;
+use crate::state::run::RunState;
 
 use super::{
     exact_run_policy_decision_v1, positive_ranked_run_policy_prior_v1, run_policy_state_delta_v1,
@@ -77,6 +79,22 @@ pub enum ShopPolicyFollowupV1 {
     Other,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AcquisitionRequirementSupportV1 {
+    Current,
+    OwnedUpgradePath {
+        card: CardId,
+        uuid: u32,
+        upgrades_before: u8,
+        energy_cost_before: i32,
+        energy_cost_after: i32,
+        energy_gain_before: i32,
+        energy_gain_after: i32,
+    },
+    Unavailable,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum ShopPolicyAcquisitionV1 {
     Card {
@@ -91,13 +109,13 @@ pub enum ShopPolicyAcquisitionV1 {
         relic: RelicId,
         traits: Vec<RelicAcquisitionTraitV1>,
         requirements: Vec<AcquisitionRequirementV1>,
-        requirements_satisfied: bool,
+        requirement_support: AcquisitionRequirementSupportV1,
     },
     Potion {
         potion: PotionId,
         traits: Vec<PotionAcquisitionTraitV1>,
         requirements: Vec<AcquisitionRequirementV1>,
-        requirements_satisfied: bool,
+        requirement_support: AcquisitionRequirementSupportV1,
     },
     Purge {
         card: CardId,
@@ -646,26 +664,24 @@ fn acquisition_v1(
         }
         DecisionCandidateKey::ShopBuyRelic { relic, .. } => {
             let requirements = relic_acquisition_requirements_v1(*relic);
-            let requirements_satisfied = requirements
-                .iter()
-                .all(|requirement| acquisition_requirement_satisfied(parent, *requirement));
+            let requirement_support =
+                acquisition_requirements_support_v1(parent, requirements.as_slice());
             ShopPolicyAcquisitionV1::Relic {
                 relic: *relic,
                 traits: relic_acquisition_traits_v1(*relic),
                 requirements,
-                requirements_satisfied,
+                requirement_support,
             }
         }
         DecisionCandidateKey::ShopBuyPotion { potion, .. } => {
             let requirements = potion_acquisition_requirements_v1(*potion);
-            let requirements_satisfied = requirements
-                .iter()
-                .all(|requirement| acquisition_requirement_satisfied(parent, *requirement));
+            let requirement_support =
+                acquisition_requirements_support_v1(parent, requirements.as_slice());
             ShopPolicyAcquisitionV1::Potion {
                 potion: *potion,
                 traits: potion_acquisition_traits_v1(*potion),
                 requirements,
-                requirements_satisfied,
+                requirement_support,
             }
         }
         DecisionCandidateKey::ShopPurgeCard { card, upgrades, .. } => {
@@ -684,22 +700,178 @@ fn acquisition_v1(
     })
 }
 
-fn acquisition_requirement_satisfied(
+fn acquisition_requirements_support_v1(
+    parent: &RunControlSession,
+    requirements: &[AcquisitionRequirementV1],
+) -> AcquisitionRequirementSupportV1 {
+    let mut aggregate = AcquisitionRequirementSupportV1::Current;
+    for requirement in requirements {
+        match acquisition_requirement_support_v1(parent, *requirement) {
+            AcquisitionRequirementSupportV1::Unavailable => {
+                return AcquisitionRequirementSupportV1::Unavailable;
+            }
+            support @ AcquisitionRequirementSupportV1::OwnedUpgradePath { .. } => {
+                if aggregate == AcquisitionRequirementSupportV1::Current {
+                    aggregate = support;
+                }
+            }
+            AcquisitionRequirementSupportV1::Current => {}
+        }
+    }
+    aggregate
+}
+
+fn acquisition_requirement_support_v1(
     parent: &RunControlSession,
     requirement: AcquisitionRequirementV1,
-) -> bool {
-    match requirement {
+) -> AcquisitionRequirementSupportV1 {
+    let satisfied = match requirement {
         AcquisitionRequirementV1::XCostPayoff => parent
             .run_state
             .master_deck
             .iter()
             .any(|card| get_card_definition(card.id).cost == -1),
         AcquisitionRequirementV1::DuplicateTarget => !parent.run_state.master_deck.is_empty(),
+        AcquisitionRequirementV1::AttackSkillPowerSameTurn => {
+            return attack_skill_power_activation_support_v1(&parent.run_state);
+        }
         AcquisitionRequirementV1::LowHpDeathInsurance => {
             parent.run_state.current_hp.saturating_mul(2) <= parent.run_state.max_hp
         }
         AcquisitionRequirementV1::RouteEscapeValue => route_escape_value_v1(parent),
+    };
+    if satisfied {
+        AcquisitionRequirementSupportV1::Current
+    } else {
+        AcquisitionRequirementSupportV1::Unavailable
     }
+}
+
+fn attack_skill_power_activation_support_v1(
+    run_state: &RunState,
+) -> AcquisitionRequirementSupportV1 {
+    let energy = 3_i32.saturating_add(
+        run_state
+            .relics
+            .iter()
+            .map(|relic| i32::from(energy_master_delta(relic.id)))
+            .sum(),
+    );
+    if attack_skill_power_sequence_exists_v1(&run_state.master_deck, energy) {
+        return AcquisitionRequirementSupportV1::Current;
+    }
+
+    for index in 0..run_state.master_deck.len() {
+        let mut upgraded = run_state.master_deck.clone();
+        let energy_cost_before = upgraded[index].combat_cost_without_turn_override_java();
+        let energy_gain_before = activation_card_energy_gain_v1(&upgraded[index]);
+        if !upgrade_card_once_java(&mut upgraded[index]) {
+            continue;
+        }
+        let energy_cost_after = upgraded[index].combat_cost_without_turn_override_java();
+        let energy_gain_after = activation_card_energy_gain_v1(&upgraded[index]);
+        if energy_cost_before == energy_cost_after && energy_gain_before == energy_gain_after {
+            continue;
+        }
+        if attack_skill_power_sequence_exists_v1(&upgraded, energy) {
+            return AcquisitionRequirementSupportV1::OwnedUpgradePath {
+                card: upgraded[index].id,
+                uuid: upgraded[index].uuid,
+                upgrades_before: upgraded[index].upgrades.saturating_sub(1),
+                energy_cost_before,
+                energy_cost_after,
+                energy_gain_before,
+                energy_gain_after,
+            };
+        }
+    }
+    AcquisitionRequirementSupportV1::Unavailable
+}
+
+#[derive(Clone, Copy)]
+struct ActivationCardV1 {
+    card_type: CardType,
+    energy_cost: i32,
+    energy_gain: i32,
+}
+
+fn attack_skill_power_sequence_exists_v1(deck: &[CombatCard], starting_energy: i32) -> bool {
+    let cards = deck
+        .iter()
+        .filter_map(|card| {
+            let card_type = get_card_definition(card.id).card_type;
+            if !matches!(
+                card_type,
+                CardType::Attack | CardType::Skill | CardType::Power
+            ) {
+                return None;
+            }
+            Some(ActivationCardV1 {
+                card_type,
+                energy_cost: card.combat_cost_without_turn_override_java(),
+                energy_gain: activation_card_energy_gain_v1(card),
+            })
+        })
+        .collect::<Vec<_>>();
+    let attacks = cards
+        .iter()
+        .copied()
+        .filter(|card| card.card_type == CardType::Attack)
+        .collect::<Vec<_>>();
+    let skills = cards
+        .iter()
+        .copied()
+        .filter(|card| card.card_type == CardType::Skill)
+        .collect::<Vec<_>>();
+    let powers = cards
+        .iter()
+        .copied()
+        .filter(|card| card.card_type == CardType::Power)
+        .collect::<Vec<_>>();
+
+    attacks.iter().copied().any(|attack| {
+        skills.iter().copied().any(|skill| {
+            powers.iter().copied().any(|power| {
+                let cards = [attack, skill, power];
+                [
+                    [0, 1, 2],
+                    [0, 2, 1],
+                    [1, 0, 2],
+                    [1, 2, 0],
+                    [2, 0, 1],
+                    [2, 1, 0],
+                ]
+                .into_iter()
+                .any(|order| activation_sequence_is_payable_v1(cards, order, starting_energy))
+            })
+        })
+    })
+}
+
+fn activation_card_energy_gain_v1(card: &CombatCard) -> i32 {
+    card_reward_facts_v1(&RewardCard::new(card.id, card.upgrades)).energy_gain
+}
+
+fn activation_sequence_is_payable_v1(
+    cards: [ActivationCardV1; 3],
+    order: [usize; 3],
+    starting_energy: i32,
+) -> bool {
+    let mut energy = starting_energy;
+    for index in order {
+        let card = cards[index];
+        if card.energy_cost < 0 {
+            energy = 0;
+        } else {
+            if card.energy_cost > energy {
+                return false;
+            }
+            energy = energy
+                .saturating_sub(card.energy_cost)
+                .saturating_add(card.energy_gain);
+        }
+    }
+    true
 }
 
 fn route_escape_value_v1(parent: &RunControlSession) -> bool {
@@ -950,10 +1122,10 @@ fn strategic_acquisition_supported(
         }
         ShopPolicyAcquisitionV1::Relic {
             traits,
-            requirements_satisfied,
+            requirement_support,
             ..
         } => {
-            *requirements_satisfied
+            *requirement_support == AcquisitionRequirementSupportV1::Current
                 && traits.iter().any(|trait_| match trait_ {
                     RelicAcquisitionTraitV1::EliteFightLeverage => {
                         parent.run_state.peek_next_elite().is_some()
@@ -967,9 +1139,12 @@ fn strategic_acquisition_supported(
         }
         ShopPolicyAcquisitionV1::Potion {
             requirements,
-            requirements_satisfied,
+            requirement_support,
             ..
-        } => !requirements.is_empty() && *requirements_satisfied,
+        } => {
+            !requirements.is_empty()
+                && *requirement_support == AcquisitionRequirementSupportV1::Current
+        }
         ShopPolicyAcquisitionV1::Purge { .. }
         | ShopPolicyAcquisitionV1::OpenRewards
         | ShopPolicyAcquisitionV1::Leave => false,
@@ -1087,6 +1262,7 @@ mod tests {
     use super::*;
     use crate::content::monsters::factory::EncounterId;
     use crate::content::potions::{Potion, PotionId};
+    use crate::content::relics::RelicState;
     use crate::eval::run_control::{build_decision_surface, RunControlConfig, ShopVisitContextV1};
     use crate::runtime::combat::CombatCard;
     use crate::state::map::node::{MapEdge, MapRoomNode, RoomType};
@@ -1163,6 +1339,59 @@ mod tests {
             .expect("relic evidence")
     }
 
+    fn orange_pellets_decision(dark_embrace_upgrades: u8) -> ExactShopPolicyDecisionV1 {
+        let mut session = RunControlSession::new(RunControlConfig::default());
+        session.run_state.act_num = 2;
+        session.run_state.floor_num = 18;
+        session.run_state.current_hp = 71;
+        session.run_state.max_hp = 85;
+        session.run_state.gold = 175;
+        session.run_state.relics = vec![
+            RelicState::new(RelicId::BurningBlood),
+            RelicState::new(RelicId::PenNib),
+            RelicState::new(RelicId::RunicCube),
+        ];
+        session.run_state.master_deck = [
+            (CardId::Strike, 0),
+            (CardId::Strike, 0),
+            (CardId::Strike, 0),
+            (CardId::Strike, 0),
+            (CardId::Defend, 0),
+            (CardId::Defend, 0),
+            (CardId::Defend, 0),
+            (CardId::Defend, 0),
+            (CardId::Bash, 1),
+            (CardId::PowerThrough, 1),
+            (CardId::HeavyBlade, 0),
+            (CardId::SecondWind, 1),
+            (CardId::DarkEmbrace, dark_embrace_upgrades),
+            (CardId::ThunderClap, 0),
+            (CardId::ShrugItOff, 0),
+            (CardId::DemonForm, 0),
+        ]
+        .into_iter()
+        .enumerate()
+        .map(|(index, (card, upgrades))| {
+            let mut owned = CombatCard::new(card, index as u32);
+            owned.upgrades = upgrades;
+            owned
+        })
+        .collect();
+        let mut shop = ShopState::new();
+        shop.purge_available = false;
+        shop.relics.push(ShopRelic {
+            relic_id: RelicId::OrangePellets,
+            price: 145,
+            can_buy: true,
+            blocked_reason: None,
+        });
+        session.engine_state = EngineState::Shop(shop);
+
+        let surface = build_decision_surface(&session);
+        let legal = policy_candidates(&surface);
+        exact_shop_policy_decision_v1(&session, &legal).expect("Orange Pellets policy")
+    }
+
     fn cauldron_decision_with_potions(potions: Vec<Option<Potion>>) -> ExactShopPolicyDecisionV1 {
         let mut session = RunControlSession::new(RunControlConfig::default());
         session.run_state.gold = 300;
@@ -1180,6 +1409,84 @@ mod tests {
         let surface = build_decision_surface(&session);
         let legal = policy_candidates(&surface);
         exact_shop_policy_decision_v1(&session, &legal).expect("Cauldron policy")
+    }
+
+    #[test]
+    fn orange_pellets_upgrade_path_is_visible_but_does_not_spend_gold_as_current_support() {
+        let decision = orange_pellets_decision(0);
+        let pellets = relic_candidate(&decision, RelicId::OrangePellets);
+
+        assert!(matches!(
+            pellets.acquisition,
+            ShopPolicyAcquisitionV1::Relic {
+                requirement_support: AcquisitionRequirementSupportV1::OwnedUpgradePath {
+                    card: CardId::DarkEmbrace,
+                    upgrades_before: 0,
+                    energy_cost_before: 2,
+                    energy_cost_after: 1,
+                    energy_gain_before: 0,
+                    energy_gain_after: 0,
+                    ..
+                },
+                ..
+            }
+        ));
+        assert_eq!(pellets.band, ShopPolicyBandV1::SpeculativePurchase);
+        assert!(matches!(
+            decision.evidence[0].candidate_key,
+            DecisionCandidateKey::ShopLeave
+        ));
+    }
+
+    #[test]
+    fn orange_pellets_current_three_card_line_is_a_supported_asset() {
+        let decision = orange_pellets_decision(1);
+        let pellets = relic_candidate(&decision, RelicId::OrangePellets);
+
+        assert!(matches!(
+            pellets.acquisition,
+            ShopPolicyAcquisitionV1::Relic {
+                requirement_support: AcquisitionRequirementSupportV1::Current,
+                ..
+            }
+        ));
+        assert_eq!(pellets.band, ShopPolicyBandV1::EstablishStrategicAsset);
+        assert!(matches!(
+            decision.evidence[0].candidate_key,
+            DecisionCandidateKey::ShopBuyRelic {
+                relic: RelicId::OrangePellets,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn orange_pellets_without_an_owned_power_reports_unavailable() {
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        run_state.master_deck = vec![
+            CombatCard::new(CardId::Strike, 1),
+            CombatCard::new(CardId::Defend, 2),
+        ];
+
+        assert_eq!(
+            attack_skill_power_activation_support_v1(&run_state),
+            AcquisitionRequirementSupportV1::Unavailable
+        );
+    }
+
+    #[test]
+    fn orange_pellets_accepts_an_unconditional_energy_gain_sequence() {
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        run_state.master_deck = vec![
+            CombatCard::new(CardId::Strike, 1),
+            CombatCard::new(CardId::SeeingRed, 2),
+            CombatCard::new(CardId::DemonForm, 3),
+        ];
+
+        assert_eq!(
+            attack_skill_power_activation_support_v1(&run_state),
+            AcquisitionRequirementSupportV1::Current
+        );
     }
 
     #[test]
@@ -1825,7 +2132,7 @@ mod tests {
         assert!(matches!(
             smoke.acquisition,
             ShopPolicyAcquisitionV1::Potion {
-                requirements_satisfied: true,
+                requirement_support: AcquisitionRequirementSupportV1::Current,
                 ..
             }
         ));
@@ -1854,7 +2161,7 @@ mod tests {
         assert!(matches!(
             smoke.acquisition,
             ShopPolicyAcquisitionV1::Potion {
-                requirements_satisfied: false,
+                requirement_support: AcquisitionRequirementSupportV1::Unavailable,
                 ..
             }
         ));

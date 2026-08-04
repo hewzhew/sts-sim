@@ -136,6 +136,15 @@ speculative; affordability by itself is not a bundle plan. Random card
 discovery potions are not existing-deck access and cannot claim draw/energy
 consistency coverage from that discovery trait alone.
 
+Conditional relic value must expose its activation requirement separately from
+its effect trait. Orange Pellets therefore requires a payable same-turn Attack,
+Skill, and Power sequence before DebuffControl can establish a current strategic
+asset. A one-card owned upgrade that makes the sequence payable remains typed as
+an upgrade path, not as current activation and not as permission to spend gold.
+The feasibility check consumes card types, actual persistent card costs,
+unconditional card energy gain, and permanent energy-relic supply; it does not
+infer activation from the relic label or from merely owning all three types.
+
 Relic-sensitive card value also stays typed and public-state-only. Mummified
 Hand power tempo records the candidate Power's paid base cost and the number of
 owned positive-cost cards that can receive its trigger. Reward and upgrade
