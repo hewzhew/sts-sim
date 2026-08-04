@@ -1,6 +1,9 @@
 use serde::Serialize;
 
 use crate::ai::boss_mechanics_v1::{boss_mechanic_pressure_profile_v1, BossMechanicRedFlagV1};
+use crate::ai::card_analysis_v1::{
+    card_analysis_profile_v1, CardAnalysisAoeSupportV1, CardAnalysisAttackChunkV1,
+};
 use crate::ai::noncombat_strategy_v1::{
     build_run_strategy_snapshot_from_run_state_v2, StrategyCapabilityCoverageV1,
     StrategyCapabilityInputKindV1, StrategyCapabilityKindV1, StrategyThreatSourceV1,
@@ -53,6 +56,8 @@ pub struct BossEncounterReadinessV1 {
     pub static_single_target_attack_damage: i32,
     pub best_single_hit: i32,
     pub aoe_sources: i32,
+    pub strong_aoe_sources: usize,
+    pub burst_attack_sources: usize,
     pub boss_threat_gap_count: usize,
     pub missing_transition_burst: bool,
     pub missing_post_split_aoe: bool,
@@ -74,6 +79,8 @@ impl Default for BossEncounterReadinessV1 {
             static_single_target_attack_damage: 0,
             best_single_hit: 0,
             aoe_sources: 0,
+            strong_aoe_sources: 0,
+            burst_attack_sources: 0,
             boss_threat_gap_count: 0,
             missing_transition_burst: false,
             missing_post_split_aoe: false,
@@ -107,6 +114,7 @@ pub fn boss_encounter_readiness_v1(run_state: &RunState) -> BossEncounterReadine
     let mechanics = boss_mechanic_pressure_profile_v1(run_state, boss);
     let damage_potions = damage_potion_facts(run_state);
     let two_stage_potion_coverage = has_two_stage_potion_coverage(&damage_potions);
+    let (strong_aoe_sources, burst_attack_sources) = post_split_deck_facts(run_state);
     let phase_control = capability(StrategyCapabilityKindV1::PhaseControl);
     let multi_target_control = capability(StrategyCapabilityKindV1::MultiTargetControl);
     let timed_damage_race = capability(StrategyCapabilityKindV1::TimedDamageRace);
@@ -120,7 +128,9 @@ pub fn boss_encounter_readiness_v1(run_state: &RunState) -> BossEncounterReadine
                 && (phase_control >= StrategyCapabilityCoverageV1::Supported
                     || static_single_target_attack_damage
                         >= SLIME_BOSS_STATIC_ATTACK_DAMAGE_TARGET_V1);
-            let post_split_plan = multi_target_control >= StrategyCapabilityCoverageV1::Supported;
+            let post_split_plan = multi_target_control >= StrategyCapabilityCoverageV1::Strong
+                || strong_aoe_sources > 0
+                || burst_attack_sources > 0;
             if opening_plan && post_split_plan {
                 BossEncounterPreparationBandV1::Established
             } else if two_stage_potion_coverage {
@@ -149,6 +159,8 @@ pub fn boss_encounter_readiness_v1(run_state: &RunState) -> BossEncounterReadine
             StrategyCapabilityKindV1::MultiTargetControl,
             StrategyCapabilityInputKindV1::AoeSources,
         ),
+        strong_aoe_sources,
+        burst_attack_sources,
         boss_threat_gap_count: strategy
             .threat_coverage
             .gaps
@@ -165,6 +177,21 @@ pub fn boss_encounter_readiness_v1(run_state: &RunState) -> BossEncounterReadine
         damage_potions,
         two_stage_potion_coverage,
     }
+}
+
+fn post_split_deck_facts(run_state: &RunState) -> (usize, usize) {
+    run_state.master_deck.iter().fold(
+        (0usize, 0usize),
+        |(strong_aoe_sources, burst_attack_sources), card| {
+            let profile = card_analysis_profile_v1(card.id, card.upgrades);
+            (
+                strong_aoe_sources
+                    + usize::from(profile.aoe_support == CardAnalysisAoeSupportV1::Strong),
+                burst_attack_sources
+                    + usize::from(profile.attack_chunk == CardAnalysisAttackChunkV1::Burst),
+            )
+        },
+    )
 }
 
 fn damage_potion_facts(run_state: &RunState) -> Vec<BossDamagePotionFactV1> {
@@ -264,6 +291,8 @@ mod tests {
             facts.multi_target_control,
             StrategyCapabilityCoverageV1::Supported
         );
+        assert_eq!(facts.strong_aoe_sources, 0);
+        assert_eq!(facts.burst_attack_sources, 0);
         assert_eq!(facts.phase_control, StrategyCapabilityCoverageV1::Thin);
         assert_eq!(facts.damage_potions.len(), 3);
         assert!(facts.two_stage_potion_coverage);
@@ -283,7 +312,7 @@ mod tests {
     }
 
     #[test]
-    fn sufficient_static_damage_and_aoe_establish_a_slime_boss_plan_without_potions() {
+    fn sufficient_static_damage_and_a_burst_finisher_establish_a_slime_boss_plan() {
         let mut run = f12_like_slime_boss_run();
         let next_uuid = run.master_deck.len() as u32 + 1;
         run.master_deck.push(card(CardId::Carnage, next_uuid));
@@ -297,5 +326,46 @@ mod tests {
             BossEncounterPreparationBandV1::Established
         );
         assert!(!facts.two_stage_potion_coverage);
+        assert_eq!(facts.burst_attack_sources, 1);
+    }
+
+    #[test]
+    fn static_damage_plus_one_light_aoe_does_not_establish_a_post_split_plan() {
+        let mut run = f12_like_slime_boss_run();
+        let next_uuid = run.master_deck.len() as u32 + 1;
+        run.master_deck.extend([
+            card(CardId::Strike, next_uuid),
+            card(CardId::Strike, next_uuid + 1),
+            card(CardId::Strike, next_uuid + 2),
+        ]);
+        run.potions = vec![None, None, None];
+
+        let facts = boss_encounter_readiness_v1(&run);
+
+        assert!(facts.static_single_target_attack_damage >= 70);
+        assert_eq!(
+            facts.multi_target_control,
+            StrategyCapabilityCoverageV1::Supported
+        );
+        assert_eq!(facts.strong_aoe_sources, 0);
+        assert_eq!(facts.burst_attack_sources, 0);
+        assert_eq!(facts.preparation, BossEncounterPreparationBandV1::Exposed);
+    }
+
+    #[test]
+    fn one_strong_aoe_can_establish_the_post_split_plan() {
+        let mut run = f12_like_slime_boss_run();
+        let next_uuid = run.master_deck.len() as u32 + 1;
+        run.master_deck.push(card(CardId::Immolate, next_uuid));
+        run.potions = vec![None, None, None];
+
+        let facts = boss_encounter_readiness_v1(&run);
+
+        assert!(facts.static_single_target_attack_damage >= 70);
+        assert_eq!(facts.strong_aoe_sources, 1);
+        assert_eq!(
+            facts.preparation,
+            BossEncounterPreparationBandV1::Established
+        );
     }
 }

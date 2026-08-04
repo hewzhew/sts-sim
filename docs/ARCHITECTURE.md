@@ -113,12 +113,14 @@ an elite is safe, a hidden-future lookup, or a substitute for measuring the
 resulting continuation.
 
 Slime Boss preparation is a shared typed strategy fact. It records capability
-coverage, static attack inventory, exact damage-potion identities, and whether
-two distinct potions can cover the opening and post-split stages. Static attack
-inventory is not presented as an exact three-turn simulation. `PotionBacked`
-means that continuation resources are carrying an unresolved deck plan; it is
-not equivalent to `Established` and is not permission to spend those resources
-on an avoidable elite.
+coverage, static attack inventory, strong-AoE and burst-finisher sources, exact
+damage-potion identities, and whether two distinct potions can cover the opening
+and post-split stages. One light AoE source is presence, not an established
+post-split plan; the plan requires multiple AoE sources, one typed strong-AoE
+source, or one typed burst finisher. Static attack inventory is not presented as
+an exact three-turn simulation. `PotionBacked` means that continuation resources
+are carrying an unresolved deck plan; it is not equivalent to `Established` and
+is not permission to spend those resources on an avoidable elite.
 
 Card-taking owners share the strategy-layer acquisition contract. A shop
 adapter must pass the currently available purge price as an explicit
