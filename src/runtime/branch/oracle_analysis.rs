@@ -335,6 +335,11 @@ impl OracleAnalysisWorkspaceV1 {
         self.session.accept_cursor_smoke_bomb_escape()?;
         self.view()
     }
+
+    pub fn commit_combat_scratch(&mut self) -> Result<OracleAnalysisNodeViewV1, String> {
+        self.session.commit_combat_scratch()?;
+        self.view()
+    }
 }
 
 fn preferred_neow_replay_v1(

@@ -428,7 +428,7 @@ pub(super) fn history(
     }
 }
 
-fn mutate<T: Serialize>(
+pub(super) fn mutate<T: Serialize>(
     workspace: &Path,
     operation: impl FnOnce(&mut OracleAnalysisWorkspaceV1) -> Result<T, String>,
 ) -> Result<Value, String> {
@@ -438,7 +438,7 @@ fn mutate<T: Serialize>(
     encode(output)
 }
 
-fn encode(value: impl Serialize) -> Result<Value, String> {
+pub(super) fn encode(value: impl Serialize) -> Result<Value, String> {
     serde_json::to_value(value)
         .map_err(|error| format!("failed to encode workspace result: {error}"))
 }

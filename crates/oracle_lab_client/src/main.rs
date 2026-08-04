@@ -220,10 +220,70 @@ enum LiveCommand {
         #[arg(long, default_value_t = 512)]
         max_engine_steps_per_transition: usize,
     },
+    /// Incrementally play, branch, rewind, and commit one exact combat scratch DAG.
+    Scratch {
+        #[command(subcommand)]
+        command: LiveScratchCommand,
+    },
     /// Save the resident workspace immediately.
     Save,
     /// Save and stop the resident workspace service.
     Shutdown,
+}
+
+#[derive(Debug, Subcommand)]
+enum LiveScratchCommand {
+    Start {
+        #[arg(long)]
+        node: Option<usize>,
+        #[arg(long, default_value_t = 512)]
+        max_engine_steps_per_transition: usize,
+        #[command(flatten)]
+        page: LiveScratchPageArgs,
+    },
+    Status {
+        #[command(flatten)]
+        page: LiveScratchPageArgs,
+    },
+    Play {
+        #[arg(long)]
+        action_ref: String,
+        #[command(flatten)]
+        page: LiveScratchPageArgs,
+    },
+    Back {
+        #[command(flatten)]
+        page: LiveScratchPageArgs,
+    },
+    Focus {
+        #[arg(long)]
+        scratch_node: u64,
+        #[command(flatten)]
+        page: LiveScratchPageArgs,
+    },
+    Search {
+        #[arg(long, default_value_t = 4)]
+        max_quanta: usize,
+        #[arg(long, default_value_t = 1_024)]
+        quantum_nodes: usize,
+        #[arg(long, default_value_t = 100)]
+        quantum_ms: u64,
+        #[arg(long, default_value_t = 1_000)]
+        wall_ms: u64,
+        #[command(flatten)]
+        page: LiveScratchPageArgs,
+    },
+    Tree,
+    Commit,
+    Clear,
+}
+
+#[derive(Clone, Copy, Debug, clap::Args)]
+struct LiveScratchPageArgs {
+    #[arg(long, default_value_t = 0)]
+    selection_offset: usize,
+    #[arg(long, default_value_t = 24, value_parser = clap::value_parser!(u8).range(1..=64))]
+    selection_limit: u8,
 }
 
 fn main() {
@@ -475,6 +535,80 @@ fn run_live_command(endpoint: &Path, command: LiveCommand) -> Result<(), String>
             )?;
             print_json(&compact_root_action_report(&diagnostic))
         }
+        LiveCommand::Scratch { command } => match command {
+            LiveScratchCommand::Start {
+                node,
+                max_engine_steps_per_transition,
+                page,
+            } => print_json(&live_call(
+                endpoint,
+                OracleAnalysisServiceCommandV1::CombatScratchStart {
+                    node,
+                    max_engine_steps_per_transition,
+                    selection_offset: page.selection_offset,
+                    selection_limit: usize::from(page.selection_limit),
+                },
+            )?),
+            LiveScratchCommand::Status { page } => print_json(&live_call(
+                endpoint,
+                OracleAnalysisServiceCommandV1::CombatScratchStatus {
+                    selection_offset: page.selection_offset,
+                    selection_limit: usize::from(page.selection_limit),
+                },
+            )?),
+            LiveScratchCommand::Play { action_ref, page } => print_json(&live_call(
+                endpoint,
+                OracleAnalysisServiceCommandV1::CombatScratchPlay {
+                    action_ref,
+                    selection_offset: page.selection_offset,
+                    selection_limit: usize::from(page.selection_limit),
+                },
+            )?),
+            LiveScratchCommand::Back { page } => print_json(&live_call(
+                endpoint,
+                OracleAnalysisServiceCommandV1::CombatScratchBack {
+                    selection_offset: page.selection_offset,
+                    selection_limit: usize::from(page.selection_limit),
+                },
+            )?),
+            LiveScratchCommand::Focus { scratch_node, page } => print_json(&live_call(
+                endpoint,
+                OracleAnalysisServiceCommandV1::CombatScratchFocus {
+                    scratch_node,
+                    selection_offset: page.selection_offset,
+                    selection_limit: usize::from(page.selection_limit),
+                },
+            )?),
+            LiveScratchCommand::Search {
+                max_quanta,
+                quantum_nodes,
+                quantum_ms,
+                wall_ms,
+                page,
+            } => print_json(&live_call(
+                endpoint,
+                OracleAnalysisServiceCommandV1::CombatScratchSearch {
+                    max_quanta,
+                    quantum_nodes,
+                    quantum_ms,
+                    wall_ms,
+                    selection_offset: page.selection_offset,
+                    selection_limit: usize::from(page.selection_limit),
+                },
+            )?),
+            LiveScratchCommand::Tree => print_json(&live_call(
+                endpoint,
+                OracleAnalysisServiceCommandV1::CombatScratchTree,
+            )?),
+            LiveScratchCommand::Commit => print_json(&live_call(
+                endpoint,
+                OracleAnalysisServiceCommandV1::CombatScratchCommit,
+            )?),
+            LiveScratchCommand::Clear => print_json(&live_call(
+                endpoint,
+                OracleAnalysisServiceCommandV1::CombatScratchClear,
+            )?),
+        },
     }
 }
 
@@ -489,6 +623,15 @@ fn live_command_mutates(command: &LiveCommand) -> bool {
             | LiveCommand::Accept
             | LiveCommand::Escape
             | LiveCommand::Restart
+            | LiveCommand::Scratch {
+                command: LiveScratchCommand::Start { .. }
+                    | LiveScratchCommand::Play { .. }
+                    | LiveScratchCommand::Back { .. }
+                    | LiveScratchCommand::Focus { .. }
+                    | LiveScratchCommand::Search { .. }
+                    | LiveScratchCommand::Commit
+                    | LiveScratchCommand::Clear,
+            }
             | LiveCommand::Save
             | LiveCommand::Shutdown
     )

@@ -190,6 +190,115 @@ fn loopback_endpoint_accepts_independent_calls_and_removes_discovery_file_on_shu
 }
 
 #[test]
+fn resident_service_keeps_combat_scratch_alive_across_typed_calls() {
+    let workspace_path = unique_workspace_path();
+    let endpoint_path = workspace_path.with_extension("endpoint.json");
+    let mut workspace = OracleAnalysisWorkspaceV1::new(OracleRunConfig {
+        seed: SEED,
+        ascension: 0,
+        budget: OracleRunBudget::default(),
+    })
+    .expect("analysis workspace");
+    for _ in 0..32 {
+        let view = workspace.view().expect("analysis view");
+        if view.boundary == sts_oracle_runtime::eval::run_control::OracleRunBoundaryV1::Combat {
+            break;
+        }
+        let choice_ref = view
+            .choices
+            .first()
+            .unwrap_or_else(|| panic!("node {} has no route to combat", view.node_id))
+            .choice_ref
+            .clone();
+        workspace
+            .try_choice(&choice_ref)
+            .expect("choose toward combat");
+    }
+    let combat_node = workspace.view().expect("combat view").node_id;
+
+    let server_workspace_path = workspace_path.clone();
+    let server_endpoint_path = endpoint_path.clone();
+    let server = thread::spawn(move || {
+        serve_oracle_analysis_tcp_v1(
+            &server_workspace_path,
+            workspace,
+            "127.0.0.1:0".parse::<SocketAddr>().expect("bind address"),
+            &server_endpoint_path,
+        )
+    });
+    for _ in 0..200 {
+        if endpoint_path.is_file() {
+            break;
+        }
+        thread::sleep(Duration::from_millis(10));
+    }
+
+    let start_request = json!({
+        "id": "scratch-start",
+        "command": "combat_scratch_start",
+        "node": combat_node,
+    })
+    .to_string();
+    let start = call_oracle_analysis_tcp_v1(&endpoint_path, &start_request)
+        .expect("start resident scratch");
+    assert!(start.ok);
+    let action_ref = start
+        .result
+        .as_ref()
+        .and_then(|result| result["legal_actions"]["atomic_actions"].as_array())
+        .and_then(|actions| actions.first())
+        .and_then(|action| action["action_ref"].as_str())
+        .expect("scratch atomic action ref")
+        .to_string();
+    let play_request = json!({
+        "id": "scratch-play",
+        "command": "combat_scratch_play",
+        "action_ref": action_ref,
+    })
+    .to_string();
+    let play = call_oracle_analysis_tcp_v1(&endpoint_path, &play_request)
+        .expect("play resident scratch action");
+    assert!(play.ok);
+    assert_eq!(play.revision, 2);
+    assert_eq!(
+        play.result.as_ref().expect("scratch play result")["scratch_node_count"],
+        2
+    );
+    let tree = call_oracle_analysis_tcp_v1(
+        &endpoint_path,
+        r#"{"id":"scratch-tree","command":"combat_scratch_tree"}"#,
+    )
+    .expect("view resident scratch tree");
+    assert_eq!(
+        tree.result
+            .as_ref()
+            .and_then(|result| result["nodes"].as_array())
+            .map(Vec::len),
+        Some(2)
+    );
+    call_oracle_analysis_tcp_v1(&endpoint_path, r#"{"command":"shutdown"}"#)
+        .expect("shutdown resident scratch service");
+    server
+        .join()
+        .expect("server thread")
+        .expect("resident server exit");
+
+    let restored = load_oracle_analysis_workspace_v1(&workspace_path).expect("saved scratch");
+    assert_eq!(
+        restored
+            .artifact()
+            .expect("restored artifact")
+            .session
+            .combat_scratch
+            .expect("persisted combat scratch")
+            .nodes
+            .len(),
+        2
+    );
+    let _ = fs::remove_file(workspace_path);
+}
+
+#[test]
 fn analysis_workspace_either_resumes_or_materializes_a_verified_combat_witness() {
     let mut budget = OracleRunBudget::default();
     budget.hallway_nodes = 1;

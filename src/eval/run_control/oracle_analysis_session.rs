@@ -39,12 +39,24 @@ use super::{
 };
 
 mod card_reward_path;
+mod combat_scratch;
 
 pub use card_reward_path::{
     OracleAnalysisCardRewardApplicationUnknownV1, OracleAnalysisCardRewardApplicationV1,
     OracleAnalysisCardRewardPathAuditV1, OracleAnalysisCardRewardPathBoundaryV1,
     ORACLE_ANALYSIS_CARD_REWARD_PATH_AUDIT_SCHEMA_NAME,
     ORACLE_ANALYSIS_CARD_REWARD_PATH_AUDIT_SCHEMA_VERSION,
+};
+use combat_scratch::OracleAnalysisCombatScratchV1;
+pub use combat_scratch::{
+    OracleAnalysisCombatScratchActionSurfaceV1, OracleAnalysisCombatScratchActionV1,
+    OracleAnalysisCombatScratchCheckpointV1, OracleAnalysisCombatScratchMonsterV1,
+    OracleAnalysisCombatScratchNodeCheckpointV1, OracleAnalysisCombatScratchPlayerV1,
+    OracleAnalysisCombatScratchPositionV1, OracleAnalysisCombatScratchSearchExitV1,
+    OracleAnalysisCombatScratchSearchReportV1, OracleAnalysisCombatScratchSearchRequestV1,
+    OracleAnalysisCombatScratchSelectionFamilyV1, OracleAnalysisCombatScratchTreeNodeV1,
+    OracleAnalysisCombatScratchTreeV1, OracleAnalysisCombatScratchViewV1,
+    ORACLE_ANALYSIS_COMBAT_SCRATCH_SCHEMA_NAME, ORACLE_ANALYSIS_COMBAT_SCRATCH_SCHEMA_VERSION,
 };
 
 pub const ORACLE_ANALYSIS_SESSION_SCHEMA_NAME: &str = "OracleAnalysisSession";
@@ -470,6 +482,8 @@ pub struct OracleAnalysisSessionCheckpointV1 {
     pub edges: Vec<OracleAnalysisEdgeV1>,
     pub explorer: OracleRunExplorerCheckpointV1,
     pub combat_jobs: Vec<OracleAnalysisCombatJobCheckpointV1>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub combat_scratch: Option<OracleAnalysisCombatScratchCheckpointV1>,
 }
 
 pub struct OracleAnalysisSessionV1 {
@@ -481,6 +495,7 @@ pub struct OracleAnalysisSessionV1 {
     next_edge_id: u64,
     edges: Vec<OracleAnalysisEdgeV1>,
     combat_jobs: BTreeMap<usize, OracleAnalysisCombatJobV1>,
+    combat_scratch: Option<OracleAnalysisCombatScratchV1>,
     combat_budgets: OracleRunCombatBudgetsV1,
     decision_prior: Option<RunPolicyPriorFnV1>,
     decision_annotation: Option<OracleRunDecisionAnnotationFnV1>,
@@ -545,6 +560,7 @@ impl OracleAnalysisSessionV1 {
             next_edge_id: 0,
             edges: Vec::new(),
             combat_jobs,
+            combat_scratch: None,
             combat_budgets,
             decision_prior,
             decision_annotation,
@@ -602,6 +618,23 @@ impl OracleAnalysisSessionV1 {
                 ));
             }
         }
+        let combat_scratch = checkpoint
+            .combat_scratch
+            .map(|saved| {
+                let branch = explorer
+                    .branches
+                    .iter()
+                    .find(|branch| branch.branch_id == saved.run_node_id)
+                    .ok_or_else(|| {
+                        format!(
+                            "analysis combat scratch references missing node {}",
+                            saved.run_node_id
+                        )
+                    })?;
+                let root = branch.session.current_active_combat_position()?;
+                OracleAnalysisCombatScratchV1::restore(saved, root)
+            })
+            .transpose()?;
         let session = Self {
             explorer,
             cursor_node_id: checkpoint.cursor_node_id,
@@ -611,6 +644,7 @@ impl OracleAnalysisSessionV1 {
             next_edge_id: checkpoint.next_edge_id,
             edges: checkpoint.edges,
             combat_jobs,
+            combat_scratch,
             combat_budgets,
             decision_prior,
             decision_annotation,
@@ -641,6 +675,10 @@ impl OracleAnalysisSessionV1 {
                     work: job.work.checkpoint(),
                 })
                 .collect(),
+            combat_scratch: self
+                .combat_scratch
+                .as_ref()
+                .map(OracleAnalysisCombatScratchV1::checkpoint),
         })
     }
 
@@ -1536,7 +1574,14 @@ impl OracleAnalysisSessionV1 {
         &mut self,
         actions: &[ClientInput],
     ) -> Result<usize, String> {
-        let source_node_id = self.cursor_node_id;
+        self.accept_combat_actions_from_node(self.cursor_node_id, actions)
+    }
+
+    fn accept_combat_actions_from_node(
+        &mut self,
+        source_node_id: usize,
+        actions: &[ClientInput],
+    ) -> Result<usize, String> {
         let branch = self.require_branch(source_node_id)?;
         if branch.boundary != OracleRunBoundaryV1::Combat {
             return Err(format!(

@@ -296,6 +296,40 @@ cargo oracle-lab new --seed 20260713009 --ascension 0 --workspace .oracle-lab/ca
 .\ol-live.cmd live --session seed009 run --export-continuation .oracle-lab/cases/seed009.victory.continuation.json
 ```
 
+At an exact combat node, use the resident combat scratch surface for
+card-by-card analysis without writing action-list JSON or mutating the formal
+run tree:
+
+```powershell
+.\ol-live.cmd live --session seed009 scratch start --node <combat-node>
+.\ol-live.cmd live --session seed009 scratch status
+.\ol-live.cmd live --session seed009 scratch play --action-ref <returned-ref>
+.\ol-live.cmd live --session seed009 scratch back
+.\ol-live.cmd live --session seed009 scratch tree
+```
+
+`focus --scratch-node <id>` moves among retained scratch branches. Structured
+Hand/Grid/Scry inputs are returned in bounded pages; use `--selection-offset`
+and `--selection-limit` without materializing the complete combination space.
+Each action ref is bound to the cursor's exact state and a stale ref fails
+without changing the workspace.
+
+Ask the existing portfolio for one deliberately small potion-free suffix from
+the current scratch node only when manual play needs help:
+
+```powershell
+.\ol-live.cmd live --session seed009 scratch search `
+  --max-quanta 4 --quantum-nodes 1024 --wall-ms 1000
+```
+
+A found suffix is appended to scratch and remains editable; a missing bounded
+witness remains unresolved. `scratch commit` succeeds only at a terminal win,
+replays the complete prefix from the unchanged run combat root, creates one
+atomic combat-witness child, and clears scratch. `scratch clear` discards only
+the temporary DAG. Offline parity is available through
+`.\ol.cmd combat-scratch --workspace <workspace> <subcommand>`, but resident
+mode avoids reloading the workspace on every card action.
+
 Audit every materialized card-reward choice on the current exact path without
 guessing node ids or opening the workspace checkpoint:
 

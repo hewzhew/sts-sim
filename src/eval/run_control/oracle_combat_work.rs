@@ -1001,6 +1001,16 @@ impl OracleRunCombatWorkV1 {
         self.best_witness().is_some()
     }
 
+    pub(super) fn verified_witness_inputs(&self) -> Option<Vec<ClientInput>> {
+        self.best_witness().map(|witness| {
+            witness
+                .actions
+                .iter()
+                .map(|action| action.input.clone())
+                .collect()
+        })
+    }
+
     pub(super) fn incumbent_hp_loss(&self) -> Option<u32> {
         let initial_hp = self.start.combat.entities.player.current_hp;
         self.best_witness().map(|witness| {

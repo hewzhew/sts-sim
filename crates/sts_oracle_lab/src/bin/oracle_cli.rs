@@ -18,6 +18,7 @@ use super::combat_case_owner_parity::CombatCaseOwnerParityArgs;
 use super::combat_evidence_audit::CombatEvidenceAuditArgs;
 use super::combat_plan_diagnostics::{CombatCasePlanAnnotationsArgs, CombatCasePlanTraceArgs};
 use super::combat_route_compare::CombatCaseRouteCompareArgs;
+use super::combat_scratch_cli::CombatScratchCommand;
 use super::depth_beam_audits::DepthBeamTurnAuditArgs;
 use super::guidance_combination_audit::GuidanceCombinationAuditArgs;
 use super::oracle_seed_panel::OracleSeedPanelArgs;
@@ -490,6 +491,12 @@ pub(super) enum Command {
         node: Option<usize>,
         #[arg(long, default_value_t = 512)]
         max_engine_steps_per_transition: usize,
+    },
+    CombatScratch {
+        #[arg(long)]
+        workspace: PathBuf,
+        #[command(subcommand)]
+        command: CombatScratchCommand,
     },
     /// List every materialized variation and its edges.
     Tree {

@@ -465,6 +465,17 @@ schedules into typed content-addressed payload tables. Replay steps and emitted
 events use shared prefix DAGs. Payload hashes declare their algorithm and are
 validated during hydration; legacy inline checkpoints remain readable.
 
+One workspace may carry one combat scratch DAG bound to an immutable run combat
+node and its exact root hash. The root position remains owned by that run node;
+each scratch child persists only its parent id, one typed `ClientInput`, and the
+exact successor hash. Restore topologically replays every delta from the bound
+root and rejects missing parents, cycles, illegal inputs, transition truncation,
+or hash drift. Scratch navigation never creates run variations. A bounded
+descendant search may append a replay-verified potion-free suffix to scratch,
+but only an explicit terminal-victory commit may materialize the complete root
+prefix as one atomic combat witness and clear the scratch DAG. Run journals do
+not record individual scratch card actions.
+
 A fresh active workspace may also be rebuilt from one exact committed node
 after journal and final-state fingerprints are verified; the historical
 workspace remains immutable evidence. This bounds the active edit loop without

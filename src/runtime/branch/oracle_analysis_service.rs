@@ -322,7 +322,8 @@ fn execute_command(
             json!({
                 "commands": [
                     "ping", "capabilities", "status", "explain", "route_policy_audit", "shop_policy_audit", "card_reward_policy_audit", "card_reward_path_audit", "campfire_policy_audit", "view", "tree", "try",
-                    "focus", "choose", "owner", "run", "choose_path", "follow", "back", "promote", "advance", "accept_combat", "restart_combat", "history",
+                    "focus", "choose", "owner", "run", "choose_path", "follow", "back", "promote", "advance", "accept_combat", "restart_combat",
+                    "combat_scratch_start", "combat_scratch_status", "combat_scratch_play", "combat_scratch_back", "combat_scratch_focus", "combat_scratch_search", "combat_scratch_tree", "combat_scratch_commit", "combat_scratch_clear", "history",
                     "journal", "timeline", "journal_entry", "trajectory", "combat_summary", "combat_diagnostic",
                     "export_combat_case", "export_continuation", "verify_run_witness", "escape_combat", "save", "shutdown"
                 ],
@@ -628,6 +629,117 @@ fn execute_command(
             let view = workspace.view()?;
             (current_node_summary(workspace, &view)?, true, false, false)
         }
+        OracleAnalysisServiceCommandV1::CombatScratchStart {
+            node,
+            max_engine_steps_per_transition,
+            selection_offset,
+            selection_limit,
+        } => (
+            to_value(workspace.session.start_combat_scratch(
+                node,
+                max_engine_steps_per_transition,
+                selection_offset,
+                selection_limit,
+            )?)?,
+            true,
+            false,
+            false,
+        ),
+        OracleAnalysisServiceCommandV1::CombatScratchStatus {
+            selection_offset,
+            selection_limit,
+        } => (
+            to_value(
+                workspace
+                    .session
+                    .combat_scratch_view(selection_offset, selection_limit)?,
+            )?,
+            false,
+            false,
+            false,
+        ),
+        OracleAnalysisServiceCommandV1::CombatScratchPlay {
+            action_ref,
+            selection_offset,
+            selection_limit,
+        } => (
+            to_value(workspace.session.play_combat_scratch_action(
+                &action_ref,
+                selection_offset,
+                selection_limit,
+            )?)?,
+            true,
+            false,
+            false,
+        ),
+        OracleAnalysisServiceCommandV1::CombatScratchBack {
+            selection_offset,
+            selection_limit,
+        } => (
+            to_value(
+                workspace
+                    .session
+                    .back_combat_scratch(selection_offset, selection_limit)?,
+            )?,
+            true,
+            false,
+            false,
+        ),
+        OracleAnalysisServiceCommandV1::CombatScratchFocus {
+            scratch_node,
+            selection_offset,
+            selection_limit,
+        } => (
+            to_value(workspace.session.focus_combat_scratch_node(
+                scratch_node,
+                selection_offset,
+                selection_limit,
+            )?)?,
+            true,
+            false,
+            false,
+        ),
+        OracleAnalysisServiceCommandV1::CombatScratchSearch {
+            max_quanta,
+            quantum_nodes,
+            quantum_ms,
+            wall_ms,
+            selection_offset,
+            selection_limit,
+        } => {
+            let (report, view) = workspace.session.search_combat_scratch(
+                crate::eval::run_control::OracleAnalysisCombatScratchSearchRequestV1 {
+                    max_quanta,
+                    quantum_nodes,
+                    quantum_ms,
+                    wall_ms,
+                },
+                selection_offset,
+                selection_limit,
+            )?;
+            (json!({"report": report, "view": view}), true, false, false)
+        }
+        OracleAnalysisServiceCommandV1::CombatScratchTree => (
+            to_value(workspace.session.combat_scratch_tree()?)?,
+            false,
+            false,
+            false,
+        ),
+        OracleAnalysisServiceCommandV1::CombatScratchCommit => {
+            let view = workspace.commit_combat_scratch()?;
+            (current_node_summary(workspace, &view)?, true, false, false)
+        }
+        OracleAnalysisServiceCommandV1::CombatScratchClear => (
+            json!({
+                "schema_name": "OracleAnalysisCombatScratchClearReceiptV1",
+                "schema_version": 1,
+                "cleared": workspace.session.clear_combat_scratch(),
+                "run_cursor_node_id": workspace.session.cursor_node_id(),
+            }),
+            true,
+            false,
+            false,
+        ),
         OracleAnalysisServiceCommandV1::History { node } => {
             let node = node.unwrap_or_else(|| workspace.session.cursor_node_id());
             (

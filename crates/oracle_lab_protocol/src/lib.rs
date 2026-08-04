@@ -151,6 +151,59 @@ pub enum OracleAnalysisServiceCommandV1 {
     AcceptCombat,
     EscapeCombat,
     RestartCombat,
+    CombatScratchStart {
+        #[serde(default)]
+        node: Option<usize>,
+        #[serde(default = "default_max_engine_steps_per_transition")]
+        max_engine_steps_per_transition: usize,
+        #[serde(default)]
+        selection_offset: usize,
+        #[serde(default = "default_combat_scratch_selection_limit")]
+        selection_limit: usize,
+    },
+    CombatScratchStatus {
+        #[serde(default)]
+        selection_offset: usize,
+        #[serde(default = "default_combat_scratch_selection_limit")]
+        selection_limit: usize,
+    },
+    CombatScratchPlay {
+        action_ref: String,
+        #[serde(default)]
+        selection_offset: usize,
+        #[serde(default = "default_combat_scratch_selection_limit")]
+        selection_limit: usize,
+    },
+    CombatScratchBack {
+        #[serde(default)]
+        selection_offset: usize,
+        #[serde(default = "default_combat_scratch_selection_limit")]
+        selection_limit: usize,
+    },
+    CombatScratchFocus {
+        scratch_node: u64,
+        #[serde(default)]
+        selection_offset: usize,
+        #[serde(default = "default_combat_scratch_selection_limit")]
+        selection_limit: usize,
+    },
+    CombatScratchSearch {
+        #[serde(default = "default_combat_scratch_max_quanta")]
+        max_quanta: usize,
+        #[serde(default = "default_combat_scratch_quantum_nodes")]
+        quantum_nodes: usize,
+        #[serde(default = "default_combat_scratch_quantum_ms")]
+        quantum_ms: u64,
+        #[serde(default = "default_combat_scratch_wall_ms")]
+        wall_ms: u64,
+        #[serde(default)]
+        selection_offset: usize,
+        #[serde(default = "default_combat_scratch_selection_limit")]
+        selection_limit: usize,
+    },
+    CombatScratchTree,
+    CombatScratchCommit,
+    CombatScratchClear,
     History {
         #[serde(default)]
         node: Option<usize>,
@@ -198,6 +251,26 @@ pub enum OracleAnalysisServiceCommandV1 {
 
 fn default_max_engine_steps_per_transition() -> usize {
     512
+}
+
+fn default_combat_scratch_selection_limit() -> usize {
+    24
+}
+
+const fn default_combat_scratch_max_quanta() -> usize {
+    4
+}
+
+const fn default_combat_scratch_quantum_nodes() -> usize {
+    1_024
+}
+
+const fn default_combat_scratch_quantum_ms() -> u64 {
+    100
+}
+
+const fn default_combat_scratch_wall_ms() -> u64 {
+    1_000
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -421,6 +494,37 @@ mod tests {
             OracleAnalysisServiceCommandV1::CombatDiagnostic {
                 node: 17,
                 max_engine_steps_per_transition: 512,
+            }
+        ));
+    }
+
+    #[test]
+    fn combat_scratch_status_uses_a_bounded_lazy_selection_page() {
+        let command = serde_json::from_value::<OracleAnalysisServiceCommandV1>(json!({
+            "command": "combat_scratch_status",
+        }))
+        .expect("parse combat scratch status command");
+        assert!(matches!(
+            command,
+            OracleAnalysisServiceCommandV1::CombatScratchStatus {
+                selection_offset: 0,
+                selection_limit: 24,
+            }
+        ));
+
+        let search = serde_json::from_value::<OracleAnalysisServiceCommandV1>(json!({
+            "command": "combat_scratch_search",
+        }))
+        .expect("parse combat scratch search command");
+        assert!(matches!(
+            search,
+            OracleAnalysisServiceCommandV1::CombatScratchSearch {
+                max_quanta: 4,
+                quantum_nodes: 1_024,
+                quantum_ms: 100,
+                wall_ms: 1_000,
+                selection_offset: 0,
+                selection_limit: 24,
             }
         ));
     }
