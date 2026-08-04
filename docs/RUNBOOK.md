@@ -317,10 +317,10 @@ run tree:
 The canonical client still validates its own path and depfile before contacting
 the resident service; if it is missing or stale, rebuild it once with
 `cargo build --release -p oracle_lab_client --bin oracle_lab_client`.
-When exactly one validated resident endpoint still names a live service
-process, routine `live` calls may omit `--session <name>`; stale endpoint files
-are ignored, and zero or multiple active sessions require an explicit session
-or endpoint:
+When exactly one validated resident endpoint names a process running its
+recorded immutable host image, routine `live` calls may omit `--session
+<name>`; stale endpoints, dead PIDs, and reused PIDs are ignored, while zero or
+multiple active sessions require an explicit session or endpoint:
 
 ```powershell
 .\ol-live.cmd live scratch observe

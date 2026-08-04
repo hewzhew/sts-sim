@@ -4,9 +4,9 @@ use std::path::Path;
 use std::process::{Child, Command, Stdio};
 
 #[cfg(windows)]
-use std::ffi::{c_void, OsStr};
+use std::ffi::{c_void, OsStr, OsString};
 #[cfg(windows)]
-use std::os::windows::ffi::OsStrExt;
+use std::os::windows::ffi::{OsStrExt, OsStringExt};
 #[cfg(windows)]
 use std::ptr::{null, null_mut};
 #[cfg(windows)]
@@ -14,10 +14,10 @@ use windows_sys::Win32::Foundation::{CloseHandle, HANDLE, WAIT_OBJECT_0, WAIT_TI
 #[cfg(windows)]
 use windows_sys::Win32::System::Threading::{
     CreateProcessW, DeleteProcThreadAttributeList, GetExitCodeProcess,
-    InitializeProcThreadAttributeList, OpenProcess, UpdateProcThreadAttribute, WaitForSingleObject,
-    CREATE_BREAKAWAY_FROM_JOB, DETACHED_PROCESS, EXTENDED_STARTUPINFO_PRESENT,
-    PROCESS_CREATE_PROCESS, PROCESS_INFORMATION, PROCESS_QUERY_LIMITED_INFORMATION,
-    PROCESS_SYNCHRONIZE, PROC_THREAD_ATTRIBUTE_PARENT_PROCESS, STARTUPINFOEXW,
+    InitializeProcThreadAttributeList, OpenProcess, QueryFullProcessImageNameW,
+    UpdateProcThreadAttribute, WaitForSingleObject, CREATE_BREAKAWAY_FROM_JOB, DETACHED_PROCESS,
+    EXTENDED_STARTUPINFO_PRESENT, PROCESS_CREATE_PROCESS, PROCESS_INFORMATION,
+    PROCESS_QUERY_LIMITED_INFORMATION, PROC_THREAD_ATTRIBUTE_PARENT_PROCESS, STARTUPINFOEXW,
 };
 #[cfg(windows)]
 use windows_sys::Win32::UI::WindowsAndMessaging::{GetShellWindow, GetWindowThreadProcessId};
@@ -32,35 +32,44 @@ pub(super) struct ResidentProcess {
 }
 
 #[cfg(windows)]
-pub(super) fn process_is_running(process_id: u32) -> bool {
+pub(super) fn process_matches_executable(process_id: u32, expected: &Path) -> bool {
     // SAFETY: query-only access to an OS process id does not transfer ownership.
-    let handle = unsafe {
-        OpenProcess(
-            PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_SYNCHRONIZE,
-            0,
-            process_id,
-        )
-    };
+    let handle = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, process_id) };
     if handle.is_null() {
         return false;
     }
-    // SAFETY: `handle` is valid until the matching CloseHandle below.
-    let wait = unsafe { WaitForSingleObject(handle, 0) };
+    let mut buffer = vec![0u16; 32_768];
+    let mut length = buffer.len() as u32;
+    // SAFETY: `buffer` is writable for `length` UTF-16 code units and `handle`
+    // remains valid until the matching CloseHandle below.
+    let read = unsafe { QueryFullProcessImageNameW(handle, 0, buffer.as_mut_ptr(), &mut length) };
     // SAFETY: `handle` was returned by OpenProcess in this function.
     unsafe { CloseHandle(handle) };
-    wait == WAIT_TIMEOUT
+    if read == 0 {
+        return false;
+    }
+    let actual = Path::new(&OsString::from_wide(&buffer[..length as usize])).to_path_buf();
+    paths_refer_to_same_file(&actual, expected)
 }
 
-#[cfg(unix)]
-pub(super) fn process_is_running(process_id: u32) -> bool {
-    // SAFETY: signal 0 performs an existence/permission check without sending a signal.
-    let result = unsafe { libc::kill(process_id as libc::pid_t, 0) };
-    result == 0 || std::io::Error::last_os_error().raw_os_error() == Some(libc::EPERM)
+#[cfg(any(target_os = "linux", target_os = "android"))]
+pub(super) fn process_matches_executable(process_id: u32, expected: &Path) -> bool {
+    std::fs::read_link(format!("/proc/{process_id}/exe"))
+        .ok()
+        .is_some_and(|actual| paths_refer_to_same_file(&actual, expected))
 }
 
-#[cfg(not(any(unix, windows)))]
-pub(super) fn process_is_running(_process_id: u32) -> bool {
+#[cfg(not(any(windows, target_os = "linux", target_os = "android")))]
+pub(super) fn process_matches_executable(_process_id: u32, _expected: &Path) -> bool {
     false
+}
+
+fn paths_refer_to_same_file(left: &Path, right: &Path) -> bool {
+    left == right
+        || match (left.canonicalize(), right.canonicalize()) {
+            (Ok(left), Ok(right)) => left == right,
+            _ => false,
+        }
 }
 
 impl ResidentProcess {

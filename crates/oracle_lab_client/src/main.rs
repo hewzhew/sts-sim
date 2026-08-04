@@ -1645,18 +1645,20 @@ fn implicit_session_endpoint_path(sessions_root: &Path) -> Result<PathBuf, Strin
                     .and_then(|name| name.to_str())
                     .is_some_and(|name| name.ends_with(".endpoint.json"))
         })
-        .filter(|path| endpoint_process_is_running(path))
+        .filter(|path| endpoint_process_matches_runtime(path))
         .collect::<Vec<_>>();
     select_implicit_session_endpoint(endpoints)
 }
 
-fn endpoint_process_is_running(endpoint_path: &Path) -> bool {
+fn endpoint_process_matches_runtime(endpoint_path: &Path) -> bool {
     let endpoint = fs::read(endpoint_path)
         .ok()
         .and_then(|bytes| serde_json::from_slice::<OracleAnalysisServiceEndpointV1>(&bytes).ok());
     endpoint.is_some_and(|endpoint| {
         oracle_lab_protocol::validate_endpoint(&endpoint).is_ok()
-            && resident_process::process_is_running(endpoint.process_id)
+            && endpoint.executable.as_deref().is_some_and(|executable| {
+                resident_process::process_matches_executable(endpoint.process_id, executable)
+            })
     })
 }
 
@@ -1801,9 +1803,14 @@ mod tests {
     use super::*;
     use std::time::{SystemTime, UNIX_EPOCH};
 
+    #[cfg(any(windows, target_os = "linux", target_os = "android"))]
     #[test]
     fn implicit_live_session_requires_exactly_one_endpoint() {
-        assert!(resident_process::process_is_running(std::process::id()));
+        let current_executable = std::env::current_exe().expect("identify current test executable");
+        assert!(resident_process::process_matches_executable(
+            std::process::id(),
+            &current_executable
+        ));
         let nonce = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .expect("system clock after epoch")
@@ -1820,30 +1827,48 @@ mod tests {
 
         let ignored = directory.join("notes.json");
         fs::write(&ignored, b"{}").expect("write ignored non-endpoint file");
-        let endpoint_fixture = |process_id| OracleAnalysisServiceEndpointV1 {
+        let endpoint_fixture = |process_id, executable| OracleAnalysisServiceEndpointV1 {
             schema_name: oracle_lab_protocol::ORACLE_ANALYSIS_SERVICE_ENDPOINT_SCHEMA.to_string(),
             schema_version: oracle_lab_protocol::ORACLE_ANALYSIS_SERVICE_ENDPOINT_SCHEMA_VERSION,
             address: "127.0.0.1:1".parse().expect("static loopback address"),
             auth_token: "fixture-token".to_string(),
             workspace: directory.join("fixture.workspace.json"),
             process_id,
-            executable: None,
+            executable: Some(executable),
         };
         let stale_path = directory.join("stale.endpoint.json");
         fs::write(
             &stale_path,
-            serde_json::to_vec(&endpoint_fixture(u32::MAX)).expect("encode stale endpoint"),
+            serde_json::to_vec(&endpoint_fixture(u32::MAX, current_executable.clone()))
+                .expect("encode stale endpoint"),
         )
         .expect("write stale endpoint fixture");
         let stale = implicit_session_endpoint_path(&directory)
             .expect_err("stale endpoint must not become an implicit session");
         assert!(stale.contains("no active resident session"));
 
+        let mismatched_path = directory.join("mismatched.endpoint.json");
+        fs::write(
+            &mismatched_path,
+            serde_json::to_vec(&endpoint_fixture(
+                std::process::id(),
+                directory.join("different-runtime.exe"),
+            ))
+            .expect("encode mismatched endpoint"),
+        )
+        .expect("write mismatched endpoint fixture");
+        let mismatched = implicit_session_endpoint_path(&directory)
+            .expect_err("a reused pid with another image must not become an implicit session");
+        assert!(mismatched.contains("no active resident session"));
+
         let only = directory.join("alpha.endpoint.json");
         fs::write(
             &only,
-            serde_json::to_vec(&endpoint_fixture(std::process::id()))
-                .expect("encode live endpoint"),
+            serde_json::to_vec(&endpoint_fixture(
+                std::process::id(),
+                current_executable.clone(),
+            ))
+            .expect("encode live endpoint"),
         )
         .expect("write only live endpoint fixture");
         assert_eq!(
@@ -1854,7 +1879,7 @@ mod tests {
         let second = directory.join("beta.endpoint.json");
         fs::write(
             &second,
-            serde_json::to_vec(&endpoint_fixture(std::process::id()))
+            serde_json::to_vec(&endpoint_fixture(std::process::id(), current_executable))
                 .expect("encode second live endpoint"),
         )
         .expect("write second live endpoint fixture");
