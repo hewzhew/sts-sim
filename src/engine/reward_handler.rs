@@ -16,6 +16,9 @@ fn post_reward_state(run_state: &mut RunState) -> EngineState {
     // After boss reward screen, trigger boss relic selection before advancing act
     if run_state.pending_boss_reward {
         run_state.pending_boss_reward = false;
+        // Java enters TreasureRoomBoss on its own floor before constructing
+        // the BossChest and applying any selected relic's effects.
+        run_state.advance_floor_and_generate_seeds();
         // Java BossChest constructor calls returnRandomRelic(BOSS) exactly
         // three times. The boss relic pool already removes candidates as they
         // are drawn, so there is no retry/dedup layer here.
@@ -384,6 +387,7 @@ mod tests {
     use crate::content::potions::PotionId;
     use crate::content::relics::{RelicId, RelicState};
     use crate::runtime::combat::CombatCard;
+    use crate::runtime::rng::StsRng;
     use crate::state::core::{ClientInput, EngineState};
     use crate::state::rewards::{RewardItem, RewardState};
     use crate::state::run::RunState;
@@ -393,6 +397,7 @@ mod tests {
     #[test]
     fn leaving_unclaimed_boss_rewards_opens_boss_relic_selection() {
         let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        run_state.floor_num = 16;
         run_state.pending_boss_reward = true;
         let mut reward_state = RewardState::new();
         reward_state.items = vec![RewardItem::Potion {
@@ -408,12 +413,15 @@ mod tests {
 
         assert!(matches!(next, EngineState::BossRelicSelect(_)));
         assert!(!run_state.pending_boss_reward);
+        assert_eq!(run_state.floor_num, 17);
+        assert_eq!(run_state.rng_pool.shuffle_rng, StsRng::new(18));
         assert!(run_state.potions.iter().all(Option::is_none));
     }
 
     #[test]
     fn leaving_unclaimed_boss_relic_rewards_advances_the_act() {
         let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        run_state.floor_num = 17;
         run_state.pending_boss_act_transition = true;
         run_state.potions = vec![
             Some(crate::content::potions::Potion::new(
@@ -443,6 +451,7 @@ mod tests {
 
         assert!(matches!(next, EngineState::MapNavigation));
         assert_eq!(run_state.act_num, 2);
+        assert_eq!(run_state.floor_num, 17);
         assert!(!run_state.pending_boss_act_transition);
         assert!(
             run_state

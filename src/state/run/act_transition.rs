@@ -1,6 +1,16 @@
 use super::*;
 
 impl RunState {
+    /// Advance Java's global floor number and rebuild every floor-local RNG.
+    ///
+    /// This applies to ordinary room entry, a boss chest, and the second Act 3
+    /// boss at A20. Persistent dungeon RNG streams keep their counters.
+    pub fn advance_floor_and_generate_seeds(&mut self) {
+        self.floor_num += 1;
+        self.rng_pool
+            .generate_floor_seeds(self.seed, self.floor_num);
+    }
+
     pub fn should_start_act3_double_boss(&self) -> bool {
         self.act_num == 3 && self.ascension_level >= 20 && self.boss_list.len() == 2
     }

@@ -418,6 +418,10 @@ fn finish_active_combat(
 
     run_state.absorb_combat_player(active.combat_state.entities.player.clone());
     run_state.potions = active.combat_state.entities.potions.clone();
+    // Java owns one global RNG pool. Combat clones it only to isolate search
+    // branches, so the accepted exact branch must hand every stream back
+    // before run-level rewards or same-floor continuations consume randomness.
+    run_state.rng_pool = active.combat_state.rng.pool.clone();
     run_state.room_mugged |= active.combat_state.runtime.combat_mugged;
     run_state.room_smoked |= active.combat_state.runtime.combat_smoked;
 
@@ -463,6 +467,7 @@ fn finish_room_combat(
 
         if is_boss && run_state.act_num == 3 {
             if run_state.should_start_act3_double_boss() {
+                run_state.advance_floor_and_generate_seeds();
                 run_state.reveal_next_boss_from_list();
                 match combat_start_request_for_room(run_state, RoomType::MonsterRoomBoss) {
                     Ok(request) => *engine_state = EngineState::CombatStart(request),
@@ -762,8 +767,7 @@ pub fn tick_run_active_with_observer(
                     run_state.room_mugged = false;
                     run_state.room_smoked = false;
                     run_state.event_state = None;
-                    // Increment floor number successfully entering a new room
-                    run_state.floor_num += 1;
+                    run_state.advance_floor_and_generate_seeds();
 
                     // WingBoots: decrement counter on successful flight (non-adjacent travel)
                     if is_flight {

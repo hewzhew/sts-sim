@@ -1,13 +1,14 @@
 use super::{
-    apply_combat_meta_change, open_treasure_chest, remove_one_relic_from_rewards_after_chest_open,
-    tick_run, tick_run_active,
+    apply_combat_meta_change, finish_active_combat, open_treasure_chest,
+    remove_one_relic_from_rewards_after_chest_open, tick_run, tick_run_active,
 };
 use crate::content::cards::CardId;
 use crate::content::relics::{RelicId, RelicState, RelicTier};
 use crate::runtime::combat::CombatCard;
-use crate::runtime::rng::StsRng;
+use crate::runtime::rng::{RngPool, StsRng};
 use crate::state::core::{
     ActiveCombat, ClientInput, CombatContext, EngineState, EventCombatContext, PostCombatReturn,
+    RoomCombatContext,
 };
 use crate::state::map::node::{MapEdge, MapRoomNode, RoomType};
 use crate::state::map::state::MapState;
@@ -91,6 +92,68 @@ fn map_overlay_path_selection_commits_travel_and_drops_return_screen() {
 }
 
 #[test]
+fn entering_a_room_reseeds_java_per_floor_rng_streams() {
+    let seed = 91;
+    let mut run_state = run_state_with_first_room(RoomType::RestRoom);
+    run_state.seed = seed;
+    run_state.rng_pool = RngPool::new(seed);
+    let _ = run_state.rng_pool.monster_rng.random(99);
+    let persistent_monster_rng = run_state.rng_pool.monster_rng.clone();
+    let _ = run_state.rng_pool.monster_hp_rng.random(99);
+    let _ = run_state.rng_pool.ai_rng.random(99);
+    let _ = run_state.rng_pool.shuffle_rng.random(99);
+    let _ = run_state.rng_pool.card_random_rng.random(99);
+    let _ = run_state.rng_pool.misc_rng.random(99);
+
+    let mut engine_state = EngineState::MapNavigation;
+    let mut combat_state = None;
+    assert!(tick_run(
+        &mut engine_state,
+        &mut run_state,
+        &mut combat_state,
+        Some(ClientInput::SelectMapNode(0)),
+    ));
+
+    assert_eq!(run_state.floor_num, 1);
+    let floor_rng = StsRng::new(seed + 1);
+    assert_eq!(run_state.rng_pool.monster_hp_rng, floor_rng);
+    assert_eq!(run_state.rng_pool.ai_rng, floor_rng);
+    assert_eq!(run_state.rng_pool.shuffle_rng, floor_rng);
+    assert_eq!(run_state.rng_pool.card_random_rng, floor_rng);
+    assert_eq!(run_state.rng_pool.misc_rng, floor_rng);
+    assert_eq!(
+        run_state.rng_pool.monster_rng, persistent_monster_rng,
+        "persistent run RNG streams must not be reset at a floor transition"
+    );
+}
+
+#[test]
+fn finishing_combat_returns_java_rng_stream_state_to_the_run() {
+    let mut run_state = RunState::new(91, 0, false, "Ironclad");
+    let mut combat = crate::test_support::blank_test_combat();
+    let _ = combat.rng.card_rng.random(99);
+    let _ = combat.rng.card_random_rng.random(99);
+    let expected = combat.rng.pool.clone();
+    let mut engine_state = EngineState::MapNavigation;
+    let mut active_combat = Some(ActiveCombat::new(
+        EngineState::MapNavigation,
+        combat,
+        CombatContext::Room(RoomCombatContext {
+            room_type: RoomType::MonsterRoom,
+        }),
+    ));
+
+    assert!(finish_active_combat(
+        &mut engine_state,
+        &mut run_state,
+        &mut active_combat,
+    ));
+
+    assert_eq!(run_state.rng_pool, expected);
+    assert!(active_combat.is_none());
+}
+
+#[test]
 fn map_boss_room_starts_boss_combat_and_uses_boss_reward_rules() {
     let mut run_state = run_state_with_first_room(RoomType::MonsterRoomBoss);
     let mut engine_state = EngineState::MapNavigation;
@@ -155,6 +218,7 @@ fn act3_a20_first_boss_starts_second_boss_without_reward_or_victory() {
 
     let mut run_state = RunState::new(1, 20, true, "Ironclad");
     run_state.act_num = 3;
+    run_state.floor_num = 50;
     run_state.boss_list = vec![
         EncounterId::AwakenedOne,
         EncounterId::TimeEater,
@@ -182,6 +246,8 @@ fn act3_a20_first_boss_starts_second_boss_without_reward_or_victory() {
 
     assert!(matches!(engine_state, EngineState::CombatPlayerTurn));
     assert!(combat_state.is_some());
+    assert_eq!(run_state.floor_num, 51);
+    assert_eq!(run_state.rng_pool.shuffle_rng, StsRng::new(52));
     assert_eq!(run_state.boss_key, Some(EncounterId::TimeEater));
     assert_eq!(run_state.boss_list, vec![EncounterId::DonuAndDeca]);
 }
@@ -254,6 +320,7 @@ fn event_combat_rewards_do_not_call_standard_combat_loot_generator() {
     };
 
     let mut combat = crate::test_support::blank_test_combat();
+    combat.rng.pool = run_state.rng_pool.clone();
     combat
         .entities
         .player
