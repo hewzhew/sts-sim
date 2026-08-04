@@ -23,7 +23,8 @@ Use the narrowest maintained surface for the task:
 | `cargo oracle-lab` / `cargo ol` | Build-owning offline oracle commands. |
 | `.\ol.cmd` | Repeated offline oracle calls through the canonical artifact guard. |
 | `.\ol.cmd drive` | Bounded current-owner and ordinary-combat progression in one process. |
-| `cargo ol-live` / `.\ol-live.cmd` | Resident oracle sessions. |
+| `cargo ol-live` | Build or rebuild the lightweight resident client, then run it. |
+| `.\ol-live.cmd` | Invoke the validated canonical resident client directly for low-latency repeated calls. |
 | `.\ol-contract.cmd` | Narrow replay-verified exact-combat contracts. |
 
 The heavy `oracle_lab` and `oracle_lab_service` targets require the internal
@@ -310,6 +311,11 @@ run tree:
 .\ol-live.cmd live --session seed009 scratch back
 .\ol-live.cmd live --session seed009 scratch tree
 ```
+
+`ol-live.cmd` bypasses Cargo's per-process startup on the repeated card loop.
+The canonical client still validates its own path and depfile before contacting
+the resident service; if it is missing or stale, rebuild it once with
+`cargo build --release -p oracle_lab_client --bin oracle_lab_client`.
 
 Action commands return a compact typed delta by default. Add `--full` to
 `card`, `potion`, `end`, `atomic`, or `selection` when the caller no longer has

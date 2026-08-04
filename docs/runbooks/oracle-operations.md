@@ -110,12 +110,15 @@ historical files below `target/` remain offline inputs and are never rewritten
 by resident startup.
 
 On Windows the lightweight client detaches a newly launched resident host from
-one-shot callers. `.\ol-live.cmd` lets Cargo validate the client before every
-execution. `live start` compares an existing endpoint's immutable service
-image with the current canonical host: a matching image is reused; a stale
-image is saved and replaced while exact run state and charged historical work
-remain durable. In-memory tactical frontier work belongs to the old image and
-is deliberately restarted.
+one-shot callers. `cargo ol-live` is the build-owning entry point;
+`.\ol-live.cmd` invokes the canonical client directly for repeated calls. The
+client validates its own canonical path and depfile before contacting a
+resident, so source drift fails before a mutation and requires one explicit
+`cargo build --release -p oracle_lab_client --bin oracle_lab_client`. `live
+start` compares an existing endpoint's immutable service image with the current
+canonical host: a matching image is reused; a stale image is saved and replaced
+while exact run state and charged historical work remain durable. In-memory
+tactical frontier work belongs to the old image and is deliberately restarted.
 
 ## Consecutive Seed Panels
 
