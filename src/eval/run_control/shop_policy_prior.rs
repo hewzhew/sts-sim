@@ -1206,6 +1206,7 @@ fn compare_shop_evidence(
 ) -> Ordering {
     shop_band_priority(left.band)
         .cmp(&shop_band_priority(right.band))
+        .then_with(|| compare_blocked_card_acquisition_policy(left, right))
         .then_with(|| {
             right
                 .closed_threat_gaps
@@ -1238,6 +1239,24 @@ fn compare_shop_evidence(
         })
         .then_with(|| left.gold_spent.cmp(&right.gold_spent))
         .then_with(|| left.surface_index.cmp(&right.surface_index))
+}
+
+fn compare_blocked_card_acquisition_policy(
+    left: &ShopPolicyActionEvidenceV1,
+    right: &ShopPolicyActionEvidenceV1,
+) -> Ordering {
+    match (
+        left.card_acquisition_policy.map(|policy| policy.verdict),
+        right.card_acquisition_policy.map(|policy| policy.verdict),
+    ) {
+        (Some(AcquisitionPolicyVerdict::SkipPreferred), Some(AcquisitionPolicyVerdict::Reject)) => {
+            Ordering::Less
+        }
+        (Some(AcquisitionPolicyVerdict::Reject), Some(AcquisitionPolicyVerdict::SkipPreferred)) => {
+            Ordering::Greater
+        }
+        _ => Ordering::Equal,
+    }
 }
 
 const fn shop_band_priority(band: ShopPolicyBandV1) -> u8 {
@@ -1805,6 +1824,102 @@ mod tests {
                 candidate.candidate_key,
                 DecisionCandidateKey::ShopLeave
             )) < Some(candidate_position(&decision, CardId::Uppercut))
+        );
+    }
+
+    #[test]
+    fn skip_preferred_hard_gap_precedes_rejected_speculative_cards() {
+        let mut session = RunControlSession::new(RunControlConfig::default());
+        session.run_state.act_num = 1;
+        session.run_state.floor_num = 4;
+        session.run_state.boss_key = Some(EncounterId::SlimeBoss);
+        session.run_state.current_hp = 85;
+        session.run_state.max_hp = 85;
+        session.run_state.gold = 100;
+        session.run_state.master_deck = [
+            CardId::Strike,
+            CardId::Strike,
+            CardId::Strike,
+            CardId::Strike,
+            CardId::Strike,
+            CardId::Defend,
+            CardId::Defend,
+            CardId::Defend,
+            CardId::Defend,
+            CardId::Bash,
+            CardId::PowerThrough,
+            CardId::SecondWind,
+        ]
+        .into_iter()
+        .enumerate()
+        .map(|(index, card)| CombatCard::new(card, index as u32))
+        .collect();
+        let mut shop = ShopState::new();
+        shop.purge_cost = 75;
+        shop.cards.extend([
+            ShopCard {
+                card_id: CardId::Uppercut,
+                upgrades: 0,
+                price: 69,
+                can_buy: true,
+                blocked_reason: None,
+            },
+            ShopCard {
+                card_id: CardId::WildStrike,
+                upgrades: 0,
+                price: 47,
+                can_buy: true,
+                blocked_reason: None,
+            },
+            ShopCard {
+                card_id: CardId::Armaments,
+                upgrades: 0,
+                price: 50,
+                can_buy: true,
+                blocked_reason: None,
+            },
+        ]);
+        session.engine_state = EngineState::Shop(shop);
+
+        let surface = build_decision_surface(&session);
+        let legal = policy_candidates(&surface);
+        let decision = exact_shop_policy_decision_v1(&session, &legal)
+            .expect("post-Second Wind A1F4 shop policy");
+        let armaments = decision
+            .evidence
+            .iter()
+            .find(|candidate| {
+                matches!(
+                    candidate.candidate_key,
+                    DecisionCandidateKey::ShopBuyCard {
+                        card: CardId::Armaments,
+                        ..
+                    }
+                )
+            })
+            .expect("Armaments evidence");
+
+        assert_eq!(
+            armaments.card_acquisition_policy,
+            Some(AcquisitionPolicyDecision {
+                verdict: AcquisitionPolicyVerdict::SkipPreferred,
+                reason: AcquisitionPolicyReason::PurgeReserveBlocksHardGap,
+            })
+        );
+        assert_eq!(armaments.band, ShopPolicyBandV1::SpeculativePurchase);
+        assert!(
+            decision.evidence.iter().position(|candidate| matches!(
+                candidate.candidate_key,
+                DecisionCandidateKey::ShopLeave
+            )) < Some(candidate_position(&decision, CardId::Armaments))
+        );
+        assert!(
+            candidate_position(&decision, CardId::Armaments)
+                < candidate_position(&decision, CardId::Uppercut)
+        );
+        assert!(
+            candidate_position(&decision, CardId::Armaments)
+                < candidate_position(&decision, CardId::WildStrike)
         );
     }
 
