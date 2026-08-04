@@ -180,15 +180,25 @@ impl LocalTurnGraphWitnessSession {
     }
 
     pub(super) fn witness_satisfies(&self) -> bool {
-        let Some(witness) = self.witness.as_ref() else {
-            return false;
-        };
+        self.witness_frontier
+            .iter()
+            .any(|witness| self.witness_satisfies_config(witness))
+    }
+
+    fn witness_satisfies_config(&self, witness: &OracleCombatWitness) -> bool {
         if !witness_within_potion_contract(
             &self.original_root,
             witness,
             self.config.max_potions_used,
             self.config.generator.allowed_potion_slots,
         ) {
+            return false;
+        }
+        if self.config.require_no_unrecovered_stolen_gold
+            && sts_core::ai::combat_persistent_outcome_v1::unrecovered_stolen_gold(
+                &witness.final_position.combat,
+            ) > 0
+        {
             return false;
         }
         match self.config.satisfaction {

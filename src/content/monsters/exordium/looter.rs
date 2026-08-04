@@ -1,7 +1,6 @@
 use super::{attack_actions, gain_block_action, set_next_move_action, steal_gold_action, PLAYER};
 use crate::content::monsters::MonsterBehavior;
 use crate::content::powers::PowerId;
-use crate::rewards::state::RewardItem;
 use crate::runtime::action::Action;
 use crate::runtime::combat::{CombatState, MonsterEntity};
 use crate::semantics::combat::{
@@ -304,16 +303,9 @@ impl MonsterBehavior for Looter {
         }
     }
 
-    fn on_death(_state: &mut CombatState, entity: &MonsterEntity) -> Vec<Action> {
+    fn on_death(state: &mut CombatState, entity: &MonsterEntity) -> Vec<Action> {
         let stolen_gold = current_stolen_gold(entity);
-        if stolen_gold <= 0 {
-            Vec::new()
-        } else {
-            vec![Action::AddCombatReward {
-                item: RewardItem::StolenGold {
-                    amount: stolen_gold,
-                },
-            }]
-        }
+        state.add_stolen_gold_to_rewards(stolen_gold);
+        Vec::new()
     }
 }

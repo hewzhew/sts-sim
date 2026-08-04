@@ -183,7 +183,7 @@ pub use deficit_evidence::{
 pub use external_payoff::{
     external_burden_count, has_external_payoff_opportunity, has_healing_payoff_opportunity,
     has_persistent_or_reward_payoff_opportunity, persistent_run_value, recoverable_gold_delta,
-    recoverable_stolen_gold, CombatPersistentOutcomeV1,
+    recoverable_stolen_gold, unrecovered_stolen_gold, CombatPersistentOutcomeV1,
 };
 pub use line_lab::{
     run_combat_line_lab_from_parent_v0, run_combat_line_lab_v0, CombatLineLabReport,

@@ -325,6 +325,19 @@ graph's best exact candidate, its satisfaction and typed portfolio disposition,
 the selected incumbent, remaining allowance, and exit reason. Keeping both
 candidates distinguishes "search did not find it" from "the run-level quality
 gate rejected it."
+
+A mechanically terminal victory in which a living Looter or Mugger still holds
+stolen gold remains an executable witness, but its typed unrecovered-theft fact
+cannot end strategic quality refinement. Remaining concrete potion identities
+must receive their bounded stages before run control may settle for that loss.
+The production local planner receives the same typed terminal constraint for
+HP-quality searches. It retains partial-recovery victories on the terminal
+frontier but only reports satisfaction when at least one frontier witness both
+meets the HP target and has no unrecovered stolen gold; the local HP-selected
+compatibility witness cannot hide a lower-HP qualifying outcome.
+Within a potion stage, a fully recovered witness that satisfies the configured
+HP quality target outranks a partial-recovery witness; an over-target full
+recovery does not acquire that preference merely from encounter identity.
 Completed rows survive workspace checkpoint restore. This trace is diagnostic
 evidence for locating an owner scheduling divergence; it does not rank potions
 or authorize a policy change.

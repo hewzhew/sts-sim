@@ -1,7 +1,7 @@
 use crate::ai::card_semantics_v1::{card_mechanics_profile_v1, CombatExternalPayoffV1};
 pub use crate::ai::combat_persistent_outcome_v1::{
     external_burden_count, recoverable_gold_delta, recoverable_stolen_gold,
-    CombatPersistentOutcomeV1,
+    unrecovered_stolen_gold, CombatPersistentOutcomeV1,
 };
 use crate::runtime::combat::{CombatCard, CombatState};
 

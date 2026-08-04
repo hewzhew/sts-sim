@@ -96,6 +96,7 @@ enum PortfolioWitnessSatisfactionV1 {
 pub enum OracleCombatLocalCandidateDispositionV1 {
     SelectedIncumbent,
     RejectedPotionSpendMissesSatisfaction,
+    RejectedPotionSpendLeavesUnrecoveredTheft,
     RejectedOutsidePotionContract,
     RejectedByPortfolioComparison,
 }
@@ -330,6 +331,10 @@ impl OracleRunCombatWorkV1 {
                 lookahead_work_per_evaluation: 24,
                 max_turn_depth: 32,
                 satisfaction: planner_satisfaction,
+                require_no_unrecovered_stolen_gold: matches!(
+                    satisfaction,
+                    PortfolioWitnessSatisfactionV1::HpLossAtMost(_)
+                ),
                 max_potions_used: prepared.config.max_potions_used,
             },
             policy.clone(),
@@ -1519,8 +1524,9 @@ fn combat_witness_better_with_potion_quality_gate(
     if potion_spend_requires_satisfaction {
         let left_potions = combat_witness_potion_expenditures(start, left);
         let right_potions = combat_witness_potion_expenditures(start, right);
-        let left_satisfies = combat_witness_satisfies(satisfaction, start, left);
-        let right_satisfies = combat_witness_satisfies(satisfaction, start, right);
+        let left_satisfies = combat_witness_satisfies_strategic_quality(satisfaction, start, left);
+        let right_satisfies =
+            combat_witness_satisfies_strategic_quality(satisfaction, start, right);
         if left_satisfies != right_satisfies {
             return left_satisfies;
         }
@@ -1563,7 +1569,26 @@ fn combat_local_candidate_disposition(
             OracleCombatLocalCandidateDispositionV1::RejectedPotionSpendMissesSatisfaction,
         );
     }
+    if potion_spend_requires_satisfaction
+        && combat_witness_potion_expenditures(start, local_candidate) > 0
+        && crate::ai::combat_search_v2::unrecovered_stolen_gold(
+            &local_candidate.final_position.combat,
+        ) > 0
+    {
+        return Some(
+            OracleCombatLocalCandidateDispositionV1::RejectedPotionSpendLeavesUnrecoveredTheft,
+        );
+    }
     Some(OracleCombatLocalCandidateDispositionV1::RejectedByPortfolioComparison)
+}
+
+fn combat_witness_satisfies_strategic_quality(
+    satisfaction: PortfolioWitnessSatisfactionV1,
+    start: &crate::sim::combat::CombatPosition,
+    witness: &OracleCombatWitness,
+) -> bool {
+    combat_witness_satisfies(satisfaction, start, witness)
+        && crate::ai::combat_search_v2::unrecovered_stolen_gold(&witness.final_position.combat) == 0
 }
 
 fn combat_witness_ends_quality_refinement(
@@ -1572,7 +1597,7 @@ fn combat_witness_ends_quality_refinement(
     potion_spend_requires_satisfaction: bool,
     witness: &OracleCombatWitness,
 ) -> bool {
-    combat_witness_satisfies(satisfaction, start, witness)
+    combat_witness_satisfies_strategic_quality(satisfaction, start, witness)
         && (!potion_spend_requires_satisfaction
             || combat_witness_potion_expenditures(start, witness) == 0)
 }
@@ -2049,6 +2074,208 @@ mod tests {
             false,
             &quality_spend,
         ));
+    }
+
+    #[test]
+    fn unrecovered_thief_gold_keeps_quality_refinement_open() {
+        let session = hallway_combat_session();
+        let start = session
+            .current_active_combat_position()
+            .expect("exact hallway combat root");
+        let clean = synthetic_witness(&start, start.combat.entities.player.current_hp, false);
+        let mut escaped_with_gold = clean.clone();
+        let mut thief =
+            crate::test_support::test_monster(crate::content::monsters::EnemyId::Looter);
+        thief.is_escaped = true;
+        thief.thief.stolen_gold = 30;
+        escaped_with_gold.final_position.combat.entities.monsters = vec![thief];
+
+        assert!(combat_witness_ends_quality_refinement(
+            &start,
+            PortfolioWitnessSatisfactionV1::HpLossAtMost(0),
+            false,
+            &clean,
+        ));
+        assert!(!combat_witness_ends_quality_refinement(
+            &start,
+            PortfolioWitnessSatisfactionV1::HpLossAtMost(0),
+            false,
+            &escaped_with_gold,
+        ));
+    }
+
+    #[test]
+    fn strategic_potion_quality_prefers_threshold_compliant_full_theft_recovery() {
+        let mut session = hallway_combat_session();
+        session
+            .active_combat
+            .as_mut()
+            .unwrap()
+            .combat_state
+            .entities
+            .potions = vec![Some(crate::content::potions::Potion::new(
+            crate::content::potions::PotionId::FirePotion,
+            7,
+        ))];
+        let start = session
+            .current_active_combat_position()
+            .expect("exact potion combat root");
+        let initial_hp = start.combat.entities.player.current_hp;
+        let mut partial_recovery = synthetic_witness(&start, initial_hp - 3, true);
+        partial_recovery
+            .final_position
+            .combat
+            .entities
+            .player
+            .gold_delta_this_combat = -75;
+        partial_recovery
+            .final_position
+            .combat
+            .runtime
+            .pending_rewards
+            .push(crate::state::rewards::RewardItem::StolenGold { amount: 45 });
+        let mut escaped =
+            crate::test_support::test_monster(crate::content::monsters::EnemyId::Looter);
+        escaped.is_escaped = true;
+        escaped.thief.stolen_gold = 30;
+        partial_recovery.final_position.combat.entities.monsters = vec![escaped];
+
+        let mut full_recovery = synthetic_witness(&start, initial_hp - 14, true);
+        full_recovery
+            .final_position
+            .combat
+            .entities
+            .player
+            .gold_delta_this_combat = -75;
+        full_recovery
+            .final_position
+            .combat
+            .runtime
+            .pending_rewards
+            .push(crate::state::rewards::RewardItem::StolenGold { amount: 75 });
+        full_recovery
+            .final_position
+            .combat
+            .entities
+            .monsters
+            .clear();
+        let satisfaction = PortfolioWitnessSatisfactionV1::HpLossAtMost(17);
+
+        assert!(combat_witness_better(
+            &start,
+            &partial_recovery,
+            &full_recovery,
+        ));
+        assert!(combat_witness_better_with_potion_quality_gate(
+            &start,
+            satisfaction,
+            true,
+            &full_recovery,
+            &partial_recovery,
+        ));
+        assert_eq!(
+            combat_local_candidate_disposition(
+                &start,
+                satisfaction,
+                true,
+                Some(1),
+                Some(1),
+                false,
+                Some(&partial_recovery),
+                Some(&full_recovery),
+            ),
+            Some(
+                OracleCombatLocalCandidateDispositionV1::RejectedPotionSpendLeavesUnrecoveredTheft
+            )
+        );
+    }
+
+    #[test]
+    fn production_hp_quality_keeps_local_search_open_for_unrecovered_theft() {
+        let session = hallway_combat_session();
+        let start = session
+            .current_active_combat_position()
+            .expect("exact hallway combat root");
+        let initial_hp = start.combat.entities.player.current_hp;
+        let mut work = OracleRunCombatWorkV1::for_exact_action_witness_with_guidance(
+            &session,
+            RunControlSearchCombatOptions {
+                max_nodes: Some(1),
+                max_potions_used: Some(0),
+                satisfaction: Some(
+                    crate::ai::combat_search_v2::CombatSearchV2Satisfaction::HpLossAtMost(17),
+                ),
+                ..RunControlSearchCombatOptions::default()
+            },
+            None,
+        )
+        .expect("production combat work");
+
+        let mut escaped = synthetic_witness(&start, initial_hp, false);
+        escaped
+            .final_position
+            .combat
+            .entities
+            .player
+            .gold_delta_this_combat = -30;
+        let mut thief =
+            crate::test_support::test_monster(crate::content::monsters::EnemyId::Looter);
+        thief.is_escaped = true;
+        thief.thief.stolen_gold = 30;
+        escaped.final_position.combat.entities.monsters = vec![thief];
+        work.local_search
+            .restore_verified_witness(escaped)
+            .expect("escaped thief is a mechanically terminal victory");
+
+        let zero_work = LocalTurnGraphWitnessQuantum {
+            additional_selections: 0,
+            additional_generation_work: 0,
+            additional_engine_steps: 0,
+            deadline: None,
+        };
+        let partial = work
+            .local_search
+            .advance(zero_work, &crate::sim::combat::EngineCombatStepper);
+        assert!(matches!(
+            partial.status,
+            LocalTurnGraphWitnessStatus::Partial(_)
+        ));
+
+        let mut recovered = synthetic_witness(&start, initial_hp - 14, false);
+        recovered
+            .final_position
+            .combat
+            .entities
+            .player
+            .gold_delta_this_combat = -30;
+        recovered.final_position.combat.entities.monsters.clear();
+        recovered
+            .final_position
+            .combat
+            .runtime
+            .pending_rewards
+            .push(crate::state::rewards::RewardItem::StolenGold { amount: 30 });
+        work.local_search
+            .restore_verified_witness(recovered)
+            .expect("fully recovered line is a mechanically terminal victory");
+
+        assert_eq!(work.local_search.witness_frontier().len(), 2);
+        assert_eq!(
+            work.local_search
+                .witness()
+                .expect("local HP compatibility witness")
+                .final_position
+                .combat
+                .entities
+                .player
+                .current_hp,
+            initial_hp,
+            "the lower-HP qualifying frontier witness must not need to replace the HP view"
+        );
+        let satisfied = work
+            .local_search
+            .advance(zero_work, &crate::sim::combat::EngineCombatStepper);
+        assert_eq!(satisfied.status, LocalTurnGraphWitnessStatus::WitnessFound);
     }
 
     #[test]

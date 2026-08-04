@@ -365,6 +365,7 @@ mod tests {
             final_max_hp: 85,
             recoverable_gold_delta: 0,
             recoverable_stolen_gold: 75,
+            unrecovered_stolen_gold: 0,
             ritual_dagger_value: 0,
             genetic_algorithm_value: 0,
             external_burden_count: 0,
@@ -377,6 +378,7 @@ mod tests {
         let outcome = &report["terminal_outcome_frontier"][0];
         assert_eq!(outcome["final_hp"], 71);
         assert_eq!(outcome["recoverable_stolen_gold"], 75);
+        assert_eq!(outcome["unrecovered_stolen_gold"], 0);
         assert!(outcome.get("actions").is_none());
         assert!(outcome.get("trace").is_none());
     }

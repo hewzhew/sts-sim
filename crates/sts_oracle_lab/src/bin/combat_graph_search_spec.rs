@@ -132,6 +132,7 @@ impl LocalGraphSearchSpec {
             lookahead_work_per_evaluation: self.planner.lookahead_work_per_evaluation,
             max_turn_depth: self.planner.max_turn_depth,
             satisfaction,
+            require_no_unrecovered_stolen_gold: false,
             max_potions_used: self.planner.max_potions_used,
         }
     }

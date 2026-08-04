@@ -586,11 +586,14 @@ pub fn handle_damage(info: crate::runtime::action::DamageInfo, state: &mut Comba
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::content::monsters::EnemyId;
     use crate::content::powers::PowerId;
     use crate::content::relics::{RelicId, RelicState};
+    use crate::engine::action_handlers::execute_action;
     use crate::runtime::action::{DamageInfo, DamageType};
     use crate::runtime::combat::{Power, PowerPayload};
-    use crate::test_support::blank_test_combat;
+    use crate::state::rewards::RewardItem;
+    use crate::test_support::{blank_test_combat, test_monster};
 
     fn thorns_damage(amount: i32) -> DamageInfo {
         DamageInfo {
@@ -666,5 +669,39 @@ mod tests {
 
         assert_eq!(tungsten_resolution.damage_before_hp_loss_hooks, 3);
         assert_eq!(tungsten_resolution.hp_loss, 2);
+    }
+
+    #[test]
+    fn final_thief_death_synchronously_accumulates_both_stolen_gold_rewards() {
+        let mut state = blank_test_combat();
+        let mut looter = test_monster(EnemyId::Looter);
+        looter.thief.stolen_gold = 30;
+        for action in
+            crate::content::monsters::resolve_on_death(EnemyId::Looter, &mut state, &looter)
+        {
+            execute_action(action, &mut state);
+        }
+
+        let mut mugger = test_monster(EnemyId::Mugger);
+        mugger.current_hp = 1;
+        mugger.max_hp = 1;
+        mugger.thief.stolen_gold = 30;
+        state.entities.monsters = vec![mugger];
+        handle_damage(
+            DamageInfo {
+                source: 0,
+                target: 1,
+                base: 1,
+                output: 1,
+                damage_type: DamageType::Normal,
+                is_modified: false,
+            },
+            &mut state,
+        );
+
+        assert_eq!(
+            state.runtime.pending_rewards,
+            vec![RewardItem::StolenGold { amount: 60 }]
+        );
     }
 }

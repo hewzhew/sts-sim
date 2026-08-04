@@ -312,6 +312,7 @@ pub(super) fn terminal_outcome_snapshot(
             sts_core::ai::combat_persistent_outcome_v1::recoverable_stolen_gold(
                 &witness.final_position.combat,
             ),
+        unrecovered_stolen_gold: persistent.unrecovered_stolen_gold,
         ritual_dagger_value: persistent.ritual_dagger_value,
         genetic_algorithm_value: persistent.genetic_algorithm_value,
         external_burden_count: persistent.external_burden_count,

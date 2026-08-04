@@ -50,6 +50,10 @@ pub struct LocalTurnGraphWitnessConfig {
     pub lookahead_work_per_evaluation: usize,
     pub max_turn_depth: usize,
     pub satisfaction: OracleCombatWitnessSatisfaction,
+    /// Require a satisfying terminal witness to leave no stolen gold on a
+    /// living Looter or Mugger. Partial-recovery victories remain exact
+    /// frontier evidence, but cannot terminate this search contract.
+    pub require_no_unrecovered_stolen_gold: bool,
     /// Maximum number of potion resources expended by an accepted witness.
     ///
     /// This is a run-resource contract, not an action prior. Legal prefixes up
@@ -72,6 +76,7 @@ impl Default for LocalTurnGraphWitnessConfig {
             lookahead_work_per_evaluation: 24,
             max_turn_depth: 32,
             satisfaction: OracleCombatWitnessSatisfaction::FirstWitness,
+            require_no_unrecovered_stolen_gold: false,
             max_potions_used: None,
         }
     }

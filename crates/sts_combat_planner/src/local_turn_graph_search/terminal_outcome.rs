@@ -10,6 +10,7 @@ pub struct LocalTurnGraphTerminalOutcomeSnapshotV1 {
     pub final_max_hp: i32,
     pub recoverable_gold_delta: i32,
     pub recoverable_stolen_gold: i32,
+    pub unrecovered_stolen_gold: i32,
     pub ritual_dagger_value: i32,
     pub genetic_algorithm_value: i32,
     pub external_burden_count: i32,

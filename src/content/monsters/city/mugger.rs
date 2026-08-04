@@ -3,7 +3,6 @@ use crate::content::monsters::exordium::{
 };
 use crate::content::monsters::MonsterBehavior;
 use crate::content::powers::PowerId;
-use crate::rewards::state::RewardItem;
 use crate::runtime::action::Action;
 use crate::runtime::combat::{CombatState, MonsterEntity};
 use crate::semantics::combat::{
@@ -363,14 +362,7 @@ impl MonsterBehavior for Mugger {
         // even though the selected sound itself is presentation-only.
         let _ = state.rng.ai_rng.random(2);
         let stolen_gold = current_stolen_gold(entity);
-        if stolen_gold <= 0 {
-            Vec::new()
-        } else {
-            vec![Action::AddCombatReward {
-                item: RewardItem::StolenGold {
-                    amount: stolen_gold,
-                },
-            }]
-        }
+        state.add_stolen_gold_to_rewards(stolen_gold);
+        Vec::new()
     }
 }

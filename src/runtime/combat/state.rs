@@ -392,6 +392,31 @@ impl CombatState {
         std::mem::take(&mut self.runtime.engine_diagnostics)
     }
 
+    /// Java `AbstractRoom.addStolenGoldToRewards` mutates the reward list
+    /// synchronously from Looter/Mugger `die()`, merging repeated thieves into
+    /// one reward. This must happen before post-combat action cleanup: a queued
+    /// reward action for the final monster would otherwise be discarded.
+    pub fn add_stolen_gold_to_rewards(&mut self, amount: i32) {
+        if amount <= 0 {
+            return;
+        }
+        if let Some(existing) =
+            self.runtime
+                .pending_rewards
+                .iter_mut()
+                .find_map(|reward| match reward {
+                    crate::state::rewards::RewardItem::StolenGold { amount } => Some(amount),
+                    _ => None,
+                })
+        {
+            *existing = existing.saturating_add(amount);
+        } else {
+            self.runtime
+                .pending_rewards
+                .push(crate::state::rewards::RewardItem::StolenGold { amount });
+        }
+    }
+
     /// Clears output-only mailboxes at a stable simulation boundary.
     ///
     /// Domain events and engine diagnostics describe how a transition was
