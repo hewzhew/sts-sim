@@ -112,6 +112,12 @@ still take precedence. This is a public-state behavior prior, not a claim that
 an elite is safe, a hidden-future lookup, or a substitute for measuring the
 resulting continuation.
 
+Within one route band, guaranteed campfire scope is strategic evidence and
+precedes raw observed-path cardinality after elite and optional campfire scope
+have tied. A route having more enumerated continuations is a representation
+fact; it must not by itself outrank another route that guarantees an additional
+campfire.
+
 Slime Boss preparation is a shared typed strategy fact. It records capability
 coverage, static attack inventory, strong-AoE and burst-finisher sources, exact
 damage-potion identities, and whether two distinct potions can cover the opening

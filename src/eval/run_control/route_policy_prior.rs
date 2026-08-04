@@ -670,6 +670,7 @@ fn compare_route_actions(
     shop.then_with(|| left_path.min_elites.cmp(&right_path.min_elites))
         .then_with(|| right_path.max_elites.cmp(&left_path.max_elites))
         .then_with(|| right_path.max_campfires.cmp(&left_path.max_campfires))
+        .then_with(|| right_path.min_campfires.cmp(&left_path.min_campfires))
         .then_with(|| right_path.max_treasures.cmp(&left_path.max_treasures))
         .then_with(|| {
             right_path
@@ -1096,6 +1097,69 @@ mod tests {
         assert_eq!(
             compare_route_actions(&campfire, &monster, &context),
             Ordering::Less
+        );
+    }
+
+    #[test]
+    fn guaranteed_campfire_growth_precedes_raw_path_count() {
+        let monster = route_action(
+            RoomType::MonsterRoom,
+            RoutePolicyArrivalV1::Combat,
+            RoutePolicyPathEvidenceV1 {
+                observed_path_count: 21,
+                min_damage_rooms_before_recovery: 2,
+                max_damage_rooms_before_recovery: 8,
+                min_elites: 0,
+                max_elites: 2,
+                min_campfires: 1,
+                max_campfires: 3,
+                min_treasures: 1,
+                max_treasures: 1,
+                ..RoutePolicyPathEvidenceV1::default()
+            },
+        );
+        let event = route_action(
+            RoomType::EventRoom,
+            RoutePolicyArrivalV1::Event,
+            RoutePolicyPathEvidenceV1 {
+                observed_path_count: 13,
+                min_damage_rooms_before_recovery: 1,
+                max_damage_rooms_before_recovery: 1,
+                min_elites: 0,
+                max_elites: 2,
+                min_campfires: 2,
+                max_campfires: 3,
+                min_treasures: 1,
+                max_treasures: 1,
+                ..RoutePolicyPathEvidenceV1::default()
+            },
+        );
+        let context = RoutePolicyContextV1 {
+            act: 2,
+            ascension: 0,
+            current_hp: 66,
+            max_hp: 85,
+            gold: 195,
+            critical_recovery: false,
+            recovery_pressure: false,
+            shop_conversion_support: StrategyPlanSupportV1::Strong,
+            recent_combat_hp_loss: Some(5),
+            boss_encounter_readiness: BossEncounterReadinessV1::default(),
+            pending_rewards_only_unclaimable_potions: false,
+        };
+
+        assert_eq!(
+            route_policy_band_v1(&monster, &context),
+            RoutePolicyBandV1::FlexibleGrowth
+        );
+        assert_eq!(
+            route_policy_band_v1(&event, &context),
+            RoutePolicyBandV1::FlexibleGrowth
+        );
+        assert_eq!(
+            compare_route_actions(&event, &monster, &context),
+            Ordering::Less,
+            "a guaranteed campfire is strategic growth, while raw path count is only representation cardinality"
         );
     }
 
