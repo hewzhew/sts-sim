@@ -14,11 +14,14 @@ mod types;
 mod view;
 
 pub use types::*;
-use view::{action_surface_view, exact_hash, position_view, resolve_action_ref};
+use view::{
+    action_surface_view, exact_hash, position_view, resolve_action_ref, resolve_action_selector,
+};
 
 #[derive(Clone)]
 pub(super) struct OracleAnalysisCombatScratchV1 {
     run_node_id: usize,
+    context: OracleAnalysisCombatScratchContextV1,
     root_exact_state_hash: String,
     max_engine_steps_per_transition: usize,
     cursor_scratch_node_id: u64,
@@ -30,6 +33,7 @@ pub(super) struct OracleAnalysisCombatScratchV1 {
 impl OracleAnalysisCombatScratchV1 {
     pub(super) fn start(
         run_node_id: usize,
+        context: OracleAnalysisCombatScratchContextV1,
         root: CombatPosition,
         max_engine_steps_per_transition: usize,
     ) -> Result<Self, String> {
@@ -48,6 +52,7 @@ impl OracleAnalysisCombatScratchV1 {
         };
         Ok(Self {
             run_node_id,
+            context,
             root_exact_state_hash,
             max_engine_steps_per_transition,
             cursor_scratch_node_id: 0,
@@ -59,6 +64,7 @@ impl OracleAnalysisCombatScratchV1 {
 
     pub(super) fn restore(
         checkpoint: OracleAnalysisCombatScratchCheckpointV1,
+        context: OracleAnalysisCombatScratchContextV1,
         root: CombatPosition,
     ) -> Result<Self, String> {
         if checkpoint.schema_name != ORACLE_ANALYSIS_COMBAT_SCRATCH_SCHEMA_NAME
@@ -149,6 +155,7 @@ impl OracleAnalysisCombatScratchV1 {
 
         Ok(Self {
             run_node_id: checkpoint.run_node_id,
+            context,
             root_exact_state_hash: checkpoint.root_exact_state_hash,
             max_engine_steps_per_transition: checkpoint.max_engine_steps_per_transition,
             cursor_scratch_node_id: checkpoint.cursor_scratch_node_id,
@@ -183,6 +190,7 @@ impl OracleAnalysisCombatScratchV1 {
         let position = self.current_position()?;
         Ok(OracleAnalysisCombatScratchViewV1 {
             run_node_id: self.run_node_id,
+            context: self.context.clone(),
             root_exact_state_hash: self.root_exact_state_hash.clone(),
             max_engine_steps_per_transition: self.max_engine_steps_per_transition,
             cursor_scratch_node_id: self.cursor_scratch_node_id,
@@ -190,7 +198,12 @@ impl OracleAnalysisCombatScratchV1 {
             parent_scratch_node_id: node.parent_scratch_node_id,
             input_from_parent: node.input.clone(),
             position: position_view(position),
-            legal_actions: action_surface_view(position, selection_offset, selection_limit)?,
+            legal_actions: action_surface_view(
+                position,
+                self.cursor_scratch_node_id,
+                selection_offset,
+                selection_limit,
+            )?,
         })
     }
 
@@ -204,6 +217,25 @@ impl OracleAnalysisCombatScratchV1 {
         let input = resolve_action_ref(&parent, action_ref)?;
         self.play_input(input)?;
         self.view(selection_offset, selection_limit)
+    }
+
+    fn play_selector(
+        &mut self,
+        selector: OracleAnalysisCombatScratchActionSelectorV1,
+        selection_offset: usize,
+        selection_limit: usize,
+    ) -> Result<OracleAnalysisCombatScratchViewV1, String> {
+        let mut candidate = self.clone();
+        let source_node_id = selector.scratch_node_id();
+        if !candidate.nodes.contains_key(&source_node_id) {
+            return Err(format!("unknown combat scratch node {source_node_id}"));
+        }
+        candidate.cursor_scratch_node_id = source_node_id;
+        let input = resolve_action_selector(candidate.current_position()?, selector)?;
+        candidate.play_input(input)?;
+        let view = candidate.view(selection_offset, selection_limit)?;
+        *self = candidate;
+        Ok(view)
     }
 
     fn play_input(&mut self, input: ClientInput) -> Result<u64, String> {
@@ -401,9 +433,15 @@ impl OracleAnalysisSessionV1 {
                 branch.boundary
             ));
         }
+        let context = OracleAnalysisCombatScratchContextV1 {
+            act: branch.session.run_state.act_num,
+            floor: branch.session.run_state.floor_num,
+            gold: branch.session.run_state.gold,
+        };
         let root = branch.session.current_active_combat_position()?;
         let scratch = OracleAnalysisCombatScratchV1::start(
             run_node_id,
+            context,
             root,
             max_engine_steps_per_transition,
         )?;
@@ -423,6 +461,15 @@ impl OracleAnalysisSessionV1 {
             .view(selection_offset, selection_limit)
     }
 
+    pub fn combat_scratch_decision_view(
+        &self,
+        selection_offset: usize,
+        selection_limit: usize,
+    ) -> Result<OracleAnalysisCombatScratchDecisionViewV1, String> {
+        self.combat_scratch_view(selection_offset, selection_limit)
+            .map(Into::into)
+    }
+
     pub fn play_combat_scratch_action(
         &mut self,
         action_ref: &str,
@@ -433,6 +480,18 @@ impl OracleAnalysisSessionV1 {
             .as_mut()
             .ok_or_else(|| "oracle analysis workspace has no active combat scratch".to_string())?
             .play(action_ref, selection_offset, selection_limit)
+    }
+
+    pub fn play_combat_scratch_selector(
+        &mut self,
+        selector: OracleAnalysisCombatScratchActionSelectorV1,
+        selection_offset: usize,
+        selection_limit: usize,
+    ) -> Result<OracleAnalysisCombatScratchViewV1, String> {
+        self.combat_scratch
+            .as_mut()
+            .ok_or_else(|| "oracle analysis workspace has no active combat scratch".to_string())?
+            .play_selector(selector, selection_offset, selection_limit)
     }
 
     pub fn focus_combat_scratch_node(

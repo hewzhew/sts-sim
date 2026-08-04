@@ -49,8 +49,12 @@ pub use card_reward_path::{
 };
 use combat_scratch::OracleAnalysisCombatScratchV1;
 pub use combat_scratch::{
-    OracleAnalysisCombatScratchActionSurfaceV1, OracleAnalysisCombatScratchActionV1,
-    OracleAnalysisCombatScratchCheckpointV1, OracleAnalysisCombatScratchMonsterV1,
+    OracleAnalysisCombatScratchActionSelectorV1, OracleAnalysisCombatScratchActionSurfaceV1,
+    OracleAnalysisCombatScratchActionV1, OracleAnalysisCombatScratchCardV1,
+    OracleAnalysisCombatScratchCheckpointV1, OracleAnalysisCombatScratchContextV1,
+    OracleAnalysisCombatScratchDecisionActionV1,
+    OracleAnalysisCombatScratchDecisionSelectionFamilyV1,
+    OracleAnalysisCombatScratchDecisionViewV1, OracleAnalysisCombatScratchMonsterV1,
     OracleAnalysisCombatScratchNodeCheckpointV1, OracleAnalysisCombatScratchPlayerV1,
     OracleAnalysisCombatScratchPositionV1, OracleAnalysisCombatScratchSearchExitV1,
     OracleAnalysisCombatScratchSearchReportV1, OracleAnalysisCombatScratchSearchRequestV1,
@@ -632,7 +636,12 @@ impl OracleAnalysisSessionV1 {
                         )
                     })?;
                 let root = branch.session.current_active_combat_position()?;
-                OracleAnalysisCombatScratchV1::restore(saved, root)
+                let context = OracleAnalysisCombatScratchContextV1 {
+                    act: branch.session.run_state.act_num,
+                    floor: branch.session.run_state.floor_num,
+                    gold: branch.session.run_state.gold,
+                };
+                OracleAnalysisCombatScratchV1::restore(saved, context, root)
             })
             .transpose()?;
         let session = Self {

@@ -242,18 +242,10 @@ fn resident_service_keeps_combat_scratch_alive_across_typed_calls() {
     let start = call_oracle_analysis_tcp_v1(&endpoint_path, &start_request)
         .expect("start resident scratch");
     assert!(start.ok);
-    let action_ref = start
-        .result
-        .as_ref()
-        .and_then(|result| result["legal_actions"]["atomic_actions"].as_array())
-        .and_then(|actions| actions.first())
-        .and_then(|action| action["action_ref"].as_str())
-        .expect("scratch atomic action ref")
-        .to_string();
     let play_request = json!({
         "id": "scratch-play",
-        "command": "combat_scratch_play",
-        "action_ref": action_ref,
+        "command": "combat_scratch_end",
+        "scratch_node": 0,
     })
     .to_string();
     let play = call_oracle_analysis_tcp_v1(&endpoint_path, &play_request)

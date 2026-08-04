@@ -16,10 +16,64 @@ pub(super) enum CombatScratchCommand {
         #[command(flatten)]
         page: CombatScratchPageArgs,
     },
+    /// Show the compact typed decision state used for agent play.
+    Observe {
+        #[command(flatten)]
+        page: CombatScratchPageArgs,
+    },
     /// Apply one exact action ref returned by scratch status.
     Play {
         #[arg(long)]
         action_ref: String,
+        #[command(flatten)]
+        page: CombatScratchPageArgs,
+    },
+    /// Apply one short atomic selector directly from any retained scratch node.
+    Atomic {
+        #[arg(long)]
+        from: u64,
+        #[arg(long)]
+        action: usize,
+        #[command(flatten)]
+        page: CombatScratchPageArgs,
+    },
+    /// Play the exact hand card identity from any retained scratch node.
+    Card {
+        #[arg(long)]
+        from: u64,
+        #[arg(long)]
+        uuid: u32,
+        #[arg(long)]
+        target: Option<usize>,
+        #[command(flatten)]
+        page: CombatScratchPageArgs,
+    },
+    /// Use the exact potion identity from any retained scratch node.
+    Potion {
+        #[arg(long)]
+        from: u64,
+        #[arg(long)]
+        uuid: u32,
+        #[arg(long)]
+        target: Option<usize>,
+        #[command(flatten)]
+        page: CombatScratchPageArgs,
+    },
+    /// End the turn directly from any retained scratch node.
+    End {
+        #[arg(long)]
+        from: u64,
+        #[command(flatten)]
+        page: CombatScratchPageArgs,
+    },
+    /// Apply one paged structured-selection selector from any retained scratch node.
+    Selection {
+        #[arg(long)]
+        from: u64,
+        #[arg(long)]
+        family: usize,
+        #[arg(long)]
+        input: usize,
         #[command(flatten)]
         page: CombatScratchPageArgs,
     },

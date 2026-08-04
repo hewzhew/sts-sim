@@ -1,5 +1,6 @@
 use super::*;
 
+use crate::content::relics::{RelicId, RelicState};
 use crate::eval::run_control::{
     seed_oracle_run_explorer_from_session_v1, OracleRunCombatBudgetsV1, RunControlConfig,
     RunControlSearchCombatOptions, RunControlSession, RunProgressJournalV1,
@@ -16,6 +17,10 @@ fn scratch_analysis_at_engine(
     engine_state: EngineState,
 ) -> OracleAnalysisSessionV1 {
     let mut run = RunControlSession::new(RunControlConfig::default());
+    run.run_state.act_num = 2;
+    run.run_state.floor_num = 17;
+    run.run_state.gold = 233;
+    run.run_state.relics = vec![RelicState::new(RelicId::PenNib)];
     run.engine_state = engine_state.clone();
     run.active_combat = Some(ActiveCombat::new(
         engine_state,
@@ -43,6 +48,10 @@ fn one_strike_scratch_analysis() -> OracleAnalysisSessionV1 {
 
 fn one_strike_combat() -> crate::runtime::combat::CombatState {
     let mut combat = crate::test_support::blank_test_combat();
+    combat
+        .entities
+        .player
+        .add_relic(RelicState::new(RelicId::PenNib));
     let mut monster = crate::test_support::test_monster(crate::content::monsters::EnemyId::JawWorm);
     let plan = crate::content::monsters::roll_monster_turn_plan(
         &mut combat.rng.ai_rng,
@@ -60,6 +69,69 @@ fn one_strike_combat() -> crate::runtime::combat::CombatState {
     combat.entities.monsters = vec![monster];
     combat.zones.hand = vec![CombatCard::new(crate::content::cards::CardId::Strike, 1)];
     combat
+}
+
+#[test]
+fn combat_scratch_short_selector_forks_from_a_retained_node_and_observes_decision_facts() {
+    let mut analysis = one_strike_scratch_analysis();
+    let root = analysis
+        .start_combat_scratch(None, 250, 0, 16)
+        .expect("start combat scratch");
+    assert_eq!(root.context.act, 2);
+    assert_eq!(root.context.floor, 17);
+    assert_eq!(root.context.gold, 233);
+    assert_eq!(root.position.player.relics[0].id, RelicId::PenNib);
+    assert_eq!(root.position.hand[0].effective_cost, 1);
+    assert!(!root.position.monsters[0].planned_steps.is_empty());
+
+    let end_turn = OracleAnalysisCombatScratchActionSelectorV1::EndTurn { scratch_node_id: 0 };
+    let strike = OracleAnalysisCombatScratchActionSelectorV1::Card {
+        scratch_node_id: 0,
+        card_uuid: root.position.hand[0].card.uuid,
+        target: Some(1),
+    };
+    analysis
+        .play_combat_scratch_selector(end_turn, 0, 16)
+        .expect("play short end-turn selector");
+    let victory = analysis
+        .play_combat_scratch_selector(strike, 0, 16)
+        .expect("fork from root with cached short selector");
+    assert_eq!(victory.position.terminal, CombatTerminal::Win);
+    assert_eq!(victory.parent_scratch_node_id, Some(0));
+    assert_eq!(victory.scratch_node_count, 3);
+
+    let before_invalid = serde_json::to_value(analysis.checkpoint().expect("before bad identity"))
+        .expect("serialize before bad identity");
+    let error = analysis
+        .play_combat_scratch_selector(
+            OracleAnalysisCombatScratchActionSelectorV1::Card {
+                scratch_node_id: 0,
+                card_uuid: u32::MAX,
+                target: Some(1),
+            },
+            0,
+            16,
+        )
+        .expect_err("unknown card identity must fail");
+    assert!(error.contains("card uuid"), "{error}");
+    assert_eq!(
+        serde_json::to_value(analysis.checkpoint().expect("after bad identity"))
+            .expect("serialize after bad identity"),
+        before_invalid,
+        "a rejected identity selector must not move the cursor or mutate scratch"
+    );
+
+    let decision = analysis
+        .combat_scratch_decision_view(0, 16)
+        .expect("compact decision view");
+    let encoded = serde_json::to_value(decision).expect("serialize decision view");
+    assert!(encoded.get("position").is_none());
+    assert!(encoded.get("draw_pile_top_first").is_some());
+    assert!(encoded["atomic_actions"]
+        .as_array()
+        .expect("decision actions")
+        .iter()
+        .all(|action| action.get("action_ref").is_none() && action.get("action_key").is_none()));
 }
 
 fn scratch_action_ref(

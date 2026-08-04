@@ -245,9 +245,57 @@ enum LiveScratchCommand {
         #[command(flatten)]
         page: LiveScratchPageArgs,
     },
+    Observe {
+        #[command(flatten)]
+        page: LiveScratchPageArgs,
+    },
     Play {
         #[arg(long)]
         action_ref: String,
+        #[command(flatten)]
+        page: LiveScratchPageArgs,
+    },
+    Atomic {
+        #[arg(long)]
+        from: u64,
+        #[arg(long)]
+        action: usize,
+        #[command(flatten)]
+        page: LiveScratchPageArgs,
+    },
+    Card {
+        #[arg(long)]
+        from: u64,
+        #[arg(long)]
+        uuid: u32,
+        #[arg(long)]
+        target: Option<usize>,
+        #[command(flatten)]
+        page: LiveScratchPageArgs,
+    },
+    Potion {
+        #[arg(long)]
+        from: u64,
+        #[arg(long)]
+        uuid: u32,
+        #[arg(long)]
+        target: Option<usize>,
+        #[command(flatten)]
+        page: LiveScratchPageArgs,
+    },
+    End {
+        #[arg(long)]
+        from: u64,
+        #[command(flatten)]
+        page: LiveScratchPageArgs,
+    },
+    Selection {
+        #[arg(long)]
+        from: u64,
+        #[arg(long)]
+        family: usize,
+        #[arg(long)]
+        input: usize,
         #[command(flatten)]
         page: LiveScratchPageArgs,
     },
@@ -556,10 +604,79 @@ fn run_live_command(endpoint: &Path, command: LiveCommand) -> Result<(), String>
                     selection_limit: usize::from(page.selection_limit),
                 },
             )?),
+            LiveScratchCommand::Observe { page } => print_json(&live_call(
+                endpoint,
+                OracleAnalysisServiceCommandV1::CombatScratchObserve {
+                    selection_offset: page.selection_offset,
+                    selection_limit: usize::from(page.selection_limit),
+                },
+            )?),
             LiveScratchCommand::Play { action_ref, page } => print_json(&live_call(
                 endpoint,
                 OracleAnalysisServiceCommandV1::CombatScratchPlay {
                     action_ref,
+                    selection_offset: page.selection_offset,
+                    selection_limit: usize::from(page.selection_limit),
+                },
+            )?),
+            LiveScratchCommand::Atomic { from, action, page } => print_json(&live_call(
+                endpoint,
+                OracleAnalysisServiceCommandV1::CombatScratchAtomic {
+                    scratch_node: from,
+                    action_index: action,
+                    selection_offset: page.selection_offset,
+                    selection_limit: usize::from(page.selection_limit),
+                },
+            )?),
+            LiveScratchCommand::Card {
+                from,
+                uuid,
+                target,
+                page,
+            } => print_json(&live_call(
+                endpoint,
+                OracleAnalysisServiceCommandV1::CombatScratchCard {
+                    scratch_node: from,
+                    card_uuid: uuid,
+                    target,
+                    selection_offset: page.selection_offset,
+                    selection_limit: usize::from(page.selection_limit),
+                },
+            )?),
+            LiveScratchCommand::Potion {
+                from,
+                uuid,
+                target,
+                page,
+            } => print_json(&live_call(
+                endpoint,
+                OracleAnalysisServiceCommandV1::CombatScratchPotion {
+                    scratch_node: from,
+                    potion_uuid: uuid,
+                    target,
+                    selection_offset: page.selection_offset,
+                    selection_limit: usize::from(page.selection_limit),
+                },
+            )?),
+            LiveScratchCommand::End { from, page } => print_json(&live_call(
+                endpoint,
+                OracleAnalysisServiceCommandV1::CombatScratchEnd {
+                    scratch_node: from,
+                    selection_offset: page.selection_offset,
+                    selection_limit: usize::from(page.selection_limit),
+                },
+            )?),
+            LiveScratchCommand::Selection {
+                from,
+                family,
+                input,
+                page,
+            } => print_json(&live_call(
+                endpoint,
+                OracleAnalysisServiceCommandV1::CombatScratchSelection {
+                    scratch_node: from,
+                    family_index: family,
+                    input_index: input,
                     selection_offset: page.selection_offset,
                     selection_limit: usize::from(page.selection_limit),
                 },
@@ -626,6 +743,11 @@ fn live_command_mutates(command: &LiveCommand) -> bool {
             | LiveCommand::Scratch {
                 command: LiveScratchCommand::Start { .. }
                     | LiveScratchCommand::Play { .. }
+                    | LiveScratchCommand::Atomic { .. }
+                    | LiveScratchCommand::Card { .. }
+                    | LiveScratchCommand::Potion { .. }
+                    | LiveScratchCommand::End { .. }
+                    | LiveScratchCommand::Selection { .. }
                     | LiveScratchCommand::Back { .. }
                     | LiveScratchCommand::Focus { .. }
                     | LiveScratchCommand::Search { .. }

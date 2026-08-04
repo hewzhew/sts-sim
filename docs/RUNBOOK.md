@@ -302,17 +302,29 @@ run tree:
 
 ```powershell
 .\ol-live.cmd live --session seed009 scratch start --node <combat-node>
-.\ol-live.cmd live --session seed009 scratch status
-.\ol-live.cmd live --session seed009 scratch play --action-ref <returned-ref>
+.\ol-live.cmd live --session seed009 scratch observe
+.\ol-live.cmd live --session seed009 scratch card --from <scratch-node> --uuid <card-uuid> [--target <entity-id>]
+.\ol-live.cmd live --session seed009 scratch potion --from <scratch-node> --uuid <potion-uuid> [--target <entity-id>]
+.\ol-live.cmd live --session seed009 scratch end --from <scratch-node>
+.\ol-live.cmd live --session seed009 scratch selection --from <scratch-node> --family <index> --input <index>
 .\ol-live.cmd live --session seed009 scratch back
 .\ol-live.cmd live --session seed009 scratch tree
 ```
 
+`observe` is the agent-play projection: it omits fingerprint and display-key
+duplication while retaining current combat relic counters, effective card
+costs, a top-first draw pile, complete locked monster move steps, thief runtime
+state, and typed legal inputs. Normal play addresses stable card and potion
+UUIDs directly; `atomic` remains a short fallback for other atomic inputs.
+Every play command binds to the immutable source scratch node and may fork
+directly from any retained node; an invalid source, identity, target, or index
+fails without moving the current cursor.
+
 `focus --scratch-node <id>` moves among retained scratch branches. Structured
 Hand/Grid/Scry inputs are returned in bounded pages; use `--selection-offset`
 and `--selection-limit` without materializing the complete combination space.
-Each action ref is bound to the cursor's exact state and a stale ref fails
-without changing the workspace.
+The longer exact-hash action refs remain available through `status` and `play`
+for compatibility and low-level diagnostics.
 
 Ask the existing portfolio for one deliberately small potion-free suffix from
 the current scratch node only when manual play needs help:

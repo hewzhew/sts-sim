@@ -323,7 +323,7 @@ fn execute_command(
                 "commands": [
                     "ping", "capabilities", "status", "explain", "route_policy_audit", "shop_policy_audit", "card_reward_policy_audit", "card_reward_path_audit", "campfire_policy_audit", "view", "tree", "try",
                     "focus", "choose", "owner", "run", "choose_path", "follow", "back", "promote", "advance", "accept_combat", "restart_combat",
-                    "combat_scratch_start", "combat_scratch_status", "combat_scratch_play", "combat_scratch_back", "combat_scratch_focus", "combat_scratch_search", "combat_scratch_tree", "combat_scratch_commit", "combat_scratch_clear", "history",
+                    "combat_scratch_start", "combat_scratch_status", "combat_scratch_observe", "combat_scratch_play", "combat_scratch_atomic", "combat_scratch_card", "combat_scratch_potion", "combat_scratch_end", "combat_scratch_selection", "combat_scratch_back", "combat_scratch_focus", "combat_scratch_search", "combat_scratch_tree", "combat_scratch_commit", "combat_scratch_clear", "history",
                     "journal", "timeline", "journal_entry", "trajectory", "combat_summary", "combat_diagnostic",
                     "export_combat_case", "export_continuation", "verify_run_witness", "escape_combat", "save", "shutdown"
                 ],
@@ -635,12 +635,16 @@ fn execute_command(
             selection_offset,
             selection_limit,
         } => (
-            to_value(workspace.session.start_combat_scratch(
-                node,
-                max_engine_steps_per_transition,
-                selection_offset,
-                selection_limit,
-            )?)?,
+            to_value(
+                crate::eval::run_control::OracleAnalysisCombatScratchDecisionViewV1::from(
+                    workspace.session.start_combat_scratch(
+                        node,
+                        max_engine_steps_per_transition,
+                        selection_offset,
+                        selection_limit,
+                    )?,
+                ),
+            )?,
             true,
             false,
             false,
@@ -658,6 +662,19 @@ fn execute_command(
             false,
             false,
         ),
+        OracleAnalysisServiceCommandV1::CombatScratchObserve {
+            selection_offset,
+            selection_limit,
+        } => (
+            to_value(
+                workspace
+                    .session
+                    .combat_scratch_decision_view(selection_offset, selection_limit)?,
+            )?,
+            false,
+            false,
+            false,
+        ),
         OracleAnalysisServiceCommandV1::CombatScratchPlay {
             action_ref,
             selection_offset,
@@ -668,6 +685,105 @@ fn execute_command(
                 selection_offset,
                 selection_limit,
             )?)?,
+            true,
+            false,
+            false,
+        ),
+        OracleAnalysisServiceCommandV1::CombatScratchAtomic {
+            scratch_node,
+            action_index,
+            selection_offset,
+            selection_limit,
+        } => (
+            play_combat_scratch_selector(
+                workspace,
+                crate::eval::run_control::OracleAnalysisCombatScratchActionSelectorV1::Atomic {
+                    scratch_node_id: scratch_node,
+                    action_index,
+                },
+                selection_offset,
+                selection_limit,
+            )?,
+            true,
+            false,
+            false,
+        ),
+        OracleAnalysisServiceCommandV1::CombatScratchCard {
+            scratch_node,
+            card_uuid,
+            target,
+            selection_offset,
+            selection_limit,
+        } => (
+            play_combat_scratch_selector(
+                workspace,
+                crate::eval::run_control::OracleAnalysisCombatScratchActionSelectorV1::Card {
+                    scratch_node_id: scratch_node,
+                    card_uuid,
+                    target,
+                },
+                selection_offset,
+                selection_limit,
+            )?,
+            true,
+            false,
+            false,
+        ),
+        OracleAnalysisServiceCommandV1::CombatScratchPotion {
+            scratch_node,
+            potion_uuid,
+            target,
+            selection_offset,
+            selection_limit,
+        } => (
+            play_combat_scratch_selector(
+                workspace,
+                crate::eval::run_control::OracleAnalysisCombatScratchActionSelectorV1::Potion {
+                    scratch_node_id: scratch_node,
+                    potion_uuid,
+                    target,
+                },
+                selection_offset,
+                selection_limit,
+            )?,
+            true,
+            false,
+            false,
+        ),
+        OracleAnalysisServiceCommandV1::CombatScratchEnd {
+            scratch_node,
+            selection_offset,
+            selection_limit,
+        } => (
+            play_combat_scratch_selector(
+                workspace,
+                crate::eval::run_control::OracleAnalysisCombatScratchActionSelectorV1::EndTurn {
+                    scratch_node_id: scratch_node,
+                },
+                selection_offset,
+                selection_limit,
+            )?,
+            true,
+            false,
+            false,
+        ),
+        OracleAnalysisServiceCommandV1::CombatScratchSelection {
+            scratch_node,
+            family_index,
+            input_index,
+            selection_offset,
+            selection_limit,
+        } => (
+            play_combat_scratch_selector(
+                workspace,
+                crate::eval::run_control::OracleAnalysisCombatScratchActionSelectorV1::Selection {
+                    scratch_node_id: scratch_node,
+                    family_index,
+                    input_index,
+                },
+                selection_offset,
+                selection_limit,
+            )?,
             true,
             false,
             false,
@@ -717,7 +833,15 @@ fn execute_command(
                 selection_offset,
                 selection_limit,
             )?;
-            (json!({"report": report, "view": view}), true, false, false)
+            (
+                json!({
+                    "report": report,
+                    "view": crate::eval::run_control::OracleAnalysisCombatScratchDecisionViewV1::from(view),
+                }),
+                true,
+                false,
+                false,
+            )
         }
         OracleAnalysisServiceCommandV1::CombatScratchTree => (
             to_value(workspace.session.combat_scratch_tree()?)?,
@@ -1011,6 +1135,20 @@ fn write_response<W: Write>(
     writer
         .flush()
         .map_err(|error| format!("failed to flush oracle service response: {error}"))
+}
+
+fn play_combat_scratch_selector(
+    workspace: &mut OracleAnalysisWorkspaceV1,
+    selector: crate::eval::run_control::OracleAnalysisCombatScratchActionSelectorV1,
+    selection_offset: usize,
+    selection_limit: usize,
+) -> Result<Value, String> {
+    let view = workspace.session.play_combat_scratch_selector(
+        selector,
+        selection_offset,
+        selection_limit,
+    )?;
+    to_value(crate::eval::run_control::OracleAnalysisCombatScratchDecisionViewV1::from(view))
 }
 
 fn to_value<T: Serialize>(value: T) -> Result<Value, String> {

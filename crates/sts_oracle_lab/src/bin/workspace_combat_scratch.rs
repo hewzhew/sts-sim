@@ -1,12 +1,129 @@
 use std::path::Path;
 
 use serde_json::{json, Value};
-use sts_oracle_runtime::eval::run_control::OracleAnalysisCombatScratchSearchRequestV1;
+use sts_oracle_runtime::eval::run_control::{
+    OracleAnalysisCombatScratchActionSelectorV1, OracleAnalysisCombatScratchDecisionViewV1,
+    OracleAnalysisCombatScratchSearchRequestV1,
+};
 use sts_oracle_runtime::runtime::branch::{
     load_oracle_analysis_workspace_v1, OracleAnalysisWorkspaceV1,
 };
 
+use super::combat_scratch_cli::CombatScratchCommand;
 use super::workspace_commands::{encode, mutate};
+
+pub(super) fn execute(workspace: &Path, command: CombatScratchCommand) -> Result<Value, String> {
+    match command {
+        CombatScratchCommand::Start {
+            node,
+            max_engine_steps_per_transition,
+            page,
+        } => start(
+            workspace,
+            node,
+            max_engine_steps_per_transition,
+            page.selection_offset,
+            usize::from(page.selection_limit),
+        ),
+        CombatScratchCommand::Status { page } => status(
+            workspace,
+            page.selection_offset,
+            usize::from(page.selection_limit),
+        ),
+        CombatScratchCommand::Observe { page } => observe(
+            workspace,
+            page.selection_offset,
+            usize::from(page.selection_limit),
+        ),
+        CombatScratchCommand::Play { action_ref, page } => play(
+            workspace,
+            &action_ref,
+            page.selection_offset,
+            usize::from(page.selection_limit),
+        ),
+        CombatScratchCommand::Atomic { from, action, page } => atomic(
+            workspace,
+            from,
+            action,
+            page.selection_offset,
+            usize::from(page.selection_limit),
+        ),
+        CombatScratchCommand::Card {
+            from,
+            uuid,
+            target,
+            page,
+        } => card(
+            workspace,
+            from,
+            uuid,
+            target,
+            page.selection_offset,
+            usize::from(page.selection_limit),
+        ),
+        CombatScratchCommand::Potion {
+            from,
+            uuid,
+            target,
+            page,
+        } => potion(
+            workspace,
+            from,
+            uuid,
+            target,
+            page.selection_offset,
+            usize::from(page.selection_limit),
+        ),
+        CombatScratchCommand::End { from, page } => end(
+            workspace,
+            from,
+            page.selection_offset,
+            usize::from(page.selection_limit),
+        ),
+        CombatScratchCommand::Selection {
+            from,
+            family,
+            input,
+            page,
+        } => selection(
+            workspace,
+            from,
+            family,
+            input,
+            page.selection_offset,
+            usize::from(page.selection_limit),
+        ),
+        CombatScratchCommand::Back { page } => back(
+            workspace,
+            page.selection_offset,
+            usize::from(page.selection_limit),
+        ),
+        CombatScratchCommand::Focus { scratch_node, page } => focus(
+            workspace,
+            scratch_node,
+            page.selection_offset,
+            usize::from(page.selection_limit),
+        ),
+        CombatScratchCommand::Search {
+            max_quanta,
+            quantum_nodes,
+            quantum_ms,
+            wall_ms,
+            page,
+        } => search(
+            workspace,
+            max_quanta,
+            quantum_nodes,
+            quantum_ms,
+            wall_ms,
+            page.selection_offset,
+            usize::from(page.selection_limit),
+        ),
+        CombatScratchCommand::Tree => tree(workspace),
+        CombatScratchCommand::Commit => commit(workspace),
+        CombatScratchCommand::Clear => clear(workspace),
+    }
+}
 
 pub(super) fn start(
     workspace: &Path,
@@ -16,12 +133,13 @@ pub(super) fn start(
     selection_limit: usize,
 ) -> Result<Value, String> {
     mutate(workspace, |analysis| {
-        analysis.session.start_combat_scratch(
+        let view = analysis.session.start_combat_scratch(
             node,
             max_engine_steps_per_transition,
             selection_offset,
             selection_limit,
-        )
+        )?;
+        Ok(OracleAnalysisCombatScratchDecisionViewV1::from(view))
     })
 }
 
@@ -38,6 +156,19 @@ pub(super) fn status(
     )
 }
 
+pub(super) fn observe(
+    workspace: &Path,
+    selection_offset: usize,
+    selection_limit: usize,
+) -> Result<Value, String> {
+    let analysis = load_oracle_analysis_workspace_v1(workspace)?;
+    encode(
+        analysis
+            .session
+            .combat_scratch_decision_view(selection_offset, selection_limit)?,
+    )
+}
+
 pub(super) fn play(
     workspace: &Path,
     action_ref: &str,
@@ -49,6 +180,117 @@ pub(super) fn play(
             .session
             .play_combat_scratch_action(action_ref, selection_offset, selection_limit)
     })
+}
+
+pub(super) fn atomic(
+    workspace: &Path,
+    from: u64,
+    action: usize,
+    selection_offset: usize,
+    selection_limit: usize,
+) -> Result<Value, String> {
+    apply_selector(
+        workspace,
+        OracleAnalysisCombatScratchActionSelectorV1::Atomic {
+            scratch_node_id: from,
+            action_index: action,
+        },
+        selection_offset,
+        selection_limit,
+    )
+}
+
+pub(super) fn card(
+    workspace: &Path,
+    from: u64,
+    uuid: u32,
+    target: Option<usize>,
+    selection_offset: usize,
+    selection_limit: usize,
+) -> Result<Value, String> {
+    apply_selector(
+        workspace,
+        OracleAnalysisCombatScratchActionSelectorV1::Card {
+            scratch_node_id: from,
+            card_uuid: uuid,
+            target,
+        },
+        selection_offset,
+        selection_limit,
+    )
+}
+
+pub(super) fn potion(
+    workspace: &Path,
+    from: u64,
+    uuid: u32,
+    target: Option<usize>,
+    selection_offset: usize,
+    selection_limit: usize,
+) -> Result<Value, String> {
+    apply_selector(
+        workspace,
+        OracleAnalysisCombatScratchActionSelectorV1::Potion {
+            scratch_node_id: from,
+            potion_uuid: uuid,
+            target,
+        },
+        selection_offset,
+        selection_limit,
+    )
+}
+
+pub(super) fn end(
+    workspace: &Path,
+    from: u64,
+    selection_offset: usize,
+    selection_limit: usize,
+) -> Result<Value, String> {
+    apply_selector(
+        workspace,
+        OracleAnalysisCombatScratchActionSelectorV1::EndTurn {
+            scratch_node_id: from,
+        },
+        selection_offset,
+        selection_limit,
+    )
+}
+
+fn apply_selector(
+    workspace: &Path,
+    selector: OracleAnalysisCombatScratchActionSelectorV1,
+    selection_offset: usize,
+    selection_limit: usize,
+) -> Result<Value, String> {
+    mutate(workspace, |analysis| {
+        let view = analysis.session.play_combat_scratch_selector(
+            selector,
+            selection_offset,
+            selection_limit,
+        )?;
+        Ok(OracleAnalysisCombatScratchDecisionViewV1::from(view))
+    })
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(super) fn selection(
+    workspace: &Path,
+    from: u64,
+    family: usize,
+    input: usize,
+    selection_offset: usize,
+    selection_limit: usize,
+) -> Result<Value, String> {
+    apply_selector(
+        workspace,
+        OracleAnalysisCombatScratchActionSelectorV1::Selection {
+            scratch_node_id: from,
+            family_index: family,
+            input_index: input,
+        },
+        selection_offset,
+        selection_limit,
+    )
 }
 
 pub(super) fn back(
@@ -102,7 +344,10 @@ pub(super) fn search(
             selection_offset,
             selection_limit,
         )?;
-        Ok(json!({"report": report, "view": view}))
+        Ok(json!({
+            "report": report,
+            "view": OracleAnalysisCombatScratchDecisionViewV1::from(view),
+        }))
     })
 }
 

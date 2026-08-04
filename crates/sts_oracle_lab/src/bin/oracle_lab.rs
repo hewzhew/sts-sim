@@ -57,7 +57,6 @@ use canonical_launch::{
     runtime_identity as oracle_lab_runtime_identity, source_content_fingerprint,
 };
 
-use combat_scratch_cli::CombatScratchCommand;
 use oracle_cli::Command;
 use serde::Serialize;
 use sts_oracle_runtime::eval::combat_guidance_bundle::CombatGuidanceBundleV1;
@@ -409,67 +408,9 @@ fn main() -> Result<(), String> {
             node,
             max_engine_steps_per_transition,
         )?),
-        Command::CombatScratch { workspace, command } => match command {
-            CombatScratchCommand::Start {
-                node,
-                max_engine_steps_per_transition,
-                page,
-            } => print_json(&workspace_combat_scratch::start(
-                &workspace,
-                node,
-                max_engine_steps_per_transition,
-                page.selection_offset,
-                usize::from(page.selection_limit),
-            )?),
-            CombatScratchCommand::Status { page } => print_json(&workspace_combat_scratch::status(
-                &workspace,
-                page.selection_offset,
-                usize::from(page.selection_limit),
-            )?),
-            CombatScratchCommand::Play { action_ref, page } => {
-                print_json(&workspace_combat_scratch::play(
-                    &workspace,
-                    &action_ref,
-                    page.selection_offset,
-                    usize::from(page.selection_limit),
-                )?)
-            }
-            CombatScratchCommand::Back { page } => print_json(&workspace_combat_scratch::back(
-                &workspace,
-                page.selection_offset,
-                usize::from(page.selection_limit),
-            )?),
-            CombatScratchCommand::Focus { scratch_node, page } => {
-                print_json(&workspace_combat_scratch::focus(
-                    &workspace,
-                    scratch_node,
-                    page.selection_offset,
-                    usize::from(page.selection_limit),
-                )?)
-            }
-            CombatScratchCommand::Search {
-                max_quanta,
-                quantum_nodes,
-                quantum_ms,
-                wall_ms,
-                page,
-            } => print_json(&workspace_combat_scratch::search(
-                &workspace,
-                max_quanta,
-                quantum_nodes,
-                quantum_ms,
-                wall_ms,
-                page.selection_offset,
-                usize::from(page.selection_limit),
-            )?),
-            CombatScratchCommand::Tree => print_json(&workspace_combat_scratch::tree(&workspace)?),
-            CombatScratchCommand::Commit => {
-                print_json(&workspace_combat_scratch::commit(&workspace)?)
-            }
-            CombatScratchCommand::Clear => {
-                print_json(&workspace_combat_scratch::clear(&workspace)?)
-            }
-        },
+        Command::CombatScratch { workspace, command } => {
+            print_json(&workspace_combat_scratch::execute(&workspace, command)?)
+        }
         Command::Tree { workspace } => print_json(&workspace_commands::tree(&workspace)?),
         Command::Try {
             workspace,

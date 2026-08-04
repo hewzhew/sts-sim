@@ -6,13 +6,15 @@ use crate::sim::combat_action::combat_action_key;
 use crate::state::core::ClientInput;
 
 use super::{
-    OracleAnalysisCombatScratchActionSurfaceV1, OracleAnalysisCombatScratchActionV1,
+    OracleAnalysisCombatScratchActionSelectorV1, OracleAnalysisCombatScratchActionSurfaceV1,
+    OracleAnalysisCombatScratchActionV1, OracleAnalysisCombatScratchCardV1,
     OracleAnalysisCombatScratchMonsterV1, OracleAnalysisCombatScratchPlayerV1,
     OracleAnalysisCombatScratchPositionV1, OracleAnalysisCombatScratchSelectionFamilyV1,
 };
 
 pub(super) fn action_surface_view(
     position: &CombatPosition,
+    scratch_node_id: u64,
     selection_offset: usize,
     selection_limit: usize,
 ) -> Result<OracleAnalysisCombatScratchActionSurfaceV1, String> {
@@ -24,7 +26,15 @@ pub(super) fn action_surface_view(
         .cloned()
         .enumerate()
         .map(|(index, input)| {
-            action_view(position, atomic_action_ref(&exact_state_hash, index), input)
+            action_view(
+                position,
+                OracleAnalysisCombatScratchActionSelectorV1::Atomic {
+                    scratch_node_id,
+                    action_index: index,
+                },
+                atomic_action_ref(&exact_state_hash, index),
+                input,
+            )
         })
         .collect();
     let mut selection_families = Vec::with_capacity(surface.selection_families.len());
@@ -43,6 +53,11 @@ pub(super) fn action_surface_view(
             };
             actions.push(action_view(
                 position,
+                OracleAnalysisCombatScratchActionSelectorV1::Selection {
+                    scratch_node_id,
+                    family_index,
+                    input_index,
+                },
                 selection_action_ref(&exact_state_hash, family_index, input_index),
                 input,
             ));
@@ -68,14 +83,96 @@ pub(super) fn action_surface_view(
 
 fn action_view(
     position: &CombatPosition,
+    selector: OracleAnalysisCombatScratchActionSelectorV1,
     action_ref: String,
     input: ClientInput,
 ) -> OracleAnalysisCombatScratchActionV1 {
     OracleAnalysisCombatScratchActionV1 {
+        selector,
         action_ref,
         action_key: combat_action_key(&position.combat, &input),
         input,
     }
+}
+
+pub(super) fn resolve_action_selector(
+    position: &CombatPosition,
+    selector: OracleAnalysisCombatScratchActionSelectorV1,
+) -> Result<ClientInput, String> {
+    let surface = EngineCombatStepper.legal_action_surface(position);
+    let input = match selector {
+        OracleAnalysisCombatScratchActionSelectorV1::Atomic { action_index, .. } => surface
+            .atomic_actions
+            .get(action_index)
+            .cloned()
+            .ok_or_else(|| format!("combat scratch has no atomic action {action_index}"))?,
+        OracleAnalysisCombatScratchActionSelectorV1::Selection {
+            family_index,
+            input_index,
+            ..
+        } => {
+            let family = surface
+                .selection_families
+                .get(family_index)
+                .ok_or_else(|| format!("combat scratch has no selection family {family_index}"))?;
+            let mut cursor = SelectionTransactionCursor::new(family).map_err(|gap| {
+                format!("combat scratch cannot enumerate selection family {family_index}: {gap:?}")
+            })?;
+            let mut selected = None;
+            for current in 0..=input_index {
+                let Some(input) = cursor.next_input() else {
+                    break;
+                };
+                if current == input_index {
+                    selected = Some(input);
+                    break;
+                }
+            }
+            selected.ok_or_else(|| {
+                format!("combat scratch selection family {family_index} has no input {input_index}")
+            })?
+        }
+        OracleAnalysisCombatScratchActionSelectorV1::Card {
+            card_uuid, target, ..
+        } => {
+            let card_index = position
+                .combat
+                .zones
+                .hand
+                .iter()
+                .position(|card| card.uuid == card_uuid)
+                .ok_or_else(|| format!("combat scratch hand has no card uuid {card_uuid}"))?;
+            ClientInput::PlayCard { card_index, target }
+        }
+        OracleAnalysisCombatScratchActionSelectorV1::Potion {
+            potion_uuid,
+            target,
+            ..
+        } => {
+            let potion_index = position
+                .combat
+                .entities
+                .potions
+                .iter()
+                .position(|potion| {
+                    potion
+                        .as_ref()
+                        .is_some_and(|potion| potion.uuid == potion_uuid)
+                })
+                .ok_or_else(|| {
+                    format!("combat scratch inventory has no potion uuid {potion_uuid}")
+                })?;
+            ClientInput::UsePotion {
+                potion_index,
+                target,
+            }
+        }
+        OracleAnalysisCombatScratchActionSelectorV1::EndTurn { .. } => ClientInput::EndTurn,
+    };
+    if !EngineCombatStepper.is_legal_action(position, &input) {
+        return Err("combat scratch selector no longer resolves to a legal input".to_string());
+    }
+    Ok(input)
 }
 
 pub(super) fn resolve_action_ref(
@@ -163,13 +260,32 @@ pub(super) fn position_view(position: &CombatPosition) -> OracleAnalysisCombatSc
             energy: combat.turn.energy,
             stance: player.stance,
             orbs: player.orbs.clone(),
+            relics: player.relics.clone(),
             powers: crate::content::powers::store::powers_snapshot_for(combat, player.id),
         },
-        hand: combat.zones.hand.clone(),
-        draw_pile: combat.zones.draw_pile.iter().cloned().collect(),
-        discard_pile: combat.zones.discard_pile.iter().cloned().collect(),
-        exhaust_pile: combat.zones.exhaust_pile.iter().cloned().collect(),
-        limbo: combat.zones.limbo.clone(),
+        hand: combat.zones.hand.iter().cloned().map(card_view).collect(),
+        draw_pile_top_first: combat
+            .zones
+            .draw_pile
+            .iter()
+            .cloned()
+            .map(card_view)
+            .collect(),
+        discard_pile: combat
+            .zones
+            .discard_pile
+            .iter()
+            .cloned()
+            .map(card_view)
+            .collect(),
+        exhaust_pile: combat
+            .zones
+            .exhaust_pile
+            .iter()
+            .cloned()
+            .map(card_view)
+            .collect(),
+        limbo: combat.zones.limbo.iter().cloned().map(card_view).collect(),
         potions: combat.entities.potions.clone(),
         monsters: combat
             .entities
@@ -188,10 +304,19 @@ pub(super) fn position_view(position: &CombatPosition) -> OracleAnalysisCombatSc
                 is_escaped: monster.is_escaped,
                 half_dead: monster.half_dead,
                 planned_move_id: monster.planned_move_id(),
+                planned_steps: monster.move_state.planned_steps.clone().unwrap_or_default(),
                 intent: monster.move_state.planned_visible_spec.clone(),
+                thief: monster.thief.clone(),
                 powers: crate::content::powers::store::powers_snapshot_for(combat, monster.id),
             })
             .collect(),
+    }
+}
+
+fn card_view(card: crate::runtime::combat::CombatCard) -> OracleAnalysisCombatScratchCardV1 {
+    OracleAnalysisCombatScratchCardV1 {
+        effective_cost: card.cost_for_turn_java(),
+        card,
     }
 }
 

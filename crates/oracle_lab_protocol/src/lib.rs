@@ -167,8 +167,58 @@ pub enum OracleAnalysisServiceCommandV1 {
         #[serde(default = "default_combat_scratch_selection_limit")]
         selection_limit: usize,
     },
+    CombatScratchObserve {
+        #[serde(default)]
+        selection_offset: usize,
+        #[serde(default = "default_combat_scratch_selection_limit")]
+        selection_limit: usize,
+    },
     CombatScratchPlay {
         action_ref: String,
+        #[serde(default)]
+        selection_offset: usize,
+        #[serde(default = "default_combat_scratch_selection_limit")]
+        selection_limit: usize,
+    },
+    CombatScratchAtomic {
+        scratch_node: u64,
+        action_index: usize,
+        #[serde(default)]
+        selection_offset: usize,
+        #[serde(default = "default_combat_scratch_selection_limit")]
+        selection_limit: usize,
+    },
+    CombatScratchCard {
+        scratch_node: u64,
+        card_uuid: u32,
+        #[serde(default)]
+        target: Option<usize>,
+        #[serde(default)]
+        selection_offset: usize,
+        #[serde(default = "default_combat_scratch_selection_limit")]
+        selection_limit: usize,
+    },
+    CombatScratchPotion {
+        scratch_node: u64,
+        potion_uuid: u32,
+        #[serde(default)]
+        target: Option<usize>,
+        #[serde(default)]
+        selection_offset: usize,
+        #[serde(default = "default_combat_scratch_selection_limit")]
+        selection_limit: usize,
+    },
+    CombatScratchEnd {
+        scratch_node: u64,
+        #[serde(default)]
+        selection_offset: usize,
+        #[serde(default = "default_combat_scratch_selection_limit")]
+        selection_limit: usize,
+    },
+    CombatScratchSelection {
+        scratch_node: u64,
+        family_index: usize,
+        input_index: usize,
         #[serde(default)]
         selection_offset: usize,
         #[serde(default = "default_combat_scratch_selection_limit")]
@@ -507,6 +557,51 @@ mod tests {
         assert!(matches!(
             command,
             OracleAnalysisServiceCommandV1::CombatScratchStatus {
+                selection_offset: 0,
+                selection_limit: 24,
+            }
+        ));
+
+        let observe = serde_json::from_value::<OracleAnalysisServiceCommandV1>(json!({
+            "command": "combat_scratch_observe",
+        }))
+        .expect("parse compact combat scratch observation");
+        assert!(matches!(
+            observe,
+            OracleAnalysisServiceCommandV1::CombatScratchObserve {
+                selection_offset: 0,
+                selection_limit: 24,
+            }
+        ));
+
+        let atomic = serde_json::from_value::<OracleAnalysisServiceCommandV1>(json!({
+            "command": "combat_scratch_atomic",
+            "scratch_node": 7,
+            "action_index": 3,
+        }))
+        .expect("parse short combat scratch selector");
+        assert!(matches!(
+            atomic,
+            OracleAnalysisServiceCommandV1::CombatScratchAtomic {
+                scratch_node: 7,
+                action_index: 3,
+                selection_offset: 0,
+                selection_limit: 24,
+            }
+        ));
+
+        let card = serde_json::from_value::<OracleAnalysisServiceCommandV1>(json!({
+            "command": "combat_scratch_card",
+            "scratch_node": 7,
+            "card_uuid": 10006,
+        }))
+        .expect("parse identity-bound combat scratch card");
+        assert!(matches!(
+            card,
+            OracleAnalysisServiceCommandV1::CombatScratchCard {
+                scratch_node: 7,
+                card_uuid: 10006,
+                target: None,
                 selection_offset: 0,
                 selection_limit: 24,
             }
