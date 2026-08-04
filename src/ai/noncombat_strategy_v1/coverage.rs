@@ -1,7 +1,7 @@
 use crate::ai::analysis::card_semantics::{
     card_definition_with_upgrades, CombatEvent, Mechanic, TriggeredEffect,
 };
-use crate::ai::card_analysis_v1::card_analysis_profile_v1;
+use crate::ai::card_analysis_v1::{card_analysis_profile_v1, CardAnalysisAoeSupportV1};
 use crate::ai::card_semantics_v1::{
     card_mechanics_profile_v1, card_reward_facts_v1, CardRewardPickDependencyV1,
     CardRewardStatusPersistenceV1,
@@ -23,6 +23,7 @@ struct CapabilityFacts {
     single_target_damage: i32,
     best_single_hit: i32,
     aoe_sources: usize,
+    strong_aoe_sources: usize,
     block_total: i32,
     weak_sources: usize,
     strength_down_sources: usize,
@@ -71,6 +72,10 @@ fn capability_facts_from_run_state(run_state: &RunState) -> CapabilityFacts {
             facts.best_single_hit = facts.best_single_hit.max(observed.damage.damage_per_hit);
         }
         facts.aoe_sources += usize::from(observed.is_aoe && observed.damage.total_damage > 0);
+        facts.strong_aoe_sources += usize::from(
+            card_analysis_profile_v1(observed.card, card.upgrades).aoe_support
+                == CardAnalysisAoeSupportV1::Strong,
+        );
         facts.block_total = facts.block_total.saturating_add(observed.block);
         facts.weak_sources += usize::from(observed.weak > 0);
         facts.strength_down_sources += usize::from(observed.enemy_strength_down > 0);
@@ -258,9 +263,12 @@ fn ledger_from_capability_facts(
             ),
             capability(
                 Kind::MultiTargetControl,
-                count_coverage(facts.aoe_sources),
+                multi_target_control_coverage(&facts),
                 &facts,
-                vec![format!("aoe_sources={}", facts.aoe_sources)],
+                vec![format!(
+                    "aoe_sources={} strong_aoe_sources={}",
+                    facts.aoe_sources, facts.strong_aoe_sources
+                )],
             ),
             capability(
                 Kind::SustainedDefense,
@@ -402,7 +410,10 @@ fn capability_inputs(kind: Kind, facts: &CapabilityFacts) -> Vec<Input> {
             scalar(InputKind::SingleTargetDamage, facts.single_target_damage),
             scalar(InputKind::BestSingleHit, facts.best_single_hit),
         ],
-        Kind::MultiTargetControl => vec![count(InputKind::AoeSources, facts.aoe_sources)],
+        Kind::MultiTargetControl => vec![
+            count(InputKind::AoeSources, facts.aoe_sources),
+            count(InputKind::StrongAoeSources, facts.strong_aoe_sources),
+        ],
         Kind::SustainedDefense => vec![
             scalar(InputKind::BlockTotal, facts.block_total),
             count(InputKind::WeakSources, facts.weak_sources),
@@ -466,6 +477,16 @@ fn count_coverage(count: usize) -> Coverage {
         0 => Coverage::Missing,
         1 => Coverage::Supported,
         _ => Coverage::Strong,
+    }
+}
+
+fn multi_target_control_coverage(facts: &CapabilityFacts) -> Coverage {
+    if facts.strong_aoe_sources > 0 {
+        Coverage::Strong
+    } else if facts.aoe_sources > 0 {
+        Coverage::Supported
+    } else {
+        Coverage::Missing
     }
 }
 
@@ -607,5 +628,28 @@ mod tests {
             ..weak_only
         };
         assert_eq!(defense_coverage(&with_strength_down), Coverage::Strong);
+    }
+
+    #[test]
+    fn several_light_aoe_sources_do_not_claim_strong_multi_target_control() {
+        let two_light_sources = CapabilityFacts {
+            aoe_sources: 2,
+            strong_aoe_sources: 0,
+            ..CapabilityFacts::default()
+        };
+        assert_eq!(
+            multi_target_control_coverage(&two_light_sources),
+            Coverage::Supported
+        );
+
+        let one_strong_source = CapabilityFacts {
+            aoe_sources: 1,
+            strong_aoe_sources: 1,
+            ..CapabilityFacts::default()
+        };
+        assert_eq!(
+            multi_target_control_coverage(&one_strong_source),
+            Coverage::Strong
+        );
     }
 }

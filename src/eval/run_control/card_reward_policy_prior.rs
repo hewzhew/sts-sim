@@ -2255,6 +2255,77 @@ mod tests {
     }
 
     #[test]
+    fn second_light_aoe_does_not_turn_supported_control_into_a_required_upgrade() {
+        let mut session = reward_session(&[
+            (CardId::WildStrike, 0),
+            (CardId::Cleave, 0),
+            (CardId::TwinStrike, 0),
+        ]);
+        session.run_state.act_num = 2;
+        session.run_state.floor_num = 17;
+        session.run_state.boss_key = Some(EncounterId::TheChamp);
+        session.run_state.current_hp = 71;
+        session.run_state.max_hp = 85;
+        session.run_state.gold = 250;
+        session.run_state.master_deck = [
+            (CardId::Strike, 0),
+            (CardId::Strike, 0),
+            (CardId::Strike, 0),
+            (CardId::Strike, 0),
+            (CardId::Strike, 0),
+            (CardId::Defend, 0),
+            (CardId::Defend, 0),
+            (CardId::Defend, 0),
+            (CardId::Defend, 0),
+            (CardId::Bash, 1),
+            (CardId::PowerThrough, 1),
+            (CardId::HeavyBlade, 0),
+            (CardId::SecondWind, 1),
+            (CardId::DarkEmbrace, 0),
+            (CardId::ThunderClap, 0),
+            (CardId::ShrugItOff, 0),
+            (CardId::DemonForm, 0),
+        ]
+        .into_iter()
+        .enumerate()
+        .map(|(index, (card, upgrades))| {
+            let mut owned = CombatCard::new(card, index as u32);
+            owned.upgrades = upgrades;
+            owned
+        })
+        .collect();
+
+        let decision = decision(&session);
+        let cleave = card_evidence(&decision, CardId::Cleave);
+        assert_eq!(
+            card_analysis_profile_v1(CardId::Cleave, 0).aoe_support,
+            CardAnalysisAoeSupportV1::Present
+        );
+        assert!(cleave.delta.closed_threat_gaps.is_empty());
+        assert!(!cleave
+            .delta
+            .capability_improvements
+            .iter()
+            .any(|change| { change.capability == StrategyCapabilityKindV1::MultiTargetControl }));
+        assert!(!cleave.improves_threat_relevant_capability);
+        assert_eq!(cleave.band, CardRewardPolicyBandV1::SpeculativeAddition);
+        assert!(
+            position(&decision, |key| matches!(
+                key,
+                DecisionCandidateKey::CardRewardSkip { .. }
+            )) < position(&decision, |key| matches!(
+                key,
+                DecisionCandidateKey::CardRewardPick {
+                    card: CardId::Cleave,
+                    ..
+                }
+            )),
+            "a second light AoE source must not outrank preserving this established deck; evidence={:#?}",
+            decision.evidence
+        );
+    }
+
+    #[test]
     fn supported_exhaust_converter_survives_unmodeled_magnitude_and_secondary_axis_debt() {
         let mut session = reward_session(&[
             (CardId::FiendFire, 0),

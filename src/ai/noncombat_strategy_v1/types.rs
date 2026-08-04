@@ -363,6 +363,7 @@ pub enum StrategyCapabilityInputKindV1 {
     SingleTargetDamage,
     BestSingleHit,
     AoeSources,
+    StrongAoeSources,
     BlockTotal,
     WeakSources,
     StrengthDownSources,
