@@ -311,6 +311,14 @@ run tree:
 .\ol-live.cmd live --session seed009 scratch tree
 ```
 
+Action commands return a compact typed delta by default. Add `--full` to
+`card`, `potion`, `end`, `atomic`, or `selection` when the caller no longer has
+the declared base observation:
+
+```powershell
+.\ol-live.cmd live --session seed009 scratch card --from <scratch-node> --hand <hand-index> --target <monster-index> --full
+```
+
 `observe` is the agent-play projection: it omits fingerprint and display-key
 duplication while retaining current combat relic counters, effective card
 costs, a top-first draw pile, complete locked monster move steps, thief runtime
@@ -324,11 +332,18 @@ short fallback for other atomic inputs. Every selector may fork directly from
 any retained node, and an invalid source, identity, target, or index fails
 without moving the current cursor.
 
-`focus --scratch-node <id>` moves among retained scratch branches. Structured
-`focus` and `back` return the same compact decision projection as `observe`.
+`focus --scratch-node <id>` moves among retained scratch branches. `focus` and
+`back` return the same complete compact decision projection as `observe`.
 Structured Hand/Grid/Scry inputs use local domain indices and are returned in
 bounded pages; use `--selection-offset` and `--selection-limit` without
 materializing the complete combination space.
+Action deltas carry `base_scratch_node_id` and `cursor_scratch_node_id`, then
+only changed typed fields. Card piles use one validated prefix/remove/insert
+splice; potions use stable slot removals/upserts; monsters use indexed field
+updates unless topology changed. The delta contract rejects another base node
+and is tested by reconstructing the complete successor observation exactly.
+CLI JSON is emitted on one compact line; pipe it through a formatter only for
+ad-hoc human inspection.
 The longer exact-hash action refs remain available through `status` and `play`
 for compatibility and low-level diagnostics. Hidden `--uuid` card and potion
 selectors remain accepted with exact entity targets for old diagnostic callers,

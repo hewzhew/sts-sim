@@ -184,6 +184,8 @@ pub enum OracleAnalysisServiceCommandV1 {
         scratch_node: u64,
         action_index: usize,
         #[serde(default)]
+        full_observation: bool,
+        #[serde(default)]
         selection_offset: usize,
         #[serde(default = "default_combat_scratch_selection_limit")]
         selection_limit: usize,
@@ -193,6 +195,8 @@ pub enum OracleAnalysisServiceCommandV1 {
         card_uuid: u32,
         #[serde(default)]
         target: Option<usize>,
+        #[serde(default)]
+        full_observation: bool,
         #[serde(default)]
         selection_offset: usize,
         #[serde(default = "default_combat_scratch_selection_limit")]
@@ -204,6 +208,8 @@ pub enum OracleAnalysisServiceCommandV1 {
         #[serde(default)]
         target_index: Option<usize>,
         #[serde(default)]
+        full_observation: bool,
+        #[serde(default)]
         selection_offset: usize,
         #[serde(default = "default_combat_scratch_selection_limit")]
         selection_limit: usize,
@@ -213,6 +219,8 @@ pub enum OracleAnalysisServiceCommandV1 {
         potion_uuid: u32,
         #[serde(default)]
         target: Option<usize>,
+        #[serde(default)]
+        full_observation: bool,
         #[serde(default)]
         selection_offset: usize,
         #[serde(default = "default_combat_scratch_selection_limit")]
@@ -224,6 +232,8 @@ pub enum OracleAnalysisServiceCommandV1 {
         #[serde(default)]
         target_index: Option<usize>,
         #[serde(default)]
+        full_observation: bool,
+        #[serde(default)]
         selection_offset: usize,
         #[serde(default = "default_combat_scratch_selection_limit")]
         selection_limit: usize,
@@ -231,6 +241,8 @@ pub enum OracleAnalysisServiceCommandV1 {
     CombatScratchEnd {
         #[serde(default)]
         scratch_node: Option<u64>,
+        #[serde(default)]
+        full_observation: bool,
         #[serde(default)]
         selection_offset: usize,
         #[serde(default = "default_combat_scratch_selection_limit")]
@@ -240,6 +252,8 @@ pub enum OracleAnalysisServiceCommandV1 {
         scratch_node: u64,
         family_index: usize,
         input_index: usize,
+        #[serde(default)]
+        full_observation: bool,
         #[serde(default)]
         selection_offset: usize,
         #[serde(default = "default_combat_scratch_selection_limit")]
@@ -606,6 +620,7 @@ mod tests {
             OracleAnalysisServiceCommandV1::CombatScratchAtomic {
                 scratch_node: 7,
                 action_index: 3,
+                full_observation: false,
                 selection_offset: 0,
                 selection_limit: 24,
             }
@@ -623,6 +638,7 @@ mod tests {
                 scratch_node: 7,
                 card_uuid: 10006,
                 target: None,
+                full_observation: false,
                 selection_offset: 0,
                 selection_limit: 24,
             }
@@ -641,6 +657,7 @@ mod tests {
                 scratch_node: 7,
                 hand_index: 2,
                 target_index: Some(0),
+                full_observation: false,
                 selection_offset: 0,
                 selection_limit: 24,
             }
@@ -666,6 +683,7 @@ mod tests {
                 scratch_node: 9,
                 potion_slot: 1,
                 target_index: Some(0),
+                full_observation: false,
                 selection_offset: 0,
                 selection_limit: 24,
             }
@@ -679,6 +697,7 @@ mod tests {
             end,
             OracleAnalysisServiceCommandV1::CombatScratchEnd {
                 scratch_node: None,
+                full_observation: false,
                 selection_offset: 0,
                 selection_limit: 24,
             }

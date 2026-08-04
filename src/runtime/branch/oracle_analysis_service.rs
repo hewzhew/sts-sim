@@ -692,6 +692,7 @@ fn execute_command(
         OracleAnalysisServiceCommandV1::CombatScratchAtomic {
             scratch_node,
             action_index,
+            full_observation,
             selection_offset,
             selection_limit,
         } => (
@@ -701,6 +702,7 @@ fn execute_command(
                     scratch_node_id: scratch_node,
                     action_index,
                 },
+                full_observation,
                 selection_offset,
                 selection_limit,
             )?,
@@ -712,6 +714,7 @@ fn execute_command(
             scratch_node,
             card_uuid,
             target,
+            full_observation,
             selection_offset,
             selection_limit,
         } => (
@@ -722,6 +725,7 @@ fn execute_command(
                     card_uuid,
                     target,
                 },
+                full_observation,
                 selection_offset,
                 selection_limit,
             )?,
@@ -733,6 +737,7 @@ fn execute_command(
             scratch_node,
             hand_index,
             target_index,
+            full_observation,
             selection_offset,
             selection_limit,
         } => (
@@ -743,6 +748,7 @@ fn execute_command(
                     hand_index,
                     target_index,
                 },
+                full_observation,
                 selection_offset,
                 selection_limit,
             )?,
@@ -754,6 +760,7 @@ fn execute_command(
             scratch_node,
             potion_uuid,
             target,
+            full_observation,
             selection_offset,
             selection_limit,
         } => (
@@ -764,6 +771,7 @@ fn execute_command(
                     potion_uuid,
                     target,
                 },
+                full_observation,
                 selection_offset,
                 selection_limit,
             )?,
@@ -775,6 +783,7 @@ fn execute_command(
             scratch_node,
             potion_slot,
             target_index,
+            full_observation,
             selection_offset,
             selection_limit,
         } => (
@@ -785,6 +794,7 @@ fn execute_command(
                     potion_slot,
                     target_index,
                 },
+                full_observation,
                 selection_offset,
                 selection_limit,
             )?,
@@ -794,6 +804,7 @@ fn execute_command(
         ),
         OracleAnalysisServiceCommandV1::CombatScratchEnd {
             scratch_node,
+            full_observation,
             selection_offset,
             selection_limit,
         } => {
@@ -806,6 +817,7 @@ fn execute_command(
                     crate::eval::run_control::OracleAnalysisCombatScratchActionSelectorV1::EndTurn {
                         scratch_node_id: scratch_node,
                     },
+                    full_observation,
                     selection_offset,
                     selection_limit,
                 )?,
@@ -818,6 +830,7 @@ fn execute_command(
             scratch_node,
             family_index,
             input_index,
+            full_observation,
             selection_offset,
             selection_limit,
         } => (
@@ -828,6 +841,7 @@ fn execute_command(
                     family_index,
                     input_index,
                 },
+                full_observation,
                 selection_offset,
                 selection_limit,
             )?,
@@ -1193,15 +1207,24 @@ fn write_response<W: Write>(
 fn play_combat_scratch_selector(
     workspace: &mut OracleAnalysisWorkspaceV1,
     selector: crate::eval::run_control::OracleAnalysisCombatScratchActionSelectorV1,
+    full_observation: bool,
     selection_offset: usize,
     selection_limit: usize,
 ) -> Result<Value, String> {
-    let view = workspace.session.play_combat_scratch_selector(
-        selector,
-        selection_offset,
-        selection_limit,
-    )?;
-    to_value(crate::eval::run_control::OracleAnalysisCombatScratchDecisionViewV1::from(view))
+    if full_observation {
+        let view = workspace.session.play_combat_scratch_selector(
+            selector,
+            selection_offset,
+            selection_limit,
+        )?;
+        to_value(crate::eval::run_control::OracleAnalysisCombatScratchDecisionViewV1::from(view))
+    } else {
+        to_value(workspace.session.play_combat_scratch_selector_delta(
+            selector,
+            selection_offset,
+            selection_limit,
+        )?)
+    }
 }
 
 fn to_value<T: Serialize>(value: T) -> Result<Value, String> {

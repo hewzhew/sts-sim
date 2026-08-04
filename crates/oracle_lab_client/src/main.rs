@@ -260,6 +260,8 @@ enum LiveScratchCommand {
         from: u64,
         #[arg(long)]
         action: usize,
+        #[arg(long)]
+        full: bool,
         #[command(flatten)]
         page: LiveScratchPageArgs,
     },
@@ -272,6 +274,8 @@ enum LiveScratchCommand {
         uuid: Option<u32>,
         #[arg(long)]
         target: Option<usize>,
+        #[arg(long)]
+        full: bool,
         #[command(flatten)]
         page: LiveScratchPageArgs,
     },
@@ -284,12 +288,16 @@ enum LiveScratchCommand {
         uuid: Option<u32>,
         #[arg(long)]
         target: Option<usize>,
+        #[arg(long)]
+        full: bool,
         #[command(flatten)]
         page: LiveScratchPageArgs,
     },
     End {
         #[arg(long)]
         from: Option<u64>,
+        #[arg(long)]
+        full: bool,
         #[command(flatten)]
         page: LiveScratchPageArgs,
     },
@@ -300,6 +308,8 @@ enum LiveScratchCommand {
         family: usize,
         #[arg(long)]
         input: usize,
+        #[arg(long)]
+        full: bool,
         #[command(flatten)]
         page: LiveScratchPageArgs,
     },
@@ -623,11 +633,17 @@ fn run_live_command(endpoint: &Path, command: LiveCommand) -> Result<(), String>
                     selection_limit: usize::from(page.selection_limit),
                 },
             )?),
-            LiveScratchCommand::Atomic { from, action, page } => print_json(&live_call(
+            LiveScratchCommand::Atomic {
+                from,
+                action,
+                full,
+                page,
+            } => print_json(&live_call(
                 endpoint,
                 OracleAnalysisServiceCommandV1::CombatScratchAtomic {
                     scratch_node: from,
                     action_index: action,
+                    full_observation: full,
                     selection_offset: page.selection_offset,
                     selection_limit: usize::from(page.selection_limit),
                 },
@@ -637,6 +653,7 @@ fn run_live_command(endpoint: &Path, command: LiveCommand) -> Result<(), String>
                 hand,
                 uuid,
                 target,
+                full,
                 page,
             } => {
                 let command = match (hand, uuid) {
@@ -645,6 +662,7 @@ fn run_live_command(endpoint: &Path, command: LiveCommand) -> Result<(), String>
                             scratch_node: from,
                             hand_index,
                             target_index: target,
+                            full_observation: full,
                             selection_offset: page.selection_offset,
                             selection_limit: usize::from(page.selection_limit),
                         }
@@ -653,6 +671,7 @@ fn run_live_command(endpoint: &Path, command: LiveCommand) -> Result<(), String>
                         scratch_node: from,
                         card_uuid,
                         target,
+                        full_observation: full,
                         selection_offset: page.selection_offset,
                         selection_limit: usize::from(page.selection_limit),
                     },
@@ -665,6 +684,7 @@ fn run_live_command(endpoint: &Path, command: LiveCommand) -> Result<(), String>
                 slot,
                 uuid,
                 target,
+                full,
                 page,
             } => {
                 let command = match (slot, uuid) {
@@ -673,6 +693,7 @@ fn run_live_command(endpoint: &Path, command: LiveCommand) -> Result<(), String>
                             scratch_node: from,
                             potion_slot,
                             target_index: target,
+                            full_observation: full,
                             selection_offset: page.selection_offset,
                             selection_limit: usize::from(page.selection_limit),
                         }
@@ -682,6 +703,7 @@ fn run_live_command(endpoint: &Path, command: LiveCommand) -> Result<(), String>
                             scratch_node: from,
                             potion_uuid,
                             target,
+                            full_observation: full,
                             selection_offset: page.selection_offset,
                             selection_limit: usize::from(page.selection_limit),
                         }
@@ -690,10 +712,11 @@ fn run_live_command(endpoint: &Path, command: LiveCommand) -> Result<(), String>
                 };
                 print_json(&live_call(endpoint, command)?)
             }
-            LiveScratchCommand::End { from, page } => print_json(&live_call(
+            LiveScratchCommand::End { from, full, page } => print_json(&live_call(
                 endpoint,
                 OracleAnalysisServiceCommandV1::CombatScratchEnd {
                     scratch_node: from,
+                    full_observation: full,
                     selection_offset: page.selection_offset,
                     selection_limit: usize::from(page.selection_limit),
                 },
@@ -702,6 +725,7 @@ fn run_live_command(endpoint: &Path, command: LiveCommand) -> Result<(), String>
                 from,
                 family,
                 input,
+                full,
                 page,
             } => print_json(&live_call(
                 endpoint,
@@ -709,6 +733,7 @@ fn run_live_command(endpoint: &Path, command: LiveCommand) -> Result<(), String>
                     scratch_node: from,
                     family_index: family,
                     input_index: input,
+                    full_observation: full,
                     selection_offset: page.selection_offset,
                     selection_limit: usize::from(page.selection_limit),
                 },
@@ -1700,7 +1725,7 @@ fn write_fresh_json<T: Serialize>(output: &Path, value: &T) -> Result<(), String
 fn print_json<T: Serialize>(value: &T) -> Result<(), String> {
     let stdout = io::stdout();
     let mut stdout = stdout.lock();
-    serde_json::to_writer_pretty(&mut stdout, value)
+    serde_json::to_writer(&mut stdout, value)
         .map_err(|error| format!("failed to print JSON: {error}"))?;
     writeln!(stdout).map_err(|error| format!("failed to finish JSON output: {error}"))
 }

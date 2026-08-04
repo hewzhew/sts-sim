@@ -161,6 +161,109 @@ fn combat_scratch_short_selector_forks_from_a_retained_node_and_observes_decisio
         .all(|action| action.get("action_ref").is_none() && action.get("action_key").is_none()));
 }
 
+#[test]
+fn combat_scratch_decision_delta_reconstructs_exact_observation_and_rejects_stale_base() {
+    let mut analysis = one_strike_scratch_analysis();
+    analysis
+        .start_combat_scratch(None, 250, 0, 16)
+        .expect("start combat scratch");
+    let base = analysis
+        .combat_scratch_decision_view(0, 16)
+        .expect("base decision observation");
+    let delta = analysis
+        .play_combat_scratch_selector_delta(
+            OracleAnalysisCombatScratchActionSelectorV1::HandCard {
+                scratch_node_id: 0,
+                hand_index: 0,
+                target_index: Some(0),
+            },
+            0,
+            16,
+        )
+        .expect("play local card with delta response");
+    let result = analysis
+        .combat_scratch_decision_view(0, 16)
+        .expect("result decision observation");
+
+    assert_eq!(
+        delta.apply_to(&base).expect("apply exact decision delta"),
+        result
+    );
+    assert!(delta.apply_to(&result).is_err());
+    assert_eq!(delta.base_scratch_node_id, 0);
+    assert_eq!(delta.cursor_scratch_node_id, 1);
+    let encoded_delta = serde_json::to_vec(&delta).expect("encode delta");
+    assert!(
+        encoded_delta.len()
+            < serde_json::to_vec(&result)
+                .expect("encode full result")
+                .len()
+    );
+    let encoded_delta = String::from_utf8(encoded_delta).expect("delta is UTF-8 JSON");
+    assert!(!encoded_delta.contains("uuid"));
+    assert!(!encoded_delta.contains("entity_id"));
+
+    let mut turn_analysis = one_strike_scratch_analysis();
+    turn_analysis
+        .start_combat_scratch(None, 250, 0, 16)
+        .expect("start turn-transition scratch");
+    let turn_base = turn_analysis
+        .combat_scratch_decision_view(0, 16)
+        .expect("turn-transition base");
+    let turn_delta = turn_analysis
+        .play_combat_scratch_selector_delta(
+            OracleAnalysisCombatScratchActionSelectorV1::EndTurn { scratch_node_id: 0 },
+            0,
+            16,
+        )
+        .expect("end turn with delta response");
+    let turn_result = turn_analysis
+        .combat_scratch_decision_view(0, 16)
+        .expect("turn-transition result");
+    assert_eq!(
+        turn_delta
+            .apply_to(&turn_base)
+            .expect("apply turn-transition delta"),
+        turn_result
+    );
+
+    let mut branch_analysis = one_strike_scratch_analysis();
+    branch_analysis
+        .start_combat_scratch(None, 250, 0, 16)
+        .expect("start branch-delta scratch");
+    branch_analysis
+        .play_combat_scratch_selector(
+            OracleAnalysisCombatScratchActionSelectorV1::EndTurn { scratch_node_id: 0 },
+            0,
+            16,
+        )
+        .expect("move cursor away from branch source");
+    let branch_base = branch_analysis
+        .combat_scratch_decision_view_at(0, 0, 16)
+        .expect("observe retained branch source");
+    let branch_delta = branch_analysis
+        .play_combat_scratch_selector_delta(
+            OracleAnalysisCombatScratchActionSelectorV1::HandCard {
+                scratch_node_id: 0,
+                hand_index: 0,
+                target_index: Some(0),
+            },
+            0,
+            16,
+        )
+        .expect("fork with source-bound delta");
+    let branch_result = branch_analysis
+        .combat_scratch_decision_view(0, 16)
+        .expect("observe branched result");
+    assert_eq!(branch_delta.base_scratch_node_id, 0);
+    assert_eq!(
+        branch_delta
+            .apply_to(&branch_base)
+            .expect("apply retained-source delta"),
+        branch_result
+    );
+}
+
 fn scratch_action_ref(
     view: &OracleAnalysisCombatScratchViewV1,
     predicate: impl Fn(&ClientInput) -> bool,

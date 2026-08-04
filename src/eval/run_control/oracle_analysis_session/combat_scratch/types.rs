@@ -5,7 +5,8 @@ use crate::content::potions::{Potion, PotionId};
 use crate::content::relics::RelicState;
 use crate::eval::fingerprint::StateFingerprintV2;
 use crate::runtime::combat::{
-    CombatCard, CombatPhase, EphemeralCounters, OrbEntity, Power, StanceId, ThiefRuntimeState,
+    CombatCard, CombatPhase, EphemeralCounters, OrbEntity, OrbId, Power, StanceId,
+    ThiefRuntimeState,
 };
 use crate::runtime::monster_move::{MonsterMoveSpec, MonsterTurnSteps};
 use crate::sim::combat::CombatTerminal;
@@ -18,6 +19,8 @@ use std::collections::BTreeMap;
 
 pub const ORACLE_ANALYSIS_COMBAT_SCRATCH_SCHEMA_NAME: &str = "OracleAnalysisCombatScratch";
 pub const ORACLE_ANALYSIS_COMBAT_SCRATCH_SCHEMA_VERSION: u32 = 1;
+pub const ORACLE_ANALYSIS_COMBAT_SCRATCH_DECISION_DELTA_KIND: &str =
+    "combat_scratch_decision_delta_v1";
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -43,7 +46,7 @@ pub struct OracleAnalysisCombatScratchCheckpointV1 {
     pub nodes: Vec<OracleAnalysisCombatScratchNodeCheckpointV1>,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct OracleAnalysisCombatScratchContextV1 {
     pub act: u8,
@@ -151,7 +154,7 @@ pub struct OracleAnalysisCombatScratchActionSurfaceV1 {
     pub selection_families: Vec<OracleAnalysisCombatScratchSelectionFamilyV1>,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct OracleAnalysisCombatScratchPlayerV1 {
     pub current_hp: i32,
@@ -216,14 +219,14 @@ pub struct OracleAnalysisCombatScratchViewV1 {
     pub legal_actions: OracleAnalysisCombatScratchActionSurfaceV1,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct OracleAnalysisCombatScratchDecisionActionV1 {
     pub index: usize,
     pub input: ClientInput,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct OracleAnalysisCombatScratchDecisionSelectionFamilyV1 {
     pub family_index: usize,
@@ -244,7 +247,7 @@ pub struct OracleAnalysisCombatScratchDecisionSelectionFamilyV1 {
     pub actions: Vec<OracleAnalysisCombatScratchDecisionSelectionActionV1>,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct OracleAnalysisCombatScratchDecisionSelectionCandidateV1 {
     pub domain_index: usize,
@@ -253,14 +256,14 @@ pub struct OracleAnalysisCombatScratchDecisionSelectionCandidateV1 {
     pub eligible: bool,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct OracleAnalysisCombatScratchDecisionSelectionActionV1 {
     pub index: usize,
     pub selected_domain_indices: Vec<usize>,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct OracleAnalysisCombatScratchDecisionCardV1 {
     pub id: CardId,
@@ -319,7 +322,7 @@ impl From<OracleAnalysisCombatScratchCardV1> for OracleAnalysisCombatScratchDeci
     }
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct OracleAnalysisCombatScratchDecisionHandCardV1 {
     pub hand_index: usize,
@@ -331,7 +334,7 @@ pub struct OracleAnalysisCombatScratchDecisionHandCardV1 {
     pub playable_target_indices: Vec<usize>,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct OracleAnalysisCombatScratchDecisionPotionV1 {
     pub potion_slot: usize,
@@ -345,7 +348,7 @@ pub struct OracleAnalysisCombatScratchDecisionPotionV1 {
     pub usable_target_indices: Vec<usize>,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct OracleAnalysisCombatScratchDecisionMonsterV1 {
     pub monster_index: usize,
@@ -363,7 +366,7 @@ pub struct OracleAnalysisCombatScratchDecisionMonsterV1 {
     pub powers: Vec<Power>,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct OracleAnalysisCombatScratchDecisionViewV1 {
     pub run_node_id: usize,
@@ -384,6 +387,152 @@ pub struct OracleAnalysisCombatScratchDecisionViewV1 {
     pub monsters: Vec<OracleAnalysisCombatScratchDecisionMonsterV1>,
     pub atomic_actions: Vec<OracleAnalysisCombatScratchDecisionActionV1>,
     pub selection_families: Vec<OracleAnalysisCombatScratchDecisionSelectionFamilyV1>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct OracleAnalysisCombatScratchSequenceDeltaV1<T> {
+    pub base_len: usize,
+    pub retain_prefix: usize,
+    pub remove_count: usize,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub insert: Vec<T>,
+    pub result_len: usize,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct OracleAnalysisCombatScratchCountersDeltaV1 {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cards_played_this_turn: Option<u8>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub attacks_played_this_turn: Option<u8>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cards_discarded_this_turn: Option<u16>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub card_ids_played_this_turn: Option<Vec<CardId>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub card_ids_played_this_combat: Option<Vec<CardId>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub orbs_channeled_this_turn: Option<Vec<OrbId>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub orbs_channeled_this_combat: Option<Vec<OrbId>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mantra_gained_this_combat: Option<i32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub times_damaged_this_combat: Option<u8>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub victory_triggered: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub discovery_cost_for_turn: Option<Option<u8>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub early_end_turn_pending: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub skip_monster_turn_pending: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub player_escaping: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub escape_pending_reward: Option<bool>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct OracleAnalysisCombatScratchPlayerDeltaV1 {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub current_hp: Option<i32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_hp: Option<i32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub block: Option<i32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub energy: Option<u8>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stance: Option<StanceId>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub orbs: Option<Vec<OrbEntity>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub relics: Option<Vec<RelicState>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub powers: Option<Vec<Power>>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct OracleAnalysisCombatScratchMonsterDeltaV1 {
+    pub monster_index: usize,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub current_hp: Option<i32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_hp: Option<i32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub block: Option<i32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub is_dying: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub is_escaped: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub half_dead: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub planned_move_id: Option<u8>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub planned_steps: Option<MonsterTurnSteps>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub intent: Option<Option<MonsterMoveSpec>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub thief: Option<ThiefRuntimeState>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub powers: Option<Vec<Power>>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct OracleAnalysisCombatScratchDecisionDeltaV1 {
+    pub kind: String,
+    pub run_node_id: usize,
+    pub base_scratch_node_id: u64,
+    pub cursor_scratch_node_id: u64,
+    pub scratch_node_count: usize,
+    pub parent_scratch_node_id: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub context: Option<OracleAnalysisCombatScratchContextV1>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub terminal: Option<CombatTerminal>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub turn: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub phase: Option<CombatPhase>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub counters: Option<OracleAnalysisCombatScratchCountersDeltaV1>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub player: Option<OracleAnalysisCombatScratchPlayerDeltaV1>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hand: Option<Vec<OracleAnalysisCombatScratchDecisionHandCardV1>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub draw_pile_top_first: Option<
+        OracleAnalysisCombatScratchSequenceDeltaV1<OracleAnalysisCombatScratchDecisionCardV1>,
+    >,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub discard_pile: Option<
+        OracleAnalysisCombatScratchSequenceDeltaV1<OracleAnalysisCombatScratchDecisionCardV1>,
+    >,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub exhaust_pile: Option<
+        OracleAnalysisCombatScratchSequenceDeltaV1<OracleAnalysisCombatScratchDecisionCardV1>,
+    >,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub removed_potion_slots: Vec<usize>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub potion_upserts: Vec<OracleAnalysisCombatScratchDecisionPotionV1>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub monsters: Option<Vec<OracleAnalysisCombatScratchDecisionMonsterV1>>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub monster_updates: Vec<OracleAnalysisCombatScratchMonsterDeltaV1>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub atomic_actions: Option<Vec<OracleAnalysisCombatScratchDecisionActionV1>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub selection_families: Option<Vec<OracleAnalysisCombatScratchDecisionSelectionFamilyV1>>,
 }
 
 impl From<OracleAnalysisCombatScratchViewV1> for OracleAnalysisCombatScratchDecisionViewV1 {

@@ -274,6 +274,14 @@ fn resident_service_keeps_combat_scratch_alive_across_typed_calls() {
     assert!(play.ok);
     assert_eq!(play.revision, 2);
     assert_eq!(
+        play.result.as_ref().expect("scratch play result")["kind"],
+        "combat_scratch_decision_delta_v1"
+    );
+    assert_eq!(
+        play.result.as_ref().expect("scratch play result")["base_scratch_node_id"],
+        0
+    );
+    assert_eq!(
         play.result.as_ref().expect("scratch play result")["scratch_node_count"],
         2
     );
@@ -284,6 +292,10 @@ fn resident_service_keeps_combat_scratch_alive_across_typed_calls() {
     .expect("end turn from resident scratch cursor");
     assert!(end.ok);
     assert_eq!(end.revision, 3);
+    assert_eq!(
+        end.result.as_ref().expect("scratch end result")["kind"],
+        "combat_scratch_decision_delta_v1"
+    );
     assert_eq!(
         end.result.as_ref().expect("scratch end result")["scratch_node_count"],
         3
@@ -300,6 +312,22 @@ fn resident_service_keeps_combat_scratch_alive_across_typed_calls() {
             .map(Vec::len),
         Some(3)
     );
+    let full = call_oracle_analysis_tcp_v1(
+        &endpoint_path,
+        &json!({
+            "id": "scratch-full",
+            "command": "combat_scratch_hand_card",
+            "scratch_node": 0,
+            "hand_index": card["hand_index"],
+            "target_index": target_index,
+            "full_observation": true,
+        })
+        .to_string(),
+    )
+    .expect("request full scratch observation fallback");
+    assert!(full.ok);
+    assert!(full.result.as_ref().expect("full scratch result")["hand"].is_array());
+    assert!(full.result.as_ref().expect("full scratch result")["kind"].is_null());
     call_oracle_analysis_tcp_v1(&endpoint_path, r#"{"command":"shutdown"}"#)
         .expect("shutdown resident scratch service");
     server

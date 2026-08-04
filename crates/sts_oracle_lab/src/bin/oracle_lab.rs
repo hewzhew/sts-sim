@@ -461,7 +461,7 @@ fn main() -> Result<(), String> {
 fn print_json<T: Serialize>(value: &T) -> Result<(), String> {
     println!(
         "{}",
-        serde_json::to_string_pretty(value)
+        serde_json::to_string(value)
             .map_err(|error| format!("failed to serialize oracle_lab output: {error}"))?
     );
     Ok(())

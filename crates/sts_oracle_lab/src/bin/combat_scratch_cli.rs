@@ -34,6 +34,8 @@ pub(super) enum CombatScratchCommand {
         from: u64,
         #[arg(long)]
         action: usize,
+        #[arg(long)]
+        full: bool,
         #[command(flatten)]
         page: CombatScratchPageArgs,
     },
@@ -47,6 +49,8 @@ pub(super) enum CombatScratchCommand {
         uuid: Option<u32>,
         #[arg(long)]
         target: Option<usize>,
+        #[arg(long)]
+        full: bool,
         #[command(flatten)]
         page: CombatScratchPageArgs,
     },
@@ -60,6 +64,8 @@ pub(super) enum CombatScratchCommand {
         uuid: Option<u32>,
         #[arg(long)]
         target: Option<usize>,
+        #[arg(long)]
+        full: bool,
         #[command(flatten)]
         page: CombatScratchPageArgs,
     },
@@ -67,6 +73,8 @@ pub(super) enum CombatScratchCommand {
     End {
         #[arg(long)]
         from: Option<u64>,
+        #[arg(long)]
+        full: bool,
         #[command(flatten)]
         page: CombatScratchPageArgs,
     },
@@ -78,6 +86,8 @@ pub(super) enum CombatScratchCommand {
         family: usize,
         #[arg(long)]
         input: usize,
+        #[arg(long)]
+        full: bool,
         #[command(flatten)]
         page: CombatScratchPageArgs,
     },

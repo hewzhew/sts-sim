@@ -7,6 +7,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use super::{OracleAnalysisSessionV1, OracleRunBoundaryV1};
 
+mod delta;
 mod search;
 #[cfg(test)]
 mod tests;
@@ -183,24 +184,43 @@ impl OracleAnalysisCombatScratchV1 {
         selection_offset: usize,
         selection_limit: usize,
     ) -> Result<OracleAnalysisCombatScratchViewV1, String> {
+        self.view_at(
+            self.cursor_scratch_node_id,
+            selection_offset,
+            selection_limit,
+        )
+    }
+
+    fn view_at(
+        &self,
+        scratch_node_id: u64,
+        selection_offset: usize,
+        selection_limit: usize,
+    ) -> Result<OracleAnalysisCombatScratchViewV1, String> {
         if selection_limit == 0 || selection_limit > 64 {
             return Err("combat scratch selection page limit must be in 1..=64".to_string());
         }
-        let node = self.current_node()?;
-        let position = self.current_position()?;
+        let node = self
+            .nodes
+            .get(&scratch_node_id)
+            .ok_or_else(|| format!("unknown combat scratch node {scratch_node_id}"))?;
+        let position = self
+            .positions
+            .get(&scratch_node_id)
+            .ok_or_else(|| format!("combat scratch node {scratch_node_id} has no position"))?;
         Ok(OracleAnalysisCombatScratchViewV1 {
             run_node_id: self.run_node_id,
             context: self.context.clone(),
             root_exact_state_hash: self.root_exact_state_hash.clone(),
             max_engine_steps_per_transition: self.max_engine_steps_per_transition,
-            cursor_scratch_node_id: self.cursor_scratch_node_id,
+            cursor_scratch_node_id: scratch_node_id,
             scratch_node_count: self.nodes.len(),
             parent_scratch_node_id: node.parent_scratch_node_id,
             input_from_parent: node.input.clone(),
             position: position_view(position),
             legal_actions: action_surface_view(
                 position,
-                self.cursor_scratch_node_id,
+                scratch_node_id,
                 selection_offset,
                 selection_limit,
             )?,
@@ -470,6 +490,19 @@ impl OracleAnalysisSessionV1 {
             .map(Into::into)
     }
 
+    pub fn combat_scratch_decision_view_at(
+        &self,
+        scratch_node_id: u64,
+        selection_offset: usize,
+        selection_limit: usize,
+    ) -> Result<OracleAnalysisCombatScratchDecisionViewV1, String> {
+        self.combat_scratch
+            .as_ref()
+            .ok_or_else(|| "oracle analysis workspace has no active combat scratch".to_string())?
+            .view_at(scratch_node_id, selection_offset, selection_limit)
+            .map(Into::into)
+    }
+
     pub fn combat_scratch_cursor_node_id(&self) -> Result<u64, String> {
         self.combat_scratch
             .as_ref()
@@ -499,6 +532,24 @@ impl OracleAnalysisSessionV1 {
             .as_mut()
             .ok_or_else(|| "oracle analysis workspace has no active combat scratch".to_string())?
             .play_selector(selector, selection_offset, selection_limit)
+    }
+
+    pub fn play_combat_scratch_selector_delta(
+        &mut self,
+        selector: OracleAnalysisCombatScratchActionSelectorV1,
+        selection_offset: usize,
+        selection_limit: usize,
+    ) -> Result<OracleAnalysisCombatScratchDecisionDeltaV1, String> {
+        let source_node_id = selector.scratch_node_id();
+        let base = self.combat_scratch_decision_view_at(
+            source_node_id,
+            selection_offset,
+            selection_limit,
+        )?;
+        let result = self
+            .play_combat_scratch_selector(selector, selection_offset, selection_limit)
+            .map(OracleAnalysisCombatScratchDecisionViewV1::from)?;
+        OracleAnalysisCombatScratchDecisionDeltaV1::between(&base, &result)
     }
 
     pub fn focus_combat_scratch_node(

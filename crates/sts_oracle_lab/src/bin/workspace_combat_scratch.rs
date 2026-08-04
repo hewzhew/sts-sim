@@ -41,10 +41,16 @@ pub(super) fn execute(workspace: &Path, command: CombatScratchCommand) -> Result
             page.selection_offset,
             usize::from(page.selection_limit),
         ),
-        CombatScratchCommand::Atomic { from, action, page } => atomic(
+        CombatScratchCommand::Atomic {
+            from,
+            action,
+            full,
+            page,
+        } => atomic(
             workspace,
             from,
             action,
+            full,
             page.selection_offset,
             usize::from(page.selection_limit),
         ),
@@ -53,6 +59,7 @@ pub(super) fn execute(workspace: &Path, command: CombatScratchCommand) -> Result
             hand,
             uuid,
             target,
+            full,
             page,
         } => card(
             workspace,
@@ -60,6 +67,7 @@ pub(super) fn execute(workspace: &Path, command: CombatScratchCommand) -> Result
             hand,
             uuid,
             target,
+            full,
             page.selection_offset,
             usize::from(page.selection_limit),
         ),
@@ -68,6 +76,7 @@ pub(super) fn execute(workspace: &Path, command: CombatScratchCommand) -> Result
             slot,
             uuid,
             target,
+            full,
             page,
         } => potion(
             workspace,
@@ -75,12 +84,14 @@ pub(super) fn execute(workspace: &Path, command: CombatScratchCommand) -> Result
             slot,
             uuid,
             target,
+            full,
             page.selection_offset,
             usize::from(page.selection_limit),
         ),
-        CombatScratchCommand::End { from, page } => end(
+        CombatScratchCommand::End { from, full, page } => end(
             workspace,
             from,
+            full,
             page.selection_offset,
             usize::from(page.selection_limit),
         ),
@@ -88,12 +99,14 @@ pub(super) fn execute(workspace: &Path, command: CombatScratchCommand) -> Result
             from,
             family,
             input,
+            full,
             page,
         } => selection(
             workspace,
             from,
             family,
             input,
+            full,
             page.selection_offset,
             usize::from(page.selection_limit),
         ),
@@ -190,6 +203,7 @@ pub(super) fn atomic(
     workspace: &Path,
     from: u64,
     action: usize,
+    full: bool,
     selection_offset: usize,
     selection_limit: usize,
 ) -> Result<Value, String> {
@@ -199,6 +213,7 @@ pub(super) fn atomic(
             scratch_node_id: from,
             action_index: action,
         },
+        full,
         selection_offset,
         selection_limit,
     )
@@ -210,6 +225,7 @@ pub(super) fn card(
     hand: Option<usize>,
     uuid: Option<u32>,
     target: Option<usize>,
+    full: bool,
     selection_offset: usize,
     selection_limit: usize,
 ) -> Result<Value, String> {
@@ -226,7 +242,7 @@ pub(super) fn card(
         },
         _ => return Err("choose exactly one of --hand or --uuid".to_string()),
     };
-    apply_selector(workspace, selector, selection_offset, selection_limit)
+    apply_selector(workspace, selector, full, selection_offset, selection_limit)
 }
 
 pub(super) fn potion(
@@ -235,6 +251,7 @@ pub(super) fn potion(
     slot: Option<usize>,
     uuid: Option<u32>,
     target: Option<usize>,
+    full: bool,
     selection_offset: usize,
     selection_limit: usize,
 ) -> Result<Value, String> {
@@ -251,12 +268,13 @@ pub(super) fn potion(
         },
         _ => return Err("choose exactly one of --slot or --uuid".to_string()),
     };
-    apply_selector(workspace, selector, selection_offset, selection_limit)
+    apply_selector(workspace, selector, full, selection_offset, selection_limit)
 }
 
 pub(super) fn end(
     workspace: &Path,
     from: Option<u64>,
+    full: bool,
     selection_offset: usize,
     selection_limit: usize,
 ) -> Result<Value, String> {
@@ -267,6 +285,7 @@ pub(super) fn end(
         OracleAnalysisCombatScratchActionSelectorV1::EndTurn {
             scratch_node_id: source,
         },
+        full,
         selection_offset,
         selection_limit,
     )
@@ -275,16 +294,25 @@ pub(super) fn end(
 fn apply_selector(
     workspace: &Path,
     selector: OracleAnalysisCombatScratchActionSelectorV1,
+    full: bool,
     selection_offset: usize,
     selection_limit: usize,
 ) -> Result<Value, String> {
     mutate(workspace, |analysis| {
-        let view = analysis.session.play_combat_scratch_selector(
-            selector,
-            selection_offset,
-            selection_limit,
-        )?;
-        Ok(OracleAnalysisCombatScratchDecisionViewV1::from(view))
+        if full {
+            let view = analysis.session.play_combat_scratch_selector(
+                selector,
+                selection_offset,
+                selection_limit,
+            )?;
+            encode(OracleAnalysisCombatScratchDecisionViewV1::from(view))
+        } else {
+            encode(analysis.session.play_combat_scratch_selector_delta(
+                selector,
+                selection_offset,
+                selection_limit,
+            )?)
+        }
     })
 }
 
@@ -294,6 +322,7 @@ pub(super) fn selection(
     from: u64,
     family: usize,
     input: usize,
+    full: bool,
     selection_offset: usize,
     selection_limit: usize,
 ) -> Result<Value, String> {
@@ -304,6 +333,7 @@ pub(super) fn selection(
             family_index: family,
             input_index: input,
         },
+        full,
         selection_offset,
         selection_limit,
     )
