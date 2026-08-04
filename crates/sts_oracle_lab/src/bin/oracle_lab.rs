@@ -348,6 +348,9 @@ fn main() -> Result<(), String> {
         Command::RoutePolicyAudit(args) => {
             print_json(&workspace_policy_audits::route(&args.workspace, args.node)?)
         }
+        Command::ShopPolicyAudit(args) => {
+            print_json(&workspace_policy_audits::shop(&args.workspace, args.node)?)
+        }
         Command::CardRewardPath(args) => print_json(&workspace_policy_audits::card_reward_path(
             &args.workspace,
             args.node,

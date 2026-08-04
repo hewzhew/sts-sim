@@ -121,3 +121,22 @@ fn route_policy_audit_parses_an_optional_exact_node() {
     assert_eq!(args.workspace, PathBuf::from("run.workspace.json"));
     assert_eq!(args.node, Some(186));
 }
+
+#[test]
+fn shop_policy_audit_parses_an_optional_exact_node() {
+    let cli = Cli::try_parse_from([
+        "oracle_lab",
+        "shop-policy-audit",
+        "--workspace",
+        "run.workspace.json",
+        "--node",
+        "27",
+    ])
+    .expect("shop policy audit should parse");
+    let Command::ShopPolicyAudit(args) = cli.command else {
+        panic!("expected shop policy audit command");
+    };
+
+    assert_eq!(args.workspace, PathBuf::from("run.workspace.json"));
+    assert_eq!(args.node, Some(27));
+}

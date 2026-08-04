@@ -16,6 +16,15 @@ pub(super) struct RoutePolicyAuditArgs {
 }
 
 #[derive(Args, Debug)]
+pub(super) struct ShopPolicyAuditArgs {
+    /// Workspace containing the exact retained shop node. Defaults to the cursor.
+    #[arg(long)]
+    pub workspace: PathBuf,
+    #[arg(long)]
+    pub node: Option<usize>,
+}
+
+#[derive(Args, Debug)]
 pub(super) struct CardRewardPathArgs {
     #[arg(long)]
     pub workspace: PathBuf,
@@ -41,6 +50,12 @@ pub(super) fn route(workspace: &Path, node: Option<usize>) -> Result<Value, Stri
     let analysis = load_oracle_analysis_workspace_v1(workspace)?;
     let node_id = node.unwrap_or_else(|| analysis.session.cursor_node_id());
     encode(analysis.session.route_policy_audit(node_id)?)
+}
+
+pub(super) fn shop(workspace: &Path, node: Option<usize>) -> Result<Value, String> {
+    let analysis = load_oracle_analysis_workspace_v1(workspace)?;
+    let node_id = node.unwrap_or_else(|| analysis.session.cursor_node_id());
+    encode(analysis.session.shop_policy_audit(node_id)?)
 }
 
 pub(super) fn card_reward_path(

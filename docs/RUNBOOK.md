@@ -418,6 +418,18 @@ cargo oracle-lab route-policy-audit `
 Omit `--node` to audit the current cursor. This command is read-only and emits
 the same route-policy evidence as the resident `route` command.
 
+The matching exact shop-owner audit is also available without a resident
+service:
+
+```powershell
+cargo oracle-lab shop-policy-audit `
+  --workspace .oracle-lab/cases/<run>.workspace.json `
+  --node <workspace-local-node>
+```
+
+Omit `--node` to audit the cursor. This is the same read-only typed evidence as
+the resident `shop` command; it does not buy, remove, or leave.
+
 When an analysis workspace has accumulated many historical variations, create
 a fresh active workbench from one exact committed node without modifying or
 overwriting the source:

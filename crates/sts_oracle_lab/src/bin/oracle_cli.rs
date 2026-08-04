@@ -30,7 +30,9 @@ use super::turn_membership_audit::TurnMembershipArgs;
 use super::turn_quality_corridor::{TurnQualityCorridorArgs, TurnQualityFrontierArgs};
 use super::v2_capability_audit::V2CapabilityAuditArgs;
 use super::workspace_drive::OracleDriveBoundaryArg;
-use super::workspace_policy_audits::{CardRewardPathArgs, RoutePolicyAuditArgs};
+use super::workspace_policy_audits::{
+    CardRewardPathArgs, RoutePolicyAuditArgs, ShopPolicyAuditArgs,
+};
 
 #[derive(Debug, Parser)]
 #[command(
@@ -416,6 +418,8 @@ pub(super) enum Command {
         node: Option<usize>,
     },
     RoutePolicyAudit(RoutePolicyAuditArgs),
+    /// Explain the exact shop owner's complete ranked evidence at one shop node.
+    ShopPolicyAudit(ShopPolicyAuditArgs),
     CardRewardPath(CardRewardPathArgs),
     /// Show a compact actionable summary of the current or selected node.
     Status {
