@@ -360,7 +360,7 @@ pub(super) fn position_view(position: &CombatPosition) -> OracleAnalysisCombatSc
                 half_dead: monster.half_dead,
                 planned_move_id: monster.planned_move_id(),
                 planned_steps: monster.move_state.planned_steps.clone().unwrap_or_default(),
-                intent: monster.move_state.planned_visible_spec.clone(),
+                intent: super::super::exact_monster_intent(combat, monster),
                 thief: monster.thief.clone(),
                 powers: crate::content::powers::store::powers_snapshot_for(combat, monster.id),
             })

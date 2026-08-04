@@ -1081,7 +1081,7 @@ impl OracleAnalysisSessionV1 {
                         block: monster.block,
                         alive: !monster.is_dead_or_escaped(),
                         planned_move_id: monster.planned_move_id(),
-                        intent: monster.move_state.planned_visible_spec.clone(),
+                        intent: exact_monster_intent(combat, monster),
                     })
                     .collect(),
             }
@@ -2168,6 +2168,20 @@ fn validate_edge_path(
 
 fn elapsed_ms(started: Instant) -> u64 {
     started.elapsed().as_millis().min(u128::from(u64::MAX)) as u64
+}
+
+fn exact_monster_intent(
+    combat: &crate::runtime::combat::CombatState,
+    monster: &crate::runtime::combat::MonsterEntity,
+) -> Option<MonsterMoveSpec> {
+    if monster.is_dead_or_escaped() {
+        return None;
+    }
+    let plan = crate::content::monsters::resolve_monster_turn_plan(combat, monster);
+    if plan.visible_spec.is_none() && plan.steps.is_empty() {
+        return None;
+    }
+    Some(plan.summary_spec())
 }
 
 #[cfg(test)]

@@ -270,6 +270,44 @@ fn one_strike_combat() -> crate::runtime::combat::CombatState {
 }
 
 #[test]
+fn analysis_node_derives_sentry_bolt_intent_from_locked_turn_truth() {
+    let mut combat = crate::test_support::blank_test_combat();
+    let mut sentry = crate::test_support::test_monster(crate::content::monsters::EnemyId::Sentry);
+    let plan = crate::content::monsters::roll_monster_turn_plan(
+        &mut combat.rng.ai_rng,
+        &sentry,
+        combat.meta.ascension_level,
+        99,
+        std::slice::from_ref(&sentry),
+        &[],
+    );
+    sentry.set_planned_move_id(plan.move_id);
+    sentry.set_planned_steps(plan.steps);
+    sentry.set_planned_visible_spec(plan.visible_spec);
+    combat.entities.monsters = vec![sentry];
+
+    let analysis = combat_analysis(combat, None);
+    let view = analysis.view_cursor().expect("view sentry combat root");
+    let intent = view.encounter.as_ref().expect("combat encounter").monsters[0]
+        .intent
+        .as_ref()
+        .expect("Sentry Bolt has a typed intent");
+    let MonsterMoveSpec::AddCard(add_card) = intent else {
+        panic!("Sentry Bolt should project AddCard, got {intent:?}");
+    };
+    assert_eq!(add_card.card_id, crate::content::cards::CardId::Dazed);
+    assert_eq!(add_card.amount, 2);
+    assert_eq!(
+        add_card.destination,
+        crate::runtime::monster_move::CardDestination::Discard
+    );
+    assert_eq!(
+        add_card.visible_strength,
+        crate::runtime::monster_move::EffectStrength::Strong
+    );
+}
+
+#[test]
 fn restored_combat_node_accepts_exact_actions_without_resident_search() {
     let mut analysis = one_strike_combat_analysis(None);
     analysis.combat_jobs.clear();
