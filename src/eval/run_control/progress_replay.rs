@@ -1058,7 +1058,9 @@ where
     let expected_fingerprint = run_session_fingerprint_v2(expected_final);
     if final_fingerprint != expected_fingerprint {
         return Err(format!(
-            "journal replay final fingerprint mismatch: expected {expected_fingerprint}, got {final_fingerprint}"
+            "journal replay final fingerprint mismatch: expected {expected_fingerprint}, got {final_fingerprint}; recent_combat_attrition expected {:?}, got {:?}",
+            expected_final.recent_combat_attrition(),
+            session.recent_combat_attrition(),
         ));
     }
 

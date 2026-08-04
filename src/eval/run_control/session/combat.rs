@@ -142,8 +142,21 @@ impl RunControlSession {
         // Exact replay can derive this fact from combat-resolution entries even
         // when a legacy checkpoint predates the durable field. Keep the saved
         // unknown explicit instead of silently backfilling historical state.
-        if expected.recent_combat_attrition.is_none() {
+        let Some(expected_fact) = expected.recent_combat_attrition else {
             self.recent_combat_attrition = None;
+            return;
+        };
+
+        // The session fingerprint deliberately normalizes the runtime combat
+        // sequence counter. Imported and compacted continuations can therefore
+        // have a different counter provenance even when every durable combat
+        // observation replays exactly. Reconcile only that counter, and only
+        // after every semantic attrition field has matched.
+        if let Some(mut replayed_fact) = self.recent_combat_attrition {
+            replayed_fact.combat_sequence = expected_fact.combat_sequence;
+            if replayed_fact == expected_fact {
+                self.recent_combat_attrition = Some(expected_fact);
+            }
         }
     }
 

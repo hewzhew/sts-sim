@@ -64,9 +64,20 @@ fn exact_replay_preserves_legacy_unknown_recent_attrition_without_weakening_know
 
     let mut expected_known = expected_unknown;
     expected_known.recent_combat_attrition = Some(fact);
-    replay.recent_combat_attrition = Some(fact);
+    replay.recent_combat_attrition = Some(RecentCombatAttritionV1 {
+        combat_sequence: fact.combat_sequence - 1,
+        ..fact
+    });
     replay.preserve_recent_combat_attrition_availability_from(&expected_known);
     assert_eq!(replay.recent_combat_attrition(), Some(fact));
+
+    replay.recent_combat_attrition = Some(RecentCombatAttritionV1 {
+        combat_sequence: fact.combat_sequence - 1,
+        raw_hp_loss: fact.raw_hp_loss + 1,
+        ..fact
+    });
+    replay.preserve_recent_combat_attrition_availability_from(&expected_known);
+    assert_ne!(replay.recent_combat_attrition(), Some(fact));
 }
 
 #[test]
