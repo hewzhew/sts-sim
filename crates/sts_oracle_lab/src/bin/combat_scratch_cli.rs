@@ -93,6 +93,8 @@ pub(super) enum CombatScratchCommand {
     },
     /// Move to the parent scratch node without deleting the current branch.
     Back {
+        #[arg(long)]
+        full: bool,
         #[command(flatten)]
         page: CombatScratchPageArgs,
     },
@@ -100,6 +102,8 @@ pub(super) enum CombatScratchCommand {
     Focus {
         #[arg(long)]
         scratch_node: u64,
+        #[arg(long)]
+        full: bool,
         #[command(flatten)]
         page: CombatScratchPageArgs,
     },

@@ -110,14 +110,20 @@ pub(super) fn execute(workspace: &Path, command: CombatScratchCommand) -> Result
             page.selection_offset,
             usize::from(page.selection_limit),
         ),
-        CombatScratchCommand::Back { page } => back(
+        CombatScratchCommand::Back { full, page } => back(
             workspace,
+            full,
             page.selection_offset,
             usize::from(page.selection_limit),
         ),
-        CombatScratchCommand::Focus { scratch_node, page } => focus(
+        CombatScratchCommand::Focus {
+            scratch_node,
+            full,
+            page,
+        } => focus(
             workspace,
             scratch_node,
+            full,
             page.selection_offset,
             usize::from(page.selection_limit),
         ),
@@ -341,30 +347,44 @@ pub(super) fn selection(
 
 pub(super) fn back(
     workspace: &Path,
+    full: bool,
     selection_offset: usize,
     selection_limit: usize,
 ) -> Result<Value, String> {
     mutate(workspace, |analysis| {
-        let view = analysis
-            .session
-            .back_combat_scratch(selection_offset, selection_limit)?;
-        Ok(OracleAnalysisCombatScratchDecisionViewV1::from(view))
+        if full {
+            let view = analysis
+                .session
+                .back_combat_scratch(selection_offset, selection_limit)?;
+            encode(OracleAnalysisCombatScratchDecisionViewV1::from(view))
+        } else {
+            encode(analysis.session.back_combat_scratch_receipt()?)
+        }
     })
 }
 
 pub(super) fn focus(
     workspace: &Path,
     scratch_node: u64,
+    full: bool,
     selection_offset: usize,
     selection_limit: usize,
 ) -> Result<Value, String> {
     mutate(workspace, |analysis| {
-        let view = analysis.session.focus_combat_scratch_node(
-            scratch_node,
-            selection_offset,
-            selection_limit,
-        )?;
-        Ok(OracleAnalysisCombatScratchDecisionViewV1::from(view))
+        if full {
+            let view = analysis.session.focus_combat_scratch_node(
+                scratch_node,
+                selection_offset,
+                selection_limit,
+            )?;
+            encode(OracleAnalysisCombatScratchDecisionViewV1::from(view))
+        } else {
+            encode(
+                analysis
+                    .session
+                    .focus_combat_scratch_node_receipt(scratch_node)?,
+            )
+        }
     })
 }
 

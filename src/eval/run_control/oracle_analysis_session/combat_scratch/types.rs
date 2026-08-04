@@ -21,6 +21,18 @@ pub const ORACLE_ANALYSIS_COMBAT_SCRATCH_SCHEMA_NAME: &str = "OracleAnalysisComb
 pub const ORACLE_ANALYSIS_COMBAT_SCRATCH_SCHEMA_VERSION: u32 = 1;
 pub const ORACLE_ANALYSIS_COMBAT_SCRATCH_DECISION_DELTA_KIND: &str =
     "combat_scratch_decision_delta_v1";
+pub const ORACLE_ANALYSIS_COMBAT_SCRATCH_NAVIGATION_KIND: &str = "combat_scratch_navigation_v1";
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct OracleAnalysisCombatScratchNavigationV1 {
+    pub kind: String,
+    pub run_node_id: usize,
+    pub source_scratch_node_id: u64,
+    pub cursor_scratch_node_id: u64,
+    pub scratch_node_count: usize,
+    pub parent_scratch_node_id: Option<u64>,
+}
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]

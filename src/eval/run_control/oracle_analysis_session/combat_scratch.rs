@@ -316,11 +316,25 @@ impl OracleAnalysisCombatScratchV1 {
         selection_offset: usize,
         selection_limit: usize,
     ) -> Result<OracleAnalysisCombatScratchViewV1, String> {
+        self.focus_cursor(scratch_node_id)?;
+        self.view(selection_offset, selection_limit)
+    }
+
+    fn focus_receipt(
+        &mut self,
+        scratch_node_id: u64,
+    ) -> Result<OracleAnalysisCombatScratchNavigationV1, String> {
+        let source_scratch_node_id = self.cursor_scratch_node_id;
+        self.focus_cursor(scratch_node_id)?;
+        self.navigation_receipt(source_scratch_node_id)
+    }
+
+    fn focus_cursor(&mut self, scratch_node_id: u64) -> Result<(), String> {
         if !self.nodes.contains_key(&scratch_node_id) {
             return Err(format!("unknown combat scratch node {scratch_node_id}"));
         }
         self.cursor_scratch_node_id = scratch_node_id;
-        self.view(selection_offset, selection_limit)
+        Ok(())
     }
 
     fn back(
@@ -328,12 +342,37 @@ impl OracleAnalysisCombatScratchV1 {
         selection_offset: usize,
         selection_limit: usize,
     ) -> Result<OracleAnalysisCombatScratchViewV1, String> {
+        self.back_cursor()?;
+        self.view(selection_offset, selection_limit)
+    }
+
+    fn back_receipt(&mut self) -> Result<OracleAnalysisCombatScratchNavigationV1, String> {
+        let source_scratch_node_id = self.cursor_scratch_node_id;
+        self.back_cursor()?;
+        self.navigation_receipt(source_scratch_node_id)
+    }
+
+    fn back_cursor(&mut self) -> Result<(), String> {
         let parent = self
             .current_node()?
             .parent_scratch_node_id
             .ok_or_else(|| "combat scratch cursor is already at its root".to_string())?;
         self.cursor_scratch_node_id = parent;
-        self.view(selection_offset, selection_limit)
+        Ok(())
+    }
+
+    fn navigation_receipt(
+        &self,
+        source_scratch_node_id: u64,
+    ) -> Result<OracleAnalysisCombatScratchNavigationV1, String> {
+        Ok(OracleAnalysisCombatScratchNavigationV1 {
+            kind: ORACLE_ANALYSIS_COMBAT_SCRATCH_NAVIGATION_KIND.to_string(),
+            run_node_id: self.run_node_id,
+            source_scratch_node_id,
+            cursor_scratch_node_id: self.cursor_scratch_node_id,
+            scratch_node_count: self.nodes.len(),
+            parent_scratch_node_id: self.current_node()?.parent_scratch_node_id,
+        })
     }
 
     fn tree(&self) -> Result<OracleAnalysisCombatScratchTreeV1, String> {
@@ -564,6 +603,16 @@ impl OracleAnalysisSessionV1 {
             .focus(scratch_node_id, selection_offset, selection_limit)
     }
 
+    pub fn focus_combat_scratch_node_receipt(
+        &mut self,
+        scratch_node_id: u64,
+    ) -> Result<OracleAnalysisCombatScratchNavigationV1, String> {
+        self.combat_scratch
+            .as_mut()
+            .ok_or_else(|| "oracle analysis workspace has no active combat scratch".to_string())?
+            .focus_receipt(scratch_node_id)
+    }
+
     pub fn back_combat_scratch(
         &mut self,
         selection_offset: usize,
@@ -573,6 +622,15 @@ impl OracleAnalysisSessionV1 {
             .as_mut()
             .ok_or_else(|| "oracle analysis workspace has no active combat scratch".to_string())?
             .back(selection_offset, selection_limit)
+    }
+
+    pub fn back_combat_scratch_receipt(
+        &mut self,
+    ) -> Result<OracleAnalysisCombatScratchNavigationV1, String> {
+        self.combat_scratch
+            .as_mut()
+            .ok_or_else(|| "oracle analysis workspace has no active combat scratch".to_string())?
+            .back_receipt()
     }
 
     pub fn combat_scratch_tree(&self) -> Result<OracleAnalysisCombatScratchTreeV1, String> {

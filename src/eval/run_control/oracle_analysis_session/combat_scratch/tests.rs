@@ -324,6 +324,67 @@ fn combat_scratch_branches_with_deltas_without_mutating_the_run_tree() {
 }
 
 #[test]
+fn combat_scratch_navigation_receipts_select_cached_immutable_frames() {
+    let mut analysis = one_strike_scratch_analysis();
+    analysis
+        .start_combat_scratch(None, 250, 0, 16)
+        .expect("start navigation scratch");
+    let root = analysis
+        .combat_scratch_decision_view(0, 16)
+        .expect("cache root decision frame");
+    let descendant = analysis
+        .play_combat_scratch_selector(
+            OracleAnalysisCombatScratchActionSelectorV1::EndTurn { scratch_node_id: 0 },
+            0,
+            16,
+        )
+        .map(OracleAnalysisCombatScratchDecisionViewV1::from)
+        .expect("create retained descendant");
+
+    let back = analysis
+        .back_combat_scratch_receipt()
+        .expect("navigate back with receipt");
+    assert_eq!(back.kind, ORACLE_ANALYSIS_COMBAT_SCRATCH_NAVIGATION_KIND);
+    assert_eq!(
+        back.source_scratch_node_id,
+        descendant.cursor_scratch_node_id
+    );
+    assert_eq!(back.cursor_scratch_node_id, root.cursor_scratch_node_id);
+    assert_eq!(back.parent_scratch_node_id, root.parent_scratch_node_id);
+    assert_eq!(back.scratch_node_count, 2);
+    assert_eq!(
+        back.apply_to_cached(&descendant, &root)
+            .expect("select cached root frame"),
+        analysis
+            .combat_scratch_decision_view(0, 16)
+            .expect("observe selected root")
+    );
+    assert!(back.apply_to_cached(&root, &root).is_err());
+    assert!(back.apply_to_cached(&descendant, &descendant).is_err());
+
+    let focus = analysis
+        .focus_combat_scratch_node_receipt(descendant.cursor_scratch_node_id)
+        .expect("focus descendant with receipt");
+    assert_eq!(focus.source_scratch_node_id, root.cursor_scratch_node_id);
+    assert_eq!(
+        focus.cursor_scratch_node_id,
+        descendant.cursor_scratch_node_id
+    );
+    assert_eq!(
+        focus.parent_scratch_node_id,
+        Some(root.cursor_scratch_node_id)
+    );
+    assert_eq!(
+        focus
+            .apply_to_cached(&root, &descendant)
+            .expect("select cached descendant frame"),
+        analysis
+            .combat_scratch_decision_view(0, 16)
+            .expect("observe selected descendant")
+    );
+}
+
+#[test]
 fn combat_scratch_restore_replays_exact_hashes_and_rejects_stale_refs_atomically() {
     let mut analysis = one_strike_scratch_analysis();
     let budgets = analysis.combat_budgets.clone();

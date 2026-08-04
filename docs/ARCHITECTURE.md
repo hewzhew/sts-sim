@@ -480,15 +480,18 @@ diagnostic view retains internal identities and exact-hash action refs, but the
 compact observation omits them and exposes effective card costs, legal local
 targets, a top-first draw order, combat relic state, locked monster move steps,
 relevant monster runtime state, and node-local structured-selection domains.
-`observe`, `focus`, and `back` establish complete decision frames. A normal
-card, potion, end-turn, atomic, or structured-selection action returns a typed
-delta anchored to its immutable source scratch node: scalar owner changes,
-card-pile sequence splices, potion-slot upserts/removals, and per-monster
-updates. Applying that delta to the declared base reconstructs the complete
-successor decision frame; another base node is rejected. Callers may explicitly
-request a complete successor frame for recovery or diagnostics. CLI JSON is
-compact by default, so whitespace is not part of the agent transport cost.
-Observation deltas are response projections, not persisted scratch history.
+`observe` establishes a complete decision frame. A normal card, potion,
+end-turn, atomic, or structured-selection action returns a typed delta anchored
+to its immutable source scratch node: scalar owner changes, card-pile sequence
+splices, potion-slot upserts/removals, and per-monster updates. Applying that
+delta to the declared base reconstructs the complete successor decision frame;
+another base node is rejected. `focus` and `back` select a previously established
+immutable node through a typed navigation receipt; applying it to that cached
+node refreshes DAG-wide metadata such as node count. Callers may explicitly
+request a complete action successor or navigation frame for recovery or
+diagnostics. CLI JSON is compact by default, so whitespace is not part of the
+agent transport cost. Deltas and navigation receipts are response projections,
+not persisted scratch history.
 Scratch navigation never creates run variations. A bounded
 descendant search may append a replay-verified potion-free suffix to scratch,
 but only an explicit terminal-victory commit may materialize the complete root

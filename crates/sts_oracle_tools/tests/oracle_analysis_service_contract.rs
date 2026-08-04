@@ -312,6 +312,36 @@ fn resident_service_keeps_combat_scratch_alive_across_typed_calls() {
             .map(Vec::len),
         Some(3)
     );
+    let back = call_oracle_analysis_tcp_v1(
+        &endpoint_path,
+        r#"{"id":"scratch-back","command":"combat_scratch_back"}"#,
+    )
+    .expect("navigate to cached scratch parent");
+    assert!(back.ok);
+    assert_eq!(
+        back.result.as_ref().expect("scratch back result")["kind"],
+        "combat_scratch_navigation_v1"
+    );
+    assert_eq!(
+        back.result.as_ref().expect("scratch back result")["source_scratch_node_id"],
+        2
+    );
+    assert_eq!(
+        back.result.as_ref().expect("scratch back result")["cursor_scratch_node_id"],
+        1
+    );
+    assert!(back.result.as_ref().expect("scratch back result")["hand"].is_null());
+    let focus_full = call_oracle_analysis_tcp_v1(
+        &endpoint_path,
+        r#"{"id":"scratch-focus-full","command":"combat_scratch_focus","scratch_node":2,"full_observation":true}"#,
+    )
+    .expect("recover full focused scratch observation");
+    assert!(focus_full.ok);
+    assert!(focus_full
+        .result
+        .as_ref()
+        .expect("full scratch focus result")["hand"]
+        .is_array());
     let full = call_oracle_analysis_tcp_v1(
         &endpoint_path,
         &json!({

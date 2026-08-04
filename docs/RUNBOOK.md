@@ -308,7 +308,8 @@ run tree:
 .\ol-live.cmd live --session seed009 scratch potion --from <scratch-node> --slot <potion-slot> [--target <monster-index>]
 .\ol-live.cmd live --session seed009 scratch end --from <scratch-node>
 .\ol-live.cmd live --session seed009 scratch selection --from <scratch-node> --family <index> --input <index>
-.\ol-live.cmd live --session seed009 scratch back
+.\ol-live.cmd live --session seed009 scratch back [--full]
+.\ol-live.cmd live --session seed009 scratch focus --scratch-node <scratch-node> [--full]
 .\ol-live.cmd live --session seed009 scratch tree
 ```
 
@@ -317,9 +318,11 @@ The canonical client still validates its own path and depfile before contacting
 the resident service; if it is missing or stale, rebuild it once with
 `cargo build --release -p oracle_lab_client --bin oracle_lab_client`.
 
-Action commands return a compact typed delta by default. Add `--full` to
-`card`, `potion`, `end`, `atomic`, or `selection` when the caller no longer has
-the declared base observation:
+Action commands return a compact typed delta by default. `back` and `focus`
+return a typed navigation receipt that selects an already cached immutable
+node and refreshes its DAG-wide metadata. Add `--full` to `card`, `potion`,
+`end`, `atomic`, `selection`, `back`, or `focus` when the caller no longer has
+the required base or target observation:
 
 ```powershell
 .\ol-live.cmd live --session seed009 scratch card --from <scratch-node> --hand <hand-index> --target <monster-index> --full
@@ -338,8 +341,11 @@ short fallback for other atomic inputs. Every selector may fork directly from
 any retained node, and an invalid source, identity, target, or index fails
 without moving the current cursor.
 
-`focus --scratch-node <id>` moves among retained scratch branches. `focus` and
-`back` return the same complete compact decision projection as `observe`.
+`focus --scratch-node <id>` moves among retained scratch branches. Its default
+receipt, and the corresponding `back` receipt, carry the source and selected
+scratch node ids, the selected parent, and the latest scratch node count. They
+do not repeat the selected node's combat state. Use `--full` after a client
+restart, context loss, or any other cache miss.
 Structured Hand/Grid/Scry inputs use local domain indices and are returned in
 bounded pages; use `--selection-offset` and `--selection-limit` without
 materializing the complete combination space.

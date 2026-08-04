@@ -850,34 +850,48 @@ fn execute_command(
             false,
         ),
         OracleAnalysisServiceCommandV1::CombatScratchBack {
+            full_observation,
             selection_offset,
             selection_limit,
         } => (
-            to_value(
-                crate::eval::run_control::OracleAnalysisCombatScratchDecisionViewV1::from(
-                    workspace
-                        .session
-                        .back_combat_scratch(selection_offset, selection_limit)?,
-                ),
-            )?,
+            if full_observation {
+                to_value(
+                    crate::eval::run_control::OracleAnalysisCombatScratchDecisionViewV1::from(
+                        workspace
+                            .session
+                            .back_combat_scratch(selection_offset, selection_limit)?,
+                    ),
+                )?
+            } else {
+                to_value(workspace.session.back_combat_scratch_receipt()?)?
+            },
             true,
             false,
             false,
         ),
         OracleAnalysisServiceCommandV1::CombatScratchFocus {
             scratch_node,
+            full_observation,
             selection_offset,
             selection_limit,
         } => (
-            to_value(
-                crate::eval::run_control::OracleAnalysisCombatScratchDecisionViewV1::from(
-                    workspace.session.focus_combat_scratch_node(
-                        scratch_node,
-                        selection_offset,
-                        selection_limit,
-                    )?,
-                ),
-            )?,
+            if full_observation {
+                to_value(
+                    crate::eval::run_control::OracleAnalysisCombatScratchDecisionViewV1::from(
+                        workspace.session.focus_combat_scratch_node(
+                            scratch_node,
+                            selection_offset,
+                            selection_limit,
+                        )?,
+                    ),
+                )?
+            } else {
+                to_value(
+                    workspace
+                        .session
+                        .focus_combat_scratch_node_receipt(scratch_node)?,
+                )?
+            },
             true,
             false,
             false,

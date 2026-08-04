@@ -314,12 +314,16 @@ enum LiveScratchCommand {
         page: LiveScratchPageArgs,
     },
     Back {
+        #[arg(long)]
+        full: bool,
         #[command(flatten)]
         page: LiveScratchPageArgs,
     },
     Focus {
         #[arg(long)]
         scratch_node: u64,
+        #[arg(long)]
+        full: bool,
         #[command(flatten)]
         page: LiveScratchPageArgs,
     },
@@ -738,17 +742,23 @@ fn run_live_command(endpoint: &Path, command: LiveCommand) -> Result<(), String>
                     selection_limit: usize::from(page.selection_limit),
                 },
             )?),
-            LiveScratchCommand::Back { page } => print_json(&live_call(
+            LiveScratchCommand::Back { full, page } => print_json(&live_call(
                 endpoint,
                 OracleAnalysisServiceCommandV1::CombatScratchBack {
+                    full_observation: full,
                     selection_offset: page.selection_offset,
                     selection_limit: usize::from(page.selection_limit),
                 },
             )?),
-            LiveScratchCommand::Focus { scratch_node, page } => print_json(&live_call(
+            LiveScratchCommand::Focus {
+                scratch_node,
+                full,
+                page,
+            } => print_json(&live_call(
                 endpoint,
                 OracleAnalysisServiceCommandV1::CombatScratchFocus {
                     scratch_node,
+                    full_observation: full,
                     selection_offset: page.selection_offset,
                     selection_limit: usize::from(page.selection_limit),
                 },

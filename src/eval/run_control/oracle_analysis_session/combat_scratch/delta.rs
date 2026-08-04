@@ -4,6 +4,45 @@ use crate::runtime::combat::EphemeralCounters;
 
 use super::types::*;
 
+impl OracleAnalysisCombatScratchNavigationV1 {
+    pub fn apply_to_cached(
+        &self,
+        source: &OracleAnalysisCombatScratchDecisionViewV1,
+        cached: &OracleAnalysisCombatScratchDecisionViewV1,
+    ) -> Result<OracleAnalysisCombatScratchDecisionViewV1, String> {
+        if self.kind != ORACLE_ANALYSIS_COMBAT_SCRATCH_NAVIGATION_KIND {
+            return Err("unsupported combat scratch navigation receipt".to_string());
+        }
+        if source.run_node_id != self.run_node_id
+            || source.cursor_scratch_node_id != self.source_scratch_node_id
+        {
+            return Err(format!(
+                "combat scratch navigation source mismatch: expected run/node {}/{}, got {}/{}",
+                self.run_node_id,
+                self.source_scratch_node_id,
+                source.run_node_id,
+                source.cursor_scratch_node_id
+            ));
+        }
+        if cached.run_node_id != self.run_node_id
+            || cached.cursor_scratch_node_id != self.cursor_scratch_node_id
+        {
+            return Err(format!(
+                "combat scratch navigation cache mismatch: expected run/node {}/{}, got {}/{}",
+                self.run_node_id,
+                self.cursor_scratch_node_id,
+                cached.run_node_id,
+                cached.cursor_scratch_node_id
+            ));
+        }
+
+        let mut result = cached.clone();
+        result.scratch_node_count = self.scratch_node_count;
+        result.parent_scratch_node_id = self.parent_scratch_node_id;
+        Ok(result)
+    }
+}
+
 impl OracleAnalysisCombatScratchDecisionDeltaV1 {
     pub fn between(
         base: &OracleAnalysisCombatScratchDecisionViewV1,

@@ -261,12 +261,16 @@ pub enum OracleAnalysisServiceCommandV1 {
     },
     CombatScratchBack {
         #[serde(default)]
+        full_observation: bool,
+        #[serde(default)]
         selection_offset: usize,
         #[serde(default = "default_combat_scratch_selection_limit")]
         selection_limit: usize,
     },
     CombatScratchFocus {
         scratch_node: u64,
+        #[serde(default)]
+        full_observation: bool,
         #[serde(default)]
         selection_offset: usize,
         #[serde(default = "default_combat_scratch_selection_limit")]
@@ -697,6 +701,34 @@ mod tests {
             end,
             OracleAnalysisServiceCommandV1::CombatScratchEnd {
                 scratch_node: None,
+                full_observation: false,
+                selection_offset: 0,
+                selection_limit: 24,
+            }
+        ));
+
+        let back = serde_json::from_value::<OracleAnalysisServiceCommandV1>(json!({
+            "command": "combat_scratch_back",
+        }))
+        .expect("parse compact combat scratch back navigation");
+        assert!(matches!(
+            back,
+            OracleAnalysisServiceCommandV1::CombatScratchBack {
+                full_observation: false,
+                selection_offset: 0,
+                selection_limit: 24,
+            }
+        ));
+
+        let focus = serde_json::from_value::<OracleAnalysisServiceCommandV1>(json!({
+            "command": "combat_scratch_focus",
+            "scratch_node": 3,
+        }))
+        .expect("parse compact combat scratch focus navigation");
+        assert!(matches!(
+            focus,
+            OracleAnalysisServiceCommandV1::CombatScratchFocus {
+                scratch_node: 3,
                 full_observation: false,
                 selection_offset: 0,
                 selection_limit: 24,
