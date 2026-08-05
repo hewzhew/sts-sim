@@ -642,6 +642,10 @@ narrow: an incoming Fruit Juice may replace the newest duplicate inventory
 identity, and an incoming Strength Potion may replace Fear Potion only when
 card semantics confirm both a concrete Strength payoff and deck-based
 Vulnerable coverage. All other full-inventory comparisons remain unresolved.
+In particular, aggregate exhaust roles and card-based Vulnerable sources do
+not establish that Gambler's Brew should replace Fear Potion: redraw value
+depends on an exact future hand, draw pile, energy budget, and encounter,
+while Fear retains zero-energy immediate coverage without draw-order risk.
 
 Before replacement is necessary, reward transaction order must preserve
 deterministic run resources. When a claimable Fruit Juice shares one reward
