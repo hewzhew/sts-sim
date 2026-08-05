@@ -1530,6 +1530,7 @@ fn node_summary(view: &OracleAnalysisNodeViewV1, current_owner_order: &[String])
         "max_hp": view.max_hp,
         "gold": view.gold,
         "event": view.event,
+        "reward": view.reward,
         "choice_count": choices.len(),
         "owner_rank_scope": "current_policy_recomputed_by_candidate_id",
         "choices": choices,

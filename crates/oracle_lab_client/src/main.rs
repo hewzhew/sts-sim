@@ -1215,6 +1215,7 @@ fn compact_live_node(node: &Value, limit: usize) -> Value {
         "gold": node.get("gold"),
         "boundary": node.get("boundary"),
         "event": node.get("event"),
+        "reward": node.get("reward"),
         "choice_count": choice_count,
         "owner_rank_scope": node.get("owner_rank_scope"),
         "choices_shown": choices.len(),
@@ -2703,6 +2704,10 @@ mod tests {
             ],
             "children": [],
             "event": {"title": "test"},
+            "reward": {
+                "items": [{"Potion": {"potion_id": "CultistPotion"}}],
+                "skippable": true
+            },
             "encounter": {
                 "turn": 0,
                 "phase": "PlayerTurn",
@@ -2735,6 +2740,7 @@ mod tests {
         assert_eq!(compact.get("choices_shown"), Some(&json!(2)));
         assert_eq!(compact.get("choices_truncated"), Some(&json!(true)));
         assert_eq!(compact.get("event"), node.get("event"));
+        assert_eq!(compact.get("reward"), node.get("reward"));
         assert_eq!(compact["combat"]["search_stage"], 2);
         assert_eq!(compact["combat"]["max_potions_used"], 1);
         assert_eq!(compact["combat"]["allowed_potion_slots"], 2);
