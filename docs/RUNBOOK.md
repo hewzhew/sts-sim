@@ -135,6 +135,10 @@ origin instead of trusting a seed, node number, floor, or filename:
   --case <case.json>
 ```
 
+Witness verification, policy audit, diagnosis, prefix export, and historical
+combat export default to the workspace cursor when `--node` is omitted. Use
+`--node 0` explicitly when the Neow root is actually intended.
+
 The case must carry exact production context and match one unambiguous combat
 root by both combat-state hash and run-session fingerprint. A node id is local
 to one workspace. `timeline` emits the selected line fingerprint and embeds

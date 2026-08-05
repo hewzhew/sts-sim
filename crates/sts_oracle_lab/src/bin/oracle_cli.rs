@@ -126,16 +126,16 @@ pub(super) enum Command {
     VerifyRunWitness {
         #[arg(long)]
         workspace: PathBuf,
-        #[arg(long, default_value_t = 0)]
-        node: usize,
+        #[arg(long)]
+        node: Option<usize>,
     },
     /// Replay a saved witness exactly and compare every committed non-combat
     /// choice with the current production owner ordering. No search runs.
     AuditRunWitnessPolicy {
         #[arg(long)]
         workspace: PathBuf,
-        #[arg(long, default_value_t = 0)]
-        node: usize,
+        #[arg(long)]
+        node: Option<usize>,
         /// Include every owner/witness divergence instead of the compact
         /// completion summary.
         #[arg(long)]
@@ -146,8 +146,8 @@ pub(super) enum Command {
     DiagnoseRunWitness {
         #[arg(long)]
         workspace: PathBuf,
-        #[arg(long, default_value_t = 0)]
-        node: usize,
+        #[arg(long)]
+        node: Option<usize>,
         /// Verify that this exact production CombatCase originated at one
         /// unambiguous combat root in the selected run witness.
         #[arg(long)]
@@ -169,8 +169,8 @@ pub(super) enum Command {
     ExportRunWitnessPrefix {
         #[arg(long)]
         workspace: PathBuf,
-        #[arg(long, default_value_t = 0)]
-        node: usize,
+        #[arg(long)]
+        node: Option<usize>,
         /// Stop immediately before this committed journal entry.
         #[arg(long)]
         journal_entry: usize,
@@ -207,8 +207,8 @@ pub(super) enum Command {
     ExportHistoricalCombatWitness {
         #[arg(long)]
         workspace: PathBuf,
-        #[arg(long, default_value_t = 0)]
-        node: usize,
+        #[arg(long)]
+        node: Option<usize>,
         #[arg(long)]
         journal_entry: usize,
         #[arg(long)]

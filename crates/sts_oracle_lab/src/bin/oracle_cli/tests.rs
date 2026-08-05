@@ -140,3 +140,32 @@ fn shop_policy_audit_parses_an_optional_exact_node() {
     assert_eq!(args.workspace, PathBuf::from("run.workspace.json"));
     assert_eq!(args.node, Some(27));
 }
+
+#[test]
+fn witness_verification_defaults_to_cursor_and_accepts_an_exact_node() {
+    let omitted = Cli::try_parse_from([
+        "oracle_lab",
+        "verify-run-witness",
+        "--workspace",
+        "run.workspace.json",
+    ])
+    .expect("cursor witness verification should parse");
+    let Command::VerifyRunWitness { node, .. } = omitted.command else {
+        panic!("expected witness verification command");
+    };
+    assert_eq!(node, None);
+
+    let explicit = Cli::try_parse_from([
+        "oracle_lab",
+        "verify-run-witness",
+        "--workspace",
+        "run.workspace.json",
+        "--node",
+        "35",
+    ])
+    .expect("exact-node witness verification should parse");
+    let Command::VerifyRunWitness { node, .. } = explicit.command else {
+        panic!("expected witness verification command");
+    };
+    assert_eq!(node, Some(35));
+}

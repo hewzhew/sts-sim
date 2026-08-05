@@ -61,11 +61,12 @@ pub(super) fn export_continuation(
 
 pub(super) fn export_prefix(
     workspace: &Path,
-    node: usize,
+    node: Option<usize>,
     journal_entry: usize,
     output: &Path,
 ) -> Result<Value, String> {
     let analysis = load_oracle_analysis_workspace_v1(workspace)?;
+    let node = node.unwrap_or_else(|| analysis.session.cursor_node_id());
     let continuation = analysis.continuation(node)?;
     let expected_final = continuation.session.clone().into_session()?;
     let historical = exact_replay_run_progress_journal_prefix_v1(
@@ -134,8 +135,9 @@ pub(super) fn recover_combat_case(
     }))
 }
 
-pub(super) fn verify(workspace: &Path, node: usize) -> Result<Value, String> {
+pub(super) fn verify(workspace: &Path, node: Option<usize>) -> Result<Value, String> {
     let analysis = load_oracle_analysis_workspace_v1(workspace)?;
+    let node = node.unwrap_or_else(|| analysis.session.cursor_node_id());
     let continuation = analysis.continuation(node)?;
     let expected_final = continuation.session.into_session()?;
     let report = exact_replay_run_progress_journal_v1(
@@ -153,8 +155,13 @@ pub(super) fn verify(workspace: &Path, node: usize) -> Result<Value, String> {
     }))
 }
 
-pub(super) fn audit_policy(workspace: &Path, node: usize, details: bool) -> Result<Value, String> {
+pub(super) fn audit_policy(
+    workspace: &Path,
+    node: Option<usize>,
+    details: bool,
+) -> Result<Value, String> {
     let analysis = load_oracle_analysis_workspace_v1(workspace)?;
+    let node = node.unwrap_or_else(|| analysis.session.cursor_node_id());
     let continuation = analysis.continuation(node)?;
     let expected_final = continuation.session.into_session()?;
     let report = exact_audit_run_progress_journal_policy_v1(
@@ -260,13 +267,14 @@ pub(super) fn splice_combat(
 
 pub(super) fn export_historical_combat(
     workspace: &Path,
-    node: usize,
+    node: Option<usize>,
     journal_entry: usize,
     case_output: &Path,
     actions_output: &Path,
     continuation_output: Option<&Path>,
 ) -> Result<Value, String> {
     let analysis = load_oracle_analysis_workspace_v1(workspace)?;
+    let node = node.unwrap_or_else(|| analysis.session.cursor_node_id());
     let continuation = analysis.continuation(node)?;
     let resolution = continuation
         .journal

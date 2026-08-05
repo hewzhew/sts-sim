@@ -15,13 +15,14 @@ use sts_oracle_runtime::runtime::branch::{
 
 pub(super) fn diagnose(
     workspace: &Path,
-    node: usize,
+    node: Option<usize>,
     case: Option<&Path>,
     max_pivots: usize,
     details: bool,
     first_divergence_continuation_output: Option<&Path>,
 ) -> Result<Value, String> {
     let analysis = load_oracle_analysis_workspace_v1(workspace)?;
+    let node = node.unwrap_or_else(|| analysis.session.cursor_node_id());
     let continuation = analysis.continuation(node)?;
     let expected_final = continuation.session.clone().into_session()?;
     let case_origin = case
