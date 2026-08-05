@@ -226,8 +226,22 @@ fn reward_potion_space_plan(session: &RunControlSession) -> Option<RewardPotionS
         .collect::<Vec<_>>();
 
     if incoming_potions.contains(&PotionId::FruitJuice) {
-        if let Some((slot, potion)) = newest_discardable_duplicate_potion(session) {
+        if let Some((slot, potion)) = newest_discardable_duplicate_potion(session, None) {
             return Some(discard_potion_space_plan(slot, potion));
+        }
+    }
+
+    if incoming_potions.contains(&PotionId::GamblersBrew) {
+        let roles = DeckRoleInventory::from_deck(&session.run_state.master_deck);
+        // Selective hand redraw is the incoming resource. Vulnerable cards do
+        // not make redraw stronger; they only lower the opportunity cost of
+        // removing the newest duplicate Fear while one Fear remains.
+        if roles.vulnerable_units >= 2 {
+            if let Some((slot, potion)) =
+                newest_discardable_duplicate_potion(session, Some(PotionId::FearPotion))
+            {
+                return Some(discard_potion_space_plan(slot, potion));
+            }
         }
     }
 
@@ -255,6 +269,7 @@ fn reward_potion_space_plan(session: &RunControlSession) -> Option<RewardPotionS
 
 fn newest_discardable_duplicate_potion(
     session: &RunControlSession,
+    required_id: Option<PotionId>,
 ) -> Option<(usize, &crate::content::potions::Potion)> {
     session
         .run_state
@@ -263,6 +278,9 @@ fn newest_discardable_duplicate_potion(
         .enumerate()
         .filter_map(|(slot, potion)| {
             let potion = potion.as_ref()?;
+            if required_id.is_some_and(|required_id| potion.id != required_id) {
+                return None;
+            }
             let copies = session
                 .run_state
                 .potions
@@ -534,7 +552,7 @@ mod tests {
     }
 
     #[test]
-    fn gamblers_brew_does_not_replace_fear_from_aggregate_deck_roles() {
+    fn gamblers_brew_replaces_covered_duplicate_fear_without_exhaust_roles() {
         use crate::content::cards::CardId;
         use crate::runtime::combat::CombatCard;
 
@@ -542,27 +560,43 @@ mod tests {
         session.run_state.master_deck = vec![
             CombatCard::new(CardId::Bash, 101),
             CombatCard::new(CardId::ThunderClap, 102),
-            CombatCard::new(CardId::DarkEmbrace, 103),
-            CombatCard::new(CardId::SecondWind, 104),
-            CombatCard::new(CardId::PowerThrough, 105),
+            CombatCard::new(CardId::Strike, 103),
+        ];
+
+        let discarded = apply_reward_potion_space_step(&mut session)
+            .expect("potion-space policy should inspect the covered duplicate")
+            .expect("selective redraw should replace the newest covered duplicate Fear");
+
+        assert!(session.run_state.potions[1].is_none());
+        assert_reward_owner_transaction(&discarded, 0, 1);
+        apply_reward_policy_step(&mut session)
+            .expect("reward policy should inspect the opened slot")
+            .expect("Gambler's Brew should be claimed on the next atomic step");
+        assert_eq!(
+            session.run_state.potions[1]
+                .as_ref()
+                .map(|potion| potion.id),
+            Some(PotionId::GamblersBrew)
+        );
+    }
+
+    #[test]
+    fn gamblers_brew_keeps_duplicate_fear_when_its_opportunity_cost_is_uncovered() {
+        use crate::content::cards::CardId;
+        use crate::runtime::combat::CombatCard;
+
+        let mut session = full_belt_gamblers_reward_session();
+        session.run_state.master_deck = vec![
+            CombatCard::new(CardId::Bash, 101),
+            CombatCard::new(CardId::DarkEmbrace, 102),
+            CombatCard::new(CardId::SecondWind, 103),
+            CombatCard::new(CardId::PowerThrough, 104),
         ];
 
         assert!(apply_reward_potion_space_step(&mut session)
-            .expect("potion-space policy should inspect the full inventory")
+            .expect("potion-space policy should inspect the uncovered duplicate")
             .is_none());
-        assert_eq!(
-            session
-                .run_state
-                .potions
-                .iter()
-                .filter_map(|potion| potion.as_ref().map(|potion| potion.id))
-                .collect::<Vec<_>>(),
-            vec![
-                PotionId::FearPotion,
-                PotionId::FearPotion,
-                PotionId::FirePotion,
-            ]
-        );
+        assert!(session.run_state.potions.iter().all(Option::is_some));
     }
 
     #[test]

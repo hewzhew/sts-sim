@@ -639,13 +639,14 @@ must not recover that identity from a label or generic discard command. The
 owner may replace only when a bounded public-state contract discharges the
 specific opportunity cost. The current production contract is deliberately
 narrow: an incoming Fruit Juice may replace the newest duplicate inventory
-identity, and an incoming Strength Potion may replace Fear Potion only when
-card semantics confirm both a concrete Strength payoff and deck-based
-Vulnerable coverage. All other full-inventory comparisons remain unresolved.
-In particular, aggregate exhaust roles and card-based Vulnerable sources do
-not establish that Gambler's Brew should replace Fear Potion: redraw value
-depends on an exact future hand, draw pile, energy budget, and encounter,
-while Fear retains zero-energy immediate coverage without draw-order risk.
+identity; Gambler's Brew may replace the newest duplicate Fear when one Fear
+remains and card semantics expose at least two native Vulnerable sources; and
+an incoming Strength Potion may replace Fear Potion only when card semantics
+confirm both a concrete Strength payoff and deck-based Vulnerable coverage.
+The Gambler's Brew comparison is deliberately asymmetric: selective hand
+redraw is the incoming resource, while Vulnerable coverage only discharges the
+opportunity cost of the removed duplicate Fear. Exhaust roles do not mediate
+that relationship. All other full-inventory comparisons remain unresolved.
 
 Before replacement is necessary, reward transaction order must preserve
 deterministic run resources. When a claimable Fruit Juice shares one reward
