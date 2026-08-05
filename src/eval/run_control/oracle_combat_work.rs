@@ -84,6 +84,13 @@ enum PortfolioServiceOrderV1 {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum PortfolioAdvanceModeV1 {
+    StopOnSatisfaction,
+    RefineToSatisfaction,
+    ProbeCurrentStage,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum PortfolioWitnessSatisfactionV1 {
     FirstWitness,
     HpLossAtMost(u32),
@@ -724,7 +731,11 @@ impl OracleRunCombatWorkV1 {
         // mode still accepts the first exact win; strategic quality modes keep
         // an insufficient win safe while using only this stage's allowance to
         // seek a quality-reaching replacement.
-        self.advance_with_witness_policy(quantum, global_deadline, true)
+        self.advance_with_witness_policy(
+            quantum,
+            global_deadline,
+            PortfolioAdvanceModeV1::StopOnSatisfaction,
+        )
     }
 
     /// Continues serving the portfolio past an insufficient first witness, but
@@ -736,14 +747,44 @@ impl OracleRunCombatWorkV1 {
         quantum: &RunControlCombatSearchQuantum,
         global_deadline: Option<Instant>,
     ) -> RunControlCombatWorkAdvanceV1 {
-        self.advance_with_witness_policy(quantum, global_deadline, false)
+        self.advance_with_witness_policy(
+            quantum,
+            global_deadline,
+            PortfolioAdvanceModeV1::RefineToSatisfaction,
+        )
+    }
+
+    /// Serves only the currently configured potion/stage identity for the
+    /// caller's bounded grant. Strategic satisfaction does not end this probe;
+    /// the analysis session keeps both the incumbent and frontier resident so
+    /// the caller can inspect, continue, or explicitly accept the result.
+    pub(super) fn advance_current_stage_probe(
+        &mut self,
+        quantum: &RunControlCombatSearchQuantum,
+        global_deadline: Option<Instant>,
+    ) -> RunControlCombatWorkAdvanceV1 {
+        // The portfolio layer is not the only satisfaction owner: the local
+        // graph also closes itself when its configured witness threshold is
+        // reached. Temporarily switch that resumable graph to budget service
+        // so this explicit probe cannot become another threshold-limited
+        // refinement call in disguise.
+        let configured_satisfaction = planner_satisfaction(self.satisfaction);
+        self.local_search
+            .set_satisfaction(OracleCombatWitnessSatisfaction::BudgetOrExhaustion);
+        let advance = self.advance_with_witness_policy(
+            quantum,
+            global_deadline,
+            PortfolioAdvanceModeV1::ProbeCurrentStage,
+        );
+        self.local_search.set_satisfaction(configured_satisfaction);
+        advance
     }
 
     fn advance_with_witness_policy(
         &mut self,
         quantum: &RunControlCombatSearchQuantum,
         global_deadline: Option<Instant>,
-        stop_on_first_satisfying_witness: bool,
+        mode: PortfolioAdvanceModeV1,
     ) -> RunControlCombatWorkAdvanceV1 {
         let now = Instant::now();
         let global_remaining =
@@ -782,7 +823,7 @@ impl OracleRunCombatWorkV1 {
         let engine_grant = self
             .remaining_engine_steps
             .min(work.saturating_mul(self.max_transition_steps));
-        let productive_member = if stop_on_first_satisfying_witness
+        let productive_member = if mode == PortfolioAdvanceModeV1::StopOnSatisfaction
             && self.satisfaction != PortfolioWitnessSatisfactionV1::BudgetOrExhaustion
         {
             self.best_witness().and_then(|witness| {
@@ -917,11 +958,11 @@ impl OracleRunCombatWorkV1 {
         // improve HP, commit the exact fallback instead of spending the
         // encounter's entire wall allowance proving that no improvement
         // exists.
-        let fallback_challenge_complete = stop_on_first_satisfying_witness
+        let fallback_challenge_complete = mode == PortfolioAdvanceModeV1::StopOnSatisfaction
             && self.policy_witness.is_some()
             && self.current_local_search_work() >= quantum.additional_nodes;
         let inherited_satisfying_challenge_complete = inherited_satisfying_incumbent_challenged(
-            stop_on_first_satisfying_witness,
+            mode == PortfolioAdvanceModeV1::StopOnSatisfaction,
             self.satisfaction,
             &self.start,
             self.stage_entry_incumbent.as_ref(),
@@ -929,13 +970,13 @@ impl OracleRunCombatWorkV1 {
             quantum.additional_nodes,
         );
         let standard_satisfaction_reached = standard_witness_ends_stage(
-            stop_on_first_satisfying_witness,
+            mode == PortfolioAdvanceModeV1::StopOnSatisfaction,
             acceptance_improved,
             self.satisfaction,
             &self.start,
             self.best_witness(),
         );
-        let quality_satisfied = !stop_on_first_satisfying_witness
+        let quality_satisfied = mode == PortfolioAdvanceModeV1::RefineToSatisfaction
             && self.best_witness().is_some_and(|witness| {
                 combat_witness_ends_quality_refinement(
                     &self.start,
@@ -1211,6 +1252,14 @@ impl OracleRunCombatWorkV1 {
         self.remaining_work
     }
 
+    pub(super) fn current_search_generation_work(&self) -> u64 {
+        (self.current_local_search_work() as u64).saturating_add(
+            self.discrepancy_search
+                .counters()
+                .applied_action_transitions as u64,
+        )
+    }
+
     pub(super) fn remaining_wall_ms(&self) -> Option<u64> {
         self.remaining_wall_time
             .map(|duration| duration.as_millis().min(u128::from(u64::MAX)) as u64)
@@ -1240,8 +1289,7 @@ impl OracleRunCombatWorkV1 {
             incumbent.map(|witness| witness.final_position.combat.entities.player.current_hp);
         let local_generation_work = self.current_local_search_work() as u64;
         let discrepancy_generation_work = discrepancy_counters.applied_action_transitions as u64;
-        let current_generation_work =
-            local_generation_work.saturating_add(discrepancy_generation_work);
+        let current_generation_work = self.current_search_generation_work();
         let local_retained_state_work = self.local_search.retained_state_work();
         let discrepancy_retained_state_work = self.discrepancy_search.retained_state_work();
         OracleRunCombatWorkProgressV1 {
@@ -1475,6 +1523,23 @@ fn combat_witness_acceptance_improved(
                             && after.potions_used < before.potions_used)))
         }
         _ => false,
+    }
+}
+
+fn planner_satisfaction(
+    satisfaction: PortfolioWitnessSatisfactionV1,
+) -> OracleCombatWitnessSatisfaction {
+    match satisfaction {
+        PortfolioWitnessSatisfactionV1::FirstWitness => {
+            OracleCombatWitnessSatisfaction::FirstWitness
+        }
+        PortfolioWitnessSatisfactionV1::HpLossAtMost(limit) => {
+            OracleCombatWitnessSatisfaction::HpLossAtMost(limit)
+        }
+        PortfolioWitnessSatisfactionV1::PersistentRunValueGain
+        | PortfolioWitnessSatisfactionV1::BudgetOrExhaustion => {
+            OracleCombatWitnessSatisfaction::BudgetOrExhaustion
+        }
     }
 }
 
@@ -3000,6 +3065,43 @@ mod tests {
             "quality acceptance must not let a policy proposal bypass independent search"
         );
         assert_eq!(result, RunControlCombatWorkAdvanceV1::ReadyToFinish);
+    }
+
+    #[test]
+    fn current_stage_probe_ignores_local_and_portfolio_satisfaction() {
+        let session = one_strike_win_session();
+        let mut work = OracleRunCombatWorkV1::new_with_guidance(
+            &session,
+            RunControlSearchCombatOptions {
+                max_nodes: Some(16),
+                satisfaction: Some(
+                    crate::ai::combat_search_v2::CombatSearchV2Satisfaction::HpLossAtMost(0),
+                ),
+                ..RunControlSearchCombatOptions::default()
+            },
+            None,
+        )
+        .expect("one-strike combat should create a portfolio");
+
+        assert!(work.policy_witness.is_some());
+        let result = work.advance_current_stage_probe(
+            &RunControlCombatSearchQuantum {
+                label: "current_stage_probe_contract",
+                additional_nodes: 1,
+                soft_wall_ms: None,
+            },
+            None,
+        );
+
+        assert!(
+            work.local_search.counters().generation_work > 0,
+            "the probe must serve the local graph even when the incumbent already satisfies quality"
+        );
+        assert_eq!(
+            result,
+            RunControlCombatWorkAdvanceV1::Pending,
+            "quality satisfaction must not terminate the caller-bounded probe"
+        );
     }
 
     #[test]

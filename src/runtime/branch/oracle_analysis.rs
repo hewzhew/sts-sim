@@ -13,9 +13,10 @@ use crate::eval::run_control::{
     exact_audit_run_progress_journal_policy_v1, expand_oracle_neow_candidates_v1,
     ordered_oracle_neow_root_candidate_ids_v1, seed_oracle_run_explorer_from_checkpoint_v1,
     seed_oracle_run_explorer_from_session_v1, seed_oracle_run_explorer_v1, NeowOracleExpansionV1,
-    OracleAnalysisAdvanceReportV1, OracleAnalysisAdvanceRequestV1, OracleAnalysisNodeViewV1,
-    OracleAnalysisSessionCheckpointV1, OracleAnalysisSessionV1, RunControlConfig,
-    RunControlSession, RunDecisionAction,
+    OracleAnalysisAdvanceReportV1, OracleAnalysisAdvanceRequestV1,
+    OracleAnalysisCombatProbeReportV1, OracleAnalysisCombatProbeRequestV1,
+    OracleAnalysisNodeViewV1, OracleAnalysisSessionCheckpointV1, OracleAnalysisSessionV1,
+    RunControlConfig, RunControlSession, RunDecisionAction,
 };
 use crate::state::core::ClientInput;
 
@@ -314,6 +315,15 @@ impl OracleAnalysisWorkspaceV1 {
         request: OracleAnalysisAdvanceRequestV1,
     ) -> Result<(OracleAnalysisAdvanceReportV1, OracleAnalysisNodeViewV1), String> {
         let report = self.session.advance_cursor(request)?;
+        let view = self.view()?;
+        Ok((report, view))
+    }
+
+    pub fn probe_combat(
+        &mut self,
+        request: OracleAnalysisCombatProbeRequestV1,
+    ) -> Result<(OracleAnalysisCombatProbeReportV1, OracleAnalysisNodeViewV1), String> {
+        let report = self.session.probe_cursor_combat_stage(request)?;
         let view = self.view()?;
         Ok((report, view))
     }

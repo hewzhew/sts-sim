@@ -144,9 +144,19 @@ pub enum OracleAnalysisServiceCommandV1 {
         #[serde(default)]
         wall_ms: Option<u64>,
         /// Keep the verified incumbent resident and spend the requested
-        /// allowance looking for a better exact witness.
+        /// allowance until the configured strategic quality is reached.
         #[serde(default)]
         improve_incumbent: bool,
+    },
+    /// Spend one bounded diagnostic grant in the current exact combat stage
+    /// without promotion or materialization.
+    ProbeCombat {
+        #[serde(default = "default_probe_generation_work")]
+        generation_work: usize,
+        #[serde(default = "default_probe_quantum_nodes")]
+        quantum_nodes: usize,
+        #[serde(default = "default_probe_wall_ms")]
+        wall_ms: u64,
     },
     AcceptCombat,
     EscapeCombat,
@@ -458,6 +468,15 @@ const fn default_quantum_nodes() -> usize {
     50_000
 }
 const fn default_quantum_ms() -> u64 {
+    1_000
+}
+const fn default_probe_generation_work() -> usize {
+    4_096
+}
+const fn default_probe_quantum_nodes() -> usize {
+    256
+}
+const fn default_probe_wall_ms() -> u64 {
     1_000
 }
 const fn default_journal_tail() -> usize {
@@ -836,6 +855,45 @@ mod tests {
                 ..
             }
         ));
+    }
+
+    #[test]
+    fn current_stage_probe_has_its_own_typed_budget_contract() {
+        let probe = serde_json::from_value::<OracleAnalysisServiceCommandV1>(json!({
+            "command": "probe_combat",
+        }))
+        .expect("parse default current-stage probe command");
+        assert!(matches!(
+            probe,
+            OracleAnalysisServiceCommandV1::ProbeCombat {
+                generation_work: 4_096,
+                quantum_nodes: 256,
+                wall_ms: 1_000,
+            }
+        ));
+
+        let explicit = serde_json::from_value::<OracleAnalysisServiceCommandV1>(json!({
+            "command": "probe_combat",
+            "generation_work": 768,
+            "quantum_nodes": 128,
+            "wall_ms": 250,
+        }))
+        .expect("parse explicit current-stage probe command");
+        assert!(matches!(
+            explicit,
+            OracleAnalysisServiceCommandV1::ProbeCombat {
+                generation_work: 768,
+                quantum_nodes: 128,
+                wall_ms: 250,
+            }
+        ));
+        assert!(
+            serde_json::from_value::<OracleAnalysisServiceCommandV1>(json!({
+                "command": "advance",
+                "probe_current_stage": true,
+            }))
+            .is_err()
+        );
     }
 
     #[test]

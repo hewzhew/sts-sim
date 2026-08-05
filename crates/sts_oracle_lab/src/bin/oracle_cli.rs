@@ -554,13 +554,27 @@ pub(super) enum Command {
         quantum_ms: u64,
         #[arg(long)]
         wall_ms: Option<u64>,
-        /// Keep the verified incumbent resident and spend the full bounded
-        /// request looking for a higher-HP witness. Use `accept-combat`
-        /// afterwards to commit the best result.
+        /// Continue past an insufficient first win until configured strategic
+        /// quality is reached.
         #[arg(long)]
         improve_incumbent: bool,
         /// Print the full tactical progress report and node view. The default
         /// output is intentionally compact; detailed traces remain opt-in.
+        #[arg(long)]
+        detailed: bool,
+    },
+    /// Spend a fixed diagnostic work budget only in the current combat stage.
+    /// This never promotes potion identity or materializes the incumbent.
+    ProbeCombat {
+        #[arg(long)]
+        workspace: PathBuf,
+        #[arg(long, default_value_t = 4_096)]
+        generation_work: usize,
+        #[arg(long, default_value_t = 256)]
+        quantum_nodes: usize,
+        #[arg(long, default_value_t = 1_000)]
+        wall_ms: u64,
+        /// Print the full tactical progress report and node view.
         #[arg(long)]
         detailed: bool,
     },

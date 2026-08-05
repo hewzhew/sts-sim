@@ -169,3 +169,32 @@ fn witness_verification_defaults_to_cursor_and_accepts_an_exact_node() {
     };
     assert_eq!(node, Some(35));
 }
+
+#[test]
+fn current_stage_probe_is_a_separate_bounded_command() {
+    let cli = Cli::try_parse_from([
+        "oracle_lab",
+        "probe-combat",
+        "--workspace",
+        "run.workspace.json",
+        "--generation-work",
+        "768",
+        "--quantum-nodes",
+        "128",
+        "--wall-ms",
+        "250",
+    ])
+    .expect("current-stage probe should parse");
+    let Command::ProbeCombat {
+        generation_work,
+        quantum_nodes,
+        wall_ms,
+        ..
+    } = cli.command
+    else {
+        panic!("expected probe-combat command");
+    };
+    assert_eq!(generation_work, 768);
+    assert_eq!(quantum_nodes, 128);
+    assert_eq!(wall_ms, 250);
+}

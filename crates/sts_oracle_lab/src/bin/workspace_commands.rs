@@ -9,6 +9,7 @@ use sts_oracle_runtime::eval::combat_lab_v1::atomic_write_json;
 use sts_oracle_runtime::eval::run_control::{
     exact_replay_run_progress_journal_v1, run_progress_journal_fingerprint_v1,
     ExactRunProgressReplayReportV1, OracleAnalysisAdvanceRequestV1,
+    OracleAnalysisCombatProbeRequestV1,
 };
 use sts_oracle_runtime::runtime::branch::{
     load_oracle_analysis_workspace_v1, oracle_live_combat_diagnostic_v1,
@@ -371,6 +372,61 @@ pub(super) fn advance(
             "max_hp": view.max_hp,
             "gold": view.gold,
             "choice_count": view.choices.len(),
+            "child_count": view.children.len(),
+        },
+    }))
+}
+
+pub(super) fn probe_combat(
+    workspace: &Path,
+    generation_work: usize,
+    quantum_nodes: usize,
+    wall_ms: u64,
+    detailed: bool,
+) -> Result<Value, String> {
+    let mut analysis = load_oracle_analysis_workspace_v1(workspace)?;
+    let (report, view) = analysis.probe_combat(OracleAnalysisCombatProbeRequestV1 {
+        generation_work,
+        quantum_nodes,
+        wall_ms,
+    })?;
+    save_oracle_analysis_workspace_v1(workspace, &analysis)?;
+    if detailed {
+        return Ok(json!({ "report": report, "view": view }));
+    }
+    Ok(json!({
+        "schema_name": "OracleAnalysisCombatProbeSummaryV1",
+        "schema_version": 1,
+        "source_node_id": report.source_node_id,
+        "stop": report.stop,
+        "generation_work_requested": report.generation_work_requested,
+        "generation_work_consumed": report.generation_work_consumed,
+        "quanta_served": report.quanta_served,
+        "elapsed_ms": report.elapsed_ms,
+        "combat": {
+            "root_exact_state_hash": report.combat.root_exact_state_hash,
+            "stage_trace": report.combat.stage_trace,
+            "search_stage": report.combat.search_stage,
+            "max_potions_used": report.combat.max_potions_used,
+            "allowed_potion_slots": report.combat.allowed_potion_slots,
+            "generation_work": report.combat.generation_work,
+            "current_search_generation_work": report.combat.current_search_generation_work,
+            "local_generation_work": report.combat.local_generation_work,
+            "discrepancy_generation_work": report.combat.discrepancy_generation_work,
+            "incumbent_final_hp": report.combat.incumbent_final_hp,
+            "incumbent_hp_loss": report.combat.incumbent_hp_loss,
+            "incumbent_action_count": report.combat.incumbent_action_count,
+            "incumbent_satisfies_satisfaction": report.combat.incumbent_satisfies_satisfaction,
+            "last_status": report.combat.last_status,
+        },
+        "result": {
+            "node": view.node_id,
+            "boundary": view.boundary,
+            "act": view.act,
+            "floor": view.floor,
+            "hp": view.current_hp,
+            "max_hp": view.max_hp,
+            "gold": view.gold,
             "child_count": view.children.len(),
         },
     }))

@@ -139,6 +139,10 @@ pub struct OracleAnalysisChildViewV1 {
 #[serde(rename_all = "snake_case")]
 pub enum OracleAnalysisCombatStageExitV1 {
     Active,
+    ProbeWorkBudgetReached,
+    ProbeWallReached,
+    ProbeStageExhausted,
+    ProbeNoProgress,
     PromotedForReservedQuantum,
     PromotedAfterReadyToFinish,
     PromotedAfterAllowanceExhausted,
@@ -438,8 +442,8 @@ pub struct OracleAnalysisAdvanceRequestV1 {
     pub quantum_nodes: usize,
     pub quantum_ms: Option<u64>,
     pub wall_ms: Option<u64>,
-    /// Spend the requested budget improving an existing/new incumbent instead
-    /// of materializing the first verified witness immediately.
+    /// Continue past an insufficient verified witness until the configured
+    /// strategic quality is reached.
     #[serde(default)]
     pub improve_incumbent: bool,
 }
@@ -454,6 +458,46 @@ impl Default for OracleAnalysisAdvanceRequestV1 {
             improve_incumbent: false,
         }
     }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct OracleAnalysisCombatProbeRequestV1 {
+    /// Maximum additional portfolio generation work charged by this call.
+    pub generation_work: usize,
+    /// Preemption granularity used to rotate the current stage's portfolio.
+    pub quantum_nodes: usize,
+    /// Total wall deadline for this probe.
+    pub wall_ms: u64,
+}
+
+impl Default for OracleAnalysisCombatProbeRequestV1 {
+    fn default() -> Self {
+        Self {
+            generation_work: 4_096,
+            quantum_nodes: 256,
+            wall_ms: 1_000,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum OracleAnalysisCombatProbeStopV1 {
+    WorkBudgetReached,
+    WallReached,
+    StageExhausted,
+    NoProgress,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct OracleAnalysisCombatProbeReportV1 {
+    pub source_node_id: usize,
+    pub stop: OracleAnalysisCombatProbeStopV1,
+    pub generation_work_requested: usize,
+    pub generation_work_consumed: u64,
+    pub quanta_served: usize,
+    pub elapsed_ms: u64,
+    pub combat: OracleAnalysisCombatProgressV1,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -1514,6 +1558,151 @@ impl OracleAnalysisSessionV1 {
             quanta_served,
             elapsed_ms: elapsed_ms(started),
             combat: Some(final_progress),
+        })
+    }
+
+    /// Spends one explicit bounded grant only in the cursor's current combat
+    /// stage. Unlike strategic advance, this operation cannot promote a potion
+    /// identity or materialize a child, and configured quality satisfaction
+    /// does not terminate its local graph early.
+    pub fn probe_cursor_combat_stage(
+        &mut self,
+        request: OracleAnalysisCombatProbeRequestV1,
+    ) -> Result<OracleAnalysisCombatProbeReportV1, String> {
+        if request.generation_work == 0 || request.quantum_nodes == 0 || request.wall_ms == 0 {
+            return Err(
+                "oracle analysis combat probe requires positive work, quantum, and wall budgets"
+                    .to_string(),
+            );
+        }
+        let source_node_id = self.cursor_node_id;
+        let branch = self.require_branch(source_node_id)?;
+        if branch.boundary != OracleRunBoundaryV1::Combat {
+            return Err(format!(
+                "oracle analysis node {source_node_id} is at {:?}, not combat",
+                branch.boundary
+            ));
+        }
+        if !self.combat_jobs.contains_key(&source_node_id) {
+            let stage = 0;
+            let work = OracleRunCombatWorkV1::new_with_guidance(
+                &branch.session,
+                self.combat_budgets
+                    .for_session_stage(&branch.session, stage),
+                self.combat_budgets.guidance_bundle.as_deref(),
+            )?;
+            self.combat_jobs.insert(
+                source_node_id,
+                OracleAnalysisCombatJobV1 {
+                    stage,
+                    completed_stage_trace: Vec::new(),
+                    work,
+                },
+            );
+        }
+        let job = self
+            .combat_jobs
+            .get_mut(&source_node_id)
+            .expect("analysis combat probe job exists");
+        if job.work.quantum_count() > 0 {
+            job.work.mark_search_resume_exact();
+        }
+        job.work.ensure_requested_allowance(
+            request.generation_work,
+            Some(Duration::from_millis(request.wall_ms)),
+        );
+
+        let started = Instant::now();
+        let deadline = started
+            .checked_add(Duration::from_millis(request.wall_ms))
+            .ok_or_else(|| "combat probe wall budget exceeds the platform deadline".to_string())?;
+        let before_work = job.work.current_search_generation_work();
+        let requested_work = u64::try_from(request.generation_work).unwrap_or(u64::MAX);
+        let mut quanta_served = 0usize;
+        let mut zero_progress_quanta = 0u8;
+        let stop = loop {
+            let consumed = job
+                .work
+                .current_search_generation_work()
+                .saturating_sub(before_work);
+            if consumed >= requested_work {
+                break OracleAnalysisCombatProbeStopV1::WorkBudgetReached;
+            }
+            if Instant::now() >= deadline {
+                break OracleAnalysisCombatProbeStopV1::WallReached;
+            }
+            let remaining =
+                usize::try_from(requested_work.saturating_sub(consumed)).unwrap_or(usize::MAX);
+            let quantum = RunControlCombatSearchQuantum {
+                label: "oracle_analysis_current_stage_probe",
+                additional_nodes: request.quantum_nodes.min(remaining),
+                soft_wall_ms: None,
+            };
+            let before_quantum = job.work.current_search_generation_work();
+            let advance = job
+                .work
+                .advance_current_stage_probe(&quantum, Some(deadline));
+            let after_quantum = job.work.current_search_generation_work();
+            let quantum_consumed = after_quantum.saturating_sub(before_quantum);
+            if advance != RunControlCombatWorkAdvanceV1::GlobalDeadlineReached {
+                quanta_served = quanta_served.saturating_add(1);
+            }
+            let total_consumed = after_quantum.saturating_sub(before_work);
+            if total_consumed >= requested_work {
+                break OracleAnalysisCombatProbeStopV1::WorkBudgetReached;
+            }
+            match advance {
+                RunControlCombatWorkAdvanceV1::GlobalDeadlineReached => {
+                    break OracleAnalysisCombatProbeStopV1::WallReached;
+                }
+                RunControlCombatWorkAdvanceV1::ReadyToFinish
+                | RunControlCombatWorkAdvanceV1::AllowanceExhausted => {
+                    break OracleAnalysisCombatProbeStopV1::StageExhausted;
+                }
+                RunControlCombatWorkAdvanceV1::Pending => {
+                    if quantum_consumed == 0 {
+                        // One member can perform bookkeeping without charging
+                        // generation work. Require a full two-member portfolio
+                        // rotation before reporting genuine zero progress.
+                        zero_progress_quanta = zero_progress_quanta.saturating_add(1);
+                        if zero_progress_quanta >= 2 {
+                            break OracleAnalysisCombatProbeStopV1::NoProgress;
+                        }
+                    } else {
+                        zero_progress_quanta = 0;
+                    }
+                }
+            }
+        };
+        let generation_work_consumed = job
+            .work
+            .current_search_generation_work()
+            .saturating_sub(before_work);
+        let stage_exit = match stop {
+            OracleAnalysisCombatProbeStopV1::WorkBudgetReached => {
+                OracleAnalysisCombatStageExitV1::ProbeWorkBudgetReached
+            }
+            OracleAnalysisCombatProbeStopV1::WallReached => {
+                OracleAnalysisCombatStageExitV1::ProbeWallReached
+            }
+            OracleAnalysisCombatProbeStopV1::StageExhausted => {
+                OracleAnalysisCombatStageExitV1::ProbeStageExhausted
+            }
+            OracleAnalysisCombatProbeStopV1::NoProgress => {
+                OracleAnalysisCombatStageExitV1::ProbeNoProgress
+            }
+        };
+        let combat = self
+            .combat_progress_with_exit(source_node_id, stage_exit)
+            .ok_or_else(|| "combat probe lost its resident current-stage job".to_string())?;
+        Ok(OracleAnalysisCombatProbeReportV1 {
+            source_node_id,
+            stop,
+            generation_work_requested: request.generation_work,
+            generation_work_consumed,
+            quanta_served,
+            elapsed_ms: elapsed_ms(started),
+            combat,
         })
     }
 

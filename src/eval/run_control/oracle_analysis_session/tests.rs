@@ -598,6 +598,105 @@ fn strategic_no_potion_witness_that_meets_quality_materializes_without_rescue() 
 }
 
 #[test]
+fn current_stage_probe_retains_a_satisfying_incumbent_until_explicit_acceptance() {
+    let mut analysis = combat_analysis_with_budgets(
+        potion_equipped_one_strike_combat(),
+        None,
+        strategic_combat_budgets(RunControlSearchCombatOptions {
+            max_nodes: Some(64),
+            ..RunControlSearchCombatOptions::default()
+        }),
+    );
+    let before = analysis
+        .view_cursor()
+        .expect("initial combat view")
+        .combat
+        .expect("initial combat progress");
+    assert!(before.incumbent_satisfies_satisfaction == Some(true));
+    let branch_count = analysis.explorer.branches.len();
+    let edge_count = analysis.edges.len();
+
+    let report = analysis
+        .probe_cursor_combat_stage(OracleAnalysisCombatProbeRequestV1 {
+            generation_work: 3,
+            quantum_nodes: 1,
+            wall_ms: 1_000,
+        })
+        .expect("probe the current no-potion stage");
+    let progress = report.combat;
+
+    assert_eq!(
+        report.stop,
+        OracleAnalysisCombatProbeStopV1::WorkBudgetReached
+    );
+    assert_eq!(report.generation_work_requested, 3);
+    assert_eq!(report.generation_work_consumed, 3);
+    assert_eq!(report.quanta_served, 3);
+    assert_eq!(analysis.cursor_node_id(), 0);
+    assert_eq!(analysis.explorer.branches.len(), branch_count);
+    assert_eq!(analysis.edges.len(), edge_count);
+    assert_eq!(
+        analysis.view_cursor().expect("retained combat").boundary,
+        OracleRunBoundaryV1::Combat
+    );
+    assert!(analysis.combat_jobs.contains_key(&0));
+    assert_eq!(progress.search_stage, 0);
+    assert_eq!(progress.max_potions_used, before.max_potions_used);
+    assert_eq!(progress.allowed_potion_slots, before.allowed_potion_slots);
+    assert_eq!(
+        progress.stage_trace.last().map(|stage| stage.exit),
+        Some(OracleAnalysisCombatStageExitV1::ProbeWorkBudgetReached)
+    );
+
+    let resumed = analysis
+        .probe_cursor_combat_stage(OracleAnalysisCombatProbeRequestV1 {
+            generation_work: 2,
+            quantum_nodes: 1,
+            wall_ms: 1_000,
+        })
+        .expect("resume the same current-stage frontier");
+    assert_eq!(
+        resumed.stop,
+        OracleAnalysisCombatProbeStopV1::WorkBudgetReached
+    );
+    assert_eq!(resumed.generation_work_consumed, 2);
+    assert_eq!(
+        resumed.combat.resume_kind,
+        OracleCombatSearchResumeKindV1::SearchResumeExact
+    );
+    assert_eq!(resumed.combat.search_stage, 0);
+    assert_eq!(resumed.combat.restart_count, 0);
+    assert_eq!(analysis.explorer.branches.len(), branch_count);
+    assert_eq!(analysis.edges.len(), edge_count);
+
+    let child_node_id = analysis
+        .accept_cursor_combat_incumbent()
+        .expect("explicitly accept the retained incumbent");
+    assert_eq!(analysis.cursor_node_id(), child_node_id);
+    assert_eq!(
+        analysis.view_cursor().expect("accepted child").boundary,
+        OracleRunBoundaryV1::Reward
+    );
+    assert!(!analysis.combat_jobs.contains_key(&0));
+}
+
+#[test]
+fn current_stage_probe_rejects_zero_work_without_mutation() {
+    let mut analysis = one_strike_combat_analysis(None);
+    let branch_count = analysis.explorer.branches.len();
+    let error = analysis
+        .probe_cursor_combat_stage(OracleAnalysisCombatProbeRequestV1 {
+            generation_work: 0,
+            ..OracleAnalysisCombatProbeRequestV1::default()
+        })
+        .expect_err("zero-work probes must fail");
+
+    assert!(error.contains("requires positive work"));
+    assert_eq!(analysis.explorer.branches.len(), branch_count);
+    assert_eq!(analysis.cursor_node_id(), 0);
+}
+
+#[test]
 fn strategic_advance_keeps_a_below_reserve_win_resident_until_explicit_acceptance() {
     // This deliberately crosses witness replay, analysis advance, and child
     // materialization: a lower-level predicate test cannot catch an unsafe

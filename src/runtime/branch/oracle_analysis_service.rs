@@ -17,7 +17,9 @@ pub use oracle_lab_protocol::{
 };
 
 use crate::eval::combat_lab_v1::atomic_write_json;
-use crate::eval::run_control::{OracleAnalysisAdvanceRequestV1, OracleAnalysisNodeViewV1};
+use crate::eval::run_control::{
+    OracleAnalysisAdvanceRequestV1, OracleAnalysisCombatProbeRequestV1, OracleAnalysisNodeViewV1,
+};
 
 use super::{
     oracle_autonomous_run::{
@@ -318,7 +320,7 @@ fn execute_command(
             json!({
                 "commands": [
                     "ping", "capabilities", "status", "explain", "route_policy_audit", "shop_policy_audit", "card_reward_policy_audit", "card_reward_path_audit", "campfire_policy_audit", "view", "tree", "try",
-                    "focus", "choose", "owner", "run", "choose_path", "follow", "back", "promote", "advance", "accept_combat", "restart_combat",
+                    "focus", "choose", "owner", "run", "choose_path", "follow", "back", "promote", "advance", "probe_combat", "accept_combat", "restart_combat",
                     "combat_scratch_start", "combat_scratch_status", "combat_scratch_observe", "combat_scratch_play", "combat_scratch_atomic", "combat_scratch_card", "combat_scratch_potion", "combat_scratch_end", "combat_scratch_selection", "combat_scratch_back", "combat_scratch_focus", "combat_scratch_search", "combat_scratch_tree", "combat_scratch_commit", "combat_scratch_clear", "history",
                     "journal", "timeline", "journal_entry", "trajectory", "combat_summary", "combat_diagnostic",
                     "export_combat_case", "export_continuation", "verify_run_witness", "escape_combat", "save", "shutdown"
@@ -602,6 +604,29 @@ fn execute_command(
                 quantum_ms: Some(quantum_ms),
                 wall_ms,
                 improve_incumbent,
+            })?;
+            (
+                json!({"report": report, "node": current_node_transition_summary(workspace, &view)?}),
+                true,
+                false,
+                false,
+            )
+        }
+        OracleAnalysisServiceCommandV1::ProbeCombat {
+            generation_work,
+            quantum_nodes,
+            wall_ms,
+        } => {
+            if generation_work == 0 || quantum_nodes == 0 || wall_ms == 0 {
+                return Err(
+                    "probe_combat requires positive generation_work, quantum_nodes, and wall_ms"
+                        .to_string(),
+                );
+            }
+            let (report, view) = workspace.probe_combat(OracleAnalysisCombatProbeRequestV1 {
+                generation_work,
+                quantum_nodes,
+                wall_ms,
             })?;
             (
                 json!({"report": report, "node": current_node_transition_summary(workspace, &view)?}),

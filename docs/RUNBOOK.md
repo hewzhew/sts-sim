@@ -301,6 +301,32 @@ cargo oracle-lab new --seed 20260713009 --ascension 0 --workspace .oracle-lab/ca
 .\ol-live.cmd live --session seed009 run --export-continuation .oracle-lab/cases/seed009.victory.continuation.json
 ```
 
+At a retained combat node, a quality-reaching witness does not prove that its
+local HP is optimal. Spend one deliberately small diagnostic grant in the
+current exact potion stage without advancing to another identity or committing
+the witness:
+
+```powershell
+.\ol-live.cmd live --session seed009 probe-combat `
+  --generation-work 4096 --quantum-nodes 256 --wall-ms 1000
+```
+
+The result reports `work_budget_reached`, `wall_reached`, `stage_exhausted`, or
+`no_progress`, plus the exact work consumed and current incumbent. The resident
+frontier remains in memory. Repeat another bounded probe only when its result
+can distinguish a concrete hypothesis; use `live ... accept` to materialize
+the retained incumbent explicitly. `advance --improve-incumbent` has a
+different contract: it stops once configured strategic quality is reached and
+is not a request to exhaust the whole caller budget.
+
+Offline parity is available for a single invocation:
+
+```powershell
+cargo oracle-lab probe-combat `
+  --workspace .oracle-lab/cases/seed009.workspace.json `
+  --generation-work 4096 --quantum-nodes 256 --wall-ms 1000
+```
+
 At an exact combat node, use the resident combat scratch surface for
 card-by-card analysis without writing action-list JSON or mutating the formal
 run tree:

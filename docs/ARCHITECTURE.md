@@ -321,6 +321,17 @@ at most `1 + 1 / active identities` allowances for non-Boss combat and
 caller's combat wall deadline remains authoritative. Slot order follows
 deterministic slot identity, not a potion value ranking.
 
+Strategic advance and current-stage diagnosis are separate typed operations.
+Strategic advance may stop at configured quality, promote an exact potion
+identity, and materialize an accepted witness. A combat probe instead receives
+one total generation-work cap, a portfolio preemption quantum, and one wall
+deadline. It temporarily disables both portfolio-level and local-graph
+satisfaction termination, serves only the already selected exact stage, and
+retains its frontier and incumbent without promotion or materialization. Its
+typed stop distinguishes work-budget completion, wall expiry, stage
+exhaustion, and zero progress. Only a later explicit combat acceptance may
+turn that retained incumbent into a run child.
+
 Opening an exact identity stage changes the legal potion-slot contract, not the
 shared action prior. Production does not globally raise every admitted root
 potion action to the highest policy weight: that intervention can replace a

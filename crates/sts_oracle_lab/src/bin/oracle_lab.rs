@@ -444,6 +444,19 @@ fn main() -> Result<(), String> {
             improve_incumbent,
             detailed,
         )?),
+        Command::ProbeCombat {
+            workspace,
+            generation_work,
+            quantum_nodes,
+            wall_ms,
+            detailed,
+        } => print_json(&workspace_commands::probe_combat(
+            &workspace,
+            generation_work,
+            quantum_nodes,
+            wall_ms,
+            detailed,
+        )?),
         Command::AcceptCombat { workspace } => {
             print_json(&workspace_commands::accept_combat(&workspace)?)
         }

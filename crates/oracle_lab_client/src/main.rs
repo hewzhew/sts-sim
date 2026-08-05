@@ -84,10 +84,20 @@ enum LiveCommand {
         quantum_ms: u64,
         #[arg(long, default_value_t = 10_000)]
         wall_ms: u64,
-        /// Spend the full bounded allowance improving a verified incumbent
-        /// instead of materializing the first exact victory immediately.
+        /// Continue past an insufficient first win until configured strategic
+        /// quality is reached.
         #[arg(long)]
         improve_incumbent: bool,
+    },
+    /// Spend a fixed diagnostic work budget only in the current combat stage.
+    /// This never promotes potion identity or materializes the incumbent.
+    ProbeCombat {
+        #[arg(long, default_value_t = 4_096)]
+        generation_work: usize,
+        #[arg(long, default_value_t = 256)]
+        quantum_nodes: usize,
+        #[arg(long, default_value_t = 1_000)]
+        wall_ms: u64,
     },
     /// Choose an owner-ranked decision at the current node.
     Choose {
@@ -407,6 +417,25 @@ fn run_live_command(endpoint: &Path, command: LiveCommand) -> Result<(), String>
                     quantum_ms,
                     wall_ms: Some(wall_ms),
                     improve_incumbent,
+                },
+            )?;
+            print_json(&compact_live_advance(&before, &result))
+        }
+        LiveCommand::ProbeCombat {
+            generation_work,
+            quantum_nodes,
+            wall_ms,
+        } => {
+            let before = live_call(
+                endpoint,
+                OracleAnalysisServiceCommandV1::Status { node: None },
+            )?;
+            let result = live_call(
+                endpoint,
+                OracleAnalysisServiceCommandV1::ProbeCombat {
+                    generation_work,
+                    quantum_nodes,
+                    wall_ms,
                 },
             )?;
             print_json(&compact_live_advance(&before, &result))
@@ -800,6 +829,7 @@ fn live_command_mutates(command: &LiveCommand) -> bool {
     matches!(
         command,
         LiveCommand::Advance { .. }
+            | LiveCommand::ProbeCombat { .. }
             | LiveCommand::Choose { .. }
             | LiveCommand::Focus { .. }
             | LiveCommand::Owner { .. }
@@ -989,9 +1019,11 @@ fn compact_live_advance(before: &Value, result: &Value) -> Value {
     let before_combat = before.get("combat");
     let after_combat = report.and_then(|report| report.get("combat"));
     json!({
-        "status": report.and_then(|report| report.get("status")),
+        "status": report.and_then(|report| report.get("status").or_else(|| report.get("stop"))),
         "elapsed_ms": report.and_then(|report| report.get("elapsed_ms")),
         "quanta": report.and_then(|report| report.get("quanta_served")),
+        "generation_work_requested": report.and_then(|report| report.get("generation_work_requested")),
+        "generation_work_consumed": report.and_then(|report| report.get("generation_work_consumed")),
         "work_delta": {
             "generation_work": value_u64(after_combat, "generation_work").saturating_sub(value_u64(before_combat, "generation_work")),
             "current_search_generation_work": value_u64(after_combat, "current_search_generation_work").saturating_sub(value_u64(before_combat, "current_search_generation_work")),
@@ -1987,6 +2019,36 @@ mod tests {
                     wall_ms: 5000,
                     improve_incumbent: true,
                     ..
+                },
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn typed_live_exposes_a_separate_current_stage_probe() {
+        let cli = Cli::try_parse_from([
+            "oracle_lab_client",
+            "--canonical-oracle",
+            "live",
+            "--session",
+            "seed009",
+            "probe-combat",
+            "--generation-work",
+            "768",
+            "--quantum-nodes",
+            "128",
+            "--wall-ms",
+            "250",
+        ])
+        .expect("parse current-stage live probe");
+        assert!(matches!(
+            cli.command,
+            Command::Live {
+                command: LiveCommand::ProbeCombat {
+                    generation_work: 768,
+                    quantum_nodes: 128,
+                    wall_ms: 250,
                 },
                 ..
             }
