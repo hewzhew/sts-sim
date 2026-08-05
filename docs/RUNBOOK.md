@@ -335,6 +335,8 @@ typed card ids; it never requires scratch node ids or action-list JSON:
 .\ol-live.cmd live --session seed009 lab open --node <combat-node> --baseline incumbent
 .\ol-live.cmd live --session seed009 lab goto --line current --turn <observed-turn> --before <action-ordinal>
 .\ol-live.cmd live --session seed009 lab back
+.\ol-live.cmd live --session seed009 lab keep
+.\ol-live.cmd live --session seed009 lab restore
 .\ol-live.cmd live --session seed009 lab play --card PowerThrough [--copy <occurrence>] [--target <monster-index>]
 .\ol-live.cmd live --session seed009 lab potion --potion FearPotion [--copy <occurrence>] [--target <monster-index>]
 .\ol-live.cmd live --session seed009 lab end
@@ -359,10 +361,14 @@ multiple active sessions require an explicit session or endpoint:
 
 `open`, `goto`, `back`, and `observe` return a complete decision frame. `goto`
 defaults to `--line current`; use `--line baseline` to recover an imported
-incumbent frame. A normal `play`, `potion`, or `end` returns only the typed state
-delta. Duplicate copies of one card or potion id return candidate occurrences;
-an action with several legal targets returns target ambiguity. Neither case
-mutates the line. A unique copy and unique target resolve automatically.
+incumbent frame. Before `goto` or `back` leaves the first non-baseline terminal
+win, the lab keeps that exact line automatically. `keep` deliberately replaces
+the one-slot recovery point with the current line; `restore` returns to it. A
+kept summary in full frames is recovery state, not a best-line verdict. A normal
+`play`, `potion`, or `end` returns only the typed state delta. Duplicate copies
+of one card or potion id return candidate occurrences; an action with several
+legal targets returns target ambiguity. Neither case mutates the line. A unique
+copy and unique target resolve automatically.
 `compare` reports the common prefix, first semantic divergence, both exact
 divergent tails, per-turn HP/block/enemy totals, potion use, and whether each
 suffix is terminally known. The semantic action projection contains card/potion

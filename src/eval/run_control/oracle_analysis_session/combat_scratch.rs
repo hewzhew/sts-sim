@@ -26,6 +26,7 @@ pub(super) struct OracleAnalysisCombatLineLabV1 {
     root_exact_state_hash: String,
     baseline_source: OracleAnalysisCombatLineLabBaselineSourceV1,
     baseline_scratch_node_ids: Vec<u64>,
+    kept_scratch_node_id: Option<u64>,
     max_engine_steps_per_transition: usize,
     cursor_scratch_node_id: u64,
     next_scratch_node_id: u64,
@@ -77,6 +78,7 @@ impl OracleAnalysisCombatLineLabV1 {
             root_exact_state_hash,
             baseline_source,
             baseline_scratch_node_ids: vec![0],
+            kept_scratch_node_id: None,
             max_engine_steps_per_transition,
             cursor_scratch_node_id: 0,
             next_scratch_node_id: 1,
@@ -141,6 +143,13 @@ impl OracleAnalysisCombatLineLabV1 {
                 "combat scratch cursor references missing node {}",
                 checkpoint.cursor_scratch_node_id
             ));
+        }
+        if let Some(kept_node_id) = checkpoint.kept_scratch_node_id {
+            if !nodes.contains_key(&kept_node_id) {
+                return Err(format!(
+                    "combat line lab kept line references missing node {kept_node_id}"
+                ));
+            }
         }
         let maximum_node_id = nodes.keys().next_back().copied().unwrap_or(0);
         if checkpoint.next_scratch_node_id <= maximum_node_id {
@@ -208,6 +217,7 @@ impl OracleAnalysisCombatLineLabV1 {
             root_exact_state_hash: checkpoint.root_exact_state_hash,
             baseline_source: checkpoint.baseline_source,
             baseline_scratch_node_ids: checkpoint.baseline_scratch_node_ids,
+            kept_scratch_node_id: checkpoint.kept_scratch_node_id,
             max_engine_steps_per_transition: checkpoint.max_engine_steps_per_transition,
             cursor_scratch_node_id: checkpoint.cursor_scratch_node_id,
             next_scratch_node_id: checkpoint.next_scratch_node_id,
@@ -228,6 +238,7 @@ impl OracleAnalysisCombatLineLabV1 {
             nodes: self.nodes.values().cloned().collect(),
             baseline_source: self.baseline_source,
             baseline_scratch_node_ids: self.baseline_scratch_node_ids.clone(),
+            kept_scratch_node_id: self.kept_scratch_node_id,
         }
     }
 
@@ -588,11 +599,18 @@ impl OracleAnalysisCombatLineLabV1 {
             self.view(selection_offset, selection_limit)?,
         );
         let location = self.location_at(self.cursor_scratch_node_id)?;
+        let kept_line = self
+            .kept_scratch_node_id
+            .map(|node_id| self.node_path(node_id))
+            .transpose()?
+            .map(|path| self.line_summary(&path))
+            .transpose()?;
         Ok(OracleAnalysisCombatLineLabFrameV1 {
             run_node_id: decision.run_node_id,
             context: decision.context,
             baseline_source: self.baseline_source,
             baseline_action_count: self.baseline_scratch_node_ids.len().saturating_sub(1),
+            kept_line,
             location,
             terminal: decision.terminal,
             turn: decision.turn,
@@ -637,6 +655,9 @@ impl OracleAnalysisCombatLineLabV1 {
                 matching.len()
             )
         })?;
+        if node_id != self.cursor_scratch_node_id {
+            self.keep_non_baseline_win_before_navigation()?;
+        }
         self.cursor_scratch_node_id = node_id;
         self.frame(selection_offset, selection_limit)
     }
@@ -646,7 +667,43 @@ impl OracleAnalysisCombatLineLabV1 {
         selection_offset: usize,
         selection_limit: usize,
     ) -> Result<OracleAnalysisCombatLineLabFrameV1, String> {
-        self.back_cursor()?;
+        let parent = self
+            .current_node()?
+            .parent_scratch_node_id
+            .ok_or_else(|| "combat scratch cursor is already at its root".to_string())?;
+        self.keep_non_baseline_win_before_navigation()?;
+        self.cursor_scratch_node_id = parent;
+        self.frame(selection_offset, selection_limit)
+    }
+
+    fn keep_non_baseline_win_before_navigation(&mut self) -> Result<(), String> {
+        if self.kept_scratch_node_id.is_some()
+            || EngineCombatStepper.terminal(self.current_position()?) != CombatTerminal::Win
+        {
+            return Ok(());
+        }
+        if self.cursor_node_path()? != self.baseline_scratch_node_ids {
+            self.kept_scratch_node_id = Some(self.cursor_scratch_node_id);
+        }
+        Ok(())
+    }
+
+    fn keep_current_line(&mut self) -> Result<OracleAnalysisCombatLineLabLineSummaryV1, String> {
+        let path = self.cursor_node_path()?;
+        let summary = self.line_summary(&path)?;
+        self.kept_scratch_node_id = Some(self.cursor_scratch_node_id);
+        Ok(summary)
+    }
+
+    fn restore_kept_line(
+        &mut self,
+        selection_offset: usize,
+        selection_limit: usize,
+    ) -> Result<OracleAnalysisCombatLineLabFrameV1, String> {
+        self.cursor_scratch_node_id = self.kept_scratch_node_id.ok_or_else(|| {
+            "combat line lab has no kept line; use lab keep before replacing the current line"
+                .to_string()
+        })?;
         self.frame(selection_offset, selection_limit)
     }
 
@@ -1030,6 +1087,26 @@ impl OracleAnalysisSessionV1 {
             .as_mut()
             .ok_or_else(|| "oracle analysis workspace has no active combat line lab".to_string())?
             .back_frame(selection_offset, selection_limit)
+    }
+
+    pub fn keep_combat_line_lab(
+        &mut self,
+    ) -> Result<OracleAnalysisCombatLineLabLineSummaryV1, String> {
+        self.combat_scratch
+            .as_mut()
+            .ok_or_else(|| "oracle analysis workspace has no active combat line lab".to_string())?
+            .keep_current_line()
+    }
+
+    pub fn restore_kept_combat_line_lab(
+        &mut self,
+        selection_offset: usize,
+        selection_limit: usize,
+    ) -> Result<OracleAnalysisCombatLineLabFrameV1, String> {
+        self.combat_scratch
+            .as_mut()
+            .ok_or_else(|| "oracle analysis workspace has no active combat line lab".to_string())?
+            .restore_kept_line(selection_offset, selection_limit)
     }
 
     pub fn play_combat_line_lab_card(

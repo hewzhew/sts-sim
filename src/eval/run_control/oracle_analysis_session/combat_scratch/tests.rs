@@ -71,6 +71,48 @@ fn one_strike_combat() -> crate::runtime::combat::CombatState {
     combat
 }
 
+fn strike_baseline_line_lab(duplicate_strike: bool) -> (OracleAnalysisSessionV1, u32) {
+    let mut combat = one_strike_combat();
+    if duplicate_strike {
+        combat
+            .zones
+            .hand
+            .push(CombatCard::new(crate::content::cards::CardId::Strike, 2));
+    }
+    let mut analysis = scratch_analysis_at_engine(combat, EngineState::CombatPlayerTurn);
+    let (context, root) = {
+        let branch = analysis.require_branch(0).expect("combat branch");
+        (
+            OracleAnalysisCombatScratchContextV1 {
+                act: branch.session.run_state.act_num,
+                floor: branch.session.run_state.floor_num,
+                gold: branch.session.run_state.gold,
+            },
+            branch
+                .session
+                .current_active_combat_position()
+                .expect("exact combat root"),
+        )
+    };
+    let target = root.combat.entities.monsters[0].id;
+    let baseline_turn = root.combat.turn.turn_count;
+    analysis.combat_scratch = Some(
+        OracleAnalysisCombatLineLabV1::start_with_baseline(
+            0,
+            context,
+            root,
+            OracleAnalysisCombatLineLabBaselineSourceV1::ResidentIncumbent,
+            &[ClientInput::PlayCard {
+                card_index: 0,
+                target: Some(target),
+            }],
+            250,
+        )
+        .expect("import verified baseline"),
+    );
+    (analysis, baseline_turn)
+}
+
 #[test]
 fn combat_scratch_derives_sentry_bolt_intent_from_locked_turn_truth() {
     let mut combat = crate::test_support::blank_test_combat();
@@ -615,34 +657,8 @@ fn combat_scratch_pages_structured_selection_inputs_without_eager_storage() {
 
 #[test]
 fn combat_line_lab_imports_a_complete_baseline_and_branches_by_turn_without_node_ids() {
-    let mut analysis = one_strike_scratch_analysis();
-    let (context, root) = {
-        let branch = analysis.require_branch(0).expect("combat branch");
-        (
-            OracleAnalysisCombatScratchContextV1 {
-                act: branch.session.run_state.act_num,
-                floor: branch.session.run_state.floor_num,
-                gold: branch.session.run_state.gold,
-            },
-            branch
-                .session
-                .current_active_combat_position()
-                .expect("exact combat root"),
-        )
-    };
-    let target = root.combat.entities.monsters[0].id;
-    let scratch = OracleAnalysisCombatLineLabV1::start_with_baseline(
-        0,
-        context,
-        root,
-        OracleAnalysisCombatLineLabBaselineSourceV1::ResidentIncumbent,
-        &[ClientInput::PlayCard {
-            card_index: 0,
-            target: Some(target),
-        }],
-        250,
-    )
-    .expect("import verified baseline");
+    let (mut analysis, baseline_turn) = strike_baseline_line_lab(false);
+    let scratch = analysis.combat_scratch.as_ref().expect("active line lab");
     assert_eq!(
         scratch
             .line_summary(&scratch.baseline_scratch_node_ids)
@@ -650,14 +666,6 @@ fn combat_line_lab_imports_a_complete_baseline_and_branches_by_turn_without_node
             .terminal,
         CombatTerminal::Win
     );
-    let baseline_turn = scratch
-        .positions
-        .get(&0)
-        .expect("baseline root position")
-        .combat
-        .turn
-        .turn_count;
-    analysis.combat_scratch = Some(scratch);
 
     let open_frame = analysis
         .combat_line_lab_frame(0, 16)
@@ -739,6 +747,90 @@ fn combat_line_lab_imports_a_complete_baseline_and_branches_by_turn_without_node
         Some(OracleAnalysisCombatLineLabActionV1::EndTurn)
     );
     assert!(!comparison.current.suffix_known);
+}
+
+#[test]
+fn combat_line_lab_keeps_a_divergent_win_before_rewind_and_restores_it_without_node_ids() {
+    let (mut analysis, baseline_turn) = strike_baseline_line_lab(true);
+    let baseline_root = analysis
+        .goto_combat_line_lab(
+            OracleAnalysisCombatLineLabLineV1::Baseline,
+            baseline_turn,
+            0,
+            0,
+            16,
+        )
+        .expect("leave baseline terminal at root");
+    assert!(baseline_root.kept_line.is_none());
+    let played = analysis
+        .play_combat_line_lab_card(crate::content::cards::CardId::Strike, Some(1), None, 0, 16)
+        .expect("play divergent duplicate strike");
+    assert!(matches!(
+        played,
+        OracleAnalysisCombatLineLabPlayCardResultV1::Played { .. }
+    ));
+
+    let rewound = analysis
+        .goto_combat_line_lab(
+            OracleAnalysisCombatLineLabLineV1::Baseline,
+            baseline_turn,
+            0,
+            0,
+            16,
+        )
+        .expect("rewind while protecting divergent win");
+    let kept = rewound.kept_line.expect("divergent win was kept");
+    assert_eq!(kept.terminal, CombatTerminal::Win);
+    assert_eq!(kept.action_count, 1);
+    let restored = analysis
+        .restore_kept_combat_line_lab(0, 16)
+        .expect("restore kept win");
+    assert_eq!(restored.terminal, CombatTerminal::Win);
+    assert_eq!(restored.location.action_index, 1);
+    let encoded = serde_json::to_string(&restored).expect("encode restored frame");
+    assert!(!encoded.contains("scratch_node"), "{encoded}");
+    assert!(!encoded.contains("uuid"), "{encoded}");
+
+    let scratch = analysis.combat_scratch.as_ref().expect("active line lab");
+    let checkpoint = scratch.checkpoint();
+    assert!(checkpoint.kept_scratch_node_id.is_some());
+    let mut hydrated = OracleAnalysisCombatLineLabV1::restore(
+        checkpoint,
+        scratch.context.clone(),
+        scratch.positions.get(&0).expect("root position").clone(),
+    )
+    .expect("restore kept line checkpoint");
+    assert_eq!(
+        hydrated
+            .restore_kept_line(0, 16)
+            .expect("restore kept win after hydration")
+            .terminal,
+        CombatTerminal::Win
+    );
+}
+
+#[test]
+fn combat_line_lab_explicit_keep_can_restore_an_unresolved_exact_line() {
+    let (mut analysis, baseline_turn) = strike_baseline_line_lab(false);
+    analysis
+        .goto_combat_line_lab(
+            OracleAnalysisCombatLineLabLineV1::Baseline,
+            baseline_turn,
+            0,
+            0,
+            16,
+        )
+        .expect("goto unresolved root");
+    let kept = analysis.keep_combat_line_lab().expect("keep exact root");
+    assert_eq!(kept.terminal, CombatTerminal::Unresolved);
+    analysis
+        .play_combat_line_lab_card(crate::content::cards::CardId::Strike, None, None, 0, 16)
+        .expect("leave kept root");
+    let restored = analysis
+        .restore_kept_combat_line_lab(0, 16)
+        .expect("restore exact root");
+    assert_eq!(restored.terminal, CombatTerminal::Unresolved);
+    assert_eq!(restored.location.action_index, 0);
 }
 
 #[test]

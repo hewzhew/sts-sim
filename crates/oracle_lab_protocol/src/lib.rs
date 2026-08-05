@@ -212,6 +212,13 @@ pub enum OracleAnalysisServiceCommandV1 {
         #[serde(default = "default_combat_scratch_selection_limit")]
         selection_limit: usize,
     },
+    CombatLabKeep,
+    CombatLabRestore {
+        #[serde(default)]
+        selection_offset: usize,
+        #[serde(default = "default_combat_scratch_selection_limit")]
+        selection_limit: usize,
+    },
     CombatLabPlayCard {
         card_id: String,
         #[serde(default)]
@@ -923,6 +930,27 @@ mod tests {
         assert!(matches!(
             back,
             OracleAnalysisServiceCommandV1::CombatLabBack {
+                selection_offset: 0,
+                selection_limit: 24,
+            }
+        ));
+
+        let keep = serde_json::from_value::<OracleAnalysisServiceCommandV1>(json!({
+            "command": "combat_lab_keep",
+        }))
+        .expect("parse combat lab keep");
+        assert!(matches!(
+            keep,
+            OracleAnalysisServiceCommandV1::CombatLabKeep
+        ));
+
+        let restore = serde_json::from_value::<OracleAnalysisServiceCommandV1>(json!({
+            "command": "combat_lab_restore",
+        }))
+        .expect("parse combat lab restore");
+        assert!(matches!(
+            restore,
+            OracleAnalysisServiceCommandV1::CombatLabRestore {
                 selection_offset: 0,
                 selection_limit: 24,
             }

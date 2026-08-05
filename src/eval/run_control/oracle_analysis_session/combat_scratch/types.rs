@@ -60,6 +60,8 @@ pub struct OracleAnalysisCombatScratchCheckpointV1 {
     pub baseline_source: OracleAnalysisCombatLineLabBaselineSourceV1,
     #[serde(default = "combat_line_lab_root_path")]
     pub baseline_scratch_node_ids: Vec<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kept_scratch_node_id: Option<u64>,
 }
 
 fn combat_line_lab_root_path() -> Vec<u64> {
@@ -964,6 +966,8 @@ pub struct OracleAnalysisCombatLineLabFrameV1 {
     pub context: OracleAnalysisCombatScratchContextV1,
     pub baseline_source: OracleAnalysisCombatLineLabBaselineSourceV1,
     pub baseline_action_count: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub kept_line: Option<OracleAnalysisCombatLineLabLineSummaryV1>,
     pub location: OracleAnalysisCombatLineLabLocationV1,
     pub terminal: CombatTerminal,
     pub turn: u32,

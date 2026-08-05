@@ -322,7 +322,7 @@ fn execute_command(
                 "commands": [
                     "ping", "capabilities", "status", "explain", "route_policy_audit", "shop_policy_audit", "card_reward_policy_audit", "card_reward_path_audit", "campfire_policy_audit", "view", "tree", "try",
                     "focus", "choose", "owner", "run", "choose_path", "follow", "back", "promote", "advance", "probe_combat", "accept_combat", "restart_combat",
-                    "combat_lab_open", "combat_lab_observe", "combat_lab_goto", "combat_lab_back", "combat_lab_play_card", "combat_lab_use_potion", "combat_lab_end", "combat_lab_search", "combat_lab_compare", "combat_lab_commit", "combat_lab_clear",
+                    "combat_lab_open", "combat_lab_observe", "combat_lab_goto", "combat_lab_back", "combat_lab_keep", "combat_lab_restore", "combat_lab_play_card", "combat_lab_use_potion", "combat_lab_end", "combat_lab_search", "combat_lab_compare", "combat_lab_commit", "combat_lab_clear",
                     "combat_scratch_start", "combat_scratch_status", "combat_scratch_observe", "combat_scratch_play", "combat_scratch_atomic", "combat_scratch_card", "combat_scratch_potion", "combat_scratch_end", "combat_scratch_selection", "combat_scratch_back", "combat_scratch_focus", "combat_scratch_search", "combat_scratch_tree", "combat_scratch_commit", "combat_scratch_clear", "history",
                     "journal", "timeline", "journal_entry", "trajectory", "combat_summary", "combat_diagnostic",
                     "export_combat_case", "export_continuation", "verify_run_witness", "escape_combat", "save", "shutdown"
@@ -729,6 +729,25 @@ fn execute_command(
                 workspace
                     .session
                     .back_combat_line_lab(selection_offset, selection_limit)?,
+            )?,
+            true,
+            false,
+            false,
+        ),
+        OracleAnalysisServiceCommandV1::CombatLabKeep => (
+            to_value(workspace.session.keep_combat_line_lab()?)?,
+            true,
+            false,
+            false,
+        ),
+        OracleAnalysisServiceCommandV1::CombatLabRestore {
+            selection_offset,
+            selection_limit,
+        } => (
+            to_value(
+                workspace
+                    .session
+                    .restore_kept_combat_line_lab(selection_offset, selection_limit)?,
             )?,
             true,
             false,

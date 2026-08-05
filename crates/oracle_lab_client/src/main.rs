@@ -291,6 +291,13 @@ enum LiveLabCommand {
         #[command(flatten)]
         page: LiveScratchPageArgs,
     },
+    /// Keep the exact current line as the one-slot restore point.
+    Keep,
+    /// Return to the exact kept line without naming an internal node.
+    Restore {
+        #[command(flatten)]
+        page: LiveScratchPageArgs,
+    },
     /// Play a typed card id from the current frame; duplicate copies return typed ambiguity.
     Play {
         #[arg(long)]
@@ -774,6 +781,17 @@ fn run_live_command(endpoint: &Path, command: LiveCommand) -> Result<(), String>
                     selection_limit: usize::from(page.selection_limit),
                 },
             )?),
+            LiveLabCommand::Keep => print_json(&live_call(
+                endpoint,
+                OracleAnalysisServiceCommandV1::CombatLabKeep,
+            )?),
+            LiveLabCommand::Restore { page } => print_json(&live_call(
+                endpoint,
+                OracleAnalysisServiceCommandV1::CombatLabRestore {
+                    selection_offset: page.selection_offset,
+                    selection_limit: usize::from(page.selection_limit),
+                },
+            )?),
             LiveLabCommand::Play {
                 card,
                 occurrence,
@@ -1049,6 +1067,8 @@ fn live_command_mutates(command: &LiveCommand) -> bool {
                 command: LiveLabCommand::Open { .. }
                     | LiveLabCommand::Goto { .. }
                     | LiveLabCommand::Back { .. }
+                    | LiveLabCommand::Keep
+                    | LiveLabCommand::Restore { .. }
                     | LiveLabCommand::Play { .. }
                     | LiveLabCommand::Potion { .. }
                     | LiveLabCommand::End { .. }
@@ -2497,6 +2517,46 @@ mod tests {
             Command::Live {
                 command: LiveCommand::Lab {
                     command: LiveLabCommand::Back { .. }
+                },
+                ..
+            }
+        ));
+
+        let keep = Cli::try_parse_from([
+            "oracle_lab_client",
+            "--canonical-oracle",
+            "live",
+            "--session",
+            "seed008",
+            "lab",
+            "keep",
+        ])
+        .expect("parse keep current line");
+        assert!(matches!(
+            keep.command,
+            Command::Live {
+                command: LiveCommand::Lab {
+                    command: LiveLabCommand::Keep
+                },
+                ..
+            }
+        ));
+
+        let restore = Cli::try_parse_from([
+            "oracle_lab_client",
+            "--canonical-oracle",
+            "live",
+            "--session",
+            "seed008",
+            "lab",
+            "restore",
+        ])
+        .expect("parse kept line restore");
+        assert!(matches!(
+            restore.command,
+            Command::Live {
+                command: LiveCommand::Lab {
+                    command: LiveLabCommand::Restore { .. }
                 },
                 ..
             }

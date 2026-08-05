@@ -526,6 +526,16 @@ instead of guessing or mutating the line. The runtime resolves the selected
 observation-local copy and target to exact internal identities before applying
 the durable `ClientInput`.
 
+One optional kept-line pointer protects reversible experimentation without
+creating another line owner. Before semantic navigation leaves the first
+non-baseline terminal win, the lab keeps that exact tip automatically; `keep`
+may explicitly replace it with the current exact line, including an unresolved
+one, and `restore` returns to it without exposing an internal node id. The kept
+line is a caller-selected recovery point, not a claim that HP, potion use, or any
+other combat-local ordering makes it strategically optimal. Its pointer is
+validated and replayed with the rest of the checkpoint, while normal frames
+expose only its typed line summary.
+
 `open` establishes one complete decision frame. Ordinary semantic actions return
 typed deltas without scratch node ids, while `observe` returns a full recovery
 frame. `compare` owns the relationship between baseline and current line: common
