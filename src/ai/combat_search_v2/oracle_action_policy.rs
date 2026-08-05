@@ -20,7 +20,14 @@ use super::value::combat_search_state_value_for_state;
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct OracleCombatRolloutGuideV1 {
     pub components: Vec<i32>,
+    pub winning_suffix: Option<OracleCombatRolloutWinningSuffixV1>,
     pub actions_simulated: usize,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OracleCombatRolloutWinningSuffixV1 {
+    pub actions: Vec<ClientInput>,
+    pub final_hp_hint: i32,
 }
 
 /// One shared evaluation of the typed combat-state knowledge consumed by the
@@ -63,9 +70,10 @@ pub struct OracleAtomicActionPriorityDiagnosticV1 {
     pub reactive_bad_draw_cards: i32,
 }
 
-/// Runs one bounded, non-authoritative tactical rollout and returns only its
-/// ordering evidence. The simulated actions are deliberately not exposed:
-/// callers must generate and replay their own exact witness.
+/// Runs one bounded, non-authoritative tactical rollout. Its typed rank remains
+/// ordering evidence. A complete terminal-win action suffix may also be
+/// exposed as an untrusted proposal; callers must validate it at the exact
+/// evaluated state and replay the joined line from their unchanged root.
 pub fn oracle_combat_rollout_guide_v1(
     position: &CombatPosition,
     max_actions: usize,
@@ -118,6 +126,17 @@ pub fn oracle_combat_rollout_guide_v1(
         + usize::from(estimate.high_fanout_pending_choice)) as i32
         + estimate.gremlin_nob_anger_amount_total.max(0)
         + estimate.pending_choice_estimated_action_fanout as i32;
+    let winning_suffix =
+        estimate
+            .is_replayable_terminal_win()
+            .then(|| OracleCombatRolloutWinningSuffixV1 {
+                actions: estimate
+                    .action_preview
+                    .iter()
+                    .map(|action| action.input.clone())
+                    .collect(),
+                final_hp_hint: estimate.final_hp,
+            });
     OracleCombatRolloutGuideV1 {
         // Positive existence evidence leads. Non-winning bounded rollouts
         // remain live heuristic estimates rather than false refutations.
@@ -140,6 +159,7 @@ pub fn oracle_combat_rollout_guide_v1(
             -(estimate.turns as i32),
             -(estimate.cards_played as i32),
         ],
+        winning_suffix,
         actions_simulated: estimate.actions_simulated,
     }
 }

@@ -831,7 +831,8 @@ impl OracleRunCombatWorkV1 {
                     return None;
                 }
                 match witness.discovery_source {
-                    OracleCombatWitnessDiscoverySource::PlannerSearch => {
+                    OracleCombatWitnessDiscoverySource::PlannerSearch
+                    | OracleCombatWitnessDiscoverySource::LookaheadProposal => {
                         Some(PortfolioMemberV1::LocalTurnGraph)
                     }
                     OracleCombatWitnessDiscoverySource::PolicyDiscrepancySearch => {
@@ -1426,6 +1427,9 @@ impl OracleRunCombatWorkV1 {
                     CombatAutomationTrajectorySource::MaturePolicyProposal
                 }
                 OracleCombatWitnessDiscoverySource::PlannerSearch => {
+                    CombatAutomationTrajectorySource::SearchCombat
+                }
+                OracleCombatWitnessDiscoverySource::LookaheadProposal => {
                     CombatAutomationTrajectorySource::SearchCombat
                 }
                 OracleCombatWitnessDiscoverySource::PolicyDiscrepancySearch => {

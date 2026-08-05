@@ -20,8 +20,10 @@ Use the narrowest maintained surface for the task:
 | `branch_panel` | Small smoke, continuation, drain, or comparison panels. |
 | `combat_case_review` | Diagnostic review of one saved combat case. |
 | `combat_search_v2_driver` | Fixed combat starts, captures, benchmarks, and offline laboratories. |
-| `cargo oracle-lab` / `cargo ol` | Build-owning offline oracle commands. |
-| `.\ol.cmd` | Repeated offline oracle calls through the canonical artifact guard. |
+| `cargo oracle-lab contract --help` | Rebuild the canonical oracle host and show the compact V2 contract surface. |
+| `.\ol.cmd contract combat` | One bounded exact-combat experiment with compact stdout and automatic full evidence. |
+| `.\ol.cmd artifact summary/rerun` | Read or reproduce a V2 request without parsing its full report. |
+| `.\ol.cmd case import/list` | Admit and query exact roots in the explicit V2 catalog. |
 | `.\ol.cmd drive` | Bounded current-owner and ordinary-combat progression in one process. |
 | `cargo ol-live` | Build or rebuild the lightweight resident client, then run it. |
 | `.\ol-live.cmd` | Invoke the validated canonical resident client directly for low-latency repeated calls. |
@@ -37,6 +39,25 @@ Detailed recipes:
 - [Combat Evidence And Offline Laboratories](runbooks/combat-evidence.md)
 - [Oracle Operations](runbooks/oracle-operations.md)
 - [Performance Investigation](runbooks/performance.md)
+
+Routine combat experiments must not use PowerShell to list guessed filenames,
+select JSON paths, or construct report summaries. Admit one exact root once,
+then run and reproduce it through the stable V2 protocol:
+
+```powershell
+.\ol.cmd case import --case <case.json>
+.\ol.cmd contract combat --case-id <unique-root-prefix> `
+  --min-final-hp 20 --max-potions-used 0 `
+  --require-recovered-stolen-gold --generation-work 4096
+.\ol.cmd artifact summary <artifact-directory>
+.\ol.cmd artifact rerun <artifact-directory>
+```
+
+`contract combat` writes a fresh `.oracle-lab/v2/contracts/<id>/` directory.
+`manifest.json` owns the typed request, compact result, source identity, and
+paths to `report.json` plus the selected replay-exact `witness.actions.json`
+when a candidate exists. Summary and rerun read only the V2 manifest. They
+deliberately reject legacy reports instead of guessing their schema.
 
 ## Branch Tiny And Branch Panels
 
@@ -219,21 +240,21 @@ next-turn probe inspects only the requested survival-ranked roots; an unprobed
 remainder is reported as censoring, never as a non-existence result.
 
 For a descendant suffix whose victory heal makes relative HP loss ambiguous,
-use absolute terminal satisfaction. A retained potion requires an explicit
-slot contract; an already-consumed descendant can remain potion-free:
+use absolute terminal satisfaction. The V2 contract starts from an exact case
+root, enables bounded rollout suffix proposals, enforces its typed potion and
+stolen-gold contract during witness acceptance, and classifies a missing
+budget-limited result without expanding stdout:
 
 ```powershell
-.\ol.cmd combat-case-local-graph --case <descendant.case.json> --satisfy-min-final-hp 20 --max-potions-used 0
-.\ol.cmd combat-case-local-graph --case <root.case.json> --satisfy-min-final-hp 20 --max-potions-used 1 --potion-slot 2
+.\ol.cmd contract combat --case <descendant.case.json> `
+  --min-final-hp 20 --max-potions-used 0 --generation-work 4096
 ```
 
-For one-factor attribution inside the local graph, `--omit-guide-lane <N>`
-removes one positive typed guide lane without changing action legality or
-terminal truth. `--boost-guide-lane <N> --boost-guide-extra-services <K>` gives
-that existing lane `K` additional boundary-selection turns per rotation while
-keeping every entry one-shot and every service quantum unchanged. These are
-lab controls: they are recorded in `execution_profile` / `search_spec`, cannot
-be combined with `--anchor-only`, and the boosted lane cannot also be omitted.
+Concrete potion-identity comparisons belong to
+`combat-case-potion-expenditure-audit`; the compact V2 contract does not expose
+local-graph scheduler, guide, or slot-ablation knobs. Add a typed contract
+owner when a repeated causal question truly needs one instead of reopening the
+old all-flags command.
 
 Keep full JSON and build output below `.oracle-lab`; report aggregate lane
 results and a short failure tail. A missing budget-limited witness remains

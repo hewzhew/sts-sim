@@ -145,6 +145,111 @@ fn local_turn_graph_policy_proposal_requires_exact_root_replay() {
 }
 
 #[test]
+fn local_turn_graph_joins_a_lookahead_suffix_to_its_exact_prefix_before_replay() {
+    let stepper = TinyTurnStepper::lethal_after_current_turn();
+    let mut session = LocalTurnGraphWitnessSession::with_policy_and_lookahead(
+        root(),
+        LocalTurnGraphWitnessConfig {
+            generator: config(),
+            generation_quantum_work: 1,
+            backed_generation_quantum_work: 1,
+            initial_expansion_work: 1,
+            root_initial_expansion_work: 1,
+            lookahead_max_evaluations: 8,
+            lookahead_work_per_evaluation: 1,
+            max_turn_depth: 4,
+            satisfaction: OracleCombatWitnessSatisfaction::FirstWitness,
+            ..LocalTurnGraphWitnessConfig::default()
+        },
+        Arc::new(PreferEndTurnPolicy),
+        Arc::new(TurnTwoWinningSuffixLookahead {
+            final_hp_hint_delta: 0,
+            input: PLAY,
+        }),
+    );
+
+    let report = session.advance(
+        LocalTurnGraphWitnessQuantum {
+            additional_selections: 32,
+            additional_generation_work: 64,
+            additional_engine_steps: 256,
+            deadline: None,
+        },
+        &stepper,
+    );
+
+    assert_eq!(report.status, LocalTurnGraphWitnessStatus::WitnessFound);
+    let witness = report.witness.expect("replay-verified suffix witness");
+    assert_eq!(
+        witness.discovery_source,
+        OracleCombatWitnessDiscoverySource::LookaheadProposal
+    );
+    assert_eq!(
+        witness
+            .actions
+            .iter()
+            .map(|action| action.input.clone())
+            .collect::<Vec<_>>(),
+        vec![ClientInput::EndTurn, PLAY],
+        "the descendant proposal must retain the graph's exact root prefix"
+    );
+    assert_eq!(report.counters.lookahead_suffix_proposals, 1);
+    assert_eq!(report.counters.lookahead_suffix_proposal_rejections, 0);
+    assert_eq!(report.counters.lookahead_suffix_witnesses, 1);
+    assert!(report.counters.lookahead_suffix_replay_engine_steps >= 2);
+}
+
+#[test]
+fn local_turn_graph_rejects_an_untrusted_lookahead_suffix_without_poisoning_search() {
+    let stepper = TinyTurnStepper::lethal_after_current_turn();
+    let mut session = LocalTurnGraphWitnessSession::with_policy_and_lookahead(
+        root(),
+        LocalTurnGraphWitnessConfig {
+            generator: config(),
+            generation_quantum_work: 1,
+            backed_generation_quantum_work: 1,
+            initial_expansion_work: 1,
+            root_initial_expansion_work: 1,
+            lookahead_max_evaluations: 8,
+            lookahead_work_per_evaluation: 1,
+            max_turn_depth: 4,
+            satisfaction: OracleCombatWitnessSatisfaction::BudgetOrExhaustion,
+            ..LocalTurnGraphWitnessConfig::default()
+        },
+        Arc::new(PreferEndTurnPolicy),
+        Arc::new(TurnTwoWinningSuffixLookahead {
+            final_hp_hint_delta: 1,
+            input: PLAY,
+        }),
+    );
+
+    let report = session.advance(
+        LocalTurnGraphWitnessQuantum {
+            additional_selections: 8,
+            additional_generation_work: 16,
+            additional_engine_steps: 64,
+            deadline: None,
+        },
+        &stepper,
+    );
+
+    assert!(
+        !matches!(
+            report.status,
+            LocalTurnGraphWitnessStatus::ReplayMismatch(_)
+        ),
+        "an untrusted proposal rejection must not poison exact graph search"
+    );
+    assert_eq!(report.counters.lookahead_suffix_proposals, 1);
+    assert_eq!(report.counters.lookahead_suffix_proposal_rejections, 1);
+    assert_eq!(report.counters.lookahead_suffix_witnesses, 0);
+    assert!(report
+        .witness_frontier
+        .iter()
+        .all(|outcome| outcome.final_hp != i32::MAX));
+}
+
+#[test]
 fn local_turn_graph_policy_line_defers_reserved_conversion_at_a_safe_phase_boundary() {
     let stepper = TinyTurnStepper::activating_finite_skill_conversion();
     let mut session = LocalTurnGraphWitnessSession::with_policy(

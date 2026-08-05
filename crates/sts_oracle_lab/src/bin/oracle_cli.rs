@@ -21,6 +21,8 @@ use super::combat_route_compare::CombatCaseRouteCompareArgs;
 use super::combat_scratch_cli::CombatScratchCommand;
 use super::depth_beam_audits::DepthBeamTurnAuditArgs;
 use super::guidance_combination_audit::GuidanceCombinationAuditArgs;
+use super::oracle_case_catalog_v2::CaseCommandArgs;
+use super::oracle_contract_v2::{ArtifactCommandArgs, ContractCommandArgs};
 use super::oracle_seed_panel::OracleSeedPanelArgs;
 use super::policy_discrepancy_search::CombatCasePolicyDiscrepancyArgs;
 use super::potion_expenditure_audit::CombatCasePotionExpenditureAuditArgs;
@@ -51,6 +53,12 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 pub(super) enum Command {
+    /// Run bounded, replay-verified experiments through the compact V2 protocol.
+    Contract(ContractCommandArgs),
+    /// Inspect or rerun one V2 experiment artifact without parsing its full report.
+    Artifact(ArtifactCommandArgs),
+    /// Import and query exact combat roots in the explicit V2 case catalog.
+    Case(CaseCommandArgs),
     /// Run consecutive A0 oracle seeds with durable per-seed reports and resumable stops.
     SeedPanel(OracleSeedPanelArgs),
     /// Start a new A0-style oracle analysis workspace at Neow.
@@ -236,8 +244,8 @@ pub(super) enum Command {
     /// Follow the action policy to terminal states and search complete
     /// trajectories by increasing weighted policy discrepancy.
     CombatCasePolicyDiscrepancy(CombatCasePolicyDiscrepancyArgs),
-    /// Isolated local-graph component with node-local lazy widening.
-    #[command(name = "combat-case", visible_alias = "combat-case-local-graph")]
+    /// Internal full-fidelity local-graph diagnostic surface.
+    #[command(name = "combat-case-diagnostic", hide = true)]
     CombatCaseLocalGraph(CombatCaseLocalGraphArgs),
     /// Restore one case's captured production owner and serve one bounded in-memory attempt.
     CombatCaseOwnerParity(CombatCaseOwnerParityArgs),

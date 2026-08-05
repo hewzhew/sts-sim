@@ -45,8 +45,9 @@ pub(super) struct CombatCaseLocalGraphArgs {
     /// the root player turn, then restore all guides at later turns.
     #[arg(long, conflicts_with = "anchor_only")]
     root_turn_anchor_only: bool,
-    /// Opt-in capability migration: lazily evaluate selected exact states
-    /// with bounded rollout evidence. Rollout actions are never injected.
+    /// Internal diagnostic control: lazily evaluate selected exact boundaries.
+    /// A complete rollout win may propose an untrusted suffix; only joined
+    /// original-root replay can admit it as a witness.
     #[arg(
         long,
         conflicts_with = "anchor_only",

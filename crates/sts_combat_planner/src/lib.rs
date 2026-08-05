@@ -41,9 +41,10 @@ pub use local_turn_graph_search::{
 pub use policy::{
     combat_plan_selection_timing_policy_v1, combat_plan_state_guide_policy_v1, CombatActionPolicy,
     CombatGuideLaneId, CombatLookaheadEvaluation, CombatLookaheadEvaluator,
-    CombatPlanSelectionTimingPolicyV1, CombatPlanStateGuidePolicyV1, CombatPolicyChoice,
-    CombatPolicyWitnessProposal, CombatStateGuide, CombatStateGuideRank, SharedCombatActionPolicy,
-    SharedCombatLookaheadEvaluator, UniformCombatActionPolicy, COMBAT_PLAN_STATE_GUIDE_LANE_V1,
+    CombatLookaheadSuffixProposal, CombatPlanSelectionTimingPolicyV1, CombatPlanStateGuidePolicyV1,
+    CombatPolicyChoice, CombatPolicyWitnessProposal, CombatStateGuide, CombatStateGuideRank,
+    SharedCombatActionPolicy, SharedCombatLookaheadEvaluator, UniformCombatActionPolicy,
+    COMBAT_PLAN_STATE_GUIDE_LANE_V1,
 };
 pub use policy_discrepancy_search::{
     PolicyDiscrepancyConfig, PolicyDiscrepancyCounters, PolicyDiscrepancyInterruption,

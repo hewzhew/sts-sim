@@ -92,8 +92,18 @@ Use these principles unless stronger measured evidence replaces them:
   hypotheses; preserve its already durable partial summary.
 - Treat a budget-limited missing witness as unknown, not as proof of loss,
   potion value, or policy quality.
-- Use the canonical `cargo oracle-lab` surface for oracle-lab evidence as
-  documented in `docs/RUNBOOK.md`.
+- Use the V2 `.\ol.cmd contract`, `artifact`, and `case` surfaces for routine
+  exact-combat evidence as documented in `docs/RUNBOOK.md`. Rebuild through
+  `cargo oracle-lab contract --help`.
+- Repeated shell discovery, guessed JSON paths, manual artifact naming, large
+  default output, stale help, or a second ad-hoc query needed to classify one
+  experiment are control-plane rot signals. Stop the active investigation and
+  repair the owning typed tool, compact schema, or contract test before
+  continuing. Do not normalize the workaround into a runbook.
+- Prefer a deliberate breaking migration over maintaining duplicate routine
+  experiment surfaces. Legacy reports and catalogs are not automatically V2
+  evidence; import an exact root and regenerate a fresh V2 artifact instead of
+  teaching new tools to guess old schemas.
 
 ## Verification
 

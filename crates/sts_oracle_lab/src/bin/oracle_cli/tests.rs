@@ -41,20 +41,31 @@ fn drive_parses_optional_full_ledger_output() {
 }
 
 #[test]
-fn combat_case_parses_repeated_exact_potion_slots() {
-    Cli::try_parse_from([
+fn compact_combat_contract_is_the_public_exact_search_surface() {
+    let cli = Cli::try_parse_from([
         "oracle_lab",
-        "combat-case",
+        "contract",
+        "combat",
         "--case",
         "fight.case.json",
+        "--min-final-hp",
+        "66",
         "--max-potions-used",
-        "2",
-        "--potion-slot",
         "0",
-        "--potion-slot",
-        "2",
+        "--require-recovered-stolen-gold",
     ])
-    .expect("a bounded potion combination should parse");
+    .expect("compact V2 combat contract should parse");
+    assert!(matches!(cli.command, Command::Contract(_)));
+}
+
+#[test]
+fn retired_combat_case_names_are_not_accepted() {
+    for command in ["combat-case", "combat-case-local-graph"] {
+        assert!(
+            Cli::try_parse_from(["oracle_lab", command, "--case", "fight.case.json",]).is_err(),
+            "{command} must not remain a compatibility alias"
+        );
+    }
 }
 
 #[test]

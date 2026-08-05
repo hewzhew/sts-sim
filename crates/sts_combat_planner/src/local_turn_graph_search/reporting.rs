@@ -50,6 +50,17 @@ pub struct LocalTurnGraphWitnessCounters {
     pub atomic_lookahead_work: usize,
     pub boundary_lookahead_evaluations: usize,
     pub boundary_lookahead_work: usize,
+    /// Complete winning suffixes proposed by bounded boundary lookahead.
+    pub lookahead_suffix_proposals: usize,
+    /// Suffixes rejected for illegality, truncation, contract mismatch,
+    /// insufficient replay budget, or failed authoritative replay.
+    pub lookahead_suffix_proposal_rejections: usize,
+    /// Exact simulator steps spent replaying accepted suffix proposals from
+    /// the unchanged combat root. Proposal validation steps are included in
+    /// `engine_steps` but not in this narrower replay counter.
+    pub lookahead_suffix_replay_engine_steps: usize,
+    /// Replay-verified suffix proposals admitted to the terminal frontier.
+    pub lookahead_suffix_witnesses: usize,
     pub engine_steps: usize,
     pub exact_nodes: usize,
     pub exact_edges: usize,

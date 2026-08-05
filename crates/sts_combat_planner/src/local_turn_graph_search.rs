@@ -40,8 +40,8 @@ use sts_core::state::core::ClientInput;
 
 use super::generator::TurnOptionGeneratorPreferredLane;
 use super::policy::{
-    normalized_probabilities, CombatGuideLaneId, CombatPolicyChoice, CombatPolicyWitnessProposal,
-    CombatStateGuide, CombatStateGuideRank, SharedCombatActionPolicy,
+    normalized_probabilities, CombatGuideLaneId, CombatLookaheadSuffixProposal, CombatPolicyChoice,
+    CombatPolicyWitnessProposal, CombatStateGuide, CombatStateGuideRank, SharedCombatActionPolicy,
     SharedCombatLookaheadEvaluator,
 };
 use super::selection_transaction::SelectionTransactionCursor;
@@ -367,7 +367,7 @@ impl LocalTurnGraphWitnessSession {
                 }
                 SelectedWork::Evaluate { node_id, path } => {
                     self.used.selections = self.used.selections.saturating_add(1);
-                    if !self.evaluate_lookahead(node_id, &path, quantum.deadline) {
+                    if !self.evaluate_lookahead(node_id, &path, quantum.deadline, stepper) {
                         break LocalTurnGraphWitnessStatus::Partial(
                             if deadline_reached(quantum.deadline) {
                                 LocalTurnGraphWitnessInterruption::Deadline
@@ -375,6 +375,9 @@ impl LocalTurnGraphWitnessSession {
                                 LocalTurnGraphWitnessInterruption::GenerationWorkBudget
                             },
                         );
+                    }
+                    if self.witness_satisfies() {
+                        continue;
                     }
                     // An expensive boundary observation must be grounded by
                     // at least one exact expansion. Otherwise the evaluator

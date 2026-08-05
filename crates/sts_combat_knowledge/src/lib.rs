@@ -6,8 +6,8 @@ use std::time::Instant;
 use sts_combat_legacy::ai::combat_search_v2::oracle_action_policy;
 use sts_combat_planner::{
     CombatActionPolicy, CombatGuideLaneId, CombatLookaheadEvaluation, CombatLookaheadEvaluator,
-    CombatPolicyChoice, CombatStateGuide, CombatStateGuideRank, LocalTurnGraphGuideServiceBias,
-    SharedCombatActionPolicy,
+    CombatLookaheadSuffixProposal, CombatPolicyChoice, CombatStateGuide, CombatStateGuideRank,
+    LocalTurnGraphGuideServiceBias, SharedCombatActionPolicy,
 };
 use sts_core::content::monsters::EnemyId;
 use sts_core::sim::combat::CombatPosition;
@@ -128,6 +128,12 @@ impl CombatLookaheadEvaluator for ExistingCombatRolloutLookaheadV1 {
             oracle_action_policy::oracle_combat_rollout_guide_v1(position, max_work, deadline);
         Some(CombatLookaheadEvaluation {
             guide: CombatStateGuide::new(GUIDE_ROLLOUT_LOOKAHEAD, rollout.components),
+            winning_suffix: rollout
+                .winning_suffix
+                .map(|suffix| CombatLookaheadSuffixProposal {
+                    actions: suffix.actions,
+                    final_hp_hint: suffix.final_hp_hint,
+                }),
             work: rollout.actions_simulated.max(1),
         })
     }

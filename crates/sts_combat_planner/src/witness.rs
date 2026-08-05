@@ -161,6 +161,10 @@ pub enum OracleCombatWitnessDiscoverySource {
     #[default]
     LegacyUnattributed,
     PlannerSearch,
+    /// A bounded rollout proposed a complete suffix at one retained exact
+    /// boundary; the local graph joined its exact prefix and replayed the
+    /// complete line from the unchanged combat root.
+    LookaheadProposal,
     PolicyDiscrepancySearch,
     PolicyProposal,
     RestoredExactActions,

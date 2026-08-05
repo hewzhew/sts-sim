@@ -216,27 +216,3 @@ pub(super) fn combat_plan_transition_portfolio_v1(session: &LocalTurnGraphWitnes
         "events": events,
     })
 }
-
-pub(super) fn oracle_lab_guide_lane_label(lane_id: u32) -> &'static str {
-    match lane_id {
-        1 => "progress",
-        2 => "survival",
-        3 => "horizon",
-        4 => "setup",
-        5 => "turn_depth",
-        10_001 => "exact_corridor_control",
-        10_002 => "typed_corridor_control",
-        _ => "policy_defined",
-    }
-}
-
-pub(super) fn existing_combat_guide_diagnostics(
-    position: &sts_oracle_runtime::sim::combat::CombatPosition,
-) -> Value {
-    json!({
-        "progress": sts_oracle_runtime::ai::combat_search_v2::oracle_action_policy::oracle_combat_state_guide_components(position),
-        "survival": sts_oracle_runtime::ai::combat_search_v2::oracle_action_policy::oracle_combat_survival_guide_components(position),
-        "horizon": sts_oracle_runtime::ai::combat_search_v2::oracle_action_policy::oracle_combat_horizon_guide_components(position),
-        "setup": sts_oracle_runtime::ai::combat_search_v2::oracle_action_policy::oracle_combat_setup_guide_components(position),
-    })
-}

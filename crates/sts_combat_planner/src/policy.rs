@@ -88,12 +88,28 @@ pub struct CombatPolicyWitnessProposal {
     pub final_hp_hint: i32,
 }
 
+/// One untrusted complete winning suffix proposed relative to the exact state
+/// passed to a lookahead evaluator.
+///
+/// The planner may join this suffix to its retained exact prefix, but it must
+/// replay the complete line from the unchanged combat root before any witness
+/// exists. A suffix never creates graph edges, prunes alternatives, or claims
+/// terminal truth by itself.
+#[derive(Clone, Debug)]
+pub struct CombatLookaheadSuffixProposal {
+    pub actions: Vec<ClientInput>,
+    pub final_hp_hint: i32,
+}
+
 /// One non-authoritative, bounded lookahead observation for an exact combat
 /// state. The planner may use its guide rank to order future exact work, but
 /// the observation cannot create a successor or claim a terminal outcome.
 #[derive(Clone, Debug)]
 pub struct CombatLookaheadEvaluation {
     pub guide: CombatStateGuide,
+    /// Optional replay-required evidence that the evaluated exact state has a
+    /// complete winning continuation.
+    pub winning_suffix: Option<CombatLookaheadSuffixProposal>,
     /// Deterministic evaluator work consumed by this observation. Implementors
     /// normally count simulated player inputs.
     pub work: usize,

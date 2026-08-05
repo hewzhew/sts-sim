@@ -790,7 +790,7 @@ fn observation_local_selection_compiles_hand_and_grid_card_uuids_in_order() {
         .zones
         .hand
         .push(CombatCard::new(crate::content::cards::CardId::Defend, 22));
-    let mut hand_analysis = scratch_analysis_at_engine(
+    let hand_analysis = scratch_analysis_at_engine(
         hand_combat,
         EngineState::PendingChoice(PendingChoice::HandSelect {
             candidate_uuids: vec![1, 22],
@@ -820,7 +820,7 @@ fn observation_local_selection_compiles_hand_and_grid_card_uuids_in_order() {
         CombatCard::new(crate::content::cards::CardId::Defend, 32),
     ]
     .into();
-    let mut grid_analysis = scratch_analysis_at_engine(
+    let grid_analysis = scratch_analysis_at_engine(
         grid_combat,
         EngineState::PendingChoice(PendingChoice::GridSelect {
             source_pile: PileType::Discard,

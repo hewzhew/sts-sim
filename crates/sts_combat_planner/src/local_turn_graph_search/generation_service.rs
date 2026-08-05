@@ -7,8 +7,9 @@ impl LocalTurnGraphWitnessSession {
         node_id: usize,
         path: &[(usize, usize)],
         deadline: Option<Instant>,
+        stepper: &dyn CombatStepper,
     ) -> bool {
-        let Some(evaluator) = self.lookahead_evaluator.as_ref() else {
+        let Some(evaluator) = self.lookahead_evaluator.clone() else {
             self.nodes[node_id].lookahead_pending_lane = None;
             return true;
         };
@@ -28,8 +29,8 @@ impl LocalTurnGraphWitnessSession {
         if max_work == 0 {
             return false;
         }
-        let position = self.nodes[node_id].generator.root().position();
-        let Some(evaluation) = evaluator.evaluate(position, max_work, deadline) else {
+        let position = self.nodes[node_id].generator.root().position().clone();
+        let Some(evaluation) = evaluator.evaluate(&position, max_work, deadline) else {
             return false;
         };
         if evaluation.guide.lane != expected_lane {
@@ -68,7 +69,171 @@ impl LocalTurnGraphWitnessSession {
             .used
             .boundary_lookahead_work
             .saturating_add(evaluation.work.max(1));
+        if let Some(proposal) = evaluation.winning_suffix {
+            self.consume_lookahead_suffix_proposal(node_id, path, proposal, stepper);
+        }
         true
+    }
+
+    fn consume_lookahead_suffix_proposal(
+        &mut self,
+        node_id: usize,
+        path: &[(usize, usize)],
+        proposal: CombatLookaheadSuffixProposal,
+        stepper: &dyn CombatStepper,
+    ) {
+        self.used.lookahead_suffix_proposals =
+            self.used.lookahead_suffix_proposals.saturating_add(1);
+        let mut position = self.nodes[node_id].generator.root().position().clone();
+        let mut suffix_actions = Vec::with_capacity(proposal.actions.len());
+        let mut validation_engine_steps = 0usize;
+        let transition_step_limit = self.config.generator.max_engine_steps_per_transition.max(1);
+        let mut rejected = proposal.actions.is_empty();
+
+        for input in proposal.actions {
+            if rejected {
+                break;
+            }
+            if stepper.choice_for_legal_input(&position, &input).is_none() {
+                rejected = true;
+                break;
+            }
+            let remaining_engine_steps = self
+                .granted_engine_steps
+                .saturating_sub(self.used.engine_steps)
+                .saturating_sub(validation_engine_steps);
+            if remaining_engine_steps == 0 {
+                rejected = true;
+                break;
+            }
+            let result = stepper.apply_to_stable(
+                &position,
+                input.clone(),
+                CombatStepLimits {
+                    max_engine_steps: transition_step_limit.min(remaining_engine_steps),
+                    deadline: None,
+                },
+            );
+            validation_engine_steps = validation_engine_steps.saturating_add(result.engine_steps);
+            if result.truncated
+                || result.timed_out
+                || validation_engine_steps
+                    > self
+                        .granted_engine_steps
+                        .saturating_sub(self.used.engine_steps)
+            {
+                rejected = true;
+                break;
+            }
+            suffix_actions.push(TurnOptionAction {
+                input,
+                expected_successor_hash: exact_hash(&result.position).into(),
+                engine_steps: result.engine_steps,
+            });
+            position = result.position;
+        }
+        self.used.engine_steps = self
+            .used
+            .engine_steps
+            .saturating_add(validation_engine_steps);
+
+        if rejected
+            || suffix_actions.is_empty()
+            || position.combat.runtime.combat_smoked
+            || stepper.terminal(&position) != CombatTerminal::Win
+            || position.combat.entities.player.current_hp != proposal.final_hp_hint
+        {
+            self.used.lookahead_suffix_proposal_rejections = self
+                .used
+                .lookahead_suffix_proposal_rejections
+                .saturating_add(1);
+            return;
+        }
+
+        let (mut actions, prefix_negative_log_policy) = self.path_actions(path);
+        let suffix_action_count = suffix_actions.len();
+        actions.extend(suffix_actions);
+        let negative_log_policy = prefix_negative_log_policy + suffix_action_count as f64;
+        if !crate::witness::trajectory_within_potion_contract(
+            &self.original_root,
+            &actions,
+            &position,
+            self.config.max_potions_used,
+            self.config.generator.allowed_potion_slots,
+        ) {
+            self.used.lookahead_suffix_proposal_rejections = self
+                .used
+                .lookahead_suffix_proposal_rejections
+                .saturating_add(1);
+            return;
+        }
+        if !terminal_candidate_could_improve_witness_frontier(
+            &self.original_root,
+            &self.witness_frontier,
+            &position,
+            &actions,
+            negative_log_policy,
+            self.config.max_potions_used,
+        ) {
+            self.used.witness_replay_dominated_skips =
+                self.used.witness_replay_dominated_skips.saturating_add(1);
+            return;
+        }
+
+        let required_replay_steps = actions
+            .iter()
+            .map(|action| action.engine_steps.max(1))
+            .sum::<usize>();
+        if required_replay_steps
+            > self
+                .granted_engine_steps
+                .saturating_sub(self.used.engine_steps)
+        {
+            self.used.lookahead_suffix_proposal_rejections = self
+                .used
+                .lookahead_suffix_proposal_rejections
+                .saturating_add(1);
+            return;
+        }
+
+        self.used.witness_replay_attempts = self.used.witness_replay_attempts.saturating_add(1);
+        match replay_witness(
+            &self.original_root,
+            &actions,
+            negative_log_policy,
+            OracleCombatWitnessDiscoverySource::LookaheadProposal,
+            stepper,
+        ) {
+            Ok(witness) => {
+                self.used.engine_steps = self
+                    .used
+                    .engine_steps
+                    .saturating_add(witness.replay_engine_steps);
+                self.used.lookahead_suffix_replay_engine_steps = self
+                    .used
+                    .lookahead_suffix_replay_engine_steps
+                    .saturating_add(witness.replay_engine_steps);
+                let admission = self.remember_witness(witness);
+                if admission.selected_changed {
+                    self.used.witness_replay_improvements =
+                        self.used.witness_replay_improvements.saturating_add(1);
+                }
+                if admission.frontier_changed {
+                    self.used.witness_frontier_changes =
+                        self.used.witness_frontier_changes.saturating_add(1);
+                    self.used.lookahead_suffix_witnesses =
+                        self.used.lookahead_suffix_witnesses.saturating_add(1);
+                }
+            }
+            Err(_) => {
+                // A lookahead suffix is untrusted evidence. Replay rejection
+                // must not poison the exact graph session with ReplayMismatch.
+                self.used.lookahead_suffix_proposal_rejections = self
+                    .used
+                    .lookahead_suffix_proposal_rejections
+                    .saturating_add(1);
+            }
+        }
     }
 
     pub(super) fn widen(

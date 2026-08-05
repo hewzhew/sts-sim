@@ -23,8 +23,8 @@ fmt-check = ["fmt", "--all", "--", "--check"]
 # The standard release directory is the one canonical optimized oracle
 # artifact. `release-final` remains available for slow deployment builds.
 oracle-lab = ["run", "--quiet", "--release", "-p", "sts_oracle_lab", "--features", "canonical-oracle-artifacts", "--bin", "oracle_lab", "--", "--canonical-oracle"]
-# Build-owning convenience alias. For repeated diagnostics, `./ol` invokes the
-# same canonical binary directly and lets its depfile guard reject stale code.
+# Build-owning convenience alias. Rebuild routine V2 tooling with
+# `cargo oracle-lab contract --help`; repeated calls use `.\ol.cmd`.
 ol = ["run", "--quiet", "--release", "-p", "sts_oracle_lab", "--features", "canonical-oracle-artifacts", "--bin", "oracle_lab", "--", "--canonical-oracle"]
 # Build-owning resident alias. Repeated calls should use `./ol-live.cmd`, which
 # invokes this canonical client directly; the client itself validates its

@@ -35,7 +35,9 @@ mod exact_combat_evidence;
 mod exact_turn_corridor;
 mod guidance_artifact_commands;
 mod guidance_combination_audit;
+mod oracle_case_catalog_v2;
 mod oracle_cli;
+mod oracle_contract_v2;
 mod oracle_seed_panel;
 mod policy_discrepancy_search;
 mod potion_expenditure_audit;
@@ -69,6 +71,9 @@ fn main() -> Result<(), String> {
     let (canonical_oracle, command) = oracle_cli::parse();
     canonical_launch::validate(canonical_oracle)?;
     match command {
+        Command::Contract(args) => oracle_contract_v2::run_contract_command(args),
+        Command::Artifact(args) => oracle_contract_v2::run_artifact_command(args),
+        Command::Case(args) => oracle_case_catalog_v2::run(args),
         Command::SeedPanel(args) => print_json(&oracle_seed_panel::run(args)?),
         Command::New {
             seed,

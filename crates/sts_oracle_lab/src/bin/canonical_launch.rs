@@ -58,7 +58,7 @@ fn validate_source_freshness(executable: &Path) -> Result<(), String> {
         &repository,
         CanonicalArtifact::OracleHost,
         "canonical oracle laboratory",
-        "cargo oracle-lab --help",
+        "cargo oracle-lab contract --help",
     )
 }
 
@@ -137,7 +137,7 @@ pub(super) fn runtime_source_content_fingerprint() -> Result<String, String> {
         &repository,
         CanonicalArtifact::OracleHost,
         "canonical oracle laboratory",
-        "cargo oracle-lab --help",
+        "cargo oracle-lab contract --help",
     )?;
     source_content_fingerprint(&repository, &dependencies)
 }

@@ -21,13 +21,6 @@ pub(super) fn load_value_prototype(path: &Path) -> Result<CombatValuePrototypeAr
     CombatValuePrototypeArtifactV1::load(path)
 }
 
-pub(super) fn save_value_prototype(
-    path: &Path,
-    artifact: &CombatValuePrototypeArtifactV1,
-) -> Result<(), String> {
-    artifact.save(path)
-}
-
 pub(super) fn build_value_prototype(
     case: &Path,
     actions: &[PathBuf],

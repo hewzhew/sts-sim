@@ -298,55 +298,6 @@ fn card_label(card: &sts_oracle_runtime::runtime::combat::CombatCard) -> String 
     format!("{}{}", cards::java_id(card.id), upgrade)
 }
 
-pub(super) fn compact_corridor_report(report: Option<&Value>) -> Value {
-    let Some(report) = report else {
-        return Value::Null;
-    };
-    let states = report
-        .get("states")
-        .and_then(Value::as_array)
-        .map(Vec::as_slice)
-        .unwrap_or_default();
-    let reached = states
-        .iter()
-        .filter(|state| {
-            state
-                .get("membership")
-                .and_then(|membership| membership.get("accepted"))
-                .and_then(Value::as_bool)
-                .unwrap_or(false)
-        })
-        .count();
-    let first_missing = states.iter().find(|state| {
-        let accepted = state
-            .get("membership")
-            .and_then(|membership| membership.get("accepted"))
-            .and_then(Value::as_bool)
-            .unwrap_or(false);
-        !accepted
-    });
-    let furthest_accepted = states.iter().rev().find(|state| {
-        state
-            .get("membership")
-            .and_then(|membership| membership.get("accepted"))
-            .and_then(Value::as_bool)
-            .unwrap_or(false)
-    });
-    json!({
-        "kind": report.get("kind"),
-        "guide": report.get("guide"),
-        "authority": report.get("authority"),
-        "exact_turn_states": report.get("exact_turn_states"),
-        "accepted_turn_states": reached,
-        "first_missing_rank": first_missing
-            .and_then(|state| state.get("corridor_rank")),
-        "first_missing": first_missing,
-        "furthest_accepted": furthest_accepted,
-        "terminal": report.get("terminal"),
-        "terminal_final_hp": report.get("terminal_final_hp"),
-    })
-}
-
 pub(super) fn compact_combat_trace(trace: Option<&Value>) -> Value {
     let Some(trace) = trace else {
         return Value::Null;

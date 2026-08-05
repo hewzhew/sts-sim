@@ -193,26 +193,24 @@ descendant and receives no manifest from this producer.
 
 ## Local-Graph Complete Wins
 
-`combat-case-local-graph --export-witness-actions <fresh-output>.actions.json`
-uses the same complete-witness export gate. Before writing, it replays the
-actions from the search root, confirms a win, and requires the replay endpoint
-to match the search witness. An ordinary case-root search writes a sibling
-producer manifest and returns both paths in the V3 full or trace report.
+`.\ol.cmd contract combat` is the maintained complete-win surface. It admits
+the exact root to the explicit V2 case catalog, runs one typed bounded request,
+and atomically publishes `manifest.json`, `report.json`, and
+`witness.actions.json` when any replay-exact candidate exists. The compact
+result distinguishes a candidate witness from a witness satisfying every HP,
+potion, and stolen-gold contract.
 
-`--full-health` changes the caller's case into an undeclared counterfactual
-root. Its replay-verified actions may still be exported for diagnosis, but no
-manifest is written and the original case is not claimed as their root. Export
-the counterfactual root as its own case before it can become typed evidence.
+V2 summary and rerun never parse legacy local-graph reports. Re-import the
+exact `CombatCase` and generate a fresh artifact. Counterfactual roots must
+first be exported as their own exact cases; the compact contract has no
+full-health mutation flag.
 
-The local graph starts with `--max-potions-used 0` and omits explicit potion
-discard. Pass a positive potion budget only for an explicit potion lane. Add
-`--include-discard-actions` only for an all-legal slot-generation or
-revive-priority diagnostic; either change can materially alter a sparse search
-corridor.
-
-Deepest-survival and deepest-progress exports remain descendant cases with
-prefix actions. They are not complete witnesses from those adjacent cases and
-do not use this manifest contract.
+The contract defaults to zero potion expenditures and omits explicit potion
+discard. Pass a positive potion budget only for an explicit bounded rescue
+question. Concrete slot identity, discard, full-health counterfactuals, and
+descendant exports remain separate typed laboratories; they are intentionally
+absent from the compact contract rather than exposed as another all-flags
+surface.
 
 ## Historical Combat Witness Exports
 

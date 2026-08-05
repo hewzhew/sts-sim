@@ -450,6 +450,16 @@ frontier scheduler. Acceptance still requires the ordinary exact witness and
 replay contract. Production admission is explicit and evidence-backed per
 encounter plan; merely having categorical action timing does not opt a plan in.
 
+A bounded lookahead evaluator may also return one typed complete action suffix
+relative to the exact boundary it evaluated. This is an untrusted proposal, not
+a successor or terminal result. The local graph validates every suffix input,
+joins it to one retained exact prefix, and replays the complete line from the
+unchanged combat root before admitting a witness. Invalid, truncated,
+out-of-contract, or under-budget proposals are rejected locally and must not
+poison the exact graph with a replay-mismatch status. A replay-verified
+lookahead proposal remains a local-search witness when run-control records its
+trajectory source.
+
 ## Gap Semantics
 
 Gaps are typed stops, not verdicts:
@@ -503,6 +513,16 @@ rebuildable projections and must not become a second decision-history owner.
 Default reports should reference state, journal, checkpoint, and diagnostics
 instead of inlining large payloads. Compression is not a license to store
 unbounded data.
+
+Routine fixed-root combat experiments use the breaking V2 contract artifact:
+an atomically published directory containing one small stable `manifest.json`,
+one opaque full `report.json`, and an optional replay-exact
+`witness.actions.json`. The manifest owns the typed request, exact root id,
+source-content identity, compact classification, and sidecar paths.
+`artifact summary` and `artifact rerun` read only the manifest; they must not
+guess fields in the full report or legacy artifacts. Combat cases enter the V2
+catalog explicitly, keyed by exact root identity, so routine discovery never
+depends on filenames or recursive shell scans.
 
 An oracle analysis workspace is an editable variation workbench, not the
 archive authority for every state it has ever materialized. Explorer

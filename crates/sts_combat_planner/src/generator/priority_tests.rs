@@ -47,6 +47,7 @@ impl super::super::policy::CombatLookaheadEvaluator for CountingLookahead {
         self.calls.fetch_add(1, AtomicOrdering::Relaxed);
         Some(super::super::policy::CombatLookaheadEvaluation {
             guide: CombatStateGuide::new(CombatGuideLaneId::new(99), vec![1]),
+            winning_suffix: None,
             work: 3.min(max_work),
         })
     }
