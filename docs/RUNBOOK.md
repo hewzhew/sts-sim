@@ -370,6 +370,9 @@ kept summary in full frames is recovery state, not a best-line verdict. A normal
 of one card or potion id return candidate occurrences; an action with several
 legal targets returns target ambiguity. Neither case mutates the line. A unique
 copy and unique target resolve automatically.
+The typed ambiguity response is still printed, but the canonical client exits
+nonzero so a chained shell command cannot mistake "needs an explicit selector"
+for an applied action.
 Each living monster keeps its raw `intent` for base mechanics and also reports
 `move_preview.damage_per_hit`, `hits`, and `total_damage` after the simulator's
 Strength/Weak/Vulnerable and protocol-visible damage pipeline. Dead or escaped

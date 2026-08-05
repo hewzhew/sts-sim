@@ -804,7 +804,7 @@ fn run_live_command(endpoint: &Path, command: LiveCommand) -> Result<(), String>
                 occurrence,
                 target,
                 page,
-            } => print_json(&live_call(
+            } => print_combat_lab_semantic_action(live_call(
                 endpoint,
                 OracleAnalysisServiceCommandV1::CombatLabPlayCard {
                     card_id: card,
@@ -819,7 +819,7 @@ fn run_live_command(endpoint: &Path, command: LiveCommand) -> Result<(), String>
                 occurrence,
                 target,
                 page,
-            } => print_json(&live_call(
+            } => print_combat_lab_semantic_action(live_call(
                 endpoint,
                 OracleAnalysisServiceCommandV1::CombatLabUsePotion {
                     potion_id: potion,
@@ -2086,6 +2086,30 @@ fn print_json<T: Serialize>(value: &T) -> Result<(), String> {
     writeln!(stdout).map_err(|error| format!("failed to finish JSON output: {error}"))
 }
 
+fn print_combat_lab_semantic_action(result: Value) -> Result<(), String> {
+    let applied = combat_lab_semantic_action_applied(&result)?;
+    print_json(&result)?;
+    if applied {
+        Ok(())
+    } else {
+        Err(
+            "combat line lab action was not executed; rerun with an explicit copy or target"
+                .to_string(),
+        )
+    }
+}
+
+fn combat_lab_semantic_action_applied(result: &Value) -> Result<bool, String> {
+    match result.get("status").and_then(Value::as_str) {
+        Some("played" | "used") => Ok(true),
+        Some("ambiguous_card" | "ambiguous_potion" | "ambiguous_target") => Ok(false),
+        Some(status) => Err(format!(
+            "combat line lab returned unknown semantic action status '{status}'"
+        )),
+        None => Err("combat line lab semantic action response has no status".to_string()),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2621,6 +2645,24 @@ mod tests {
                 ..
             }
         ));
+    }
+
+    #[test]
+    fn semantic_line_lab_ambiguity_is_not_an_applied_shell_action() {
+        assert!(
+            combat_lab_semantic_action_applied(&json!({"status": "played"}))
+                .expect("played status")
+        );
+        assert!(
+            combat_lab_semantic_action_applied(&json!({"status": "used"})).expect("used status")
+        );
+        for status in ["ambiguous_card", "ambiguous_potion", "ambiguous_target"] {
+            assert!(
+                !combat_lab_semantic_action_applied(&json!({"status": status}))
+                    .expect("typed ambiguity status"),
+                "{status} must not let a chained shell command continue"
+            );
+        }
     }
 
     #[test]
