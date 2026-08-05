@@ -1,5 +1,8 @@
-use super::{generator_needs_initial_grounding, update_max_guide, update_max_rank, GuideRankMap};
-use crate::policy::CombatStateGuideRank;
+use super::{
+    generator_needs_initial_grounding, selected_boundary_generation_work, update_max_guide,
+    update_max_rank, GuideRankMap, LocalServiceView, LocalTurnGraphWitnessConfig,
+};
+use crate::policy::{CombatGuideLaneId, CombatStateGuideRank};
 
 #[test]
 fn backed_value_is_monotone_and_keeps_the_best_descendant() {
@@ -33,4 +36,27 @@ fn live_generator_receives_initial_grounding_even_if_an_external_edge_exists() {
     assert!(generator_needs_initial_grounding(0, false));
     assert!(!generator_needs_initial_grounding(1, false));
     assert!(!generator_needs_initial_grounding(0, true));
+}
+
+#[test]
+fn fresh_guide_boundary_receives_the_coherent_guide_quantum() {
+    let config = LocalTurnGraphWitnessConfig {
+        backed_generation_quantum_work: 128,
+        initial_expansion_work: 64,
+        ..LocalTurnGraphWitnessConfig::default()
+    };
+
+    assert_eq!(
+        selected_boundary_generation_work(
+            &config,
+            1,
+            0,
+            LocalServiceView::Guide(CombatGuideLaneId::new(7)),
+        ),
+        128
+    );
+    assert_eq!(
+        selected_boundary_generation_work(&config, 1, 0, LocalServiceView::Anchor),
+        64
+    );
 }

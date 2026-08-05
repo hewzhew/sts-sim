@@ -187,6 +187,30 @@ enum SelectedWork {
     Exhausted,
 }
 
+fn selected_boundary_generation_work(
+    config: &LocalTurnGraphWitnessConfig,
+    node_id: usize,
+    generator_work: usize,
+    service_view: LocalServiceView,
+) -> usize {
+    if generator_work > 0 {
+        return match service_view {
+            LocalServiceView::Guide(_) => config.backed_generation_quantum_work,
+            LocalServiceView::Anchor => config.generation_quantum_work,
+            LocalServiceView::LookaheadEvaluation => {
+                unreachable!("lookahead evaluation never widens a turn generator")
+            }
+        };
+    }
+    if node_id == 0 {
+        config.root_initial_expansion_work
+    } else if matches!(service_view, LocalServiceView::Guide(_)) {
+        config.backed_generation_quantum_work
+    } else {
+        config.initial_expansion_work
+    }
+}
+
 /// A resumable session. Exact successor nodes and their service statistics are
 /// shared across all incoming edges.
 pub struct LocalTurnGraphWitnessSession {
@@ -480,19 +504,12 @@ impl LocalTurnGraphWitnessSession {
                 node_id,
                 path,
                 view: generation_view,
-                requested_work: if generator_work == 0 {
-                    if node_id == 0 {
-                        self.config.root_initial_expansion_work
-                    } else {
-                        self.config.initial_expansion_work
-                    }
-                } else {
-                    match service_view {
-                        LocalServiceView::Guide(_) => self.config.backed_generation_quantum_work,
-                        LocalServiceView::Anchor => self.config.generation_quantum_work,
-                        LocalServiceView::LookaheadEvaluation => unreachable!(),
-                    }
-                },
+                requested_work: selected_boundary_generation_work(
+                    &self.config,
+                    node_id,
+                    generator_work,
+                    service_view,
+                ),
             };
         }
 
