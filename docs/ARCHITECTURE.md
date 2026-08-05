@@ -516,12 +516,15 @@ for workspace compatibility, but the line lab is the behavioral owner.
 A line lab has one typed baseline. A root baseline contains no actions; a
 resident-incumbent baseline imports the complete replay-verified incumbent into
 the same DAG and records every immutable prefix. Normal callers navigate that
-baseline by observed turn and zero-based action ordinal, never by internal DAG
-node id. A typed card id resolves automatically only when one current hand copy
-matches; duplicate copies and multiple legal targets return typed ambiguity
-instead of guessing. The runtime resolves the selected observation-local copy
-and target to exact internal identities before applying the durable
-`ClientInput`.
+baseline or the active current line by observed turn and zero-based action
+ordinal, and rewind the current line by one action, never by internal DAG node
+id. Navigation defaults to the current line so a caller can work inside its new
+branch without repeatedly naming the baseline. Typed card and potion ids resolve
+automatically only when one current copy and, where required, one legal target
+match. Duplicate copies and multiple legal targets return typed ambiguity
+instead of guessing or mutating the line. The runtime resolves the selected
+observation-local copy and target to exact internal identities before applying
+the durable `ClientInput`.
 
 `open` establishes one complete decision frame. Ordinary semantic actions return
 typed deltas without scratch node ids, while `observe` returns a full recovery
@@ -536,8 +539,8 @@ owner.
 The lower diagnostic scratch selectors remain temporarily callable during the
 cutover for exact-hash and structured-selection work. They are compatibility
 adapters over the same line-lab owner, receive no new workflow semantics, and
-must be deleted once semantic potion/selection navigation and remaining callers
-have moved. CLI JSON is compact by default; deltas and comparisons are response
+must be deleted once remaining semantic structured selections and callers have
+moved. CLI JSON is compact by default; deltas and comparisons are response
 projections, not persisted line history.
 Resident execution and autosave timing belongs to the protocol response
 envelope, not to the decision observation, delta, or navigation receipt. Typed

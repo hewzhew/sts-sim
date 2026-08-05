@@ -11,8 +11,8 @@ use fs2::FileExt;
 use oracle_artifact_contract::{ensure_artifact_fresh, CanonicalArtifact};
 use oracle_lab_protocol::{
     call_oracle_analysis_tcp_v1, resolve_owned_resident_workspace,
-    OracleAnalysisCombatLabBaselineV1, OracleAnalysisServiceCommandV1,
-    OracleAnalysisServiceEndpointV1,
+    OracleAnalysisCombatLabBaselineV1, OracleAnalysisCombatLabLineV1,
+    OracleAnalysisServiceCommandV1, OracleAnalysisServiceEndpointV1,
 };
 use serde::Serialize;
 use serde_json::{json, Value};
@@ -253,6 +253,12 @@ enum LiveLabBaseline {
     Incumbent,
 }
 
+#[derive(Clone, Copy, Debug, clap::ValueEnum)]
+enum LiveLabLine {
+    Baseline,
+    Current,
+}
+
 #[derive(Debug, Subcommand)]
 enum LiveLabCommand {
     Open {
@@ -269,8 +275,10 @@ enum LiveLabCommand {
         #[command(flatten)]
         page: LiveScratchPageArgs,
     },
-    /// Move to the exact baseline frame before one zero-based action in a turn.
+    /// Move to the exact selected-line frame before one zero-based action in a turn.
     Goto {
+        #[arg(long, value_enum, default_value = "current")]
+        line: LiveLabLine,
         #[arg(long)]
         turn: u32,
         #[arg(long, default_value_t = 0)]
@@ -278,10 +286,26 @@ enum LiveLabCommand {
         #[command(flatten)]
         page: LiveScratchPageArgs,
     },
+    /// Move back one action on the current line.
+    Back {
+        #[command(flatten)]
+        page: LiveScratchPageArgs,
+    },
     /// Play a typed card id from the current frame; duplicate copies return typed ambiguity.
     Play {
         #[arg(long)]
         card: String,
+        #[arg(long = "copy")]
+        occurrence: Option<usize>,
+        #[arg(long)]
+        target: Option<usize>,
+        #[command(flatten)]
+        page: LiveScratchPageArgs,
+    },
+    /// Use a typed potion id; duplicate copies or targets return typed ambiguity.
+    Potion {
+        #[arg(long)]
+        potion: String,
         #[arg(long = "copy")]
         occurrence: Option<usize>,
         #[arg(long)]
@@ -725,11 +749,27 @@ fn run_live_command(endpoint: &Path, command: LiveCommand) -> Result<(), String>
                     selection_limit: usize::from(page.selection_limit),
                 },
             )?),
-            LiveLabCommand::Goto { turn, before, page } => print_json(&live_call(
+            LiveLabCommand::Goto {
+                line,
+                turn,
+                before,
+                page,
+            } => print_json(&live_call(
                 endpoint,
                 OracleAnalysisServiceCommandV1::CombatLabGoto {
+                    line: match line {
+                        LiveLabLine::Baseline => OracleAnalysisCombatLabLineV1::Baseline,
+                        LiveLabLine::Current => OracleAnalysisCombatLabLineV1::Current,
+                    },
                     turn,
                     before_action: before,
+                    selection_offset: page.selection_offset,
+                    selection_limit: usize::from(page.selection_limit),
+                },
+            )?),
+            LiveLabCommand::Back { page } => print_json(&live_call(
+                endpoint,
+                OracleAnalysisServiceCommandV1::CombatLabBack {
                     selection_offset: page.selection_offset,
                     selection_limit: usize::from(page.selection_limit),
                 },
@@ -743,6 +783,21 @@ fn run_live_command(endpoint: &Path, command: LiveCommand) -> Result<(), String>
                 endpoint,
                 OracleAnalysisServiceCommandV1::CombatLabPlayCard {
                     card_id: card,
+                    occurrence,
+                    target_index: target,
+                    selection_offset: page.selection_offset,
+                    selection_limit: usize::from(page.selection_limit),
+                },
+            )?),
+            LiveLabCommand::Potion {
+                potion,
+                occurrence,
+                target,
+                page,
+            } => print_json(&live_call(
+                endpoint,
+                OracleAnalysisServiceCommandV1::CombatLabUsePotion {
+                    potion_id: potion,
                     occurrence,
                     target_index: target,
                     selection_offset: page.selection_offset,
@@ -993,7 +1048,9 @@ fn live_command_mutates(command: &LiveCommand) -> bool {
             | LiveCommand::Lab {
                 command: LiveLabCommand::Open { .. }
                     | LiveLabCommand::Goto { .. }
+                    | LiveLabCommand::Back { .. }
                     | LiveLabCommand::Play { .. }
+                    | LiveLabCommand::Potion { .. }
                     | LiveLabCommand::End { .. }
                     | LiveLabCommand::Search { .. }
                     | LiveLabCommand::Commit
@@ -2313,7 +2370,7 @@ mod tests {
     }
 
     #[test]
-    fn typed_live_combat_lab_uses_semantic_baseline_and_card_selectors() {
+    fn typed_live_combat_lab_uses_semantic_line_card_and_potion_selectors() {
         let open = Cli::try_parse_from([
             "oracle_lab_client",
             "--canonical-oracle",
@@ -2365,6 +2422,84 @@ mod tests {
                 },
                 ..
             } if card == "PowerThrough"
+        ));
+
+        let goto = Cli::try_parse_from([
+            "oracle_lab_client",
+            "--canonical-oracle",
+            "live",
+            "--session",
+            "seed008",
+            "lab",
+            "goto",
+            "--turn",
+            "3",
+        ])
+        .expect("parse current-line navigation");
+        assert!(matches!(
+            goto.command,
+            Command::Live {
+                command: LiveCommand::Lab {
+                    command: LiveLabCommand::Goto {
+                        line: LiveLabLine::Current,
+                        turn: 3,
+                        before: 0,
+                        ..
+                    }
+                },
+                ..
+            }
+        ));
+
+        let potion = Cli::try_parse_from([
+            "oracle_lab_client",
+            "--canonical-oracle",
+            "live",
+            "--session",
+            "seed008",
+            "lab",
+            "potion",
+            "--potion",
+            "FearPotion",
+            "--copy",
+            "1",
+            "--target",
+            "0",
+        ])
+        .expect("parse semantic potion use");
+        assert!(matches!(
+            potion.command,
+            Command::Live {
+                command: LiveCommand::Lab {
+                    command: LiveLabCommand::Potion {
+                        potion,
+                        occurrence: Some(1),
+                        target: Some(0),
+                        ..
+                    }
+                },
+                ..
+            } if potion == "FearPotion"
+        ));
+
+        let back = Cli::try_parse_from([
+            "oracle_lab_client",
+            "--canonical-oracle",
+            "live",
+            "--session",
+            "seed008",
+            "lab",
+            "back",
+        ])
+        .expect("parse current-line back");
+        assert!(matches!(
+            back.command,
+            Command::Live {
+                command: LiveCommand::Lab {
+                    command: LiveLabCommand::Back { .. }
+                },
+                ..
+            }
         ));
     }
 

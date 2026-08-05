@@ -668,7 +668,13 @@ fn combat_line_lab_imports_a_complete_baseline_and_branches_by_turn_without_node
     assert!(!encoded.contains("scratch_node"), "{encoded}");
 
     analysis
-        .goto_combat_line_lab_baseline(baseline_turn, 0, 0, 16)
+        .goto_combat_line_lab(
+            OracleAnalysisCombatLineLabLineV1::Baseline,
+            baseline_turn,
+            0,
+            0,
+            16,
+        )
         .expect("goto root action");
     let played = analysis
         .play_combat_line_lab_card(crate::content::cards::CardId::Strike, None, None, 0, 16)
@@ -686,11 +692,37 @@ fn combat_line_lab_imports_a_complete_baseline_and_branches_by_turn_without_node
     assert!(!encoded.contains("action_key"), "{encoded}");
 
     analysis
-        .goto_combat_line_lab_baseline(baseline_turn, 0, 0, 16)
+        .goto_combat_line_lab(
+            OracleAnalysisCombatLineLabLineV1::Baseline,
+            baseline_turn,
+            0,
+            0,
+            16,
+        )
         .expect("rewind to baseline root");
     analysis
         .end_combat_line_lab_turn(0, 16)
         .expect("branch with end turn");
+    let back = analysis
+        .back_combat_line_lab(0, 16)
+        .expect("back one current-line action");
+    assert_eq!(back.location.action_index, 0);
+    analysis
+        .end_combat_line_lab_turn(0, 16)
+        .expect("restore divergent current line");
+    let current_root = analysis
+        .goto_combat_line_lab(
+            OracleAnalysisCombatLineLabLineV1::Current,
+            baseline_turn,
+            0,
+            0,
+            16,
+        )
+        .expect("goto current-line root action");
+    assert_eq!(current_root.location.action_index, 0);
+    analysis
+        .end_combat_line_lab_turn(0, 16)
+        .expect("restore divergent line after current goto");
     let comparison = analysis
         .compare_combat_line_lab()
         .expect("compare divergent line");
@@ -707,6 +739,138 @@ fn combat_line_lab_imports_a_complete_baseline_and_branches_by_turn_without_node
         Some(OracleAnalysisCombatLineLabActionV1::EndTurn)
     );
     assert!(!comparison.current.suffix_known);
+}
+
+#[test]
+fn combat_line_lab_returns_typed_duplicate_potion_ambiguity_without_mutation() {
+    let mut combat = one_strike_combat();
+    combat.entities.potions = vec![
+        Some(crate::content::potions::Potion::new(
+            crate::content::potions::PotionId::FearPotion,
+            41,
+        )),
+        Some(crate::content::potions::Potion::new(
+            crate::content::potions::PotionId::FearPotion,
+            42,
+        )),
+    ];
+    let mut analysis = scratch_analysis_at_engine(combat, EngineState::CombatPlayerTurn);
+    analysis
+        .open_combat_line_lab(
+            None,
+            OracleAnalysisCombatLineLabBaselineSourceV1::Root,
+            250,
+            0,
+            16,
+        )
+        .expect("open root line lab");
+    let before = serde_json::to_value(analysis.checkpoint().expect("before ambiguity"))
+        .expect("encode checkpoint");
+    let result = analysis
+        .use_combat_line_lab_potion(
+            crate::content::potions::PotionId::FearPotion,
+            None,
+            None,
+            0,
+            16,
+        )
+        .expect("typed duplicate potion ambiguity");
+    let OracleAnalysisCombatLineLabUsePotionResultV1::AmbiguousPotion { candidates, .. } = result
+    else {
+        panic!("duplicate typed potion id must not be guessed");
+    };
+    assert_eq!(candidates.len(), 2);
+    assert_eq!(candidates[0].occurrence, 0);
+    assert_eq!(candidates[1].occurrence, 1);
+    assert_eq!(
+        serde_json::to_value(analysis.checkpoint().expect("after ambiguity"))
+            .expect("encode checkpoint"),
+        before
+    );
+}
+
+#[test]
+fn combat_line_lab_returns_typed_potion_target_ambiguity_without_mutation() {
+    let mut combat = one_strike_combat();
+    let mut second_monster = combat.entities.monsters[0].clone();
+    second_monster.id = 2;
+    second_monster.slot = 1;
+    second_monster.logical_position = 1;
+    combat.entities.monsters.push(second_monster);
+    combat.entities.potions = vec![Some(crate::content::potions::Potion::new(
+        crate::content::potions::PotionId::FearPotion,
+        41,
+    ))];
+    let mut analysis = scratch_analysis_at_engine(combat, EngineState::CombatPlayerTurn);
+    analysis
+        .open_combat_line_lab(
+            None,
+            OracleAnalysisCombatLineLabBaselineSourceV1::Root,
+            250,
+            0,
+            16,
+        )
+        .expect("open root line lab");
+    let before = serde_json::to_value(analysis.checkpoint().expect("before ambiguity"))
+        .expect("encode checkpoint");
+    let result = analysis
+        .use_combat_line_lab_potion(
+            crate::content::potions::PotionId::FearPotion,
+            None,
+            None,
+            0,
+            16,
+        )
+        .expect("typed potion target ambiguity");
+    let OracleAnalysisCombatLineLabUsePotionResultV1::AmbiguousTarget {
+        usable_target_indices,
+        ..
+    } = result
+    else {
+        panic!("multiple legal potion targets must not be guessed");
+    };
+    assert_eq!(usable_target_indices, vec![0, 1]);
+    assert_eq!(
+        serde_json::to_value(analysis.checkpoint().expect("after ambiguity"))
+            .expect("encode checkpoint"),
+        before
+    );
+}
+
+#[test]
+fn combat_line_lab_resolves_one_potion_copy_and_one_target_without_internal_ids() {
+    let mut combat = one_strike_combat();
+    combat.entities.potions = vec![Some(crate::content::potions::Potion::new(
+        crate::content::potions::PotionId::FearPotion,
+        41,
+    ))];
+    let mut analysis = scratch_analysis_at_engine(combat, EngineState::CombatPlayerTurn);
+    analysis
+        .open_combat_line_lab(
+            None,
+            OracleAnalysisCombatLineLabBaselineSourceV1::Root,
+            250,
+            0,
+            16,
+        )
+        .expect("open root line lab");
+    let result = analysis
+        .use_combat_line_lab_potion(
+            crate::content::potions::PotionId::FearPotion,
+            None,
+            None,
+            0,
+            16,
+        )
+        .expect("resolve unique potion and target");
+    assert!(matches!(
+        result,
+        OracleAnalysisCombatLineLabUsePotionResultV1::Used { .. }
+    ));
+    let encoded = serde_json::to_string(&result).expect("encode potion delta");
+    assert!(!encoded.contains("uuid"), "{encoded}");
+    assert!(!encoded.contains("scratch_node"), "{encoded}");
+    assert!(!encoded.contains("action_key"), "{encoded}");
 }
 
 #[test]

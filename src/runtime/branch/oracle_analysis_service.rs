@@ -10,9 +10,9 @@ use serde_json::{json, Value};
 
 pub use oracle_lab_protocol::resolve_owned_resident_workspace;
 pub use oracle_lab_protocol::{
-    call_oracle_analysis_tcp_v1, OracleAnalysisCombatLabBaselineV1, OracleAnalysisServiceCommandV1,
-    OracleAnalysisServiceEndpointV1, OracleAnalysisServiceRequestV1,
-    OracleAnalysisServiceResponseV1, OracleAnalysisServiceTimingV1,
+    call_oracle_analysis_tcp_v1, OracleAnalysisCombatLabBaselineV1, OracleAnalysisCombatLabLineV1,
+    OracleAnalysisServiceCommandV1, OracleAnalysisServiceEndpointV1,
+    OracleAnalysisServiceRequestV1, OracleAnalysisServiceResponseV1, OracleAnalysisServiceTimingV1,
     ORACLE_ANALYSIS_SERVICE_ENDPOINT_SCHEMA, ORACLE_ANALYSIS_SERVICE_ENDPOINT_SCHEMA_VERSION,
     ORACLE_ANALYSIS_SERVICE_PROTOCOL, ORACLE_ANALYSIS_SERVICE_PROTOCOL_VERSION,
 };
@@ -322,7 +322,7 @@ fn execute_command(
                 "commands": [
                     "ping", "capabilities", "status", "explain", "route_policy_audit", "shop_policy_audit", "card_reward_policy_audit", "card_reward_path_audit", "campfire_policy_audit", "view", "tree", "try",
                     "focus", "choose", "owner", "run", "choose_path", "follow", "back", "promote", "advance", "probe_combat", "accept_combat", "restart_combat",
-                    "combat_lab_open", "combat_lab_observe", "combat_lab_goto", "combat_lab_play_card", "combat_lab_end", "combat_lab_search", "combat_lab_compare", "combat_lab_commit", "combat_lab_clear",
+                    "combat_lab_open", "combat_lab_observe", "combat_lab_goto", "combat_lab_back", "combat_lab_play_card", "combat_lab_use_potion", "combat_lab_end", "combat_lab_search", "combat_lab_compare", "combat_lab_commit", "combat_lab_clear",
                     "combat_scratch_start", "combat_scratch_status", "combat_scratch_observe", "combat_scratch_play", "combat_scratch_atomic", "combat_scratch_card", "combat_scratch_potion", "combat_scratch_end", "combat_scratch_selection", "combat_scratch_back", "combat_scratch_focus", "combat_scratch_search", "combat_scratch_tree", "combat_scratch_commit", "combat_scratch_clear", "history",
                     "journal", "timeline", "journal_entry", "trajectory", "combat_summary", "combat_diagnostic",
                     "export_combat_case", "export_continuation", "verify_run_witness", "escape_combat", "save", "shutdown"
@@ -694,17 +694,42 @@ fn execute_command(
             false,
         ),
         OracleAnalysisServiceCommandV1::CombatLabGoto {
+            line,
             turn,
             before_action,
             selection_offset,
             selection_limit,
+        } => {
+            let line = match line {
+                OracleAnalysisCombatLabLineV1::Baseline => {
+                    crate::eval::run_control::OracleAnalysisCombatLineLabLineV1::Baseline
+                }
+                OracleAnalysisCombatLabLineV1::Current => {
+                    crate::eval::run_control::OracleAnalysisCombatLineLabLineV1::Current
+                }
+            };
+            (
+                to_value(workspace.session.goto_combat_line_lab(
+                    line,
+                    turn,
+                    before_action,
+                    selection_offset,
+                    selection_limit,
+                )?)?,
+                true,
+                false,
+                false,
+            )
+        }
+        OracleAnalysisServiceCommandV1::CombatLabBack {
+            selection_offset,
+            selection_limit,
         } => (
-            to_value(workspace.session.goto_combat_line_lab_baseline(
-                turn,
-                before_action,
-                selection_offset,
-                selection_limit,
-            )?)?,
+            to_value(
+                workspace
+                    .session
+                    .back_combat_line_lab(selection_offset, selection_limit)?,
+            )?,
             true,
             false,
             false,
@@ -728,6 +753,28 @@ fn execute_command(
             let mutated = matches!(
                 result,
                 crate::eval::run_control::OracleAnalysisCombatLineLabPlayCardResultV1::Played { .. }
+            );
+            (to_value(result)?, mutated, false, false)
+        }
+        OracleAnalysisServiceCommandV1::CombatLabUsePotion {
+            potion_id,
+            occurrence,
+            target_index,
+            selection_offset,
+            selection_limit,
+        } => {
+            let potion_id = serde_json::from_value(serde_json::Value::String(potion_id.clone()))
+                .map_err(|_| format!("unknown typed potion id '{potion_id}'"))?;
+            let result = workspace.session.use_combat_line_lab_potion(
+                potion_id,
+                occurrence,
+                target_index,
+                selection_offset,
+                selection_limit,
+            )?;
+            let mutated = matches!(
+                result,
+                crate::eval::run_control::OracleAnalysisCombatLineLabUsePotionResultV1::Used { .. }
             );
             (to_value(result)?, mutated, false, false)
         }

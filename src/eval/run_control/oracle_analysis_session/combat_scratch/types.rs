@@ -74,6 +74,14 @@ pub enum OracleAnalysisCombatLineLabBaselineSourceV1 {
     ResidentIncumbent,
 }
 
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum OracleAnalysisCombatLineLabLineV1 {
+    Baseline,
+    #[default]
+    Current,
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct OracleAnalysisCombatScratchContextV1 {
@@ -1073,6 +1081,35 @@ pub enum OracleAnalysisCombatLineLabPlayCardResultV1 {
         card_id: CardId,
         occurrence: usize,
         playable_target_indices: Vec<usize>,
+    },
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct OracleAnalysisCombatLineLabPotionCandidateV1 {
+    pub occurrence: usize,
+    pub potion_slot: usize,
+    pub can_use: bool,
+    pub requires_target: bool,
+    pub usable_without_target: bool,
+    pub usable_target_indices: Vec<usize>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(tag = "status", rename_all = "snake_case")]
+pub enum OracleAnalysisCombatLineLabUsePotionResultV1 {
+    Used {
+        input: ClientInput,
+        delta: OracleAnalysisCombatLineLabDecisionDeltaV1,
+    },
+    AmbiguousPotion {
+        potion_id: PotionId,
+        candidates: Vec<OracleAnalysisCombatLineLabPotionCandidateV1>,
+    },
+    AmbiguousTarget {
+        potion_id: PotionId,
+        occurrence: usize,
+        usable_target_indices: Vec<usize>,
     },
 }
 

@@ -610,15 +610,19 @@ impl OracleAnalysisCombatLineLabV1 {
         })
     }
 
-    fn goto_baseline(
+    fn goto_line(
         &mut self,
+        line: OracleAnalysisCombatLineLabLineV1,
         turn: u32,
         before_action: usize,
         selection_offset: usize,
         selection_limit: usize,
     ) -> Result<OracleAnalysisCombatLineLabFrameV1, String> {
-        let matching = self
-            .baseline_scratch_node_ids
+        let path = match line {
+            OracleAnalysisCombatLineLabLineV1::Baseline => self.baseline_scratch_node_ids.clone(),
+            OracleAnalysisCombatLineLabLineV1::Current => self.cursor_node_path()?,
+        };
+        let matching = path
             .windows(2)
             .filter_map(|pair| {
                 self.positions
@@ -629,11 +633,20 @@ impl OracleAnalysisCombatLineLabV1 {
             .collect::<Vec<_>>();
         let node_id = matching.get(before_action).copied().ok_or_else(|| {
             format!(
-                "combat line lab baseline turn {turn} has {} actions; cannot select before action {before_action}",
+                "combat line lab {line:?} line turn {turn} has {} actions; cannot select before action {before_action}",
                 matching.len()
             )
         })?;
         self.cursor_scratch_node_id = node_id;
+        self.frame(selection_offset, selection_limit)
+    }
+
+    fn back_frame(
+        &mut self,
+        selection_offset: usize,
+        selection_limit: usize,
+    ) -> Result<OracleAnalysisCombatLineLabFrameV1, String> {
+        self.back_cursor()?;
         self.frame(selection_offset, selection_limit)
     }
 
@@ -994,8 +1007,9 @@ impl OracleAnalysisSessionV1 {
             .frame(selection_offset, selection_limit)
     }
 
-    pub fn goto_combat_line_lab_baseline(
+    pub fn goto_combat_line_lab(
         &mut self,
+        line: OracleAnalysisCombatLineLabLineV1,
         turn: u32,
         before_action: usize,
         selection_offset: usize,
@@ -1004,7 +1018,18 @@ impl OracleAnalysisSessionV1 {
         self.combat_scratch
             .as_mut()
             .ok_or_else(|| "oracle analysis workspace has no active combat line lab".to_string())?
-            .goto_baseline(turn, before_action, selection_offset, selection_limit)
+            .goto_line(line, turn, before_action, selection_offset, selection_limit)
+    }
+
+    pub fn back_combat_line_lab(
+        &mut self,
+        selection_offset: usize,
+        selection_limit: usize,
+    ) -> Result<OracleAnalysisCombatLineLabFrameV1, String> {
+        self.combat_scratch
+            .as_mut()
+            .ok_or_else(|| "oracle analysis workspace has no active combat line lab".to_string())?
+            .back_frame(selection_offset, selection_limit)
     }
 
     pub fn play_combat_line_lab_card(
@@ -1110,6 +1135,116 @@ impl OracleAnalysisSessionV1 {
             .expect("combat line lab remained active")
             .location_at(delta.cursor_scratch_node_id)?;
         Ok(OracleAnalysisCombatLineLabPlayCardResultV1::Played {
+            input,
+            delta: OracleAnalysisCombatLineLabDecisionDeltaV1::from_scratch(from, to, delta),
+        })
+    }
+
+    pub fn use_combat_line_lab_potion(
+        &mut self,
+        potion_id: crate::content::potions::PotionId,
+        occurrence: Option<usize>,
+        target_index: Option<usize>,
+        selection_offset: usize,
+        selection_limit: usize,
+    ) -> Result<OracleAnalysisCombatLineLabUsePotionResultV1, String> {
+        let (source_node_id, from, candidates) = {
+            let scratch = self.combat_scratch.as_ref().ok_or_else(|| {
+                "oracle analysis workspace has no active combat line lab".to_string()
+            })?;
+            let decision = OracleAnalysisCombatScratchDecisionViewV1::from(
+                scratch.view(selection_offset, selection_limit)?,
+            );
+            let candidates = decision
+                .potions
+                .iter()
+                .filter(|potion| potion.id == potion_id)
+                .enumerate()
+                .map(
+                    |(occurrence, potion)| OracleAnalysisCombatLineLabPotionCandidateV1 {
+                        occurrence,
+                        potion_slot: potion.potion_slot,
+                        can_use: potion.can_use,
+                        requires_target: potion.requires_target,
+                        usable_without_target: potion.usable_without_target,
+                        usable_target_indices: potion.usable_target_indices.clone(),
+                    },
+                )
+                .collect::<Vec<_>>();
+            (
+                scratch.cursor_scratch_node_id,
+                scratch.location_at(scratch.cursor_scratch_node_id)?,
+                candidates,
+            )
+        };
+        if candidates.is_empty() {
+            return Err(format!(
+                "combat line lab inventory has no potion with typed id {potion_id:?}"
+            ));
+        }
+        if occurrence.is_none() && candidates.len() > 1 {
+            return Ok(
+                OracleAnalysisCombatLineLabUsePotionResultV1::AmbiguousPotion {
+                    potion_id,
+                    candidates,
+                },
+            );
+        }
+        let occurrence = occurrence.unwrap_or(0);
+        let candidate = candidates.get(occurrence).ok_or_else(|| {
+            format!(
+                "combat line lab potion {potion_id:?} has {} copies, not occurrence {occurrence}",
+                candidates.len()
+            )
+        })?;
+        let target_index = match target_index {
+            Some(target_index) if candidate.usable_target_indices.contains(&target_index) => {
+                Some(target_index)
+            }
+            Some(target_index) => {
+                return Err(format!(
+                "combat line lab potion {potion_id:?} cannot target local monster {target_index}"
+            ))
+            }
+            None if candidate.usable_without_target => None,
+            None if candidate.usable_target_indices.len() == 1 => {
+                candidate.usable_target_indices.first().copied()
+            }
+            None if candidate.usable_target_indices.len() > 1 => {
+                return Ok(
+                    OracleAnalysisCombatLineLabUsePotionResultV1::AmbiguousTarget {
+                        potion_id,
+                        occurrence,
+                        usable_target_indices: candidate.usable_target_indices.clone(),
+                    },
+                )
+            }
+            None => {
+                return Err(format!(
+                    "combat line lab potion {potion_id:?} has no legal use at the current frame"
+                ))
+            }
+        };
+        let selector = OracleAnalysisCombatScratchActionSelectorV1::PotionSlot {
+            scratch_node_id: source_node_id,
+            potion_slot: candidate.potion_slot,
+            target_index,
+        };
+        let input = {
+            let scratch = self
+                .combat_scratch
+                .as_ref()
+                .expect("combat line lab remained active");
+            resolve_action_selector(scratch.current_position()?, selector)?
+        };
+        let delta =
+            self.play_combat_scratch_selector_delta(selector, selection_offset, selection_limit)?;
+        let to = self
+            .combat_scratch
+            .as_ref()
+            .expect("combat line lab remained active")
+            .location_at(delta.cursor_scratch_node_id)?;
+        Ok(OracleAnalysisCombatLineLabUsePotionResultV1::Used {
             input,
             delta: OracleAnalysisCombatLineLabDecisionDeltaV1::from_scratch(from, to, delta),
         })

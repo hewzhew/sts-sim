@@ -333,8 +333,10 @@ typed card ids; it never requires scratch node ids or action-list JSON:
 
 ```powershell
 .\ol-live.cmd live --session seed009 lab open --node <combat-node> --baseline incumbent
-.\ol-live.cmd live --session seed009 lab goto --turn <observed-turn> --before <action-ordinal>
+.\ol-live.cmd live --session seed009 lab goto --line current --turn <observed-turn> --before <action-ordinal>
+.\ol-live.cmd live --session seed009 lab back
 .\ol-live.cmd live --session seed009 lab play --card PowerThrough [--copy <occurrence>] [--target <monster-index>]
+.\ol-live.cmd live --session seed009 lab potion --potion FearPotion [--copy <occurrence>] [--target <monster-index>]
 .\ol-live.cmd live --session seed009 lab end
 .\ol-live.cmd live --session seed009 lab search --max-quanta 4 --quantum-nodes 1024 --wall-ms 1000
 .\ol-live.cmd live --session seed009 lab compare
@@ -355,14 +357,16 @@ multiple active sessions require an explicit session or endpoint:
 .\ol-live.cmd live lab play --card PowerThrough
 ```
 
-`open`, `goto`, and `observe` return a complete decision frame. A normal
-`play` or `end` returns only the typed state delta. Duplicate copies of one card
-id return candidate occurrences; a card with several legal targets returns
-target ambiguity. Neither case mutates the line. `compare` reports the common
-prefix, first semantic divergence, both exact divergent tails, per-turn
-HP/block/enemy totals, potion use, and whether each suffix is terminally known.
-The semantic action projection contains card/potion ids and local selectors,
-not UUID-bearing diagnostic action keys.
+`open`, `goto`, `back`, and `observe` return a complete decision frame. `goto`
+defaults to `--line current`; use `--line baseline` to recover an imported
+incumbent frame. A normal `play`, `potion`, or `end` returns only the typed state
+delta. Duplicate copies of one card or potion id return candidate occurrences;
+an action with several legal targets returns target ambiguity. Neither case
+mutates the line. A unique copy and unique target resolve automatically.
+`compare` reports the common prefix, first semantic divergence, both exact
+divergent tails, per-turn HP/block/enemy totals, potion use, and whether each
+suffix is terminally known. The semantic action projection contains card/potion
+ids and local selectors, not UUID-bearing diagnostic action keys.
 Resident execute/autosave timing is carried separately in the raw service
 response envelope and does not inflate normal typed `ol-live` results. Use the
 low-level `call` surface only when transport timing itself is under diagnosis.
@@ -395,11 +399,11 @@ atomic combat-witness child, and clears the lab. `lab clear` discards only the
 temporary DAG.
 
 The older `scratch` commands remain a low-level compatibility surface for
-structured selections, potion actions, and exact diagnostic selectors during
-the cutover. Do not add new normal workflows there; move the missing semantic
-operation into `lab` and then retire the overlapping scratch command. Offline
-scratch parity remains available through `.\ol.cmd combat-scratch --workspace
-<workspace> <subcommand>` until that migration completes.
+structured selections and exact diagnostic selectors during the cutover. Do
+not add new normal workflows there; move a missing semantic operation into
+`lab` and then retire the overlapping scratch command. Offline scratch parity
+remains available through `.\ol.cmd combat-scratch --workspace <workspace>
+<subcommand>` until that migration completes.
 
 Audit every materialized card-reward choice on the current exact path without
 guessing node ids or opening the workspace checkpoint:

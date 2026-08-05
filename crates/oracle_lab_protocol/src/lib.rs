@@ -67,6 +67,14 @@ pub enum OracleAnalysisCombatLabBaselineV1 {
     ResidentIncumbent,
 }
 
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum OracleAnalysisCombatLabLineV1 {
+    Baseline,
+    #[default]
+    Current,
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(tag = "command", rename_all = "snake_case", deny_unknown_fields)]
 pub enum OracleAnalysisServiceCommandV1 {
@@ -188,6 +196,8 @@ pub enum OracleAnalysisServiceCommandV1 {
         selection_limit: usize,
     },
     CombatLabGoto {
+        #[serde(default)]
+        line: OracleAnalysisCombatLabLineV1,
         turn: u32,
         #[serde(default)]
         before_action: usize,
@@ -196,8 +206,25 @@ pub enum OracleAnalysisServiceCommandV1 {
         #[serde(default = "default_combat_scratch_selection_limit")]
         selection_limit: usize,
     },
+    CombatLabBack {
+        #[serde(default)]
+        selection_offset: usize,
+        #[serde(default = "default_combat_scratch_selection_limit")]
+        selection_limit: usize,
+    },
     CombatLabPlayCard {
         card_id: String,
+        #[serde(default)]
+        occurrence: Option<usize>,
+        #[serde(default)]
+        target_index: Option<usize>,
+        #[serde(default)]
+        selection_offset: usize,
+        #[serde(default = "default_combat_scratch_selection_limit")]
+        selection_limit: usize,
+    },
+    CombatLabUsePotion {
+        potion_id: String,
         #[serde(default)]
         occurrence: Option<usize>,
         #[serde(default)]
@@ -873,6 +900,34 @@ mod tests {
             }
         ));
 
+        let goto = serde_json::from_value::<OracleAnalysisServiceCommandV1>(json!({
+            "command": "combat_lab_goto",
+            "turn": 3,
+        }))
+        .expect("parse current-line combat lab navigation");
+        assert!(matches!(
+            goto,
+            OracleAnalysisServiceCommandV1::CombatLabGoto {
+                line: OracleAnalysisCombatLabLineV1::Current,
+                turn: 3,
+                before_action: 0,
+                selection_offset: 0,
+                selection_limit: 24,
+            }
+        ));
+
+        let back = serde_json::from_value::<OracleAnalysisServiceCommandV1>(json!({
+            "command": "combat_lab_back",
+        }))
+        .expect("parse combat lab back");
+        assert!(matches!(
+            back,
+            OracleAnalysisServiceCommandV1::CombatLabBack {
+                selection_offset: 0,
+                selection_limit: 24,
+            }
+        ));
+
         let play = serde_json::from_value::<OracleAnalysisServiceCommandV1>(json!({
             "command": "combat_lab_play_card",
             "card_id": "PowerThrough",
@@ -887,6 +942,22 @@ mod tests {
                 selection_offset: 0,
                 selection_limit: 24,
             } if card_id == "PowerThrough"
+        ));
+
+        let potion = serde_json::from_value::<OracleAnalysisServiceCommandV1>(json!({
+            "command": "combat_lab_use_potion",
+            "potion_id": "FearPotion",
+        }))
+        .expect("parse semantic combat line lab potion");
+        assert!(matches!(
+            potion,
+            OracleAnalysisServiceCommandV1::CombatLabUsePotion {
+                potion_id,
+                occurrence: None,
+                target_index: None,
+                selection_offset: 0,
+                selection_limit: 24,
+            } if potion_id == "FearPotion"
         ));
     }
 
