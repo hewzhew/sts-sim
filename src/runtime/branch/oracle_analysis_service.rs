@@ -10,8 +10,9 @@ use serde_json::{json, Value};
 
 pub use oracle_lab_protocol::resolve_owned_resident_workspace;
 pub use oracle_lab_protocol::{
-    call_oracle_analysis_tcp_v1, OracleAnalysisServiceCommandV1, OracleAnalysisServiceEndpointV1,
-    OracleAnalysisServiceRequestV1, OracleAnalysisServiceResponseV1, OracleAnalysisServiceTimingV1,
+    call_oracle_analysis_tcp_v1, OracleAnalysisCombatLabBaselineV1, OracleAnalysisServiceCommandV1,
+    OracleAnalysisServiceEndpointV1, OracleAnalysisServiceRequestV1,
+    OracleAnalysisServiceResponseV1, OracleAnalysisServiceTimingV1,
     ORACLE_ANALYSIS_SERVICE_ENDPOINT_SCHEMA, ORACLE_ANALYSIS_SERVICE_ENDPOINT_SCHEMA_VERSION,
     ORACLE_ANALYSIS_SERVICE_PROTOCOL, ORACLE_ANALYSIS_SERVICE_PROTOCOL_VERSION,
 };
@@ -321,6 +322,7 @@ fn execute_command(
                 "commands": [
                     "ping", "capabilities", "status", "explain", "route_policy_audit", "shop_policy_audit", "card_reward_policy_audit", "card_reward_path_audit", "campfire_policy_audit", "view", "tree", "try",
                     "focus", "choose", "owner", "run", "choose_path", "follow", "back", "promote", "advance", "probe_combat", "accept_combat", "restart_combat",
+                    "combat_lab_open", "combat_lab_observe", "combat_lab_goto", "combat_lab_play_card", "combat_lab_end", "combat_lab_search", "combat_lab_compare", "combat_lab_commit", "combat_lab_clear",
                     "combat_scratch_start", "combat_scratch_status", "combat_scratch_observe", "combat_scratch_play", "combat_scratch_atomic", "combat_scratch_card", "combat_scratch_potion", "combat_scratch_end", "combat_scratch_selection", "combat_scratch_back", "combat_scratch_focus", "combat_scratch_search", "combat_scratch_tree", "combat_scratch_commit", "combat_scratch_clear", "history",
                     "journal", "timeline", "journal_entry", "trajectory", "combat_summary", "combat_diagnostic",
                     "export_combat_case", "export_continuation", "verify_run_witness", "escape_combat", "save", "shutdown"
@@ -650,6 +652,143 @@ fn execute_command(
             let view = workspace.view()?;
             (current_node_summary(workspace, &view)?, true, false, false)
         }
+        OracleAnalysisServiceCommandV1::CombatLabOpen {
+            node,
+            baseline,
+            max_engine_steps_per_transition,
+            selection_offset,
+            selection_limit,
+        } => {
+            let baseline = match baseline {
+                OracleAnalysisCombatLabBaselineV1::Root => {
+                    crate::eval::run_control::OracleAnalysisCombatLineLabBaselineSourceV1::Root
+                }
+                OracleAnalysisCombatLabBaselineV1::ResidentIncumbent => {
+                    crate::eval::run_control::OracleAnalysisCombatLineLabBaselineSourceV1::ResidentIncumbent
+                }
+            };
+            (
+                to_value(workspace.session.open_combat_line_lab(
+                    node,
+                    baseline,
+                    max_engine_steps_per_transition,
+                    selection_offset,
+                    selection_limit,
+                )?)?,
+                true,
+                false,
+                false,
+            )
+        }
+        OracleAnalysisServiceCommandV1::CombatLabObserve {
+            selection_offset,
+            selection_limit,
+        } => (
+            to_value(
+                workspace
+                    .session
+                    .combat_line_lab_frame(selection_offset, selection_limit)?,
+            )?,
+            false,
+            false,
+            false,
+        ),
+        OracleAnalysisServiceCommandV1::CombatLabGoto {
+            turn,
+            before_action,
+            selection_offset,
+            selection_limit,
+        } => (
+            to_value(workspace.session.goto_combat_line_lab_baseline(
+                turn,
+                before_action,
+                selection_offset,
+                selection_limit,
+            )?)?,
+            true,
+            false,
+            false,
+        ),
+        OracleAnalysisServiceCommandV1::CombatLabPlayCard {
+            card_id,
+            occurrence,
+            target_index,
+            selection_offset,
+            selection_limit,
+        } => {
+            let card_id = serde_json::from_value(serde_json::Value::String(card_id.clone()))
+                .map_err(|_| format!("unknown typed card id '{card_id}'"))?;
+            let result = workspace.session.play_combat_line_lab_card(
+                card_id,
+                occurrence,
+                target_index,
+                selection_offset,
+                selection_limit,
+            )?;
+            let mutated = matches!(
+                result,
+                crate::eval::run_control::OracleAnalysisCombatLineLabPlayCardResultV1::Played { .. }
+            );
+            (to_value(result)?, mutated, false, false)
+        }
+        OracleAnalysisServiceCommandV1::CombatLabEnd {
+            selection_offset,
+            selection_limit,
+        } => (
+            to_value(
+                workspace
+                    .session
+                    .end_combat_line_lab_turn(selection_offset, selection_limit)?,
+            )?,
+            true,
+            false,
+            false,
+        ),
+        OracleAnalysisServiceCommandV1::CombatLabSearch {
+            max_quanta,
+            quantum_nodes,
+            quantum_ms,
+            wall_ms,
+        } => {
+            let report = workspace.session.search_combat_line_lab(
+                crate::eval::run_control::OracleAnalysisCombatScratchSearchRequestV1 {
+                    max_quanta,
+                    quantum_nodes,
+                    quantum_ms,
+                    wall_ms,
+                },
+            )?;
+            (
+                json!({
+                    "report": report,
+                    "comparison": workspace.session.compare_combat_line_lab()?,
+                }),
+                true,
+                false,
+                false,
+            )
+        }
+        OracleAnalysisServiceCommandV1::CombatLabCompare => (
+            to_value(workspace.session.compare_combat_line_lab()?)?,
+            false,
+            false,
+            false,
+        ),
+        OracleAnalysisServiceCommandV1::CombatLabCommit => {
+            let view = workspace.commit_combat_scratch()?;
+            (current_node_summary(workspace, &view)?, true, false, false)
+        }
+        OracleAnalysisServiceCommandV1::CombatLabClear => (
+            json!({
+                "schema_name": "OracleAnalysisCombatLineLabClearReceiptV1",
+                "schema_version": 1,
+                "cleared": workspace.session.clear_combat_scratch(),
+                "run_cursor_node_id": workspace.session.cursor_node_id(),
+            }),
+            true,
+            false,
+            false,
+        ),
         OracleAnalysisServiceCommandV1::CombatScratchStart {
             node,
             max_engine_steps_per_transition,

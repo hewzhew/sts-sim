@@ -20,10 +20,12 @@ use view::{
 };
 
 #[derive(Clone)]
-pub(super) struct OracleAnalysisCombatScratchV1 {
+pub(super) struct OracleAnalysisCombatLineLabV1 {
     run_node_id: usize,
     context: OracleAnalysisCombatScratchContextV1,
     root_exact_state_hash: String,
+    baseline_source: OracleAnalysisCombatLineLabBaselineSourceV1,
+    baseline_scratch_node_ids: Vec<u64>,
     max_engine_steps_per_transition: usize,
     cursor_scratch_node_id: u64,
     next_scratch_node_id: u64,
@@ -31,11 +33,29 @@ pub(super) struct OracleAnalysisCombatScratchV1 {
     positions: BTreeMap<u64, CombatPosition>,
 }
 
-impl OracleAnalysisCombatScratchV1 {
+impl OracleAnalysisCombatLineLabV1 {
     pub(super) fn start(
         run_node_id: usize,
         context: OracleAnalysisCombatScratchContextV1,
         root: CombatPosition,
+        max_engine_steps_per_transition: usize,
+    ) -> Result<Self, String> {
+        Self::start_with_baseline(
+            run_node_id,
+            context,
+            root,
+            OracleAnalysisCombatLineLabBaselineSourceV1::Root,
+            &[],
+            max_engine_steps_per_transition,
+        )
+    }
+
+    pub(super) fn start_with_baseline(
+        run_node_id: usize,
+        context: OracleAnalysisCombatScratchContextV1,
+        root: CombatPosition,
+        baseline_source: OracleAnalysisCombatLineLabBaselineSourceV1,
+        baseline_inputs: &[ClientInput],
         max_engine_steps_per_transition: usize,
     ) -> Result<Self, String> {
         if max_engine_steps_per_transition == 0 {
@@ -51,16 +71,28 @@ impl OracleAnalysisCombatScratchV1 {
             input: None,
             exact_state_hash: root_exact_state_hash.clone(),
         };
-        Ok(Self {
+        let mut scratch = Self {
             run_node_id,
             context,
             root_exact_state_hash,
+            baseline_source,
+            baseline_scratch_node_ids: vec![0],
             max_engine_steps_per_transition,
             cursor_scratch_node_id: 0,
             next_scratch_node_id: 1,
             nodes: BTreeMap::from([(0, root_node)]),
             positions: BTreeMap::from([(0, root)]),
-        })
+        };
+        for input in baseline_inputs {
+            let node_id = scratch.play_input(input.clone())?;
+            scratch.baseline_scratch_node_ids.push(node_id);
+        }
+        if baseline_source == OracleAnalysisCombatLineLabBaselineSourceV1::ResidentIncumbent
+            && EngineCombatStepper.terminal(scratch.current_position()?) != CombatTerminal::Win
+        {
+            return Err("resident incumbent baseline is not a terminal victory".to_string());
+        }
+        Ok(scratch)
     }
 
     pub(super) fn restore(
@@ -114,6 +146,22 @@ impl OracleAnalysisCombatScratchV1 {
         if checkpoint.next_scratch_node_id <= maximum_node_id {
             return Err("combat scratch next node id is not above retained nodes".to_string());
         }
+        if checkpoint.baseline_scratch_node_ids.first().copied() != Some(0) {
+            return Err("combat line lab baseline does not start at root node 0".to_string());
+        }
+        for pair in checkpoint.baseline_scratch_node_ids.windows(2) {
+            let [parent_id, child_id] = pair else {
+                unreachable!("window length is fixed");
+            };
+            let child = nodes.get(child_id).ok_or_else(|| {
+                format!("combat line lab baseline references missing node {child_id}")
+            })?;
+            if child.parent_scratch_node_id != Some(*parent_id) {
+                return Err(format!(
+                    "combat line lab baseline node {child_id} is not a child of {parent_id}"
+                ));
+            }
+        }
 
         let mut positions = BTreeMap::from([(0, root)]);
         let mut pending = nodes
@@ -158,6 +206,8 @@ impl OracleAnalysisCombatScratchV1 {
             run_node_id: checkpoint.run_node_id,
             context,
             root_exact_state_hash: checkpoint.root_exact_state_hash,
+            baseline_source: checkpoint.baseline_source,
+            baseline_scratch_node_ids: checkpoint.baseline_scratch_node_ids,
             max_engine_steps_per_transition: checkpoint.max_engine_steps_per_transition,
             cursor_scratch_node_id: checkpoint.cursor_scratch_node_id,
             next_scratch_node_id: checkpoint.next_scratch_node_id,
@@ -176,6 +226,8 @@ impl OracleAnalysisCombatScratchV1 {
             cursor_scratch_node_id: self.cursor_scratch_node_id,
             next_scratch_node_id: self.next_scratch_node_id,
             nodes: self.nodes.values().cloned().collect(),
+            baseline_source: self.baseline_source,
+            baseline_scratch_node_ids: self.baseline_scratch_node_ids.clone(),
         }
     }
 
@@ -469,6 +521,371 @@ impl OracleAnalysisCombatScratchV1 {
         actions.reverse();
         Ok(actions)
     }
+
+    fn node_path(&self, terminal_node_id: u64) -> Result<Vec<u64>, String> {
+        let mut nodes = Vec::new();
+        let mut node_id = terminal_node_id;
+        let mut visited = BTreeSet::new();
+        loop {
+            if !visited.insert(node_id) {
+                return Err("combat line lab path contains a cycle".to_string());
+            }
+            nodes.push(node_id);
+            if node_id == 0 {
+                break;
+            }
+            node_id = self
+                .nodes
+                .get(&node_id)
+                .ok_or_else(|| format!("combat line lab path references missing node {node_id}"))?
+                .parent_scratch_node_id
+                .ok_or_else(|| {
+                    format!("combat line lab node {node_id} has no parent before root")
+                })?;
+        }
+        nodes.reverse();
+        Ok(nodes)
+    }
+
+    fn cursor_node_path(&self) -> Result<Vec<u64>, String> {
+        self.node_path(self.cursor_scratch_node_id)
+    }
+
+    fn location_at(
+        &self,
+        scratch_node_id: u64,
+    ) -> Result<OracleAnalysisCombatLineLabLocationV1, String> {
+        let path = self.node_path(scratch_node_id)?;
+        let position = self
+            .positions
+            .get(&scratch_node_id)
+            .ok_or_else(|| format!("combat line lab node {scratch_node_id} has no position"))?;
+        let turn = position.combat.turn.turn_count;
+        let action_in_turn = path
+            .windows(2)
+            .filter(|pair| {
+                self.positions
+                    .get(&pair[0])
+                    .is_some_and(|source| source.combat.turn.turn_count == turn)
+            })
+            .count();
+        let action_index = path.len().saturating_sub(1);
+        Ok(OracleAnalysisCombatLineLabLocationV1 {
+            action_index,
+            turn,
+            action_in_turn,
+            on_baseline: self.baseline_scratch_node_ids.get(action_index).copied()
+                == Some(scratch_node_id),
+        })
+    }
+
+    fn frame(
+        &self,
+        selection_offset: usize,
+        selection_limit: usize,
+    ) -> Result<OracleAnalysisCombatLineLabFrameV1, String> {
+        let decision = OracleAnalysisCombatScratchDecisionViewV1::from(
+            self.view(selection_offset, selection_limit)?,
+        );
+        let location = self.location_at(self.cursor_scratch_node_id)?;
+        Ok(OracleAnalysisCombatLineLabFrameV1 {
+            run_node_id: decision.run_node_id,
+            context: decision.context,
+            baseline_source: self.baseline_source,
+            baseline_action_count: self.baseline_scratch_node_ids.len().saturating_sub(1),
+            location,
+            terminal: decision.terminal,
+            turn: decision.turn,
+            phase: decision.phase,
+            counters: decision.counters,
+            player: decision.player,
+            hand: decision.hand,
+            draw_pile_top_first: decision.draw_pile_top_first,
+            discard_pile: decision.discard_pile,
+            exhaust_pile: decision.exhaust_pile,
+            potions: decision.potions,
+            monsters: decision.monsters,
+            atomic_actions: decision.atomic_actions,
+            selection_families: decision.selection_families,
+        })
+    }
+
+    fn goto_baseline(
+        &mut self,
+        turn: u32,
+        before_action: usize,
+        selection_offset: usize,
+        selection_limit: usize,
+    ) -> Result<OracleAnalysisCombatLineLabFrameV1, String> {
+        let matching = self
+            .baseline_scratch_node_ids
+            .windows(2)
+            .filter_map(|pair| {
+                self.positions
+                    .get(&pair[0])
+                    .filter(|position| position.combat.turn.turn_count == turn)
+                    .map(|_| pair[0])
+            })
+            .collect::<Vec<_>>();
+        let node_id = matching.get(before_action).copied().ok_or_else(|| {
+            format!(
+                "combat line lab baseline turn {turn} has {} actions; cannot select before action {before_action}",
+                matching.len()
+            )
+        })?;
+        self.cursor_scratch_node_id = node_id;
+        self.frame(selection_offset, selection_limit)
+    }
+
+    fn line_inputs(&self, path: &[u64]) -> Result<Vec<ClientInput>, String> {
+        path.iter()
+            .skip(1)
+            .map(|node_id| {
+                self.nodes
+                    .get(node_id)
+                    .ok_or_else(|| format!("combat line lab references missing node {node_id}"))?
+                    .input
+                    .clone()
+                    .ok_or_else(|| format!("combat line lab node {node_id} has no input"))
+            })
+            .collect()
+    }
+
+    fn line_summary(
+        &self,
+        path: &[u64],
+    ) -> Result<OracleAnalysisCombatLineLabLineSummaryV1, String> {
+        let root_node_id = path.first().copied().unwrap_or(0);
+        let root = self
+            .positions
+            .get(&root_node_id)
+            .ok_or_else(|| "combat line lab line has no root position".to_string())?;
+        let terminal_node_id = path.last().copied().unwrap_or(0);
+        let terminal = self.positions.get(&terminal_node_id).ok_or_else(|| {
+            format!("combat line lab terminal node {terminal_node_id} has no position")
+        })?;
+        let inputs = self.line_inputs(path)?;
+        let mut turns = Vec::<OracleAnalysisCombatLineLabTurnSummaryV1>::new();
+        for pair in path.windows(2) {
+            let source = self.positions.get(&pair[0]).ok_or_else(|| {
+                format!("combat line lab source node {} has no position", pair[0])
+            })?;
+            let successor = self.positions.get(&pair[1]).ok_or_else(|| {
+                format!("combat line lab successor node {} has no position", pair[1])
+            })?;
+            let turn = source.combat.turn.turn_count;
+            let enemy_hp_total = successor
+                .combat
+                .entities
+                .monsters
+                .iter()
+                .filter(|monster| monster.is_alive_for_action())
+                .map(|monster| monster.current_hp.max(0))
+                .sum();
+            if let Some(summary) = turns.last_mut().filter(|summary| summary.turn == turn) {
+                summary.action_count = summary.action_count.saturating_add(1);
+                summary.end_hp = successor.combat.entities.player.current_hp;
+                summary.end_block = successor.combat.entities.player.block;
+                summary.enemy_hp_total = enemy_hp_total;
+            } else {
+                turns.push(OracleAnalysisCombatLineLabTurnSummaryV1 {
+                    turn,
+                    action_count: 1,
+                    start_hp: source.combat.entities.player.current_hp,
+                    end_hp: successor.combat.entities.player.current_hp,
+                    end_block: successor.combat.entities.player.block,
+                    enemy_hp_total,
+                });
+            }
+        }
+        Ok(OracleAnalysisCombatLineLabLineSummaryV1 {
+            terminal: EngineCombatStepper.terminal(terminal),
+            suffix_known: EngineCombatStepper.terminal(terminal) != CombatTerminal::Unresolved,
+            action_count: inputs.len(),
+            initial_hp: root.combat.entities.player.current_hp,
+            final_hp: terminal.combat.entities.player.current_hp,
+            potions_used: inputs
+                .iter()
+                .filter(|input| {
+                    matches!(
+                        input,
+                        ClientInput::UsePotion { .. } | ClientInput::DiscardPotion(_)
+                    )
+                })
+                .count(),
+            turns,
+        })
+    }
+
+    fn action_at(
+        &self,
+        path: &[u64],
+        action_index: usize,
+    ) -> Result<Option<OracleAnalysisCombatLineLabActionV1>, String> {
+        let Some(pair) = path.get(action_index..=action_index.saturating_add(1)) else {
+            return Ok(None);
+        };
+        if pair.len() != 2 {
+            return Ok(None);
+        }
+        let position = self
+            .positions
+            .get(&pair[0])
+            .ok_or_else(|| format!("combat line lab node {} has no position", pair[0]))?;
+        let input = self
+            .nodes
+            .get(&pair[1])
+            .and_then(|node| node.input.as_ref())
+            .ok_or_else(|| format!("combat line lab node {} has no input", pair[1]))?;
+        Ok(Some(combat_line_lab_action(position, input)))
+    }
+
+    fn action_summaries(
+        &self,
+        path: &[u64],
+        start_action_index: usize,
+    ) -> Result<Vec<OracleAnalysisCombatLineLabActionSummaryV1>, String> {
+        let mut action_in_turn = BTreeMap::<u32, usize>::new();
+        let mut summaries = Vec::new();
+        for (action_index, pair) in path.windows(2).enumerate() {
+            let source = self.positions.get(&pair[0]).ok_or_else(|| {
+                format!("combat line lab source node {} has no position", pair[0])
+            })?;
+            let result = self.positions.get(&pair[1]).ok_or_else(|| {
+                format!("combat line lab result node {} has no position", pair[1])
+            })?;
+            let input = self
+                .nodes
+                .get(&pair[1])
+                .and_then(|node| node.input.as_ref())
+                .ok_or_else(|| format!("combat line lab node {} has no input", pair[1]))?;
+            let turn = source.combat.turn.turn_count;
+            let ordinal = action_in_turn.entry(turn).or_default();
+            let current_action_in_turn = *ordinal;
+            *ordinal = ordinal.saturating_add(1);
+            if action_index < start_action_index {
+                continue;
+            }
+            summaries.push(OracleAnalysisCombatLineLabActionSummaryV1 {
+                action_index,
+                turn,
+                action_in_turn: current_action_in_turn,
+                action: combat_line_lab_action(source, input),
+                result_hp: result.combat.entities.player.current_hp,
+                result_block: result.combat.entities.player.block,
+                result_enemy_hp_total: result
+                    .combat
+                    .entities
+                    .monsters
+                    .iter()
+                    .filter(|monster| monster.is_alive_for_action())
+                    .map(|monster| monster.current_hp.max(0))
+                    .sum(),
+            });
+        }
+        Ok(summaries)
+    }
+
+    fn compare(&self) -> Result<OracleAnalysisCombatLineLabCompareV1, String> {
+        let current_path = self.cursor_node_path()?;
+        let baseline_inputs = self.line_inputs(&self.baseline_scratch_node_ids)?;
+        let current_inputs = self.line_inputs(&current_path)?;
+        let common_prefix_actions = baseline_inputs
+            .iter()
+            .zip(&current_inputs)
+            .take_while(|(baseline, current)| baseline == current)
+            .count();
+        let first_divergence = (common_prefix_actions < baseline_inputs.len()
+            || common_prefix_actions < current_inputs.len())
+        .then(|| {
+            Ok::<_, String>(OracleAnalysisCombatLineLabDivergenceV1 {
+                action_index: common_prefix_actions,
+                baseline_action: self
+                    .action_at(&self.baseline_scratch_node_ids, common_prefix_actions)?,
+                current_action: self.action_at(&current_path, common_prefix_actions)?,
+            })
+        })
+        .transpose()?;
+        Ok(OracleAnalysisCombatLineLabCompareV1 {
+            run_node_id: self.run_node_id,
+            baseline_source: self.baseline_source,
+            common_prefix_actions,
+            first_divergence,
+            baseline: self.line_summary(&self.baseline_scratch_node_ids)?,
+            current: self.line_summary(&current_path)?,
+            baseline_tail: self
+                .action_summaries(&self.baseline_scratch_node_ids, common_prefix_actions)?,
+            current_tail: self.action_summaries(&current_path, common_prefix_actions)?,
+        })
+    }
+}
+
+fn combat_line_lab_action(
+    position: &CombatPosition,
+    input: &ClientInput,
+) -> OracleAnalysisCombatLineLabActionV1 {
+    let target_index = |target: Option<usize>| {
+        target.and_then(|entity_id| {
+            position
+                .combat
+                .entities
+                .monsters
+                .iter()
+                .position(|monster| monster.id == entity_id)
+        })
+    };
+    match input {
+        ClientInput::PlayCard { card_index, target } => position
+            .combat
+            .zones
+            .hand
+            .get(*card_index)
+            .map(|card| OracleAnalysisCombatLineLabActionV1::PlayCard {
+                card_id: card.id,
+                upgrades: card.upgrades,
+                hand_index: *card_index,
+                target_index: target_index(*target),
+            })
+            .unwrap_or_else(|| OracleAnalysisCombatLineLabActionV1::Other {
+                input: input.clone(),
+            }),
+        ClientInput::UsePotion {
+            potion_index,
+            target,
+        } => position
+            .combat
+            .entities
+            .potions
+            .get(*potion_index)
+            .and_then(Option::as_ref)
+            .map(|potion| OracleAnalysisCombatLineLabActionV1::UsePotion {
+                potion_id: potion.id,
+                potion_slot: *potion_index,
+                target_index: target_index(*target),
+            })
+            .unwrap_or_else(|| OracleAnalysisCombatLineLabActionV1::Other {
+                input: input.clone(),
+            }),
+        ClientInput::DiscardPotion(potion_slot) => position
+            .combat
+            .entities
+            .potions
+            .get(*potion_slot)
+            .and_then(Option::as_ref)
+            .map(
+                |potion| OracleAnalysisCombatLineLabActionV1::DiscardPotion {
+                    potion_id: potion.id,
+                    potion_slot: *potion_slot,
+                },
+            )
+            .unwrap_or_else(|| OracleAnalysisCombatLineLabActionV1::Other {
+                input: input.clone(),
+            }),
+        ClientInput::EndTurn => OracleAnalysisCombatLineLabActionV1::EndTurn,
+        _ => OracleAnalysisCombatLineLabActionV1::Other {
+            input: input.clone(),
+        },
+    }
 }
 
 impl OracleAnalysisSessionV1 {
@@ -498,7 +915,7 @@ impl OracleAnalysisSessionV1 {
             gold: branch.session.run_state.gold,
         };
         let root = branch.session.current_active_combat_position()?;
-        let scratch = OracleAnalysisCombatScratchV1::start(
+        let scratch = OracleAnalysisCombatLineLabV1::start(
             run_node_id,
             context,
             root,
@@ -507,6 +924,233 @@ impl OracleAnalysisSessionV1 {
         let view = scratch.view(selection_offset, selection_limit)?;
         self.combat_scratch = Some(scratch);
         Ok(view)
+    }
+
+    pub fn open_combat_line_lab(
+        &mut self,
+        run_node_id: Option<usize>,
+        baseline_source: OracleAnalysisCombatLineLabBaselineSourceV1,
+        max_engine_steps_per_transition: usize,
+        selection_offset: usize,
+        selection_limit: usize,
+    ) -> Result<OracleAnalysisCombatLineLabOpenV1, String> {
+        if self.combat_scratch.is_some() {
+            return Err(
+                "oracle analysis workspace already has an active combat line lab".to_string(),
+            );
+        }
+        let run_node_id = run_node_id.unwrap_or(self.cursor_node_id);
+        let (context, root) = {
+            let branch = self.require_branch(run_node_id)?;
+            if branch.boundary != OracleRunBoundaryV1::Combat {
+                return Err(format!(
+                    "oracle analysis node {run_node_id} is at {:?}, not combat",
+                    branch.boundary
+                ));
+            }
+            (
+                OracleAnalysisCombatScratchContextV1 {
+                    act: branch.session.run_state.act_num,
+                    floor: branch.session.run_state.floor_num,
+                    gold: branch.session.run_state.gold,
+                },
+                branch.session.current_active_combat_position()?,
+            )
+        };
+        let baseline_inputs = match baseline_source {
+            OracleAnalysisCombatLineLabBaselineSourceV1::Root => Vec::new(),
+            OracleAnalysisCombatLineLabBaselineSourceV1::ResidentIncumbent => self
+                .combat_jobs
+                .get(&run_node_id)
+                .and_then(|job| job.work.verified_witness_inputs())
+                .ok_or_else(|| {
+                    format!(
+                        "oracle analysis node {run_node_id} has no verified resident combat incumbent"
+                    )
+                })?,
+        };
+        let scratch = OracleAnalysisCombatLineLabV1::start_with_baseline(
+            run_node_id,
+            context,
+            root,
+            baseline_source,
+            &baseline_inputs,
+            max_engine_steps_per_transition,
+        )?;
+        let baseline = scratch.line_summary(&scratch.baseline_scratch_node_ids)?;
+        let frame = scratch.frame(selection_offset, selection_limit)?;
+        self.combat_scratch = Some(scratch);
+        Ok(OracleAnalysisCombatLineLabOpenV1 { baseline, frame })
+    }
+
+    pub fn combat_line_lab_frame(
+        &self,
+        selection_offset: usize,
+        selection_limit: usize,
+    ) -> Result<OracleAnalysisCombatLineLabFrameV1, String> {
+        self.combat_scratch
+            .as_ref()
+            .ok_or_else(|| "oracle analysis workspace has no active combat line lab".to_string())?
+            .frame(selection_offset, selection_limit)
+    }
+
+    pub fn goto_combat_line_lab_baseline(
+        &mut self,
+        turn: u32,
+        before_action: usize,
+        selection_offset: usize,
+        selection_limit: usize,
+    ) -> Result<OracleAnalysisCombatLineLabFrameV1, String> {
+        self.combat_scratch
+            .as_mut()
+            .ok_or_else(|| "oracle analysis workspace has no active combat line lab".to_string())?
+            .goto_baseline(turn, before_action, selection_offset, selection_limit)
+    }
+
+    pub fn play_combat_line_lab_card(
+        &mut self,
+        card_id: crate::content::cards::CardId,
+        occurrence: Option<usize>,
+        target_index: Option<usize>,
+        selection_offset: usize,
+        selection_limit: usize,
+    ) -> Result<OracleAnalysisCombatLineLabPlayCardResultV1, String> {
+        let (source_node_id, from, candidates) = {
+            let scratch = self.combat_scratch.as_ref().ok_or_else(|| {
+                "oracle analysis workspace has no active combat line lab".to_string()
+            })?;
+            let decision = OracleAnalysisCombatScratchDecisionViewV1::from(
+                scratch.view(selection_offset, selection_limit)?,
+            );
+            let candidates = decision
+                .hand
+                .iter()
+                .filter(|card| card.card.id == card_id)
+                .enumerate()
+                .map(
+                    |(occurrence, card)| OracleAnalysisCombatLineLabCardCandidateV1 {
+                        occurrence,
+                        hand_index: card.hand_index,
+                        upgrades: card.card.upgrades,
+                        effective_cost: card.card.effective_cost,
+                        playable_without_target: card.playable_without_target,
+                        playable_target_indices: card.playable_target_indices.clone(),
+                    },
+                )
+                .collect::<Vec<_>>();
+            (
+                scratch.cursor_scratch_node_id,
+                scratch.location_at(scratch.cursor_scratch_node_id)?,
+                candidates,
+            )
+        };
+        if candidates.is_empty() {
+            return Err(format!(
+                "combat line lab hand has no card with typed id {card_id:?}"
+            ));
+        }
+        if occurrence.is_none() && candidates.len() > 1 {
+            return Ok(OracleAnalysisCombatLineLabPlayCardResultV1::AmbiguousCard {
+                card_id,
+                candidates,
+            });
+        }
+        let occurrence = occurrence.unwrap_or(0);
+        let candidate = candidates.get(occurrence).ok_or_else(|| {
+            format!(
+                "combat line lab card {card_id:?} has {} copies, not occurrence {occurrence}",
+                candidates.len()
+            )
+        })?;
+        let target_index = match target_index {
+            Some(target_index) if candidate.playable_target_indices.contains(&target_index) => {
+                Some(target_index)
+            }
+            Some(target_index) => {
+                return Err(format!(
+                    "combat line lab card {card_id:?} cannot target local monster {target_index}"
+                ))
+            }
+            None if candidate.playable_without_target => None,
+            None if candidate.playable_target_indices.len() == 1 => {
+                candidate.playable_target_indices.first().copied()
+            }
+            None if candidate.playable_target_indices.len() > 1 => {
+                return Ok(
+                    OracleAnalysisCombatLineLabPlayCardResultV1::AmbiguousTarget {
+                        card_id,
+                        occurrence,
+                        playable_target_indices: candidate.playable_target_indices.clone(),
+                    },
+                )
+            }
+            None => {
+                return Err(format!(
+                    "combat line lab card {card_id:?} has no legal play at the current frame"
+                ))
+            }
+        };
+        let selector = OracleAnalysisCombatScratchActionSelectorV1::HandCard {
+            scratch_node_id: source_node_id,
+            hand_index: candidate.hand_index,
+            target_index,
+        };
+        let input = {
+            let scratch = self
+                .combat_scratch
+                .as_ref()
+                .expect("combat line lab remained active");
+            resolve_action_selector(scratch.current_position()?, selector)?
+        };
+        let delta =
+            self.play_combat_scratch_selector_delta(selector, selection_offset, selection_limit)?;
+        let to = self
+            .combat_scratch
+            .as_ref()
+            .expect("combat line lab remained active")
+            .location_at(delta.cursor_scratch_node_id)?;
+        Ok(OracleAnalysisCombatLineLabPlayCardResultV1::Played {
+            input,
+            delta: OracleAnalysisCombatLineLabDecisionDeltaV1::from_scratch(from, to, delta),
+        })
+    }
+
+    pub fn end_combat_line_lab_turn(
+        &mut self,
+        selection_offset: usize,
+        selection_limit: usize,
+    ) -> Result<OracleAnalysisCombatLineLabDecisionDeltaV1, String> {
+        let (source_node_id, from) = {
+            let scratch = self.combat_scratch.as_ref().ok_or_else(|| {
+                "oracle analysis workspace has no active combat line lab".to_string()
+            })?;
+            (
+                scratch.cursor_scratch_node_id,
+                scratch.location_at(scratch.cursor_scratch_node_id)?,
+            )
+        };
+        let delta = self.play_combat_scratch_selector_delta(
+            OracleAnalysisCombatScratchActionSelectorV1::EndTurn {
+                scratch_node_id: source_node_id,
+            },
+            selection_offset,
+            selection_limit,
+        )?;
+        let to = self
+            .combat_scratch
+            .as_ref()
+            .expect("combat line lab remained active")
+            .location_at(delta.cursor_scratch_node_id)?;
+        Ok(OracleAnalysisCombatLineLabDecisionDeltaV1::from_scratch(
+            from, to, delta,
+        ))
+    }
+
+    pub fn compare_combat_line_lab(&self) -> Result<OracleAnalysisCombatLineLabCompareV1, String> {
+        self.combat_scratch
+            .as_ref()
+            .ok_or_else(|| "oracle analysis workspace has no active combat line lab".to_string())?
+            .compare()
     }
 
     pub fn combat_scratch_view(

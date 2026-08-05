@@ -612,3 +612,135 @@ fn combat_scratch_pages_structured_selection_inputs_without_eager_storage() {
         second_page.legal_actions.selection_families[0].actions[0].action_ref
     );
 }
+
+#[test]
+fn combat_line_lab_imports_a_complete_baseline_and_branches_by_turn_without_node_ids() {
+    let mut analysis = one_strike_scratch_analysis();
+    let (context, root) = {
+        let branch = analysis.require_branch(0).expect("combat branch");
+        (
+            OracleAnalysisCombatScratchContextV1 {
+                act: branch.session.run_state.act_num,
+                floor: branch.session.run_state.floor_num,
+                gold: branch.session.run_state.gold,
+            },
+            branch
+                .session
+                .current_active_combat_position()
+                .expect("exact combat root"),
+        )
+    };
+    let target = root.combat.entities.monsters[0].id;
+    let scratch = OracleAnalysisCombatLineLabV1::start_with_baseline(
+        0,
+        context,
+        root,
+        OracleAnalysisCombatLineLabBaselineSourceV1::ResidentIncumbent,
+        &[ClientInput::PlayCard {
+            card_index: 0,
+            target: Some(target),
+        }],
+        250,
+    )
+    .expect("import verified baseline");
+    assert_eq!(
+        scratch
+            .line_summary(&scratch.baseline_scratch_node_ids)
+            .expect("baseline summary")
+            .terminal,
+        CombatTerminal::Win
+    );
+    let baseline_turn = scratch
+        .positions
+        .get(&0)
+        .expect("baseline root position")
+        .combat
+        .turn
+        .turn_count;
+    analysis.combat_scratch = Some(scratch);
+
+    let open_frame = analysis
+        .combat_line_lab_frame(0, 16)
+        .expect("terminal baseline frame");
+    assert_eq!(open_frame.baseline_action_count, 1);
+    assert_eq!(open_frame.terminal, CombatTerminal::Win);
+    let encoded = serde_json::to_string(&open_frame).expect("encode line lab frame");
+    assert!(!encoded.contains("scratch_node"), "{encoded}");
+
+    analysis
+        .goto_combat_line_lab_baseline(baseline_turn, 0, 0, 16)
+        .expect("goto root action");
+    let played = analysis
+        .play_combat_line_lab_card(crate::content::cards::CardId::Strike, None, None, 0, 16)
+        .expect("play unique typed card");
+    let encoded = serde_json::to_string(&played).expect("encode line lab delta");
+    assert!(!encoded.contains("scratch_node"), "{encoded}");
+    let comparison = analysis
+        .compare_combat_line_lab()
+        .expect("compare exact matching line");
+    assert_eq!(comparison.common_prefix_actions, 1);
+    assert!(comparison.first_divergence.is_none());
+    assert_eq!(comparison.current.terminal, CombatTerminal::Win);
+    let encoded = serde_json::to_string(&comparison).expect("encode semantic comparison");
+    assert!(!encoded.contains("uuid"), "{encoded}");
+    assert!(!encoded.contains("action_key"), "{encoded}");
+
+    analysis
+        .goto_combat_line_lab_baseline(baseline_turn, 0, 0, 16)
+        .expect("rewind to baseline root");
+    analysis
+        .end_combat_line_lab_turn(0, 16)
+        .expect("branch with end turn");
+    let comparison = analysis
+        .compare_combat_line_lab()
+        .expect("compare divergent line");
+    let divergence = comparison
+        .first_divergence
+        .expect("end turn diverges from strike");
+    assert_eq!(divergence.action_index, 0);
+    assert!(matches!(
+        divergence.baseline_action,
+        Some(OracleAnalysisCombatLineLabActionV1::PlayCard { .. })
+    ));
+    assert_eq!(
+        divergence.current_action,
+        Some(OracleAnalysisCombatLineLabActionV1::EndTurn)
+    );
+    assert!(!comparison.current.suffix_known);
+}
+
+#[test]
+fn combat_line_lab_returns_typed_duplicate_card_ambiguity_without_mutation() {
+    let mut combat = one_strike_combat();
+    combat
+        .zones
+        .hand
+        .push(CombatCard::new(crate::content::cards::CardId::Strike, 2));
+    let mut analysis = scratch_analysis_at_engine(combat, EngineState::CombatPlayerTurn);
+    analysis
+        .open_combat_line_lab(
+            None,
+            OracleAnalysisCombatLineLabBaselineSourceV1::Root,
+            250,
+            0,
+            16,
+        )
+        .expect("open root line lab");
+    let before = serde_json::to_value(analysis.checkpoint().expect("before ambiguity"))
+        .expect("encode checkpoint");
+    let result = analysis
+        .play_combat_line_lab_card(crate::content::cards::CardId::Strike, None, None, 0, 16)
+        .expect("typed duplicate ambiguity");
+    let OracleAnalysisCombatLineLabPlayCardResultV1::AmbiguousCard { candidates, .. } = result
+    else {
+        panic!("duplicate typed card id must not be guessed");
+    };
+    assert_eq!(candidates.len(), 2);
+    assert_eq!(candidates[0].occurrence, 0);
+    assert_eq!(candidates[1].occurrence, 1);
+    assert_eq!(
+        serde_json::to_value(analysis.checkpoint().expect("after ambiguity"))
+            .expect("encode checkpoint"),
+        before
+    );
+}

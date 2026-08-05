@@ -505,42 +505,49 @@ schedules into typed content-addressed payload tables. Replay steps and emitted
 events use shared prefix DAGs. Payload hashes declare their algorithm and are
 validated during hydration; legacy inline checkpoints remain readable.
 
-One workspace may carry one combat scratch DAG bound to an immutable run combat
+One workspace may carry one combat line-lab DAG bound to an immutable run combat
 node and its exact root hash. The root position remains owned by that run node;
-each scratch child persists only its parent id, one typed `ClientInput`, and the
-exact successor hash. Restore topologically replays every delta from the bound
-root and rejects missing parents, cycles, illegal inputs, transition truncation,
-or hash drift. Normal agent play uses node-local hand, potion-slot, and monster
-indices paired with an immutable scratch node id. The runtime resolves that
-pair to exact card UUID, potion UUID, and monster entity identity before checking
-legality; a local index never becomes durable identity or resolves a display
-label. End-turn, atomic, and structured-selection selectors follow the same
-node-bound rule, and selectors can fork directly from retained nodes. The
-diagnostic view retains internal identities and exact-hash action refs, but the
-compact observation omits them and exposes effective card costs, legal local
-targets, a top-first draw order, combat relic state, locked monster move steps,
-relevant monster runtime state, and node-local structured-selection domains.
-`observe` establishes a complete decision frame. A normal card, potion,
-end-turn, atomic, or structured-selection action returns a typed delta anchored
-to its immutable source scratch node: scalar owner changes, card-pile sequence
-splices, potion-slot upserts/removals, and per-monster updates. Applying that
-delta to the declared base reconstructs the complete successor decision frame;
-another base node is rejected. `focus` and `back` select a previously established
-immutable node through a typed navigation receipt; applying it to that cached
-node refreshes DAG-wide metadata such as node count. Callers may explicitly
-request a complete action successor or navigation frame for recovery or
-diagnostics. CLI JSON is compact by default, so whitespace is not part of the
-agent transport cost. Deltas and navigation receipts are response projections,
-not persisted scratch history.
+each child persists only its parent id, one typed `ClientInput`, and the exact
+successor hash. Restore topologically replays every delta from the bound root and
+rejects missing parents, cycles, illegal inputs, transition truncation, or hash
+drift. The persisted checkpoint retains the legacy `combat_scratch` field name
+for workspace compatibility, but the line lab is the behavioral owner.
+
+A line lab has one typed baseline. A root baseline contains no actions; a
+resident-incumbent baseline imports the complete replay-verified incumbent into
+the same DAG and records every immutable prefix. Normal callers navigate that
+baseline by observed turn and zero-based action ordinal, never by internal DAG
+node id. A typed card id resolves automatically only when one current hand copy
+matches; duplicate copies and multiple legal targets return typed ambiguity
+instead of guessing. The runtime resolves the selected observation-local copy
+and target to exact internal identities before applying the durable
+`ClientInput`.
+
+`open` establishes one complete decision frame. Ordinary semantic actions return
+typed deltas without scratch node ids, while `observe` returns a full recovery
+frame. `compare` owns the relationship between baseline and current line: common
+prefix, first typed divergence, exact post-divergence semantic actions,
+per-turn HP/block/enemy totals, potion expenditure, and terminal truth. An
+unresolved current cursor reports an unknown suffix rather than pretending the
+partial line lost. Bounded suffix search appends a replay-verified complete win
+to the same DAG and returns its comparison; it does not create another evidence
+owner.
+
+The lower diagnostic scratch selectors remain temporarily callable during the
+cutover for exact-hash and structured-selection work. They are compatibility
+adapters over the same line-lab owner, receive no new workflow semantics, and
+must be deleted once semantic potion/selection navigation and remaining callers
+have moved. CLI JSON is compact by default; deltas and comparisons are response
+projections, not persisted line history.
 Resident execution and autosave timing belongs to the protocol response
 envelope, not to the decision observation, delta, or navigation receipt. Typed
 live commands print only the result projection; raw protocol callers retain the
 timing metadata for performance diagnosis.
-Scratch navigation never creates run variations. A bounded
-descendant search may append a replay-verified potion-free suffix to scratch,
+Line-lab navigation never creates run variations. A bounded
+descendant search may append a replay-verified potion-free suffix to the lab,
 but only an explicit terminal-victory commit may materialize the complete root
-prefix as one atomic combat witness and clear the scratch DAG. Run journals do
-not record individual scratch card actions.
+prefix as one atomic combat witness and clear the line lab. Run journals do not
+record individual line-lab card actions.
 
 A fresh active workspace may also be rebuilt from one exact committed node
 after journal and final-state fingerprints are verified; the historical

@@ -327,20 +327,18 @@ cargo oracle-lab probe-combat `
   --generation-work 4096 --quantum-nodes 256 --wall-ms 1000
 ```
 
-At an exact combat node, use the resident combat scratch surface for
-card-by-card analysis without writing action-list JSON or mutating the formal
-run tree:
+At an exact combat node, open one resident combat line lab from the complete
+verified incumbent. The normal loop uses observed turn/action coordinates and
+typed card ids; it never requires scratch node ids or action-list JSON:
 
 ```powershell
-.\ol-live.cmd live --session seed009 scratch start --node <combat-node>
-.\ol-live.cmd live --session seed009 scratch observe
-.\ol-live.cmd live --session seed009 scratch card --from <scratch-node> --hand <hand-index> [--target <monster-index>]
-.\ol-live.cmd live --session seed009 scratch potion --from <scratch-node> --slot <potion-slot> [--target <monster-index>]
-.\ol-live.cmd live --session seed009 scratch end --from <scratch-node>
-.\ol-live.cmd live --session seed009 scratch selection --from <scratch-node> --family <index> --input <index>
-.\ol-live.cmd live --session seed009 scratch back [--full]
-.\ol-live.cmd live --session seed009 scratch focus --scratch-node <scratch-node> [--full]
-.\ol-live.cmd live --session seed009 scratch tree
+.\ol-live.cmd live --session seed009 lab open --node <combat-node> --baseline incumbent
+.\ol-live.cmd live --session seed009 lab goto --turn <observed-turn> --before <action-ordinal>
+.\ol-live.cmd live --session seed009 lab play --card PowerThrough [--copy <occurrence>] [--target <monster-index>]
+.\ol-live.cmd live --session seed009 lab end
+.\ol-live.cmd live --session seed009 lab search --max-quanta 4 --quantum-nodes 1024 --wall-ms 1000
+.\ol-live.cmd live --session seed009 lab compare
+.\ol-live.cmd live --session seed009 lab commit
 ```
 
 `ol-live.cmd` bypasses Cargo's per-process startup on the repeated card loop.
@@ -353,71 +351,55 @@ recorded immutable host image, routine `live` calls may omit `--session
 multiple active sessions require an explicit session or endpoint:
 
 ```powershell
-.\ol-live.cmd live scratch observe
-.\ol-live.cmd live scratch card --from <scratch-node> --hand <hand-index> [--target <monster-index>]
+.\ol-live.cmd live lab observe
+.\ol-live.cmd live lab play --card PowerThrough
 ```
 
-Action commands return a compact typed delta by default. `back` and `focus`
-return a typed navigation receipt that selects an already cached immutable
-node and refreshes its DAG-wide metadata. Add `--full` to `card`, `potion`,
-`end`, `atomic`, `selection`, `back`, or `focus` when the caller no longer has
-the required base or target observation:
-
-```powershell
-.\ol-live.cmd live --session seed009 scratch card --from <scratch-node> --hand <hand-index> --target <monster-index> --full
-```
-
-`observe` is the agent-play projection: it omits fingerprint and display-key
-duplication while retaining current combat relic counters, effective card
-costs, a top-first draw pile, complete locked monster move steps, thief runtime
-state, and typed legal inputs. Hand cards, occupied potion slots, and monsters
-carry observation-local indices; playable cards and usable potions expose their
-legal local monster targets. Card and potion commands require the source node,
-so a stale hand or target index cannot silently apply to a later observation.
-The runtime resolves local indices to exact internal identities before applying
-the action. `end` may omit `--from` to use the current cursor; `atomic` remains a
-short fallback for other atomic inputs. Every selector may fork directly from
-any retained node, and an invalid source, identity, target, or index fails
-without moving the current cursor.
-
-`focus --scratch-node <id>` moves among retained scratch branches. Its default
-receipt, and the corresponding `back` receipt, carry the source and selected
-scratch node ids, the selected parent, and the latest scratch node count. They
-do not repeat the selected node's combat state. Use `--full` after a client
-restart, context loss, or any other cache miss.
+`open`, `goto`, and `observe` return a complete decision frame. A normal
+`play` or `end` returns only the typed state delta. Duplicate copies of one card
+id return candidate occurrences; a card with several legal targets returns
+target ambiguity. Neither case mutates the line. `compare` reports the common
+prefix, first semantic divergence, both exact divergent tails, per-turn
+HP/block/enemy totals, potion use, and whether each suffix is terminally known.
+The semantic action projection contains card/potion ids and local selectors,
+not UUID-bearing diagnostic action keys.
 Resident execute/autosave timing is carried separately in the raw service
 response envelope and does not inflate normal typed `ol-live` results. Use the
 low-level `call` surface only when transport timing itself is under diagnosis.
 Structured Hand/Grid/Scry inputs use local domain indices and are returned in
 bounded pages; use `--selection-offset` and `--selection-limit` without
 materializing the complete combination space.
-Action deltas carry `base_scratch_node_id` and `cursor_scratch_node_id`, then
-only changed typed fields. Card piles use one validated prefix/remove/insert
-splice; potions use stable slot removals/upserts; monsters use indexed field
-updates unless topology changed. The delta contract rejects another base node
-and is tested by reconstructing the complete successor observation exactly.
+Lab action deltas carry semantic before/after locations and only changed typed
+fields. Card piles use one validated prefix/remove/insert splice; potions use
+stable slot removals/upserts; monsters use indexed field updates unless topology
+changed. Internal DAG ids remain in the persisted checkpoint and low-level
+scratch adapter, not in the normal lab response.
 CLI JSON is emitted on one compact line; pipe it through a formatter only for
 ad-hoc human inspection.
-The longer exact-hash action refs remain available through `status` and `play`
-for compatibility and low-level diagnostics. Hidden `--uuid` card and potion
-selectors remain accepted with exact entity targets for old diagnostic callers,
-but are not part of the normal observation-driven interface.
+The longer exact-hash action refs and hidden UUID selectors remain accepted by
+the scratch adapter for old diagnostic callers, but are not part of the normal
+lab interface.
 
 Ask the existing portfolio for one deliberately small potion-free suffix from
-the current scratch node only when manual play needs help:
+the current line only when manual play needs help:
 
 ```powershell
-.\ol-live.cmd live --session seed009 scratch search `
+.\ol-live.cmd live --session seed009 lab search `
   --max-quanta 4 --quantum-nodes 1024 --wall-ms 1000
 ```
 
-A found suffix is appended to scratch and remains editable; a missing bounded
-witness remains unresolved. `scratch commit` succeeds only at a terminal win,
+A found suffix is appended to the line lab; a missing bounded witness remains
+unresolved. `lab commit` succeeds only at a terminal win,
 replays the complete prefix from the unchanged run combat root, creates one
-atomic combat-witness child, and clears scratch. `scratch clear` discards only
-the temporary DAG. Offline parity is available through
-`.\ol.cmd combat-scratch --workspace <workspace> <subcommand>`, but resident
-mode avoids reloading the workspace on every card action.
+atomic combat-witness child, and clears the lab. `lab clear` discards only the
+temporary DAG.
+
+The older `scratch` commands remain a low-level compatibility surface for
+structured selections, potion actions, and exact diagnostic selectors during
+the cutover. Do not add new normal workflows there; move the missing semantic
+operation into `lab` and then retire the overlapping scratch command. Offline
+scratch parity remains available through `.\ol.cmd combat-scratch --workspace
+<workspace> <subcommand>` until that migration completes.
 
 Audit every materialized card-reward choice on the current exact path without
 guessing node ids or opening the workspace checkpoint:

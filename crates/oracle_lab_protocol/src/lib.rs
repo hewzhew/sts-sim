@@ -59,6 +59,14 @@ pub struct OracleAnalysisServiceEndpointV1 {
     pub executable: Option<PathBuf>,
 }
 
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum OracleAnalysisCombatLabBaselineV1 {
+    Root,
+    #[default]
+    ResidentIncumbent,
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(tag = "command", rename_all = "snake_case", deny_unknown_fields)]
 pub enum OracleAnalysisServiceCommandV1 {
@@ -161,6 +169,63 @@ pub enum OracleAnalysisServiceCommandV1 {
     AcceptCombat,
     EscapeCombat,
     RestartCombat,
+    CombatLabOpen {
+        #[serde(default)]
+        node: Option<usize>,
+        #[serde(default)]
+        baseline: OracleAnalysisCombatLabBaselineV1,
+        #[serde(default = "default_max_engine_steps_per_transition")]
+        max_engine_steps_per_transition: usize,
+        #[serde(default)]
+        selection_offset: usize,
+        #[serde(default = "default_combat_scratch_selection_limit")]
+        selection_limit: usize,
+    },
+    CombatLabObserve {
+        #[serde(default)]
+        selection_offset: usize,
+        #[serde(default = "default_combat_scratch_selection_limit")]
+        selection_limit: usize,
+    },
+    CombatLabGoto {
+        turn: u32,
+        #[serde(default)]
+        before_action: usize,
+        #[serde(default)]
+        selection_offset: usize,
+        #[serde(default = "default_combat_scratch_selection_limit")]
+        selection_limit: usize,
+    },
+    CombatLabPlayCard {
+        card_id: String,
+        #[serde(default)]
+        occurrence: Option<usize>,
+        #[serde(default)]
+        target_index: Option<usize>,
+        #[serde(default)]
+        selection_offset: usize,
+        #[serde(default = "default_combat_scratch_selection_limit")]
+        selection_limit: usize,
+    },
+    CombatLabEnd {
+        #[serde(default)]
+        selection_offset: usize,
+        #[serde(default = "default_combat_scratch_selection_limit")]
+        selection_limit: usize,
+    },
+    CombatLabSearch {
+        #[serde(default = "default_combat_scratch_max_quanta")]
+        max_quanta: usize,
+        #[serde(default = "default_combat_scratch_quantum_nodes")]
+        quantum_nodes: usize,
+        #[serde(default = "default_combat_scratch_quantum_ms")]
+        quantum_ms: u64,
+        #[serde(default = "default_combat_scratch_wall_ms")]
+        wall_ms: u64,
+    },
+    CombatLabCompare,
+    CombatLabCommit,
+    CombatLabClear,
     CombatScratchStart {
         #[serde(default)]
         node: Option<usize>,
@@ -787,6 +852,41 @@ mod tests {
                 selection_offset: 0,
                 selection_limit: 24,
             }
+        ));
+    }
+
+    #[test]
+    fn combat_line_lab_defaults_to_the_resident_incumbent_and_hides_node_selection() {
+        let open = serde_json::from_value::<OracleAnalysisServiceCommandV1>(json!({
+            "command": "combat_lab_open",
+            "node": 36,
+        }))
+        .expect("parse combat line lab open");
+        assert!(matches!(
+            open,
+            OracleAnalysisServiceCommandV1::CombatLabOpen {
+                node: Some(36),
+                baseline: OracleAnalysisCombatLabBaselineV1::ResidentIncumbent,
+                max_engine_steps_per_transition: 512,
+                selection_offset: 0,
+                selection_limit: 24,
+            }
+        ));
+
+        let play = serde_json::from_value::<OracleAnalysisServiceCommandV1>(json!({
+            "command": "combat_lab_play_card",
+            "card_id": "PowerThrough",
+        }))
+        .expect("parse semantic combat line lab card");
+        assert!(matches!(
+            play,
+            OracleAnalysisServiceCommandV1::CombatLabPlayCard {
+                card_id,
+                occurrence: None,
+                target_index: None,
+                selection_offset: 0,
+                selection_limit: 24,
+            } if card_id == "PowerThrough"
         ));
     }
 

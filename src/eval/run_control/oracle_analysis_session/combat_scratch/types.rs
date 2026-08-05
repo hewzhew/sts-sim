@@ -56,6 +56,22 @@ pub struct OracleAnalysisCombatScratchCheckpointV1 {
     pub cursor_scratch_node_id: u64,
     pub next_scratch_node_id: u64,
     pub nodes: Vec<OracleAnalysisCombatScratchNodeCheckpointV1>,
+    #[serde(default)]
+    pub baseline_source: OracleAnalysisCombatLineLabBaselineSourceV1,
+    #[serde(default = "combat_line_lab_root_path")]
+    pub baseline_scratch_node_ids: Vec<u64>,
+}
+
+fn combat_line_lab_root_path() -> Vec<u64> {
+    vec![0]
+}
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum OracleAnalysisCombatLineLabBaselineSourceV1 {
+    #[default]
+    Root,
+    ResidentIncumbent,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -920,4 +936,229 @@ pub struct OracleAnalysisCombatScratchSearchReportV1 {
     pub appended_action_count: usize,
     pub first_appended_scratch_node_id: Option<u64>,
     pub terminal_scratch_node_id: Option<u64>,
+}
+
+pub const ORACLE_ANALYSIS_COMBAT_LINE_LAB_DELTA_KIND: &str = "combat_line_lab_decision_delta_v1";
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct OracleAnalysisCombatLineLabLocationV1 {
+    pub action_index: usize,
+    pub turn: u32,
+    pub action_in_turn: usize,
+    pub on_baseline: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct OracleAnalysisCombatLineLabFrameV1 {
+    pub run_node_id: usize,
+    pub context: OracleAnalysisCombatScratchContextV1,
+    pub baseline_source: OracleAnalysisCombatLineLabBaselineSourceV1,
+    pub baseline_action_count: usize,
+    pub location: OracleAnalysisCombatLineLabLocationV1,
+    pub terminal: CombatTerminal,
+    pub turn: u32,
+    pub phase: CombatPhase,
+    pub counters: EphemeralCounters,
+    pub player: OracleAnalysisCombatScratchPlayerV1,
+    pub hand: Vec<OracleAnalysisCombatScratchDecisionHandCardV1>,
+    pub draw_pile_top_first: Vec<OracleAnalysisCombatScratchDecisionCardV1>,
+    pub discard_pile: Vec<OracleAnalysisCombatScratchDecisionCardV1>,
+    pub exhaust_pile: Vec<OracleAnalysisCombatScratchDecisionCardV1>,
+    pub potions: Vec<OracleAnalysisCombatScratchDecisionPotionV1>,
+    pub monsters: Vec<OracleAnalysisCombatScratchDecisionMonsterV1>,
+    pub atomic_actions: Vec<OracleAnalysisCombatScratchDecisionActionV1>,
+    pub selection_families: Vec<OracleAnalysisCombatScratchDecisionSelectionFamilyV1>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct OracleAnalysisCombatLineLabDecisionDeltaV1 {
+    pub kind: String,
+    pub run_node_id: usize,
+    pub from: OracleAnalysisCombatLineLabLocationV1,
+    pub to: OracleAnalysisCombatLineLabLocationV1,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub terminal: Option<CombatTerminal>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub turn: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub phase: Option<CombatPhase>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub counters: Option<OracleAnalysisCombatScratchCountersDeltaV1>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub player: Option<OracleAnalysisCombatScratchPlayerDeltaV1>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hand: Option<Vec<OracleAnalysisCombatScratchDecisionHandCardV1>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub draw_pile_top_first: Option<
+        OracleAnalysisCombatScratchSequenceDeltaV1<OracleAnalysisCombatScratchDecisionCardV1>,
+    >,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub discard_pile: Option<
+        OracleAnalysisCombatScratchSequenceDeltaV1<OracleAnalysisCombatScratchDecisionCardV1>,
+    >,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub exhaust_pile: Option<
+        OracleAnalysisCombatScratchSequenceDeltaV1<OracleAnalysisCombatScratchDecisionCardV1>,
+    >,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub removed_potion_slots: Vec<usize>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub potion_upserts: Vec<OracleAnalysisCombatScratchDecisionPotionV1>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub monsters: Option<Vec<OracleAnalysisCombatScratchDecisionMonsterV1>>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub monster_updates: Vec<OracleAnalysisCombatScratchMonsterDeltaV1>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub atomic_actions: Option<Vec<OracleAnalysisCombatScratchDecisionActionV1>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub selection_families: Option<Vec<OracleAnalysisCombatScratchDecisionSelectionFamilyV1>>,
+}
+
+impl OracleAnalysisCombatLineLabDecisionDeltaV1 {
+    pub(super) fn from_scratch(
+        from: OracleAnalysisCombatLineLabLocationV1,
+        to: OracleAnalysisCombatLineLabLocationV1,
+        delta: OracleAnalysisCombatScratchDecisionDeltaV1,
+    ) -> Self {
+        Self {
+            kind: ORACLE_ANALYSIS_COMBAT_LINE_LAB_DELTA_KIND.to_string(),
+            run_node_id: delta.run_node_id,
+            from,
+            to,
+            terminal: delta.terminal,
+            turn: delta.turn,
+            phase: delta.phase,
+            counters: delta.counters,
+            player: delta.player,
+            hand: delta.hand,
+            draw_pile_top_first: delta.draw_pile_top_first,
+            discard_pile: delta.discard_pile,
+            exhaust_pile: delta.exhaust_pile,
+            removed_potion_slots: delta.removed_potion_slots,
+            potion_upserts: delta.potion_upserts,
+            monsters: delta.monsters,
+            monster_updates: delta.monster_updates,
+            atomic_actions: delta.atomic_actions,
+            selection_families: delta.selection_families,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct OracleAnalysisCombatLineLabCardCandidateV1 {
+    pub occurrence: usize,
+    pub hand_index: usize,
+    pub upgrades: u8,
+    pub effective_cost: i32,
+    pub playable_without_target: bool,
+    pub playable_target_indices: Vec<usize>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(tag = "status", rename_all = "snake_case")]
+pub enum OracleAnalysisCombatLineLabPlayCardResultV1 {
+    Played {
+        input: ClientInput,
+        delta: OracleAnalysisCombatLineLabDecisionDeltaV1,
+    },
+    AmbiguousCard {
+        card_id: CardId,
+        candidates: Vec<OracleAnalysisCombatLineLabCardCandidateV1>,
+    },
+    AmbiguousTarget {
+        card_id: CardId,
+        occurrence: usize,
+        playable_target_indices: Vec<usize>,
+    },
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct OracleAnalysisCombatLineLabTurnSummaryV1 {
+    pub turn: u32,
+    pub action_count: usize,
+    pub start_hp: i32,
+    pub end_hp: i32,
+    pub end_block: i32,
+    pub enemy_hp_total: i32,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct OracleAnalysisCombatLineLabLineSummaryV1 {
+    pub terminal: CombatTerminal,
+    pub suffix_known: bool,
+    pub action_count: usize,
+    pub initial_hp: i32,
+    pub final_hp: i32,
+    pub potions_used: usize,
+    pub turns: Vec<OracleAnalysisCombatLineLabTurnSummaryV1>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum OracleAnalysisCombatLineLabActionV1 {
+    PlayCard {
+        card_id: CardId,
+        upgrades: u8,
+        hand_index: usize,
+        target_index: Option<usize>,
+    },
+    UsePotion {
+        potion_id: PotionId,
+        potion_slot: usize,
+        target_index: Option<usize>,
+    },
+    DiscardPotion {
+        potion_id: PotionId,
+        potion_slot: usize,
+    },
+    EndTurn,
+    Other {
+        input: ClientInput,
+    },
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct OracleAnalysisCombatLineLabDivergenceV1 {
+    pub action_index: usize,
+    pub baseline_action: Option<OracleAnalysisCombatLineLabActionV1>,
+    pub current_action: Option<OracleAnalysisCombatLineLabActionV1>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct OracleAnalysisCombatLineLabActionSummaryV1 {
+    pub action_index: usize,
+    pub turn: u32,
+    pub action_in_turn: usize,
+    pub action: OracleAnalysisCombatLineLabActionV1,
+    pub result_hp: i32,
+    pub result_block: i32,
+    pub result_enemy_hp_total: i32,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct OracleAnalysisCombatLineLabCompareV1 {
+    pub run_node_id: usize,
+    pub baseline_source: OracleAnalysisCombatLineLabBaselineSourceV1,
+    pub common_prefix_actions: usize,
+    pub first_divergence: Option<OracleAnalysisCombatLineLabDivergenceV1>,
+    pub baseline: OracleAnalysisCombatLineLabLineSummaryV1,
+    pub current: OracleAnalysisCombatLineLabLineSummaryV1,
+    pub baseline_tail: Vec<OracleAnalysisCombatLineLabActionSummaryV1>,
+    pub current_tail: Vec<OracleAnalysisCombatLineLabActionSummaryV1>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct OracleAnalysisCombatLineLabOpenV1 {
+    pub baseline: OracleAnalysisCombatLineLabLineSummaryV1,
+    pub frame: OracleAnalysisCombatLineLabFrameV1,
 }

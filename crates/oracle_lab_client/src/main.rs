@@ -10,7 +10,8 @@ use clap::{Parser, Subcommand};
 use fs2::FileExt;
 use oracle_artifact_contract::{ensure_artifact_fresh, CanonicalArtifact};
 use oracle_lab_protocol::{
-    call_oracle_analysis_tcp_v1, resolve_owned_resident_workspace, OracleAnalysisServiceCommandV1,
+    call_oracle_analysis_tcp_v1, resolve_owned_resident_workspace,
+    OracleAnalysisCombatLabBaselineV1, OracleAnalysisServiceCommandV1,
     OracleAnalysisServiceEndpointV1,
 };
 use serde::Serialize;
@@ -230,6 +231,11 @@ enum LiveCommand {
         #[arg(long, default_value_t = 512)]
         max_engine_steps_per_transition: usize,
     },
+    /// Open one incumbent-backed combat line, branch by semantic choices, and compare exact paths.
+    Lab {
+        #[command(subcommand)]
+        command: LiveLabCommand,
+    },
     /// Incrementally play, branch, rewind, and commit one exact combat scratch DAG.
     Scratch {
         #[command(subcommand)]
@@ -239,6 +245,67 @@ enum LiveCommand {
     Save,
     /// Save and stop the resident workspace service.
     Shutdown,
+}
+
+#[derive(Clone, Copy, Debug, clap::ValueEnum)]
+enum LiveLabBaseline {
+    Root,
+    Incumbent,
+}
+
+#[derive(Debug, Subcommand)]
+enum LiveLabCommand {
+    Open {
+        #[arg(long)]
+        node: Option<usize>,
+        #[arg(long, value_enum, default_value = "incumbent")]
+        baseline: LiveLabBaseline,
+        #[arg(long, default_value_t = 512)]
+        max_engine_steps_per_transition: usize,
+        #[command(flatten)]
+        page: LiveScratchPageArgs,
+    },
+    Observe {
+        #[command(flatten)]
+        page: LiveScratchPageArgs,
+    },
+    /// Move to the exact baseline frame before one zero-based action in a turn.
+    Goto {
+        #[arg(long)]
+        turn: u32,
+        #[arg(long, default_value_t = 0)]
+        before: usize,
+        #[command(flatten)]
+        page: LiveScratchPageArgs,
+    },
+    /// Play a typed card id from the current frame; duplicate copies return typed ambiguity.
+    Play {
+        #[arg(long)]
+        card: String,
+        #[arg(long = "copy")]
+        occurrence: Option<usize>,
+        #[arg(long)]
+        target: Option<usize>,
+        #[command(flatten)]
+        page: LiveScratchPageArgs,
+    },
+    End {
+        #[command(flatten)]
+        page: LiveScratchPageArgs,
+    },
+    Search {
+        #[arg(long, default_value_t = 4)]
+        max_quanta: usize,
+        #[arg(long, default_value_t = 1_024)]
+        quantum_nodes: usize,
+        #[arg(long, default_value_t = 100)]
+        quantum_ms: u64,
+        #[arg(long, default_value_t = 1_000)]
+        wall_ms: u64,
+    },
+    Compare,
+    Commit,
+    Clear,
 }
 
 #[derive(Debug, Subcommand)]
@@ -630,6 +697,92 @@ fn run_live_command(endpoint: &Path, command: LiveCommand) -> Result<(), String>
             )?;
             print_json(&compact_root_action_report(&diagnostic))
         }
+        LiveCommand::Lab { command } => match command {
+            LiveLabCommand::Open {
+                node,
+                baseline,
+                max_engine_steps_per_transition,
+                page,
+            } => print_json(&live_call(
+                endpoint,
+                OracleAnalysisServiceCommandV1::CombatLabOpen {
+                    node,
+                    baseline: match baseline {
+                        LiveLabBaseline::Root => OracleAnalysisCombatLabBaselineV1::Root,
+                        LiveLabBaseline::Incumbent => {
+                            OracleAnalysisCombatLabBaselineV1::ResidentIncumbent
+                        }
+                    },
+                    max_engine_steps_per_transition,
+                    selection_offset: page.selection_offset,
+                    selection_limit: usize::from(page.selection_limit),
+                },
+            )?),
+            LiveLabCommand::Observe { page } => print_json(&live_call(
+                endpoint,
+                OracleAnalysisServiceCommandV1::CombatLabObserve {
+                    selection_offset: page.selection_offset,
+                    selection_limit: usize::from(page.selection_limit),
+                },
+            )?),
+            LiveLabCommand::Goto { turn, before, page } => print_json(&live_call(
+                endpoint,
+                OracleAnalysisServiceCommandV1::CombatLabGoto {
+                    turn,
+                    before_action: before,
+                    selection_offset: page.selection_offset,
+                    selection_limit: usize::from(page.selection_limit),
+                },
+            )?),
+            LiveLabCommand::Play {
+                card,
+                occurrence,
+                target,
+                page,
+            } => print_json(&live_call(
+                endpoint,
+                OracleAnalysisServiceCommandV1::CombatLabPlayCard {
+                    card_id: card,
+                    occurrence,
+                    target_index: target,
+                    selection_offset: page.selection_offset,
+                    selection_limit: usize::from(page.selection_limit),
+                },
+            )?),
+            LiveLabCommand::End { page } => print_json(&live_call(
+                endpoint,
+                OracleAnalysisServiceCommandV1::CombatLabEnd {
+                    selection_offset: page.selection_offset,
+                    selection_limit: usize::from(page.selection_limit),
+                },
+            )?),
+            LiveLabCommand::Search {
+                max_quanta,
+                quantum_nodes,
+                quantum_ms,
+                wall_ms,
+            } => print_json(&live_call(
+                endpoint,
+                OracleAnalysisServiceCommandV1::CombatLabSearch {
+                    max_quanta,
+                    quantum_nodes,
+                    quantum_ms,
+                    wall_ms,
+                },
+            )?),
+            LiveLabCommand::Compare => print_json(&live_call(
+                endpoint,
+                OracleAnalysisServiceCommandV1::CombatLabCompare,
+            )?),
+            LiveLabCommand::Commit => print_json(&live_call(
+                endpoint,
+                OracleAnalysisServiceCommandV1::CombatLabCommit,
+            )?),
+            LiveLabCommand::Clear => print_json(&live_call(
+                endpoint,
+                OracleAnalysisServiceCommandV1::CombatLabClear,
+            )?),
+        },
         LiveCommand::Scratch { command } => match command {
             LiveScratchCommand::Start {
                 node,
@@ -837,6 +990,15 @@ fn live_command_mutates(command: &LiveCommand) -> bool {
             | LiveCommand::Accept
             | LiveCommand::Escape
             | LiveCommand::Restart
+            | LiveCommand::Lab {
+                command: LiveLabCommand::Open { .. }
+                    | LiveLabCommand::Goto { .. }
+                    | LiveLabCommand::Play { .. }
+                    | LiveLabCommand::End { .. }
+                    | LiveLabCommand::Search { .. }
+                    | LiveLabCommand::Commit
+                    | LiveLabCommand::Clear,
+            }
             | LiveCommand::Scratch {
                 command: LiveScratchCommand::Start { .. }
                     | LiveScratchCommand::Play { .. }
@@ -2147,6 +2309,62 @@ mod tests {
                 },
                 ..
             }
+        ));
+    }
+
+    #[test]
+    fn typed_live_combat_lab_uses_semantic_baseline_and_card_selectors() {
+        let open = Cli::try_parse_from([
+            "oracle_lab_client",
+            "--canonical-oracle",
+            "live",
+            "--session",
+            "seed008",
+            "lab",
+            "open",
+            "--node",
+            "36",
+        ])
+        .expect("parse incumbent-backed combat lab");
+        assert!(matches!(
+            open.command,
+            Command::Live {
+                command: LiveCommand::Lab {
+                    command: LiveLabCommand::Open {
+                        node: Some(36),
+                        baseline: LiveLabBaseline::Incumbent,
+                        ..
+                    }
+                },
+                ..
+            }
+        ));
+
+        let play = Cli::try_parse_from([
+            "oracle_lab_client",
+            "--canonical-oracle",
+            "live",
+            "--session",
+            "seed008",
+            "lab",
+            "play",
+            "--card",
+            "PowerThrough",
+        ])
+        .expect("parse semantic card play");
+        assert!(matches!(
+            play.command,
+            Command::Live {
+                command: LiveCommand::Lab {
+                    command: LiveLabCommand::Play {
+                        card,
+                        occurrence: None,
+                        target: None,
+                        ..
+                    }
+                },
+                ..
+            } if card == "PowerThrough"
         ));
     }
 

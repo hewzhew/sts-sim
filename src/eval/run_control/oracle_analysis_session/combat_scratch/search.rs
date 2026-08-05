@@ -25,6 +25,15 @@ impl OracleAnalysisSessionV1 {
         ),
         String,
     > {
+        let report = self.search_combat_line_lab(request)?;
+        let view = self.combat_scratch_view(selection_offset, selection_limit)?;
+        Ok((report, view))
+    }
+
+    pub fn search_combat_line_lab(
+        &mut self,
+        request: OracleAnalysisCombatScratchSearchRequestV1,
+    ) -> Result<OracleAnalysisCombatScratchSearchReportV1, String> {
         if request.max_quanta == 0
             || request.quantum_nodes == 0
             || request.quantum_ms == 0
@@ -142,7 +151,6 @@ impl OracleAnalysisSessionV1 {
             first_appended_scratch_node_id: first_appended,
             terminal_scratch_node_id: terminal_node,
         };
-        let view = self.combat_scratch_view(selection_offset, selection_limit)?;
-        Ok((report, view))
+        Ok(report)
     }
 }

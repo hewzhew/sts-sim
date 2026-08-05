@@ -47,12 +47,18 @@ pub use card_reward_path::{
     ORACLE_ANALYSIS_CARD_REWARD_PATH_AUDIT_SCHEMA_NAME,
     ORACLE_ANALYSIS_CARD_REWARD_PATH_AUDIT_SCHEMA_VERSION,
 };
-use combat_scratch::OracleAnalysisCombatScratchV1;
+use combat_scratch::OracleAnalysisCombatLineLabV1;
 pub use combat_scratch::{
-    OracleAnalysisCombatScratchActionSelectorV1, OracleAnalysisCombatScratchActionSurfaceV1,
-    OracleAnalysisCombatScratchActionV1, OracleAnalysisCombatScratchCardV1,
-    OracleAnalysisCombatScratchCheckpointV1, OracleAnalysisCombatScratchContextV1,
-    OracleAnalysisCombatScratchDecisionActionV1,
+    OracleAnalysisCombatLineLabActionSummaryV1, OracleAnalysisCombatLineLabActionV1,
+    OracleAnalysisCombatLineLabBaselineSourceV1, OracleAnalysisCombatLineLabCardCandidateV1,
+    OracleAnalysisCombatLineLabCompareV1, OracleAnalysisCombatLineLabDecisionDeltaV1,
+    OracleAnalysisCombatLineLabDivergenceV1, OracleAnalysisCombatLineLabFrameV1,
+    OracleAnalysisCombatLineLabLineSummaryV1, OracleAnalysisCombatLineLabLocationV1,
+    OracleAnalysisCombatLineLabOpenV1, OracleAnalysisCombatLineLabPlayCardResultV1,
+    OracleAnalysisCombatLineLabTurnSummaryV1, OracleAnalysisCombatScratchActionSelectorV1,
+    OracleAnalysisCombatScratchActionSurfaceV1, OracleAnalysisCombatScratchActionV1,
+    OracleAnalysisCombatScratchCardV1, OracleAnalysisCombatScratchCheckpointV1,
+    OracleAnalysisCombatScratchContextV1, OracleAnalysisCombatScratchDecisionActionV1,
     OracleAnalysisCombatScratchDecisionSelectionFamilyV1,
     OracleAnalysisCombatScratchDecisionViewV1, OracleAnalysisCombatScratchMonsterV1,
     OracleAnalysisCombatScratchNodeCheckpointV1, OracleAnalysisCombatScratchPlayerV1,
@@ -543,7 +549,7 @@ pub struct OracleAnalysisSessionV1 {
     next_edge_id: u64,
     edges: Vec<OracleAnalysisEdgeV1>,
     combat_jobs: BTreeMap<usize, OracleAnalysisCombatJobV1>,
-    combat_scratch: Option<OracleAnalysisCombatScratchV1>,
+    combat_scratch: Option<OracleAnalysisCombatLineLabV1>,
     combat_budgets: OracleRunCombatBudgetsV1,
     decision_prior: Option<RunPolicyPriorFnV1>,
     decision_annotation: Option<OracleRunDecisionAnnotationFnV1>,
@@ -685,7 +691,7 @@ impl OracleAnalysisSessionV1 {
                     floor: branch.session.run_state.floor_num,
                     gold: branch.session.run_state.gold,
                 };
-                OracleAnalysisCombatScratchV1::restore(saved, context, root)
+                OracleAnalysisCombatLineLabV1::restore(saved, context, root)
             })
             .transpose()?;
         let session = Self {
@@ -731,7 +737,7 @@ impl OracleAnalysisSessionV1 {
             combat_scratch: self
                 .combat_scratch
                 .as_ref()
-                .map(OracleAnalysisCombatScratchV1::checkpoint),
+                .map(OracleAnalysisCombatLineLabV1::checkpoint),
         })
     }
 
