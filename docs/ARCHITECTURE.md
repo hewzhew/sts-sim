@@ -170,6 +170,12 @@ share coverage groups. Upgrade roles must describe what the upgrade changes:
 a card that already draws but whose upgrade changes only Block does not pay an
 access-recovery debt.
 
+An exhaust-payoff Power's cost reduction pays setup-tempo debt only when the
+owned deck already has a typed exhaust executor. Mummified Hand keeps its
+separate Power-tempo contract and suppresses this additional debt so the same
+tempo support is not counted twice. This is upgrade evidence for an existing
+engine, not acquisition support for an otherwise speculative Power.
+
 Card-reward gap closure remains subject to typed marginal-quality gates. A
 cost-two-or-more tactical candidate whose only semantic roles are frontload,
 Weak, and Vulnerable stays speculative when one of its one-turn debuffs

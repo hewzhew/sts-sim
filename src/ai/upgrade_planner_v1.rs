@@ -51,6 +51,7 @@ pub enum UpgradeDebtKindV1 {
     HyperbeamBlock,
     PhaseBurst,
     ExecuteBlock,
+    ExhaustPayoffSetupTempo,
     PowerSetupTempo,
     AccessRecovery,
     ScalingSetup,
@@ -239,6 +240,7 @@ impl UpgradeDebtKindV1 {
             Self::HyperbeamBlock => "hyperbeam_block",
             Self::PhaseBurst => "phase_burst",
             Self::ExecuteBlock => "execute_block",
+            Self::ExhaustPayoffSetupTempo => "exhaust_payoff_setup_tempo",
             Self::PowerSetupTempo => "power_setup_tempo",
             Self::AccessRecovery => "access_recovery",
             Self::ScalingSetup => "scaling_setup",
@@ -361,6 +363,7 @@ fn upgrade_debt_strategy_tag_priority(debt: UpgradeDebtKindV1) -> u8 {
         UpgradeDebtKindV1::StasisRecovery => 95,
         UpgradeDebtKindV1::HyperbeamBlock => 92,
         UpgradeDebtKindV1::PhaseBurst => 90,
+        UpgradeDebtKindV1::ExhaustPayoffSetupTempo => 88,
         UpgradeDebtKindV1::ExecuteBlock => 85,
         UpgradeDebtKindV1::ScalingSetup => 80,
         UpgradeDebtKindV1::DebuffCoverage => 75,
@@ -833,6 +836,29 @@ fn build_upgrade_debt_ledger(
         pressure_label(run_state, "access recovery"),
         "unpaid access upgrade slows setup and recovery from poor draws",
     );
+    let has_exhaust_executor = run_state
+        .master_deck
+        .iter()
+        .any(|card| card_analysis_profile_v1(card.id, card.upgrades).is_startup_exhaust_engine);
+    let has_mummified_hand = run_state
+        .relics
+        .iter()
+        .any(|relic| relic.id == RelicId::MummifiedHand);
+    if has_exhaust_executor && !has_mummified_hand {
+        add_debt_if_candidates(
+            &mut debts,
+            UpgradeDebtKindV1::ExhaustPayoffSetupTempo,
+            candidates,
+            |candidate| {
+                candidate.mechanical_delta.cost_delta > 0
+                    && card_analysis_profile_v1(candidate.card, candidate.upgrades)
+                        .has_exhaust_payoff
+            },
+            UpgradeDebtSeverityV1::ImportantBeforeBoss,
+            pressure_label(run_state, "supported exhaust-payoff setup tempo"),
+            "unpaid exhaust-payoff cost reduction can keep an otherwise supported exhaust engine from starting on curve",
+        );
+    }
     add_debt_if_candidates(
         &mut debts,
         UpgradeDebtKindV1::PowerSetupTempo,
@@ -1422,6 +1448,43 @@ mod tests {
             .contains(&UpgradeDebtKindV1::PowerSetupTempo));
         assert!(bash.roles.contains(&UpgradeRoleV1::LowMarginalRepeat));
         assert!(bash.verdict <= UpgradeVerdictV1::Defer);
+    }
+
+    #[test]
+    fn supported_exhaust_engine_prioritizes_dark_embrace_cost_reduction() {
+        let mut run = RunState::new(20260730007, 0, false, "Ironclad");
+        run.act_num = 1;
+        run.floor_num = 15;
+        run.current_hp = 71;
+        run.max_hp = 85;
+        run.boss_key = Some(EncounterId::SlimeBoss);
+        run.master_deck = [
+            CardId::PowerThrough,
+            CardId::SecondWind,
+            CardId::DarkEmbrace,
+            CardId::ThunderClap,
+            CardId::ShrugItOff,
+        ]
+        .into_iter()
+        .enumerate()
+        .map(|(index, card)| CombatCard::new(card, index as u32))
+        .collect();
+
+        let plan = plan_upgrades_v1(&run);
+        let dark_embrace = plan
+            .candidates
+            .iter()
+            .find(|candidate| candidate.card == CardId::DarkEmbrace)
+            .expect("Dark Embrace upgrade candidate");
+
+        assert_eq!(plan.best_smith, Some(2), "plan={plan:#?}");
+        assert_eq!(
+            dark_embrace.urgency,
+            UpgradeDebtSeverityV1::ImportantBeforeBoss
+        );
+        assert!(dark_embrace
+            .pays_debts
+            .contains(&UpgradeDebtKindV1::ExhaustPayoffSetupTempo));
     }
 
     #[test]
