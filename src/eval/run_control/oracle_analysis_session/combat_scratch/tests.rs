@@ -114,6 +114,46 @@ fn strike_baseline_line_lab(duplicate_strike: bool) -> (OracleAnalysisSessionV1,
 }
 
 #[test]
+fn combat_scratch_projects_strength_adjusted_monster_damage_from_execution_semantics() {
+    let mut combat = crate::test_support::blank_test_combat();
+    let cultist =
+        crate::test_support::planned_monster(crate::content::monsters::EnemyId::Cultist, 1);
+    let monster_id = cultist.id;
+    combat.entities.monsters = vec![cultist];
+    crate::content::powers::store::set_powers_for(
+        &mut combat,
+        monster_id,
+        vec![crate::runtime::combat::Power {
+            power_type: crate::content::powers::PowerId::Strength,
+            instance_id: None,
+            amount: 6,
+            extra_data: 0,
+            payload: crate::runtime::combat::PowerPayload::None,
+            just_applied: false,
+        }],
+    );
+    let mut analysis = scratch_analysis_at_engine(combat, EngineState::CombatPlayerTurn);
+
+    let root = analysis
+        .start_combat_scratch(None, 250, 0, 16)
+        .expect("start strength-adjusted intent scratch");
+    let monster = &root.position.monsters[0];
+    let preview = monster
+        .move_preview
+        .as_ref()
+        .expect("living attacker has an execution-semantic preview");
+    assert_eq!(preview.damage_per_hit, Some(12));
+    assert_eq!(preview.hits, 1);
+    assert_eq!(preview.total_damage, Some(12));
+    let Some(crate::runtime::monster_move::MonsterMoveSpec::Attack(attack)) =
+        monster.intent.as_ref()
+    else {
+        panic!("Cultist attack retains its typed base intent");
+    };
+    assert_eq!(attack.base_damage, 6);
+}
+
+#[test]
 fn combat_scratch_derives_sentry_bolt_intent_from_locked_turn_truth() {
     let mut combat = crate::test_support::blank_test_combat();
     let mut sentry = crate::test_support::test_monster(crate::content::monsters::EnemyId::Sentry);

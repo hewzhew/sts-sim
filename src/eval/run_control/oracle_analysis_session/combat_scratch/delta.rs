@@ -405,6 +405,7 @@ impl OracleAnalysisCombatScratchMonsterDeltaV1 {
             planned_move_id: changed(&from.planned_move_id, &to.planned_move_id),
             planned_steps: changed(&from.planned_steps, &to.planned_steps),
             intent: changed(&from.intent, &to.intent),
+            move_preview: changed(&from.move_preview, &to.move_preview),
             thief: changed(&from.thief, &to.thief),
             powers: changed(&from.powers, &to.powers),
         }
@@ -421,6 +422,7 @@ impl OracleAnalysisCombatScratchMonsterDeltaV1 {
         apply_changed(&mut target.planned_move_id, &self.planned_move_id);
         apply_changed(&mut target.planned_steps, &self.planned_steps);
         apply_changed(&mut target.intent, &self.intent);
+        apply_changed(&mut target.move_preview, &self.move_preview);
         apply_changed(&mut target.thief, &self.thief);
         apply_changed(&mut target.powers, &self.powers);
     }

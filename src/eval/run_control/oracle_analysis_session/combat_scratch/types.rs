@@ -14,6 +14,7 @@ use crate::sim::combat_action_surface::{
     CombatSelectionActionFamilyV2, CombatSelectionDomainCandidateV2, CombatSelectionReasonV2,
     CombatSelectionStatusV2,
 };
+use crate::sim::combat_projection::MonsterMovePreview;
 use crate::state::core::{ClientInput, PileType};
 use std::collections::BTreeMap;
 
@@ -220,6 +221,8 @@ pub struct OracleAnalysisCombatScratchMonsterV1 {
     pub planned_move_id: u8,
     pub planned_steps: MonsterTurnSteps,
     pub intent: Option<MonsterMoveSpec>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub move_preview: Option<MonsterMovePreview>,
     pub thief: ThiefRuntimeState,
     pub powers: Vec<Power>,
 }
@@ -400,6 +403,8 @@ pub struct OracleAnalysisCombatScratchDecisionMonsterV1 {
     pub planned_move_id: u8,
     pub planned_steps: MonsterTurnSteps,
     pub intent: Option<MonsterMoveSpec>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub move_preview: Option<MonsterMovePreview>,
     pub thief: ThiefRuntimeState,
     pub powers: Vec<Power>,
 }
@@ -518,6 +523,8 @@ pub struct OracleAnalysisCombatScratchMonsterDeltaV1 {
     pub planned_steps: Option<MonsterTurnSteps>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub intent: Option<Option<MonsterMoveSpec>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub move_preview: Option<Option<MonsterMovePreview>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub thief: Option<ThiefRuntimeState>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -671,6 +678,7 @@ impl From<OracleAnalysisCombatScratchViewV1> for OracleAnalysisCombatScratchDeci
                     planned_move_id: monster.planned_move_id,
                     planned_steps: monster.planned_steps,
                     intent: monster.intent,
+                    move_preview: monster.move_preview,
                     thief: monster.thief,
                     powers: monster.powers,
                 },

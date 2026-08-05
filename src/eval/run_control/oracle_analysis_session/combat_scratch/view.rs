@@ -361,6 +361,11 @@ pub(super) fn position_view(position: &CombatPosition) -> OracleAnalysisCombatSc
                 planned_move_id: monster.planned_move_id(),
                 planned_steps: monster.move_state.planned_steps.clone().unwrap_or_default(),
                 intent: super::super::exact_monster_intent(combat, monster),
+                move_preview: (!monster.is_dead_or_escaped()).then(|| {
+                    crate::sim::combat_projection::project_monster_move_preview_in_combat(
+                        combat, monster,
+                    )
+                }),
                 thief: monster.thief.clone(),
                 powers: crate::content::powers::store::powers_snapshot_for(combat, monster.id),
             })

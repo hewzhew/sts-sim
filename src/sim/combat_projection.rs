@@ -1,7 +1,9 @@
 use crate::runtime::combat::{CombatState, MonsterEntity};
 use crate::runtime::monster_move::{DamageKind, EffectStrength, MonsterMoveSpec, MonsterTurnPlan};
+use serde::Serialize;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum VisibleIntentKind {
     Attack,
     AttackBuff,
@@ -22,7 +24,8 @@ pub enum VisibleIntentKind {
     Unknown,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct MonsterMovePreview {
     pub damage_per_hit: Option<i32>,
     pub hits: u8,

@@ -538,13 +538,17 @@ expose only its typed line summary.
 
 `open` establishes one complete decision frame. Ordinary semantic actions return
 typed deltas without scratch node ids, while `observe` returns a full recovery
-frame. `compare` owns the relationship between baseline and current line: common
-prefix, first typed divergence, exact post-divergence semantic actions,
-per-turn HP/block/enemy totals, potion expenditure, and terminal truth. An
-unresolved current cursor reports an unknown suffix rather than pretending the
-partial line lost. Bounded suffix search appends a replay-verified complete win
-to the same DAG and returns its comparison; it does not create another evidence
-owner.
+frame. A living monster retains its raw typed intent and separately exposes the
+shared execution-semantic move preview: effective damage per hit, hit count,
+total damage, and visible intent. The preview must use the simulator damage
+pipeline rather than locally reconstructing Strength, Weak, Vulnerable, or
+protocol overrides. `compare` owns the relationship between baseline and
+current line: common prefix, first typed divergence, exact post-divergence
+semantic actions, per-turn HP/block/enemy totals, potion expenditure, and
+terminal truth. An unresolved current cursor reports an unknown suffix rather
+than pretending the partial line lost. Bounded suffix search appends a
+replay-verified complete win to the same DAG and returns its comparison; it does
+not create another evidence owner.
 
 The lower diagnostic scratch selectors remain temporarily callable during the
 cutover for exact-hash and structured-selection work. They are compatibility
