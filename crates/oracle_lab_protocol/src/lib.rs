@@ -241,6 +241,13 @@ pub enum OracleAnalysisServiceCommandV1 {
         #[serde(default = "default_combat_scratch_selection_limit")]
         selection_limit: usize,
     },
+    CombatLabSelect {
+        indices: Vec<usize>,
+        #[serde(default)]
+        selection_offset: usize,
+        #[serde(default = "default_combat_scratch_selection_limit")]
+        selection_limit: usize,
+    },
     CombatLabEnd {
         #[serde(default)]
         selection_offset: usize,
@@ -986,6 +993,20 @@ mod tests {
                 selection_offset: 0,
                 selection_limit: 24,
             } if potion_id == "FearPotion"
+        ));
+
+        let selection = serde_json::from_value::<OracleAnalysisServiceCommandV1>(json!({
+            "command": "combat_lab_select",
+            "indices": [0, 2, 3],
+        }))
+        .expect("parse observation-local combat line lab selection");
+        assert!(matches!(
+            selection,
+            OracleAnalysisServiceCommandV1::CombatLabSelect {
+                indices,
+                selection_offset: 0,
+                selection_limit: 24,
+            } if indices == [0, 2, 3]
         ));
     }
 

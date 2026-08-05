@@ -339,6 +339,7 @@ typed card ids; it never requires scratch node ids or action-list JSON:
 .\ol-live.cmd live --session seed009 lab restore
 .\ol-live.cmd live --session seed009 lab play --card PowerThrough [--copy <occurrence>] [--target <monster-index>]
 .\ol-live.cmd live --session seed009 lab potion --potion FearPotion [--copy <occurrence>] [--target <monster-index>]
+.\ol-live.cmd live --session seed009 lab select --indices 0,2,3
 .\ol-live.cmd live --session seed009 lab end
 .\ol-live.cmd live --session seed009 lab search --max-quanta 4 --quantum-nodes 1024 --wall-ms 1000
 .\ol-live.cmd live --session seed009 lab compare

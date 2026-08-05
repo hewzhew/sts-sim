@@ -320,6 +320,13 @@ enum LiveLabCommand {
         #[command(flatten)]
         page: LiveScratchPageArgs,
     },
+    /// Submit one structured Hand/Grid/Scry choice by current-frame domain indices.
+    Select {
+        #[arg(long, value_delimiter = ',', num_args = 0.., required = true)]
+        indices: Vec<usize>,
+        #[command(flatten)]
+        page: LiveScratchPageArgs,
+    },
     End {
         #[command(flatten)]
         page: LiveScratchPageArgs,
@@ -822,6 +829,14 @@ fn run_live_command(endpoint: &Path, command: LiveCommand) -> Result<(), String>
                     selection_limit: usize::from(page.selection_limit),
                 },
             )?),
+            LiveLabCommand::Select { indices, page } => print_json(&live_call(
+                endpoint,
+                OracleAnalysisServiceCommandV1::CombatLabSelect {
+                    indices,
+                    selection_offset: page.selection_offset,
+                    selection_limit: usize::from(page.selection_limit),
+                },
+            )?),
             LiveLabCommand::End { page } => print_json(&live_call(
                 endpoint,
                 OracleAnalysisServiceCommandV1::CombatLabEnd {
@@ -1071,6 +1086,7 @@ fn live_command_mutates(command: &LiveCommand) -> bool {
                     | LiveLabCommand::Restore { .. }
                     | LiveLabCommand::Play { .. }
                     | LiveLabCommand::Potion { .. }
+                    | LiveLabCommand::Select { .. }
                     | LiveLabCommand::End { .. }
                     | LiveLabCommand::Search { .. }
                     | LiveLabCommand::Commit
@@ -2391,7 +2407,7 @@ mod tests {
     }
 
     #[test]
-    fn typed_live_combat_lab_uses_semantic_line_card_and_potion_selectors() {
+    fn typed_live_combat_lab_uses_semantic_line_selectors() {
         let open = Cli::try_parse_from([
             "oracle_lab_client",
             "--canonical-oracle",
@@ -2501,6 +2517,49 @@ mod tests {
                 },
                 ..
             } if potion == "FearPotion"
+        ));
+
+        let selection = Cli::try_parse_from([
+            "oracle_lab_client",
+            "--canonical-oracle",
+            "live",
+            "--session",
+            "seed008",
+            "lab",
+            "select",
+            "--indices",
+            "0,2,3",
+        ])
+        .expect("parse observation-local structured selection");
+        assert!(matches!(
+            selection.command,
+            Command::Live {
+                command: LiveCommand::Lab {
+                    command: LiveLabCommand::Select { indices, .. }
+                },
+                ..
+            } if indices == [0, 2, 3]
+        ));
+
+        let empty_selection = Cli::try_parse_from([
+            "oracle_lab_client",
+            "--canonical-oracle",
+            "live",
+            "--session",
+            "seed008",
+            "lab",
+            "select",
+            "--indices",
+        ])
+        .expect("parse an explicit empty structured selection");
+        assert!(matches!(
+            empty_selection.command,
+            Command::Live {
+                command: LiveCommand::Lab {
+                    command: LiveLabCommand::Select { indices, .. }
+                },
+                ..
+            } if indices.is_empty()
         ));
 
         let back = Cli::try_parse_from([

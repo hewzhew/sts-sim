@@ -8,7 +8,8 @@ use crate::eval::run_control::{
 use crate::runtime::combat::CombatCard;
 use crate::sim::combat::CombatTerminal;
 use crate::state::core::{
-    ActiveCombat, ClientInput, CombatContext, EngineState, PendingChoice, RoomCombatContext,
+    ActiveCombat, ClientInput, CombatContext, EngineState, GridSelectReason, HandSelectReason,
+    PendingChoice, PileType, RoomCombatContext,
 };
 use crate::state::map::node::RoomType;
 
@@ -692,6 +693,156 @@ fn combat_scratch_pages_structured_selection_inputs_without_eager_storage() {
     assert_ne!(
         first_page.legal_actions.selection_families[0].actions[0].action_ref,
         second_page.legal_actions.selection_families[0].actions[0].action_ref
+    );
+}
+
+#[test]
+fn combat_line_lab_submits_scry_by_observation_local_domain_indices() {
+    let mut combat = one_strike_combat();
+    combat.zones.draw_pile = vec![
+        CombatCard::new(crate::content::cards::CardId::Strike, 11),
+        CombatCard::new(crate::content::cards::CardId::Defend, 22),
+        CombatCard::new(crate::content::cards::CardId::Bash, 33),
+    ]
+    .into();
+    let engine = EngineState::PendingChoice(PendingChoice::ScrySelect {
+        cards: vec![
+            crate::content::cards::CardId::Strike,
+            crate::content::cards::CardId::Defend,
+            crate::content::cards::CardId::Bash,
+        ],
+        card_uuids: vec![11, 22, 33],
+    });
+    let mut analysis = scratch_analysis_at_engine(combat, engine);
+    analysis
+        .start_combat_scratch(None, 250, 0, 2)
+        .expect("start structured line lab");
+
+    let delta = analysis
+        .select_combat_line_lab(vec![2, 0], 0, 2)
+        .expect("submit local scry indices");
+
+    let scratch = analysis.combat_scratch.as_ref().expect("active line lab");
+    let cursor = scratch
+        .nodes
+        .get(&scratch.cursor_scratch_node_id)
+        .expect("selection child");
+    assert_eq!(
+        cursor.input.as_ref(),
+        Some(&ClientInput::SubmitScryDiscard(vec![2, 0]))
+    );
+    let encoded = serde_json::to_string(&delta).expect("encode semantic selection delta");
+    assert!(!encoded.contains("scratch_node"), "{encoded}");
+    assert!(!encoded.contains("uuid"), "{encoded}");
+}
+
+#[test]
+fn combat_line_lab_rejects_invalid_local_selection_without_mutation() {
+    let mut combat = one_strike_combat();
+    combat
+        .zones
+        .hand
+        .push(CombatCard::new(crate::content::cards::CardId::Defend, 22));
+    let engine = EngineState::PendingChoice(PendingChoice::HandSelect {
+        candidate_uuids: vec![1, 22, 99],
+        min_cards: 1,
+        max_cards: 2,
+        can_cancel: false,
+        reason: HandSelectReason::Exhaust,
+    });
+    let mut analysis = scratch_analysis_at_engine(combat, engine);
+    analysis
+        .start_combat_scratch(None, 250, 0, 2)
+        .expect("start structured line lab");
+    let root_cursor = analysis
+        .combat_scratch
+        .as_ref()
+        .expect("active line lab")
+        .cursor_scratch_node_id;
+
+    for (indices, expected_error) in [
+        (vec![], "requires 1..=2"),
+        (vec![0, 0], "repeated local domain index"),
+        (vec![3], "no local domain index 3"),
+        (vec![2], "local domain index 2 is not eligible"),
+        (vec![0, 1, 2], "requires 1..=2"),
+    ] {
+        let error = analysis
+            .select_combat_line_lab(indices, 0, 2)
+            .expect_err("invalid local selection must fail");
+        assert!(error.contains(expected_error), "{error}");
+        assert_eq!(
+            analysis
+                .combat_scratch
+                .as_ref()
+                .expect("line lab remains active")
+                .cursor_scratch_node_id,
+            root_cursor,
+            "a rejected local selection cannot move the line"
+        );
+    }
+}
+
+#[test]
+fn observation_local_selection_compiles_hand_and_grid_card_uuids_in_order() {
+    let mut hand_combat = one_strike_combat();
+    hand_combat
+        .zones
+        .hand
+        .push(CombatCard::new(crate::content::cards::CardId::Defend, 22));
+    let mut hand_analysis = scratch_analysis_at_engine(
+        hand_combat,
+        EngineState::PendingChoice(PendingChoice::HandSelect {
+            candidate_uuids: vec![1, 22],
+            min_cards: 1,
+            max_cards: 2,
+            can_cancel: false,
+            reason: HandSelectReason::Exhaust,
+        }),
+    );
+    let hand_position = hand_analysis
+        .require_branch(0)
+        .expect("hand branch")
+        .session
+        .current_active_combat_position()
+        .expect("hand position");
+    assert_eq!(
+        resolve_observation_local_selection(&hand_position, &[1, 0]).expect("compile hand indices"),
+        ClientInput::SubmitSelection(crate::state::selection::SelectionResolution::card_uuids(
+            crate::state::selection::SelectionScope::Hand,
+            [22, 1],
+        ))
+    );
+
+    let mut grid_combat = one_strike_combat();
+    grid_combat.zones.discard_pile = vec![
+        CombatCard::new(crate::content::cards::CardId::Strike, 31),
+        CombatCard::new(crate::content::cards::CardId::Defend, 32),
+    ]
+    .into();
+    let mut grid_analysis = scratch_analysis_at_engine(
+        grid_combat,
+        EngineState::PendingChoice(PendingChoice::GridSelect {
+            source_pile: PileType::Discard,
+            candidate_uuids: vec![31, 32],
+            min_cards: 1,
+            max_cards: 2,
+            can_cancel: false,
+            reason: GridSelectReason::DiscardToHand,
+        }),
+    );
+    let grid_position = grid_analysis
+        .require_branch(0)
+        .expect("grid branch")
+        .session
+        .current_active_combat_position()
+        .expect("grid position");
+    assert_eq!(
+        resolve_observation_local_selection(&grid_position, &[1, 0]).expect("compile grid indices"),
+        ClientInput::SubmitSelection(crate::state::selection::SelectionResolution::card_uuids(
+            crate::state::selection::SelectionScope::Grid,
+            [32, 31],
+        ))
     );
 }
 

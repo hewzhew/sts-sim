@@ -17,6 +17,7 @@ mod view;
 pub use types::*;
 use view::{
     action_surface_view, exact_hash, position_view, resolve_action_ref, resolve_action_selector,
+    resolve_observation_local_selection,
 };
 
 #[derive(Clone)]
@@ -315,6 +316,19 @@ impl OracleAnalysisCombatLineLabV1 {
         }
         candidate.cursor_scratch_node_id = source_node_id;
         let input = resolve_action_selector(candidate.current_position()?, selector)?;
+        candidate.play_input(input)?;
+        let view = candidate.view(selection_offset, selection_limit)?;
+        *self = candidate;
+        Ok(view)
+    }
+
+    fn play_current_input(
+        &mut self,
+        input: ClientInput,
+        selection_offset: usize,
+        selection_limit: usize,
+    ) -> Result<OracleAnalysisCombatScratchViewV1, String> {
+        let mut candidate = self.clone();
         candidate.play_input(input)?;
         let view = candidate.view(selection_offset, selection_limit)?;
         *self = candidate;
@@ -1325,6 +1339,48 @@ impl OracleAnalysisSessionV1 {
             input,
             delta: OracleAnalysisCombatLineLabDecisionDeltaV1::from_scratch(from, to, delta),
         })
+    }
+
+    pub fn select_combat_line_lab(
+        &mut self,
+        selected_domain_indices: Vec<usize>,
+        selection_offset: usize,
+        selection_limit: usize,
+    ) -> Result<OracleAnalysisCombatLineLabDecisionDeltaV1, String> {
+        let (from, base, input) = {
+            let scratch = self.combat_scratch.as_ref().ok_or_else(|| {
+                "oracle analysis workspace has no active combat line lab".to_string()
+            })?;
+            let source_node_id = scratch.cursor_scratch_node_id;
+            let position = scratch.current_position()?;
+            (
+                scratch.location_at(source_node_id)?,
+                OracleAnalysisCombatScratchDecisionViewV1::from(scratch.view_at(
+                    source_node_id,
+                    selection_offset,
+                    selection_limit,
+                )?),
+                resolve_observation_local_selection(position, &selected_domain_indices)?,
+            )
+        };
+        let result = {
+            let scratch = self
+                .combat_scratch
+                .as_mut()
+                .expect("combat line lab remained active");
+            scratch
+                .play_current_input(input, selection_offset, selection_limit)
+                .map(OracleAnalysisCombatScratchDecisionViewV1::from)?
+        };
+        let delta = OracleAnalysisCombatScratchDecisionDeltaV1::between(&base, &result)?;
+        let to = self
+            .combat_scratch
+            .as_ref()
+            .expect("combat line lab remained active")
+            .location_at(delta.cursor_scratch_node_id)?;
+        Ok(OracleAnalysisCombatLineLabDecisionDeltaV1::from_scratch(
+            from, to, delta,
+        ))
     }
 
     pub fn end_combat_line_lab_turn(

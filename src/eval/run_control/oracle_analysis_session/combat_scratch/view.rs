@@ -3,7 +3,11 @@ use sts_combat_planner::SelectionTransactionCursor;
 use crate::eval::fingerprint::combat_state_fingerprint_v2;
 use crate::sim::combat::{CombatPosition, CombatStepper, EngineCombatStepper};
 use crate::sim::combat_action::combat_action_key;
+use crate::sim::combat_action_surface::{
+    CombatSelectionDomainCandidateV2, CombatSelectionInputEncodingV2, CombatSelectionStatusV2,
+};
 use crate::state::core::ClientInput;
+use crate::state::selection::{SelectionResolution, SelectionScope};
 
 use super::{
     OracleAnalysisCombatScratchActionSelectorV1, OracleAnalysisCombatScratchActionSurfaceV1,
@@ -211,6 +215,110 @@ pub(super) fn resolve_action_selector(
         return Err("combat scratch selector no longer resolves to a legal input".to_string());
     }
     Ok(input)
+}
+
+pub(super) fn resolve_observation_local_selection(
+    position: &CombatPosition,
+    selected_domain_indices: &[usize],
+) -> Result<ClientInput, String> {
+    let surface = EngineCombatStepper.legal_action_surface(position);
+    let [family] = surface.selection_families.as_slice() else {
+        return Err(format!(
+            "combat line lab current frame has {} structured selection families; local indices require exactly one",
+            surface.selection_families.len()
+        ));
+    };
+    if let CombatSelectionStatusV2::Disabled(reason) = family.selection_status {
+        return Err(format!(
+            "combat line lab current structured selection is disabled: {reason:?}"
+        ));
+    }
+
+    let selected_count = u64::try_from(selected_domain_indices.len())
+        .map_err(|_| "combat line lab selection length does not fit u64".to_string())?;
+    if selected_count < family.declared_min || selected_count > family.effective_max {
+        return Err(format!(
+            "combat line lab selection requires {}..={} local indices, received {}",
+            family.declared_min, family.effective_max, selected_count
+        ));
+    }
+
+    let mut distinct_indices = std::collections::BTreeSet::new();
+    if selected_domain_indices
+        .iter()
+        .any(|index| !distinct_indices.insert(*index))
+    {
+        return Err("combat line lab selection contains a repeated local domain index".to_string());
+    }
+
+    match family.input_encoding {
+        CombatSelectionInputEncodingV2::SubmitSelectionHandCardUuids
+        | CombatSelectionInputEncodingV2::SubmitSelectionGridCardUuids => {
+            let mut selected_uuids = Vec::with_capacity(selected_domain_indices.len());
+            for domain_index in selected_domain_indices {
+                let candidate = family.raw_domain.get(*domain_index).ok_or_else(|| {
+                    format!(
+                        "combat line lab structured selection has no local domain index {domain_index}"
+                    )
+                })?;
+                let CombatSelectionDomainCandidateV2::CardUuid { uuid, eligible, .. } = candidate
+                else {
+                    return Err(
+                        "combat line lab card selection has a non-card domain candidate"
+                            .to_string(),
+                    );
+                };
+                if !eligible {
+                    return Err(format!(
+                        "combat line lab local domain index {domain_index} is not eligible"
+                    ));
+                }
+                selected_uuids.push(*uuid);
+            }
+            let scope = match family.input_encoding {
+                CombatSelectionInputEncodingV2::SubmitSelectionHandCardUuids => {
+                    SelectionScope::Hand
+                }
+                CombatSelectionInputEncodingV2::SubmitSelectionGridCardUuids => {
+                    SelectionScope::Grid
+                }
+                CombatSelectionInputEncodingV2::SubmitScryDiscardIndices => unreachable!(),
+            };
+            Ok(ClientInput::SubmitSelection(
+                SelectionResolution::card_uuids(scope, selected_uuids),
+            ))
+        }
+        CombatSelectionInputEncodingV2::SubmitScryDiscardIndices => {
+            let mut selected_indices = Vec::with_capacity(selected_domain_indices.len());
+            for domain_index in selected_domain_indices {
+                let candidate = family.raw_domain.get(*domain_index).ok_or_else(|| {
+                    format!(
+                        "combat line lab structured selection has no local domain index {domain_index}"
+                    )
+                })?;
+                let CombatSelectionDomainCandidateV2::ScryIndex {
+                    index,
+                    currently_present,
+                    ..
+                } = candidate
+                else {
+                    return Err(
+                        "combat line lab scry selection has a non-scry domain candidate"
+                            .to_string(),
+                    );
+                };
+                if !currently_present {
+                    return Err(format!(
+                        "combat line lab local domain index {domain_index} is not eligible"
+                    ));
+                }
+                selected_indices.push(usize::try_from(*index).map_err(|_| {
+                    format!("combat line lab scry index {index} does not fit usize")
+                })?);
+            }
+            Ok(ClientInput::SubmitScryDiscard(selected_indices))
+        }
+    }
 }
 
 fn local_monster_entity_id(

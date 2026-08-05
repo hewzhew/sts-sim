@@ -797,6 +797,20 @@ fn execute_command(
             );
             (to_value(result)?, mutated, false, false)
         }
+        OracleAnalysisServiceCommandV1::CombatLabSelect {
+            indices,
+            selection_offset,
+            selection_limit,
+        } => (
+            to_value(workspace.session.select_combat_line_lab(
+                indices,
+                selection_offset,
+                selection_limit,
+            )?)?,
+            true,
+            false,
+            false,
+        ),
         OracleAnalysisServiceCommandV1::CombatLabEnd {
             selection_offset,
             selection_limit,
