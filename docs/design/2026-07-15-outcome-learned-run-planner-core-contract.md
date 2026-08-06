@@ -560,11 +560,11 @@ actions use the complete linear typed action surface, including symbolic
 selection families. `CombatLearningObservationV1` now adds explicit turn,
 dynamic card-zone, power, stance/orb, relic, and encounter projections without
 serializing raw combat state or replacing domain identities with display
-labels. The environment still publishes two typed gaps: encounter-specific
+labels. Indexed generated-card and stance choices now carry one ordered typed
+candidate list on the action surface; their exact atomic index inputs remain
+unchanged. The environment still publishes one typed gap for encounter-specific
 public history and counters that currently live only in monster runtime
-bundles, and indexed generated-card choices whose legal indices do not yet
-carry public candidate semantics. Combat samples remain incomplete until both
-gaps are closed.
+bundles. Combat samples remain incomplete until that gap is closed.
 
 Recovery curricula are callers of this boundary, not mechanics. Restoring an
 exact checkpoint must preserve its RNG state; a curriculum may count, limit,

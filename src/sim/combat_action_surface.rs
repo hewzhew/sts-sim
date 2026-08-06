@@ -2,8 +2,9 @@ use std::collections::HashSet;
 
 use serde::{Deserialize, Serialize};
 
-use crate::content::cards::CardId;
-use crate::runtime::combat::{CardPileView, CombatState};
+use crate::content::cards::{CardId, CardType};
+use crate::runtime::action::CardDestination;
+use crate::runtime::combat::{CardPileView, CombatState, StanceId};
 use crate::state::core::{
     ClientInput, EngineState, GridSelectReason, HandSelectReason, PendingChoice, PileType,
 };
@@ -11,13 +12,57 @@ use crate::state::selection::SelectionScope;
 
 /// A linear-size description of every input accepted at one combat boundary.
 ///
-/// Atomic inputs remain explicit.  Combinatorial pending choices are described
+/// Atomic inputs remain explicit. Combinatorial pending choices are described
 /// as an ordered-input language instead of materializing every payload.
+/// Indexed one-of choices keep their exact atomic inputs and carry one aligned
+/// typed candidate list instead of duplicating candidate semantics elsewhere.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct CombatLegalActionSurfaceV2 {
     pub atomic_actions: Vec<ClientInput>,
     pub selection_families: Vec<CombatSelectionActionFamilyV2>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub indexed_choice: Option<CombatIndexedChoiceSurfaceV2>,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct CombatIndexedChoiceSurfaceV2 {
+    pub input_encoding: CombatIndexedChoiceInputEncodingV2,
+    pub reason: CombatIndexedChoiceReasonV2,
+    /// Position in this vector is the exact submitted choice index.
+    pub candidates: Vec<CombatIndexedChoiceCandidateV2>,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CombatIndexedChoiceInputEncodingV2 {
+    SubmitDiscoverChoiceIndex,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum CombatIndexedChoiceReasonV2 {
+    Discovery {
+        colorless: bool,
+        card_type: Option<CardType>,
+        amount: u8,
+    },
+    CardReward {
+        destination: CardDestination,
+    },
+    ForeignInfluence {
+        upgraded: bool,
+    },
+    ChooseOne,
+    Stance,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum CombatIndexedChoiceCandidateV2 {
+    Card { card_id: CardId, upgrades: u8 },
+    Stance { stance: StanceId },
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -108,6 +153,7 @@ pub fn combat_legal_action_surface_v2(
         _ => CombatLegalActionSurfaceV2 {
             atomic_actions: crate::sim::combat_legal_actions::engine_atomic_actions(engine, combat),
             selection_families: Vec::new(),
+            indexed_choice: None,
         },
     }
 }
@@ -251,48 +297,102 @@ fn pending_choice_surface(
         PendingChoice::ScrySelect { cards, card_uuids } => CombatLegalActionSurfaceV2 {
             atomic_actions: Vec::new(),
             selection_families: vec![scry_family(cards, card_uuids, combat)],
+            indexed_choice: None,
         },
-        PendingChoice::DiscoverySelect(choice) => {
-            let mut actions = (0..choice.cards.len())
-                .map(ClientInput::SubmitDiscoverChoice)
-                .collect::<Vec<_>>();
-            if choice.can_skip {
-                actions.push(ClientInput::Cancel);
-            }
-            explicit_surface(actions)
-        }
+        PendingChoice::DiscoverySelect(choice) => indexed_choice_surface(
+            CombatIndexedChoiceReasonV2::Discovery {
+                colorless: choice.colorless,
+                card_type: choice.card_type,
+                amount: choice.amount,
+            },
+            choice
+                .cards
+                .iter()
+                .copied()
+                .map(|card_id| CombatIndexedChoiceCandidateV2::Card {
+                    card_id,
+                    upgrades: 0,
+                })
+                .collect(),
+            choice.can_skip,
+        ),
         PendingChoice::CardRewardSelect {
-            cards, can_skip, ..
-        } => {
-            let mut actions = (0..cards.len())
-                .map(ClientInput::SubmitDiscoverChoice)
-                .collect::<Vec<_>>();
-            if *can_skip {
-                actions.push(ClientInput::Cancel);
-            }
-            explicit_surface(actions)
-        }
-        PendingChoice::ForeignInfluenceSelect { cards, .. } => explicit_surface(
-            (0..cards.len())
-                .map(ClientInput::SubmitDiscoverChoice)
+            cards,
+            destination,
+            can_skip,
+        } => indexed_choice_surface(
+            CombatIndexedChoiceReasonV2::CardReward {
+                destination: *destination,
+            },
+            cards
+                .iter()
+                .copied()
+                .map(|card_id| CombatIndexedChoiceCandidateV2::Card {
+                    card_id,
+                    upgrades: 0,
+                })
                 .collect(),
+            *can_skip,
         ),
-        PendingChoice::ChooseOneSelect { choices } => explicit_surface(
-            (0..choices.len())
-                .map(ClientInput::SubmitDiscoverChoice)
+        PendingChoice::ForeignInfluenceSelect { cards, upgraded } => indexed_choice_surface(
+            CombatIndexedChoiceReasonV2::ForeignInfluence {
+                upgraded: *upgraded,
+            },
+            cards
+                .iter()
+                .copied()
+                .map(|card_id| CombatIndexedChoiceCandidateV2::Card {
+                    card_id,
+                    upgrades: u8::from(*upgraded),
+                })
                 .collect(),
+            false,
         ),
-        PendingChoice::StanceChoice => explicit_surface(vec![
-            ClientInput::SubmitDiscoverChoice(0),
-            ClientInput::SubmitDiscoverChoice(1),
-        ]),
+        PendingChoice::ChooseOneSelect { choices } => indexed_choice_surface(
+            CombatIndexedChoiceReasonV2::ChooseOne,
+            choices
+                .iter()
+                .map(|choice| CombatIndexedChoiceCandidateV2::Card {
+                    card_id: choice.card_id,
+                    upgrades: choice.upgrades,
+                })
+                .collect(),
+            false,
+        ),
+        PendingChoice::StanceChoice => indexed_choice_surface(
+            CombatIndexedChoiceReasonV2::Stance,
+            vec![
+                CombatIndexedChoiceCandidateV2::Stance {
+                    stance: StanceId::Wrath,
+                },
+                CombatIndexedChoiceCandidateV2::Stance {
+                    stance: StanceId::Calm,
+                },
+            ],
+            false,
+        ),
     }
 }
 
-fn explicit_surface(actions: Vec<ClientInput>) -> CombatLegalActionSurfaceV2 {
+fn indexed_choice_surface(
+    reason: CombatIndexedChoiceReasonV2,
+    candidates: Vec<CombatIndexedChoiceCandidateV2>,
+    can_cancel: bool,
+) -> CombatLegalActionSurfaceV2 {
+    let mut atomic_actions = (0..candidates.len())
+        .map(ClientInput::SubmitDiscoverChoice)
+        .collect::<Vec<_>>();
+    if can_cancel {
+        atomic_actions.push(ClientInput::Cancel);
+    }
     CombatLegalActionSurfaceV2 {
-        atomic_actions: actions,
+        atomic_actions,
         selection_families: Vec::new(),
+        indexed_choice: Some(CombatIndexedChoiceSurfaceV2 {
+            input_encoding: CombatIndexedChoiceInputEncodingV2::SubmitDiscoverChoiceIndex,
+            reason,
+            candidates,
+        }),
     }
 }
 
@@ -307,6 +407,7 @@ fn symbolic_surface(
             Vec::new()
         },
         selection_families: vec![family],
+        indexed_choice: None,
     }
 }
 
@@ -703,6 +804,106 @@ mod tests {
         assert_eq!(
             surface.selection_families[0].selection_status,
             CombatSelectionStatusV2::Disabled(CombatSelectionDisabledReasonV2::MalformedScryDomain)
+        );
+    }
+
+    #[test]
+    fn discovery_indices_carry_one_aligned_typed_candidate_list() {
+        let combat = crate::test_support::blank_test_combat();
+        let surface = combat_legal_action_surface_v2(
+            &EngineState::PendingChoice(PendingChoice::DiscoverySelect(
+                crate::state::DiscoveryChoiceState {
+                    cards: vec![CardId::Bash, CardId::FiendFire],
+                    colorless: false,
+                    card_type: Some(CardType::Attack),
+                    amount: 2,
+                    can_skip: true,
+                },
+            )),
+            &combat,
+        );
+
+        assert_eq!(
+            surface.atomic_actions,
+            vec![
+                ClientInput::SubmitDiscoverChoice(0),
+                ClientInput::SubmitDiscoverChoice(1),
+                ClientInput::Cancel,
+            ]
+        );
+        assert!(surface.selection_families.is_empty());
+        assert_eq!(
+            surface.indexed_choice,
+            Some(CombatIndexedChoiceSurfaceV2 {
+                input_encoding: CombatIndexedChoiceInputEncodingV2::SubmitDiscoverChoiceIndex,
+                reason: CombatIndexedChoiceReasonV2::Discovery {
+                    colorless: false,
+                    card_type: Some(CardType::Attack),
+                    amount: 2,
+                },
+                candidates: vec![
+                    CombatIndexedChoiceCandidateV2::Card {
+                        card_id: CardId::Bash,
+                        upgrades: 0,
+                    },
+                    CombatIndexedChoiceCandidateV2::Card {
+                        card_id: CardId::FiendFire,
+                        upgrades: 0,
+                    },
+                ],
+            })
+        );
+    }
+
+    #[test]
+    fn choose_one_and_stance_indices_preserve_typed_option_semantics() {
+        let combat = crate::test_support::blank_test_combat();
+        let choose_one = combat_legal_action_surface_v2(
+            &EngineState::PendingChoice(PendingChoice::ChooseOneSelect {
+                choices: vec![
+                    crate::state::ChooseOneCardChoice {
+                        card_id: CardId::BecomeAlmighty,
+                        upgrades: 1,
+                    },
+                    crate::state::ChooseOneCardChoice {
+                        card_id: CardId::ReachHeaven,
+                        upgrades: 0,
+                    },
+                ],
+            }),
+            &combat,
+        );
+        let stance = combat_legal_action_surface_v2(
+            &EngineState::PendingChoice(PendingChoice::StanceChoice),
+            &combat,
+        );
+
+        assert_eq!(
+            choose_one
+                .indexed_choice
+                .expect("choose-one semantics")
+                .candidates,
+            vec![
+                CombatIndexedChoiceCandidateV2::Card {
+                    card_id: CardId::BecomeAlmighty,
+                    upgrades: 1,
+                },
+                CombatIndexedChoiceCandidateV2::Card {
+                    card_id: CardId::ReachHeaven,
+                    upgrades: 0,
+                },
+            ]
+        );
+        assert_eq!(
+            stance.indexed_choice.expect("stance semantics").candidates,
+            vec![
+                CombatIndexedChoiceCandidateV2::Stance {
+                    stance: StanceId::Wrath,
+                },
+                CombatIndexedChoiceCandidateV2::Stance {
+                    stance: StanceId::Calm,
+                },
+            ]
         );
     }
 }

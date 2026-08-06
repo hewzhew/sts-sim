@@ -119,11 +119,12 @@ The combat learning branch does not serialize raw combat state. Its explicit
 projection uses domain card, potion, enemy, power, relic, orb, stance, and
 intent identities rather than display labels. It includes turn/phase counters,
 dynamic public card state, public card-zone contents, powers, stance/orbs,
-relics, and the typed action surface. It remains deliberately incomplete while
-encounter-specific public history and counters exist only inside monster
-runtime bundles, and while indexed generated-card choices expose legal indices
-without their public candidate semantics. End-to-end training must not treat
-combat samples as complete until both typed gaps are closed.
+relics, and the typed action surface. Indexed generated-card and stance choices
+carry one ordered typed candidate list on that action surface, so submitted
+indices do not require a duplicate observation payload. The combat observation
+remains deliberately incomplete while encounter-specific public history and
+counters exist only inside monster runtime bundles. End-to-end training must
+not treat combat samples as complete until that typed gap is closed.
 
 On an ordinary reward screen, the reward owner claims typed low-agency public
 resources before opening a nested card-reward choice. This lets the card owner

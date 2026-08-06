@@ -18,7 +18,6 @@ use super::{
 #[serde(rename_all = "snake_case")]
 pub enum LearningCombatObservationGapV1 {
     MonsterPublicHistoryAndCounters,
-    PendingChoiceContext,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -230,10 +229,7 @@ impl LearningEnvV1 {
 }
 
 fn current_combat_observation_gaps_v1() -> Vec<LearningCombatObservationGapV1> {
-    vec![
-        LearningCombatObservationGapV1::MonsterPublicHistoryAndCounters,
-        LearningCombatObservationGapV1::PendingChoiceContext,
-    ]
+    vec![LearningCombatObservationGapV1::MonsterPublicHistoryAndCounters]
 }
 
 #[cfg(test)]
@@ -243,8 +239,12 @@ mod tests {
     use crate::content::monsters::EnemyId;
     use crate::content::potions::{Potion, PotionId};
     use crate::runtime::combat::CombatCard;
+    use crate::sim::combat_action_surface::{
+        CombatIndexedChoiceCandidateV2, CombatIndexedChoiceReasonV2,
+    };
     use crate::state::core::{ActiveCombat, CombatContext, RoomCombatContext};
     use crate::state::map::node::RoomType;
+    use crate::state::{DiscoveryChoiceState, PendingChoice};
 
     #[test]
     fn strategic_boundary_steps_by_typed_planner_candidate_and_restores_exactly() {
@@ -324,10 +324,7 @@ mod tests {
             LearningObservationCompletenessV1::Incomplete {
                 combat_gaps
             } if combat_gaps
-                == vec![
-                    LearningCombatObservationGapV1::MonsterPublicHistoryAndCounters,
-                    LearningCombatObservationGapV1::PendingChoiceContext,
-                ]
+                == vec![LearningCombatObservationGapV1::MonsterPublicHistoryAndCounters]
         ));
         assert!(boundary
             .legal_actions
@@ -378,6 +375,65 @@ mod tests {
         assert_eq!(
             env.observe().expect("observe after rejected combat input"),
             before
+        );
+    }
+
+    #[test]
+    fn indexed_pending_choice_exposes_typed_candidates_without_an_observation_gap() {
+        let mut session = RunControlSession::new(RunControlConfig::default());
+        let choice = PendingChoice::DiscoverySelect(DiscoveryChoiceState {
+            cards: vec![CardId::Bash, CardId::FiendFire],
+            colorless: false,
+            card_type: None,
+            amount: 1,
+            can_skip: true,
+        });
+        session.engine_state = EngineState::PendingChoice(choice.clone());
+        session.active_combat = Some(ActiveCombat::new(
+            EngineState::PendingChoice(choice),
+            crate::test_support::blank_test_combat(),
+            CombatContext::Room(RoomCombatContext {
+                room_type: RoomType::MonsterRoom,
+            }),
+        ));
+        let env = LearningEnvV1::from_session(session);
+
+        let LearningBoundaryV1::Combat { boundary } =
+            env.observe().expect("observe indexed combat choice")
+        else {
+            panic!("pending combat choice should remain a combat learning boundary");
+        };
+        let indexed = boundary
+            .legal_actions
+            .indexed_choice
+            .expect("indexed choice semantics");
+
+        assert_eq!(
+            indexed.reason,
+            CombatIndexedChoiceReasonV2::Discovery {
+                colorless: false,
+                card_type: None,
+                amount: 1,
+            }
+        );
+        assert_eq!(
+            indexed.candidates,
+            vec![
+                CombatIndexedChoiceCandidateV2::Card {
+                    card_id: CardId::Bash,
+                    upgrades: 0,
+                },
+                CombatIndexedChoiceCandidateV2::Card {
+                    card_id: CardId::FiendFire,
+                    upgrades: 0,
+                },
+            ]
+        );
+        assert_eq!(
+            boundary.observation_completeness,
+            LearningObservationCompletenessV1::Incomplete {
+                combat_gaps: vec![LearningCombatObservationGapV1::MonsterPublicHistoryAndCounters],
+            }
         );
     }
 }

@@ -15,7 +15,7 @@ use crate::runtime::combat::CombatState;
 use crate::runtime::rng::{RngPool, StsRng};
 use crate::sim::combat::{combat_terminal, stable_boundary, CombatPosition, CombatTerminal};
 use crate::sim::combat_action_surface::{
-    combat_legal_action_surface_v2, CombatSelectionActionFamilyV2,
+    combat_legal_action_surface_v2, CombatIndexedChoiceSurfaceV2, CombatSelectionActionFamilyV2,
     CombatSelectionDomainCandidateV2, CombatSelectionInputEncodingV2,
     CombatSelectionPayloadLanguageV2, CombatSelectionStatusV2,
 };
@@ -81,8 +81,12 @@ pub struct CombatLegalActionSurfaceFingerprintV2 {
     pub enumeration_domain_digest: String,
     pub atomic_action_count: u64,
     pub action_family_count: u64,
+    #[serde(default)]
+    pub indexed_choice_count: u64,
     pub atomic_actions: Vec<CombatActionFingerprintDescriptorV2>,
     pub selection_families: Vec<crate::sim::combat_action_surface::CombatSelectionActionFamilyV2>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub indexed_choice: Option<CombatIndexedChoiceSurfaceV2>,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -168,8 +172,11 @@ pub fn combat_legal_action_surface_fingerprint_v2(
         .map(|input| combat_action_descriptor_v2(combat, input))
         .collect::<Vec<_>>();
     let legal_input_language_digest = legal_input_language_digest(&legal_surface);
-    let enumeration_domain_digest =
-        enumeration_domain_digest(&atomic_actions, &legal_surface.selection_families);
+    let enumeration_domain_digest = enumeration_domain_digest(
+        &atomic_actions,
+        &legal_surface.selection_families,
+        legal_surface.indexed_choice.as_ref(),
+    );
     CombatLegalActionSurfaceFingerprintV2 {
         fingerprint_algorithm: FINGERPRINT_ALGORITHM_JSON.to_string(),
         legal_input_language_digest,
@@ -177,8 +184,10 @@ pub fn combat_legal_action_surface_fingerprint_v2(
         atomic_action_count: u64::try_from(atomic_actions.len()).unwrap_or(u64::MAX),
         action_family_count: u64::try_from(legal_surface.selection_families.len())
             .unwrap_or(u64::MAX),
+        indexed_choice_count: u64::from(legal_surface.indexed_choice.is_some()),
         atomic_actions,
         selection_families: legal_surface.selection_families,
+        indexed_choice: legal_surface.indexed_choice,
     }
 }
 
@@ -212,6 +221,7 @@ struct EnumerationDomainDigestInputV2<'a> {
     contract: &'static str,
     atomic_actions: &'a [CombatActionFingerprintDescriptorV2],
     selection_families: &'a [CombatSelectionActionFamilyV2],
+    indexed_choice: Option<&'a CombatIndexedChoiceSurfaceV2>,
 }
 
 fn legal_input_language_digest(
@@ -299,11 +309,13 @@ fn legal_selection_language_projection(
 fn enumeration_domain_digest(
     atomic_actions: &[CombatActionFingerprintDescriptorV2],
     selection_families: &[CombatSelectionActionFamilyV2],
+    indexed_choice: Option<&CombatIndexedChoiceSurfaceV2>,
 ) -> String {
     hash_serializable(&EnumerationDomainDigestInputV2 {
-        contract: "ordered_semantic_atomic_actions_plus_frozen_selection_domain_v1",
+        contract: "ordered_semantic_actions_plus_frozen_selection_and_indexed_domains_v2",
         atomic_actions,
         selection_families,
+        indexed_choice,
     })
 }
 
@@ -724,6 +736,46 @@ mod tests {
             first.enumeration_domain_digest,
             reversed.enumeration_domain_digest
         );
+    }
+
+    #[test]
+    fn indexed_choice_semantics_change_enumeration_but_not_legal_language() {
+        let combat = combat_with_single_monster();
+        let first = combat_legal_action_surface_fingerprint_v2(
+            &EngineState::PendingChoice(PendingChoice::DiscoverySelect(
+                crate::state::DiscoveryChoiceState {
+                    cards: vec![CardId::Bash, CardId::Defend],
+                    colorless: false,
+                    card_type: None,
+                    amount: 1,
+                    can_skip: false,
+                },
+            )),
+            &combat,
+        );
+        let changed = combat_legal_action_surface_fingerprint_v2(
+            &EngineState::PendingChoice(PendingChoice::DiscoverySelect(
+                crate::state::DiscoveryChoiceState {
+                    cards: vec![CardId::Bash, CardId::FiendFire],
+                    colorless: false,
+                    card_type: None,
+                    amount: 1,
+                    can_skip: false,
+                },
+            )),
+            &combat,
+        );
+
+        assert_eq!(
+            first.legal_input_language_digest,
+            changed.legal_input_language_digest
+        );
+        assert_ne!(
+            first.enumeration_domain_digest,
+            changed.enumeration_domain_digest
+        );
+        assert_eq!(first.indexed_choice_count, 1);
+        assert_ne!(first.indexed_choice, changed.indexed_choice);
     }
 
     #[test]

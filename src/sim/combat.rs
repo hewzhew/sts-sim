@@ -109,6 +109,7 @@ pub trait CombatStepper {
         CombatLegalActionSurfaceV2 {
             atomic_actions: self.atomic_actions(position),
             selection_families: Vec::new(),
+            indexed_choice: None,
         }
     }
 

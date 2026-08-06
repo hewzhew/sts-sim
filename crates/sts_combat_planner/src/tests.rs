@@ -255,6 +255,7 @@ impl CombatStepper for TinyTurnStepper {
             _ => CombatLegalActionSurfaceV2 {
                 atomic_actions: self.atomic_actions(position),
                 selection_families: Vec::new(),
+                indexed_choice: None,
             },
         }
     }
