@@ -121,6 +121,7 @@ pub fn handle_spawn_monster(
             observation: crate::runtime::combat::MonsterProtocolObservationState {
                 visible_intent: crate::runtime::combat::Intent::Unknown,
                 preview_damage_per_hit: louse_bite_damage.unwrap_or(0),
+                executed_move_history: Vec::new(),
             },
             identity: crate::runtime::combat::MonsterProtocolIdentity {
                 instance_id: Some(next_protocol_id),

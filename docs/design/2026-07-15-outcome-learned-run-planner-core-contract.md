@@ -562,9 +562,13 @@ dynamic card-zone, power, stance/orb, relic, and encounter projections without
 serializing raw combat state or replacing domain identities with display
 labels. Indexed generated-card and stance choices now carry one ordered typed
 candidate list on the action surface; their exact atomic index inputs remain
-unchanged. The environment still publishes one typed gap for encounter-specific
-public history and counters that currently live only in monster runtime
-bundles. Combat samples remain incomplete until that gap is closed.
+unchanged. Monster moves enter a separate public history only when they
+actually begin execution, so the private mechanics history cannot leak the
+current unexecuted roll. Typed public encounter counters cover Hexaghost active
+orbs and per-thief stolen gold; other encounter state is represented by that
+history, powers, cards, or ordinary entity state. The maintained in-process
+combat observation is therefore complete without exposing raw monster runtime
+bundles or unrevealed random damage.
 
 Recovery curricula are callers of this boundary, not mechanics. Restoring an
 exact checkpoint must preserve its RNG state; a curriculum may count, limit,

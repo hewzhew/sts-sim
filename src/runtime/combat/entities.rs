@@ -443,6 +443,12 @@ pub struct MonsterProtocolObservationState {
     /// This is not an executable damage base and must not be fed back into
     /// combat resolution.
     pub preview_damage_per_hit: i32,
+    /// Append-only public history recorded only when the monster actually
+    /// begins a turn. `MonsterMoveState::history` is mechanics state and
+    /// includes the current unexecuted roll, so it must never substitute for
+    /// this observation field.
+    #[serde(default)]
+    pub executed_move_history: Vec<u8>,
 }
 
 impl Default for MonsterProtocolObservationState {
@@ -450,6 +456,7 @@ impl Default for MonsterProtocolObservationState {
         Self {
             visible_intent: Intent::Unknown,
             preview_damage_per_hit: 0,
+            executed_move_history: Vec::new(),
         }
     }
 }

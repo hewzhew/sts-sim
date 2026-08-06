@@ -304,8 +304,9 @@ impl CombatState {
     }
 
     pub fn clear_monster_protocol_observation(&mut self, monster_id: EntityId) {
-        self.monster_protocol_mut(monster_id).observation =
-            MonsterProtocolObservationState::default();
+        let observation = &mut self.monster_protocol_mut(monster_id).observation;
+        observation.visible_intent = Intent::Unknown;
+        observation.preview_damage_per_hit = 0;
     }
 
     pub fn set_monster_protocol_visible_intent(&mut self, monster_id: EntityId, intent: Intent) {
@@ -334,6 +335,19 @@ impl CombatState {
         self.monster_protocol(monster_id)
             .map(|state| state.observation.preview_damage_per_hit)
             .unwrap_or(0)
+    }
+
+    pub fn record_monster_protocol_executed_move(&mut self, monster_id: EntityId, move_id: u8) {
+        self.monster_protocol_mut(monster_id)
+            .observation
+            .executed_move_history
+            .push(move_id);
+    }
+
+    pub fn monster_protocol_executed_move_history(&self, monster_id: EntityId) -> &[u8] {
+        self.monster_protocol(monster_id)
+            .map(|state| state.observation.executed_move_history.as_slice())
+            .unwrap_or_default()
     }
 
     pub fn monster_has_protocol_visible_intent(&self, monster_id: EntityId) -> bool {

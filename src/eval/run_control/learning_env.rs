@@ -15,18 +15,9 @@ use super::{
 };
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum LearningCombatObservationGapV1 {
-    MonsterPublicHistoryAndCounters,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "status", rename_all = "snake_case")]
 pub enum LearningObservationCompletenessV1 {
     Complete,
-    Incomplete {
-        combat_gaps: Vec<LearningCombatObservationGapV1>,
-    },
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -143,9 +134,7 @@ impl LearningEnvV1 {
             return Ok(LearningBoundaryV1::Combat {
                 boundary: LearningCombatBoundaryV1 {
                     observation: combat_learning_observation_v1(&position.combat),
-                    observation_completeness: LearningObservationCompletenessV1::Incomplete {
-                        combat_gaps: current_combat_observation_gaps_v1(),
-                    },
+                    observation_completeness: LearningObservationCompletenessV1::Complete,
                     legal_actions: combat_legal_action_surface_v2(
                         &position.engine,
                         &position.combat,
@@ -228,10 +217,6 @@ impl LearningEnvV1 {
     }
 }
 
-fn current_combat_observation_gaps_v1() -> Vec<LearningCombatObservationGapV1> {
-    vec![LearningCombatObservationGapV1::MonsterPublicHistoryAndCounters]
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -296,7 +281,7 @@ mod tests {
     }
 
     #[test]
-    fn combat_boundary_exposes_exact_actions_but_rejects_incomplete_observation_claim() {
+    fn combat_boundary_exposes_exact_actions_with_a_complete_observation() {
         let mut session = RunControlSession::new(RunControlConfig::default());
         let mut combat = crate::test_support::blank_test_combat();
         combat.entities.potions = vec![Some(Potion::new(PotionId::FruitJuice, 41)), None, None];
@@ -319,13 +304,10 @@ mod tests {
         else {
             panic!("active combat should expose a combat learning boundary");
         };
-        assert!(matches!(
+        assert_eq!(
             boundary.observation_completeness,
-            LearningObservationCompletenessV1::Incomplete {
-                combat_gaps
-            } if combat_gaps
-                == vec![LearningCombatObservationGapV1::MonsterPublicHistoryAndCounters]
-        ));
+            LearningObservationCompletenessV1::Complete
+        );
         assert!(boundary
             .legal_actions
             .atomic_actions
@@ -431,9 +413,7 @@ mod tests {
         );
         assert_eq!(
             boundary.observation_completeness,
-            LearningObservationCompletenessV1::Incomplete {
-                combat_gaps: vec![LearningCombatObservationGapV1::MonsterPublicHistoryAndCounters],
-            }
+            LearningObservationCompletenessV1::Complete
         );
     }
 }

@@ -16,8 +16,8 @@ use crate::content::powers::PowerId;
 use crate::content::relics::RelicState;
 use crate::ids::EntityId;
 use crate::runtime::combat::{
-    CombatCard, CombatPhase, CombatState, EphemeralCounters, Intent, MonsterId, OrbEntity, OrbId,
-    Power, PowerPayload, StanceId,
+    CombatCard, CombatPhase, CombatState, EphemeralCounters, Intent, MonsterEntity, MonsterId,
+    OrbEntity, OrbId, Power, PowerPayload, StanceId,
 };
 
 use super::combat_public_observation::{
@@ -127,7 +127,25 @@ pub struct CombatLearningMonsterStateV1 {
     pub dying: bool,
     pub half_dead: bool,
     pub intent: CombatLearningIntentV1,
+    pub executed_moves: CombatLearningMonsterMoveHistoryV1,
+    pub public_counters: Vec<CombatLearningMonsterPublicCounterV1>,
     pub powers: Vec<CombatLearningPowerV1>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct CombatLearningMonsterMoveHistoryV1 {
+    /// Move ids are encounter-local and are namespaced by the monster's
+    /// `enemy` identity. Only moves that actually began execution appear here.
+    pub evidence: ObservationEvidenceKindV1,
+    pub move_ids: Vec<u8>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum CombatLearningMonsterPublicCounterV1 {
+    HexaghostActiveOrbs { count: u8 },
+    StolenGold { amount: i32 },
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -257,6 +275,13 @@ pub fn combat_learning_observation_v1(combat: &CombatState) -> CombatLearningObs
                     preview_damage_per_hit: intent.preview_damage_per_hit,
                     hidden_reason: intent.hidden_reason,
                 },
+                executed_moves: CombatLearningMonsterMoveHistoryV1 {
+                    evidence: ObservationEvidenceKindV1::PublicOrderedCollection,
+                    move_ids: combat
+                        .monster_protocol_executed_move_history(monster.id)
+                        .to_vec(),
+                },
+                public_counters: learning_monster_public_counters(monster),
                 powers: learning_powers(combat, monster.id),
             }
         })
@@ -326,6 +351,24 @@ pub fn combat_learning_observation_v1(combat: &CombatState) -> CombatLearningObs
             ),
         },
         monsters,
+    }
+}
+
+fn learning_monster_public_counters(
+    monster: &MonsterEntity,
+) -> Vec<CombatLearningMonsterPublicCounterV1> {
+    match EnemyId::from_id(monster.monster_type) {
+        Some(EnemyId::Hexaghost) => {
+            vec![CombatLearningMonsterPublicCounterV1::HexaghostActiveOrbs {
+                count: monster.hexaghost.orb_active_count,
+            }]
+        }
+        Some(EnemyId::Looter | EnemyId::Mugger) => {
+            vec![CombatLearningMonsterPublicCounterV1::StolenGold {
+                amount: monster.thief.stolen_gold,
+            }]
+        }
+        _ => Vec::new(),
     }
 }
 

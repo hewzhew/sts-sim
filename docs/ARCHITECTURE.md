@@ -121,10 +121,16 @@ intent identities rather than display labels. It includes turn/phase counters,
 dynamic public card state, public card-zone contents, powers, stance/orbs,
 relics, and the typed action surface. Indexed generated-card and stance choices
 carry one ordered typed candidate list on that action surface, so submitted
-indices do not require a duplicate observation payload. The combat observation
-remains deliberately incomplete while encounter-specific public history and
-counters exist only inside monster runtime bundles. End-to-end training must
-not treat combat samples as complete until that typed gap is closed.
+indices do not require a duplicate observation payload. The engine records
+monster moves in a separate append-only public history only when that monster
+actually begins its turn; the mechanics move history remains private because
+its final entry is the current unexecuted roll. Encounter-local move ids are
+namespaced by typed enemy identity. Public encounter counters project only
+facts that are visible and not already represented by history, powers, cards,
+or ordinary entity state, currently Hexaghost's active orbs and each
+Looter/Mugger's stolen gold. Private protocol flags, unrevealed random damage,
+and raw monster runtime bundles remain absent. With these fields the combat
+observation is complete for the maintained in-process learning environment.
 
 On an ordinary reward screen, the reward owner claims typed low-agency public
 resources before opening a nested card-reward choice. This lets the card owner

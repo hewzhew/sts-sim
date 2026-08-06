@@ -148,8 +148,8 @@ pub use forced_transition::{
     RUN_FORCED_TRANSITION_SCHEMA_VERSION,
 };
 pub use learning_env::{
-    LearningActionV1, LearningBoundaryV1, LearningCombatBoundaryV1, LearningCombatObservationGapV1,
-    LearningEnvV1, LearningObservationCompletenessV1, LearningStepV1, LearningStrategicBoundaryV1,
+    LearningActionV1, LearningBoundaryV1, LearningCombatBoundaryV1, LearningEnvV1,
+    LearningObservationCompletenessV1, LearningStepV1, LearningStrategicBoundaryV1,
 };
 pub use oracle_analysis_session::{
     OracleAnalysisAdvanceReportV1, OracleAnalysisAdvanceRequestV1, OracleAnalysisAdvanceStatusV1,

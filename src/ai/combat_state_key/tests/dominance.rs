@@ -186,4 +186,11 @@ fn combat_dominance_key_keeps_monster_protocol_observation_state() {
         combat_dominance_key(&EngineState::CombatPlayerTurn, &baseline),
         combat_dominance_key(&EngineState::CombatPlayerTurn, &damage_variant),
     );
+
+    let mut history_variant = baseline.clone();
+    history_variant.record_monster_protocol_executed_move(monster_id, 3);
+    assert_ne!(
+        combat_dominance_key(&EngineState::CombatPlayerTurn, &baseline),
+        combat_dominance_key(&EngineState::CombatPlayerTurn, &history_variant),
+    );
 }

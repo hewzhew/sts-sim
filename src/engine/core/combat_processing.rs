@@ -505,6 +505,10 @@ pub(super) fn process_combat_processing<P: CombatEnginePhaseProfiler>(
                     for monster in &monster_snapshots {
                         let monster_move_resolution_marker =
                             profiler.begin(CombatEngineProfilePhaseV1::MonsterMoveResolution);
+                        combat_state.record_monster_protocol_executed_move(
+                            monster.id,
+                            monster.planned_move_id(),
+                        );
                         let actions =
                             crate::content::monsters::resolve_monster_turn(combat_state, monster);
                         for action in actions {

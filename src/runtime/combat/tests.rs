@@ -530,3 +530,17 @@ fn monster_turn_plan_hides_visible_spec_for_half_dead_or_dying_monsters() {
         0
     );
 }
+
+#[test]
+fn clearing_current_monster_intent_preserves_public_executed_history() {
+    let mut combat = crate::test_support::blank_test_combat();
+    combat.set_monster_protocol_visible_intent(7, Intent::Attack { damage: 6, hits: 1 });
+    combat.set_monster_protocol_preview_damage_per_hit(7, 6);
+    combat.record_monster_protocol_executed_move(7, 2);
+
+    combat.clear_monster_protocol_observation(7);
+
+    assert_eq!(combat.monster_protocol_visible_intent(7), &Intent::Unknown);
+    assert_eq!(combat.monster_protocol_preview_damage_per_hit(7), 0);
+    assert_eq!(combat.monster_protocol_executed_move_history(7), &[2]);
+}

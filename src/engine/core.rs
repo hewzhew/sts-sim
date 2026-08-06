@@ -1856,6 +1856,12 @@ mod tests {
             !combat_state.turn.counters.skip_monster_turn_pending,
             "Java clears room.skipMonsterTurn once the new player turn begins"
         );
+        assert!(
+            combat_state
+                .monster_protocol_executed_move_history(7)
+                .is_empty(),
+            "a skipped monster turn must not become public executed history"
+        );
     }
 
     #[test]
@@ -1903,8 +1909,14 @@ mod tests {
             .iter()
             .find(|monster| monster.id == 12)
             .expect("second monster should still exist");
+        assert_eq!(
+            combat_state.monster_protocol_executed_move_history(11),
+            &[1]
+        );
         assert!(
-            next_monster.move_history().is_empty(),
+            combat_state
+                .monster_protocol_executed_move_history(next_monster.id)
+                .is_empty(),
             "Java GameActionManager calls m.applyTurnPowers() immediately after each monster takeTurn(); Explosive damage can kill the player before the next monster is dequeued"
         );
     }
@@ -1973,6 +1985,10 @@ mod tests {
         assert_eq!(reborn.current_hp, 300);
         assert!(!reborn.half_dead);
         assert!(!reborn.is_dying);
+        assert_eq!(
+            combat_state.monster_protocol_executed_move_history(reborn.id),
+            &[3]
+        );
     }
 
     #[test]

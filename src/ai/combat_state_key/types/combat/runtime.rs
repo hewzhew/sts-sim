@@ -29,6 +29,7 @@ pub(crate) struct CombatMonsterProtocolKey {
 pub(crate) struct CombatMonsterProtocolObservationKey {
     pub(crate) visible_intent: CombatIntentKey,
     pub(crate) preview_damage_per_hit: i32,
+    pub(crate) executed_move_history: Vec<u8>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, serde::Serialize)]

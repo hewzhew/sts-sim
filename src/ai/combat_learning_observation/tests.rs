@@ -176,3 +176,79 @@ fn public_powers_relics_and_dynamic_cards_change_learning_observation() {
         combat_learning_observation_v1(&changed)
     );
 }
+
+#[test]
+fn private_monster_roll_state_does_not_change_learning_observation() {
+    let mut left = crate::test_support::blank_test_combat();
+    let mut louse = crate::test_support::test_monster(EnemyId::LouseNormal);
+    louse.id = 7;
+    louse.set_planned_move_id(1);
+    louse.move_history_mut().push_back(1);
+    louse.louse.bite_damage = Some(6);
+    left.entities.monsters.push(louse);
+    left.entities
+        .player
+        .add_relic(RelicState::new(RelicId::RunicDome));
+
+    let mut right = left.clone();
+    right.entities.monsters[0].set_planned_move_id(2);
+    right.entities.monsters[0].move_history_mut().clear();
+    right.entities.monsters[0].move_history_mut().push_back(2);
+    right.entities.monsters[0].louse.bite_damage = Some(9);
+
+    assert_eq!(
+        combat_learning_observation_v1(&left),
+        combat_learning_observation_v1(&right),
+        "the private current roll and unrevealed louse damage must not leak"
+    );
+}
+
+#[test]
+fn executed_monster_history_is_public_but_the_current_roll_is_not() {
+    let mut combat = crate::test_support::blank_test_combat();
+    let mut monster = crate::test_support::test_monster(EnemyId::JawWorm);
+    monster.id = 7;
+    monster.set_planned_move_id(2);
+    monster.move_history_mut().extend([1, 2]);
+    combat.entities.monsters.push(monster);
+    combat.record_monster_protocol_executed_move(7, 1);
+    combat
+        .entities
+        .player
+        .add_relic(RelicState::new(RelicId::RunicDome));
+
+    let observation = combat_learning_observation_v1(&combat);
+
+    assert_eq!(
+        observation.monsters[0].executed_moves,
+        CombatLearningMonsterMoveHistoryV1 {
+            evidence: ObservationEvidenceKindV1::PublicOrderedCollection,
+            move_ids: vec![1],
+        }
+    );
+}
+
+#[test]
+fn public_encounter_counters_change_learning_observation() {
+    let mut thief_combat = crate::test_support::blank_test_combat();
+    let mut looter = crate::test_support::test_monster(EnemyId::Looter);
+    looter.thief.stolen_gold = 17;
+    thief_combat.entities.monsters.push(looter);
+
+    let thief_observation = combat_learning_observation_v1(&thief_combat);
+    assert_eq!(
+        thief_observation.monsters[0].public_counters,
+        vec![CombatLearningMonsterPublicCounterV1::StolenGold { amount: 17 }]
+    );
+
+    let mut hexaghost_combat = crate::test_support::blank_test_combat();
+    let mut hexaghost = crate::test_support::test_monster(EnemyId::Hexaghost);
+    hexaghost.hexaghost.orb_active_count = 4;
+    hexaghost_combat.entities.monsters.push(hexaghost);
+
+    let hexaghost_observation = combat_learning_observation_v1(&hexaghost_combat);
+    assert_eq!(
+        hexaghost_observation.monsters[0].public_counters,
+        vec![CombatLearningMonsterPublicCounterV1::HexaghostActiveOrbs { count: 4 }]
+    );
+}

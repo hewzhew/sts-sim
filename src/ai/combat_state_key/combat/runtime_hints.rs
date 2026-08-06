@@ -45,6 +45,7 @@ fn monster_protocol_key(
         observation: CombatMonsterProtocolObservationKey {
             visible_intent: intent_key(&state.observation.visible_intent),
             preview_damage_per_hit: state.observation.preview_damage_per_hit,
+            executed_move_history: state.observation.executed_move_history.clone(),
         },
         identity: CombatMonsterProtocolIdentityKey {
             instance_id: state.identity.instance_id,
