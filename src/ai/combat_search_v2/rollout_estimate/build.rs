@@ -18,6 +18,9 @@ impl RolloutNodeEstimate {
             final_hp: node.combat.entities.player.current_hp,
             persistent_run_value: super::super::external_payoff::persistent_run_value(&node.combat),
             external_burden_count: super::super::outcome_score::external_burden_count(&node.combat),
+            unrecovered_stolen_gold: super::super::external_payoff::unrecovered_stolen_gold(
+                &node.combat,
+            ),
             hp_loss: (node.initial_hp - node.combat.entities.player.current_hp).max(0),
             turns: node.combat.turn.turn_count,
             potions_used: node.potions_used,

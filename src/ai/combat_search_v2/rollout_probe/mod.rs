@@ -2,6 +2,7 @@ use std::time::Instant;
 
 use crate::sim::combat::CombatStepper;
 
+use super::oracle_action_policy::OracleCombatRolloutContractV1;
 use super::rollout_profile::RolloutPerformanceCounters;
 use super::*;
 
@@ -34,6 +35,7 @@ pub(super) fn choose_by_one_step_probe(
     ordered: &[IndexedActionChoice],
     allow_nonterminal_upgrade: bool,
     performance: &mut RolloutPerformanceCounters,
+    contract: OracleCombatRolloutContractV1,
 ) -> OneStepProbeSelection {
     if !allow_nonterminal_upgrade {
         return choose_by_terminal_one_step_probe(
@@ -43,6 +45,7 @@ pub(super) fn choose_by_one_step_probe(
             deadline,
             ordered,
             performance,
+            contract,
         );
     }
     let Some(fallback_choice) = ordered.first() else {
@@ -56,6 +59,7 @@ pub(super) fn choose_by_one_step_probe(
         fallback_choice,
         0,
         performance,
+        contract,
     ) else {
         return OneStepProbeSelection::NoUsableProbe;
     };
@@ -82,6 +86,7 @@ pub(super) fn choose_by_one_step_probe(
             choice,
             ordered_index,
             performance,
+            contract,
         ) else {
             continue;
         };
@@ -117,6 +122,7 @@ fn choose_by_terminal_one_step_probe(
     deadline: Option<Instant>,
     ordered: &[IndexedActionChoice],
     performance: &mut RolloutPerformanceCounters,
+    contract: OracleCombatRolloutContractV1,
 ) -> OneStepProbeSelection {
     let Some(fallback_choice) = ordered.first() else {
         return OneStepProbeSelection::NoUsableProbe;
@@ -129,6 +135,7 @@ fn choose_by_terminal_one_step_probe(
         fallback_choice,
         0,
         performance,
+        contract,
     ) else {
         return OneStepProbeSelection::NoUsableProbe;
     };
@@ -154,6 +161,7 @@ fn choose_by_terminal_one_step_probe(
             choice,
             ordered_index,
             performance,
+            contract,
         ) else {
             continue;
         };

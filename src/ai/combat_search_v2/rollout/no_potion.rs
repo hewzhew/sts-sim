@@ -1,5 +1,6 @@
 use std::time::Instant;
 
+use super::super::oracle_action_policy::OracleCombatRolloutContractV1;
 use super::super::rollout_pending_choice::{
     linear_pending_choice_actions, RolloutPendingChoiceProgress,
 };
@@ -22,6 +23,7 @@ pub(in crate::ai::combat_search_v2) fn conservative_no_potion_rollout(
         max_actions,
         deadline,
         performance,
+        OracleCombatRolloutContractV1::default(),
     )
 }
 
@@ -41,6 +43,28 @@ pub(in crate::ai::combat_search_v2) fn phase_aware_no_potion_rollout(
         max_actions,
         deadline,
         performance,
+        OracleCombatRolloutContractV1::default(),
+    )
+}
+
+pub(in crate::ai::combat_search_v2) fn phase_aware_no_potion_rollout_for_contract(
+    node: &SearchNode,
+    stepper: &impl CombatStepper,
+    config: &CombatSearchV2Config,
+    max_actions: usize,
+    deadline: Option<Instant>,
+    performance: &mut RolloutPerformanceCounters,
+    contract: OracleCombatRolloutContractV1,
+) -> RolloutNodeEstimate {
+    no_potion_rollout(
+        CombatSearchRolloutPluginId::PhaseAwareNoPotion,
+        node,
+        stepper,
+        config,
+        max_actions,
+        deadline,
+        performance,
+        contract,
     )
 }
 
@@ -52,6 +76,7 @@ fn no_potion_rollout(
     max_actions: usize,
     deadline: Option<Instant>,
     performance: &mut RolloutPerformanceCounters,
+    contract: OracleCombatRolloutContractV1,
 ) -> RolloutNodeEstimate {
     let mut rollout = node.clone_for_rollout();
     let mut last_action_reason = None;
@@ -151,6 +176,7 @@ fn no_potion_rollout(
             &rollout.combat,
             legal,
             performance,
+            contract,
         ) else {
             performance.no_potion_choose_action_elapsed_us = performance
                 .no_potion_choose_action_elapsed_us

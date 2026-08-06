@@ -39,6 +39,7 @@ mod baseline;
 mod card_pile_value;
 mod enemy_phase_value;
 mod pressure_value;
+mod recoverable_resource_urgency;
 mod rollout_value;
 mod value;
 mod value_facts;
@@ -215,6 +216,7 @@ pub use trajectory_report::trajectory_from_state;
 pub use turn_plan_probe::{
     enumerate_combat_search_v2_turn_plan_probe_candidates,
     enumerate_combat_search_v2_turn_plan_probe_candidates_across_pending_choices,
+    CombatSearchV2TurnPlanProbeCandidate, CombatSearchV2TurnPlanProbeEnumeration,
 };
 pub use turn_plan_probe_report::{
     CombatSearchV2TurnPlanProbeCandidateReport, CombatSearchV2TurnPlanProbeRootReport,

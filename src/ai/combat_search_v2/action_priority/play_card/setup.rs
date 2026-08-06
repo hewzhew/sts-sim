@@ -37,13 +37,15 @@ pub(super) fn key_setup_card_online_candidate(card: CardId, upgrades: u8) -> boo
 pub(super) fn current_turn_attack_setup_score(
     combat: &CombatState,
     card_index: usize,
+    target: Option<usize>,
     card: &CombatCard,
     effects: CardPlayEffectFacts,
 ) -> i32 {
-    if effects.direct.player_strength_gain <= 0 {
+    if effects.direct.player_strength_gain <= 0 && effects.direct.enemy_vulnerable <= 0 {
         return 0;
     }
 
+    let setup_target_kind = cards::effective_target(card);
     let setup_cost = card.cost_for_turn_java().max(0);
     let available_energy = i32::from(combat.turn.energy);
     if setup_cost > available_energy {
@@ -60,6 +62,12 @@ pub(super) fn current_turn_attack_setup_score(
                 && cards::get_card_definition(candidate.id).card_type == CardType::Attack
                 && cards::can_play_card(candidate, combat).is_ok()
                 && attack_cost_is_payable_after_setup(candidate, remaining_energy)
+                && (effects.direct.player_strength_gain > 0
+                    || attack_can_use_enemy_debuff(
+                        setup_target_kind,
+                        target,
+                        cards::effective_target(candidate),
+                    ))
         })
         .count() as i32;
 
@@ -67,6 +75,29 @@ pub(super) fn current_turn_attack_setup_score(
         .direct
         .player_strength_gain
         .saturating_mul(playable_attacks)
+        .saturating_add(
+            effects
+                .direct
+                .enemy_vulnerable
+                .saturating_mul(playable_attacks),
+        )
+}
+
+fn attack_can_use_enemy_debuff(
+    setup_target_kind: CardTarget,
+    setup_target: Option<usize>,
+    attack_target_kind: CardTarget,
+) -> bool {
+    let setup_reaches_enemy = match setup_target_kind {
+        CardTarget::Enemy | CardTarget::SelfAndEnemy => setup_target.is_some(),
+        CardTarget::AllEnemy | CardTarget::All => true,
+        _ => false,
+    };
+    let attack_reaches_enemy = matches!(
+        attack_target_kind,
+        CardTarget::Enemy | CardTarget::SelfAndEnemy | CardTarget::AllEnemy | CardTarget::All
+    );
+    setup_reaches_enemy && attack_reaches_enemy
 }
 
 pub(super) fn current_turn_retaliation_protection_score(

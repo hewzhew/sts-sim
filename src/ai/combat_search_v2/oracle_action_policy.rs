@@ -22,12 +22,46 @@ pub struct OracleCombatRolloutGuideV1 {
     pub components: Vec<i32>,
     pub winning_suffix: Option<OracleCombatRolloutWinningSuffixV1>,
     pub actions_simulated: usize,
+    pub action_preview: Vec<ClientInput>,
+    pub terminal: super::SearchTerminalLabel,
+    pub final_hp: i32,
+    pub unrecovered_stolen_gold: i32,
+    pub contract_satisfied: bool,
+    pub stop_reason: &'static str,
+    pub last_action_reason: Option<&'static str>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct OracleCombatRolloutWinningSuffixV1 {
     pub actions: Vec<ClientInput>,
     pub final_hp_hint: i32,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct OracleCombatRolloutContractV1 {
+    pub minimum_final_hp: Option<i32>,
+    pub require_no_unrecovered_stolen_gold: bool,
+}
+
+impl OracleCombatRolloutContractV1 {
+    pub(in crate::ai::combat_search_v2) fn accepts_terminal_position(
+        self,
+        position: &CombatPosition,
+    ) -> bool {
+        self.minimum_final_hp
+            .is_none_or(|minimum| position.combat.entities.player.current_hp >= minimum)
+            && (!self.require_no_unrecovered_stolen_gold
+                || super::external_payoff::unrecovered_stolen_gold(&position.combat) == 0)
+    }
+
+    fn accepts_terminal_estimate(
+        self,
+        estimate: &super::rollout_estimate::RolloutNodeEstimate,
+    ) -> bool {
+        self.minimum_final_hp
+            .is_none_or(|minimum| estimate.final_hp >= minimum)
+            && (!self.require_no_unrecovered_stolen_gold || estimate.unrecovered_stolen_gold == 0)
+    }
 }
 
 /// One shared evaluation of the typed combat-state knowledge consumed by the
@@ -49,6 +83,7 @@ pub struct OracleCombatGuideBundleV1 {
 #[derive(Clone, Debug, Serialize)]
 pub struct OracleAtomicActionPriorityDiagnosticV1 {
     pub role: &'static str,
+    pub recoverable_resource_urgency: i32,
     pub role_rank: i32,
     pub mitigation: i32,
     pub action_supply: i32,
@@ -78,19 +113,23 @@ pub fn oracle_combat_rollout_guide_v1(
     position: &CombatPosition,
     max_actions: usize,
     deadline: Option<Instant>,
+    contract: OracleCombatRolloutContractV1,
 ) -> OracleCombatRolloutGuideV1 {
     let node = SearchNode::root(position.engine.clone(), position.combat.clone());
     let config = super::CombatSearchV2Config::default();
     let mut performance = super::rollout_profile::RolloutPerformanceCounters::default();
-    let estimate = super::rollout::phase_aware_no_potion_rollout(
+    let estimate = super::rollout::phase_aware_no_potion_rollout_for_contract(
         &node,
         &EngineCombatStepper,
         &config,
         max_actions.max(1),
         deadline,
         &mut performance,
+        contract,
     );
-    let (outcome, evidence) = if estimate.terminal == super::SearchTerminalLabel::Win {
+    let contract_win = estimate.terminal == super::SearchTerminalLabel::Win
+        && contract.accepts_terminal_estimate(&estimate);
+    let (outcome, evidence) = if contract_win {
         // A simulated win is positive existence evidence. The caller still
         // has to generate and replay its own exact witness.
         (2, 2)
@@ -126,17 +165,17 @@ pub fn oracle_combat_rollout_guide_v1(
         + usize::from(estimate.high_fanout_pending_choice)) as i32
         + estimate.gremlin_nob_anger_amount_total.max(0)
         + estimate.pending_choice_estimated_action_fanout as i32;
-    let winning_suffix =
-        estimate
-            .is_replayable_terminal_win()
-            .then(|| OracleCombatRolloutWinningSuffixV1 {
-                actions: estimate
-                    .action_preview
-                    .iter()
-                    .map(|action| action.input.clone())
-                    .collect(),
-                final_hp_hint: estimate.final_hp,
-            });
+    let action_preview = estimate
+        .action_preview
+        .iter()
+        .map(|action| action.input.clone())
+        .collect::<Vec<_>>();
+    let winning_suffix = (estimate.is_replayable_terminal_win() && contract_win).then(|| {
+        OracleCombatRolloutWinningSuffixV1 {
+            actions: action_preview.clone(),
+            final_hp_hint: estimate.final_hp,
+        }
+    });
     OracleCombatRolloutGuideV1 {
         // Positive existence evidence leads. Non-winning bounded rollouts
         // remain live heuristic estimates rather than false refutations.
@@ -161,6 +200,13 @@ pub fn oracle_combat_rollout_guide_v1(
         ],
         winning_suffix,
         actions_simulated: estimate.actions_simulated,
+        action_preview,
+        terminal: estimate.terminal,
+        final_hp: estimate.final_hp,
+        unrecovered_stolen_gold: estimate.unrecovered_stolen_gold,
+        contract_satisfied: contract_win,
+        stop_reason: estimate.stop_reason.label(),
+        last_action_reason: estimate.last_action_reason,
     }
 }
 
@@ -330,6 +376,7 @@ pub fn oracle_atomic_action_policy_priority_diagnostics_v1(
             );
             Some(OracleAtomicActionPriorityDiagnosticV1 {
                 role: priority.role.label(),
+                recoverable_resource_urgency: priority.recoverable_resource_urgency,
                 role_rank: priority.role_rank,
                 mitigation: priority.mitigation,
                 action_supply: priority.action_supply,
@@ -411,9 +458,12 @@ fn combat_state_guide_components(
     position: &CombatPosition,
     value: &super::value::CombatSearchStateValueV1,
 ) -> Vec<i32> {
+    let priority = encounter_priority_owner_progress(&position.combat);
     vec![
         value.fewer_living_enemies,
-        encounter_priority_owner_progress(&position.combat),
+        priority.completed_targets,
+        priority.focused_damage,
+        priority.total_damage,
         value.phase_adjusted_enemy_effort_progress,
         value.enemy_effort_progress,
         value.enemy_hp_progress,
@@ -445,11 +495,14 @@ fn combat_survival_guide_components(
     position: &CombatPosition,
     value: &super::value::CombatSearchStateValueV1,
 ) -> Vec<i32> {
+    let priority = encounter_priority_owner_progress(&position.combat);
     vec![
         value.survival_margin,
         value.player_hp,
         value.fewer_living_enemies,
-        encounter_priority_owner_progress(&position.combat),
+        priority.completed_targets,
+        priority.focused_damage,
+        priority.total_damage,
         value.phase_adjusted_enemy_effort_progress,
         value.enemy_effort_progress,
         value.enemy_hp_progress,
@@ -469,10 +522,13 @@ fn combat_horizon_guide_components(
     position: &CombatPosition,
     value: &super::value::CombatSearchStateValueV1,
 ) -> Vec<i32> {
+    let priority = encounter_priority_owner_progress(&position.combat);
     vec![
         i32::try_from(position.combat.turn.turn_count).unwrap_or(i32::MAX),
         value.fewer_living_enemies,
-        encounter_priority_owner_progress(&position.combat),
+        priority.completed_targets,
+        priority.focused_damage,
+        priority.total_damage,
         value.phase_adjusted_enemy_effort_progress,
         value.enemy_effort_progress,
         value.enemy_hp_progress,
@@ -486,8 +542,12 @@ fn combat_turn_generation_guide_components(
     value: &super::value::CombatSearchStateValueV1,
     setup: PlayerSetupSummary,
 ) -> Vec<i32> {
+    let priority = encounter_priority_owner_progress(&position.combat);
     vec![
         i32::from(position.combat.turn.counters.cards_played_this_turn),
+        priority.completed_targets,
+        priority.focused_damage,
+        priority.total_damage,
         setup.exhaust_engine_connected,
         setup.status_access_engine_connected,
         setup.active_power_count,
@@ -510,6 +570,7 @@ fn combat_setup_guide_components(
     setup: PlayerSetupSummary,
     tactical: PlayerTacticalOpportunitySummary,
 ) -> Vec<i32> {
+    let priority = encounter_priority_owner_progress(&position.combat);
     vec![
         tactical.runic_cube_emergency_draw_conversion,
         tactical.dark_embrace_wound_access_conversion,
@@ -519,7 +580,9 @@ fn combat_setup_guide_components(
         setup.recurring_output_count,
         setup.recurring_output_mass,
         value.fewer_living_enemies,
-        encounter_priority_owner_progress(&position.combat),
+        priority.completed_targets,
+        priority.focused_damage,
+        priority.total_damage,
         value.phase_adjusted_enemy_effort_progress,
         value.enemy_effort_progress,
         value.enemy_hp_progress,
@@ -608,34 +671,65 @@ pub fn oracle_combat_setup_guide_components(position: &CombatPosition) -> Vec<i3
     )
 }
 
-/// Progress against an encounter member whose death removes a persistent
-/// team-wide growth source. Total enemy HP alone treats symmetric-looking
-/// targets as interchangeable, even when their future combat semantics are
-/// not. Donu is the concrete owner in the Donu/Deca encounter: its alternating
-/// buff grants Strength to every living monster, while Deca's death does not
-/// stop that clock.
+/// Progress against encounter members whose defeat owns a persistent strategic
+/// payoff. Total enemy HP alone treats symmetric-looking targets as
+/// interchangeable even when their future combat semantics are not.
 ///
-/// This is deliberately a guide coordinate rather than a forced target rule.
-/// Exact search may still prefer Deca when Dazed pressure or a lethal window
-/// makes that line better.
-fn encounter_priority_owner_progress(combat: &CombatState) -> i32 {
+/// Looter and Mugger damage is tracked here because concentrating damage on
+/// either thief is the exact corridor that can prevent or recover stolen gold;
+/// spreading the same damage across an ordinary enemy cannot. Donu is the
+/// other concrete owner: its death removes the Donu/Deca encounter's
+/// team-wide Strength clock.
+///
+/// This remains a guide coordinate rather than a forced target rule. Exact
+/// search may still choose another target for survival, lethal, or a stronger
+/// complete-turn line.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+struct EncounterPriorityOwnerProgress {
+    completed_targets: i32,
+    focused_damage: i32,
+    total_damage: i32,
+}
+
+fn encounter_priority_owner_progress(combat: &CombatState) -> EncounterPriorityOwnerProgress {
     use crate::content::monsters::EnemyId;
 
+    let mut progress = EncounterPriorityOwnerProgress::default();
+    for thief in combat.entities.monsters.iter().filter(|monster| {
+        matches!(
+            EnemyId::from_id(monster.monster_type),
+            Some(EnemyId::Looter | EnemyId::Mugger)
+        )
+    }) {
+        let damage = thief.max_hp.saturating_sub(thief.current_hp.max(0)).max(0);
+        progress.completed_targets = progress
+            .completed_targets
+            .saturating_add(i32::from(thief.current_hp <= 0));
+        progress.focused_damage = progress.focused_damage.max(damage);
+        progress.total_damage = progress.total_damage.saturating_add(damage);
+    }
     let has_deca = combat
         .entities
         .monsters
         .iter()
         .any(|monster| EnemyId::from_id(monster.monster_type) == Some(EnemyId::Deca));
     if !has_deca {
-        return 0;
+        return progress;
     }
-    combat
+    if let Some(donu) = combat
         .entities
         .monsters
         .iter()
         .find(|monster| EnemyId::from_id(monster.monster_type) == Some(EnemyId::Donu))
-        .map(|donu| donu.max_hp.saturating_sub(donu.current_hp.max(0)).max(0))
-        .unwrap_or_default()
+    {
+        let damage = donu.max_hp.saturating_sub(donu.current_hp.max(0)).max(0);
+        progress.completed_targets = progress
+            .completed_targets
+            .saturating_add(i32::from(donu.current_hp <= 0));
+        progress.focused_damage = progress.focused_damage.max(damage);
+        progress.total_damage = progress.total_damage.saturating_add(damage);
+    }
+    progress
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -1325,6 +1419,96 @@ mod tests {
         ));
 
         assert!(donu_rank > deca_rank);
+    }
+
+    #[test]
+    fn thief_damage_outranks_equal_damage_spread_to_an_ordinary_enemy() {
+        let mut base = crate::test_support::blank_test_combat();
+        let mut looter = crate::test_support::test_monster(EnemyId::Looter);
+        looter.id = 1;
+        looter.current_hp = 50;
+        looter.max_hp = 50;
+        let mut jaw_worm = crate::test_support::test_monster(EnemyId::JawWorm);
+        jaw_worm.id = 2;
+        jaw_worm.current_hp = 50;
+        jaw_worm.max_hp = 50;
+        base.entities.monsters = vec![looter, jaw_worm];
+
+        let mut damaged_ordinary = base.clone();
+        damaged_ordinary.entities.monsters[1].current_hp = 38;
+        let mut damaged_thief = base;
+        damaged_thief.entities.monsters[0].current_hp = 38;
+
+        let ordinary_rank = oracle_combat_state_guide_components(&CombatPosition::new(
+            EngineState::CombatPlayerTurn,
+            damaged_ordinary,
+        ));
+        let thief_rank = oracle_combat_state_guide_components(&CombatPosition::new(
+            EngineState::CombatPlayerTurn,
+            damaged_thief,
+        ));
+
+        assert!(thief_rank > ordinary_rank);
+    }
+
+    #[test]
+    fn thief_completed_recovery_corridor_outranks_equal_distributed_damage() {
+        let mut base = crate::test_support::blank_test_combat();
+        let mut looter = crate::test_support::test_monster(EnemyId::Looter);
+        looter.id = 1;
+        looter.current_hp = 50;
+        looter.max_hp = 50;
+        let mut mugger = crate::test_support::test_monster(EnemyId::Mugger);
+        mugger.id = 2;
+        mugger.current_hp = 50;
+        mugger.max_hp = 50;
+        base.entities.monsters = vec![looter, mugger];
+
+        let mut distributed = base.clone();
+        distributed.entities.monsters[0].current_hp = 25;
+        distributed.entities.monsters[1].current_hp = 25;
+        let mut completed = base;
+        completed.entities.monsters[0].current_hp = 0;
+
+        let distributed_rank = oracle_combat_state_guide_components(&CombatPosition::new(
+            EngineState::CombatPlayerTurn,
+            distributed.clone(),
+        ));
+        let completed_rank = oracle_combat_state_guide_components(&CombatPosition::new(
+            EngineState::CombatPlayerTurn,
+            completed.clone(),
+        ));
+
+        assert!(completed_rank > distributed_rank);
+
+        let distributed_turn_rank = oracle_combat_turn_generation_guide_components(
+            &CombatPosition::new(EngineState::CombatPlayerTurn, distributed),
+        );
+        let completed_turn_rank = oracle_combat_turn_generation_guide_components(
+            &CombatPosition::new(EngineState::CombatPlayerTurn, completed),
+        );
+        assert!(completed_turn_rank > distributed_turn_rank);
+    }
+
+    #[test]
+    fn thief_owner_progress_accumulates_across_looter_and_mugger_corridor() {
+        let mut combat = crate::test_support::blank_test_combat();
+        let mut looter = crate::test_support::test_monster(EnemyId::Looter);
+        looter.current_hp = 30;
+        looter.max_hp = 50;
+        let mut mugger = crate::test_support::test_monster(EnemyId::Mugger);
+        mugger.current_hp = 0;
+        mugger.max_hp = 48;
+        combat.entities.monsters = vec![looter, mugger];
+
+        assert_eq!(
+            encounter_priority_owner_progress(&combat),
+            EncounterPriorityOwnerProgress {
+                completed_targets: 1,
+                focused_damage: 48,
+                total_damage: 68,
+            }
+        );
     }
 
     #[test]

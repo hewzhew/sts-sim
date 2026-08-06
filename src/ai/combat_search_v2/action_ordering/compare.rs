@@ -20,8 +20,9 @@ pub(in crate::ai::combat_search_v2) fn compare_action_ordering_priorities(
     right_root_action_prior_score: Option<f64>,
 ) -> std::cmp::Ordering {
     right
-        .role_rank
-        .cmp(&left.role_rank)
+        .recoverable_resource_urgency
+        .cmp(&left.recoverable_resource_urgency)
+        .then_with(|| right.role_rank.cmp(&left.role_rank))
         .then_with(|| {
             right
                 .lethal_external_payoff

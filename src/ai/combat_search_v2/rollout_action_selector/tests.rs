@@ -4,8 +4,8 @@ use crate::content::cards::CardId;
 use crate::content::monsters::EnemyId;
 use crate::content::powers::PowerId;
 use crate::runtime::combat::{CombatCard, Power, PowerPayload};
-use crate::sim::combat::{CombatPosition, CombatStepLimits};
-use crate::test_support::{blank_test_combat, test_monster};
+use crate::sim::combat::{CombatPosition, CombatStepLimits, EngineCombatStepper};
+use crate::test_support::{blank_test_combat, planned_monster, test_monster};
 
 #[derive(Clone, Copy)]
 struct ProbeWinStepper;
@@ -22,6 +22,41 @@ impl CombatStepper for ProbeWinStepper {
         _limits: CombatStepLimits,
     ) -> crate::sim::combat::CombatStepResult {
         let engine = if matches!(input, ClientInput::PlayCard { .. }) {
+            EngineState::GameOver(crate::state::core::RunResult::Victory)
+        } else {
+            position.engine.clone()
+        };
+        let position = CombatPosition::new(engine, position.combat.clone());
+        crate::sim::combat::CombatStepResult {
+            terminal: combat_terminal(&position.engine, &position.combat),
+            alive: true,
+            truncated: false,
+            timed_out: false,
+            engine_steps: 1,
+            position,
+        }
+    }
+
+    fn terminal(&self, position: &CombatPosition) -> crate::sim::combat::CombatTerminal {
+        combat_terminal(&position.engine, &position.combat)
+    }
+}
+
+#[derive(Clone, Copy)]
+struct EscapeWinStepper;
+
+impl CombatStepper for EscapeWinStepper {
+    fn atomic_actions(&self, _position: &CombatPosition) -> Vec<ClientInput> {
+        Vec::new()
+    }
+
+    fn apply_to_stable(
+        &self,
+        position: &CombatPosition,
+        input: ClientInput,
+        _limits: CombatStepLimits,
+    ) -> crate::sim::combat::CombatStepResult {
+        let engine = if matches!(input, ClientInput::EndTurn) {
             EngineState::GameOver(crate::state::core::RunResult::Victory)
         } else {
             position.engine.clone()
@@ -84,6 +119,7 @@ fn conservative_rollout_policy_reports_selection_reason() {
         &combat,
         legal,
         &mut RolloutPerformanceCounters::default(),
+        OracleCombatRolloutContractV1::default(),
     )
     .expect("single legal action should be selected");
 
@@ -121,6 +157,7 @@ fn conservative_rollout_probe_can_select_non_first_terminal_win() {
         &combat,
         legal,
         &mut RolloutPerformanceCounters::default(),
+        OracleCombatRolloutContractV1::default(),
     )
     .expect("probe should select an action");
 
@@ -130,6 +167,67 @@ fn conservative_rollout_probe_can_select_non_first_terminal_win() {
     );
     assert!(matches!(
         selection.choice.choice.input,
+        ClientInput::PlayCard { .. }
+    ));
+}
+
+#[test]
+fn contract_aware_rollout_does_not_upgrade_to_a_thief_escape_win() {
+    let mut combat = blank_test_combat();
+    let mut mugger = test_monster(EnemyId::Mugger);
+    mugger.id = 1;
+    mugger.current_hp = 30;
+    mugger.max_hp = 30;
+    mugger.thief.stolen_gold = 30;
+    combat.entities.monsters = vec![mugger];
+    combat.zones.hand = vec![CombatCard::new(CardId::Strike, 10)];
+    let legal = vec![
+        CombatActionChoice::from_input(
+            &combat,
+            ClientInput::PlayCard {
+                card_index: 0,
+                target: Some(1),
+            },
+        ),
+        CombatActionChoice::from_input(&combat, ClientInput::EndTurn),
+    ];
+
+    let unconstrained = choose_rollout_action(
+        CombatSearchRolloutPluginId::PhaseAwareNoPotion,
+        &test_node(combat.clone()),
+        &EscapeWinStepper,
+        &test_config(),
+        None,
+        &EngineState::CombatPlayerTurn,
+        &combat,
+        legal.clone(),
+        &mut RolloutPerformanceCounters::default(),
+        OracleCombatRolloutContractV1::default(),
+    )
+    .expect("unconstrained rollout should select an action");
+    assert!(matches!(
+        unconstrained.choice.choice.input,
+        ClientInput::EndTurn
+    ));
+
+    let constrained = choose_rollout_action(
+        CombatSearchRolloutPluginId::PhaseAwareNoPotion,
+        &test_node(combat.clone()),
+        &EscapeWinStepper,
+        &test_config(),
+        None,
+        &EngineState::CombatPlayerTurn,
+        &combat,
+        legal,
+        &mut RolloutPerformanceCounters::default(),
+        OracleCombatRolloutContractV1 {
+            minimum_final_hp: None,
+            require_no_unrecovered_stolen_gold: true,
+        },
+    )
+    .expect("contract-aware rollout should select an action");
+    assert!(matches!(
+        constrained.choice.choice.input,
         ClientInput::PlayCard { .. }
     ));
 }
@@ -159,6 +257,7 @@ fn conservative_rollout_probe_does_not_rescore_fallback_candidate() {
         &combat,
         legal,
         &mut performance,
+        OracleCombatRolloutContractV1::default(),
     )
     .expect("probe should select an action");
 
@@ -222,6 +321,7 @@ fn conservative_rollout_reuses_timed_threat_ordering() {
         &combat,
         legal,
         &mut RolloutPerformanceCounters::default(),
+        OracleCombatRolloutContractV1::default(),
     )
     .expect("rollout should select an action");
 
@@ -284,12 +384,80 @@ fn conservative_rollout_reuses_attack_retaliation_ordering() {
         &combat,
         legal,
         &mut RolloutPerformanceCounters::default(),
+        OracleCombatRolloutContractV1::default(),
     )
     .expect("rollout should select an action");
 
     assert!(matches!(
         selection.choice.choice.input,
         ClientInput::PlayCard { card_index: 1, .. }
+    ));
+}
+
+#[test]
+fn phase_aware_probe_cannot_replace_thief_damage_setup_with_nonlethal_block() {
+    let mut combat = blank_test_combat();
+    combat.entities.player.current_hp = 85;
+    combat.turn.energy = 3;
+    let mut looter = planned_monster(EnemyId::Looter, 1);
+    looter.id = 1;
+    looter.current_hp = 47;
+    looter.max_hp = 47;
+    let mut mugger = planned_monster(EnemyId::Mugger, 1);
+    mugger.id = 2;
+    mugger.current_hp = 48;
+    mugger.max_hp = 48;
+    combat.entities.monsters = vec![looter, mugger];
+    combat.zones.hand = vec![
+        CombatCard::new(CardId::Defend, 10),
+        CombatCard::new(CardId::Defend, 11),
+        CombatCard::new(CardId::FiendFire, 12),
+        CombatCard::new(CardId::ThunderClap, 13),
+    ];
+    let legal = vec![
+        CombatActionChoice::from_input(
+            &combat,
+            ClientInput::PlayCard {
+                card_index: 0,
+                target: None,
+            },
+        ),
+        CombatActionChoice::from_input(
+            &combat,
+            ClientInput::PlayCard {
+                card_index: 2,
+                target: Some(1),
+            },
+        ),
+        CombatActionChoice::from_input(
+            &combat,
+            ClientInput::PlayCard {
+                card_index: 3,
+                target: None,
+            },
+        ),
+    ];
+
+    let selection = choose_rollout_action(
+        CombatSearchRolloutPluginId::PhaseAwareNoPotion,
+        &test_node(combat.clone()),
+        &EngineCombatStepper,
+        &test_config(),
+        None,
+        &EngineState::CombatPlayerTurn,
+        &combat,
+        legal,
+        &mut RolloutPerformanceCounters::default(),
+        OracleCombatRolloutContractV1 {
+            minimum_final_hp: Some(66),
+            require_no_unrecovered_stolen_gold: true,
+        },
+    )
+    .expect("rollout should select one legal action");
+
+    assert!(matches!(
+        selection.choice.choice.input,
+        ClientInput::PlayCard { card_index: 3, .. }
     ));
 }
 

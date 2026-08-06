@@ -13,6 +13,9 @@ pub(super) fn probe_upgrade_reason(
     if candidate.terminal_rank < fallback.terminal_rank {
         return None;
     }
+    if candidate.recoverable_resource_urgency < fallback.recoverable_resource_urgency {
+        return None;
+    }
     if !allow_nonterminal_upgrade {
         return None;
     }

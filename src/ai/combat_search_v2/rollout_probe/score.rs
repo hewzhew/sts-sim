@@ -2,6 +2,7 @@ use std::time::Instant;
 
 use crate::sim::combat::{CombatPosition, CombatStepLimits, CombatStepResult, CombatStepper};
 
+use super::super::oracle_action_policy::OracleCombatRolloutContractV1;
 use super::super::phase_profile::combat_search_phase_profile;
 use super::super::rollout_profile::RolloutPerformanceCounters;
 use super::super::transition::terminal_label;
@@ -19,6 +20,7 @@ pub(super) fn probe_action(
     choice: &IndexedActionChoice,
     ordered_index: usize,
     performance: &mut RolloutPerformanceCounters,
+    contract: OracleCombatRolloutContractV1,
 ) -> Option<RolloutActionProbeResult> {
     if deadline.is_some_and(|limit| Instant::now() >= limit) {
         return None;
@@ -45,7 +47,14 @@ pub(super) fn probe_action(
         .no_potion_probe_actions_evaluated
         .saturating_add(1);
     Some(RolloutActionProbeResult {
-        score: rollout_action_probe_score(node, choice, ordered_index, &step, performance),
+        score: rollout_action_probe_score(
+            node,
+            choice,
+            ordered_index,
+            &step,
+            performance,
+            contract,
+        ),
         step,
     })
 }
@@ -58,6 +67,7 @@ pub(super) fn probe_terminal_action(
     choice: &IndexedActionChoice,
     ordered_index: usize,
     performance: &mut RolloutPerformanceCounters,
+    contract: OracleCombatRolloutContractV1,
 ) -> Option<RolloutTerminalProbeResult> {
     if deadline.is_some_and(|limit| Instant::now() >= limit) {
         return None;
@@ -83,10 +93,9 @@ pub(super) fn probe_terminal_action(
     performance.no_potion_probe_actions_evaluated = performance
         .no_potion_probe_actions_evaluated
         .saturating_add(1);
-    let terminal = terminal_label(&step.position.engine, &step.position.combat);
     Some(RolloutTerminalProbeResult {
         score: RolloutTerminalProbeScore {
-            terminal_rank: terminal_rank(terminal),
+            terminal_rank: contract_terminal_rank(contract, &step.position),
             final_hp: step.position.combat.entities.player.current_hp,
             ordered_preference: -(ordered_index as i32),
         },
@@ -100,13 +109,13 @@ fn rollout_action_probe_score(
     ordered_index: usize,
     step: &CombatStepResult,
     performance: &mut RolloutPerformanceCounters,
+    contract: OracleCombatRolloutContractV1,
 ) -> RolloutActionProbeScore {
     let phase_profile_started = Instant::now();
     let phase_profile = combat_search_phase_profile(&step.position.engine, &step.position.combat);
     performance.no_potion_probe_phase_profile_elapsed_us = performance
         .no_potion_probe_phase_profile_elapsed_us
         .saturating_add(phase_profile_started.elapsed().as_micros());
-    let terminal = terminal_label(&step.position.engine, &step.position.combat);
     let mechanics_pressure = (phase_profile
         .enemy_mechanics
         .guardian_mode_shift_pending_count
@@ -131,8 +140,17 @@ fn rollout_action_probe_score(
     let action_facts_score = action_facts_probe_score(&action_facts);
     let player_block = step.position.combat.entities.player.block;
     let visible_hp_loss = (phase_profile.pressure.visible_incoming_damage - player_block).max(0);
+    let recoverable_resource_urgency =
+        super::super::action_priority::priority_for_input_with_plugins(
+            &node.engine,
+            &node.combat,
+            &choice.choice.input,
+            super::super::CombatSearchActionOrderingPlugins::default(),
+        )
+        .recoverable_resource_urgency;
     RolloutActionProbeScore {
-        terminal_rank: terminal_rank(terminal),
+        terminal_rank: contract_terminal_rank(contract, &step.position),
+        recoverable_resource_urgency,
         final_hp: step.position.combat.entities.player.current_hp,
         survival_margin: phase_profile.pressure.survival_margin,
         visible_hp_loss,
@@ -152,6 +170,18 @@ fn rollout_action_probe_score(
         pending_choice_fanout: -(phase_profile.pending_choice.estimated_action_fanout as i32),
         ordered_preference: -(ordered_index as i32),
         nonterminal_upgrade_eligible: !matches!(choice.choice.input, ClientInput::EndTurn),
+    }
+}
+
+fn contract_terminal_rank(
+    contract: OracleCombatRolloutContractV1,
+    position: &CombatPosition,
+) -> i32 {
+    let terminal = terminal_label(&position.engine, &position.combat);
+    if terminal == SearchTerminalLabel::Win && !contract.accepts_terminal_position(position) {
+        terminal_rank(SearchTerminalLabel::Unresolved)
+    } else {
+        terminal_rank(terminal)
     }
 }
 

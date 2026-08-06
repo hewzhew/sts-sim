@@ -84,6 +84,7 @@ fn one_step_probe_can_choose_nonterminal_special_phase_value_upgrade() {
         &ordered,
         true,
         &mut RolloutPerformanceCounters::default(),
+        OracleCombatRolloutContractV1::default(),
     )
     else {
         panic!("phase progress without hp regression should be eligible");
@@ -123,6 +124,7 @@ fn one_step_probe_rejects_phase_upgrade_with_hp_regression() {
         &ordered,
         true,
         &mut RolloutPerformanceCounters::default(),
+        OracleCombatRolloutContractV1::default(),
     );
 
     assert!(matches!(selection, OneStepProbeSelection::Fallback { .. }));
@@ -155,6 +157,7 @@ fn one_step_probe_terminal_only_mode_rejects_nonterminal_phase_upgrade() {
         &ordered,
         false,
         &mut RolloutPerformanceCounters::default(),
+        OracleCombatRolloutContractV1::default(),
     );
 
     assert!(matches!(selection, OneStepProbeSelection::Fallback { .. }));
@@ -201,6 +204,7 @@ fn one_step_probe_can_choose_sustained_mitigation_from_action_facts() {
         &ordered,
         true,
         &mut RolloutPerformanceCounters::default(),
+        OracleCombatRolloutContractV1::default(),
     )
     else {
         panic!("Disarm facts should be eligible when it does not regress survival");
@@ -230,6 +234,15 @@ fn probe_upgrade_reason_accepts_hp_gain_as_survival_value() {
 fn probe_upgrade_reason_rejects_block_only_survival_value_without_visible_hp_loss_reduction() {
     let fallback = score_with_survival(30, 30, 0);
     let candidate = score_with_survival(30, 35, 0);
+
+    assert_eq!(probe_upgrade_reason(candidate, fallback, true), None);
+}
+
+#[test]
+fn probe_upgrade_reason_rejects_survival_gain_that_drops_resource_urgency() {
+    let mut fallback = score_with_survival(30, 5, 8);
+    fallback.recoverable_resource_urgency = 1;
+    let candidate = score_with_survival(30, 10, 3);
 
     assert_eq!(probe_upgrade_reason(candidate, fallback, true), None);
 }
@@ -401,6 +414,7 @@ fn score_with_survival(
 ) -> RolloutActionProbeScore {
     RolloutActionProbeScore {
         terminal_rank: terminal_rank(SearchTerminalLabel::Unresolved),
+        recoverable_resource_urgency: 0,
         final_hp,
         survival_margin,
         visible_hp_loss,

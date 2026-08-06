@@ -1512,3 +1512,184 @@ fn lethal_fiend_fire_keeps_finisher_priority_even_when_it_consumes_hand_resource
     assert_eq!(fiend_fire.role, ActionOrderingRole::LethalCard);
     assert!(fiend_fire > offering);
 }
+
+#[test]
+fn nonlethal_thief_pressure_moves_damage_ahead_of_ordinary_block() {
+    let mut combat = blank_test_combat();
+    combat.entities.player.current_hp = 85;
+    let mut looter = planned_monster(EnemyId::Looter, 1);
+    looter.id = 1;
+    let mut mugger = planned_monster(EnemyId::Mugger, 1);
+    mugger.id = 2;
+    combat.entities.monsters = vec![looter, mugger];
+    combat.zones.hand = vec![
+        CombatCard::new(CardId::Defend, 10),
+        CombatCard::new(CardId::Strike, 11),
+    ];
+
+    let defend = priority_for_input(
+        &EngineState::CombatPlayerTurn,
+        &combat,
+        &ClientInput::PlayCard {
+            card_index: 0,
+            target: None,
+        },
+        CombatSearchV2PhaseGuardPolicy::Default,
+        CombatSearchV2SetupBiasPolicy::Default,
+    );
+    let strike = priority_for_input(
+        &EngineState::CombatPlayerTurn,
+        &combat,
+        &ClientInput::PlayCard {
+            card_index: 1,
+            target: Some(1),
+        },
+        CombatSearchV2PhaseGuardPolicy::Default,
+        CombatSearchV2SetupBiasPolicy::Default,
+    );
+
+    assert_eq!(defend.recoverable_resource_urgency, 0);
+    assert_eq!(strike.recoverable_resource_urgency, 1);
+    assert!(
+        strike > defend,
+        "damage against a thief should enter the search corridor before nonlethal block"
+    );
+}
+
+#[test]
+fn visible_lethal_disables_thief_resource_urgency() {
+    let mut combat = blank_test_combat();
+    combat.entities.player.current_hp = 20;
+    let mut looter = planned_monster(EnemyId::Looter, 1);
+    looter.id = 1;
+    let mut mugger = planned_monster(EnemyId::Mugger, 1);
+    mugger.id = 2;
+    combat.entities.monsters = vec![looter, mugger];
+    combat.zones.hand = vec![
+        CombatCard::new(CardId::Defend, 10),
+        CombatCard::new(CardId::Strike, 11),
+    ];
+
+    let defend = priority_for_input(
+        &EngineState::CombatPlayerTurn,
+        &combat,
+        &ClientInput::PlayCard {
+            card_index: 0,
+            target: None,
+        },
+        CombatSearchV2PhaseGuardPolicy::Default,
+        CombatSearchV2SetupBiasPolicy::Default,
+    );
+    let strike = priority_for_input(
+        &EngineState::CombatPlayerTurn,
+        &combat,
+        &ClientInput::PlayCard {
+            card_index: 1,
+            target: Some(1),
+        },
+        CombatSearchV2PhaseGuardPolicy::Default,
+        CombatSearchV2SetupBiasPolicy::Default,
+    );
+
+    assert_eq!(strike.recoverable_resource_urgency, 0);
+    assert_eq!(defend.role, ActionOrderingRole::PreventVisibleLethal);
+    assert!(defend > strike);
+}
+
+#[test]
+fn ordinary_enemy_does_not_trigger_thief_resource_urgency() {
+    let mut combat = blank_test_combat();
+    combat.entities.player.current_hp = 85;
+    let mut jaw_worm = test_monster(EnemyId::JawWorm);
+    jaw_worm.id = 1;
+    combat.entities.monsters = vec![jaw_worm];
+    combat.zones.hand = vec![
+        CombatCard::new(CardId::Defend, 10),
+        CombatCard::new(CardId::Strike, 11),
+    ];
+
+    let defend = priority_for_input(
+        &EngineState::CombatPlayerTurn,
+        &combat,
+        &ClientInput::PlayCard {
+            card_index: 0,
+            target: None,
+        },
+        CombatSearchV2PhaseGuardPolicy::Default,
+        CombatSearchV2SetupBiasPolicy::Default,
+    );
+    let strike = priority_for_input(
+        &EngineState::CombatPlayerTurn,
+        &combat,
+        &ClientInput::PlayCard {
+            card_index: 1,
+            target: Some(1),
+        },
+        CombatSearchV2PhaseGuardPolicy::Default,
+        CombatSearchV2SetupBiasPolicy::Default,
+    );
+
+    assert_eq!(strike.recoverable_resource_urgency, 0);
+    assert_eq!(defend.recoverable_resource_urgency, 0);
+}
+
+#[test]
+fn thief_pressure_keeps_fiend_fire_fuel_behind_thunderclap_and_fiend_fire() {
+    let mut combat = blank_test_combat();
+    combat.entities.player.current_hp = 85;
+    combat.turn.energy = 3;
+    let mut looter = planned_monster(EnemyId::Looter, 1);
+    looter.id = 1;
+    looter.current_hp = 50;
+    looter.max_hp = 50;
+    let mut mugger = planned_monster(EnemyId::Mugger, 1);
+    mugger.id = 2;
+    mugger.current_hp = 50;
+    mugger.max_hp = 50;
+    combat.entities.monsters = vec![looter, mugger];
+    combat.zones.hand = vec![
+        CombatCard::new(CardId::Defend, 10),
+        CombatCard::new(CardId::Defend, 11),
+        CombatCard::new(CardId::ThunderClap, 12),
+        CombatCard::new(CardId::FiendFire, 13),
+    ];
+
+    let defend = priority_for_input(
+        &EngineState::CombatPlayerTurn,
+        &combat,
+        &ClientInput::PlayCard {
+            card_index: 0,
+            target: None,
+        },
+        CombatSearchV2PhaseGuardPolicy::Default,
+        CombatSearchV2SetupBiasPolicy::Default,
+    );
+    let thunderclap = priority_for_input(
+        &EngineState::CombatPlayerTurn,
+        &combat,
+        &ClientInput::PlayCard {
+            card_index: 2,
+            target: None,
+        },
+        CombatSearchV2PhaseGuardPolicy::Default,
+        CombatSearchV2SetupBiasPolicy::Default,
+    );
+    let fiend_fire = priority_for_input(
+        &EngineState::CombatPlayerTurn,
+        &combat,
+        &ClientInput::PlayCard {
+            card_index: 3,
+            target: Some(1),
+        },
+        CombatSearchV2PhaseGuardPolicy::Default,
+        CombatSearchV2SetupBiasPolicy::Default,
+    );
+
+    assert_eq!(thunderclap.recoverable_resource_urgency, 1);
+    assert_eq!(fiend_fire.recoverable_resource_urgency, 1);
+    assert!(thunderclap > fiend_fire);
+    assert!(
+        fiend_fire > defend,
+        "Fiend Fire should see basic Defends as fuel before they are spent"
+    );
+}

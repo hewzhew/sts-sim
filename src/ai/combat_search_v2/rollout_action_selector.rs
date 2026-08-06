@@ -2,6 +2,7 @@ use std::time::Instant;
 
 use crate::sim::combat::CombatStepper;
 
+use super::oracle_action_policy::OracleCombatRolloutContractV1;
 use super::rollout_probe::{choose_by_one_step_probe, OneStepProbeSelection};
 use super::rollout_profile::RolloutPerformanceCounters;
 use super::*;
@@ -52,6 +53,7 @@ pub(super) fn choose_rollout_action(
     combat: &CombatState,
     legal: Vec<CombatActionChoice>,
     performance: &mut RolloutPerformanceCounters,
+    contract: OracleCombatRolloutContractV1,
 ) -> Option<RolloutPolicySelection> {
     match plugin {
         CombatSearchRolloutPluginId::Disabled => None,
@@ -67,6 +69,7 @@ pub(super) fn choose_rollout_action(
                 combat,
                 legal,
                 performance,
+                contract,
             )
         }
         CombatSearchRolloutPluginId::PhaseAwareNoPotion => choose_conservative_no_potion_action(
@@ -79,6 +82,7 @@ pub(super) fn choose_rollout_action(
             combat,
             legal,
             performance,
+            contract,
         ),
         CombatSearchRolloutPluginId::TurnBeamNoPotion => choose_conservative_no_potion_action(
             true,
@@ -90,6 +94,7 @@ pub(super) fn choose_rollout_action(
             combat,
             legal,
             performance,
+            contract,
         ),
     }
 }
@@ -104,6 +109,7 @@ fn choose_conservative_no_potion_action(
     combat: &CombatState,
     legal: Vec<CombatActionChoice>,
     performance: &mut RolloutPerformanceCounters,
+    contract: OracleCombatRolloutContractV1,
 ) -> Option<RolloutPolicySelection> {
     let choices = legal
         .into_iter()
@@ -135,6 +141,7 @@ fn choose_conservative_no_potion_action(
         &ordered.choices,
         allow_nonterminal_probe_upgrade,
         performance,
+        contract,
     );
     performance.no_potion_probe_elapsed_us = performance
         .no_potion_probe_elapsed_us

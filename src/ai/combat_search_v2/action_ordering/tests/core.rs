@@ -108,7 +108,7 @@ fn root_action_prior_can_reorder_within_the_same_semantic_role() {
     monster.max_hp = 40;
     combat.entities.monsters = vec![monster];
     combat.zones.hand = vec![
-        CombatCard::new(CardId::Bash, 10),
+        CombatCard::new(CardId::HeavyBlade, 10),
         CombatCard::new(CardId::Strike, 11),
     ];
     let choices = vec![

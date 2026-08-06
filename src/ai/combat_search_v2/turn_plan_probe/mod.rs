@@ -3,7 +3,7 @@ mod candidate_report;
 mod selection_audit;
 mod types;
 
-pub(crate) use types::CombatSearchV2TurnPlanProbeEnumeration;
+pub use types::{CombatSearchV2TurnPlanProbeCandidate, CombatSearchV2TurnPlanProbeEnumeration};
 
 use crate::sim::combat::{CombatPosition, CombatStepper, EngineCombatStepper};
 

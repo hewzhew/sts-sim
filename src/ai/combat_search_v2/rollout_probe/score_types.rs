@@ -5,6 +5,7 @@ use crate::sim::combat::CombatStepResult;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) struct RolloutActionProbeScore {
     pub(super) terminal_rank: i32,
+    pub(super) recoverable_resource_urgency: i32,
     pub(super) final_hp: i32,
     pub(super) survival_margin: i32,
     pub(super) visible_hp_loss: i32,
@@ -65,6 +66,10 @@ impl Ord for RolloutActionProbeScore {
     fn cmp(&self, other: &Self) -> Ordering {
         self.terminal_rank
             .cmp(&other.terminal_rank)
+            .then_with(|| {
+                self.recoverable_resource_urgency
+                    .cmp(&other.recoverable_resource_urgency)
+            })
             .then_with(|| self.final_hp.cmp(&other.final_hp))
             .then_with(|| self.survival_margin.cmp(&other.survival_margin))
             .then_with(|| other.visible_hp_loss.cmp(&self.visible_hp_loss))

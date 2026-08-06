@@ -8,6 +8,7 @@ use super::super::phase_action_ordering::{
     phase_action_ordering_hint, PhaseActionAccessFacts, PhaseActionOrderingFacts,
 };
 use super::super::phase_profile::CombatSearchPhaseProfileV1;
+use super::super::recoverable_resource_urgency::recoverable_resource_urgency_for_play;
 use super::super::timed_enemy_threat::timed_enemy_threat_for_target;
 use super::super::visible_incoming_damage;
 use super::constants::*;
@@ -105,7 +106,7 @@ pub(super) fn priority_for_play_card(
     );
     let future_debuff = effects.has_future_debuff();
     let current_turn_attack_setup =
-        current_turn_attack_setup_score(combat, card_index, card, effects);
+        current_turn_attack_setup_score(combat, card_index, target, card, effects);
     let visible_damage = visible_incoming_damage(combat);
     let available_hand_slots = 10_i32
         .saturating_sub(i32::try_from(combat.zones.hand.len().saturating_sub(1)).unwrap_or(10));
@@ -159,6 +160,13 @@ pub(super) fn priority_for_play_card(
     let current_block = combat.entities.player.block;
     let current_hp = combat.entities.player.current_hp;
     let visible_loss_now = (visible_damage - current_block).max(0);
+    let recoverable_resource_urgency = recoverable_resource_urgency_for_play(
+        combat,
+        target_kind,
+        target,
+        target_progress,
+        visible_loss_now,
+    );
     let visible_loss_after_block =
         (visible_damage - current_block - block - effects.direct.visible_attack_mitigation_hint)
             .max(0)
@@ -252,6 +260,7 @@ pub(super) fn priority_for_play_card(
 
     ActionOrderingPriority {
         role,
+        recoverable_resource_urgency,
         role_rank: role_rank
             .saturating_add(phase_hint.role_rank_adjustment)
             .saturating_add(resource_timing.role_rank_adjustment),
