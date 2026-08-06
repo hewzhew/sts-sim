@@ -115,12 +115,15 @@ typed combat action surface, exact checkpoint/restore, and only sparse terminal
 reward. A curriculum or recovery controller stays outside the environment and
 must not change RNG when restoring a checkpoint.
 
-The current combat branch deliberately reports its public observation as
-incomplete. `CombatPublicObservationV1` was built for stable public
-fingerprints and still omits visible state required for learning, including
-turn/phase counters, powers, stance/orbs, relics, public discard/exhaust
-contents, and pending-choice context. End-to-end training must not treat that
-projection as complete; close the typed gaps before admitting combat samples.
+The combat learning branch does not serialize raw combat state. Its explicit
+projection uses domain card, potion, enemy, power, relic, orb, stance, and
+intent identities rather than display labels. It includes turn/phase counters,
+dynamic public card state, public card-zone contents, powers, stance/orbs,
+relics, and the typed action surface. It remains deliberately incomplete while
+encounter-specific public history and counters exist only inside monster
+runtime bundles, and while indexed generated-card choices expose legal indices
+without their public candidate semantics. End-to-end training must not treat
+combat samples as complete until both typed gaps are closed.
 
 On an ordinary reward screen, the reward owner claims typed low-agency public
 resources before opening a nested card-reward choice. This lets the card owner

@@ -120,81 +120,120 @@ pub struct CombatPublicIntentV1 {
     pub hidden_reason: Option<HiddenInformationReasonV1>,
 }
 
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct CombatPublicIntentFactsV1 {
+    pub evidence: ObservationEvidenceKindV1,
+    pub intent: Option<Intent>,
+    pub preview_damage_per_hit: Option<i32>,
+    pub hidden_reason: Option<HiddenInformationReasonV1>,
+}
+
 pub fn combat_public_observation_v1(combat: &CombatState) -> CombatPublicObservationV1 {
-    let runic_dome = combat.entities.player.has_relic(RelicId::RunicDome);
-    let draw_order_visible = combat.entities.player.has_relic(RelicId::FrozenEye);
-    let mut hidden_reasons = Vec::new();
-    if runic_dome {
-        hidden_reasons.push(HiddenInformationReasonV1::RunicDome);
-    }
-    if !draw_order_visible && !combat.zones.draw_pile.is_empty() {
-        hidden_reasons.push(HiddenInformationReasonV1::DrawPileOrderHidden);
-    }
+    let draw_evidence = combat_public_draw_evidence_v1(combat);
 
     CombatPublicObservationV1 {
         schema_name: OBSERVATION_BOUNDARY_SCHEMA_NAME.to_string(),
         schema_version: OBSERVATION_BOUNDARY_SCHEMA_VERSION,
         information_access: InformationAccessV1::Public,
-        player: CombatPublicPlayerV1 {
-            player_class: combat.meta.player_class.clone(),
-            ascension_level: combat.meta.ascension_level,
-            hp: combat.entities.player.current_hp,
-            max_hp: combat.entities.player.max_hp,
-            block: combat.entities.player.block,
-            energy: combat.turn.energy,
-        },
+        player: combat_public_player_v1(combat),
         hand: combat.zones.hand.iter().map(public_card).collect(),
         piles: CombatPublicPilesV1 {
-            draw: public_draw_pile(combat, draw_order_visible),
+            draw: public_draw_pile(combat, draw_evidence),
             discard_count: combat.zones.discard_pile.len(),
             exhaust_count: combat.zones.exhaust_pile.len(),
             limbo_count: combat.zones.limbo.len(),
             queued_cards_count: combat.zones.queued_cards.len(),
         },
-        potions: combat
-            .entities
-            .potions
-            .iter()
-            .map(|slot| {
-                slot.as_ref().map(|potion| CombatPublicPotionV1 {
-                    potion_id: format!("{:?}", potion.id),
-                    can_use: potion.can_use,
-                    can_discard: potion.can_discard,
-                    requires_target: potion.requires_target,
-                })
-            })
-            .collect(),
-        monsters: combat
-            .entities
-            .monsters
-            .iter()
-            .map(|monster| CombatPublicMonsterV1 {
-                slot: monster.slot,
-                enemy_id: EnemyId::from_id(monster.monster_type)
-                    .map(|enemy| format!("{enemy:?}"))
-                    .unwrap_or_else(|| format!("monster_type:{}", monster.monster_type)),
-                hp: monster.current_hp,
-                max_hp: monster.max_hp,
-                block: monster.block,
-                alive: monster.is_alive_for_action(),
-                escaped: monster.is_escaped,
-                dying: monster.is_dying,
-                half_dead: monster.half_dead,
-                intent: public_intent(combat, monster.id, runic_dome),
-            })
-            .collect(),
-        hidden_reasons,
+        potions: combat_public_potions_v1(combat),
+        monsters: combat_public_monsters_v1(combat),
+        hidden_reasons: combat_public_hidden_reasons_v1(combat),
     }
 }
 
-fn public_draw_pile(combat: &CombatState, draw_order_visible: bool) -> CombatPublicCardPileV1 {
+pub(crate) fn combat_public_player_v1(combat: &CombatState) -> CombatPublicPlayerV1 {
+    CombatPublicPlayerV1 {
+        player_class: combat.meta.player_class.clone(),
+        ascension_level: combat.meta.ascension_level,
+        hp: combat.entities.player.current_hp,
+        max_hp: combat.entities.player.max_hp,
+        block: combat.entities.player.block,
+        energy: combat.turn.energy,
+    }
+}
+
+pub(crate) fn combat_public_potions_v1(combat: &CombatState) -> Vec<Option<CombatPublicPotionV1>> {
+    combat
+        .entities
+        .potions
+        .iter()
+        .map(|slot| {
+            slot.as_ref().map(|potion| CombatPublicPotionV1 {
+                potion_id: format!("{:?}", potion.id),
+                can_use: potion.can_use,
+                can_discard: potion.can_discard,
+                requires_target: potion.requires_target,
+            })
+        })
+        .collect()
+}
+
+pub(crate) fn combat_public_monsters_v1(combat: &CombatState) -> Vec<CombatPublicMonsterV1> {
+    combat
+        .entities
+        .monsters
+        .iter()
+        .map(|monster| CombatPublicMonsterV1 {
+            slot: monster.slot,
+            enemy_id: EnemyId::from_id(monster.monster_type)
+                .map(|enemy| format!("{enemy:?}"))
+                .unwrap_or_else(|| format!("monster_type:{}", monster.monster_type)),
+            hp: monster.current_hp,
+            max_hp: monster.max_hp,
+            block: monster.block,
+            alive: monster.is_alive_for_action(),
+            escaped: monster.is_escaped,
+            dying: monster.is_dying,
+            half_dead: monster.half_dead,
+            intent: public_intent(combat, monster.id),
+        })
+        .collect()
+}
+
+pub(crate) fn combat_public_hidden_reasons_v1(
+    combat: &CombatState,
+) -> Vec<HiddenInformationReasonV1> {
+    let mut hidden_reasons = Vec::new();
+    if combat.entities.player.has_relic(RelicId::RunicDome) {
+        hidden_reasons.push(HiddenInformationReasonV1::RunicDome);
+    }
+    if combat_public_draw_evidence_v1(combat)
+        == ObservationEvidenceKindV1::PublicUnorderedCollection
+        && !combat.zones.draw_pile.is_empty()
+    {
+        hidden_reasons.push(HiddenInformationReasonV1::DrawPileOrderHidden);
+    }
+    hidden_reasons
+}
+
+pub(crate) fn combat_public_draw_evidence_v1(combat: &CombatState) -> ObservationEvidenceKindV1 {
+    if combat.entities.player.has_relic(RelicId::FrozenEye) {
+        ObservationEvidenceKindV1::PublicOrderedCollection
+    } else {
+        ObservationEvidenceKindV1::PublicUnorderedCollection
+    }
+}
+
+fn public_draw_pile(
+    combat: &CombatState,
+    evidence: ObservationEvidenceKindV1,
+) -> CombatPublicCardPileV1 {
     let mut cards = combat
         .zones
         .draw_pile
         .iter()
         .map(public_card)
         .collect::<Vec<_>>();
-    if !draw_order_visible {
+    if evidence != ObservationEvidenceKindV1::PublicOrderedCollection {
         cards.sort_by(|a, b| {
             a.card_id
                 .cmp(&b.card_id)
@@ -204,29 +243,30 @@ fn public_draw_pile(combat: &CombatState, draw_order_visible: bool) -> CombatPub
     }
     CombatPublicCardPileV1 {
         count: combat.zones.draw_pile.len(),
-        evidence: if draw_order_visible {
-            ObservationEvidenceKindV1::PublicOrderedCollection
-        } else {
-            ObservationEvidenceKindV1::PublicUnorderedCollection
-        },
-        hidden_reason: (!draw_order_visible && !combat.zones.draw_pile.is_empty())
-            .then_some(HiddenInformationReasonV1::DrawPileOrderHidden),
+        evidence,
+        hidden_reason: (evidence == ObservationEvidenceKindV1::PublicUnorderedCollection
+            && !combat.zones.draw_pile.is_empty())
+        .then_some(HiddenInformationReasonV1::DrawPileOrderHidden),
         cards,
     }
 }
 
-fn public_intent(
+fn public_intent(combat: &CombatState, monster_id: usize) -> CombatPublicIntentV1 {
+    let facts = combat_public_intent_facts_v1(combat, monster_id);
+    CombatPublicIntentV1 {
+        evidence: facts.evidence,
+        intent: facts.intent.map(|intent| format!("{intent:?}")),
+        preview_damage_per_hit: facts.preview_damage_per_hit,
+        hidden_reason: facts.hidden_reason,
+    }
+}
+
+pub(crate) fn combat_public_intent_facts_v1(
     combat: &CombatState,
     monster_id: usize,
-    runic_dome: bool,
-) -> CombatPublicIntentV1 {
-    if runic_dome {
-        return CombatPublicIntentV1 {
-            evidence: ObservationEvidenceKindV1::Hidden,
-            intent: None,
-            preview_damage_per_hit: None,
-            hidden_reason: Some(HiddenInformationReasonV1::RunicDome),
-        };
+) -> CombatPublicIntentFactsV1 {
+    if combat.entities.player.has_relic(RelicId::RunicDome) {
+        return hidden_intent_facts(HiddenInformationReasonV1::RunicDome);
     }
     let observation = combat
         .runtime
@@ -234,22 +274,22 @@ fn public_intent(
         .get(&monster_id)
         .map(|protocol| &protocol.observation);
     let Some(observation) = observation else {
-        return hidden_intent(HiddenInformationReasonV1::IntentNotVisible);
+        return hidden_intent_facts(HiddenInformationReasonV1::IntentNotVisible);
     };
     if observation.visible_intent == Intent::Unknown {
-        return hidden_intent(HiddenInformationReasonV1::IntentNotVisible);
+        return hidden_intent_facts(HiddenInformationReasonV1::IntentNotVisible);
     }
-    CombatPublicIntentV1 {
+    CombatPublicIntentFactsV1 {
         evidence: ObservationEvidenceKindV1::VisibleExact,
-        intent: Some(format!("{:?}", observation.visible_intent)),
+        intent: Some(observation.visible_intent.clone()),
         preview_damage_per_hit: (observation.preview_damage_per_hit > 0)
             .then_some(observation.preview_damage_per_hit),
         hidden_reason: None,
     }
 }
 
-fn hidden_intent(reason: HiddenInformationReasonV1) -> CombatPublicIntentV1 {
-    CombatPublicIntentV1 {
+fn hidden_intent_facts(reason: HiddenInformationReasonV1) -> CombatPublicIntentFactsV1 {
+    CombatPublicIntentFactsV1 {
         evidence: ObservationEvidenceKindV1::Hidden,
         intent: None,
         preview_damage_per_hit: None,

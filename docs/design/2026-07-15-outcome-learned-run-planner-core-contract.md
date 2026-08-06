@@ -557,10 +557,14 @@ it does not create another journal, workspace, or executor.
 This is infrastructure, not a claim that end-to-end training is ready.
 Strategic observations already use the hidden-free planner contract. Combat
 actions use the complete linear typed action surface, including symbolic
-selection families, but `CombatPublicObservationV1` remains a fingerprint
-projection rather than a complete learning observation. The environment
-therefore publishes typed combat-observation gaps and must not mark those
-samples complete until the missing public state is represented.
+selection families. `CombatLearningObservationV1` now adds explicit turn,
+dynamic card-zone, power, stance/orb, relic, and encounter projections without
+serializing raw combat state or replacing domain identities with display
+labels. The environment still publishes two typed gaps: encounter-specific
+public history and counters that currently live only in monster runtime
+bundles, and indexed generated-card choices whose legal indices do not yet
+carry public candidate semantics. Combat samples remain incomplete until both
+gaps are closed.
 
 Recovery curricula are callers of this boundary, not mechanics. Restoring an
 exact checkpoint must preserve its RNG state; a curriculum may count, limit,

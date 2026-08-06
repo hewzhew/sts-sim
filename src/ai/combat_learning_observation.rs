@@ -1,0 +1,442 @@
+//! Hidden-free combat state for online policy and value learning.
+//!
+//! This projection is deliberately explicit. It must not serialize
+//! `CombatState`, RNG pools, queued engine actions, or simulator-only runtime
+//! bundles as a shortcut.
+
+use std::cmp::Ordering;
+
+use serde::{Deserialize, Serialize};
+
+use crate::ai::planner_core::PlannerPlayerClass;
+use crate::content::cards::CardId;
+use crate::content::monsters::EnemyId;
+use crate::content::potions::PotionId;
+use crate::content::powers::PowerId;
+use crate::content::relics::RelicState;
+use crate::ids::EntityId;
+use crate::runtime::combat::{
+    CombatCard, CombatPhase, CombatState, EphemeralCounters, Intent, MonsterId, OrbEntity, OrbId,
+    Power, PowerPayload, StanceId,
+};
+
+use super::combat_public_observation::{
+    combat_public_draw_evidence_v1, combat_public_hidden_reasons_v1, combat_public_intent_facts_v1,
+    HiddenInformationReasonV1, InformationAccessV1, ObservationEvidenceKindV1,
+};
+
+pub const COMBAT_LEARNING_OBSERVATION_SCHEMA_NAME: &str = "CombatLearningObservationV1";
+pub const COMBAT_LEARNING_OBSERVATION_SCHEMA_VERSION: u32 = 1;
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct CombatLearningObservationV1 {
+    pub schema_name: String,
+    pub schema_version: u32,
+    pub information_access: InformationAccessV1,
+    pub potions: Vec<Option<CombatLearningPotionV1>>,
+    pub hidden_reasons: Vec<HiddenInformationReasonV1>,
+    pub encounter: CombatLearningEncounterV1,
+    pub turn: CombatLearningTurnV1,
+    pub player: CombatLearningPlayerStateV1,
+    pub cards: CombatLearningCardZonesV1,
+    pub monsters: Vec<CombatLearningMonsterStateV1>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct CombatLearningEncounterV1 {
+    pub is_boss_fight: bool,
+    pub is_elite_fight: bool,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct CombatLearningTurnV1 {
+    pub turn_count: u32,
+    pub phase: CombatPhase,
+    pub energy: u8,
+    pub turn_start_draw_modifier: i32,
+    pub counters: CombatLearningTurnCountersV1,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct CombatLearningTurnCountersV1 {
+    pub cards_played_this_turn: u8,
+    pub attacks_played_this_turn: u8,
+    pub cards_discarded_this_turn: u16,
+    pub card_ids_played_this_turn: Vec<CardId>,
+    pub card_ids_played_this_combat: Vec<CardId>,
+    pub orbs_channeled_this_turn: Vec<OrbId>,
+    pub orbs_channeled_this_combat: Vec<OrbId>,
+    pub mantra_gained_this_combat: i32,
+    pub times_damaged_this_combat: u8,
+    pub discovery_cost_for_turn: Option<u8>,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct CombatLearningPlayerStateV1 {
+    pub player_class: Option<PlannerPlayerClass>,
+    pub ascension_level: u8,
+    pub hp: i32,
+    pub max_hp: i32,
+    pub block: i32,
+    pub facing_left: bool,
+    pub gold: i32,
+    pub gold_delta_this_combat: i32,
+    pub energy_master: u8,
+    pub max_orbs: u8,
+    pub stance: StanceId,
+    pub orbs: Vec<CombatLearningOrbV1>,
+    pub relics: Vec<RelicState>,
+    pub powers: Vec<CombatLearningPowerV1>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct CombatLearningPotionV1 {
+    pub potion_id: PotionId,
+    pub can_use: bool,
+    pub can_discard: bool,
+    pub requires_target: bool,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct CombatLearningOrbV1 {
+    pub orb: OrbId,
+    pub base_passive_amount: i32,
+    pub base_evoke_amount: i32,
+    pub passive_amount: i32,
+    pub evoke_amount: i32,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct CombatLearningMonsterStateV1 {
+    pub entity_id: EntityId,
+    pub slot: u8,
+    pub enemy: CombatLearningEnemyIdentityV1,
+    pub hp: i32,
+    pub max_hp: i32,
+    pub block: i32,
+    pub alive: bool,
+    pub escaped: bool,
+    pub dying: bool,
+    pub half_dead: bool,
+    pub intent: CombatLearningIntentV1,
+    pub powers: Vec<CombatLearningPowerV1>,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(tag = "status", rename_all = "snake_case")]
+pub enum CombatLearningEnemyIdentityV1 {
+    Known { enemy_id: EnemyId },
+    Unmapped { monster_type: MonsterId },
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct CombatLearningIntentV1 {
+    pub evidence: ObservationEvidenceKindV1,
+    pub intent: Option<Intent>,
+    pub preview_damage_per_hit: Option<i32>,
+    pub hidden_reason: Option<HiddenInformationReasonV1>,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct CombatLearningPowerV1 {
+    pub power: PowerId,
+    pub amount: i32,
+    pub extra_data: i32,
+    pub just_applied: bool,
+    pub payload_card: Option<CombatLearningCardV1>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct CombatLearningCardZonesV1 {
+    pub master_deck: CombatLearningCardCollectionV1,
+    pub hand: CombatLearningCardCollectionV1,
+    pub draw: CombatLearningCardCollectionV1,
+    pub discard: CombatLearningCardCollectionV1,
+    pub exhaust: CombatLearningCardCollectionV1,
+    pub limbo: CombatLearningCardCollectionV1,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct CombatLearningCardCollectionV1 {
+    pub evidence: ObservationEvidenceKindV1,
+    pub cards: Vec<CombatLearningCardV1>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct CombatLearningCardV1 {
+    pub card_id: CardId,
+    pub upgrades: u8,
+    pub misc_value: i32,
+    pub base_damage_override: Option<i32>,
+    pub base_block_override: Option<i32>,
+    pub cost_modifier: i8,
+    pub cost_for_turn: Option<u8>,
+    pub effective_cost: i32,
+    pub base_damage_mut: i32,
+    pub base_block_mut: i32,
+    pub base_magic_num_mut: i32,
+    pub damage_by_monster_order: Vec<i32>,
+    pub exhaust_override: Option<bool>,
+    pub retain_override: Option<bool>,
+    pub free_to_play_once: bool,
+    pub energy_on_use: i32,
+}
+
+impl Ord for CombatLearningCardV1 {
+    fn cmp(&self, other: &Self) -> Ordering {
+        (self.card_id as i32)
+            .cmp(&(other.card_id as i32))
+            .then_with(|| self.upgrades.cmp(&other.upgrades))
+            .then_with(|| self.misc_value.cmp(&other.misc_value))
+            .then_with(|| self.base_damage_override.cmp(&other.base_damage_override))
+            .then_with(|| self.base_block_override.cmp(&other.base_block_override))
+            .then_with(|| self.cost_modifier.cmp(&other.cost_modifier))
+            .then_with(|| self.cost_for_turn.cmp(&other.cost_for_turn))
+            .then_with(|| self.effective_cost.cmp(&other.effective_cost))
+            .then_with(|| self.base_damage_mut.cmp(&other.base_damage_mut))
+            .then_with(|| self.base_block_mut.cmp(&other.base_block_mut))
+            .then_with(|| self.base_magic_num_mut.cmp(&other.base_magic_num_mut))
+            .then_with(|| {
+                self.damage_by_monster_order
+                    .cmp(&other.damage_by_monster_order)
+            })
+            .then_with(|| self.exhaust_override.cmp(&other.exhaust_override))
+            .then_with(|| self.retain_override.cmp(&other.retain_override))
+            .then_with(|| self.free_to_play_once.cmp(&other.free_to_play_once))
+            .then_with(|| self.energy_on_use.cmp(&other.energy_on_use))
+    }
+}
+
+impl PartialOrd for CombatLearningCardV1 {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+pub fn combat_learning_observation_v1(combat: &CombatState) -> CombatLearningObservationV1 {
+    let draw_evidence = combat_public_draw_evidence_v1(combat);
+    let player = &combat.entities.player;
+    let monsters = combat
+        .entities
+        .monsters
+        .iter()
+        .map(|monster| {
+            let intent = combat_public_intent_facts_v1(combat, monster.id);
+            CombatLearningMonsterStateV1 {
+                entity_id: monster.id,
+                slot: monster.slot,
+                enemy: EnemyId::from_id(monster.monster_type).map_or(
+                    CombatLearningEnemyIdentityV1::Unmapped {
+                        monster_type: monster.monster_type,
+                    },
+                    |enemy_id| CombatLearningEnemyIdentityV1::Known { enemy_id },
+                ),
+                hp: monster.current_hp,
+                max_hp: monster.max_hp,
+                block: monster.block,
+                alive: monster.is_alive_for_action(),
+                escaped: monster.is_escaped,
+                dying: monster.is_dying,
+                half_dead: monster.half_dead,
+                intent: CombatLearningIntentV1 {
+                    evidence: intent.evidence,
+                    intent: intent.intent,
+                    preview_damage_per_hit: intent.preview_damage_per_hit,
+                    hidden_reason: intent.hidden_reason,
+                },
+                powers: learning_powers(combat, monster.id),
+            }
+        })
+        .collect();
+
+    CombatLearningObservationV1 {
+        schema_name: COMBAT_LEARNING_OBSERVATION_SCHEMA_NAME.to_string(),
+        schema_version: COMBAT_LEARNING_OBSERVATION_SCHEMA_VERSION,
+        information_access: InformationAccessV1::Public,
+        potions: combat
+            .entities
+            .potions
+            .iter()
+            .map(|slot| {
+                slot.as_ref().map(|potion| CombatLearningPotionV1 {
+                    potion_id: potion.id,
+                    can_use: potion.can_use,
+                    can_discard: potion.can_discard,
+                    requires_target: potion.requires_target,
+                })
+            })
+            .collect(),
+        hidden_reasons: combat_public_hidden_reasons_v1(combat),
+        encounter: CombatLearningEncounterV1 {
+            is_boss_fight: combat.meta.is_boss_fight,
+            is_elite_fight: combat.meta.is_elite_fight,
+        },
+        turn: CombatLearningTurnV1 {
+            turn_count: combat.turn.turn_count,
+            phase: combat.turn.current_phase,
+            energy: combat.turn.energy,
+            turn_start_draw_modifier: combat.turn.turn_start_draw_modifier,
+            counters: learning_turn_counters(&combat.turn.counters),
+        },
+        player: CombatLearningPlayerStateV1 {
+            player_class: learning_player_class(&combat.meta.player_class),
+            ascension_level: combat.meta.ascension_level,
+            hp: player.current_hp,
+            max_hp: player.max_hp,
+            block: player.block,
+            facing_left: player.facing_left,
+            gold: player.gold,
+            gold_delta_this_combat: player.gold_delta_this_combat,
+            energy_master: player.energy_master,
+            max_orbs: player.max_orbs,
+            stance: player.stance,
+            orbs: player.orbs.iter().map(learning_orb).collect(),
+            relics: player.relics.clone(),
+            powers: learning_powers(combat, player.id),
+        },
+        cards: CombatLearningCardZonesV1 {
+            master_deck: unordered_cards(combat.meta.master_deck_snapshot.iter()),
+            hand: ordered_cards(
+                combat.zones.hand.iter(),
+                ObservationEvidenceKindV1::PublicOrderedCollection,
+            ),
+            draw: if draw_evidence == ObservationEvidenceKindV1::PublicOrderedCollection {
+                ordered_cards(combat.zones.draw_pile.iter(), draw_evidence)
+            } else {
+                unordered_cards_with_evidence(combat.zones.draw_pile.iter(), draw_evidence)
+            },
+            discard: unordered_cards(combat.zones.discard_pile.iter()),
+            exhaust: unordered_cards(combat.zones.exhaust_pile.iter()),
+            limbo: ordered_cards(
+                combat.zones.limbo.iter(),
+                ObservationEvidenceKindV1::VisibleExact,
+            ),
+        },
+        monsters,
+    }
+}
+
+fn learning_turn_counters(counters: &EphemeralCounters) -> CombatLearningTurnCountersV1 {
+    CombatLearningTurnCountersV1 {
+        cards_played_this_turn: counters.cards_played_this_turn,
+        attacks_played_this_turn: counters.attacks_played_this_turn,
+        cards_discarded_this_turn: counters.cards_discarded_this_turn,
+        card_ids_played_this_turn: counters.card_ids_played_this_turn.iter().copied().collect(),
+        card_ids_played_this_combat: counters
+            .card_ids_played_this_combat
+            .iter()
+            .copied()
+            .collect(),
+        orbs_channeled_this_turn: counters.orbs_channeled_this_turn.clone(),
+        orbs_channeled_this_combat: counters.orbs_channeled_this_combat.clone(),
+        mantra_gained_this_combat: counters.mantra_gained_this_combat,
+        times_damaged_this_combat: counters.times_damaged_this_combat,
+        discovery_cost_for_turn: counters.discovery_cost_for_turn,
+    }
+}
+
+fn learning_player_class(player_class: &str) -> Option<PlannerPlayerClass> {
+    match player_class {
+        "Ironclad" => Some(PlannerPlayerClass::Ironclad),
+        "Silent" => Some(PlannerPlayerClass::Silent),
+        "Defect" => Some(PlannerPlayerClass::Defect),
+        "Watcher" => Some(PlannerPlayerClass::Watcher),
+        _ => None,
+    }
+}
+
+fn learning_orb(orb: &OrbEntity) -> CombatLearningOrbV1 {
+    CombatLearningOrbV1 {
+        orb: orb.id,
+        base_passive_amount: orb.base_passive_amount,
+        base_evoke_amount: orb.base_evoke_amount,
+        passive_amount: orb.passive_amount,
+        evoke_amount: orb.evoke_amount,
+    }
+}
+
+fn learning_powers(combat: &CombatState, entity_id: usize) -> Vec<CombatLearningPowerV1> {
+    combat
+        .entities
+        .power_db
+        .get(&entity_id)
+        .into_iter()
+        .flatten()
+        .map(learning_power)
+        .collect()
+}
+
+fn learning_power(power: &Power) -> CombatLearningPowerV1 {
+    CombatLearningPowerV1 {
+        power: power.power_type,
+        amount: power.amount,
+        extra_data: power.extra_data,
+        just_applied: power.just_applied,
+        payload_card: match &power.payload {
+            PowerPayload::None => None,
+            PowerPayload::Card(card) => Some(learning_card(card)),
+        },
+    }
+}
+
+fn ordered_cards<'a>(
+    cards: impl Iterator<Item = &'a CombatCard>,
+    evidence: ObservationEvidenceKindV1,
+) -> CombatLearningCardCollectionV1 {
+    CombatLearningCardCollectionV1 {
+        evidence,
+        cards: cards.map(learning_card).collect(),
+    }
+}
+
+fn unordered_cards<'a>(
+    cards: impl Iterator<Item = &'a CombatCard>,
+) -> CombatLearningCardCollectionV1 {
+    unordered_cards_with_evidence(cards, ObservationEvidenceKindV1::PublicUnorderedCollection)
+}
+
+fn unordered_cards_with_evidence<'a>(
+    cards: impl Iterator<Item = &'a CombatCard>,
+    evidence: ObservationEvidenceKindV1,
+) -> CombatLearningCardCollectionV1 {
+    let mut cards = cards.map(learning_card).collect::<Vec<_>>();
+    cards.sort();
+    CombatLearningCardCollectionV1 { evidence, cards }
+}
+
+fn learning_card(card: &CombatCard) -> CombatLearningCardV1 {
+    CombatLearningCardV1 {
+        card_id: card.id,
+        upgrades: card.upgrades,
+        misc_value: card.misc_value,
+        base_damage_override: card.base_damage_override,
+        base_block_override: card.base_block_override,
+        cost_modifier: card.cost_modifier,
+        cost_for_turn: card.cost_for_turn,
+        effective_cost: card.cost_for_turn_java(),
+        base_damage_mut: card.base_damage_mut,
+        base_block_mut: card.base_block_mut,
+        base_magic_num_mut: card.base_magic_num_mut,
+        damage_by_monster_order: card.multi_damage.iter().copied().collect(),
+        exhaust_override: card.exhaust_override,
+        retain_override: card.retain_override,
+        free_to_play_once: card.free_to_play_once,
+        energy_on_use: card.energy_on_use,
+    }
+}
+
+#[cfg(test)]
+mod tests;

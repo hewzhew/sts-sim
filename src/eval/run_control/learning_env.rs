@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
-use crate::ai::combat_public_observation::{
-    combat_public_observation_v1, CombatPublicObservationV1,
+use crate::ai::combat_learning_observation::{
+    combat_learning_observation_v1, CombatLearningObservationV1,
 };
 use crate::ai::planner_core::{LegalCandidateSet, PlannerObservation};
 use crate::sim::combat_action_surface::{
@@ -17,11 +17,7 @@ use super::{
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum LearningCombatObservationGapV1 {
-    CombatPhaseAndTurnCounters,
-    PlayerPowersStanceAndOrbs,
-    MonsterPowersAndRuntimeState,
-    Relics,
-    PublicDiscardAndExhaustContents,
+    MonsterPublicHistoryAndCounters,
     PendingChoiceContext,
 }
 
@@ -44,7 +40,7 @@ pub struct LearningStrategicBoundaryV1 {
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct LearningCombatBoundaryV1 {
-    pub observation: CombatPublicObservationV1,
+    pub observation: CombatLearningObservationV1,
     pub observation_completeness: LearningObservationCompletenessV1,
     pub legal_actions: CombatLegalActionSurfaceV2,
 }
@@ -147,7 +143,7 @@ impl LearningEnvV1 {
             let position = self.session.current_combat_position_for_actions()?;
             return Ok(LearningBoundaryV1::Combat {
                 boundary: LearningCombatBoundaryV1 {
-                    observation: combat_public_observation_v1(&position.combat),
+                    observation: combat_learning_observation_v1(&position.combat),
                     observation_completeness: LearningObservationCompletenessV1::Incomplete {
                         combat_gaps: current_combat_observation_gaps_v1(),
                     },
@@ -235,11 +231,7 @@ impl LearningEnvV1 {
 
 fn current_combat_observation_gaps_v1() -> Vec<LearningCombatObservationGapV1> {
     vec![
-        LearningCombatObservationGapV1::CombatPhaseAndTurnCounters,
-        LearningCombatObservationGapV1::PlayerPowersStanceAndOrbs,
-        LearningCombatObservationGapV1::MonsterPowersAndRuntimeState,
-        LearningCombatObservationGapV1::Relics,
-        LearningCombatObservationGapV1::PublicDiscardAndExhaustContents,
+        LearningCombatObservationGapV1::MonsterPublicHistoryAndCounters,
         LearningCombatObservationGapV1::PendingChoiceContext,
     ]
 }
@@ -247,6 +239,10 @@ fn current_combat_observation_gaps_v1() -> Vec<LearningCombatObservationGapV1> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::content::cards::CardId;
+    use crate::content::monsters::EnemyId;
+    use crate::content::potions::{Potion, PotionId};
+    use crate::runtime::combat::CombatCard;
     use crate::state::core::{ActiveCombat, CombatContext, RoomCombatContext};
     use crate::state::map::node::RoomType;
 
@@ -302,7 +298,12 @@ mod tests {
     #[test]
     fn combat_boundary_exposes_exact_actions_but_rejects_incomplete_observation_claim() {
         let mut session = RunControlSession::new(RunControlConfig::default());
-        let combat = crate::test_support::blank_test_combat();
+        let mut combat = crate::test_support::blank_test_combat();
+        combat.entities.potions = vec![Some(Potion::new(PotionId::FruitJuice, 41)), None, None];
+        combat.zones.hand = vec![CombatCard::new(CardId::Bash, 51)];
+        let mut monster = crate::test_support::test_monster(EnemyId::JawWorm);
+        monster.id = 7;
+        combat.entities.monsters.push(monster);
         session.engine_state = EngineState::CombatPlayerTurn;
         session.active_combat = Some(ActiveCombat::new(
             EngineState::CombatPlayerTurn,
@@ -320,12 +321,33 @@ mod tests {
         };
         assert!(matches!(
             boundary.observation_completeness,
-            LearningObservationCompletenessV1::Incomplete { .. }
+            LearningObservationCompletenessV1::Incomplete {
+                combat_gaps
+            } if combat_gaps
+                == vec![
+                    LearningCombatObservationGapV1::MonsterPublicHistoryAndCounters,
+                    LearningCombatObservationGapV1::PendingChoiceContext,
+                ]
         ));
         assert!(boundary
             .legal_actions
             .atomic_actions
             .contains(&ClientInput::EndTurn));
+        assert!(boundary
+            .legal_actions
+            .atomic_actions
+            .contains(&ClientInput::UsePotion {
+                potion_index: 0,
+                target: None,
+            }));
+        assert_eq!(boundary.observation.monsters[0].entity_id, 7);
+        assert!(boundary
+            .legal_actions
+            .atomic_actions
+            .contains(&ClientInput::PlayCard {
+                card_index: 0,
+                target: Some(7),
+            }));
     }
 
     #[test]
