@@ -1,5 +1,31 @@
 """Batched typed control bridge for sts_simulator learning experiments."""
 
-from ._native import LearningBatchEnv
+from ._native import (
+    LearningBatchEnv,
+    PHASE_COMBAT_ROOT,
+    PHASE_SELECTION,
+    PHASE_STRATEGIC_ROOT,
+    SEMANTIC_COMPLETE,
+    SEMANTIC_NO_CANDIDATE_TOKEN,
+    SEMANTIC_NOT_ENCODED,
+    SEMANTIC_RELATION_CANDIDATE_TARGETS,
+    SEMANTIC_RELATION_OBSERVATION_HAS_CANDIDATE,
+    SEMANTIC_SCHEMA_VERSION,
+    SEMANTIC_TOKEN_CANDIDATE,
+    semantic_schema,
+)
 
-__all__ = ["LearningBatchEnv"]
+__all__ = [
+    "LearningBatchEnv",
+    "PHASE_COMBAT_ROOT",
+    "PHASE_SELECTION",
+    "PHASE_STRATEGIC_ROOT",
+    "SEMANTIC_COMPLETE",
+    "SEMANTIC_NO_CANDIDATE_TOKEN",
+    "SEMANTIC_NOT_ENCODED",
+    "SEMANTIC_RELATION_CANDIDATE_TARGETS",
+    "SEMANTIC_RELATION_OBSERVATION_HAS_CANDIDATE",
+    "SEMANTIC_SCHEMA_VERSION",
+    "SEMANTIC_TOKEN_CANDIDATE",
+    "semantic_schema",
+]

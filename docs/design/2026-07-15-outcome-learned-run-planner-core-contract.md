@@ -595,13 +595,18 @@ unexpected engine failure poisons the pool rather than silently continuing
 from a partly advanced batch.
 
 The first foreign-language adapter is an excluded standalone Maturin crate
-rather than a root-workspace dependency. It transfers only batched NumPy
-control arrays and observation-local candidate ordinals; typed root and
-selection resolution remain in Rust. Its maintained smoke proves wheel
-construction, row-split/mask alignment, atomic rejection of a bad ordinal,
-explicit terminal reset, and a complete five-environment walk. It deliberately
-does not expose semantic state or candidate features yet, so it cannot train a
-policy and is not evidence for any model architecture.
+rather than a root-workspace dependency. Typed root and selection resolution
+remain in Rust. In addition to batched NumPy control arrays and
+observation-local candidate ordinals, an opt-in versioned sparse graph now
+encodes complete strategic observations and every strategic `PlannerAction`.
+Its five columnar table families preserve ragged entities, map edges, owned-card
+targets, and candidate alignment without exporting opaque ids or using UUIDs as
+learnable values. Combat and symbolic-selection rows deliberately report
+`not_encoded` until a complete combat vocabulary is added. The maintained smoke
+proves wheel construction, semantic/token/candidate alignment, explicit
+incompleteness, atomic rejection of a bad ordinal, terminal reset, and a
+complete five-environment walk. This is a transport and encoding contract, not
+evidence for a policy or model architecture.
 
 Recovery curricula are callers of this boundary, not mechanics. Restoring an
 exact checkpoint must preserve its RNG state; a curriculum may count, limit,
@@ -740,10 +745,11 @@ model or alter a decision:
    complete candidates and which still have typed gaps.
 6. Use that report to select, in a later reviewed change, the first owner and
    the smallest outcome-prediction experiment.
-7. **Online bridge complete; combat observation incomplete.** Reuse
-   run-control for typed online stepping, exact checkpoint/restore, and sparse
-   terminal reward. Close the declared public-combat observation gaps before
-   starting end-to-end combat training.
+7. **Complete.** Reuse run-control for typed online stepping, exact
+   checkpoint/restore, sparse terminal reward, and a complete typed combat
+   observation. The standalone Python bridge currently encodes the strategic
+   half of that observation contract and marks combat rows `not_encoded`; its
+   combat numeric vocabulary is the next independent slice.
 
 The slice should prefer a transparent tabular or small-set baseline before a
 large neural model. Architecture is earned by data and ablation, not by model

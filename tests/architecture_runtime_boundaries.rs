@@ -2566,13 +2566,26 @@ fn python_learning_bridge_stays_outside_the_root_workspace_and_policy_layer() {
     assert!(bridge_manifest.contains("crate-type = [\"cdylib\"]"));
     assert!(bridge_manifest.contains("sts_oracle_eval"));
 
-    let source = std::fs::read_to_string("bindings/python_learning/src/lib.rs")
-        .expect("read Python learning bridge");
+    let source = [
+        std::fs::read_to_string("bindings/python_learning/src/lib.rs")
+            .expect("read Python learning bridge"),
+        std::fs::read_to_string("bindings/python_learning/src/semantic.rs")
+            .expect("read Python semantic encoder"),
+    ]
+    .join("\n");
     for required in [
         "LearningEnvPoolV1",
         "candidate_row_splits",
         "dense_action_mask",
         "LearningSelectionStepV1",
+        "SEMANTIC_SCHEMA_VERSION",
+        "semantic_schema",
+        "candidate_token_indices",
+        "SemanticCompleteness::NotEncoded",
+        "cards.sort_by_key",
+        "relics.sort_by_key",
+        "potions.sort_by_key",
+        "nodes.sort_by_key",
     ] {
         assert!(
             source.contains(required),
@@ -2586,6 +2599,12 @@ fn python_learning_bridge_stays_outside_the_root_workspace_and_policy_layer() {
         "_policy_v1",
         "torch",
         "auto_reset",
+        "candidate_id",
+        "observation_id",
+        "mechanics_id",
+        "CardUuid =",
+        "PotionUuid =",
+        ".potion_uuid",
     ] {
         assert!(
             !source.contains(forbidden),

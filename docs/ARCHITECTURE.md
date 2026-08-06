@@ -158,15 +158,21 @@ for amortizing a future Rust or Python backend call across environments without
 per-step JSON or one foreign-language call per slot.
 
 The standalone `bindings/python_learning` Maturin crate is excluded from the
-root Cargo workspace. Its first supported slice is a control-plane smoke:
-Python supplies observation-local candidate ordinals, while Rust owns typed
-root/selection decoding and batched environment mutation. Slot ids, decision
-phase, candidate counts, row splits, terminal results, and optional dense masks
-cross the boundary as NumPy arrays. The bridge has no semantic feature encoder,
-policy, optimizer, automatic reset, or PyTorch dependency yet; its arrays are
-not trainable state and must not be presented as a learning result. Keeping the
-crate standalone prevents Python build dependencies from entering ordinary
-simulator checks.
+root Cargo workspace. Python supplies observation-local candidate ordinals,
+while Rust owns typed root/selection decoding and batched environment mutation.
+Slot ids, decision phase, candidate counts, row splits, terminal results, and
+optional dense masks cross the boundary as NumPy arrays. An opt-in, versioned
+sparse semantic graph now encodes complete strategic rows as token,
+categorical-feature, scalar-feature, relation-edge, and candidate-token NumPy
+tables. Opaque observation/candidate ids and entity UUIDs are not features;
+UUIDs may only resolve graph edges to already encoded public entities. Combat
+and symbolic-selection rows remain explicitly `not_encoded` until their full
+semantic vocabulary is implemented, so a partial projection cannot masquerade
+as trainable state. `semantic_schema()` exposes enum dictionaries and
+categorical vocabulary sizes from the same Rust definitions, avoiding a second
+Python feature dictionary. The bridge still owns no policy, optimizer,
+automatic reset, or PyTorch dependency. Keeping the crate standalone prevents
+Python build dependencies from entering ordinary simulator checks.
 
 On an ordinary reward screen, the reward owner claims typed low-agency public
 resources before opening a nested card-reward choice. This lets the card owner

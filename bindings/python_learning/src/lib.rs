@@ -9,6 +9,16 @@ use sts_oracle_eval::eval::run_control::{
     LearningSelectionStepV1, RunControlConfig,
 };
 
+mod semantic;
+
+use semantic::{
+    ActionKind, CategoricalField, ContextKind, RelationKind, RewardKind, ScalarField,
+    SemanticBatch, SemanticBatchBuilder, SemanticCompleteness, TokenKind, CARD_ID_VOCABULARY_SIZE,
+    CATEGORICAL_VOCABULARY_SIZES, ENCOUNTER_ID_VOCABULARY_SIZE, EVENT_ID_VOCABULARY_SIZE,
+    NO_CANDIDATE_TOKEN, POTION_ID_VOCABULARY_SIZE, RELIC_ID_VOCABULARY_SIZE,
+    SEMANTIC_SCHEMA_VERSION,
+};
+
 const PHASE_STRATEGIC_ROOT: u8 = 0;
 const PHASE_COMBAT_ROOT: u8 = 1;
 const PHASE_SELECTION: u8 = 2;
@@ -66,11 +76,12 @@ impl LearningBatchEnv {
             .all(|state| matches!(state, BridgeSlotState::Terminal | BridgeSlotState::Ready(_)))
     }
 
-    #[pyo3(signature = (dense_mask=false))]
+    #[pyo3(signature = (dense_mask=false, semantic=false))]
     fn decision_batch<'py>(
         &self,
         py: Python<'py>,
         dense_mask: bool,
+        semantic: bool,
     ) -> PyResult<Bound<'py, PyDict>> {
         let snapshot = self.decision_snapshot()?;
         let result = PyDict::new(py);
@@ -96,6 +107,9 @@ impl LearningBatchEnv {
             let mask = Array2::from_shape_vec((snapshot.candidate_counts.len(), width), values)
                 .map_err(|error| PyRuntimeError::new_err(error.to_string()))?;
             result.set_item("dense_action_mask", mask.into_pyarray(py))?;
+        }
+        if semantic {
+            result.set_item("semantic", semantic_dict(py, self.semantic_snapshot()?)?)?;
         }
         Ok(result)
     }
@@ -261,6 +275,28 @@ impl LearningBatchEnv {
             candidate_row_splits,
         })
     }
+
+    fn semantic_snapshot(&self) -> PyResult<SemanticBatch> {
+        let mut builder = SemanticBatchBuilder::new();
+        for (slot_index, state) in self.states.iter().enumerate() {
+            match state {
+                BridgeSlotState::Root => {
+                    let boundary = self.pool.boundary(slot_index).ok_or_else(|| {
+                        PyRuntimeError::new_err(format!("missing pool slot {slot_index}"))
+                    })?;
+                    let decision =
+                        LearningModelDecisionV1::from_boundary(boundary).map_err(value_error)?;
+                    builder.push_decision(&decision).map_err(runtime_error)?;
+                }
+                BridgeSlotState::Selection(draft) => {
+                    builder.push_not_encoded_candidates(draft.decision().candidates.len());
+                    builder.finish_not_encoded_row().map_err(runtime_error)?;
+                }
+                BridgeSlotState::Terminal | BridgeSlotState::Ready(_) => {}
+            }
+        }
+        Ok(builder.finish())
+    }
 }
 
 fn states_from_pool(pool: &LearningEnvPoolV1) -> Vec<BridgeSlotState> {
@@ -283,6 +319,107 @@ fn usize_array(py: Python<'_>, values: Vec<usize>) -> Bound<'_, PyArray1<u64>> {
     )
 }
 
+fn semantic_dict(py: Python<'_>, batch: SemanticBatch) -> PyResult<Bound<'_, PyDict>> {
+    let result = PyDict::new(py);
+    result.set_item("schema_version", SEMANTIC_SCHEMA_VERSION)?;
+    result.set_item("completeness", PyArray1::from_vec(py, batch.completeness))?;
+
+    let token = PyDict::new(py);
+    token.set_item("row_splits", PyArray1::from_vec(py, batch.token_row_splits))?;
+    token.set_item("kind", PyArray1::from_vec(py, batch.token_kinds))?;
+    result.set_item("token", token)?;
+
+    let categorical = PyDict::new(py);
+    categorical.set_item(
+        "token_indices",
+        PyArray1::from_vec(py, batch.categorical.token_indices),
+    )?;
+    categorical.set_item("field", PyArray1::from_vec(py, batch.categorical.fields))?;
+    categorical.set_item("value", PyArray1::from_vec(py, batch.categorical.values))?;
+    result.set_item("categorical", categorical)?;
+
+    let scalar = PyDict::new(py);
+    scalar.set_item(
+        "token_indices",
+        PyArray1::from_vec(py, batch.scalar.token_indices),
+    )?;
+    scalar.set_item("field", PyArray1::from_vec(py, batch.scalar.fields))?;
+    scalar.set_item("value", PyArray1::from_vec(py, batch.scalar.values))?;
+    result.set_item("scalar", scalar)?;
+
+    let relation = PyDict::new(py);
+    relation.set_item(
+        "source_token_indices",
+        PyArray1::from_vec(py, batch.relation.source_token_indices),
+    )?;
+    relation.set_item("relation", PyArray1::from_vec(py, batch.relation.relations))?;
+    relation.set_item(
+        "target_token_indices",
+        PyArray1::from_vec(py, batch.relation.target_token_indices),
+    )?;
+    result.set_item("relation", relation)?;
+    result.set_item(
+        "candidate_token_indices",
+        PyArray1::from_vec(py, batch.candidate_token_indices),
+    )?;
+    Ok(result)
+}
+
+#[pyfunction]
+fn semantic_schema(py: Python<'_>) -> PyResult<Bound<'_, PyDict>> {
+    let result = PyDict::new(py);
+    result.set_item("version", SEMANTIC_SCHEMA_VERSION)?;
+    result.set_item(
+        "completeness",
+        numeric_schema_dict(py, SemanticCompleteness::SCHEMA)?,
+    )?;
+    result.set_item("token_kind", numeric_schema_dict(py, TokenKind::SCHEMA)?)?;
+    result.set_item(
+        "categorical_field",
+        numeric_schema_dict(py, CategoricalField::SCHEMA)?,
+    )?;
+    result.set_item(
+        "scalar_field",
+        numeric_schema_dict(py, ScalarField::SCHEMA)?,
+    )?;
+    result.set_item(
+        "relation_kind",
+        numeric_schema_dict(py, RelationKind::SCHEMA)?,
+    )?;
+    result.set_item(
+        "context_kind",
+        numeric_schema_dict(py, ContextKind::SCHEMA)?,
+    )?;
+    result.set_item("action_kind", numeric_schema_dict(py, ActionKind::SCHEMA)?)?;
+    result.set_item("reward_kind", numeric_schema_dict(py, RewardKind::SCHEMA)?)?;
+
+    let vocabulary_sizes = PyDict::new(py);
+    for (field, size) in CATEGORICAL_VOCABULARY_SIZES {
+        vocabulary_sizes.set_item(*field, *size)?;
+    }
+    result.set_item("categorical_vocabulary_size", vocabulary_sizes)?;
+
+    let domains = PyDict::new(py);
+    domains.set_item("card_id", CARD_ID_VOCABULARY_SIZE)?;
+    domains.set_item("relic_id", RELIC_ID_VOCABULARY_SIZE)?;
+    domains.set_item("potion_id", POTION_ID_VOCABULARY_SIZE)?;
+    domains.set_item("encounter_id", ENCOUNTER_ID_VOCABULARY_SIZE)?;
+    domains.set_item("event_id", EVENT_ID_VOCABULARY_SIZE)?;
+    result.set_item("domain_vocabulary_size", domains)?;
+    Ok(result)
+}
+
+fn numeric_schema_dict<'py>(
+    py: Python<'py>,
+    entries: &[(&str, i64)],
+) -> PyResult<Bound<'py, PyDict>> {
+    let result = PyDict::new(py);
+    for (name, value) in entries {
+        result.set_item(*name, *value)?;
+    }
+    Ok(result)
+}
+
 fn value_error(error: impl ToString) -> PyErr {
     PyValueError::new_err(error.to_string())
 }
@@ -294,8 +431,25 @@ fn runtime_error(error: impl ToString) -> PyErr {
 #[pymodule]
 fn _native(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_class::<LearningBatchEnv>()?;
+    module.add_function(wrap_pyfunction!(semantic_schema, module)?)?;
     module.add("PHASE_STRATEGIC_ROOT", PHASE_STRATEGIC_ROOT)?;
     module.add("PHASE_COMBAT_ROOT", PHASE_COMBAT_ROOT)?;
     module.add("PHASE_SELECTION", PHASE_SELECTION)?;
+    module.add("SEMANTIC_SCHEMA_VERSION", SEMANTIC_SCHEMA_VERSION)?;
+    module.add(
+        "SEMANTIC_NOT_ENCODED",
+        SemanticCompleteness::NotEncoded as u8,
+    )?;
+    module.add("SEMANTIC_COMPLETE", SemanticCompleteness::Complete as u8)?;
+    module.add("SEMANTIC_NO_CANDIDATE_TOKEN", NO_CANDIDATE_TOKEN)?;
+    module.add("SEMANTIC_TOKEN_CANDIDATE", TokenKind::Candidate as u16)?;
+    module.add(
+        "SEMANTIC_RELATION_OBSERVATION_HAS_CANDIDATE",
+        RelationKind::ObservationHasCandidate as u16,
+    )?;
+    module.add(
+        "SEMANTIC_RELATION_CANDIDATE_TARGETS",
+        RelationKind::CandidateTargets as u16,
+    )?;
     Ok(())
 }
