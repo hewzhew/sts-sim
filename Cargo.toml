@@ -26,6 +26,7 @@ members = [
     "tools/architecture_checks",
 ]
 default-members = ["."]
+exclude = ["bindings/python_learning"]
 resolver = "2"
 
 [dependencies]

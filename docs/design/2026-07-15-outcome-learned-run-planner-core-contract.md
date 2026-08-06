@@ -594,6 +594,15 @@ simulator boundary. A bad action is rejected before any slot advances; an
 unexpected engine failure poisons the pool rather than silently continuing
 from a partly advanced batch.
 
+The first foreign-language adapter is an excluded standalone Maturin crate
+rather than a root-workspace dependency. It transfers only batched NumPy
+control arrays and observation-local candidate ordinals; typed root and
+selection resolution remain in Rust. Its maintained smoke proves wheel
+construction, row-split/mask alignment, atomic rejection of a bad ordinal,
+explicit terminal reset, and a complete five-environment walk. It deliberately
+does not expose semantic state or candidate features yet, so it cannot train a
+policy and is not evidence for any model architecture.
+
 Recovery curricula are callers of this boundary, not mechanics. Restoring an
 exact checkpoint must preserve its RNG state; a curriculum may count, limit,
 or schedule retries but may not obtain value by rerolling the same state.

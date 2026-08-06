@@ -157,6 +157,17 @@ and policy inference remain outside the pool. This is the maintained boundary
 for amortizing a future Rust or Python backend call across environments without
 per-step JSON or one foreign-language call per slot.
 
+The standalone `bindings/python_learning` Maturin crate is excluded from the
+root Cargo workspace. Its first supported slice is a control-plane smoke:
+Python supplies observation-local candidate ordinals, while Rust owns typed
+root/selection decoding and batched environment mutation. Slot ids, decision
+phase, candidate counts, row splits, terminal results, and optional dense masks
+cross the boundary as NumPy arrays. The bridge has no semantic feature encoder,
+policy, optimizer, automatic reset, or PyTorch dependency yet; its arrays are
+not trainable state and must not be presented as a learning result. Keeping the
+crate standalone prevents Python build dependencies from entering ordinary
+simulator checks.
+
 On an ordinary reward screen, the reward owner claims typed low-agency public
 resources before opening a nested card-reward choice. This lets the card owner
 observe already-claimed gold, non-conflicting relics, and empty-slot potions

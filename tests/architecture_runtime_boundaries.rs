@@ -2555,3 +2555,41 @@ fn online_learning_env_uses_public_state_and_typed_legality_without_policy_score
         );
     }
 }
+
+#[test]
+fn python_learning_bridge_stays_outside_the_root_workspace_and_policy_layer() {
+    let root_manifest = std::fs::read_to_string("Cargo.toml").expect("read root manifest");
+    assert!(root_manifest.contains("exclude = [\"bindings/python_learning\"]"));
+
+    let bridge_manifest = std::fs::read_to_string("bindings/python_learning/Cargo.toml")
+        .expect("read Python learning bridge manifest");
+    assert!(bridge_manifest.contains("crate-type = [\"cdylib\"]"));
+    assert!(bridge_manifest.contains("sts_oracle_eval"));
+
+    let source = std::fs::read_to_string("bindings/python_learning/src/lib.rs")
+        .expect("read Python learning bridge");
+    for required in [
+        "LearningEnvPoolV1",
+        "candidate_row_splits",
+        "dense_action_mask",
+        "LearningSelectionStepV1",
+    ] {
+        assert!(
+            source.contains(required),
+            "Python learning bridge must retain typed batched control owner '{required}'"
+        );
+    }
+    for forbidden in [
+        "serde_json",
+        "combat_search",
+        "strategy::",
+        "_policy_v1",
+        "torch",
+        "auto_reset",
+    ] {
+        assert!(
+            !source.contains(forbidden),
+            "Python learning bridge must not import policy, search, JSON, or training framework through '{forbidden}'"
+        );
+    }
+}
