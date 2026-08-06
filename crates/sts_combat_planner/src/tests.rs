@@ -378,6 +378,28 @@ fn root() -> CombatDecisionRoot {
     CombatDecisionRoot::new(CombatPosition::new(EngineState::CombatPlayerTurn, combat)).unwrap()
 }
 
+fn double_thief_bridge_root() -> CombatDecisionRoot {
+    let mut combat = sts_core::test_support::blank_test_combat();
+    combat.turn.energy = 3;
+    let mut looter = sts_core::test_support::planned_monster(EnemyId::Looter, 1);
+    looter.id = 10;
+    looter.current_hp = 43;
+    looter.max_hp = 47;
+    let mut mugger = sts_core::test_support::planned_monster(EnemyId::Mugger, 1);
+    mugger.id = 20;
+    mugger.current_hp = 14;
+    mugger.max_hp = 48;
+    combat.entities.monsters = vec![looter, mugger];
+    combat.zones.hand = vec![
+        CombatCard::new(CardId::Strike, 3),
+        CombatCard::new(CardId::DarkEmbrace, 10002),
+        CombatCard::new(CardId::Strike, 1),
+        CombatCard::new(CardId::Defend, 6),
+        CombatCard::new(CardId::PowerThrough, 10000),
+    ];
+    CombatDecisionRoot::new(CombatPosition::new(EngineState::CombatPlayerTurn, combat)).unwrap()
+}
+
 #[test]
 fn combat_root_accepts_a_stable_pre_turn_selection_boundary() {
     let mut combat = sts_core::test_support::blank_test_combat();

@@ -549,7 +549,9 @@ and paths to sidecars plus one compact exact-state service index. `artifact
 search --state` distinguishes a state that was never retained from one whose
 complete-turn generator was retained but never serviced, and reports its
 current anchor, proposal-root, and proposal-continuation queue positions and
-service counts without parsing the opaque report. `artifact summary`,
+service counts, plus per-boundary proposal applicability, attempt outcome,
+exact proposal-successor identities, and generator anchor/guide service
+attribution without parsing the opaque report. `artifact summary`,
 `artifact search`, and `artifact rerun`
 read only the manifest. `artifact trace` replays the contract-aligned candidate;
 `artifact compare` replays it alongside the local-HP candidate and locates their

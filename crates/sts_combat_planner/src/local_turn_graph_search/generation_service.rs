@@ -98,6 +98,20 @@ impl LocalTurnGraphWitnessSession {
         if used_work == 0 && used_steps == 0 {
             return false;
         }
+        match view {
+            LocalServiceView::Anchor
+            | LocalServiceView::ProposalRoot
+            | LocalServiceView::ProposalContinuation => {
+                self.nodes[node_id].generation_anchor_services = self.nodes[node_id]
+                    .generation_anchor_services
+                    .saturating_add(1);
+            }
+            LocalServiceView::Guide(_) => {
+                self.nodes[node_id].generation_guide_services = self.nodes[node_id]
+                    .generation_guide_services
+                    .saturating_add(1);
+            }
+        }
         self.used.generation_work = self.used.generation_work.saturating_add(used_work);
         self.used.engine_steps = self.used.engine_steps.saturating_add(used_steps);
         self.used.applied_action_transitions = self.used.applied_action_transitions.saturating_add(

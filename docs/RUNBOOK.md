@@ -80,7 +80,10 @@ case and action paths or restate the contract.
 `artifact search --state` reports whether one exact state was retained and
 whether its complete-turn generator received service, its current anchor,
 proposal-root, and proposal-continuation queue positions, and their service
-counts; it never parses the opaque full report.
+counts. It also reports whether the boundary's typed proposal was applicable,
+attempted, completed, or rejected, the exact successor identities it
+materialized, and whether generator work used anchor or guide service; it
+never parses the opaque full report.
 These commands deliberately reject earlier manifest schemas and legacy reports
 instead of guessing their fields.
 

@@ -53,7 +53,7 @@ use classification::{
 };
 
 const ARTIFACT_SCHEMA: &str = "OracleCombatContractArtifactV2";
-const ARTIFACT_SCHEMA_VERSION: u32 = 7;
+const ARTIFACT_SCHEMA_VERSION: u32 = 8;
 
 #[derive(Debug, Args)]
 pub(super) struct ContractCommandArgs {
@@ -260,6 +260,14 @@ struct CombatContractSearchStateV2 {
     exact_children: usize,
     retained_generator_work_items: usize,
     path_action_count: usize,
+    plan_prefix_applicable: bool,
+    plan_prefix_step_count: Option<usize>,
+    plan_prefix_attempts: usize,
+    plan_prefix_completed: usize,
+    plan_prefix_rejections: usize,
+    plan_prefix_successor_exact_state_hashes: Vec<String>,
+    generation_anchor_services: usize,
+    generation_guide_services: usize,
     anchor_ordinal_rank: Option<usize>,
     anchor_candidate_count: usize,
     proposal_root_ordinal_rank: Option<usize>,
@@ -531,7 +539,7 @@ fn run_combat_contract(request: CombatContractRequestV2) -> Result<CombatContrac
     search.states = reservation.final_path.join("search-states.json");
     let search_state_index = CombatContractSearchStateIndexV2 {
         schema_name: "OracleCombatContractSearchStateIndexV2".to_owned(),
-        schema_version: 3,
+        schema_version: 4,
         root_exact_state_hash: root_exact_state_hash.clone(),
         states: session
             .state_service_index()
@@ -672,6 +680,15 @@ impl From<LocalTurnGraphServicedStateSnapshot> for CombatContractSearchStateV2 {
             exact_children: snapshot.exact_children,
             retained_generator_work_items: snapshot.retained_generator_work_items,
             path_action_count: snapshot.path_action_count,
+            plan_prefix_applicable: snapshot.plan_prefix_applicable,
+            plan_prefix_step_count: snapshot.plan_prefix_step_count,
+            plan_prefix_attempts: snapshot.plan_prefix_attempts,
+            plan_prefix_completed: snapshot.plan_prefix_completed,
+            plan_prefix_rejections: snapshot.plan_prefix_rejections,
+            plan_prefix_successor_exact_state_hashes: snapshot
+                .plan_prefix_successor_exact_state_hashes,
+            generation_anchor_services: snapshot.generation_anchor_services,
+            generation_guide_services: snapshot.generation_guide_services,
             anchor_ordinal_rank: snapshot.anchor_ordinal_rank,
             anchor_candidate_count: snapshot.anchor_candidate_count,
             proposal_root_ordinal_rank: snapshot.proposal_root_ordinal_rank,
@@ -702,7 +719,7 @@ fn query_search_state(artifact: &CombatContractArtifactV2, query: &str) -> Resul
             )
         })?;
     if index.schema_name != "OracleCombatContractSearchStateIndexV2"
-        || index.schema_version != 3
+        || index.schema_version != 4
         || index.root_exact_state_hash != artifact.root_exact_state_hash
     {
         return Err(format!(
@@ -724,7 +741,7 @@ fn query_search_state(artifact: &CombatContractArtifactV2, query: &str) -> Resul
     let state = matches.first().copied();
     print_json(&serde_json::json!({
         "schema_name": "OracleCombatContractSearchStateQueryV2",
-        "schema_version": 3,
+        "schema_version": 4,
         "root_exact_state_hash": artifact.root_exact_state_hash,
         "query": query,
         "retained": state.is_some(),

@@ -255,46 +255,6 @@ pub struct LocalTurnGraphStateSnapshot {
     pub exhausted: bool,
 }
 
-/// Compact accounting of exact search service grouped by relative player-turn
-/// depth. This is a diagnostic view only: it never participates in scheduling
-/// or stopping.
-#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]
-pub struct LocalTurnGraphDepthServiceSnapshot {
-    pub relative_turn_depth: usize,
-    pub exact_states: usize,
-    pub serviced_states: usize,
-    pub generation_work: usize,
-    pub generated_options: usize,
-    pub exact_children: usize,
-    pub retained_generator_work_items: usize,
-    pub exhausted_states: usize,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
-pub struct LocalTurnGraphServicedStateSnapshot {
-    pub exact_state_hash: String,
-    pub relative_turn_depth: usize,
-    pub player_turn: u32,
-    pub player_hp: i32,
-    pub alive_enemy_count: usize,
-    pub enemy_total_hp: i32,
-    pub recoverable_stolen_gold: i32,
-    pub unrecovered_stolen_gold: i32,
-    pub generation_work: usize,
-    pub generated_options: usize,
-    pub exact_children: usize,
-    pub retained_generator_work_items: usize,
-    pub path_action_count: usize,
-    pub anchor_ordinal_rank: Option<usize>,
-    pub anchor_candidate_count: usize,
-    pub proposal_root_ordinal_rank: Option<usize>,
-    pub proposal_root_candidate_count: usize,
-    pub proposal_root_services: usize,
-    pub proposal_continuation_ordinal_rank: Option<usize>,
-    pub proposal_continuation_candidate_count: usize,
-    pub proposal_continuation_services: usize,
-}
-
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct LocalTurnGraphRetainedGuidePromiseSnapshot {
     pub lane: u32,

@@ -290,6 +290,52 @@ fn local_turn_graph_plan_annotations_are_opt_in_and_read_only() {
 }
 
 #[test]
+fn state_service_index_attributes_plan_prefix_work_to_its_exact_boundary() {
+    let root = double_thief_bridge_root();
+    let root_hash = root.exact_state_hash().to_owned();
+    let mut session = LocalTurnGraphWitnessSession::with_policy(
+        root,
+        LocalTurnGraphWitnessConfig {
+            generator: TurnOptionGeneratorConfig {
+                max_engine_steps_per_transition: 250,
+                ..TurnOptionGeneratorConfig::default()
+            },
+            generation_quantum_work: 4,
+            backed_generation_quantum_work: 4,
+            initial_expansion_work: 16,
+            root_initial_expansion_work: 16,
+            max_turn_depth: 1,
+            satisfaction: OracleCombatWitnessSatisfaction::BudgetOrExhaustion,
+            ..LocalTurnGraphWitnessConfig::default()
+        },
+        Arc::new(PreferPlayPolicy),
+    );
+
+    session.advance(
+        LocalTurnGraphWitnessQuantum {
+            additional_selections: 64,
+            additional_generation_work: 256,
+            additional_engine_steps: 8_192,
+            deadline: None,
+        },
+        &EngineCombatStepper,
+    );
+
+    let state = session
+        .state_service_index()
+        .into_iter()
+        .find(|state| state.exact_state_hash == root_hash)
+        .expect("root service attribution");
+    assert!(state.plan_prefix_applicable);
+    assert!(state.plan_prefix_step_count.is_some_and(|count| count > 0));
+    assert_eq!(state.plan_prefix_attempts, 1);
+    assert_eq!(state.plan_prefix_completed, 1);
+    assert_eq!(state.plan_prefix_rejections, 0);
+    assert_eq!(state.plan_prefix_successor_exact_state_hashes.len(), 1);
+    assert!(state.generation_anchor_services > 0);
+}
+
+#[test]
 fn local_turn_graph_plan_annotations_leave_unowned_encounters_empty() {
     let mut session = LocalTurnGraphWitnessSession::with_policy(
         root(),

@@ -64,6 +64,8 @@ impl LocalTurnGraphWitnessSession {
             widen_proposal_root_visits: 0,
             widen_proposal_continuation_visits: 0,
             widen_guide_visits: BTreeMap::new(),
+            generation_anchor_services: 0,
+            generation_guide_services: 0,
             backed_guides: root_backed_guides,
             synced_gaps: 0,
             exhausted: false,

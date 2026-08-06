@@ -1,4 +1,53 @@
 use super::*;
+use serde::Serialize;
+
+/// Compact accounting of exact search service grouped by relative player-turn
+/// depth. This is a diagnostic view only: it never participates in scheduling
+/// or stopping.
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]
+pub struct LocalTurnGraphDepthServiceSnapshot {
+    pub relative_turn_depth: usize,
+    pub exact_states: usize,
+    pub serviced_states: usize,
+    pub generation_work: usize,
+    pub generated_options: usize,
+    pub exact_children: usize,
+    pub retained_generator_work_items: usize,
+    pub exhausted_states: usize,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct LocalTurnGraphServicedStateSnapshot {
+    pub exact_state_hash: String,
+    pub relative_turn_depth: usize,
+    pub player_turn: u32,
+    pub player_hp: i32,
+    pub alive_enemy_count: usize,
+    pub enemy_total_hp: i32,
+    pub recoverable_stolen_gold: i32,
+    pub unrecovered_stolen_gold: i32,
+    pub generation_work: usize,
+    pub generated_options: usize,
+    pub exact_children: usize,
+    pub retained_generator_work_items: usize,
+    pub path_action_count: usize,
+    pub plan_prefix_applicable: bool,
+    pub plan_prefix_step_count: Option<usize>,
+    pub plan_prefix_attempts: usize,
+    pub plan_prefix_completed: usize,
+    pub plan_prefix_rejections: usize,
+    pub plan_prefix_successor_exact_state_hashes: Vec<String>,
+    pub generation_anchor_services: usize,
+    pub generation_guide_services: usize,
+    pub anchor_ordinal_rank: Option<usize>,
+    pub anchor_candidate_count: usize,
+    pub proposal_root_ordinal_rank: Option<usize>,
+    pub proposal_root_candidate_count: usize,
+    pub proposal_root_services: usize,
+    pub proposal_continuation_ordinal_rank: Option<usize>,
+    pub proposal_continuation_candidate_count: usize,
+    pub proposal_continuation_services: usize,
+}
 
 impl LocalTurnGraphWitnessSession {
     pub fn depth_service_snapshot(&self) -> Vec<LocalTurnGraphDepthServiceSnapshot> {
@@ -85,6 +134,16 @@ impl LocalTurnGraphWitnessSession {
         let position = node.generator.root().position();
         let combat = &position.combat;
         let counters = node.generator.counters();
+        let diagnostics = node.generator.diagnostics();
+        let plan_prefix = combat_plan_turn_prefix_proposal_v1(position);
+        let mut plan_prefix_successor_exact_state_hashes = node
+            .children
+            .iter()
+            .filter(|edge| edge.plan_prefix_proposed)
+            .map(|edge| exact_hash(self.nodes[edge.successor].generator.root().position()))
+            .collect::<Vec<_>>();
+        plan_prefix_successor_exact_state_hashes.sort();
+        plan_prefix_successor_exact_state_hashes.dedup();
         let state = local_deep_state_snapshot(node, self.diagnostic_actions_to_node(node_id).len());
         let persistent =
             sts_core::ai::combat_persistent_outcome_v1::CombatPersistentOutcomeV1::from_combat(
@@ -112,6 +171,14 @@ impl LocalTurnGraphWitnessSession {
             exact_children: node.children.len(),
             retained_generator_work_items: node.generator.retained_work_items(),
             path_action_count: state.path_atomic_depth,
+            plan_prefix_applicable: plan_prefix.is_some(),
+            plan_prefix_step_count: plan_prefix.map(|proposal| proposal.steps.len()),
+            plan_prefix_attempts: diagnostics.plan_prefix_attempts,
+            plan_prefix_completed: diagnostics.plan_prefix_completed,
+            plan_prefix_rejections: diagnostics.plan_prefix_rejections,
+            plan_prefix_successor_exact_state_hashes,
+            generation_anchor_services: node.generation_anchor_services,
+            generation_guide_services: node.generation_guide_services,
             anchor_ordinal_rank: anchor_position.agenda.ordinal_rank,
             anchor_candidate_count: anchor_position.agenda.candidate_count,
             proposal_root_ordinal_rank: proposal_root_position.ordinal_rank,

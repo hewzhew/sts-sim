@@ -20,6 +20,7 @@ pub use config::{
 use potion_budget::*;
 pub use reporting::*;
 use scheduling::*;
+pub use service_diagnostics::*;
 use shared_agenda::SharedBoundaryAgenda;
 pub use storage_diagnostics::LocalTurnGraphStorageSnapshot;
 pub use terminal_outcome::LocalTurnGraphTerminalOutcomeSnapshotV1;
@@ -140,6 +141,8 @@ struct GraphNode {
     widen_proposal_root_visits: usize,
     widen_proposal_continuation_visits: usize,
     widen_guide_visits: BTreeMap<CombatGuideLaneId, usize>,
+    generation_anchor_services: usize,
+    generation_guide_services: usize,
     /// Best exact descendant observed for each cheap semantic guide.
     backed_guides: GuideRankMap,
     synced_gaps: usize,
