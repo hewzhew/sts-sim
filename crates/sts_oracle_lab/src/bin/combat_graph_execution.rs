@@ -9,7 +9,6 @@ use sts_combat_planner::{
     combat_plan_selection_timing_policy_v1, combat_plan_state_guide_policy_v1, CombatDecisionRoot,
     LocalTurnGraphWitnessConfig, LocalTurnGraphWitnessSession, SharedCombatActionPolicy,
 };
-use sts_oracle_runtime::eval::run_control::existing_combat_rollout_lookahead_v1;
 
 use super::combat_policy_controls::{
     anchor_only_policy, omit_guide_lane_policy, root_turn_anchor_only_policy,
@@ -26,7 +25,6 @@ pub(super) enum LocalGraphGuideService {
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 pub(super) struct LocalGraphExecutionProfile {
     guide_service: LocalGraphGuideService,
-    rollout_lookahead: bool,
     typed_plan_state_guide: bool,
     plan_selection_timing: bool,
     omitted_guide_lane: Option<u32>,
@@ -36,19 +34,12 @@ impl LocalGraphExecutionProfile {
     pub(super) fn from_controls(
         anchor_only: bool,
         root_turn_anchor_only: bool,
-        rollout_lookahead: bool,
         typed_plan_state_guide: bool,
         plan_selection_timing: bool,
         omitted_guide_lane: Option<u32>,
     ) -> Result<Self, String> {
         if anchor_only && root_turn_anchor_only {
             return Err("anchor-only conflicts with root-turn-anchor-only".to_owned());
-        }
-        if rollout_lookahead && (anchor_only || root_turn_anchor_only) {
-            return Err(
-                "rollout-lookahead requires ordinary guide service, not an anchor-only mode"
-                    .to_owned(),
-            );
         }
         if anchor_only && typed_plan_state_guide {
             return Err("typed-plan-guide conflicts with anchor-only".to_owned());
@@ -59,9 +50,6 @@ impl LocalGraphExecutionProfile {
         if anchor_only && omitted_guide_lane.is_some() {
             return Err("omit-guide-lane conflicts with anchor-only".to_owned());
         }
-        if rollout_lookahead && omitted_guide_lane == Some(6) {
-            return Err("omit-guide-lane 6 conflicts with rollout-lookahead".to_owned());
-        }
         Ok(Self {
             guide_service: if anchor_only {
                 LocalGraphGuideService::AnchorOnly
@@ -70,7 +58,6 @@ impl LocalGraphExecutionProfile {
             } else {
                 LocalGraphGuideService::AnchorAndGuides
             },
-            rollout_lookahead,
             typed_plan_state_guide,
             plan_selection_timing,
             omitted_guide_lane,
@@ -80,13 +67,10 @@ impl LocalGraphExecutionProfile {
     /// Historical summary retained in the V1 report alongside the complete
     /// typed profile. It describes graph service, not every policy overlay.
     pub(super) fn scheduler_label(self) -> &'static str {
-        match (self.guide_service, self.rollout_lookahead) {
-            (LocalGraphGuideService::AnchorOnly, _) => "anchor_only",
-            (LocalGraphGuideService::RootTurnAnchorThenGuides, _) => "root_turn_anchor_then_guides",
-            (LocalGraphGuideService::AnchorAndGuides, true) => {
-                "anchor_guides_and_lazy_rollout_lookahead"
-            }
-            (LocalGraphGuideService::AnchorAndGuides, false) => "anchor_and_guides",
+        match self.guide_service {
+            LocalGraphGuideService::AnchorOnly => "anchor_only",
+            LocalGraphGuideService::RootTurnAnchorThenGuides => "root_turn_anchor_then_guides",
+            LocalGraphGuideService::AnchorAndGuides => "anchor_and_guides",
         }
     }
 
@@ -98,17 +82,7 @@ impl LocalGraphExecutionProfile {
         base_policy: SharedCombatActionPolicy,
     ) -> LocalTurnGraphWitnessSession {
         let policy = self.decorate_policy(root_player_turn, base_policy);
-
-        if self.rollout_lookahead {
-            LocalTurnGraphWitnessSession::with_policy_and_lookahead(
-                root,
-                config,
-                policy,
-                existing_combat_rollout_lookahead_v1(),
-            )
-        } else {
-            LocalTurnGraphWitnessSession::with_policy(root, config, policy)
-        }
+        LocalTurnGraphWitnessSession::with_policy(root, config, policy)
     }
 
     fn decorate_policy(
@@ -174,52 +148,30 @@ mod tests {
 
     #[test]
     fn execution_profile_reports_every_orthogonal_control() {
-        let profile =
-            LocalGraphExecutionProfile::from_controls(false, false, true, true, true, Some(3))
-                .expect("valid profile");
+        let profile = LocalGraphExecutionProfile::from_controls(false, false, true, true, Some(3))
+            .expect("valid profile");
         let value = serde_json::to_value(profile).expect("serialize profile");
 
         assert_eq!(value["guide_service"], "anchor_and_guides");
-        assert_eq!(value["rollout_lookahead"], true);
         assert_eq!(value["typed_plan_state_guide"], true);
         assert_eq!(value["plan_selection_timing"], true);
         assert_eq!(value["omitted_guide_lane"], 3);
-        assert_eq!(
-            profile.scheduler_label(),
-            "anchor_guides_and_lazy_rollout_lookahead"
-        );
+        assert_eq!(profile.scheduler_label(), "anchor_and_guides");
     }
 
     #[test]
     fn invalid_combinations_are_rejected_below_clap() {
+        assert!(LocalGraphExecutionProfile::from_controls(true, true, false, false, None).is_err());
+        assert!(LocalGraphExecutionProfile::from_controls(true, false, true, false, None).is_err());
         assert!(
-            LocalGraphExecutionProfile::from_controls(true, true, false, false, false, None)
-                .is_err()
+            LocalGraphExecutionProfile::from_controls(false, false, false, false, Some(0)).is_err()
         );
-        assert!(
-            LocalGraphExecutionProfile::from_controls(false, true, true, false, false, None)
-                .is_err()
-        );
-        assert!(
-            LocalGraphExecutionProfile::from_controls(true, false, false, true, false, None)
-                .is_err()
-        );
-        assert!(LocalGraphExecutionProfile::from_controls(
-            false,
-            false,
-            false,
-            false,
-            false,
-            Some(0)
-        )
-        .is_err());
     }
 
     #[test]
     fn root_turn_anchor_suppression_wraps_every_inner_guide() {
-        let profile =
-            LocalGraphExecutionProfile::from_controls(false, true, false, true, false, None)
-                .expect("valid root-turn profile");
+        let profile = LocalGraphExecutionProfile::from_controls(false, true, true, false, None)
+            .expect("valid root-turn profile");
         let mut position = CombatPosition::new(EngineState::CombatPlayerTurn, blank_test_combat());
         let root_turn = position.combat.turn.turn_count;
         let policy = profile.decorate_policy(root_turn, Arc::new(OneGuidePolicy));
@@ -232,7 +184,7 @@ mod tests {
     #[test]
     fn omitted_guide_lane_filters_only_that_typed_lane() {
         let profile =
-            LocalGraphExecutionProfile::from_controls(false, false, false, false, false, Some(7))
+            LocalGraphExecutionProfile::from_controls(false, false, false, false, Some(7))
                 .expect("valid omitted guide profile");
         let position = CombatPosition::new(EngineState::CombatPlayerTurn, blank_test_combat());
         let policy = profile.decorate_policy(0, Arc::new(OneGuidePolicy));

@@ -1,6 +1,6 @@
 use super::*;
 use std::cmp::Ordering;
-use std::collections::{BTreeMap, BTreeSet, BinaryHeap};
+use std::collections::{BTreeMap, BTreeSet, BinaryHeap, VecDeque};
 
 #[derive(Clone, Debug)]
 struct AnchorEntry {
@@ -74,9 +74,13 @@ impl Ord for GuideEntry {
 /// the selected node's turn generator chooses its own local generation lane.
 pub(super) struct SharedBoundaryAgenda {
     anchor: BinaryHeap<AnchorEntry>,
+    proposal_roots: VecDeque<usize>,
+    proposal_root_members: BTreeSet<usize>,
+    proposal_continuations: VecDeque<usize>,
+    proposal_continuation_members: BTreeSet<usize>,
+    proposal_service_claims: BTreeSet<usize>,
     guides: BTreeMap<CombatGuideLaneId, BTreeSet<GuideEntry>>,
     next_view: usize,
-    lookahead_enabled: bool,
     guide_service_bias: Option<LocalTurnGraphGuideServiceBias>,
 }
 
@@ -94,30 +98,31 @@ pub(super) struct SharedAnchorPosition {
 }
 
 impl SharedBoundaryAgenda {
-    pub(super) fn new(
-        lookahead_enabled: bool,
-        guide_service_bias: Option<LocalTurnGraphGuideServiceBias>,
-    ) -> Self {
+    pub(super) fn new(guide_service_bias: Option<LocalTurnGraphGuideServiceBias>) -> Self {
         Self {
             anchor: BinaryHeap::new(),
+            proposal_roots: VecDeque::new(),
+            proposal_root_members: BTreeSet::new(),
+            proposal_continuations: VecDeque::new(),
+            proposal_continuation_members: BTreeSet::new(),
+            proposal_service_claims: BTreeSet::new(),
             guides: BTreeMap::new(),
             next_view: 0,
-            lookahead_enabled,
             guide_service_bias,
         }
     }
 
     pub(super) fn clear(&mut self) {
         self.anchor.clear();
+        self.proposal_roots.clear();
+        self.proposal_root_members.clear();
+        self.proposal_continuations.clear();
+        self.proposal_continuation_members.clear();
+        self.proposal_service_claims.clear();
         self.guides.clear();
     }
 
-    pub(super) fn publish_node(
-        &mut self,
-        node_id: usize,
-        node: &GraphNode,
-        lookahead_lane: Option<CombatGuideLaneId>,
-    ) {
+    pub(super) fn publish_node(&mut self, node_id: usize, node: &GraphNode) {
         if node.generator.is_finished() || node.exhausted {
             return;
         }
@@ -125,23 +130,14 @@ impl SharedBoundaryAgenda {
             node_id,
             service_cost: anchor_service_cost(node),
         });
-        self.publish_guide_entries(node_id, node, lookahead_lane);
+        self.publish_guide_entries(node_id, node);
     }
 
-    pub(super) fn publish_guide_entries(
-        &mut self,
-        node_id: usize,
-        node: &GraphNode,
-        lookahead_lane: Option<CombatGuideLaneId>,
-    ) {
+    pub(super) fn publish_guide_entries(&mut self, node_id: usize, node: &GraphNode) {
         if node.generator.is_finished() || node.exhausted {
             return;
         }
         for guide in &node.guides {
-            if Some(guide.lane) == lookahead_lane && node.lookahead_pending_lane == Some(guide.lane)
-            {
-                continue;
-            }
             self.publish_guide_entry(node_id, node, guide.lane);
         }
     }
@@ -165,17 +161,8 @@ impl SharedBoundaryAgenda {
         });
     }
 
-    pub(super) fn remove_guide_entries(
-        &mut self,
-        node_id: usize,
-        node: &GraphNode,
-        lookahead_lane: Option<CombatGuideLaneId>,
-    ) {
+    pub(super) fn remove_guide_entries(&mut self, node_id: usize, node: &GraphNode) {
         for guide in &node.guides {
-            if Some(guide.lane) == lookahead_lane && node.lookahead_pending_lane == Some(guide.lane)
-            {
-                continue;
-            }
             if let Some(entries) = self.guides.get_mut(&guide.lane) {
                 entries.remove(&GuideEntry {
                     node_id,
@@ -196,11 +183,65 @@ impl SharedBoundaryAgenda {
         });
     }
 
+    /// Gives one exact boundary with an applicable typed proposal one
+    /// ordinary, auditable service opportunity.
+    ///
+    /// The node remains in the anchor agenda for completeness. This queue is
+    /// FIFO, deduplicated while pending, and one-shot: selecting an entry
+    /// never recursively services its descendants.
+    pub(super) fn publish_proposal_root(&mut self, node_id: usize, node: &GraphNode) -> bool {
+        if node.generator.is_finished()
+            || node.exhausted
+            || !self.proposal_service_claims.insert(node_id)
+        {
+            return false;
+        }
+        self.proposal_root_members.insert(node_id);
+        self.proposal_roots.push_back(node_id);
+        true
+    }
+
+    /// Gives the exact successor of a materialized proposal one opportunity
+    /// in a queue independent from newly applicable proposal roots.
+    ///
+    /// If the successor was already waiting as an applicable root, its one
+    /// lifetime proposal claim moves to the continuation queue. Once either
+    /// proposal view services a node, later duplicate exact edges cannot
+    /// restore proposal privilege.
+    pub(super) fn publish_proposal_continuation(
+        &mut self,
+        node_id: usize,
+        node: &GraphNode,
+    ) -> bool {
+        if node.generator.is_finished() || node.exhausted {
+            return false;
+        }
+        self.enqueue_proposal_continuation(node_id)
+    }
+
+    fn enqueue_proposal_continuation(&mut self, node_id: usize) -> bool {
+        if self.proposal_continuation_members.contains(&node_id) {
+            return false;
+        }
+        if self.proposal_root_members.remove(&node_id) {
+            self.proposal_roots
+                .retain(|candidate_id| *candidate_id != node_id);
+        } else if !self.proposal_service_claims.insert(node_id) {
+            return false;
+        }
+        self.proposal_continuation_members.insert(node_id);
+        self.proposal_continuations.push_back(node_id);
+        true
+    }
+
     pub(super) fn next_service_view(&mut self) -> LocalServiceView {
-        let mut views = Vec::with_capacity(self.guides.len().saturating_add(2));
+        let mut views = Vec::with_capacity(self.guides.len().saturating_add(4));
         views.push(LocalServiceView::Anchor);
-        if self.lookahead_enabled {
-            views.push(LocalServiceView::LookaheadEvaluation);
+        if !self.proposal_continuations.is_empty() {
+            views.push(LocalServiceView::ProposalContinuation);
+        }
+        if !self.proposal_roots.is_empty() {
+            views.push(LocalServiceView::ProposalRoot);
         }
         views.extend(self.guides.keys().copied().map(LocalServiceView::Guide));
         if let Some(bias) = self
@@ -221,7 +262,8 @@ impl SharedBoundaryAgenda {
         self.guides
             .len()
             .saturating_add(1)
-            .saturating_add(usize::from(self.lookahead_enabled))
+            .saturating_add(usize::from(!self.proposal_continuations.is_empty()))
+            .saturating_add(usize::from(!self.proposal_roots.is_empty()))
             .saturating_add(
                 self.guide_service_bias
                     .filter(|bias| self.guides.contains_key(&bias.lane))
@@ -269,21 +311,42 @@ impl SharedBoundaryAgenda {
         Some(selected.node_id)
     }
 
-    pub(super) fn select_pending_lookahead(&self, nodes: &[GraphNode]) -> Option<usize> {
-        nodes
-            .iter()
-            .enumerate()
-            .filter(|(_, node)| {
-                !node.exhausted
-                    && node.lookahead_pending_lane.is_some()
-                    && node.generator.counters().generation_work > 0
-            })
-            .min_by(|(left_id, left), (right_id, right)| {
-                left.path_cost()
-                    .total_cmp(&right.path_cost())
-                    .then_with(|| left_id.cmp(right_id))
-            })
-            .map(|(node_id, _)| node_id)
+    pub(super) fn select_proposal_root(&mut self, nodes: &[GraphNode]) -> Option<usize> {
+        while let Some(node_id) = self.proposal_roots.pop_front() {
+            self.proposal_root_members.remove(&node_id);
+            self.remove_pending_proposal_continuation(node_id);
+            let node = &nodes[node_id];
+            if !node.exhausted && !node.generator.is_finished() {
+                return Some(node_id);
+            }
+        }
+        None
+    }
+
+    pub(super) fn select_proposal_continuation(&mut self, nodes: &[GraphNode]) -> Option<usize> {
+        while let Some(node_id) = self.proposal_continuations.pop_front() {
+            self.proposal_continuation_members.remove(&node_id);
+            self.remove_pending_proposal_root(node_id);
+            let node = &nodes[node_id];
+            if !node.exhausted && !node.generator.is_finished() {
+                return Some(node_id);
+            }
+        }
+        None
+    }
+
+    fn remove_pending_proposal_root(&mut self, node_id: usize) {
+        if self.proposal_root_members.remove(&node_id) {
+            self.proposal_roots
+                .retain(|candidate_id| *candidate_id != node_id);
+        }
+    }
+
+    fn remove_pending_proposal_continuation(&mut self, node_id: usize) {
+        if self.proposal_continuation_members.remove(&node_id) {
+            self.proposal_continuations
+                .retain(|candidate_id| *candidate_id != node_id);
+        }
     }
 
     pub(super) fn anchor_position(
@@ -324,6 +387,54 @@ impl SharedBoundaryAgenda {
                 .find(|(candidate_id, _)| *candidate_id == node_id)
                 .map(|(_, cost)| *cost),
             best_service_cost: candidates.first().map(|(_, cost)| *cost),
+        }
+    }
+
+    pub(super) fn proposal_root_position(
+        &self,
+        node_id: usize,
+        nodes: &[GraphNode],
+    ) -> SharedAgendaPosition {
+        let candidates = self
+            .proposal_roots
+            .iter()
+            .copied()
+            .filter(|candidate_id| {
+                self.proposal_root_members.contains(candidate_id)
+                    && !nodes[*candidate_id].exhausted
+                    && !nodes[*candidate_id].generator.is_finished()
+            })
+            .collect::<Vec<_>>();
+        SharedAgendaPosition {
+            ordinal_rank: candidates
+                .iter()
+                .position(|candidate_id| *candidate_id == node_id)
+                .map(|index| index.saturating_add(1)),
+            candidate_count: candidates.len(),
+        }
+    }
+
+    pub(super) fn proposal_continuation_position(
+        &self,
+        node_id: usize,
+        nodes: &[GraphNode],
+    ) -> SharedAgendaPosition {
+        let candidates = self
+            .proposal_continuations
+            .iter()
+            .copied()
+            .filter(|candidate_id| {
+                self.proposal_continuation_members.contains(candidate_id)
+                    && !nodes[*candidate_id].exhausted
+                    && !nodes[*candidate_id].generator.is_finished()
+            })
+            .collect::<Vec<_>>();
+        SharedAgendaPosition {
+            ordinal_rank: candidates
+                .iter()
+                .position(|candidate_id| *candidate_id == node_id)
+                .map(|index| index.saturating_add(1)),
+            candidate_count: candidates.len(),
         }
     }
 
@@ -407,13 +518,10 @@ mod tests {
     #[test]
     fn boosted_guide_receives_only_the_configured_extra_service_turns() {
         let lane = CombatGuideLaneId::new(2);
-        let mut agenda = SharedBoundaryAgenda::new(
-            false,
-            Some(LocalTurnGraphGuideServiceBias {
-                lane,
-                extra_services_per_cycle: 2,
-            }),
-        );
+        let mut agenda = SharedBoundaryAgenda::new(Some(LocalTurnGraphGuideServiceBias {
+            lane,
+            extra_services_per_cycle: 2,
+        }));
         agenda.guides.insert(lane, BTreeSet::new());
 
         assert_eq!(agenda.view_count(), 4);
@@ -422,5 +530,60 @@ mod tests {
         assert_eq!(agenda.next_service_view(), LocalServiceView::Guide(lane));
         assert_eq!(agenda.next_service_view(), LocalServiceView::Guide(lane));
         assert_eq!(agenda.next_service_view(), LocalServiceView::Anchor);
+    }
+
+    #[test]
+    fn proposal_queues_get_independent_fair_turns_without_replacing_anchor() {
+        let lane = CombatGuideLaneId::new(3);
+        let mut agenda = SharedBoundaryAgenda::new(None);
+        agenda.proposal_continuations.push_back(4);
+        agenda.proposal_continuation_members.insert(4);
+        agenda.proposal_roots.push_back(9);
+        agenda.proposal_root_members.insert(9);
+        agenda.guides.insert(lane, BTreeSet::new());
+
+        assert_eq!(agenda.view_count(), 4);
+        assert_eq!(agenda.next_service_view(), LocalServiceView::Anchor);
+        assert_eq!(
+            agenda.next_service_view(),
+            LocalServiceView::ProposalContinuation
+        );
+        assert_eq!(agenda.next_service_view(), LocalServiceView::ProposalRoot);
+        assert_eq!(agenda.next_service_view(), LocalServiceView::Guide(lane));
+        assert_eq!(agenda.next_service_view(), LocalServiceView::Anchor);
+    }
+
+    #[test]
+    fn proposal_continuation_reclassifies_a_pending_root_without_duplicate_privilege() {
+        let mut agenda = SharedBoundaryAgenda::new(None);
+        agenda.proposal_roots.extend([4, 7]);
+        agenda.proposal_root_members.extend([4, 7]);
+        agenda.proposal_service_claims.extend([4, 7]);
+
+        assert!(agenda.enqueue_proposal_continuation(7));
+        assert_eq!(
+            agenda.proposal_roots.iter().copied().collect::<Vec<_>>(),
+            [4]
+        );
+        assert_eq!(
+            agenda
+                .proposal_continuations
+                .iter()
+                .copied()
+                .collect::<Vec<_>>(),
+            [7]
+        );
+        assert!(!agenda.enqueue_proposal_continuation(7));
+        agenda.remove_pending_proposal_root(4);
+        assert!(!agenda.enqueue_proposal_continuation(4));
+        assert!(agenda.enqueue_proposal_continuation(9));
+        assert_eq!(
+            agenda
+                .proposal_continuations
+                .iter()
+                .copied()
+                .collect::<Vec<_>>(),
+            [7, 9]
+        );
     }
 }

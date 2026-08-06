@@ -210,7 +210,7 @@ The runner owns run progression:
 Combat search owns only the in-combat problem:
 
 - legal combat action enumeration,
-- action ordering, rollout, and search policy,
+- action ordering, typed state guidance, and exact search policy,
 - exact execution of candidate combat lines,
 - combat outcome facts and diagnostics.
 
@@ -276,23 +276,43 @@ allowance without an acceptable witness. A later identity inheriting an already
 satisfying witness receives one complete local challenge rather than a full
 quality-polishing allowance.
 
-Inside the local graph, one shared boundary agenda rotates between the anchor
-and the available semantic guide lanes. A guide entry selects one exact
-boundary once; it receives 128 coherent generator-work units, while repeated
-and exhaustive service remains owned by the anchor. This value controls
+Inside the local graph, one shared boundary agenda rotates among the anchor,
+independent typed-proposal root and immediate-continuation queues, and the
+available semantic guide lanes. An exact boundary whose typed proposal source
+is applicable and a guide entry each select one exact boundary once. The first
+proposal or guide service to reach a fresh boundary may pay
+for one 128-work coherent grounding batch. Other views may agree on that same
+shared state, but after grounding they resume it at the ordinary 4-work
+preemption quantum rather than multiplying the coherent batch once per view.
+Both proposal queues are FIFO. A newly applicable root cannot be starved by a
+stream of continuations, and neither proposal queue replaces the anchor.
+Proposal privilege is deduplicated for the exact state's lifetime, not merely
+while it is pending. When a proposal materializes an exact non-terminal
+successor, that successor receives at most one continuation opportunity; if it
+was already pending as a proposal root, the same claim moves queues instead of
+being duplicated. The next boundary is not inherited automatically. Repeated
+and exhaustive service remains owned by the anchor. These values control
 preemption granularity, not combat value or admission, and production and
-laboratory hosts use the same planner constant. Full local-graph reports retain
-the effective value in their search specification so budget-cliff comparisons
-remain reconstructible.
+laboratory hosts use the same planner constants. Full local-graph reports
+retain the effective values in their search specification so budget-cliff
+comparisons remain reconstructible.
+
+The root's first complete-turn expansion is also allowance-aware. It receives
+one eighth of the caller's generation work, with a 64-work floor for usable
+allowances and a 2,048-work ceiling; an allowance below the floor is never
+overdrawn. This keeps routine 4,096-work contracts from spending half their
+budget repeatedly enumerating the root while deeper exact boundaries starve.
+Production and V2 contract hosts call the same planner helper.
 
 An encounter-owned typed service bias may give one existing guide lane a
 bounded number of additional turns in that rotation. It does not duplicate
 guide entries: each selected boundary remains one-shot, receives the same
 quantum, and then leaves completeness to the anchor. The default planner has no
-bias. Production currently concentrates the survival view for an all-Darkling
-group because reincarnation loops make raw turn horizon unbounded; laboratory
-controls may omit or reweight a typed lane for fixed-root attribution. The
-effective production bias is retained in each stage trace.
+bias. The shared encounter owner concentrates the survival view for an
+all-Darkling group because reincarnation loops make raw turn horizon unbounded.
+Production and the compact V2 contract project the same typed bias; laboratory
+controls may omit or reweight a lane for fixed-root attribution. The effective
+production bias is retained in each stage trace.
 
 During `ImproveVerifiedWin`, a quality-reaching spending witness remains an
 exact candidate but cannot by itself end the refinement quantum. Early
@@ -387,13 +407,13 @@ Static potion identity tiers may describe audit evidence but do not admit
 production spending. Passive death insurance and explicit escape remain
 outside active victory search. When the runner opens concrete potion slots,
 that exact mask is part of the combat-search engine profile and must be
-enforced by atomic expansion, turn-plan enumeration, rollout-witness replay,
-fallback repair, and final executable-line replay; a trace-only slot mask is
-not an admission contract.
+enforced by atomic expansion, turn-plan enumeration, terminal-frontier
+admission, and final executable-line replay; a trace-only slot mask is not an
+admission contract.
 
 Accepted combat lines must be exact executable lines from the current combat
-state. Frontiers, near misses, rollout samples, and dirty diagnostic lines are
-evidence, not runnable campaign actions.
+state. Frontiers, near misses, heuristic samples, and dirty diagnostic lines
+are evidence, not runnable campaign actions.
 
 The complete-turn planner retains exact terminal witnesses on a typed
 non-dominated frontier instead of collapsing every victory into its local
@@ -431,7 +451,7 @@ policy. A profile is an explicit bundle of:
 
 - a budget,
 - action-prior / phase-guard plugins,
-- rollout and frontier plugins,
+- typed guide and frontier plugins,
 - potion policy,
 - acceptance policy,
 - artifact policy.
@@ -443,22 +463,27 @@ run profiles and apply typed outcomes.
 
 A typed encounter plan may expose categorical action timing to one bounded,
 plan-compatible exact prefix proposal. Strategy owns the timing semantics; the
-planner materializes the prefix as ordinary graph edges; run-control only gates
-the proposal, charges its actual work, and reports diagnostic counts. The
-proposal never prunes alternatives, claims a win, or becomes another global
-frontier scheduler. Acceptance still requires the ordinary exact witness and
-replay contract. Production admission is explicit and evidence-backed per
-encounter plan; merely having categorical action timing does not opt a plan in.
+planner marks exact boundaries where the source is applicable before their
+generator runs, materializes the prefix as ordinary graph edges, and retains
+typed proposal provenance on those edges. Each applicable boundary receives
+one deduplicated proposal-root service opportunity while remaining in the
+anchor queue for ordinary completeness. A materialized proposal's immediate
+exact successor receives one opportunity in the independent continuation
+queue; this does not recursively grant service to later descendants.
+Run-control only gates the proposal, charges its actual work, and reports root
+and continuation enqueue, generation, and service counts.
+The proposal never prunes alternatives, claims a win, recursively services its
+descendants, or becomes another global frontier scheduler. Acceptance still
+requires the ordinary exact witness and replay contract. Production admission
+is explicit and evidence-backed per encounter plan; merely having categorical
+action timing does not opt a plan in.
 
-A bounded lookahead evaluator may also return one typed complete action suffix
-relative to the exact boundary it evaluated. This is an untrusted proposal, not
-a successor or terminal result. The local graph validates every suffix input,
-joins it to one retained exact prefix, and replays the complete line from the
-unchanged combat root before admitting a witness. Invalid, truncated,
-out-of-contract, or under-budget proposals are rejected locally and must not
-poison the exact graph with a replay-mismatch status. A replay-verified
-lookahead proposal remains a local-search witness when run-control records its
-trajectory source.
+Maintained production and V2 contract execution do not install an external
+complete-line or bounded-lookahead witness producer. Terminal evidence must be
+reached through the exact graph, retained on its typed non-dominated frontier,
+and replayed from the unchanged root. Restored checkpoints may carry an
+already verified incumbent, but restoring one does not mint work or bypass the
+current potion and terminal contracts.
 
 ## Gap Semantics
 
@@ -516,13 +541,29 @@ unbounded data.
 
 Routine fixed-root combat experiments use the breaking V2 contract artifact:
 an atomically published directory containing one small stable `manifest.json`,
-one opaque full `report.json`, and an optional replay-exact
-`witness.actions.json`. The manifest owns the typed request, exact root id,
-source-content identity, compact classification, and sidecar paths.
-`artifact summary` and `artifact rerun` read only the manifest; they must not
-guess fields in the full report or legacy artifacts. Combat cases enter the V2
-catalog explicitly, keyed by exact root identity, so routine discovery never
-depends on filenames or recursive shell scans.
+one opaque full `report.json`, and one replay-exact action sidecar per retained
+non-dominated terminal candidate. The manifest owns the typed request, exact
+root id, source-content identity, compact classification, compact per-depth
+exact-search service accounting, terminal exact identities, candidate roles,
+and paths to sidecars plus one compact exact-state service index. `artifact
+search --state` distinguishes a state that was never retained from one whose
+complete-turn generator was retained but never serviced, and reports its
+current anchor, proposal-root, and proposal-continuation queue positions and
+service counts without parsing the opaque report. `artifact summary`,
+`artifact search`, and `artifact rerun`
+read only the manifest. `artifact trace` replays the contract-aligned candidate;
+`artifact compare` replays it alongside the local-HP candidate and locates their
+first exact divergence. `artifact turn` resolves either candidate by semantic
+role, inspects one exact complete-turn surface, and may follow displayed plan
+indices through replay-checked exact successors without exposing sidecar paths,
+scratch ids, or intermediate case files. An explicit diagnostic may enumerate
+one additional exact complete turn from every selected parent and aggregate
+terminal HP and stolen-gold facts; it does not recurse, propose policy, or
+become a second witness search. None of these commands may make callers recover
+paths or restate constraints. They must not guess fields in the full report or
+earlier artifact schemas. Combat cases enter the V2 catalog
+explicitly, keyed by exact root identity, so routine discovery never depends on
+filenames or recursive shell scans.
 
 An oracle analysis workspace is an editable variation workbench, not the
 archive authority for every state it has ever materialized. Explorer

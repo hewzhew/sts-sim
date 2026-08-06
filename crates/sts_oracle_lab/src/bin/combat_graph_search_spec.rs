@@ -8,8 +8,9 @@ use std::time::{Duration, Instant};
 
 use serde::Serialize;
 use sts_combat_planner::{
-    CombatGuideLaneId, LocalTurnGraphGuideServiceBias, LocalTurnGraphWitnessConfig,
-    LocalTurnGraphWitnessQuantum, OracleCombatWitnessSatisfaction, TurnOptionGeneratorConfig,
+    root_initial_expansion_work_for_budget, CombatGuideLaneId, LocalTurnGraphGuideServiceBias,
+    LocalTurnGraphWitnessConfig, LocalTurnGraphWitnessQuantum, OracleCombatWitnessSatisfaction,
+    TurnOptionGeneratorConfig,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
@@ -38,8 +39,6 @@ pub(super) struct LocalGraphPlannerSettings {
     guide_service_bias: Option<LocalGraphGuideServiceBiasSpec>,
     initial_expansion_work: usize,
     root_initial_expansion_work: usize,
-    lookahead_max_evaluations: usize,
-    lookahead_work_per_evaluation: usize,
     max_turn_depth: usize,
     max_potions_used: Option<u32>,
     allowed_potion_slots: Option<u64>,
@@ -75,7 +74,6 @@ impl LocalGraphSearchSpec {
         guide_service_bias: Option<LocalGraphGuideServiceBiasSpec>,
     ) -> Self {
         let defaults = LocalTurnGraphWitnessConfig::default();
-        let lookahead_work_per_evaluation = defaults.lookahead_work_per_evaluation;
         Self {
             planner: LocalGraphPlannerSettings {
                 max_engine_steps_per_transition,
@@ -87,11 +85,9 @@ impl LocalGraphSearchSpec {
                 guide_service_bias,
                 initial_expansion_work: initial_expansion_work
                     .unwrap_or(defaults.initial_expansion_work),
-                root_initial_expansion_work: defaults.root_initial_expansion_work,
-                lookahead_max_evaluations: max_generation_work
-                    .saturating_div(lookahead_work_per_evaluation)
-                    .max(1),
-                lookahead_work_per_evaluation,
+                root_initial_expansion_work: root_initial_expansion_work_for_budget(
+                    max_generation_work,
+                ),
                 max_turn_depth,
                 max_potions_used,
                 allowed_potion_slots,
@@ -128,8 +124,6 @@ impl LocalGraphSearchSpec {
             }),
             initial_expansion_work: self.planner.initial_expansion_work,
             root_initial_expansion_work: self.planner.root_initial_expansion_work,
-            lookahead_max_evaluations: self.planner.lookahead_max_evaluations,
-            lookahead_work_per_evaluation: self.planner.lookahead_work_per_evaluation,
             max_turn_depth: self.planner.max_turn_depth,
             satisfaction,
             require_no_unrecovered_stolen_gold: false,

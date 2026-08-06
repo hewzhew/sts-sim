@@ -5,7 +5,7 @@ use std::time::SystemTime;
 use serde::Serialize;
 use serde_json::Value;
 
-use super::{CombatContractArtifactV2, ARTIFACT_SCHEMA};
+use super::{CombatContractArtifactV2, ARTIFACT_SCHEMA, ARTIFACT_SCHEMA_VERSION};
 
 pub(super) struct ArtifactDirectoryReservation {
     pub(super) staging_path: PathBuf,
@@ -90,7 +90,9 @@ fn parse_artifact(manifest: &Path, bytes: &[u8]) -> Result<CombatContractArtifac
         .map_err(|error| format!("invalid artifact JSON '{}': {error}", manifest.display()))?;
     let schema_name = value.get("schema_name").and_then(Value::as_str);
     let schema_version = value.get("schema_version").and_then(Value::as_u64);
-    if schema_name != Some(ARTIFACT_SCHEMA) || schema_version != Some(2) {
+    if schema_name != Some(ARTIFACT_SCHEMA)
+        || schema_version != Some(u64::from(ARTIFACT_SCHEMA_VERSION))
+    {
         return Err(format!(
             "unsupported artifact '{}'; V2 commands do not parse legacy reports",
             manifest.display()
@@ -115,6 +117,62 @@ mod tests {
         assert_eq!(
             error,
             "unsupported artifact 'legacy-report.json'; V2 commands do not parse legacy reports"
+        );
+    }
+
+    #[test]
+    fn loader_rejects_the_previous_manifest_without_search_state_index() {
+        let error = parse_artifact(
+            Path::new("v2-manifest.json"),
+            br#"{"schema_name":"OracleCombatContractArtifactV2","schema_version":3}"#,
+        )
+        .unwrap_err();
+
+        assert_eq!(
+            error,
+            "unsupported artifact 'v2-manifest.json'; V2 commands do not parse legacy reports"
+        );
+    }
+
+    #[test]
+    fn loader_rejects_schema_four_without_plan_prefix_accounting() {
+        let error = parse_artifact(
+            Path::new("v2-manifest.json"),
+            br#"{"schema_name":"OracleCombatContractArtifactV2","schema_version":4}"#,
+        )
+        .unwrap_err();
+
+        assert_eq!(
+            error,
+            "unsupported artifact 'v2-manifest.json'; V2 commands do not parse legacy reports"
+        );
+    }
+
+    #[test]
+    fn loader_rejects_schema_five_without_preferred_service_accounting() {
+        let error = parse_artifact(
+            Path::new("v2-manifest.json"),
+            br#"{"schema_name":"OracleCombatContractArtifactV2","schema_version":5}"#,
+        )
+        .unwrap_err();
+
+        assert_eq!(
+            error,
+            "unsupported artifact 'v2-manifest.json'; V2 commands do not parse legacy reports"
+        );
+    }
+
+    #[test]
+    fn loader_rejects_schema_six_without_independent_proposal_queues() {
+        let error = parse_artifact(
+            Path::new("v2-manifest.json"),
+            br#"{"schema_name":"OracleCombatContractArtifactV2","schema_version":6}"#,
+        )
+        .unwrap_err();
+
+        assert_eq!(
+            error,
+            "unsupported artifact 'v2-manifest.json'; V2 commands do not parse legacy reports"
         );
     }
 }

@@ -28,23 +28,22 @@ pub use generator::{
     LiveActionTransitionSnapshot, TurnOptionGeneratorSession, DETAIL_TIMING_SAMPLE_INTERVAL,
 };
 pub use local_turn_graph_search::{
+    root_initial_expansion_work_for_budget, LocalTurnGraphDepthServiceSnapshot,
     LocalTurnGraphEdgeSnapshot, LocalTurnGraphGuideServiceBias, LocalTurnGraphGuideServiceSnapshot,
     LocalTurnGraphPlanAnnotationEnableError, LocalTurnGraphPlanTransitionEdgeSnapshot,
     LocalTurnGraphPolicyLineReport, LocalTurnGraphRetainedGuidePromiseSnapshot,
-    LocalTurnGraphRootActionFamilySnapshot, LocalTurnGraphStateSnapshot,
-    LocalTurnGraphStorageSnapshot, LocalTurnGraphSuffixProbeAttempt,
+    LocalTurnGraphRootActionFamilySnapshot, LocalTurnGraphServicedStateSnapshot,
+    LocalTurnGraphStateSnapshot, LocalTurnGraphStorageSnapshot,
     LocalTurnGraphTerminalOutcomeSnapshotV1, LocalTurnGraphWitnessConfig,
     LocalTurnGraphWitnessCounters, LocalTurnGraphWitnessInterruption, LocalTurnGraphWitnessQuantum,
     LocalTurnGraphWitnessReport, LocalTurnGraphWitnessSession, LocalTurnGraphWitnessStatus,
-    DEFAULT_BACKED_GENERATION_QUANTUM_WORK,
+    DEFAULT_BACKED_GENERATION_QUANTUM_WORK, DEFAULT_ROOT_INITIAL_EXPANSION_WORK,
 };
 pub use policy::{
     combat_plan_selection_timing_policy_v1, combat_plan_state_guide_policy_v1, CombatActionPolicy,
-    CombatGuideLaneId, CombatLookaheadEvaluation, CombatLookaheadEvaluator,
-    CombatLookaheadSuffixProposal, CombatPlanSelectionTimingPolicyV1, CombatPlanStateGuidePolicyV1,
-    CombatPolicyChoice, CombatPolicyWitnessProposal, CombatStateGuide, CombatStateGuideRank,
-    SharedCombatActionPolicy, SharedCombatLookaheadEvaluator, UniformCombatActionPolicy,
-    COMBAT_PLAN_STATE_GUIDE_LANE_V1,
+    CombatGuideLaneId, CombatPlanSelectionTimingPolicyV1, CombatPlanStateGuidePolicyV1,
+    CombatPolicyChoice, CombatStateGuide, CombatStateGuideRank, SharedCombatActionPolicy,
+    UniformCombatActionPolicy, COMBAT_PLAN_STATE_GUIDE_LANE_V1,
 };
 pub use policy_discrepancy_search::{
     PolicyDiscrepancyConfig, PolicyDiscrepancyCounters, PolicyDiscrepancyInterruption,

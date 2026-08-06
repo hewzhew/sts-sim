@@ -6,14 +6,16 @@ mod policy_line;
 mod potion_budget;
 mod reporting;
 mod scheduling;
+mod service_diagnostics;
 mod session;
 mod shared_agenda;
 mod storage_diagnostics;
 mod terminal_outcome;
 
 pub use config::{
-    LocalTurnGraphGuideServiceBias, LocalTurnGraphWitnessConfig,
-    DEFAULT_BACKED_GENERATION_QUANTUM_WORK,
+    root_initial_expansion_work_for_budget, LocalTurnGraphGuideServiceBias,
+    LocalTurnGraphWitnessConfig, DEFAULT_BACKED_GENERATION_QUANTUM_WORK,
+    DEFAULT_ROOT_INITIAL_EXPANSION_WORK,
 };
 use potion_budget::*;
 pub use reporting::*;
@@ -32,7 +34,8 @@ use sts_combat_strategy::{
     combat_plan_action_timing_v1, combat_plan_has_timed_action_preference_v1,
     combat_plan_projection_v1, combat_plan_selection_member_timing_v1,
     combat_plan_supports_initial_policy_prefix_v1, combat_plan_transition_annotation_v1,
-    CombatPlanActionTimingV1, CombatPlanTransitionAnnotationV1,
+    combat_plan_turn_prefix_proposal_v1, CombatPlanActionTimingV1,
+    CombatPlanTransitionAnnotationV1,
 };
 use sts_core::ai::combat_state_key::combat_exact_state_key;
 use sts_core::sim::combat::{CombatPosition, CombatStepLimits, CombatStepper, CombatTerminal};
@@ -40,14 +43,14 @@ use sts_core::state::core::ClientInput;
 
 use super::generator::TurnOptionGeneratorPreferredLane;
 use super::policy::{
-    normalized_probabilities, CombatGuideLaneId, CombatLookaheadSuffixProposal, CombatPolicyChoice,
-    CombatPolicyWitnessProposal, CombatStateGuide, CombatStateGuideRank, SharedCombatActionPolicy,
-    SharedCombatLookaheadEvaluator,
+    normalized_probabilities, CombatGuideLaneId, CombatPolicyChoice, CombatStateGuide,
+    CombatStateGuideRank, SharedCombatActionPolicy,
 };
 use super::selection_transaction::SelectionTransactionCursor;
 use super::types::{
     exact_hash, CombatDecisionRoot, CombatPlanningQuantum, CompleteTurnOption,
-    CompleteTurnOptionBoundary, TurnOptionAction, TurnOptionGenerationGap,
+    CompleteTurnOptionBoundary, CompleteTurnOptionSource, TurnOptionAction,
+    TurnOptionGenerationGap,
 };
 use super::witness::{
     OracleCombatDeepStateSnapshot, OracleCombatWitness, OracleCombatWitnessDiscoverySource,
@@ -134,13 +137,11 @@ struct GraphNode {
     generation_service_views: Vec<LocalServiceView>,
     next_generation_service_view: usize,
     widen_anchor_visits: usize,
+    widen_proposal_root_visits: usize,
+    widen_proposal_continuation_visits: usize,
     widen_guide_visits: BTreeMap<CombatGuideLaneId, usize>,
-    lookahead_pending_lane: Option<CombatGuideLaneId>,
     /// Best exact descendant observed for each cheap semantic guide.
     backed_guides: GuideRankMap,
-    /// Best bounded rollout value observed at this exact boundary. This is
-    /// search guidance only; terminal authority still belongs to exact replay.
-    backed_lookahead_rank: Option<CombatStateGuideRank>,
     synced_gaps: usize,
     exhausted: bool,
 }
@@ -155,21 +156,21 @@ struct GraphEdge {
     successor: usize,
     actions: Vec<TurnOptionAction>,
     negative_log_policy: f64,
+    plan_prefix_proposed: bool,
     plan_transition_annotation: Option<CombatPlanTransitionAnnotationV1>,
     visits: usize,
     anchor_visits: usize,
     guide_visits: BTreeMap<CombatGuideLaneId, usize>,
     /// Best exact descendant observed through this edge for each cheap guide.
     backed_guides: GuideRankMap,
-    /// Best evaluated descendant reached through this exact edge.
-    backed_lookahead_rank: Option<CombatStateGuideRank>,
     backed_visits: usize,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum LocalServiceView {
     Anchor,
-    LookaheadEvaluation,
+    ProposalRoot,
+    ProposalContinuation,
     Guide(CombatGuideLaneId),
 }
 
@@ -179,10 +180,6 @@ enum SelectedWork {
         path: Vec<(usize, usize)>,
         view: LocalServiceView,
         requested_work: usize,
-    },
-    Evaluate {
-        node_id: usize,
-        path: Vec<(usize, usize)>,
     },
     Exhausted,
 }
@@ -194,17 +191,21 @@ fn selected_boundary_generation_work(
     service_view: LocalServiceView,
 ) -> usize {
     if generator_work > 0 {
-        return match service_view {
-            LocalServiceView::Guide(_) => config.backed_generation_quantum_work,
-            LocalServiceView::Anchor => config.generation_quantum_work,
-            LocalServiceView::LookaheadEvaluation => {
-                unreachable!("lookahead evaluation never widens a turn generator")
-            }
-        };
+        // The first semantic guide to reach a fresh exact state pays for one
+        // coherent grounding batch. Other independent guides may agree on that
+        // same state, but their agreement must not multiply the large batch
+        // once per lane. After grounding, every view resumes the shared
+        // generator at the ordinary preemption quantum.
+        return config.generation_quantum_work;
     }
     if node_id == 0 {
         config.root_initial_expansion_work
-    } else if matches!(service_view, LocalServiceView::Guide(_)) {
+    } else if matches!(
+        service_view,
+        LocalServiceView::ProposalRoot
+            | LocalServiceView::ProposalContinuation
+            | LocalServiceView::Guide(_)
+    ) {
         config.backed_generation_quantum_work
     } else {
         config.initial_expansion_work
@@ -217,9 +218,7 @@ pub struct LocalTurnGraphWitnessSession {
     original_root: CombatPosition,
     config: LocalTurnGraphWitnessConfig,
     policy: SharedCombatActionPolicy,
-    lookahead_evaluator: Option<SharedCombatLookaheadEvaluator>,
     collect_plan_transition_annotations: bool,
-    lookahead_lane: Option<CombatGuideLaneId>,
     shared_agenda: SharedBoundaryAgenda,
     nodes: Vec<GraphNode>,
     nodes_by_exact_key: HashMap<ConstrainedExactStateKey, usize, FxBuildHasher>,
@@ -318,12 +317,7 @@ impl LocalTurnGraphWitnessSession {
                     LocalTurnGraphWitnessInterruption::SelectionBudget,
                 );
             }
-            if self
-                .used
-                .generation_work
-                .saturating_add(self.used.lookahead_work)
-                >= self.granted_generation_work
-            {
+            if self.used.generation_work >= self.granted_generation_work {
                 break LocalTurnGraphWitnessStatus::Partial(
                     LocalTurnGraphWitnessInterruption::GenerationWorkBudget,
                 );
@@ -361,45 +355,6 @@ impl LocalTurnGraphWitnessSession {
                                 LocalTurnGraphWitnessInterruption::Deadline
                             } else {
                                 LocalTurnGraphWitnessInterruption::EngineStepBudget
-                            },
-                        );
-                    }
-                }
-                SelectedWork::Evaluate { node_id, path } => {
-                    self.used.selections = self.used.selections.saturating_add(1);
-                    if !self.evaluate_lookahead(node_id, &path, quantum.deadline, stepper) {
-                        break LocalTurnGraphWitnessStatus::Partial(
-                            if deadline_reached(quantum.deadline) {
-                                LocalTurnGraphWitnessInterruption::Deadline
-                            } else {
-                                LocalTurnGraphWitnessInterruption::GenerationWorkBudget
-                            },
-                        );
-                    }
-                    if self.witness_satisfies() {
-                        continue;
-                    }
-                    // An expensive boundary observation must be grounded by
-                    // at least one exact expansion. Otherwise the evaluator
-                    // can label a state and leave it with zero exact children,
-                    // forcing the global scheduler to rediscover the same
-                    // boundary before any real evidence exists.
-                    if generator_needs_initial_grounding(
-                        self.nodes[node_id].generator.counters().generation_work,
-                        self.nodes[node_id].generator.is_finished(),
-                    ) && !self.widen(
-                        node_id,
-                        &path,
-                        LocalServiceView::Anchor,
-                        self.config.backed_generation_quantum_work,
-                        quantum.deadline,
-                        stepper,
-                    ) {
-                        break LocalTurnGraphWitnessStatus::Partial(
-                            if deadline_reached(quantum.deadline) {
-                                LocalTurnGraphWitnessInterruption::Deadline
-                            } else {
-                                LocalTurnGraphWitnessInterruption::GenerationWorkBudget
                             },
                         );
                     }
@@ -463,23 +418,15 @@ impl LocalTurnGraphWitnessSession {
         let attempts = self.shared_agenda.view_count().max(1);
         for _ in 0..attempts {
             let service_view = self.shared_agenda.next_service_view();
-            if service_view == LocalServiceView::LookaheadEvaluation {
-                if self.used.boundary_lookahead_evaluations < self.config.lookahead_max_evaluations
-                {
-                    if let Some(node_id) = self.shared_agenda.select_pending_lookahead(&self.nodes)
-                    {
-                        let path = self.retained_path_to(node_id);
-                        self.record_shared_service(node_id, &path, service_view);
-                        return SelectedWork::Evaluate { node_id, path };
-                    }
-                }
-                continue;
-            }
-
             let selected = match service_view {
                 LocalServiceView::Anchor => self.shared_agenda.select_anchor(&self.nodes),
+                LocalServiceView::ProposalRoot => {
+                    self.shared_agenda.select_proposal_root(&self.nodes)
+                }
+                LocalServiceView::ProposalContinuation => {
+                    self.shared_agenda.select_proposal_continuation(&self.nodes)
+                }
                 LocalServiceView::Guide(lane) => self.shared_agenda.select_guide(lane, &self.nodes),
-                LocalServiceView::LookaheadEvaluation => unreachable!(),
             };
             let Some(node_id) = selected else {
                 continue;
@@ -568,6 +515,22 @@ impl LocalTurnGraphWitnessSession {
                 self.nodes[node_id].widen_anchor_visits =
                     self.nodes[node_id].widen_anchor_visits.saturating_add(1);
             }
+            LocalServiceView::ProposalRoot => {
+                self.nodes[node_id].widen_proposal_root_visits = self.nodes[node_id]
+                    .widen_proposal_root_visits
+                    .saturating_add(1);
+                self.used.plan_prefix_root_services =
+                    self.used.plan_prefix_root_services.saturating_add(1);
+            }
+            LocalServiceView::ProposalContinuation => {
+                self.nodes[node_id].widen_proposal_continuation_visits = self.nodes[node_id]
+                    .widen_proposal_continuation_visits
+                    .saturating_add(1);
+                self.used.plan_prefix_continuation_services = self
+                    .used
+                    .plan_prefix_continuation_services
+                    .saturating_add(1);
+            }
             LocalServiceView::Guide(lane) => {
                 self.nodes[node_id]
                     .first_guide_service_selection
@@ -578,7 +541,6 @@ impl LocalTurnGraphWitnessSession {
                     .or_default();
                 *visits = visits.saturating_add(1);
             }
-            LocalServiceView::LookaheadEvaluation => {}
         }
         for (parent_id, edge_index) in path {
             let edge = &mut self.nodes[*parent_id].children[*edge_index];
@@ -587,11 +549,11 @@ impl LocalTurnGraphWitnessSession {
                 LocalServiceView::Anchor => {
                     edge.anchor_visits = edge.anchor_visits.saturating_add(1);
                 }
+                LocalServiceView::ProposalRoot | LocalServiceView::ProposalContinuation => {}
                 LocalServiceView::Guide(lane) => {
                     let visits = edge.guide_visits.entry(lane).or_default();
                     *visits = visits.saturating_add(1);
                 }
-                LocalServiceView::LookaheadEvaluation => {}
             }
         }
     }

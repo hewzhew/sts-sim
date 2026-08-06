@@ -60,14 +60,10 @@ struct Cli {
     typed_plan_selection_timing: bool,
     #[arg(long)]
     plan_compatible_policy_line: bool,
-    #[arg(long, default_value_t = 0, requires = "plan_compatible_policy_line")]
-    plan_compatible_suffix_work: usize,
     #[arg(long)]
     expect_witness: bool,
     #[arg(long, requires = "expect_witness")]
     expect_min_final_hp: Option<i32>,
-    #[arg(long, requires = "plan_compatible_policy_line")]
-    expect_max_plan_suffix_work: Option<usize>,
     #[arg(long, default_value_t = 250_000)]
     max_nodes: usize,
     #[arg(long, default_value_t = 1_000_000)]
@@ -388,10 +384,6 @@ fn run(args: Cli) -> Result<(), String> {
             ..TurnOptionGeneratorConfig::default()
         },
         generation_quantum_work: args.generation_quantum_work,
-        lookahead_max_evaluations: args
-            .max_nodes
-            .saturating_div(config_defaults.lookahead_work_per_evaluation)
-            .max(1),
         max_turn_depth: args.max_turn_depth,
         satisfaction: if args.improve_incumbent {
             OracleCombatWitnessSatisfaction::BudgetOrExhaustion
@@ -427,10 +419,9 @@ fn run(args: Cli) -> Result<(), String> {
     let policy_line_report = args
         .plan_compatible_policy_line
         .then(|| {
-            session.offer_plan_compatible_policy_line_with_suffix_probes(
+            session.offer_plan_compatible_policy_line(
                 args.max_turn_depth,
                 256,
-                args.plan_compatible_suffix_work,
                 &EngineCombatStepper,
             )
         })
@@ -490,18 +481,6 @@ fn run(args: Cli) -> Result<(), String> {
             ));
         }
     }
-    if let Some(maximum) = args.expect_max_plan_suffix_work {
-        let actual = policy_line_report
-            .as_ref()
-            .map(|line| line.suffix_probe_generation_work)
-            .unwrap_or_default();
-        if actual > maximum {
-            return Err(format!(
-                "combat contract failed: plan suffix work {actual} exceeds {maximum}"
-            ));
-        }
-    }
-
     let witness = report.witness.as_ref();
     if let Some(path) = args.write_witness_actions.as_ref() {
         let witness = witness.ok_or_else(|| {
@@ -780,7 +759,7 @@ fn run(args: Cli) -> Result<(), String> {
             "transition_publish_retain": report.performance_timing.transition_publish_retain_elapsed_ns,
             "transition_publish_agenda": report.performance_timing.transition_publish_agenda_elapsed_ns,
         },
-        "plan_suffix": policy_line_report.as_ref().map(|line| json!({
+        "plan_prefix": policy_line_report.as_ref().map(|line| json!({
             "proposed_turns": line.proposed_turns,
             "chosen_action_transitions": line.chosen_action_transitions,
             "proposed_actions": line.proposed_actions,
@@ -795,18 +774,7 @@ fn run(args: Cli) -> Result<(), String> {
                 "plan_annotation": line.plan_annotation_elapsed_ns,
                 "successor_admission": line.successor_admission_elapsed_ns,
             },
-            "attempts": line.suffix_probe_attempts,
-            "generation_work": line.suffix_probe_generation_work,
-            "engine_steps": line.suffix_probe_engine_steps,
-            "completed_turn_options": line.suffix_probe_completed_turn_options,
-            "applied_action_transitions": line.suffix_probe_applied_action_transitions,
-            "unique_successor_states": line.suffix_probe_unique_successor_states,
-            "exact_nodes": line.suffix_probe_exact_nodes,
-            "exact_edges": line.suffix_probe_exact_edges,
-            "performance_ns": line.suffix_probe_performance_timing,
-            "setup_elapsed_ns": line.suffix_probe_setup_elapsed_ns,
-            "advance_elapsed_ns": line.suffix_probe_advance_elapsed_ns,
-            "replay_elapsed_ns": line.suffix_probe_replay_elapsed_ns,
+            "reached_terminal_win": line.reached_terminal_win,
         })),
     });
     println!(

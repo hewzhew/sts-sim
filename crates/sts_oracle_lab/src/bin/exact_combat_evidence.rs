@@ -11,9 +11,7 @@ use sts_combat_planner::{
     LocalTurnGraphWitnessReport, LocalTurnGraphWitnessSession, LocalTurnGraphWitnessStatus,
     OracleCombatWitnessSatisfaction, TurnOptionGeneratorConfig,
 };
-use sts_oracle_runtime::eval::run_control::{
-    existing_combat_knowledge_policy_v1, existing_combat_rollout_lookahead_v1,
-};
+use sts_oracle_runtime::eval::run_control::existing_combat_knowledge_policy_v1;
 use sts_oracle_runtime::sim::combat::{
     CombatPosition, CombatStepLimits, CombatStepper, CombatTerminal, EngineCombatStepper,
 };
@@ -63,7 +61,6 @@ impl ExactCombatEvidence {
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub(crate) struct ExactCombatSearchCost {
     generation_work: usize,
-    lookahead_work: usize,
     applied_action_transitions: usize,
     engine_steps: usize,
     exact_nodes: usize,
@@ -73,7 +70,6 @@ pub(crate) struct ExactCombatSearchCost {
 impl ExactCombatSearchCost {
     fn add_assign(&mut self, other: &Self) {
         self.generation_work = self.generation_work.saturating_add(other.generation_work);
-        self.lookahead_work = self.lookahead_work.saturating_add(other.lookahead_work);
         self.applied_action_transitions = self
             .applied_action_transitions
             .saturating_add(other.applied_action_transitions);
@@ -109,26 +105,21 @@ pub(crate) fn evaluate_nonterminal_position(
 ) -> Result<ExactCombatEvaluation, String> {
     let root = CombatDecisionRoot::new(position.clone())
         .map_err(|error| format!("invalid successor root: {error:?}"))?;
-    let config_defaults = LocalTurnGraphWitnessConfig::default();
     let search_config = LocalTurnGraphWitnessConfig {
         generator: TurnOptionGeneratorConfig {
             max_engine_steps_per_transition,
             ..TurnOptionGeneratorConfig::default()
         },
         generation_quantum_work: 4,
-        lookahead_max_evaluations: solve_work
-            .saturating_div(config_defaults.lookahead_work_per_evaluation)
-            .max(1),
         max_turn_depth: 32,
         satisfaction: OracleCombatWitnessSatisfaction::FirstWitness,
         max_potions_used: None,
-        ..config_defaults
+        ..LocalTurnGraphWitnessConfig::default()
     };
-    let mut session = LocalTurnGraphWitnessSession::with_policy_and_lookahead(
+    let mut session = LocalTurnGraphWitnessSession::with_policy(
         root,
         search_config,
         existing_combat_knowledge_policy_v1(),
-        existing_combat_rollout_lookahead_v1(),
     );
     let report = session.advance(
         LocalTurnGraphWitnessQuantum {
@@ -333,7 +324,6 @@ pub(crate) fn evaluate_unresolved_position(
 fn search_cost(report: &LocalTurnGraphWitnessReport) -> ExactCombatSearchCost {
     ExactCombatSearchCost {
         generation_work: report.counters.generation_work,
-        lookahead_work: report.counters.lookahead_work,
         applied_action_transitions: report.counters.applied_action_transitions,
         engine_steps: report.counters.engine_steps,
         exact_nodes: report.counters.exact_nodes,
@@ -351,11 +341,10 @@ mod tests {
     fn exact_evidence_kinds_do_not_collapse_unknown_with_terminal_results() {
         let cost = ExactCombatSearchCost {
             generation_work: 1,
-            lookahead_work: 2,
-            applied_action_transitions: 3,
-            engine_steps: 4,
-            exact_nodes: 5,
-            exact_edges: 6,
+            applied_action_transitions: 2,
+            engine_steps: 3,
+            exact_nodes: 4,
+            exact_edges: 5,
         };
         assert_eq!(known_exact_win("verified", 17, 3).kind(), "exact_win");
         assert_eq!(

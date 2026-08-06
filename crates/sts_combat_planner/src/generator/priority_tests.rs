@@ -2,10 +2,6 @@ use super::*;
 use std::sync::atomic::{AtomicUsize, Ordering as AtomicOrdering};
 use sts_core::sim::combat::EngineCombatStepper;
 
-struct CountingLookahead {
-    calls: Arc<AtomicUsize>,
-}
-
 struct CountingGenerationGuides {
     calls: Arc<AtomicUsize>,
 }
@@ -22,34 +18,6 @@ impl super::super::policy::CombatActionPolicy for CountingGenerationGuides {
     fn turn_generation_guides(&self, _position: &CombatPosition) -> Vec<CombatStateGuide> {
         self.calls.fetch_add(1, AtomicOrdering::Relaxed);
         vec![CombatStateGuide::new(CombatGuideLaneId::new(98), vec![0])]
-    }
-}
-
-impl super::super::policy::CombatLookaheadEvaluator for CountingLookahead {
-    fn pending_guide(&self, _position: &CombatPosition) -> Option<CombatStateGuide> {
-        Some(CombatStateGuide::new(CombatGuideLaneId::new(99), vec![0]))
-    }
-
-    fn admit_atomic_state(
-        &self,
-        _position: &CombatPosition,
-        _atomic_expansions_before: usize,
-    ) -> bool {
-        true
-    }
-
-    fn evaluate(
-        &self,
-        _position: &CombatPosition,
-        max_work: usize,
-        _deadline: Option<Instant>,
-    ) -> Option<super::super::policy::CombatLookaheadEvaluation> {
-        self.calls.fetch_add(1, AtomicOrdering::Relaxed);
-        Some(super::super::policy::CombatLookaheadEvaluation {
-            guide: CombatStateGuide::new(CombatGuideLaneId::new(99), vec![1]),
-            winning_suffix: None,
-            work: 3.min(max_work),
-        })
     }
 }
 
@@ -158,35 +126,6 @@ fn one_partial_state_computes_base_generation_guides_once() {
         1,
         "expanding a queued partial must reuse the guide bundle computed at publication"
     );
-}
-
-#[test]
-fn expensive_lookahead_is_lazy_budgeted_and_does_not_expand_the_state() {
-    let calls = Arc::new(AtomicUsize::new(0));
-    let evaluator = Arc::new(CountingLookahead {
-        calls: calls.clone(),
-    });
-    let mut session = TurnOptionGeneratorSession::with_policy_and_lookahead(
-        test_root(),
-        TurnOptionGeneratorConfig::default(),
-        uniform_policy(),
-        evaluator,
-    );
-    let report = session.advance_with_lookahead(
-        &EngineCombatStepper,
-        CombatPlanningQuantum::deterministic(1, 250_000),
-        1,
-        3,
-        3,
-    );
-
-    assert_eq!(calls.load(AtomicOrdering::Relaxed), 1);
-    assert_eq!(session.lookahead_evaluations(), 1);
-    assert_eq!(session.lookahead_work(), 3);
-    assert_eq!(session.atomic_state_expansions(), 0);
-    assert_eq!(session.retained_lookahead_guides(), 1);
-    assert_eq!(report.after.generation_work, 1);
-    assert!(session.retained_work_items() > 0);
 }
 
 #[test]

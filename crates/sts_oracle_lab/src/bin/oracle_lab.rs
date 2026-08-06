@@ -8,7 +8,6 @@ mod action_reanalysis_policy;
 mod action_reanalysis_queue;
 mod action_successor_reanalysis;
 mod boundary_successor_corpus;
-mod boundary_successor_lookahead;
 mod canonical_launch;
 mod combat_case_contract;
 mod combat_case_local_graph;
@@ -35,6 +34,8 @@ mod exact_combat_evidence;
 mod exact_turn_corridor;
 mod guidance_artifact_commands;
 mod guidance_combination_audit;
+mod historical_combat_export;
+mod oracle_budget_cli;
 mod oracle_case_catalog_v2;
 mod oracle_cli;
 mod oracle_contract_v2;
@@ -47,12 +48,12 @@ mod run_witness_suite;
 mod turn_audits;
 mod turn_membership_audit;
 mod turn_quality_corridor;
-mod v2_capability_audit;
 mod workspace_combat_scratch;
 mod workspace_commands;
 mod workspace_drive;
 mod workspace_owner_commands;
 mod workspace_policy_audits;
+mod workspace_storage_commands;
 mod workspace_view;
 
 use canonical_launch::{
@@ -145,12 +146,12 @@ fn main() -> Result<(), String> {
             workspace,
             node,
             output,
-        } => print_json(&workspace_commands::compact_workspace(
+        } => print_json(&workspace_storage_commands::compact_workspace(
             &workspace, node, &output,
         )?),
-        Command::RepackWorkspace { workspace, output } => {
-            print_json(&workspace_commands::repack_workspace(&workspace, &output)?)
-        }
+        Command::RepackWorkspace { workspace, output } => print_json(
+            &workspace_storage_commands::repack_workspace(&workspace, &output)?,
+        ),
         Command::RecoverCombatCase {
             workspace,
             branch,
@@ -219,7 +220,7 @@ fn main() -> Result<(), String> {
             case_output,
             actions_output,
             continuation_output,
-        } => print_json(&run_witness_commands::export_historical_combat(
+        } => print_json(&historical_combat_export::export_historical_combat(
             &workspace,
             node,
             journal_entry,
@@ -321,10 +322,6 @@ fn main() -> Result<(), String> {
             let summary = boundary_successor_corpus::build(args)?;
             print_json(&summary)
         }
-        Command::AuditBoundarySuccessorLookahead { args } => {
-            let report = boundary_successor_lookahead::audit(args)?;
-            print_json(&report)
-        }
         Command::AuditGuidanceCombination(args) => {
             print_json(&guidance_combination_audit::run(args)?)
         }
@@ -346,7 +343,6 @@ fn main() -> Result<(), String> {
         }
         Command::DepthBeamTurnAudit(args) => depth_beam_audits::run_turn(args),
         Command::TurnMembership(args) => turn_membership_audit::run(args),
-        Command::V2CapabilityAudit(args) => v2_capability_audit::run(args),
         Command::View { workspace, node } => {
             print_json(&workspace_commands::view(&workspace, node)?)
         }

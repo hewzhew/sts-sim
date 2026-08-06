@@ -13,7 +13,6 @@ pub(super) struct LocalGraphContractRequest<'a> {
     pub(super) policy_line: Option<&'a LocalTurnGraphPolicyLineReport>,
     pub(super) expect_witness: bool,
     pub(super) expect_min_final_hp: Option<i32>,
-    pub(super) expect_max_plan_suffix_work: Option<usize>,
     pub(super) contract_only: bool,
 }
 
@@ -27,7 +26,6 @@ pub(super) fn evaluate_local_graph_contract(
         policy_line,
         expect_witness,
         expect_min_final_hp,
-        expect_max_plan_suffix_work,
         contract_only,
     } = request;
 
@@ -48,16 +46,6 @@ pub(super) fn evaluate_local_graph_contract(
             ));
         }
     }
-    if let Some(expected_maximum) = expect_max_plan_suffix_work {
-        let actual = policy_line
-            .map(|policy_line| policy_line.suffix_probe_generation_work)
-            .unwrap_or_default();
-        if actual > expected_maximum {
-            return Err(format!(
-                "combat-case contract failed: plan suffix work {actual} exceeds {expected_maximum}"
-            ));
-        }
-    }
     if !contract_only {
         return Ok(None);
     }
@@ -73,10 +61,11 @@ pub(super) fn evaluate_local_graph_contract(
         "elapsed_ms": elapsed.as_millis(),
         "final_hp": witness.final_position.combat.entities.player.current_hp,
         "witness_actions": witness.actions.len(),
-        "plan_suffix": policy_line.map(|policy_line| json!({
-            "attempts": policy_line.suffix_probe_attempts,
-            "generation_work": policy_line.suffix_probe_generation_work,
-            "engine_steps": policy_line.suffix_probe_engine_steps,
+        "plan_prefix": policy_line.map(|policy_line| json!({
+            "proposed_turns": policy_line.proposed_turns,
+            "chosen_action_transitions": policy_line.chosen_action_transitions,
+            "engine_steps": policy_line.engine_steps,
+            "reached_terminal_win": policy_line.reached_terminal_win,
         })),
     })))
 }
@@ -111,7 +100,6 @@ mod tests {
             policy_line,
             expect_witness: false,
             expect_min_final_hp: None,
-            expect_max_plan_suffix_work: None,
             contract_only: false,
         }
     }
@@ -137,22 +125,6 @@ mod tests {
         assert_eq!(
             evaluate_local_graph_contract(request),
             Err("combat-case contract failed: final HP requires a verified witness".to_owned())
-        );
-    }
-
-    #[test]
-    fn suffix_work_limit_uses_the_typed_policy_line_report() {
-        let report = report_without_witness();
-        let policy_line = LocalTurnGraphPolicyLineReport {
-            suffix_probe_generation_work: 41,
-            ..LocalTurnGraphPolicyLineReport::default()
-        };
-        let mut request = request(&report, Some(&policy_line));
-        request.expect_max_plan_suffix_work = Some(40);
-
-        assert_eq!(
-            evaluate_local_graph_contract(request),
-            Err("combat-case contract failed: plan suffix work 41 exceeds 40".to_owned())
         );
     }
 

@@ -40,7 +40,7 @@ Good tests protect one of these surfaces:
 
 - **Domain semantics**: card, relic, potion, enemy, and event behavior that must
   match the game.
-- **Search kernel contracts**: termination, frontier handling, rollout timing,
+- **Search kernel contracts**: termination, frontier handling, generator timing,
   win acceptance, budget accounting, and report consistency.
 - **Typed interfaces**: profiles, plugin stacks, owners, run choices, capsule
   schemas, and JSON fields consumed by tools.
@@ -131,8 +131,8 @@ Preferred split:
 - **Search loop contracts**: budget, deadline, terminal handling, acceptance,
   frontier insertion, dominance pruning.
 - **Plugin/profile projection**: profile ids and config fields map correctly.
-- **Rollout behavior**: rollout selection, rollout cache, rollout timing, and
-  estimated outcomes.
+- **Exact generation behavior**: complete-turn selection, replay, work
+  accounting, and terminal-frontier admission.
 - **Action ordering**: legal action order, phase hints, setup bias, and
   root-action priors.
 - **Report contracts**: fields that tools consume, not prose descriptions.

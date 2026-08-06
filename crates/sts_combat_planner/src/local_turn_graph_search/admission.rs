@@ -15,6 +15,7 @@ impl LocalTurnGraphWitnessSession {
         }
 
         let successor_identity_started = Instant::now();
+        let option_source = option.source();
         let (successor_identity, successor_position, option_actions, option_negative_log_policy) =
             option.into_successor_parts();
         let successor_path_negative_log_policy =
@@ -70,11 +71,7 @@ impl LocalTurnGraphWitnessSession {
                     .saturating_add(elapsed_nanos_u64(successor_node_build_started));
                 return None;
             };
-            let (guides, lookahead_pending_lane) = guides_with_pending_lookahead(
-                self.policy.as_ref(),
-                self.lookahead_evaluator.as_deref(),
-                root.position(),
-            );
+            let guides = self.policy.state_guides(root.position());
             let backed_guides = guide_rank_map(&guides);
             let node_id = self.nodes.len();
             let generator = turn_generator_for_potion_budget(
@@ -102,10 +99,10 @@ impl LocalTurnGraphWitnessSession {
                 generation_service_views,
                 next_generation_service_view: 0,
                 widen_anchor_visits: 0,
+                widen_proposal_root_visits: 0,
+                widen_proposal_continuation_visits: 0,
                 widen_guide_visits: BTreeMap::new(),
-                lookahead_pending_lane,
                 backed_guides,
-                backed_lookahead_rank: None,
                 synced_gaps: 0,
                 exhausted: false,
             });
@@ -122,7 +119,6 @@ impl LocalTurnGraphWitnessSession {
 
         let successor_edge_started = Instant::now();
         let successor_backed_guides = self.nodes[successor].backed_guides.clone();
-        let successor_backed_rank = self.nodes[successor].backed_lookahead_rank.clone();
         let existing_edge_index = self.nodes[parent_id]
             .children
             .iter()
@@ -138,6 +134,8 @@ impl LocalTurnGraphWitnessSession {
                 edge.actions = option_actions;
                 edge.negative_log_policy = option_negative_log_policy;
             }
+            edge.plan_prefix_proposed |=
+                option_source == CompleteTurnOptionSource::EncounterPlanPrefix;
             edge_index
         } else {
             let plan_transition_annotation = self
@@ -155,12 +153,13 @@ impl LocalTurnGraphWitnessSession {
                 successor,
                 actions: option_actions,
                 negative_log_policy: option_negative_log_policy,
+                plan_prefix_proposed: option_source
+                    == CompleteTurnOptionSource::EncounterPlanPrefix,
                 plan_transition_annotation: plan_transition_annotation.clone(),
                 visits: 0,
                 anchor_visits: 0,
                 guide_visits: BTreeMap::new(),
                 backed_guides: successor_backed_guides.clone(),
-                backed_lookahead_rank: successor_backed_rank,
                 backed_visits: 0,
             });
             parent.exhausted = false;
@@ -178,17 +177,14 @@ impl LocalTurnGraphWitnessSession {
             .total_cmp(&self.nodes[successor].path_cost())
             .is_lt();
         if successor_path_improved {
-            self.shared_agenda.remove_guide_entries(
-                successor,
-                &self.nodes[successor],
-                self.lookahead_lane,
-            );
+            self.shared_agenda
+                .remove_guide_entries(successor, &self.nodes[successor]);
             let successor_node = &mut self.nodes[successor];
             successor_node.diagnostic_parent = Some((parent_id, edge_index));
             successor_node.path_negative_log_policy = successor_path_negative_log_policy;
             successor_node.path_atomic_depth = successor_path_atomic_depth;
             self.shared_agenda
-                .publish_node(successor, &self.nodes[successor], self.lookahead_lane);
+                .publish_node(successor, &self.nodes[successor]);
         }
         self.performance_timing.successor_edge_elapsed_ns = self
             .performance_timing
@@ -198,7 +194,16 @@ impl LocalTurnGraphWitnessSession {
         self.backup_guides_along_path(path, parent_id, edge_index, &successor_backed_guides);
         if existing.is_none() {
             self.shared_agenda
-                .publish_node(successor, &self.nodes[successor], self.lookahead_lane);
+                .publish_node(successor, &self.nodes[successor]);
+        }
+        if combat_plan_turn_prefix_proposal_v1(self.nodes[successor].generator.root().position())
+            .is_some()
+            && self
+                .shared_agenda
+                .publish_proposal_root(successor, &self.nodes[successor])
+        {
+            self.used.plan_prefix_root_enqueues =
+                self.used.plan_prefix_root_enqueues.saturating_add(1);
         }
         self.performance_timing.successor_backup_elapsed_ns = self
             .performance_timing

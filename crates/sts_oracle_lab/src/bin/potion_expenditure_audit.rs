@@ -294,8 +294,6 @@ struct PotionAuditSearchSettingsV1 {
 struct PotionAuditLaneCountersV1 {
     selections: usize,
     generation_work: usize,
-    lookahead_evaluations: usize,
-    lookahead_work: usize,
     engine_steps: usize,
     exact_nodes: usize,
     terminal_win_options: usize,
@@ -981,8 +979,6 @@ pub(super) fn run(
             counters: PotionAuditLaneCountersV1 {
                 selections: report.counters.selections,
                 generation_work: report.counters.generation_work,
-                lookahead_evaluations: report.counters.lookahead_evaluations,
-                lookahead_work: report.counters.lookahead_work,
                 engine_steps: report.counters.engine_steps,
                 exact_nodes: report.counters.exact_nodes,
                 terminal_win_options: report.counters.terminal_win_options,
@@ -3257,8 +3253,6 @@ mod tests {
             counters: PotionAuditLaneCountersV1 {
                 selections: 0,
                 generation_work: 0,
-                lookahead_evaluations: 0,
-                lookahead_work: 0,
                 engine_steps: 0,
                 exact_nodes: 0,
                 terminal_win_options: 0,

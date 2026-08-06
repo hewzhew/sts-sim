@@ -619,18 +619,11 @@ fn empty_combat_work_checkpoint() -> OracleRunCombatWorkCheckpointV1 {
         quantum_count: 1,
         restart_count: 0,
         incumbent_revision: 0,
-        policy_witness_proposals: 0,
-        policy_witness_proposal_rejections: 0,
         quanta_since_incumbent_improvement: 1,
-        potion_contract_recorded: false,
         max_potions_used: None,
         allowed_potion_slots: None,
         potion_spend_requires_satisfaction: false,
         incumbent: None,
-        advisor_nodes: 0,
-        advisor_elapsed_ms: 0,
-        advisor_complete: true,
-        advisor_failure: None,
     }
 }
 

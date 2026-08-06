@@ -36,7 +36,8 @@ fn spec_serializes_every_effective_setting_and_allowance() {
         value["planner"]["guide_service_bias"]["extra_services_per_cycle"],
         2
     );
-    assert_eq!(value["planner"]["lookahead_max_evaluations"], 10);
+    assert!(value["planner"].get("lookahead_max_evaluations").is_none());
+    assert_eq!(value["planner"]["root_initial_expansion_work"], 64);
     assert_eq!(value["planner"]["max_turn_depth"], 9);
     assert_eq!(value["planner"]["max_potions_used"], 0);
     assert_eq!(value["planner"]["allowed_potion_slots"], 4);
@@ -79,7 +80,7 @@ fn planner_config_and_quantum_are_built_from_the_reported_spec() {
             extra_services_per_cycle: 1,
         })
     );
-    assert_eq!(config.lookahead_max_evaluations, 10);
+    assert_eq!(config.root_initial_expansion_work, 64);
     assert_eq!(config.max_turn_depth, 9);
     assert_eq!(config.max_potions_used, Some(2));
     assert_eq!(quantum.additional_selections, 80);

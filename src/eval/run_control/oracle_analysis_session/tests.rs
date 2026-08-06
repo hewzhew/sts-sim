@@ -543,6 +543,31 @@ fn potion_equipped_one_strike_combat() -> crate::runtime::combat::CombatState {
     combat
 }
 
+fn establish_current_combat_witness(analysis: &mut OracleAnalysisSessionV1) {
+    let work = &mut analysis
+        .combat_jobs
+        .get_mut(&0)
+        .expect("resident combat")
+        .work;
+    for _ in 0..4 {
+        if work.has_verified_witness() {
+            break;
+        }
+        let _ = work.advance_improving_incumbent(
+            &RunControlCombatSearchQuantum {
+                label: "establish-test-incumbent",
+                additional_nodes: 32,
+                soft_wall_ms: None,
+            },
+            None,
+        );
+    }
+    assert!(
+        work.has_verified_witness(),
+        "the exact planner should establish the deterministic one-Strike witness"
+    );
+}
+
 #[test]
 fn strategic_nonboss_analysis_starts_with_an_exact_no_potion_stage() {
     let analysis = combat_analysis_with_budgets(
@@ -598,7 +623,7 @@ fn strategic_no_potion_witness_that_meets_quality_materializes_without_rescue() 
 }
 
 #[test]
-fn current_stage_probe_retains_a_satisfying_incumbent_until_explicit_acceptance() {
+fn exhausted_stage_probe_retains_a_satisfying_incumbent_until_explicit_acceptance() {
     let mut analysis = combat_analysis_with_budgets(
         potion_equipped_one_strike_combat(),
         None,
@@ -607,6 +632,7 @@ fn current_stage_probe_retains_a_satisfying_incumbent_until_explicit_acceptance(
             ..RunControlSearchCombatOptions::default()
         }),
     );
+    establish_current_combat_witness(&mut analysis);
     let before = analysis
         .view_cursor()
         .expect("initial combat view")
@@ -625,13 +651,10 @@ fn current_stage_probe_retains_a_satisfying_incumbent_until_explicit_acceptance(
         .expect("probe the current no-potion stage");
     let progress = report.combat;
 
-    assert_eq!(
-        report.stop,
-        OracleAnalysisCombatProbeStopV1::WorkBudgetReached
-    );
+    assert_eq!(report.stop, OracleAnalysisCombatProbeStopV1::StageExhausted);
     assert_eq!(report.generation_work_requested, 3);
-    assert_eq!(report.generation_work_consumed, 3);
-    assert_eq!(report.quanta_served, 3);
+    assert_eq!(report.generation_work_consumed, 1);
+    assert_eq!(report.quanta_served, 1);
     assert_eq!(analysis.cursor_node_id(), 0);
     assert_eq!(analysis.explorer.branches.len(), branch_count);
     assert_eq!(analysis.edges.len(), edge_count);
@@ -645,7 +668,7 @@ fn current_stage_probe_retains_a_satisfying_incumbent_until_explicit_acceptance(
     assert_eq!(progress.allowed_potion_slots, before.allowed_potion_slots);
     assert_eq!(
         progress.stage_trace.last().map(|stage| stage.exit),
-        Some(OracleAnalysisCombatStageExitV1::ProbeWorkBudgetReached)
+        Some(OracleAnalysisCombatStageExitV1::ProbeStageExhausted)
     );
 
     let resumed = analysis
@@ -657,9 +680,9 @@ fn current_stage_probe_retains_a_satisfying_incumbent_until_explicit_acceptance(
         .expect("resume the same current-stage frontier");
     assert_eq!(
         resumed.stop,
-        OracleAnalysisCombatProbeStopV1::WorkBudgetReached
+        OracleAnalysisCombatProbeStopV1::StageExhausted
     );
-    assert_eq!(resumed.generation_work_consumed, 2);
+    assert_eq!(resumed.generation_work_consumed, 0);
     assert_eq!(
         resumed.combat.resume_kind,
         OracleCombatSearchResumeKindV1::SearchResumeExact
@@ -1272,7 +1295,8 @@ fn quality_gated_rescue_can_inspect_flexible_potions_without_admitting_passive_e
         Some(Potion::new(PotionId::SmokeBomb, 64)),
     ];
     let budgets = strategic_combat_budgets(RunControlSearchCombatOptions::default());
-    let analysis = combat_analysis_with_budgets(combat, None, budgets.clone());
+    let mut analysis = combat_analysis_with_budgets(combat, None, budgets.clone());
+    establish_current_combat_witness(&mut analysis);
     let branch = analysis.require_branch(0).expect("combat branch");
     let mut prior = analysis
         .combat_jobs
@@ -1312,7 +1336,6 @@ fn quality_gated_rescue_can_inspect_flexible_potions_without_admitting_passive_e
         "finding any win still inspects one active identity at a time"
     );
 
-    prior.potion_contract_recorded = true;
     prior.max_potions_used = survival.max_potions_used;
     prior.allowed_potion_slots = survival.allowed_potion_slots;
     prior.incumbent = incumbent;

@@ -1,5 +1,4 @@
 use std::sync::Arc;
-use std::time::Instant;
 
 use sts_combat_strategy::{
     combat_plan_selection_member_timing_v1, combat_plan_state_guide_rank_v1,
@@ -8,8 +7,6 @@ use sts_combat_strategy::{
 use sts_core::sim::combat::CombatPosition;
 use sts_core::sim::combat_action_surface::CombatSelectionActionFamilyV2;
 use sts_core::state::core::ClientInput;
-
-use crate::types::TurnOptionAction;
 
 /// One exact choice on a concrete simulator action surface.
 ///
@@ -77,71 +74,6 @@ impl CombatStateGuide {
     pub fn from_rank(lane: CombatGuideLaneId, rank: CombatStateGuideRank) -> Self {
         Self { lane, rank }
     }
-}
-
-/// A domain policy may cheaply propose a complete tactical suffix. The
-/// planner never trusts the proposal as an outcome: every action and exact
-/// successor hash is replayed from the original root before a witness exists.
-#[derive(Clone, Debug)]
-pub struct CombatPolicyWitnessProposal {
-    pub actions: Vec<TurnOptionAction>,
-    pub final_hp_hint: i32,
-}
-
-/// One untrusted complete winning suffix proposed relative to the exact state
-/// passed to a lookahead evaluator.
-///
-/// The planner may join this suffix to its retained exact prefix, but it must
-/// replay the complete line from the unchanged combat root before any witness
-/// exists. A suffix never creates graph edges, prunes alternatives, or claims
-/// terminal truth by itself.
-#[derive(Clone, Debug)]
-pub struct CombatLookaheadSuffixProposal {
-    pub actions: Vec<ClientInput>,
-    pub final_hp_hint: i32,
-}
-
-/// One non-authoritative, bounded lookahead observation for an exact combat
-/// state. The planner may use its guide rank to order future exact work, but
-/// the observation cannot create a successor or claim a terminal outcome.
-#[derive(Clone, Debug)]
-pub struct CombatLookaheadEvaluation {
-    pub guide: CombatStateGuide,
-    /// Optional replay-required evidence that the evaluated exact state has a
-    /// complete winning continuation.
-    pub winning_suffix: Option<CombatLookaheadSuffixProposal>,
-    /// Deterministic evaluator work consumed by this observation. Implementors
-    /// normally count simulated player inputs.
-    pub work: usize,
-}
-
-/// Optional expensive state guidance, scheduled lazily by the planner.
-///
-/// This is deliberately separate from `CombatActionPolicy`: cheap static
-/// ranks are available when a node is admitted, while lookahead is paid for
-/// only after the exact node receives evaluator service.
-pub trait CombatLookaheadEvaluator: Send + Sync {
-    /// The guide rank used before this exact state has been evaluated. Returning
-    /// `None` means that the evaluator does not apply to this state.
-    fn pending_guide(&self, position: &CombatPosition) -> Option<CombatStateGuide>;
-
-    /// Whether one mid-turn exact state should pay for lookahead when it is
-    /// naturally selected for expansion. This admission hook prevents an
-    /// expensive evaluator from being run eagerly for every generated state.
-    fn admit_atomic_state(
-        &self,
-        position: &CombatPosition,
-        atomic_expansions_before: usize,
-    ) -> bool;
-
-    /// Evaluate one exact state within the caller-owned work and time bounds.
-    /// Returning `None` leaves the state pending so a later quantum may retry.
-    fn evaluate(
-        &self,
-        position: &CombatPosition,
-        max_work: usize,
-        deadline: Option<Instant>,
-    ) -> Option<CombatLookaheadEvaluation>;
 }
 
 /// Supplies search guidance only. Returning a small weight never changes
@@ -344,7 +276,6 @@ impl CombatActionPolicy for UniformCombatActionPolicy {
 }
 
 pub type SharedCombatActionPolicy = Arc<dyn CombatActionPolicy>;
-pub type SharedCombatLookaheadEvaluator = Arc<dyn CombatLookaheadEvaluator>;
 
 pub(crate) fn uniform_policy() -> SharedCombatActionPolicy {
     Arc::new(UniformCombatActionPolicy)

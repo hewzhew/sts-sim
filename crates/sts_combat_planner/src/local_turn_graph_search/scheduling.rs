@@ -1,27 +1,6 @@
 use super::*;
 use std::collections::BTreeSet;
 
-pub(super) fn generator_needs_initial_grounding(
-    generation_work: usize,
-    generator_finished: bool,
-) -> bool {
-    generation_work == 0 && !generator_finished
-}
-
-pub(super) fn update_max_rank(
-    current: &mut Option<CombatStateGuideRank>,
-    candidate: &CombatStateGuideRank,
-) -> bool {
-    if current
-        .as_ref()
-        .is_some_and(|existing| existing >= candidate)
-    {
-        return false;
-    }
-    *current = Some(candidate.clone());
-    true
-}
-
 pub(super) fn update_max_guide(
     current: &mut GuideRankMap,
     lane: CombatGuideLaneId,
@@ -73,26 +52,6 @@ pub(super) fn backed_guide_rank<'a>(
     edge.backed_guides
         .get(&lane)
         .or_else(|| guide_rank(successor, lane))
-}
-
-pub(super) fn guides_with_pending_lookahead(
-    policy: &dyn crate::policy::CombatActionPolicy,
-    evaluator: Option<&dyn crate::policy::CombatLookaheadEvaluator>,
-    position: &CombatPosition,
-) -> (Vec<CombatStateGuide>, Option<CombatGuideLaneId>) {
-    let mut guides = policy.state_guides(position);
-    let pending_lane = evaluator
-        .and_then(|evaluator| evaluator.pending_guide(position))
-        .and_then(|pending| {
-            if guides.iter().any(|guide| guide.lane == pending.lane) {
-                None
-            } else {
-                let lane = pending.lane;
-                guides.push(pending);
-                Some(lane)
-            }
-        });
-    (guides, pending_lane)
 }
 
 pub(super) fn guide_rank_map(guides: &[CombatStateGuide]) -> GuideRankMap {

@@ -117,53 +117,6 @@ impl CombatActionPolicy for PreferSelection22Policy {
 struct SharedGuidePolicy;
 
 const SHARED_TEST_GUIDE: CombatGuideLaneId = CombatGuideLaneId::new(77);
-const TEST_LOOKAHEAD_GUIDE: CombatGuideLaneId = CombatGuideLaneId::new(78);
-
-#[derive(Clone)]
-struct TurnTwoWinningSuffixLookahead {
-    final_hp_hint_delta: i32,
-    input: ClientInput,
-}
-
-impl CombatLookaheadEvaluator for TurnTwoWinningSuffixLookahead {
-    fn pending_guide(&self, _position: &CombatPosition) -> Option<CombatStateGuide> {
-        Some(CombatStateGuide::new(TEST_LOOKAHEAD_GUIDE, vec![0]))
-    }
-
-    fn admit_atomic_state(
-        &self,
-        _position: &CombatPosition,
-        _atomic_expansions_before: usize,
-    ) -> bool {
-        false
-    }
-
-    fn evaluate(
-        &self,
-        position: &CombatPosition,
-        max_work: usize,
-        _deadline: Option<std::time::Instant>,
-    ) -> Option<CombatLookaheadEvaluation> {
-        Some(CombatLookaheadEvaluation {
-            guide: CombatStateGuide::new(
-                TEST_LOOKAHEAD_GUIDE,
-                vec![position.combat.turn.turn_count as i32],
-            ),
-            winning_suffix: (position.combat.turn.turn_count == 2).then(|| {
-                CombatLookaheadSuffixProposal {
-                    actions: vec![self.input.clone()],
-                    final_hp_hint: position
-                        .combat
-                        .entities
-                        .player
-                        .current_hp
-                        .saturating_add(self.final_hp_hint_delta),
-                }
-            }),
-            work: max_work.min(1),
-        })
-    }
-}
 
 impl CombatActionPolicy for SharedGuidePolicy {
     fn weights(&self, _position: &CombatPosition, choices: &[CombatPolicyChoice<'_>]) -> Vec<f64> {

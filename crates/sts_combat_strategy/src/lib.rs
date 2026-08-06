@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use sts_core::ai::analysis::card_semantics::{
     card_definition_with_upgrades, CombatEvent, Mechanic, PlayEffect,
 };
-use sts_core::content::cards::{exhausts_when_played, get_card_definition, CardId, CardType};
+use sts_core::content::cards::{self, exhausts_when_played, get_card_definition, CardId, CardType};
 use sts_core::content::monsters::EnemyId;
 use sts_core::content::powers::PowerId;
 use sts_core::runtime::combat::{CombatCard, CombatState, MonsterEntity};
@@ -19,7 +19,7 @@ use sts_core::sim::combat::{combat_terminal, CombatPosition, CombatTerminal};
 use sts_core::sim::combat_action_surface::{
     CombatSelectionActionFamilyV2, CombatSelectionReasonV2,
 };
-use sts_core::sim::combat_projection::project_monster_move_preview_in_combat;
+use sts_core::sim::combat_projection::{project_monster_move_preview_in_combat, VisibleIntentKind};
 use sts_core::state::core::{ClientInput, HandSelectReason};
 
 mod bronze_automaton;
@@ -94,6 +94,37 @@ pub enum CombatPlanActionTimingV1 {
     PreferNow,
     Neutral,
     Defer(CombatPlanActionDeferralV1),
+}
+
+/// One stable semantic step in an encounter-owned current-turn proposal.
+///
+/// Card identity is carried by UUID because hand indices shift after every
+/// play. The planner resolves the UUID against each exact intermediate state
+/// and still requires the resulting ordinary input to be legal.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case", tag = "kind")]
+pub enum CombatPlanPrefixStepV1 {
+    PlayCard {
+        card_uuid: u32,
+        target: Option<usize>,
+    },
+    EndTurn,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CombatPlanPrefixKindV1 {
+    SplitThiefPressureAroundDefensiveBridge,
+}
+
+/// One non-authoritative exact-turn proposal owned by encounter semantics.
+///
+/// It supplies neither a terminal claim nor a pruning rule. Generic planning
+/// resolves and simulates every step as an ordinary exact graph edge.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct CombatPlanTurnPrefixProposalV1 {
+    pub kind: CombatPlanPrefixKindV1,
+    pub steps: Vec<CombatPlanPrefixStepV1>,
 }
 
 /// Opaque, plan-owned lexicographic guidance for one exact state.
@@ -979,6 +1010,95 @@ pub fn combat_plan_supports_initial_policy_prefix_v1(position: &CombatPosition) 
     })
 }
 
+/// Proposes one complete current-turn allocation when a double-thief fight
+/// exposes the measured "attack, large bridge, attack the other thief"
+/// corridor.
+///
+/// The proposal is deliberately narrower than an action prior. It activates
+/// only with two attacking thieves, two ordinary one-cost Strikes, and a
+/// playable one-cost Power Through. Other card orders, targets, defenses, and
+/// every ordinary search edge remain untouched.
+pub fn combat_plan_turn_prefix_proposal_v1(
+    position: &CombatPosition,
+) -> Option<CombatPlanTurnPrefixProposalV1> {
+    let combat = &position.combat;
+    let mut thieves = combat
+        .entities
+        .monsters
+        .iter()
+        .filter(|monster| {
+            monster.is_alive_for_action()
+                && matches!(enemy_id(monster), Some(EnemyId::Looter | EnemyId::Mugger))
+        })
+        .collect::<Vec<_>>();
+    if thieves.len() != 2
+        || combat
+            .entities
+            .monsters
+            .iter()
+            .filter(|monster| monster.is_alive_for_action())
+            .count()
+            != 2
+        || thieves.iter().any(|monster| {
+            !matches!(
+                project_monster_move_preview_in_combat(combat, monster).visible_intent,
+                VisibleIntentKind::Attack
+                    | VisibleIntentKind::AttackBuff
+                    | VisibleIntentKind::AttackDebuff
+                    | VisibleIntentKind::AttackDefend
+            )
+        })
+    {
+        return None;
+    }
+
+    let power_through = combat.zones.hand.iter().find(|card| {
+        card.id == CardId::PowerThrough
+            && card.cost_for_turn_java() == 1
+            && cards::can_play_card(card, combat).is_ok()
+    })?;
+    let strikes = combat
+        .zones
+        .hand
+        .iter()
+        .filter(|card| {
+            card.id == CardId::Strike
+                && card.cost_for_turn_java() == 1
+                && cards::can_play_card(card, combat).is_ok()
+        })
+        .take(2)
+        .collect::<Vec<_>>();
+    if strikes.len() != 2 || combat.turn.energy < 3 {
+        return None;
+    }
+
+    thieves.sort_by(|left, right| {
+        left.current_hp
+            .cmp(&right.current_hp)
+            .then_with(|| left.id.cmp(&right.id))
+    });
+    let lower_hp_thief = thieves[0];
+    let higher_hp_thief = thieves[1];
+    Some(CombatPlanTurnPrefixProposalV1 {
+        kind: CombatPlanPrefixKindV1::SplitThiefPressureAroundDefensiveBridge,
+        steps: vec![
+            CombatPlanPrefixStepV1::PlayCard {
+                card_uuid: strikes[0].uuid,
+                target: Some(higher_hp_thief.id),
+            },
+            CombatPlanPrefixStepV1::PlayCard {
+                card_uuid: power_through.uuid,
+                target: None,
+            },
+            CombatPlanPrefixStepV1::PlayCard {
+                card_uuid: strikes[1].uuid,
+                target: Some(lower_hp_thief.id),
+            },
+            CombatPlanPrefixStepV1::EndTurn,
+        ],
+    })
+}
+
 fn undeployed_card_supplies_plan_resource(
     card: &CombatCard,
     resources: &CombatPlanResourcesV1,
@@ -1352,7 +1472,7 @@ mod tests {
     use sts_core::runtime::combat::{Power, PowerPayload};
     use sts_core::state::core::{EngineState, PendingChoice};
     use sts_core::state::selection::{SelectionResolution, SelectionScope};
-    use sts_core::test_support::{blank_test_combat, test_monster};
+    use sts_core::test_support::{blank_test_combat, planned_monster, test_monster};
 
     fn power(power_type: PowerId, amount: i32) -> Power {
         Power {
@@ -1379,6 +1499,71 @@ mod tests {
         }
         store::set_powers_for(&mut combat, 10, vec![power(PowerId::Curiosity, 1)]);
         CombatPosition::new(EngineState::CombatPlayerTurn, combat)
+    }
+
+    fn double_thief_bridge_position() -> CombatPosition {
+        let mut combat = blank_test_combat();
+        combat.turn.energy = 3;
+        let mut looter = planned_monster(EnemyId::Looter, 1);
+        looter.id = 10;
+        looter.current_hp = 43;
+        looter.max_hp = 47;
+        let mut mugger = planned_monster(EnemyId::Mugger, 1);
+        mugger.id = 20;
+        mugger.current_hp = 14;
+        mugger.max_hp = 48;
+        combat.entities.monsters = vec![looter, mugger];
+        combat.zones.hand = vec![
+            CombatCard::new(CardId::Strike, 3),
+            CombatCard::new(CardId::DarkEmbrace, 10002),
+            CombatCard::new(CardId::Strike, 1),
+            CombatCard::new(CardId::Defend, 6),
+            CombatCard::new(CardId::PowerThrough, 10000),
+        ];
+        CombatPosition::new(EngineState::CombatPlayerTurn, combat)
+    }
+
+    #[test]
+    fn double_thief_bridge_proposal_uses_stable_card_and_target_identity() {
+        let position = double_thief_bridge_position();
+
+        assert!(!combat_plan_supports_initial_policy_prefix_v1(&position));
+        let proposal = combat_plan_turn_prefix_proposal_v1(&position).expect("typed thief prefix");
+
+        assert_eq!(
+            proposal.kind,
+            CombatPlanPrefixKindV1::SplitThiefPressureAroundDefensiveBridge
+        );
+        assert_eq!(
+            proposal.steps,
+            vec![
+                CombatPlanPrefixStepV1::PlayCard {
+                    card_uuid: 3,
+                    target: Some(10),
+                },
+                CombatPlanPrefixStepV1::PlayCard {
+                    card_uuid: 10000,
+                    target: None,
+                },
+                CombatPlanPrefixStepV1::PlayCard {
+                    card_uuid: 1,
+                    target: Some(20),
+                },
+                CombatPlanPrefixStepV1::EndTurn,
+            ]
+        );
+    }
+
+    #[test]
+    fn double_thief_bridge_proposal_does_not_replace_missing_components() {
+        let mut position = double_thief_bridge_position();
+        position
+            .combat
+            .zones
+            .hand
+            .retain(|card| card.id != CardId::PowerThrough);
+
+        assert!(combat_plan_turn_prefix_proposal_v1(&position).is_none());
     }
 
     #[test]

@@ -45,15 +45,6 @@ pub(super) struct CombatCaseLocalGraphArgs {
     /// the root player turn, then restore all guides at later turns.
     #[arg(long, conflicts_with = "anchor_only")]
     root_turn_anchor_only: bool,
-    /// Internal diagnostic control: lazily evaluate selected exact boundaries.
-    /// A complete rollout win may propose an untrusted suffix; only joined
-    /// original-root replay can admit it as a witness.
-    #[arg(
-        long,
-        conflicts_with = "anchor_only",
-        conflicts_with = "root_turn_anchor_only"
-    )]
-    rollout_lookahead: bool,
     /// Optional typed action-order policy distilled from exact witnesses.
     /// It changes guidance only; legality and terminal truth stay exact.
     #[arg(long)]
@@ -99,11 +90,6 @@ pub(super) struct CombatCaseLocalGraphArgs {
     /// action; all rejected alternatives remain searchable.
     #[arg(long)]
     plan_compatible_policy_line: bool,
-    /// Deterministic exact-search work granted immediately before the
-    /// plan-compatible line would cross a typed combat-plan milestone.
-    /// Zero disables suffix probes.
-    #[arg(long, default_value_t = 0, requires = "plan_compatible_policy_line")]
-    plan_compatible_suffix_work: usize,
     /// Contract assertion: return a non-zero exit status unless an exact,
     /// replay-verified combat witness is found.
     #[arg(long)]
@@ -112,10 +98,6 @@ pub(super) struct CombatCaseLocalGraphArgs {
     /// least this much HP.
     #[arg(long, requires = "expect_witness")]
     expect_min_final_hp: Option<i32>,
-    /// Contract assertion: fail if all plan-compatible suffix probes
-    /// together consume more exact generation work than this allowance.
-    #[arg(long, requires = "plan_compatible_policy_line")]
-    expect_max_plan_suffix_work: Option<usize>,
     /// Print only the compact contract result after all requested
     /// assertions pass. This keeps repeat regression checks readable.
     #[arg(long, requires = "expect_witness")]
@@ -234,7 +216,6 @@ pub(super) fn run(args: CombatCaseLocalGraphArgs) -> Result<(), String> {
         case,
         anchor_only,
         root_turn_anchor_only,
-        rollout_lookahead,
         action_imitation_artifact,
         value_prototype_artifact,
         guidance_bundle,
@@ -244,10 +225,8 @@ pub(super) fn run(args: CombatCaseLocalGraphArgs) -> Result<(), String> {
         omit_guide_lane,
         typed_plan_selection_timing,
         plan_compatible_policy_line,
-        plan_compatible_suffix_work,
         expect_witness,
         expect_min_final_hp,
-        expect_max_plan_suffix_work,
         contract_only,
         performance_only,
         max_nodes,
@@ -305,7 +284,6 @@ pub(super) fn run(args: CombatCaseLocalGraphArgs) -> Result<(), String> {
     let execution_profile = LocalGraphExecutionProfile::from_controls(
         anchor_only,
         root_turn_anchor_only,
-        rollout_lookahead,
         typed_plan_guide,
         typed_plan_selection_timing,
         omit_guide_lane,
@@ -375,12 +353,7 @@ pub(super) fn run(args: CombatCaseLocalGraphArgs) -> Result<(), String> {
     }
     let policy_line_report = plan_compatible_policy_line
         .then(|| {
-            session.offer_plan_compatible_policy_line_with_suffix_probes(
-                max_turn_depth,
-                256,
-                plan_compatible_suffix_work,
-                &EngineCombatStepper,
-            )
+            session.offer_plan_compatible_policy_line(max_turn_depth, 256, &EngineCombatStepper)
         })
         .transpose()?;
     let search_started = Instant::now();
@@ -423,7 +396,6 @@ pub(super) fn run(args: CombatCaseLocalGraphArgs) -> Result<(), String> {
         policy_line: policy_line_report.as_ref(),
         expect_witness,
         expect_min_final_hp,
-        expect_max_plan_suffix_work,
         contract_only,
     })? {
         return print_json(&contract_result);

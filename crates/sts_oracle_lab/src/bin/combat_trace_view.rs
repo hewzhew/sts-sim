@@ -1,5 +1,6 @@
 //! Read-only labels, snapshots, and compact trace views for exact combat diagnostics.
 
+use serde::Serialize;
 use serde_json::{json, Value};
 use sts_combat_planner::TurnOptionAction;
 use sts_oracle_runtime::content::{cards, monsters::EnemyId};
@@ -87,13 +88,38 @@ pub(super) fn readable_turn_option_action_labels(
     Ok(labels)
 }
 
+#[derive(Clone, Debug, Serialize)]
+pub(super) struct AtomicPolicyChoiceTraceV2 {
+    pub(super) input: ClientInput,
+    pub(super) action: String,
+    pub(super) action_key: String,
+    pub(super) raw_weight: f64,
+    pub(super) is_selected: bool,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub(super) struct AtomicPolicyTraceStepV2 {
+    pub(super) step: usize,
+    pub(super) turn: u32,
+    pub(super) action: String,
+    pub(super) input: ClientInput,
+    pub(super) action_key: String,
+    pub(super) legal_action_count: usize,
+    pub(super) ordinal_rank: Option<usize>,
+    pub(super) raw_weight: Option<f64>,
+    pub(super) probability: Option<f64>,
+    pub(super) negative_log_probability: Option<f64>,
+    pub(super) surface: &'static str,
+    pub(super) top_choices: Vec<AtomicPolicyChoiceTraceV2>,
+}
+
 pub(super) fn target_atomic_policy_trace(
     initial: &sts_oracle_runtime::sim::combat::CombatPosition,
     target: &[ClientInput],
     max_engine_steps_per_transition: usize,
 ) -> Result<
     (
-        Vec<Value>,
+        Vec<AtomicPolicyTraceStepV2>,
         String,
         Vec<sts_oracle_runtime::sim::combat::CombatPosition>,
     ),
@@ -115,6 +141,23 @@ pub(super) fn target_atomic_policy_trace(
         let target_index = legal.iter().position(|candidate| candidate == input);
         let exact_input_is_legal =
             target_index.is_some() || stepper.choice_for_legal_input(&position, input).is_some();
+        let mut ranked_indices = (0..legal.len()).collect::<Vec<_>>();
+        ranked_indices.sort_by(|left, right| {
+            weights[*right]
+                .total_cmp(&weights[*left])
+                .then_with(|| left.cmp(right))
+        });
+        let top_choices = ranked_indices
+            .into_iter()
+            .take(3)
+            .map(|index| AtomicPolicyChoiceTraceV2 {
+                input: legal[index].clone(),
+                action: combat_action_label(&position, &legal[index]),
+                action_key: combat_action_key(&position.combat, &legal[index]),
+                raw_weight: weights[index],
+                is_selected: target_index == Some(index),
+            })
+            .collect::<Vec<_>>();
         let (ordinal_rank, raw_weight, probability, negative_log_probability) = target_index
             .and_then(|index| weights.get(index).copied().map(|weight| (index, weight)))
             .map_or((None, None, None, None), |(_, weight)| {
@@ -134,17 +177,24 @@ pub(super) fn target_atomic_policy_trace(
                     Some(-probability.ln()),
                 )
             });
-        trace.push(json!({
-            "step": step_index,
-            "turn": position.combat.turn.turn_count,
-            "action": combat_action_label(&position, input),
-            "legal_action_count": legal.len(),
-            "ordinal_rank": ordinal_rank,
-            "raw_weight": raw_weight,
-            "probability": probability,
-            "negative_log_probability": negative_log_probability,
-            "surface": if target_index.is_some() { "atomic" } else { "structured_selection" },
-        }));
+        trace.push(AtomicPolicyTraceStepV2 {
+            step: step_index,
+            turn: position.combat.turn.turn_count,
+            action: combat_action_label(&position, input),
+            input: input.clone(),
+            action_key: combat_action_key(&position.combat, input),
+            legal_action_count: legal.len(),
+            ordinal_rank,
+            raw_weight,
+            probability,
+            negative_log_probability,
+            surface: if target_index.is_some() {
+                "atomic"
+            } else {
+                "structured_selection"
+            },
+            top_choices,
+        });
         if !exact_input_is_legal {
             return Err(format!(
                 "target action {step_index} is not on the exact legal action surface: {input:?}"
@@ -268,6 +318,9 @@ fn monster_state_label(
     let label = EnemyId::from_id(monster.monster_type)
         .map(|enemy| enemy.get_name())
         .unwrap_or("Unknown");
+    if monster.is_escaped {
+        return format!("{label}[{}] escaped", monster.slot);
+    }
     if !monster.is_alive_for_action() {
         return format!("{label}[{}] dead", monster.slot);
     }

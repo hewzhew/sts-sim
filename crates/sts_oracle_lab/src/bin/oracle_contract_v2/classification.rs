@@ -17,9 +17,6 @@ pub(super) enum CombatContractClassificationV2 {
     WitnessBelowFinalHp,
     WitnessSpentTooManyPotions,
     WitnessLeftStolenGold,
-    SuffixNotProposed,
-    SuffixProposalsRejected,
-    SuffixProposalsNotVerified,
     FrontierExhausted,
     MechanicsGap,
     ReplayMismatch,
@@ -40,6 +37,15 @@ pub(super) enum CombatContractSearchStatusV2 {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub(super) struct CombatContractCandidateSummaryV2 {
+    pub(super) final_hp: i32,
+    pub(super) potions_used: u32,
+    pub(super) unrecovered_stolen_gold: i32,
+    pub(super) action_count: usize,
+    pub(super) discovery_source: OracleCombatWitnessDiscoverySource,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub(super) struct CombatContractResultV2 {
     pub(super) schema_name: String,
     pub(super) schema_version: u32,
@@ -55,9 +61,9 @@ pub(super) struct CombatContractResultV2 {
     pub(super) unrecovered_stolen_gold: Option<i32>,
     pub(super) action_count: Option<usize>,
     pub(super) witness_actions: Option<PathBuf>,
-    pub(super) suffix_proposals: usize,
-    pub(super) suffix_rejections: usize,
-    pub(super) suffix_witnesses: usize,
+    pub(super) terminal_outcome_count: usize,
+    pub(super) resource_contract_candidate_count: usize,
+    pub(super) local_hp_candidate: Option<CombatContractCandidateSummaryV2>,
     pub(super) generation_work: usize,
     pub(super) elapsed_ms: u128,
 }
@@ -65,6 +71,7 @@ pub(super) struct CombatContractResultV2 {
 pub(super) struct CombatContractAssessmentV2 {
     pub(super) result: CombatContractResultV2,
     pub(super) selected_witness_index: Option<usize>,
+    pub(super) local_hp_witness_index: Option<usize>,
 }
 
 pub(super) fn classify_contract(
@@ -74,7 +81,9 @@ pub(super) fn classify_contract(
     artifact: &Path,
     elapsed: Duration,
 ) -> CombatContractAssessmentV2 {
-    let (contract_index, candidate_index) = evidence_indexes(request, report, witness_frontier);
+    let indexes = evidence_indexes(request, report, witness_frontier);
+    let contract_index = indexes.contract;
+    let candidate_index = indexes.selected;
     let outcome = candidate_index.and_then(|index| report.witness_frontier.get(index));
     let witness = candidate_index.and_then(|index| witness_frontier.get(index));
     let final_hp = outcome.map(|outcome| outcome.final_hp);
@@ -83,15 +92,15 @@ pub(super) fn classify_contract(
     let classification = if contract_index.is_some() {
         CombatContractClassificationV2::Passed
     } else if let Some(outcome) = outcome {
-        if request
+        if outcome.potion_expenditures > request.max_potions_used {
+            CombatContractClassificationV2::WitnessSpentTooManyPotions
+        } else if request.require_recovered_stolen_gold && outcome.unrecovered_stolen_gold > 0 {
+            CombatContractClassificationV2::WitnessLeftStolenGold
+        } else if request
             .min_final_hp
             .is_some_and(|minimum| outcome.final_hp < minimum)
         {
             CombatContractClassificationV2::WitnessBelowFinalHp
-        } else if outcome.potion_expenditures > request.max_potions_used {
-            CombatContractClassificationV2::WitnessSpentTooManyPotions
-        } else if request.require_recovered_stolen_gold && outcome.unrecovered_stolen_gold > 0 {
-            CombatContractClassificationV2::WitnessLeftStolenGold
         } else {
             CombatContractClassificationV2::BudgetUnknown
         }
@@ -102,17 +111,6 @@ pub(super) fn classify_contract(
             }
             LocalTurnGraphWitnessStatus::ReplayMismatch(_) => {
                 CombatContractClassificationV2::ReplayMismatch
-            }
-            _ if report.counters.lookahead_suffix_proposals == 0 => {
-                CombatContractClassificationV2::SuffixNotProposed
-            }
-            _ if report.counters.lookahead_suffix_proposal_rejections
-                == report.counters.lookahead_suffix_proposals =>
-            {
-                CombatContractClassificationV2::SuffixProposalsRejected
-            }
-            _ if report.counters.lookahead_suffix_witnesses == 0 => {
-                CombatContractClassificationV2::SuffixProposalsNotVerified
             }
             LocalTurnGraphWitnessStatus::FrontierExhausted => {
                 CombatContractClassificationV2::FrontierExhausted
@@ -136,50 +134,135 @@ pub(super) fn classify_contract(
             unrecovered_stolen_gold,
             action_count: outcome.map(|outcome| outcome.action_count),
             witness_actions: None,
-            suffix_proposals: report.counters.lookahead_suffix_proposals,
-            suffix_rejections: report.counters.lookahead_suffix_proposal_rejections,
-            suffix_witnesses: report.counters.lookahead_suffix_witnesses,
-            generation_work: report
-                .counters
-                .generation_work
-                .saturating_add(report.counters.lookahead_work),
+            terminal_outcome_count: report.witness_frontier.len(),
+            resource_contract_candidate_count: report
+                .witness_frontier
+                .iter()
+                .filter(|outcome| outcome_satisfies_resource_contract(request, outcome))
+                .count(),
+            local_hp_candidate: indexes
+                .local_hp
+                .and_then(|index| candidate_summary(report, witness_frontier, index)),
+            generation_work: report.counters.generation_work,
             elapsed_ms: elapsed.as_millis(),
         },
         selected_witness_index: candidate_index,
+        local_hp_witness_index: indexes.local_hp,
     }
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+struct CombatContractEvidenceIndexesV2 {
+    contract: Option<usize>,
+    selected: Option<usize>,
+    local_hp: Option<usize>,
 }
 
 fn evidence_indexes(
     request: &CombatContractRequestV2,
     report: &LocalTurnGraphWitnessReport,
     witness_frontier: &[OracleCombatWitness],
-) -> (Option<usize>, Option<usize>) {
+) -> CombatContractEvidenceIndexesV2 {
     let paired_len = report.witness_frontier.len().min(witness_frontier.len());
-    let contract = report
+    let outcomes = report
         .witness_frontier
         .iter()
         .take(paired_len)
-        .position(|outcome| outcome_satisfies_contract(request, outcome));
-    let candidate = contract.or_else(|| {
-        report
-            .witness_frontier
+        .enumerate()
+        .collect::<Vec<_>>();
+    let contract = outcomes
+        .iter()
+        .copied()
+        .filter(|(_, outcome)| outcome_satisfies_contract(request, outcome))
+        .max_by(|(_, left), (_, right)| contract_alignment_order(request, left, right))
+        .map(|(index, _)| index);
+    let selected = contract.or_else(|| {
+        outcomes
             .iter()
-            .take(paired_len)
-            .position(|outcome| outcome.selected_by_local_hp_view)
-            .or((paired_len > 0).then_some(0))
+            .copied()
+            .max_by(|(_, left), (_, right)| contract_alignment_order(request, left, right))
+            .map(|(index, _)| index)
     });
-    (contract, candidate)
+    let local_hp = outcomes
+        .iter()
+        .copied()
+        .find(|(_, outcome)| outcome.selected_by_local_hp_view)
+        .map(|(index, _)| index)
+        .or((paired_len > 0).then_some(0));
+    CombatContractEvidenceIndexesV2 {
+        contract,
+        selected,
+        local_hp,
+    }
 }
 
-fn outcome_satisfies_contract(
+pub(super) fn outcome_satisfies_contract(
     request: &CombatContractRequestV2,
     outcome: &LocalTurnGraphTerminalOutcomeSnapshotV1,
 ) -> bool {
     request
         .min_final_hp
         .is_none_or(|minimum| outcome.final_hp >= minimum)
-        && outcome.potion_expenditures <= request.max_potions_used
+        && outcome_satisfies_resource_contract(request, outcome)
+}
+
+pub(super) fn outcome_satisfies_resource_contract(
+    request: &CombatContractRequestV2,
+    outcome: &LocalTurnGraphTerminalOutcomeSnapshotV1,
+) -> bool {
+    outcome.potion_expenditures <= request.max_potions_used
         && (!request.require_recovered_stolen_gold || outcome.unrecovered_stolen_gold == 0)
+}
+
+fn contract_alignment_order(
+    request: &CombatContractRequestV2,
+    left: &LocalTurnGraphTerminalOutcomeSnapshotV1,
+    right: &LocalTurnGraphTerminalOutcomeSnapshotV1,
+) -> std::cmp::Ordering {
+    let left_recovered =
+        !request.require_recovered_stolen_gold || left.unrecovered_stolen_gold == 0;
+    let right_recovered =
+        !request.require_recovered_stolen_gold || right.unrecovered_stolen_gold == 0;
+    let left_meets_hp = request
+        .min_final_hp
+        .is_none_or(|minimum| left.final_hp >= minimum);
+    let right_meets_hp = request
+        .min_final_hp
+        .is_none_or(|minimum| right.final_hp >= minimum);
+
+    (left.potion_expenditures <= request.max_potions_used)
+        .cmp(&(right.potion_expenditures <= request.max_potions_used))
+        .then_with(|| left_recovered.cmp(&right_recovered))
+        .then_with(|| left_meets_hp.cmp(&right_meets_hp))
+        .then_with(|| left.final_hp.cmp(&right.final_hp))
+        .then_with(|| right.potion_expenditures.cmp(&left.potion_expenditures))
+        .then_with(|| {
+            right
+                .unrecovered_stolen_gold
+                .cmp(&left.unrecovered_stolen_gold)
+        })
+        .then_with(|| right.action_count.cmp(&left.action_count))
+        .then_with(|| {
+            right
+                .negative_log_policy
+                .total_cmp(&left.negative_log_policy)
+        })
+}
+
+fn candidate_summary(
+    report: &LocalTurnGraphWitnessReport,
+    witness_frontier: &[OracleCombatWitness],
+    index: usize,
+) -> Option<CombatContractCandidateSummaryV2> {
+    let outcome = report.witness_frontier.get(index)?;
+    let witness = witness_frontier.get(index)?;
+    Some(CombatContractCandidateSummaryV2 {
+        final_hp: outcome.final_hp,
+        potions_used: outcome.potion_expenditures,
+        unrecovered_stolen_gold: outcome.unrecovered_stolen_gold,
+        action_count: outcome.action_count,
+        discovery_source: witness.discovery_source,
+    })
 }
 
 fn search_status(status: &LocalTurnGraphWitnessStatus) -> CombatContractSearchStatusV2 {
@@ -272,12 +355,12 @@ mod tests {
             final_position: CombatPosition::new(EngineState::GameOver(RunResult::Victory), combat),
             negative_log_policy: 1.0,
             replay_engine_steps: 1,
-            discovery_source: OracleCombatWitnessDiscoverySource::LookaheadProposal,
+            discovery_source: OracleCombatWitnessDiscoverySource::PlannerSearch,
         }
     }
 
     #[test]
-    fn compact_classification_distinguishes_missing_suffix_service() {
+    fn bounded_missing_witness_remains_unknown_without_rollout_diagnostics() {
         let result = classify_contract(
             &request(),
             &report(LocalTurnGraphWitnessCounters::default()),
@@ -288,29 +371,9 @@ mod tests {
         .result;
         assert_eq!(
             result.classification,
-            CombatContractClassificationV2::SuffixNotProposed
+            CombatContractClassificationV2::BudgetUnknown
         );
         assert!(!result.contract_passed);
-    }
-
-    #[test]
-    fn compact_classification_distinguishes_rejected_suffixes() {
-        let result = classify_contract(
-            &request(),
-            &report(LocalTurnGraphWitnessCounters {
-                lookahead_suffix_proposals: 2,
-                lookahead_suffix_proposal_rejections: 2,
-                ..LocalTurnGraphWitnessCounters::default()
-            }),
-            &[],
-            Path::new("manifest.json"),
-            Duration::ZERO,
-        )
-        .result;
-        assert_eq!(
-            result.classification,
-            CombatContractClassificationV2::SuffixProposalsRejected
-        );
     }
 
     #[test]
@@ -347,6 +410,7 @@ mod tests {
         );
 
         assert_eq!(assessment.selected_witness_index, Some(1));
+        assert_eq!(assessment.local_hp_witness_index, Some(0));
         let result = assessment.result;
         assert_eq!(
             result.classification,
@@ -355,5 +419,44 @@ mod tests {
         assert!(result.contract_witness);
         assert_eq!(result.final_hp, Some(66));
         assert_eq!(result.unrecovered_stolen_gold, Some(0));
+    }
+
+    #[test]
+    fn failed_contract_reports_the_resource_aligned_candidate_not_local_hp_escape() {
+        let escaped = witness(71);
+        let recovered = witness(61);
+        let mut report = report(LocalTurnGraphWitnessCounters::default());
+        report.witness = Some(escaped.clone());
+        report.witness_frontier = vec![
+            terminal_outcome(71, 30, true),
+            terminal_outcome(61, 0, false),
+        ];
+
+        let assessment = classify_contract(
+            &request(),
+            &report,
+            &[escaped, recovered],
+            Path::new("manifest.json"),
+            Duration::ZERO,
+        );
+
+        assert_eq!(assessment.selected_witness_index, Some(1));
+        assert_eq!(assessment.local_hp_witness_index, Some(0));
+        let result = assessment.result;
+        assert_eq!(
+            result.classification,
+            CombatContractClassificationV2::WitnessBelowFinalHp
+        );
+        assert_eq!(result.final_hp, Some(61));
+        assert_eq!(result.unrecovered_stolen_gold, Some(0));
+        assert_eq!(result.terminal_outcome_count, 2);
+        assert_eq!(result.resource_contract_candidate_count, 1);
+        assert_eq!(
+            result
+                .local_hp_candidate
+                .as_ref()
+                .map(|candidate| candidate.final_hp),
+            Some(71)
+        );
     }
 }

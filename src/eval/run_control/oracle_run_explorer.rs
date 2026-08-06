@@ -390,9 +390,6 @@ impl OracleRunCombatBudgetsV1 {
         stage: u8,
         checkpoint: &OracleRunCombatWorkCheckpointV1,
     ) -> RunControlSearchCombatOptions {
-        if !checkpoint.potion_contract_recorded {
-            return self.for_session_stage_with_prior(session, stage, checkpoint);
-        }
         let mut options = self.for_session_stage(session, stage);
         options.max_potions_used = checkpoint.max_potions_used;
         options.allowed_potion_slots = checkpoint.allowed_potion_slots;

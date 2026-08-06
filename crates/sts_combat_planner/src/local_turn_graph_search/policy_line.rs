@@ -27,31 +27,6 @@ impl LocalTurnGraphWitnessSession {
         max_actions: usize,
         stepper: &dyn CombatStepper,
     ) -> Result<LocalTurnGraphPolicyLineReport, String> {
-        self.offer_plan_compatible_policy_line_with_suffix_probes(
-            max_turns,
-            max_actions,
-            0,
-            stepper,
-        )
-    }
-
-    /// Materializes the same exact policy line and, immediately before that
-    /// line would cross a typed combat-plan milestone, gives the current
-    /// exact state one bounded deterministic suffix search.
-    ///
-    /// This is a hierarchical laboratory control, not a second global
-    /// scheduler. The policy line cheaply carries the combat through states
-    /// where its plan stage is unchanged; exact branching is paid only at a
-    /// semantic handoff. A suffix can become authoritative only after its
-    /// actions are joined to the exact prefix and replayed from the unchanged
-    /// combat root.
-    pub fn offer_plan_compatible_policy_line_with_suffix_probes(
-        &mut self,
-        max_turns: usize,
-        max_actions: usize,
-        suffix_generation_work: usize,
-        stepper: &dyn CombatStepper,
-    ) -> Result<LocalTurnGraphPolicyLineReport, String> {
         let mut report = LocalTurnGraphPolicyLineReport::default();
         if max_turns == 0
             || max_actions == 0
@@ -64,7 +39,7 @@ impl LocalTurnGraphWitnessSession {
         let mut path = Vec::<(usize, usize)>::new();
         let mut total_actions = 0usize;
 
-        'turns: for _ in 0..max_turns {
+        for _ in 0..max_turns {
             if total_actions >= max_actions {
                 break;
             }
@@ -378,27 +353,6 @@ impl LocalTurnGraphWitnessSession {
                 }
                 CompleteTurnOptionBoundary::Escape => break,
                 CompleteTurnOptionBoundary::NextPlayerTurn => {
-                    let plan_annotation_started = Instant::now();
-                    let crosses_plan_milestone = combat_plan_transition_annotation_v1(
-                        &segment_root,
-                        option.exact_successor(),
-                    )
-                    .is_some_and(|annotation| !annotation.completed_milestones().is_empty());
-                    report.plan_annotation_elapsed_ns = report
-                        .plan_annotation_elapsed_ns
-                        .saturating_add(elapsed_nanos_u64(plan_annotation_started));
-                    if suffix_generation_work > 0
-                        && crosses_plan_milestone
-                        && self.offer_exact_suffix_probe(
-                            node_id,
-                            &path,
-                            suffix_generation_work,
-                            stepper,
-                            &mut report,
-                        )?
-                    {
-                        break 'turns;
-                    }
                     let successor_admission_started = Instant::now();
                     let Some(successor_id) = self.accept_successor(node_id, &path, option) else {
                         return Err("policy-line successor was not admitted".to_owned());
@@ -420,120 +374,5 @@ impl LocalTurnGraphWitnessSession {
         }
 
         Ok(report)
-    }
-
-    fn offer_exact_suffix_probe(
-        &mut self,
-        node_id: usize,
-        path: &[(usize, usize)],
-        suffix_generation_work: usize,
-        stepper: &dyn CombatStepper,
-        report: &mut LocalTurnGraphPolicyLineReport,
-    ) -> Result<bool, String> {
-        let suffix_setup_started = Instant::now();
-        let root = CombatDecisionRoot::new(self.nodes[node_id].generator.root().position().clone())
-            .map_err(|error| format!("suffix probe root is not a decision boundary: {error:?}"))?;
-        let mut suffix = LocalTurnGraphWitnessSession::with_policy(
-            root,
-            LocalTurnGraphWitnessConfig {
-                satisfaction: OracleCombatWitnessSatisfaction::FirstWitness,
-                ..self.config
-            },
-            self.policy.clone(),
-        );
-        report.suffix_probe_setup_elapsed_ns = report
-            .suffix_probe_setup_elapsed_ns
-            .saturating_add(elapsed_nanos_u64(suffix_setup_started));
-        let suffix_advance_started = Instant::now();
-        let suffix_report = suffix.advance(
-            LocalTurnGraphWitnessQuantum {
-                additional_selections: suffix_generation_work.max(1),
-                additional_generation_work: suffix_generation_work,
-                additional_engine_steps: suffix_generation_work
-                    .saturating_mul(self.config.generator.max_engine_steps_per_transition.max(1)),
-                deadline: None,
-            },
-            stepper,
-        );
-        report.suffix_probe_advance_elapsed_ns = report
-            .suffix_probe_advance_elapsed_ns
-            .saturating_add(elapsed_nanos_u64(suffix_advance_started));
-        report.suffix_probe_attempts = report.suffix_probe_attempts.saturating_add(1);
-        report.suffix_probe_generation_work = report
-            .suffix_probe_generation_work
-            .saturating_add(suffix_report.counters.generation_work);
-        report.suffix_probe_engine_steps = report
-            .suffix_probe_engine_steps
-            .saturating_add(suffix_report.counters.engine_steps);
-        report.suffix_probe_completed_turn_options = report
-            .suffix_probe_completed_turn_options
-            .saturating_add(suffix_report.counters.completed_turn_options);
-        report.suffix_probe_applied_action_transitions = report
-            .suffix_probe_applied_action_transitions
-            .saturating_add(suffix_report.counters.applied_action_transitions);
-        report.suffix_probe_unique_successor_states = report
-            .suffix_probe_unique_successor_states
-            .saturating_add(suffix_report.counters.unique_successor_states);
-        report.suffix_probe_exact_nodes = report
-            .suffix_probe_exact_nodes
-            .saturating_add(suffix_report.counters.exact_nodes);
-        report.suffix_probe_exact_edges = report
-            .suffix_probe_exact_edges
-            .saturating_add(suffix_report.counters.exact_edges);
-        report
-            .suffix_probe_performance_timing
-            .accumulate(suffix_report.performance_timing);
-        let witness_found = suffix_report.witness.is_some();
-        let final_hp = suffix_report
-            .witness
-            .as_ref()
-            .map(|witness| witness.final_position.combat.entities.player.current_hp);
-        report
-            .suffix_probe_details
-            .push(LocalTurnGraphSuffixProbeAttempt {
-                exact_state_hash: exact_hash(self.nodes[node_id].generator.root().position()),
-                player_turn: self.nodes[node_id]
-                    .generator
-                    .root()
-                    .position()
-                    .combat
-                    .turn
-                    .turn_count,
-                plan_projection: combat_plan_projection_v1(
-                    self.nodes[node_id].generator.root().position(),
-                ),
-                generation_work: suffix_report.counters.generation_work,
-                engine_steps: suffix_report.counters.engine_steps,
-                witness_found,
-                final_hp,
-            });
-
-        let Some(suffix_witness) = suffix_report.witness else {
-            return Ok(false);
-        };
-        let suffix_replay_started = Instant::now();
-        let (mut actions, _) = self.path_actions(path);
-        actions.extend(suffix_witness.actions);
-        let final_hp_hint = suffix_witness
-            .final_position
-            .combat
-            .entities
-            .player
-            .current_hp;
-        let accepted = self
-            .offer_witness_proposal(
-                CombatPolicyWitnessProposal {
-                    actions,
-                    final_hp_hint,
-                },
-                stepper,
-            )
-            .map_err(|error| format!("combined suffix witness replay failed: {error:?}"))?;
-        report.suffix_probe_replay_elapsed_ns = report
-            .suffix_probe_replay_elapsed_ns
-            .saturating_add(elapsed_nanos_u64(suffix_replay_started));
-        report.suffix_probe_witness_found = accepted || self.witness.is_some();
-        report.reached_terminal_win = report.suffix_probe_witness_found;
-        Ok(report.suffix_probe_witness_found)
     }
 }

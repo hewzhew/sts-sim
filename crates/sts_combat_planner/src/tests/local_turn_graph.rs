@@ -8,7 +8,6 @@ fn local_turn_graph_retires_finished_generator_search_storage() {
             generator: config(),
             initial_expansion_work: 16,
             root_initial_expansion_work: 16,
-            lookahead_max_evaluations: 0,
             max_turn_depth: 1,
             satisfaction: OracleCombatWitnessSatisfaction::BudgetOrExhaustion,
             ..LocalTurnGraphWitnessConfig::default()
@@ -42,7 +41,6 @@ fn local_turn_graph_absolute_final_hp_satisfaction_uses_terminal_hp() {
         generator: config(),
         initial_expansion_work: 16,
         root_initial_expansion_work: 16,
-        lookahead_max_evaluations: 0,
         max_turn_depth: 1,
         satisfaction: OracleCombatWitnessSatisfaction::FinalHpAtLeast(minimum),
         ..LocalTurnGraphWitnessConfig::default()
@@ -86,167 +84,6 @@ fn local_turn_graph_absolute_final_hp_satisfaction_uses_terminal_hp() {
             .current_hp,
         terminal_hp
     );
-}
-
-#[test]
-fn local_turn_graph_policy_proposal_requires_exact_root_replay() {
-    let stepper = TinyTurnStepper::lethal_after_current_turn();
-    let decision_root = root();
-    let actions = exact_actions(&stepper, &decision_root, [ClientInput::EndTurn, PLAY]);
-    let mut session = LocalTurnGraphWitnessSession::with_policy(
-        decision_root,
-        LocalTurnGraphWitnessConfig {
-            generator: config(),
-            satisfaction: OracleCombatWitnessSatisfaction::FirstWitness,
-            ..LocalTurnGraphWitnessConfig::default()
-        },
-        Arc::new(PreferPlayPolicy),
-    );
-
-    assert_eq!(
-        session.offer_witness_proposal(
-            CombatPolicyWitnessProposal {
-                actions: actions.clone(),
-                final_hp_hint: i32::MAX,
-            },
-            &stepper,
-        ),
-        Ok(true)
-    );
-    let counters = session.counters();
-    assert_eq!(counters.policy_witness_proposals, 1);
-    assert!(counters.policy_witness_replay_engine_steps >= 2);
-    let witness = session.witness().expect("exactly replayed proposal");
-    assert_eq!(
-        witness.discovery_source,
-        OracleCombatWitnessDiscoverySource::PolicyProposal
-    );
-    assert_eq!(
-        stepper.terminal(&witness.final_position),
-        CombatTerminal::Win
-    );
-    assert_ne!(
-        witness.final_position.combat.entities.player.current_hp,
-        i32::MAX,
-        "the untrusted final-HP hint cannot create witness truth"
-    );
-
-    assert_eq!(
-        session.offer_witness_proposal(
-            CombatPolicyWitnessProposal {
-                actions,
-                final_hp_hint: i32::MAX,
-            },
-            &stepper,
-        ),
-        Ok(false),
-        "an equal replay must not replace the incumbent"
-    );
-}
-
-#[test]
-fn local_turn_graph_joins_a_lookahead_suffix_to_its_exact_prefix_before_replay() {
-    let stepper = TinyTurnStepper::lethal_after_current_turn();
-    let mut session = LocalTurnGraphWitnessSession::with_policy_and_lookahead(
-        root(),
-        LocalTurnGraphWitnessConfig {
-            generator: config(),
-            generation_quantum_work: 1,
-            backed_generation_quantum_work: 1,
-            initial_expansion_work: 1,
-            root_initial_expansion_work: 1,
-            lookahead_max_evaluations: 8,
-            lookahead_work_per_evaluation: 1,
-            max_turn_depth: 4,
-            satisfaction: OracleCombatWitnessSatisfaction::FirstWitness,
-            ..LocalTurnGraphWitnessConfig::default()
-        },
-        Arc::new(PreferEndTurnPolicy),
-        Arc::new(TurnTwoWinningSuffixLookahead {
-            final_hp_hint_delta: 0,
-            input: PLAY,
-        }),
-    );
-
-    let report = session.advance(
-        LocalTurnGraphWitnessQuantum {
-            additional_selections: 32,
-            additional_generation_work: 64,
-            additional_engine_steps: 256,
-            deadline: None,
-        },
-        &stepper,
-    );
-
-    assert_eq!(report.status, LocalTurnGraphWitnessStatus::WitnessFound);
-    let witness = report.witness.expect("replay-verified suffix witness");
-    assert_eq!(
-        witness.discovery_source,
-        OracleCombatWitnessDiscoverySource::LookaheadProposal
-    );
-    assert_eq!(
-        witness
-            .actions
-            .iter()
-            .map(|action| action.input.clone())
-            .collect::<Vec<_>>(),
-        vec![ClientInput::EndTurn, PLAY],
-        "the descendant proposal must retain the graph's exact root prefix"
-    );
-    assert_eq!(report.counters.lookahead_suffix_proposals, 1);
-    assert_eq!(report.counters.lookahead_suffix_proposal_rejections, 0);
-    assert_eq!(report.counters.lookahead_suffix_witnesses, 1);
-    assert!(report.counters.lookahead_suffix_replay_engine_steps >= 2);
-}
-
-#[test]
-fn local_turn_graph_rejects_an_untrusted_lookahead_suffix_without_poisoning_search() {
-    let stepper = TinyTurnStepper::lethal_after_current_turn();
-    let mut session = LocalTurnGraphWitnessSession::with_policy_and_lookahead(
-        root(),
-        LocalTurnGraphWitnessConfig {
-            generator: config(),
-            generation_quantum_work: 1,
-            backed_generation_quantum_work: 1,
-            initial_expansion_work: 1,
-            root_initial_expansion_work: 1,
-            lookahead_max_evaluations: 8,
-            lookahead_work_per_evaluation: 1,
-            max_turn_depth: 4,
-            satisfaction: OracleCombatWitnessSatisfaction::BudgetOrExhaustion,
-            ..LocalTurnGraphWitnessConfig::default()
-        },
-        Arc::new(PreferEndTurnPolicy),
-        Arc::new(TurnTwoWinningSuffixLookahead {
-            final_hp_hint_delta: 1,
-            input: PLAY,
-        }),
-    );
-
-    let report = session.advance(
-        LocalTurnGraphWitnessQuantum {
-            additional_selections: 8,
-            additional_generation_work: 16,
-            additional_engine_steps: 64,
-            deadline: None,
-        },
-        &stepper,
-    );
-
-    assert!(
-        !matches!(
-            report.status,
-            LocalTurnGraphWitnessStatus::ReplayMismatch(_)
-        ),
-        "an untrusted proposal rejection must not poison exact graph search"
-    );
-    assert_eq!(report.counters.lookahead_suffix_proposals, 1);
-    assert_eq!(report.counters.lookahead_suffix_proposal_rejections, 1);
-    assert_eq!(report.counters.lookahead_suffix_witnesses, 0);
-    assert!(report
-        .witness_frontier
-        .iter()
-        .all(|outcome| outcome.final_hp != i32::MAX));
 }
 
 #[test]
@@ -371,87 +208,6 @@ fn local_turn_graph_policy_line_crosses_a_ranked_single_selection_transaction() 
 }
 
 #[test]
-fn local_turn_graph_policy_line_can_join_a_bounded_exact_suffix() {
-    let stepper = TinyTurnStepper {
-        opens_awakened_transition_window: true,
-        lethal_from_turn: Some(2),
-        ..TinyTurnStepper::plain()
-    };
-    let mut session = LocalTurnGraphWitnessSession::with_policy(
-        awakened_root(),
-        LocalTurnGraphWitnessConfig {
-            generator: config(),
-            ..LocalTurnGraphWitnessConfig::default()
-        },
-        Arc::new(PreferPlayPolicy),
-    );
-
-    let report = session
-        .offer_plan_compatible_policy_line_with_suffix_probes(1, 4, 256, &stepper)
-        .expect("plan-compatible line with suffix");
-
-    assert_eq!(report.proposed_turns, 1);
-    assert_eq!(report.suffix_probe_attempts, 1);
-    assert!(report.suffix_probe_generation_work > 0);
-    assert!(report.suffix_probe_witness_found);
-    assert!(report.reached_terminal_win);
-    assert!(session.witness().is_some());
-}
-
-#[test]
-fn local_turn_graph_policy_line_does_not_probe_an_unchanged_plan_stage() {
-    let stepper = TinyTurnStepper::lethal_after_current_turn();
-    let mut session = LocalTurnGraphWitnessSession::with_policy(
-        awakened_root(),
-        LocalTurnGraphWitnessConfig {
-            generator: config(),
-            ..LocalTurnGraphWitnessConfig::default()
-        },
-        Arc::new(PreferEndTurnPolicy),
-    );
-
-    let report = session
-        .offer_plan_compatible_policy_line_with_suffix_probes(1, 4, 256, &stepper)
-        .expect("plan-compatible line with suffix");
-
-    assert_eq!(report.proposed_turns, 1);
-    assert_eq!(report.suffix_probe_attempts, 0);
-    assert_eq!(report.suffix_probe_generation_work, 0);
-    assert!(!report.suffix_probe_witness_found);
-    assert!(!report.reached_terminal_win);
-}
-
-#[test]
-fn local_turn_graph_rejects_a_policy_proposal_with_a_forged_successor() {
-    let stepper = TinyTurnStepper::lethal_after_current_turn();
-    let decision_root = root();
-    let mut actions = exact_actions(&stepper, &decision_root, [ClientInput::EndTurn, PLAY]);
-    actions[0].expected_successor_hash = "forged-successor".into();
-    let mut session = LocalTurnGraphWitnessSession::with_policy(
-        decision_root,
-        LocalTurnGraphWitnessConfig {
-            generator: config(),
-            satisfaction: OracleCombatWitnessSatisfaction::FirstWitness,
-            ..LocalTurnGraphWitnessConfig::default()
-        },
-        Arc::new(PreferPlayPolicy),
-    );
-
-    assert_eq!(
-        session.offer_witness_proposal(
-            CombatPolicyWitnessProposal {
-                actions,
-                final_hp_hint: i32::MAX,
-            },
-            &stepper,
-        ),
-        Err(OracleCombatWitnessReplayError::SuccessorMismatch { action_index: 0 })
-    );
-    assert!(session.witness().is_none());
-    assert_eq!(session.counters().policy_witness_proposals, 1);
-}
-
-#[test]
 fn local_turn_graph_plan_annotations_are_opt_in_and_read_only() {
     let root = awakened_root();
     let parent_hash = root.exact_state_hash().to_owned();
@@ -471,7 +227,6 @@ fn local_turn_graph_plan_annotations_are_opt_in_and_read_only() {
         backed_generation_quantum_work: 4,
         initial_expansion_work: 16,
         root_initial_expansion_work: 16,
-        lookahead_max_evaluations: 0,
         max_turn_depth: 1,
         satisfaction: OracleCombatWitnessSatisfaction::BudgetOrExhaustion,
         ..LocalTurnGraphWitnessConfig::default()
@@ -542,7 +297,6 @@ fn local_turn_graph_plan_annotations_leave_unowned_encounters_empty() {
             generator: config(),
             initial_expansion_work: 16,
             root_initial_expansion_work: 16,
-            lookahead_max_evaluations: 0,
             max_turn_depth: 1,
             satisfaction: OracleCombatWitnessSatisfaction::BudgetOrExhaustion,
             ..LocalTurnGraphWitnessConfig::default()

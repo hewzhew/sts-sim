@@ -89,22 +89,6 @@ pub(super) struct PushWorkTiming {
     pub(super) agenda_elapsed_ns: u64,
 }
 
-pub(super) fn guides_with_lookahead(
-    base: Arc<[CombatStateGuide]>,
-    lookahead: Option<&CombatStateGuide>,
-) -> Arc<[CombatStateGuide]> {
-    let Some(lookahead) = lookahead else {
-        return base;
-    };
-    let mut guides = base.to_vec();
-    if let Some(existing) = guides.iter_mut().find(|guide| guide.lane == lookahead.lane) {
-        *existing = lookahead.clone();
-    } else {
-        guides.push(lookahead.clone());
-    }
-    guides.into()
-}
-
 impl TurnOptionGeneratorSession {
     pub(crate) fn prefer_lane(&mut self, preferred: TurnOptionGeneratorPreferredLane) {
         self.next_scheduler_lane = match preferred {
@@ -160,13 +144,7 @@ impl TurnOptionGeneratorSession {
                         .into()
                 }),
         };
-        let guides = guides_with_lookahead(
-            base_guides,
-            match &work {
-                GeneratorWork::Expand(partial) => partial.lookahead_guide.as_ref(),
-                _ => None,
-            },
-        );
+        let guides = base_guides;
         let guide_elapsed_ns = guide_started.map(elapsed_nanos_u64).unwrap_or(0);
 
         let retain_started = measure.then(Instant::now);

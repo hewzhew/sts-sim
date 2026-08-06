@@ -181,9 +181,8 @@ pub use oracle_analysis_session::{
     ORACLE_ANALYSIS_SESSION_SCHEMA_NAME, ORACLE_ANALYSIS_SESSION_SCHEMA_VERSION,
 };
 pub use oracle_combat_policy::{
-    authorized_potion_trial_policy_v1, existing_combat_knowledge_policy_v1,
-    existing_combat_rollout_lookahead_v1, ExistingCombatKnowledgeAdvisorAdvanceV1,
-    ExistingCombatKnowledgeAdvisorV1,
+    authorized_potion_trial_policy_v1, existing_combat_guide_service_bias_v1,
+    existing_combat_knowledge_policy_v1,
 };
 pub use oracle_combat_work::{
     OracleCombatLocalCandidateDispositionV1, OracleRunCombatWorkCheckpointV1,

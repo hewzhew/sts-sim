@@ -22,7 +22,7 @@ Use the narrowest maintained surface for the task:
 | `combat_search_v2_driver` | Fixed combat starts, captures, benchmarks, and offline laboratories. |
 | `cargo oracle-lab contract --help` | Rebuild the canonical oracle host and show the compact V2 contract surface. |
 | `.\ol.cmd contract combat` | One bounded exact-combat experiment with compact stdout and automatic full evidence. |
-| `.\ol.cmd artifact summary/rerun` | Read or reproduce a V2 request without parsing its full report. |
+| `.\ol.cmd artifact summary/search/trace/compare/turn/rerun` | Read the result, inspect search service, replay/compare candidates, inspect one exact turn, or reproduce a V2 request without parsing its full report. |
 | `.\ol.cmd case import/list` | Admit and query exact roots in the explicit V2 catalog. |
 | `.\ol.cmd drive` | Bounded current-owner and ordinary-combat progression in one process. |
 | `cargo ol-live` | Build or rebuild the lightweight resident client, then run it. |
@@ -50,14 +50,39 @@ then run and reproduce it through the stable V2 protocol:
   --min-final-hp 20 --max-potions-used 0 `
   --require-recovered-stolen-gold --generation-work 4096
 .\ol.cmd artifact summary <artifact-directory>
+.\ol.cmd artifact search <artifact-directory>
+.\ol.cmd artifact search <artifact-directory> --state <exact-hash-or-prefix>
+.\ol.cmd artifact trace <artifact-directory>
+.\ol.cmd artifact compare <artifact-directory>
+.\ol.cmd artifact turn <artifact-directory> --candidate contract --turn 1
+.\ol.cmd artifact turn <artifact-directory> --candidate contract --turn 1 --follow-plan 2
 .\ol.cmd artifact rerun <artifact-directory>
 ```
 
 `contract combat` writes a fresh `.oracle-lab/v2/contracts/<id>/` directory.
-`manifest.json` owns the typed request, compact result, source identity, and
-paths to `report.json` plus the selected replay-exact `witness.actions.json`
-when a candidate exists. Summary and rerun read only the V2 manifest. They
-deliberately reject legacy reports instead of guessing their schema.
+`manifest.json` owns the typed request, compact result, compact per-depth search
+service accounting (including typed proposal root/continuation enqueue,
+generation, and independent service counts), source identity,
+and paths to `report.json`,
+the compact exact-state service index, plus one
+replay-exact action sidecar for every retained non-dominated terminal candidate.
+Summary, search, and rerun read only the V2 manifest. Trace replays the
+contract-aligned candidate and emits compact policy ranks plus turn-boundary
+checkpoints. Compare authoritatively replays both the contract-aligned and
+local-HP candidates, then reports their first exact action divergence and both
+turn-boundary histories. Turn resolves one of those retained candidates by
+semantic role and enumerates a bounded exact complete-turn surface at the
+requested observed turn; it never asks callers for action sidecar paths or
+scratch ids. Repeat `--follow-plan <displayed-index>` to walk exact complete-turn
+successors and inspect the reached turn directly; the command replay-validates
+each successor and does not export an intermediate case. Callers never join
+case and action paths or restate the contract.
+`artifact search --state` reports whether one exact state was retained and
+whether its complete-turn generator received service, its current anchor,
+proposal-root, and proposal-continuation queue positions, and their service
+counts; it never parses the opaque full report.
+These commands deliberately reject earlier manifest schemas and legacy reports
+instead of guessing their fields.
 
 ## Branch Tiny And Branch Panels
 
@@ -241,9 +266,9 @@ remainder is reported as censoring, never as a non-existence result.
 
 For a descendant suffix whose victory heal makes relative HP loss ambiguous,
 use absolute terminal satisfaction. The V2 contract starts from an exact case
-root, enables bounded rollout suffix proposals, enforces its typed potion and
-stolen-gold contract during witness acceptance, and classifies a missing
-budget-limited result without expanding stdout:
+root, enumerates a bounded exact complete-turn frontier, enforces its typed
+potion and stolen-gold contract during terminal admission, and classifies a
+missing budget-limited result without expanding stdout:
 
 ```powershell
 .\ol.cmd contract combat --case <descendant.case.json> `
@@ -252,9 +277,11 @@ budget-limited result without expanding stdout:
 
 Concrete potion-identity comparisons belong to
 `combat-case-potion-expenditure-audit`; the compact V2 contract does not expose
-local-graph scheduler, guide, or slot-ablation knobs. Add a typed contract
-owner when a repeated causal question truly needs one instead of reopening the
-old all-flags command.
+local-graph scheduler, guide, or slot-ablation knobs. `artifact search` exposes
+read-only per-depth service accounting, not knobs; add `--states` only when a
+few highest-service exact-state samples are needed. Add a typed contract owner
+when a repeated causal question truly needs one instead of reopening the old
+all-flags command.
 
 Keep full JSON and build output below `.oracle-lab`; report aggregate lane
 results and a short failure tail. A missing budget-limited witness remains

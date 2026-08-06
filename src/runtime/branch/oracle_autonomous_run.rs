@@ -273,11 +273,10 @@ pub fn run_oracle_analysis_to_stop_v1(
             quantum_nodes: config.quantum_nodes,
             quantum_ms: Some(config.quantum_ms),
             wall_ms: Some(wall_ms),
-            // Standard advance already gives a verified policy proposal one
-            // bounded independent challenge, checks strategic HP quality, and
-            // promotes to exact potion rescue only when needed. Autonomous run
-            // must not bypass that contract or force every combat to spend its
-            // full wall polishing an acceptable incumbent.
+            // Standard advance checks strategic HP quality and promotes to an
+            // exact potion rescue only when needed. Autonomous run must not
+            // bypass that contract or force every combat to spend its full
+            // wall polishing an acceptable incumbent.
             improve_incumbent: false,
         })?;
         timing.combat_advance_ms = timing
@@ -516,8 +515,6 @@ fn compact_run_combat_progress(
         "local_retained_state_work": combat.local_retained_state_work,
         "discrepancy_retained_state_work": combat.discrepancy_retained_state_work,
         "max_player_turn": combat.max_player_turn,
-        "policy_witness_proposals": combat.policy_witness_proposals,
-        "policy_witness_proposal_rejections": combat.policy_witness_proposal_rejections,
         "incumbent_final_hp": combat.incumbent_final_hp,
         "incumbent_hp_loss": combat.incumbent_hp_loss,
         "incumbent_actions": combat.incumbent_action_count,
@@ -803,7 +800,7 @@ mod tests {
     }
 
     #[test]
-    fn autonomous_run_challenges_a_policy_proposal_before_committing_it() {
+    fn autonomous_run_does_not_preseed_an_external_witness_before_exact_search() {
         // This must cross the public workspace runner: lower combat-work tests
         // cannot catch an autonomous pre-acceptance bypass around `advance`.
         let config = OracleRunConfig {
@@ -869,8 +866,8 @@ mod tests {
                 .combat
                 .as_ref()
                 .and_then(|work| work.incumbent_final_hp),
-            Some(80),
-            "the mature policy proposal should already be exact and verified"
+            None,
+            "production must not preseed a terminal witness outside exact frontier search"
         );
 
         let report = run_oracle_analysis_to_stop_v1(

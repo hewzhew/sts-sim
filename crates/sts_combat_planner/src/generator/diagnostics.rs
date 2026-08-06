@@ -276,25 +276,6 @@ impl TurnOptionGeneratorSession {
         self.guided_work_pops
     }
 
-    pub fn lookahead_evaluations(&self) -> usize {
-        self.lookahead_evaluations
-    }
-
-    pub fn lookahead_work(&self) -> usize {
-        self.lookahead_work
-    }
-
-    pub fn retained_lookahead_guides(&self) -> usize {
-        self.work
-            .iter()
-            .filter_map(Option::as_ref)
-            .filter(|work| match work {
-                GeneratorWork::Expand(partial) => partial.lookahead_guide.is_some(),
-                _ => false,
-            })
-            .count()
-    }
-
     pub(crate) fn retained_guide_lanes(&self) -> Vec<CombatGuideLaneId> {
         self.guided_frontiers
             .iter()
@@ -324,6 +305,9 @@ impl TurnOptionGeneratorSession {
             unique_successor_states: self.seen.len().saturating_sub(1),
             duplicate_exact_successors: self.duplicate_exact_successors,
             completed_turn_options: self.total_completed_options,
+            plan_prefix_attempts: self.plan_prefix_attempts,
+            plan_prefix_completed: self.plan_prefix_completed,
+            plan_prefix_rejections: self.plan_prefix_rejections,
         }
     }
 

@@ -6,9 +6,7 @@ const MIN_USABLE_WALL_ALLOWANCE: Duration = Duration::from_millis(1);
 use super::combat_line_executor::apply_oracle_combat_witness;
 use super::combat_search::RunControlCombatWorkAdvanceV1;
 use super::combat_search_setup::prepare_search_combat;
-use super::oracle_combat_policy::{
-    existing_combat_rollout_witness_v1, ExistingCombatKnowledgePolicy,
-};
+use super::oracle_combat_policy::ExistingCombatKnowledgePolicy;
 use super::progress_options::{RunControlCombatSearchQuantum, RunControlSearchCombatOptions};
 use super::session::{RunControlCombatSearchRejection, RunControlSession, RunProgressOutcome};
 use super::trace_annotation::CombatAutomationTrajectorySource;
@@ -16,14 +14,14 @@ use crate::eval::combat_guidance_bundle::CombatGuidanceBundleV1;
 use crate::state::core::ClientInput;
 use serde::{Deserialize, Serialize};
 use sts_combat_planner::{
-    combat_plan_state_guide_policy_v1, CombatDecisionRoot, LocalTurnGraphGuideServiceBias,
-    LocalTurnGraphRootActionFamilySnapshot, LocalTurnGraphWitnessConfig,
-    LocalTurnGraphWitnessQuantum, LocalTurnGraphWitnessSession, LocalTurnGraphWitnessStatus,
-    OracleCombatDeepStateSnapshot, OracleCombatWitness, OracleCombatWitnessDiscoverySource,
-    OracleCombatWitnessSatisfaction, OracleCombatWitnessStateProgressSnapshot,
-    PolicyDiscrepancyConfig, PolicyDiscrepancyQuantum, PolicyDiscrepancySession,
-    PolicyDiscrepancyStatus, PolicyDiscrepancyTurnMacroConfig, TurnOptionAction,
-    TurnOptionGeneratorConfig, DEFAULT_BACKED_GENERATION_QUANTUM_WORK,
+    combat_plan_state_guide_policy_v1, root_initial_expansion_work_for_budget, CombatDecisionRoot,
+    LocalTurnGraphGuideServiceBias, LocalTurnGraphRootActionFamilySnapshot,
+    LocalTurnGraphWitnessConfig, LocalTurnGraphWitnessQuantum, LocalTurnGraphWitnessSession,
+    LocalTurnGraphWitnessStatus, OracleCombatDeepStateSnapshot, OracleCombatWitness,
+    OracleCombatWitnessDiscoverySource, OracleCombatWitnessSatisfaction,
+    OracleCombatWitnessStateProgressSnapshot, PolicyDiscrepancyConfig, PolicyDiscrepancyQuantum,
+    PolicyDiscrepancySession, PolicyDiscrepancyStatus, PolicyDiscrepancyTurnMacroConfig,
+    TurnOptionAction, TurnOptionGeneratorConfig, DEFAULT_BACKED_GENERATION_QUANTUM_WORK,
 };
 
 pub(super) struct OracleRunCombatWorkV1 {
@@ -49,15 +47,10 @@ pub(super) struct OracleRunCombatWorkV1 {
     remaining_wall_time: Option<Duration>,
     quantum_count: usize,
     prior_generation_work: u64,
-    prior_policy_witness_proposals: usize,
-    policy_witness_proposals: usize,
-    policy_witness_replay_engine_steps: usize,
-    policy_witness_proposal_rejections: usize,
     plan_prefix_proposals: usize,
     plan_prefix_proposed_turns: usize,
     plan_prefix_proposed_actions: usize,
     plan_prefix_proposal_rejections: usize,
-    policy_witness: Option<OracleCombatWitness>,
     discrepancy_witness: Option<OracleCombatWitness>,
     restart_count: usize,
     last_status: Option<PortfolioStatusV1>,
@@ -135,15 +128,7 @@ pub struct OracleRunCombatWorkCheckpointV1 {
     #[serde(default)]
     pub incumbent_revision: u64,
     #[serde(default)]
-    pub policy_witness_proposals: usize,
-    #[serde(default)]
-    pub policy_witness_proposal_rejections: usize,
-    #[serde(default)]
     pub quanta_since_incumbent_improvement: usize,
-    /// Distinguishes a newly written exact potion contract from legacy
-    /// checkpoints where absent fields meant "unknown, reconstruct".
-    #[serde(default)]
-    pub potion_contract_recorded: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_potions_used: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -154,14 +139,6 @@ pub struct OracleRunCombatWorkCheckpointV1 {
     pub potion_spend_requires_satisfaction: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub incumbent: Option<OracleCombatWitness>,
-    #[serde(default)]
-    pub advisor_nodes: u64,
-    #[serde(default)]
-    pub advisor_elapsed_ms: u64,
-    #[serde(default)]
-    pub advisor_complete: bool,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub advisor_failure: Option<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -177,8 +154,6 @@ pub(super) struct OracleRunCombatWorkProgressV1 {
     pub generation_work: u64,
     pub local_generation_work: u64,
     pub discrepancy_generation_work: u64,
-    pub lookahead_evaluations: usize,
-    pub lookahead_work: usize,
     pub engine_steps: usize,
     pub exact_states: usize,
     pub local_exact_states: usize,
@@ -203,10 +178,6 @@ pub(super) struct OracleRunCombatWorkProgressV1 {
     pub max_completed_turn_options_at_state: usize,
     pub generation_gap_count: usize,
     pub pending_witness_replay: bool,
-    pub current_policy_witness_proposals: usize,
-    pub current_policy_witness_proposal_rejections: usize,
-    pub policy_witness_proposals: usize,
-    pub policy_witness_proposal_rejections: usize,
     pub plan_prefix_proposals: usize,
     pub plan_prefix_proposed_turns: usize,
     pub plan_prefix_proposed_actions: usize,
@@ -217,10 +188,6 @@ pub(super) struct OracleRunCombatWorkProgressV1 {
     pub local_candidate_potion_slots: Option<u64>,
     pub local_candidate_satisfies_satisfaction: Option<bool>,
     pub local_candidate_disposition: Option<OracleCombatLocalCandidateDispositionV1>,
-    pub advisor_nodes: u64,
-    pub advisor_elapsed_ms: u64,
-    pub advisor_active: bool,
-    pub advisor_failure: Option<String>,
     pub incumbent_discovery_source: Option<OracleCombatWitnessDiscoverySource>,
     pub incumbent_final_hp: Option<i32>,
     pub incumbent_hp_loss: Option<i32>,
@@ -247,13 +214,12 @@ impl OracleRunCombatWorkV1 {
         options: RunControlSearchCombatOptions,
         guidance: Option<&CombatGuidanceBundleV1>,
     ) -> Result<Self, String> {
-        Self::new_with_policy_proposal(session, options, true, guidance)
+        Self::new_exact_planner(session, options, guidance)
     }
 
-    fn new_with_policy_proposal(
+    fn new_exact_planner(
         session: &RunControlSession,
         options: RunControlSearchCombatOptions,
-        offer_policy_proposal: bool,
         guidance: Option<&CombatGuidanceBundleV1>,
     ) -> Result<Self, String> {
         let prepared = prepare_search_combat(session, options)?;
@@ -333,9 +299,7 @@ impl OracleRunCombatWorkV1 {
                 backed_generation_quantum_work: DEFAULT_BACKED_GENERATION_QUANTUM_WORK,
                 guide_service_bias,
                 initial_expansion_work: 64,
-                root_initial_expansion_work: 2_048,
-                lookahead_max_evaluations: 384,
-                lookahead_work_per_evaluation: 24,
+                root_initial_expansion_work: root_initial_expansion_work_for_budget(max_work),
                 max_turn_depth: 32,
                 satisfaction: planner_satisfaction,
                 require_no_unrecovered_stolen_gold: matches!(
@@ -385,15 +349,10 @@ impl OracleRunCombatWorkV1 {
             remaining_wall_time: prepared.config.wall_time,
             quantum_count: 0,
             prior_generation_work: 0,
-            prior_policy_witness_proposals: 0,
-            policy_witness_proposals: 0,
-            policy_witness_replay_engine_steps: 0,
-            policy_witness_proposal_rejections: 0,
             plan_prefix_proposals: 0,
             plan_prefix_proposed_turns: 0,
             plan_prefix_proposed_actions: 0,
             plan_prefix_proposal_rejections: 0,
-            policy_witness: None,
             discrepancy_witness: None,
             restart_count: 0,
             last_status: None,
@@ -406,9 +365,6 @@ impl OracleRunCombatWorkV1 {
             search_resume_exact: false,
             witness_source: CombatAutomationTrajectorySource::SearchCombat,
         };
-        if offer_policy_proposal {
-            work.offer_initial_rollout_policy_proposal();
-        }
         work.offer_initial_plan_prefix();
         Ok(work)
     }
@@ -419,10 +375,9 @@ impl OracleRunCombatWorkV1 {
         checkpoint: OracleRunCombatWorkCheckpointV1,
         guidance: Option<&CombatGuidanceBundleV1>,
     ) -> Result<Self, String> {
-        // A process restart restores the already charged incumbent and
-        // allowance. Re-running a non-serialized policy proposal here would
-        // repeatedly pay the same startup computation and obscure accounting.
-        let mut work = Self::new_with_policy_proposal(session, options, false, guidance)?;
+        // A process restart restores the already charged allowance and exact
+        // incumbent. The tactical frontier itself is intentionally rebuilt.
+        let mut work = Self::new_exact_planner(session, options, guidance)?;
         work.remaining_work = work.remaining_work.min(checkpoint.remaining_nodes);
         work.remaining_engine_steps = work
             .remaining_engine_steps
@@ -436,8 +391,6 @@ impl OracleRunCombatWorkV1 {
         };
         work.quantum_count = checkpoint.quantum_count;
         work.prior_generation_work = checkpoint.consumed_nodes;
-        work.prior_policy_witness_proposals = checkpoint.policy_witness_proposals;
-        work.policy_witness_proposal_rejections = checkpoint.policy_witness_proposal_rejections;
         work.restart_count = checkpoint.restart_count.saturating_add(1);
         work.incumbent_revision = checkpoint.incumbent_revision;
         work.quanta_since_incumbent_improvement = checkpoint.quanta_since_incumbent_improvement;
@@ -466,11 +419,9 @@ impl OracleRunCombatWorkV1 {
         prior: OracleRunCombatWorkCheckpointV1,
         guidance: Option<&CombatGuidanceBundleV1>,
     ) -> Result<Self, String> {
-        let mut work = Self::new_with_policy_proposal(session, options, false, guidance)?;
+        let mut work = Self::new_exact_planner(session, options, guidance)?;
         work.quantum_count = prior.quantum_count;
         work.prior_generation_work = prior.consumed_nodes;
-        work.prior_policy_witness_proposals = prior.policy_witness_proposals;
-        work.policy_witness_proposal_rejections = prior.policy_witness_proposal_rejections;
         work.restart_count = prior.restart_count.saturating_add(1);
         work.incumbent_revision = prior.incumbent_revision;
         work.quanta_since_incumbent_improvement = prior.quanta_since_incumbent_improvement;
@@ -507,10 +458,7 @@ impl OracleRunCombatWorkV1 {
             self.prior_stage_incumbent = Some(incumbent);
             return Ok(());
         }
-        if incumbent.discovery_source == OracleCombatWitnessDiscoverySource::PolicyProposal {
-            self.policy_witness = Some(incumbent);
-        } else if incumbent.discovery_source
-            == OracleCombatWitnessDiscoverySource::PolicyDiscrepancySearch
+        if incumbent.discovery_source == OracleCombatWitnessDiscoverySource::PolicyDiscrepancySearch
         {
             self.discrepancy_witness = Some(incumbent);
         } else {
@@ -568,60 +516,6 @@ impl OracleRunCombatWorkV1 {
             return Err("checkpoint incumbent exact replay is not terminal victory".to_string());
         }
         Ok(())
-    }
-
-    fn offer_initial_rollout_policy_proposal(&mut self) {
-        const MAX_POLICY_ACTIONS: usize = 256;
-        const POLICY_WALL_LIMIT: Duration = Duration::from_millis(100);
-
-        let allowance = self
-            .remaining_wall_time
-            .map(|remaining| remaining.min(POLICY_WALL_LIMIT))
-            .unwrap_or(POLICY_WALL_LIMIT);
-        if allowance.is_zero() {
-            return;
-        }
-        let started = Instant::now();
-        let deadline = started.checked_add(allowance);
-        let proposal_result = existing_combat_rollout_witness_v1(
-            &self.start,
-            MAX_POLICY_ACTIONS,
-            self.max_transition_steps,
-            deadline,
-            self.max_potions_used,
-            self.allowed_potion_slots,
-        );
-        if let Some(remaining) = &mut self.remaining_wall_time {
-            *remaining = remaining.saturating_sub(started.elapsed());
-        }
-        let proposal = match proposal_result {
-            Ok(proposal) => proposal,
-            Err(_) => {
-                self.policy_witness_proposal_rejections =
-                    self.policy_witness_proposal_rejections.saturating_add(1);
-                None
-            }
-        };
-        let Some(proposal) = proposal else {
-            return;
-        };
-        if !combat_witness_within_potion_contract(
-            &self.start,
-            &proposal,
-            self.max_potions_used,
-            self.allowed_potion_slots,
-        ) {
-            self.policy_witness_proposal_rejections =
-                self.policy_witness_proposal_rejections.saturating_add(1);
-            return;
-        }
-        self.policy_witness_proposals = self.policy_witness_proposals.saturating_add(1);
-        let replay_steps = proposal.replay_engine_steps;
-        self.policy_witness_replay_engine_steps = self
-            .policy_witness_replay_engine_steps
-            .saturating_add(replay_steps);
-        self.remaining_engine_steps = self.remaining_engine_steps.saturating_sub(replay_steps);
-        self.policy_witness = Some(proposal);
     }
 
     fn offer_initial_plan_prefix(&mut self) {
@@ -689,9 +583,9 @@ impl OracleRunCombatWorkV1 {
         options: RunControlSearchCombatOptions,
         guidance: Option<&CombatGuidanceBundleV1>,
     ) -> Result<Self, String> {
-        // Exact analyst actions need simulator verification, not an implicit
-        // rollout proposal that could replace the explicitly supplied line.
-        Self::new_with_policy_proposal(session, options, false, guidance)
+        // Exact analyst actions need simulator verification before they can
+        // enter the same terminal frontier as planner-discovered witnesses.
+        Self::new_exact_planner(session, options, guidance)
     }
 
     pub(super) fn checkpoint(&self) -> OracleRunCombatWorkCheckpointV1 {
@@ -703,22 +597,11 @@ impl OracleRunCombatWorkV1 {
             quantum_count: self.quantum_count,
             restart_count: self.restart_count,
             incumbent_revision: self.incumbent_revision,
-            policy_witness_proposals: self
-                .prior_policy_witness_proposals
-                .saturating_add(self.policy_witness_proposals),
-            policy_witness_proposal_rejections: self.policy_witness_proposal_rejections,
             quanta_since_incumbent_improvement: self.quanta_since_incumbent_improvement,
-            potion_contract_recorded: true,
             max_potions_used: self.max_potions_used,
             allowed_potion_slots: self.allowed_potion_slots,
             potion_spend_requires_satisfaction: self.potion_spend_requires_satisfaction,
             incumbent: self.best_witness().cloned(),
-            // Kept in checkpoint schema so old files still deserialize. New
-            // local-graph searches never start the retired V2 advisor.
-            advisor_nodes: 0,
-            advisor_elapsed_ms: 0,
-            advisor_complete: true,
-            advisor_failure: None,
         }
     }
 
@@ -831,8 +714,7 @@ impl OracleRunCombatWorkV1 {
                     return None;
                 }
                 match witness.discovery_source {
-                    OracleCombatWitnessDiscoverySource::PlannerSearch
-                    | OracleCombatWitnessDiscoverySource::LookaheadProposal => {
+                    OracleCombatWitnessDiscoverySource::PlannerSearch => {
                         Some(PortfolioMemberV1::LocalTurnGraph)
                     }
                     OracleCombatWitnessDiscoverySource::PolicyDiscrepancySearch => {
@@ -868,12 +750,10 @@ impl OracleRunCombatWorkV1 {
                         &crate::sim::combat::EngineCombatStepper,
                     );
                     let after = report.counters;
-                    let before_work = before.generation_work.saturating_add(before.lookahead_work);
-                    let after_work = after.generation_work.saturating_add(after.lookahead_work);
                     let member_complete =
                         !matches!(&report.status, LocalTurnGraphWitnessStatus::Partial(_));
                     (
-                        after_work.saturating_sub(before_work),
+                        after.generation_work.saturating_sub(before.generation_work),
                         after.engine_steps.saturating_sub(before.engine_steps),
                         member_complete,
                         PortfolioStatusV1::Local(report.status),
@@ -953,15 +833,6 @@ impl OracleRunCombatWorkV1 {
         }
         self.quantum_count = self.quantum_count.saturating_add(1);
         self.last_status = Some(status);
-        // A verified policy line is a fallback, not an instant terminal
-        // signal. Give the independent local graph one complete caller-sized
-        // work quantum to challenge it. If that bounded challenge cannot
-        // improve HP, commit the exact fallback instead of spending the
-        // encounter's entire wall allowance proving that no improvement
-        // exists.
-        let fallback_challenge_complete = mode == PortfolioAdvanceModeV1::StopOnSatisfaction
-            && self.policy_witness.is_some()
-            && self.current_local_search_work() >= quantum.additional_nodes;
         let inherited_satisfying_challenge_complete = inherited_satisfying_incumbent_challenged(
             mode == PortfolioAdvanceModeV1::StopOnSatisfaction,
             self.satisfaction,
@@ -986,15 +857,9 @@ impl OracleRunCombatWorkV1 {
                     witness,
                 )
             });
-        let quality_challenge_complete = self.best_witness().is_none_or(|witness| {
-            witness.discovery_source != OracleCombatWitnessDiscoverySource::PolicyProposal
-        }) || self.current_local_search_work()
-            >= quantum.additional_nodes
-            || self.local_complete;
         if standard_satisfaction_reached
-            || fallback_challenge_complete
             || inherited_satisfying_challenge_complete
-            || (quality_satisfied && quality_challenge_complete)
+            || quality_satisfied
             || (self.local_complete && self.discrepancy_complete)
         {
             RunControlCombatWorkAdvanceV1::ReadyToFinish
@@ -1182,7 +1047,6 @@ impl OracleRunCombatWorkV1 {
         let local = self.local_search.counters();
         local
             .generation_work
-            .saturating_add(local.lookahead_work)
             .saturating_add(self.plan_prefix_proposed_actions)
     }
 
@@ -1193,7 +1057,6 @@ impl OracleRunCombatWorkV1 {
             .chain(
                 [
                     self.discrepancy_witness.as_ref(),
-                    self.policy_witness.as_ref(),
                     self.protected_potion_free_incumbent.as_ref(),
                 ]
                 .into_iter()
@@ -1306,12 +1169,9 @@ impl OracleRunCombatWorkV1 {
                 .saturating_add(current_generation_work),
             local_generation_work,
             discrepancy_generation_work,
-            lookahead_evaluations: local_counters.lookahead_evaluations,
-            lookahead_work: local_counters.lookahead_work,
             engine_steps: local_counters
                 .engine_steps
-                .saturating_add(discrepancy_counters.engine_steps)
-                .saturating_add(self.policy_witness_replay_engine_steps),
+                .saturating_add(discrepancy_counters.engine_steps),
             exact_states: local_counters
                 .exact_nodes
                 .saturating_add(discrepancy_counters.exact_states),
@@ -1348,12 +1208,6 @@ impl OracleRunCombatWorkV1 {
                 .generation_gap_count
                 .saturating_add(discrepancy_counters.transition_step_limit_gaps),
             pending_witness_replay: local_progress.pending_witness_replay,
-            current_policy_witness_proposals: self.policy_witness_proposals,
-            current_policy_witness_proposal_rejections: self.policy_witness_proposal_rejections,
-            policy_witness_proposals: self
-                .policy_witness_proposals
-                .saturating_add(self.prior_policy_witness_proposals),
-            policy_witness_proposal_rejections: self.policy_witness_proposal_rejections,
             plan_prefix_proposals: self.plan_prefix_proposals,
             plan_prefix_proposed_turns: self.plan_prefix_proposed_turns,
             plan_prefix_proposed_actions: self.plan_prefix_proposed_actions,
@@ -1377,10 +1231,6 @@ impl OracleRunCombatWorkV1 {
                 local_candidate,
                 incumbent,
             ),
-            advisor_nodes: 0,
-            advisor_elapsed_ms: 0,
-            advisor_active: false,
-            advisor_failure: None,
             incumbent_discovery_source: incumbent.map(|witness| witness.discovery_source),
             incumbent_final_hp,
             incumbent_hp_loss: incumbent_final_hp
@@ -1423,13 +1273,7 @@ impl OracleRunCombatWorkV1 {
         }
         if let Some(witness) = self.best_witness() {
             let source = match witness.discovery_source {
-                OracleCombatWitnessDiscoverySource::PolicyProposal => {
-                    CombatAutomationTrajectorySource::MaturePolicyProposal
-                }
                 OracleCombatWitnessDiscoverySource::PlannerSearch => {
-                    CombatAutomationTrajectorySource::SearchCombat
-                }
-                OracleCombatWitnessDiscoverySource::LookaheadProposal => {
                     CombatAutomationTrajectorySource::SearchCombat
                 }
                 OracleCombatWitnessDiscoverySource::PolicyDiscrepancySearch => {
@@ -2348,37 +2192,6 @@ mod tests {
     }
 
     #[test]
-    fn conserving_rollout_keeps_the_no_potion_baseline_when_a_potion_line_is_better() {
-        let mut session = one_strike_win_session();
-        let combat = &mut session.active_combat.as_mut().unwrap().combat_state;
-        combat.entities.player.current_hp = 20;
-        combat.entities.player.max_hp = 20;
-        combat.entities.monsters[0].current_hp = 7;
-        combat.entities.monsters[0].max_hp = 7;
-        combat.entities.potions = vec![Some(crate::content::potions::Potion::new(
-            crate::content::potions::PotionId::FirePotion,
-            7,
-        ))];
-        let start = session
-            .current_active_combat_position()
-            .expect("exact potion rollout root");
-        let unconstrained =
-            crate::ai::combat_search_v2::oracle_rollout_witness_proposal_v1(&start, 64, None)
-                .expect("unconstrained rollout proposal");
-        assert!(unconstrained
-            .actions
-            .iter()
-            .any(|input| matches!(input, ClientInput::UsePotion { .. })));
-
-        let conserving =
-            existing_combat_rollout_witness_v1(&start, 64, 250, None, Some(0), Some(0))
-                .expect("replay conserving proposal")
-                .expect("no-potion baseline");
-
-        assert_eq!(combat_witness_potion_expenditures(&start, &conserving), 0);
-    }
-
-    #[test]
     fn exact_restored_witness_cannot_bypass_zero_potion_contract() {
         let mut session = one_strike_win_session();
         let combat = &mut session.active_combat.as_mut().unwrap().combat_state;
@@ -2710,7 +2523,7 @@ mod tests {
             final_position,
             negative_log_policy: 0.0,
             replay_engine_steps: 0,
-            discovery_source: OracleCombatWitnessDiscoverySource::PolicyProposal,
+            discovery_source: OracleCombatWitnessDiscoverySource::RestoredExactActions,
         };
 
         assert_eq!(combat_witness_potion_expenditures(&start, &witness), 1);
@@ -2997,81 +2810,6 @@ mod tests {
     }
 
     #[test]
-    fn policy_fallback_does_not_precomplete_the_independent_local_search() {
-        let session = one_strike_win_session();
-        let mut work = OracleRunCombatWorkV1::new_with_guidance(
-            &session,
-            RunControlSearchCombatOptions {
-                max_nodes: Some(16),
-                satisfaction: Some(
-                    crate::ai::combat_search_v2::CombatSearchV2Satisfaction::FirstCompleteWin,
-                ),
-                ..RunControlSearchCombatOptions::default()
-            },
-            None,
-        )
-        .expect("one-strike combat should create a portfolio");
-
-        assert!(work.policy_witness.is_some());
-        assert_eq!(work.policy_witness_proposals, 1);
-        assert!(
-            work.local_search.witness().is_none(),
-            "a verified fallback must not masquerade as a local-search result"
-        );
-
-        let result = work.advance(
-            &RunControlCombatSearchQuantum {
-                label: "independent_local_search_contract",
-                additional_nodes: 1,
-                soft_wall_ms: None,
-            },
-            None,
-        );
-        assert!(
-            work.local_search.counters().generation_work > 0,
-            "the local graph must receive real work despite the fallback witness"
-        );
-        assert_eq!(
-            result,
-            RunControlCombatWorkAdvanceV1::ReadyToFinish,
-            "after one complete caller-sized challenge, the exact fallback may finish"
-        );
-    }
-
-    #[test]
-    fn quality_mode_honors_satisfaction_after_an_independent_challenge() {
-        let session = one_strike_win_session();
-        let mut work = OracleRunCombatWorkV1::new_with_guidance(
-            &session,
-            RunControlSearchCombatOptions {
-                max_nodes: Some(16),
-                satisfaction: Some(
-                    crate::ai::combat_search_v2::CombatSearchV2Satisfaction::HpLossAtMost(0),
-                ),
-                ..RunControlSearchCombatOptions::default()
-            },
-            None,
-        )
-        .expect("one-strike combat should create a portfolio");
-
-        assert!(work.policy_witness.is_some());
-        let result = work.advance_improving_incumbent(
-            &RunControlCombatSearchQuantum {
-                label: "quality_satisfaction_contract",
-                additional_nodes: 1,
-                soft_wall_ms: None,
-            },
-            None,
-        );
-
-        assert!(
-            work.local_search.counters().generation_work > 0,
-            "quality acceptance must not let a policy proposal bypass independent search"
-        );
-        assert_eq!(result, RunControlCombatWorkAdvanceV1::ReadyToFinish);
-    }
-
-    #[test]
     fn current_stage_probe_ignores_local_and_portfolio_satisfaction() {
         let session = one_strike_win_session();
         let mut work = OracleRunCombatWorkV1::new_with_guidance(
@@ -3087,7 +2825,6 @@ mod tests {
         )
         .expect("one-strike combat should create a portfolio");
 
-        assert!(work.policy_witness.is_some());
         let result = work.advance_current_stage_probe(
             &RunControlCombatSearchQuantum {
                 label: "current_stage_probe_contract",
@@ -3099,7 +2836,7 @@ mod tests {
 
         assert!(
             work.local_search.counters().generation_work > 0,
-            "the probe must serve the local graph even when the incumbent already satisfies quality"
+            "the probe must serve the local graph regardless of local satisfaction"
         );
         assert_eq!(
             result,
@@ -3151,10 +2888,11 @@ mod tests {
             None,
         )
         .expect("one-strike combat should create a portfolio");
-        let plain = work
-            .policy_witness
-            .clone()
-            .expect("policy should provide an exact winning line");
+        let plain = synthetic_witness(
+            &work.start,
+            work.start.combat.entities.player.current_hp,
+            false,
+        );
         let mut profitable = plain.clone();
         profitable
             .final_position
@@ -3178,13 +2916,12 @@ mod tests {
     #[test]
     fn production_darkling_work_reports_its_typed_guide_service_bias() {
         let session = darkling_combat_session();
-        let work = OracleRunCombatWorkV1::new_with_policy_proposal(
+        let work = OracleRunCombatWorkV1::new_with_guidance(
             &session,
             RunControlSearchCombatOptions {
                 max_nodes: Some(16),
                 ..RunControlSearchCombatOptions::default()
             },
-            false,
             None,
         )
         .expect("Darkling combat should create a portfolio");
@@ -3214,10 +2951,11 @@ mod tests {
             None,
         )
         .expect("one-strike combat should create a portfolio");
-        let satisfying = work
-            .policy_witness
-            .clone()
-            .expect("policy should provide an exact winning line");
+        let satisfying = synthetic_witness(
+            &work.start,
+            work.start.combat.entities.player.current_hp,
+            false,
+        );
         let mut insufficient = satisfying.clone();
         insufficient
             .final_position
@@ -3293,10 +3031,11 @@ mod tests {
             None,
         )
         .expect("one-strike combat should create a portfolio");
-        let mut poor = work
-            .policy_witness
-            .clone()
-            .expect("policy should provide an exact winning line");
+        let mut poor = synthetic_witness(
+            &work.start,
+            work.start.combat.entities.player.current_hp,
+            false,
+        );
         poor.final_position.combat.entities.player.current_hp = work
             .start
             .combat
@@ -3485,7 +3224,7 @@ mod tests {
     }
 
     #[test]
-    fn production_local_graph_does_not_run_rollout_lookahead() {
+    fn production_exact_graph_charges_only_materialized_generation_work() {
         let session = hallway_combat_session();
         let mut work = OracleRunCombatWorkV1::new_with_guidance(
             &session,
@@ -3500,7 +3239,7 @@ mod tests {
         )
         .expect("portfolio should accept an active combat");
         let quantum = RunControlCombatSearchQuantum {
-            label: "lookahead_accounting_contract",
+            label: "exact_generation_accounting_contract",
             additional_nodes: 4_096,
             soft_wall_ms: None,
         };
@@ -3508,10 +3247,6 @@ mod tests {
         let before_remaining = work.remaining_work;
         let _ = work.advance(&quantum, None);
         let counters = work.local_search.counters();
-        assert_eq!(
-            counters.lookahead_work, 0,
-            "rollout lookahead remains a laboratory control rather than hidden production work"
-        );
         assert_eq!(
             work.discrepancy_search
                 .counters()

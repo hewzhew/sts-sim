@@ -2,7 +2,7 @@ use super::*;
 use std::collections::BTreeSet;
 
 impl LocalTurnGraphWitnessSession {
-    fn diagnostic_actions_to_node(&self, mut node_id: usize) -> Vec<TurnOptionAction> {
+    pub(super) fn diagnostic_actions_to_node(&self, mut node_id: usize) -> Vec<TurnOptionAction> {
         let mut path = Vec::new();
         while let Some(parent) = self.nodes[node_id].diagnostic_parent {
             path.push(parent);
@@ -183,8 +183,6 @@ impl LocalTurnGraphWitnessSession {
                 .best_retained_path_bound_snapshot()
                 .map(|(atomic_depth, _)| atomic_depth),
             retained_guide_promises,
-            retained_lookahead_guides: node.generator.retained_lookahead_guides(),
-            lookahead_pending_lane: node.lookahead_pending_lane.map(CombatGuideLaneId::value),
             generated_options: node.generated_options,
             children: node.children.len(),
             exhausted: node.exhausted,
@@ -218,29 +216,6 @@ impl LocalTurnGraphWitnessSession {
             .iter()
             .find(|edge| edge.successor == successor_id)?;
         let successor = &self.nodes[successor_id];
-        let mut pending_lookahead = parent
-            .children
-            .iter()
-            .filter(|candidate| {
-                !self.nodes[candidate.successor].exhausted
-                    && self.nodes[candidate.successor]
-                        .lookahead_pending_lane
-                        .is_some()
-            })
-            .collect::<Vec<_>>();
-        pending_lookahead.sort_by(|left, right| {
-            local_path_base(left.actions.len(), left.negative_log_policy)
-                .total_cmp(&local_path_base(
-                    right.actions.len(),
-                    right.negative_log_policy,
-                ))
-                .then_with(|| left.visits.cmp(&right.visits))
-                .then_with(|| left.successor.cmp(&right.successor))
-        });
-        let lookahead_pending_rank = pending_lookahead
-            .iter()
-            .position(|candidate| candidate.successor == successor_id)
-            .map(|index| index.saturating_add(1));
         let successor_anchor_position = self
             .shared_agenda
             .anchor_position(successor_id, &self.nodes);
@@ -305,16 +280,11 @@ impl LocalTurnGraphWitnessSession {
             parent_widen_anchor_visits: parent.widen_anchor_visits,
             actions: edge.actions.clone(),
             negative_log_policy: edge.negative_log_policy,
+            plan_prefix_proposed: edge.plan_prefix_proposed,
             plan_transition_annotation: edge.plan_transition_annotation.clone(),
             visits: edge.visits,
             anchor_visits: edge.anchor_visits,
             backed_visits: edge.backed_visits,
-            backed_lookahead_rank: edge
-                .backed_lookahead_rank
-                .as_ref()
-                .map(|rank| rank.components().to_vec()),
-            lookahead_pending_rank,
-            lookahead_pending_candidates: pending_lookahead.len(),
             successor_path_cost: successor.path_cost(),
             successor_anchor_ordinal_rank: successor_anchor_position.agenda.ordinal_rank,
             successor_anchor_candidate_count: successor_anchor_position.agenda.candidate_count,

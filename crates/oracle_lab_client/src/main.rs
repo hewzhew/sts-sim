@@ -1340,8 +1340,6 @@ fn compact_combat_progress(combat: Option<&Value>) -> Value {
         "max_player_turn": combat.get("max_player_turn"),
         "deepest_progress": combat.get("deepest_progress_state"),
         "deepest_survival": combat.get("deepest_survival_state"),
-        "policy_witness_proposals": combat.get("policy_witness_proposals"),
-        "policy_witness_proposal_rejections": combat.get("policy_witness_proposal_rejections"),
         "incumbent_discovery_source": combat.get("incumbent_discovery_source"),
         "incumbent_final_hp": combat.get("incumbent_final_hp"),
         "incumbent_hp_loss": combat.get("incumbent_hp_loss"),

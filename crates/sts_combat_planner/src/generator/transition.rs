@@ -118,7 +118,6 @@ impl TurnOptionGeneratorSession {
                 negative_log_policy: action.negative_log_policy,
                 potion_expenditures: successor_potion_expenditures,
                 generation_guides: None,
-                lookahead_guide: None,
             };
             self.transition_publish_trace_node_elapsed_ns = self
                 .transition_publish_trace_node_elapsed_ns

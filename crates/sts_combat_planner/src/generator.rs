@@ -10,7 +10,7 @@ use sts_core::state::core::{ClientInput, EngineState};
 
 use super::policy::{
     normalized_probabilities, uniform_policy, CombatPolicyChoice, CombatStateGuide,
-    SharedCombatActionPolicy, SharedCombatLookaheadEvaluator,
+    SharedCombatActionPolicy,
 };
 #[cfg(test)]
 use super::policy::{CombatGuideLaneId, CombatStateGuideRank};
@@ -26,7 +26,7 @@ use guide_frontier::GuidedGeneratorFrontier;
 #[cfg(test)]
 use guide_frontier::GuidedGeneratorQueueEntry;
 pub(crate) use scheduling::TurnOptionGeneratorPreferredLane;
-use scheduling::{guides_with_lookahead, GeneratorQueueEntry, GeneratorWorkPriority};
+use scheduling::{GeneratorQueueEntry, GeneratorWorkPriority};
 #[cfg(test)]
 use transition::detail_timing_scale;
 use transition::{is_potion_expenditure, ActionTransitionStatus};
@@ -35,6 +35,7 @@ use work_slots::GeneratorWorkHandle;
 pub(crate) mod diagnostics;
 mod guide_frontier;
 mod lifecycle;
+mod prefix_proposal;
 mod reclamation;
 mod scheduling;
 mod transition;
@@ -53,7 +54,6 @@ struct PartialTurnOption {
     negative_log_policy: f64,
     potion_expenditures: u32,
     generation_guides: Option<Arc<[CombatStateGuide]>>,
-    lookahead_guide: Option<CombatStateGuide>,
 }
 
 #[derive(Debug)]
@@ -298,16 +298,16 @@ pub struct TurnOptionGeneratorSession {
     seen: HashSet<IndexedExactStateKey, FxBuildHasher>,
     completed: Vec<CompleteTurnOption>,
     total_completed_options: usize,
+    plan_prefix_attempted: bool,
+    plan_prefix_attempts: usize,
+    plan_prefix_completed: usize,
+    plan_prefix_rejections: usize,
     gaps: Vec<TurnOptionGenerationGap>,
     applied_action_transitions: usize,
     duplicate_exact_successors: usize,
     atomic_state_expansions: usize,
-    atomic_expand_services: usize,
     anchor_work_pops: usize,
     guided_work_pops: usize,
-    lookahead_evaluator: Option<SharedCombatLookaheadEvaluator>,
-    lookahead_evaluations: usize,
-    lookahead_work: usize,
     atomic_expand_elapsed_ns: u64,
     transition_simulation_elapsed_ns: u64,
     transition_identity_elapsed_ns: u64,
@@ -338,7 +338,7 @@ impl TurnOptionGeneratorSession {
         config: TurnOptionGeneratorConfig,
         policy: SharedCombatActionPolicy,
     ) -> Self {
-        Self::with_optional_lookahead(root, config, policy, None, None)
+        Self::with_policy_and_optional_potion_limit(root, config, policy, None)
     }
 
     pub(crate) fn with_policy_and_potion_limit(
@@ -347,23 +347,13 @@ impl TurnOptionGeneratorSession {
         policy: SharedCombatActionPolicy,
         max_potion_expenditures: Option<u32>,
     ) -> Self {
-        Self::with_optional_lookahead(root, config, policy, None, max_potion_expenditures)
+        Self::with_policy_and_optional_potion_limit(root, config, policy, max_potion_expenditures)
     }
 
-    pub fn with_policy_and_lookahead(
+    fn with_policy_and_optional_potion_limit(
         root: CombatDecisionRoot,
         config: TurnOptionGeneratorConfig,
         policy: SharedCombatActionPolicy,
-        lookahead_evaluator: SharedCombatLookaheadEvaluator,
-    ) -> Self {
-        Self::with_optional_lookahead(root, config, policy, Some(lookahead_evaluator), None)
-    }
-
-    fn with_optional_lookahead(
-        root: CombatDecisionRoot,
-        config: TurnOptionGeneratorConfig,
-        policy: SharedCombatActionPolicy,
-        lookahead_evaluator: Option<SharedCombatLookaheadEvaluator>,
         max_potion_expenditures: Option<u32>,
     ) -> Self {
         let max_potion_expenditures = if config.allow_potion_expenditure {
@@ -389,7 +379,6 @@ impl TurnOptionGeneratorSession {
             negative_log_policy: 0.0,
             potion_expenditures: 0,
             generation_guides: None,
-            lookahead_guide: None,
         }));
         let mut session = Self {
             root,
@@ -414,16 +403,16 @@ impl TurnOptionGeneratorSession {
             seen,
             completed: Vec::new(),
             total_completed_options: 0,
+            plan_prefix_attempted: false,
+            plan_prefix_attempts: 0,
+            plan_prefix_completed: 0,
+            plan_prefix_rejections: 0,
             gaps: Vec::new(),
             applied_action_transitions: 0,
             duplicate_exact_successors: 0,
             atomic_state_expansions: 0,
-            atomic_expand_services: 0,
             anchor_work_pops: 0,
             guided_work_pops: 0,
-            lookahead_evaluator,
-            lookahead_evaluations: 0,
-            lookahead_work: 0,
             atomic_expand_elapsed_ns: 0,
             transition_simulation_elapsed_ns: 0,
             transition_identity_elapsed_ns: 0,
@@ -472,33 +461,13 @@ impl TurnOptionGeneratorSession {
         stepper: &dyn CombatStepper,
         quantum: CombatPlanningQuantum,
     ) -> TurnOptionGenerationReport {
-        self.advance_internal(stepper, quantum, 0, 0, 0)
-    }
-
-    pub fn advance_with_lookahead(
-        &mut self,
-        stepper: &dyn CombatStepper,
-        quantum: CombatPlanningQuantum,
-        lookahead_evaluations: usize,
-        lookahead_work: usize,
-        lookahead_work_per_evaluation: usize,
-    ) -> TurnOptionGenerationReport {
-        self.advance_internal(
-            stepper,
-            quantum,
-            lookahead_evaluations,
-            lookahead_work,
-            lookahead_work_per_evaluation,
-        )
+        self.advance_internal(stepper, quantum)
     }
 
     fn advance_internal(
         &mut self,
         stepper: &dyn CombatStepper,
         quantum: CombatPlanningQuantum,
-        mut remaining_lookahead_evaluations: usize,
-        mut remaining_lookahead_work: usize,
-        lookahead_work_per_evaluation: usize,
     ) -> TurnOptionGenerationReport {
         let before = self.used;
         let before_diagnostics = self.diagnostics();
@@ -507,187 +476,154 @@ impl TurnOptionGeneratorSession {
             generation_work: quantum.additional_generation_work,
             engine_steps: quantum.additional_engine_steps,
         });
+        let prefix_interruption = self.advance_plan_prefix_proposal(stepper, quantum.deadline);
         // Freeze one current head from every scheduling view before serving
         // the round. Without this boundary, work expanded by an earlier lane
         // can publish a new head into a later lane and repeatedly overtake the
         // item which was already first there. A finite pending transaction can
         // consequently remain live forever despite round-robin lane service.
-        let interruption = loop {
-            if self.is_finished() {
-                break None;
-            }
-            if deadline_reached(quantum.deadline) {
-                break Some(GenerationInterruption::Deadline);
-            }
-            if self.used.generation_work >= self.granted.generation_work {
-                break Some(GenerationInterruption::GenerationWorkBudget);
-            }
-            while self
-                .scheduled_round
-                .front()
-                .is_some_and(|(_, handle)| !self.is_live_work_handle(*handle))
-            {
-                self.scheduled_round.pop_front();
-            }
-            if self.scheduled_round.is_empty() {
-                self.reclaim_stale_scheduling_entries();
-                self.scheduled_round = self.snapshot_scheduling_round();
-                if self.scheduled_round.is_empty() {
-                    debug_assert!(self.is_finished());
+        let interruption = if let Some(cause) = prefix_interruption {
+            Some(cause)
+        } else {
+            loop {
+                if self.is_finished() {
                     break None;
                 }
-            }
-            let (lane, handle) = *self
-                .scheduled_round
-                .front()
-                .expect("a non-empty scheduling round has a head");
-            let transition_reservation = self.config.max_engine_steps_per_transition.max(1);
-            if self.live_work(handle).is_some_and(|work| {
-                matches!(
-                    work,
-                    GeneratorWork::AtomicActions(_) | GeneratorWork::ApplyAction(_)
-                )
-            }) && self
-                .granted
-                .engine_steps
-                .saturating_sub(self.used.engine_steps)
-                < transition_reservation
-            {
-                break Some(GenerationInterruption::EngineStepBudget);
-            }
+                if deadline_reached(quantum.deadline) {
+                    break Some(GenerationInterruption::Deadline);
+                }
+                if self.used.generation_work >= self.granted.generation_work {
+                    break Some(GenerationInterruption::GenerationWorkBudget);
+                }
+                while self
+                    .scheduled_round
+                    .front()
+                    .is_some_and(|(_, handle)| !self.is_live_work_handle(*handle))
+                {
+                    self.scheduled_round.pop_front();
+                }
+                if self.scheduled_round.is_empty() {
+                    self.reclaim_stale_scheduling_entries();
+                    self.scheduled_round = self.snapshot_scheduling_round();
+                    if self.scheduled_round.is_empty() {
+                        debug_assert!(self.is_finished());
+                        break None;
+                    }
+                }
+                let (lane, handle) = *self
+                    .scheduled_round
+                    .front()
+                    .expect("a non-empty scheduling round has a head");
+                let transition_reservation = self.config.max_engine_steps_per_transition.max(1);
+                if self.live_work(handle).is_some_and(|work| {
+                    matches!(
+                        work,
+                        GeneratorWork::AtomicActions(_) | GeneratorWork::ApplyAction(_)
+                    )
+                }) && self
+                    .granted
+                    .engine_steps
+                    .saturating_sub(self.used.engine_steps)
+                    < transition_reservation
+                {
+                    break Some(GenerationInterruption::EngineStepBudget);
+                }
 
-            self.scheduled_round.pop_front();
-            let work = self.take_live_work(handle);
-            if lane == 0 {
-                self.anchor_work_pops = self.anchor_work_pops.saturating_add(1);
-            } else {
-                self.guided_work_pops = self.guided_work_pops.saturating_add(1);
-            }
-            self.next_scheduler_lane = (lane + 1) % self.guided_frontiers.len().saturating_add(1);
-            self.used.generation_work = self.used.generation_work.saturating_add(1);
-            match work {
-                GeneratorWork::Expand(mut partial) => {
-                    let expand_service_ordinal = self.atomic_expand_services;
-                    self.atomic_expand_services = self.atomic_expand_services.saturating_add(1);
-                    let should_evaluate = partial.lookahead_guide.is_none()
-                        && self.lookahead_evaluator.as_ref().is_some_and(|evaluator| {
-                            evaluator.admit_atomic_state(&partial.position, expand_service_ordinal)
-                        });
-                    if should_evaluate
-                        && remaining_lookahead_evaluations > 0
-                        && remaining_lookahead_work > 0
-                    {
-                        let priority = GeneratorWorkPriority::for_path(
-                            partial.atomic_depth,
-                            partial.negative_log_policy,
-                        );
-                        let max_work = lookahead_work_per_evaluation
-                            .max(1)
-                            .min(remaining_lookahead_work);
-                        let evaluation = self.lookahead_evaluator.as_ref().and_then(|evaluator| {
-                            evaluator.evaluate(&partial.position, max_work, quantum.deadline)
-                        });
-                        let Some(evaluation) = evaluation else {
-                            self.push_work(GeneratorWork::Expand(partial), priority);
-                            break Some(if deadline_reached(quantum.deadline) {
-                                GenerationInterruption::Deadline
-                            } else {
-                                GenerationInterruption::GenerationWorkBudget
-                            });
-                        };
-                        debug_assert!(evaluation.work <= max_work);
-                        let charged_work = evaluation.work.max(1).min(max_work);
-                        Arc::make_mut(&mut partial).lookahead_guide = Some(evaluation.guide);
-                        self.lookahead_evaluations = self.lookahead_evaluations.saturating_add(1);
-                        self.lookahead_work = self.lookahead_work.saturating_add(charged_work);
-                        remaining_lookahead_evaluations =
-                            remaining_lookahead_evaluations.saturating_sub(1);
-                        remaining_lookahead_work =
-                            remaining_lookahead_work.saturating_sub(charged_work);
-                        self.push_work(GeneratorWork::Expand(partial), priority);
-                        continue;
-                    }
-                    self.atomic_state_expansions = self.atomic_state_expansions.saturating_add(1);
-                    let expand_started = Instant::now();
-                    self.expand(stepper, partial);
-                    self.atomic_expand_elapsed_ns = self
-                        .atomic_expand_elapsed_ns
-                        .saturating_add(elapsed_nanos_u64(expand_started));
+                self.scheduled_round.pop_front();
+                let work = self.take_live_work(handle);
+                if lane == 0 {
+                    self.anchor_work_pops = self.anchor_work_pops.saturating_add(1);
+                } else {
+                    self.guided_work_pops = self.guided_work_pops.saturating_add(1);
                 }
-                GeneratorWork::AtomicActions(mut cursor) => {
-                    let action = cursor
-                        .current_transition()
-                        .expect("a scheduled atomic cursor has a candidate");
-                    if self.apply_action_transition(
-                        stepper,
-                        action,
-                        transition_reservation,
-                        quantum.deadline,
-                    ) == ActionTransitionStatus::TimedOut
-                    {
-                        let priority = cursor
-                            .priority()
-                            .expect("a timed-out cursor retains its candidate");
-                        self.push_work(GeneratorWork::AtomicActions(cursor), priority);
-                        break Some(GenerationInterruption::Deadline);
+                self.next_scheduler_lane =
+                    (lane + 1) % self.guided_frontiers.len().saturating_add(1);
+                self.used.generation_work = self.used.generation_work.saturating_add(1);
+                match work {
+                    GeneratorWork::Expand(partial) => {
+                        self.atomic_state_expansions =
+                            self.atomic_state_expansions.saturating_add(1);
+                        let expand_started = Instant::now();
+                        self.expand(stepper, partial);
+                        self.atomic_expand_elapsed_ns = self
+                            .atomic_expand_elapsed_ns
+                            .saturating_add(elapsed_nanos_u64(expand_started));
                     }
-                    cursor.consume_current();
-                    if let Some(priority) = cursor.priority() {
-                        self.push_work(GeneratorWork::AtomicActions(cursor), priority);
+                    GeneratorWork::AtomicActions(mut cursor) => {
+                        let action = cursor
+                            .current_transition()
+                            .expect("a scheduled atomic cursor has a candidate");
+                        if self.apply_action_transition(
+                            stepper,
+                            action,
+                            transition_reservation,
+                            quantum.deadline,
+                        ) == ActionTransitionStatus::TimedOut
+                        {
+                            let priority = cursor
+                                .priority()
+                                .expect("a timed-out cursor retains its candidate");
+                            self.push_work(GeneratorWork::AtomicActions(cursor), priority);
+                            break Some(GenerationInterruption::Deadline);
+                        }
+                        cursor.consume_current();
+                        if let Some(priority) = cursor.priority() {
+                            self.push_work(GeneratorWork::AtomicActions(cursor), priority);
+                        }
                     }
-                }
-                GeneratorWork::StructuredSelection(mut selection) => {
-                    let remaining_inputs = selection.cursor.remaining_input_count().max(1);
-                    if let Some(input) = selection.cursor.next_input() {
-                        // Every concrete member of a finite symbolic family
-                        // receives equal conditional mass. The former
-                        // geometric split made enumeration order an
-                        // exponential strategic prior (1/2, 1/4, 1/8, ...).
-                        let input_conditional_mass =
-                            selection.remaining_conditional_mass / remaining_inputs as f64;
-                        if !selection.cursor.is_exhausted() {
-                            selection.remaining_conditional_mass -= input_conditional_mass;
-                            let residual_negative_log = selection.family_negative_log_policy
-                                - selection.remaining_conditional_mass.ln();
-                            let residual_priority = GeneratorWorkPriority::for_path(
-                                selection.parent.atomic_depth.saturating_add(1),
-                                residual_negative_log,
-                            );
+                    GeneratorWork::StructuredSelection(mut selection) => {
+                        let remaining_inputs = selection.cursor.remaining_input_count().max(1);
+                        if let Some(input) = selection.cursor.next_input() {
+                            // Every concrete member of a finite symbolic family
+                            // receives equal conditional mass. The former
+                            // geometric split made enumeration order an
+                            // exponential strategic prior (1/2, 1/4, 1/8, ...).
+                            let input_conditional_mass =
+                                selection.remaining_conditional_mass / remaining_inputs as f64;
+                            if !selection.cursor.is_exhausted() {
+                                selection.remaining_conditional_mass -= input_conditional_mass;
+                                let residual_negative_log = selection.family_negative_log_policy
+                                    - selection.remaining_conditional_mass.ln();
+                                let residual_priority = GeneratorWorkPriority::for_path(
+                                    selection.parent.atomic_depth.saturating_add(1),
+                                    residual_negative_log,
+                                );
+                                self.push_work(
+                                    GeneratorWork::StructuredSelection(selection.clone()),
+                                    residual_priority,
+                                );
+                            }
+                            let negative_log_policy =
+                                selection.family_negative_log_policy - input_conditional_mass.ln();
+                            let atomic_depth = selection.parent.atomic_depth.saturating_add(1);
+                            let priority =
+                                GeneratorWorkPriority::for_path(atomic_depth, negative_log_policy);
                             self.push_work(
-                                GeneratorWork::StructuredSelection(selection.clone()),
-                                residual_priority,
+                                GeneratorWork::ApplyAction(ActionTransitionWork {
+                                    parent: selection.parent,
+                                    input,
+                                    atomic_depth,
+                                    negative_log_policy,
+                                }),
+                                priority,
                             );
                         }
-                        let negative_log_policy =
-                            selection.family_negative_log_policy - input_conditional_mass.ln();
-                        let atomic_depth = selection.parent.atomic_depth.saturating_add(1);
-                        let priority =
-                            GeneratorWorkPriority::for_path(atomic_depth, negative_log_policy);
-                        self.push_work(
-                            GeneratorWork::ApplyAction(ActionTransitionWork {
-                                parent: selection.parent,
-                                input,
-                                atomic_depth,
-                                negative_log_policy,
-                            }),
-                            priority,
-                        );
                     }
-                }
-                GeneratorWork::ApplyAction(action) => {
-                    let priority = GeneratorWorkPriority::for_path(
-                        action.atomic_depth,
-                        action.negative_log_policy,
-                    );
-                    if self.apply_action_transition(
-                        stepper,
-                        action.clone(),
-                        transition_reservation,
-                        quantum.deadline,
-                    ) == ActionTransitionStatus::TimedOut
-                    {
-                        self.push_work(GeneratorWork::ApplyAction(action), priority);
-                        break Some(GenerationInterruption::Deadline);
+                    GeneratorWork::ApplyAction(action) => {
+                        let priority = GeneratorWorkPriority::for_path(
+                            action.atomic_depth,
+                            action.negative_log_policy,
+                        );
+                        if self.apply_action_transition(
+                            stepper,
+                            action.clone(),
+                            transition_reservation,
+                            quantum.deadline,
+                        ) == ActionTransitionStatus::TimedOut
+                        {
+                            self.push_work(GeneratorWork::ApplyAction(action), priority);
+                            break Some(GenerationInterruption::Deadline);
+                        }
                     }
                 }
             }
@@ -826,8 +762,7 @@ impl TurnOptionGeneratorSession {
             Arc::make_mut(&mut partial).generation_guides = Some(guides.clone());
             guides
         };
-        let parent_guides =
-            guides_with_lookahead(base_generation_guides, partial.lookahead_guide.as_ref());
+        let parent_guides = base_generation_guides;
         // Every outgoing action observes the same immutable parent position.
         // Sharing it avoids one full combat-state and action-prefix clone for
         // every legal action while preserving the exact search graph.

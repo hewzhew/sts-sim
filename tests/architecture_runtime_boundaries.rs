@@ -16,6 +16,17 @@ fn collect_rust_sources(root: &std::path::Path, paths: &mut Vec<std::path::PathB
     }
 }
 
+fn normalized_source_bytes(path: impl AsRef<std::path::Path>) -> u64 {
+    let path = path.as_ref();
+    let bytes = std::fs::read(path)
+        .unwrap_or_else(|error| panic!("read {} for size: {error}", path.display()));
+    let crlf_count = bytes
+        .windows(2)
+        .filter(|pair| *pair == b"\r\n")
+        .count();
+    u64::try_from(bytes.len().saturating_sub(crlf_count)).unwrap_or(u64::MAX)
+}
+
 fn contains_rust_identifier(source: &str, identifier: &str) -> bool {
     source
         .split(|character: char| !(character.is_ascii_alphanumeric() || character == '_'))
@@ -212,9 +223,7 @@ fn oracle_lab_frontend_stays_split_into_bounded_command_modules() {
     const COMMAND_MODULE_LIMIT: u64 = 40 * 1024;
 
     let frontend = std::path::Path::new("crates/sts_oracle_lab/src/bin/oracle_lab.rs");
-    let frontend_bytes = std::fs::metadata(frontend)
-        .expect("read oracle_lab frontend metadata")
-        .len();
+    let frontend_bytes = normalized_source_bytes(frontend);
     assert!(
         frontend_bytes <= FRONTEND_LIMIT,
         "oracle_lab.rs grew to {frontend_bytes} bytes; move cohesive command families into modules before extending the frontend"
@@ -228,12 +237,9 @@ fn oracle_lab_frontend_stays_split_into_bounded_command_modules() {
         "policy_discrepancy_search.rs",
         "turn_audits.rs",
         "turn_membership_audit.rs",
-        "v2_capability_audit.rs",
     ] {
         let path = std::path::Path::new("crates/sts_oracle_lab/src/bin").join(module);
-        let bytes = std::fs::metadata(&path)
-            .unwrap_or_else(|error| panic!("read {} metadata: {error}", path.display()))
-            .len();
+        let bytes = normalized_source_bytes(&path);
         assert!(
             bytes <= COMMAND_MODULE_LIMIT,
             "{} grew to {bytes} bytes; split its independent responsibilities instead of creating another command monolith",
@@ -259,13 +265,14 @@ fn oracle_lab_frontend_stays_split_into_bounded_command_modules() {
         ("run_witness_commands.rs", 16 * 1024),
         ("exact_turn_corridor.rs", 16 * 1024),
         ("guidance_artifact_commands.rs", 16 * 1024),
+        ("historical_combat_export.rs", 16 * 1024),
         ("workspace_commands.rs", 16 * 1024),
+        ("workspace_storage_commands.rs", 16 * 1024),
         ("oracle_cli.rs", 24 * 1024),
+        ("oracle_budget_cli.rs", 4 * 1024),
     ] {
         let path = std::path::Path::new("crates/sts_oracle_lab/src/bin").join(module);
-        let bytes = std::fs::metadata(&path)
-            .unwrap_or_else(|error| panic!("read {} metadata: {error}", path.display()))
-            .len();
+        let bytes = normalized_source_bytes(&path);
         assert!(
             bytes <= limit,
             "{} grew to {bytes} bytes; keep this laboratory boundary focused instead of moving unrelated host logic into it",
@@ -904,7 +911,7 @@ fn oracle_run_explorer_keeps_decision_materialization_in_a_bounded_module() {
 #[test]
 fn local_turn_graph_keeps_distinct_responsibilities_in_bounded_modules() {
     const ROOT: &str = "crates/sts_combat_planner/src/local_turn_graph_search.rs";
-    const MODULES: [(&str, u64); 8] = [
+    const MODULES: [(&str, u64); 9] = [
         (
             "crates/sts_combat_planner/src/local_turn_graph_search/admission.rs",
             16 * 1024,
@@ -920,6 +927,10 @@ fn local_turn_graph_keeps_distinct_responsibilities_in_bounded_modules() {
         (
             "crates/sts_combat_planner/src/local_turn_graph_search/scheduling.rs",
             32 * 1024,
+        ),
+        (
+            "crates/sts_combat_planner/src/local_turn_graph_search/service_diagnostics.rs",
+            16 * 1024,
         ),
         (
             "crates/sts_combat_planner/src/local_turn_graph_search/policy_line.rs",
@@ -953,6 +964,7 @@ fn local_turn_graph_keeps_distinct_responsibilities_in_bounded_modules() {
         "policy_line",
         "reporting",
         "session",
+        "service_diagnostics",
     ] {
         assert!(
             source.contains(&format!("mod {module};")),
@@ -997,13 +1009,44 @@ fn local_turn_graph_keeps_distinct_responsibilities_in_bounded_modules() {
     );
 
     for (path, limit) in MODULES {
-        let bytes = std::fs::metadata(path)
-            .unwrap_or_else(|error| panic!("read {path} metadata: {error}"))
-            .len();
+        let bytes = normalized_source_bytes(path);
         assert!(
             bytes <= limit,
             "{path} grew to {bytes} bytes (limit {limit}); split its independent responsibilities before extending it"
         );
+    }
+}
+
+#[test]
+fn maintained_exact_planner_has_no_external_witness_producer_surface() {
+    let mut paths = Vec::new();
+    collect_rust_sources(
+        std::path::Path::new("crates/sts_combat_planner/src"),
+        &mut paths,
+    );
+    for path in paths {
+        let source = std::fs::read_to_string(&path)
+            .unwrap_or_else(|error| panic!("read {}: {error}", path.display()));
+        for retired_surface in [
+            "CombatLookaheadEvaluator",
+            "CombatLookaheadSuffixProposal",
+            "CombatPolicyWitnessProposal",
+            "SharedCombatLookaheadEvaluator",
+            "with_policy_and_lookahead",
+            "advance_with_lookahead",
+            "offer_witness_proposal",
+            "offer_plan_compatible_policy_line_with_suffix_probes",
+            "LookaheadProposal",
+            "PolicyProposal",
+            "suffix_probe",
+            "lookahead_max_evaluations",
+        ] {
+            assert!(
+                !contains_rust_identifier(&source, retired_surface),
+                "{} reintroduced retired external witness producer surface `{retired_surface}`",
+                path.display()
+            );
+        }
     }
 }
 
@@ -1047,9 +1090,7 @@ fn policy_discrepancy_keeps_contract_and_turn_macro_in_bounded_modules() {
     );
 
     for (path, limit) in MODULES {
-        let bytes = std::fs::metadata(path)
-            .unwrap_or_else(|error| panic!("read {path} metadata: {error}"))
-            .len();
+        let bytes = normalized_source_bytes(path);
         assert!(
             bytes <= limit,
             "{path} grew to {bytes} bytes (limit {limit}); split its independent responsibilities before extending it"
@@ -1138,44 +1179,32 @@ fn turn_option_generator_keeps_internal_responsibilities_in_bounded_modules() {
         "inline tests must not regrow inside the turn-option generator root"
     );
 
-    let scheduling_bytes = std::fs::metadata(SCHEDULING)
-        .unwrap_or_else(|error| panic!("read {SCHEDULING} metadata: {error}"))
-        .len();
+    let scheduling_bytes = normalized_source_bytes(SCHEDULING);
     assert!(
         scheduling_bytes <= 16 * 1024,
         "{SCHEDULING} grew to {scheduling_bytes} bytes; split queue policy from queue mechanics before extending it"
     );
-    let guide_frontier_bytes = std::fs::metadata(GUIDE_FRONTIER)
-        .unwrap_or_else(|error| panic!("read {GUIDE_FRONTIER} metadata: {error}"))
-        .len();
+    let guide_frontier_bytes = normalized_source_bytes(GUIDE_FRONTIER);
     assert!(
         guide_frontier_bytes <= 12 * 1024,
         "{GUIDE_FRONTIER} grew to {guide_frontier_bytes} bytes; keep singleton storage mechanics separate from scheduling policy"
     );
-    let reclamation_bytes = std::fs::metadata(RECLAMATION)
-        .unwrap_or_else(|error| panic!("read {RECLAMATION} metadata: {error}"))
-        .len();
+    let reclamation_bytes = normalized_source_bytes(RECLAMATION);
     assert!(
         reclamation_bytes <= 12 * 1024,
         "{RECLAMATION} grew to {reclamation_bytes} bytes; split rebuild policy from heap storage mechanics before extending it"
     );
-    let work_slot_bytes = std::fs::metadata(WORK_SLOTS)
-        .unwrap_or_else(|error| panic!("read {WORK_SLOTS} metadata: {error}"))
-        .len();
+    let work_slot_bytes = normalized_source_bytes(WORK_SLOTS);
     assert!(
         work_slot_bytes <= 12 * 1024,
         "{WORK_SLOTS} grew to {work_slot_bytes} bytes; split handle identity from slot reuse mechanics before extending it"
     );
-    let diagnostics_bytes = std::fs::metadata(DIAGNOSTICS)
-        .unwrap_or_else(|error| panic!("read {DIAGNOSTICS} metadata: {error}"))
-        .len();
+    let diagnostics_bytes = normalized_source_bytes(DIAGNOSTICS);
     assert!(
         diagnostics_bytes <= 20 * 1024,
         "{DIAGNOSTICS} grew to {diagnostics_bytes} bytes; split independent diagnostic projections before extending it"
     );
-    let transition_bytes = std::fs::metadata(TRANSITION)
-        .unwrap_or_else(|error| panic!("read {TRANSITION} metadata: {error}"))
-        .len();
+    let transition_bytes = normalized_source_bytes(TRANSITION);
     assert!(
         transition_bytes <= 16 * 1024,
         "{TRANSITION} grew to {transition_bytes} bytes; split simulation, admission, or publication only when one becomes independently extensible"

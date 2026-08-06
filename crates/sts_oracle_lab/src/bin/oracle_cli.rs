@@ -1,7 +1,6 @@
 use std::path::PathBuf;
 
-use clap::{Args, Parser, Subcommand};
-use sts_oracle_runtime::runtime::branch::OracleRunBudget;
+use clap::{Parser, Subcommand};
 
 use super::action_boundary_evidence::{
     ActionBoundaryEvidenceArgs, ActionBoundaryEvidenceBatchArgs,
@@ -12,7 +11,6 @@ use super::action_reanalysis_policy::ActionReanalysisPolicyArgs;
 use super::action_reanalysis_queue::{ActionReanalysisBatchArgs, ActionReanalysisQueueArgs};
 use super::action_successor_reanalysis::ActionSuccessorReanalysisArgs;
 use super::boundary_successor_corpus::BoundarySuccessorCorpusArgs;
-use super::boundary_successor_lookahead::BoundarySuccessorLookaheadArgs;
 use super::combat_case_local_graph::CombatCaseLocalGraphArgs;
 use super::combat_case_owner_parity::CombatCaseOwnerParityArgs;
 use super::combat_evidence_audit::CombatEvidenceAuditArgs;
@@ -21,6 +19,7 @@ use super::combat_route_compare::CombatCaseRouteCompareArgs;
 use super::combat_scratch_cli::CombatScratchCommand;
 use super::depth_beam_audits::DepthBeamTurnAuditArgs;
 use super::guidance_combination_audit::GuidanceCombinationAuditArgs;
+use super::oracle_budget_cli::BudgetArgs;
 use super::oracle_case_catalog_v2::CaseCommandArgs;
 use super::oracle_contract_v2::{ArtifactCommandArgs, ContractCommandArgs};
 use super::oracle_seed_panel::OracleSeedPanelArgs;
@@ -30,7 +29,6 @@ use super::run_witness_suite::RunWitnessSuiteArgs;
 use super::turn_audits::{TurnActionAuditArgs, TurnPlanAuditArgs};
 use super::turn_membership_audit::TurnMembershipArgs;
 use super::turn_quality_corridor::{TurnQualityCorridorArgs, TurnQualityFrontierArgs};
-use super::v2_capability_audit::V2CapabilityAuditArgs;
 use super::workspace_drive::OracleDriveBoundaryArg;
 use super::workspace_policy_audits::{
     CardRewardPathArgs, RoutePolicyAuditArgs, ShopPolicyAuditArgs,
@@ -326,14 +324,6 @@ pub(super) enum Command {
         #[command(flatten)]
         args: BoundarySuccessorCorpusArgs,
     },
-    /// Compare bounded rollout guidance across exact complete-turn successors.
-    ///
-    /// This is a read-only teacher audit. It never changes the production
-    /// action policy, successor scheduler, or exact witness contract.
-    AuditBoundarySuccessorLookahead {
-        #[command(flatten)]
-        args: BoundarySuccessorLookaheadArgs,
-    },
     /// Run base, action-only, value-only, and combined guidance controls in
     /// one process against the same exact combat root and bounded allowance.
     AuditGuidanceCombination(GuidanceCombinationAuditArgs),
@@ -400,10 +390,6 @@ pub(super) enum Command {
     },
     /// Check when one exact complete-turn action sequence is generated.
     TurnMembership(TurnMembershipArgs),
-    /// Compare the mature V2 search with and without rollout guidance on the
-    /// same exact combat root. This is a compact capability ablation; it
-    /// cannot seed or alter production search.
-    V2CapabilityAudit(V2CapabilityAuditArgs),
     /// Audit action-policy order and exact one-step successor guides at one turn prefix.
     TurnActionAudit(TurnActionAuditArgs),
     /// Audit the mature V2 bounded complete-turn proposer on one exact case.
@@ -615,36 +601,6 @@ pub(super) enum Command {
         #[arg(long)]
         journal: bool,
     },
-}
-
-#[derive(Clone, Copy, Debug, Args)]
-pub(super) struct BudgetArgs {
-    #[arg(long, default_value_t = 250_000)]
-    hallway_nodes: usize,
-    #[arg(long, default_value_t = 5_000)]
-    hallway_ms: u64,
-    #[arg(long, default_value_t = 750_000)]
-    elite_nodes: usize,
-    #[arg(long, default_value_t = 15_000)]
-    elite_ms: u64,
-    #[arg(long, default_value_t = 2_000_000)]
-    boss_nodes: usize,
-    #[arg(long, default_value_t = 30_000)]
-    boss_ms: u64,
-}
-
-impl BudgetArgs {
-    pub(super) fn into_budget(self) -> OracleRunBudget {
-        OracleRunBudget {
-            hallway_nodes: self.hallway_nodes,
-            hallway_ms: self.hallway_ms,
-            elite_nodes: self.elite_nodes,
-            elite_ms: self.elite_ms,
-            boss_nodes: self.boss_nodes,
-            boss_ms: self.boss_ms,
-            ..OracleRunBudget::default()
-        }
-    }
 }
 
 pub(super) fn parse() -> (bool, Command) {

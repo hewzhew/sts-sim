@@ -59,6 +59,68 @@ fn compact_combat_contract_is_the_public_exact_search_surface() {
 }
 
 #[test]
+fn artifact_trace_needs_only_the_v2_artifact_identity() {
+    let cli = Cli::try_parse_from(["oracle_lab", "artifact", "trace", "contract-artifact"])
+        .expect("artifact-owned witness trace should parse");
+    assert!(matches!(cli.command, Command::Artifact(_)));
+}
+
+#[test]
+fn artifact_search_needs_only_the_v2_artifact_identity() {
+    let cli = Cli::try_parse_from(["oracle_lab", "artifact", "search", "contract-artifact"])
+        .expect("artifact-owned search accounting should parse");
+    assert!(matches!(cli.command, Command::Artifact(_)));
+}
+
+#[test]
+fn artifact_search_accepts_one_exact_state_query() {
+    let cli = Cli::try_parse_from([
+        "oracle_lab",
+        "artifact",
+        "search",
+        "contract-artifact",
+        "--state",
+        "3273823f",
+    ])
+    .expect("artifact-owned exact-state service query should parse");
+    assert!(matches!(cli.command, Command::Artifact(_)));
+}
+
+#[test]
+fn artifact_turn_can_follow_displayed_exact_plan_indices() {
+    let cli = Cli::try_parse_from([
+        "oracle_lab",
+        "artifact",
+        "turn",
+        "contract-artifact",
+        "--candidate",
+        "contract",
+        "--turn",
+        "1",
+        "--follow-plan",
+        "2",
+        "--follow-plan",
+        "7",
+        "--scan-next-terminal",
+    ])
+    .expect("artifact-owned exact branch traversal should parse");
+    assert!(matches!(cli.command, Command::Artifact(_)));
+}
+
+#[test]
+fn retired_rollout_control_surfaces_are_not_accepted() {
+    assert!(
+        Cli::try_parse_from(["oracle_lab", "artifact", "rollout", "contract-artifact"]).is_err()
+    );
+    for command in ["v2-capability-audit", "audit-boundary-successor-lookahead"] {
+        assert!(
+            Cli::try_parse_from(["oracle_lab", command]).is_err(),
+            "{command} must not remain a compatibility alias"
+        );
+    }
+}
+
+#[test]
 fn retired_combat_case_names_are_not_accepted() {
     for command in ["combat-case", "combat-case-local-graph"] {
         assert!(

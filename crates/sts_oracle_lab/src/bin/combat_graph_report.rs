@@ -129,16 +129,6 @@ fn full_counter_report(report: &LocalTurnGraphWitnessReport) -> Value {
         "selections": report.counters.selections,
         "node_visits": report.counters.node_visits,
         "generation_work": report.counters.generation_work,
-        "lookahead_evaluations": report.counters.lookahead_evaluations,
-        "lookahead_work": report.counters.lookahead_work,
-        "atomic_lookahead_evaluations": report.counters.atomic_lookahead_evaluations,
-        "atomic_lookahead_work": report.counters.atomic_lookahead_work,
-        "boundary_lookahead_evaluations": report.counters.boundary_lookahead_evaluations,
-        "boundary_lookahead_work": report.counters.boundary_lookahead_work,
-        "lookahead_suffix_proposals": report.counters.lookahead_suffix_proposals,
-        "lookahead_suffix_proposal_rejections": report.counters.lookahead_suffix_proposal_rejections,
-        "lookahead_suffix_replay_engine_steps": report.counters.lookahead_suffix_replay_engine_steps,
-        "lookahead_suffix_witnesses": report.counters.lookahead_suffix_witnesses,
         "engine_steps": report.counters.engine_steps,
         "exact_nodes": report.counters.exact_nodes,
         "exact_edges": report.counters.exact_edges,
@@ -310,7 +300,7 @@ mod tests {
                     elapsed: Duration::from_millis(7),
                     satisfaction: OracleCombatWitnessSatisfaction::FirstWitness,
                     execution_profile: LocalGraphExecutionProfile::from_controls(
-                        false, false, false, false, false, None,
+                        false, false, false, false, None,
                     )
                     .expect("fixture execution profile"),
                     search_spec: LocalGraphSearchSpec::from_controls(

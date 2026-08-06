@@ -2,240 +2,6 @@ use super::*;
 use crate::generator::diagnostics::TurnOptionGeneratorTiming;
 
 impl LocalTurnGraphWitnessSession {
-    pub(super) fn evaluate_lookahead(
-        &mut self,
-        node_id: usize,
-        path: &[(usize, usize)],
-        deadline: Option<Instant>,
-        stepper: &dyn CombatStepper,
-    ) -> bool {
-        let Some(evaluator) = self.lookahead_evaluator.clone() else {
-            self.nodes[node_id].lookahead_pending_lane = None;
-            return true;
-        };
-        let Some(expected_lane) = self.nodes[node_id].lookahead_pending_lane else {
-            return true;
-        };
-        let remaining_work = self.granted_generation_work.saturating_sub(
-            self.used
-                .generation_work
-                .saturating_add(self.used.lookahead_work),
-        );
-        let max_work = self
-            .config
-            .lookahead_work_per_evaluation
-            .max(1)
-            .min(remaining_work);
-        if max_work == 0 {
-            return false;
-        }
-        let position = self.nodes[node_id].generator.root().position().clone();
-        let Some(evaluation) = evaluator.evaluate(&position, max_work, deadline) else {
-            return false;
-        };
-        if evaluation.guide.lane != expected_lane {
-            self.nodes[node_id].lookahead_pending_lane = None;
-            return true;
-        }
-        let backed_rank = evaluation.guide.rank.clone();
-        if let Some(guide) = self.nodes[node_id]
-            .guides
-            .iter_mut()
-            .find(|guide| guide.lane == expected_lane)
-        {
-            *guide = evaluation.guide;
-        } else {
-            self.nodes[node_id].guides.push(evaluation.guide);
-        }
-        update_max_rank(&mut self.nodes[node_id].backed_lookahead_rank, &backed_rank);
-        for (parent_id, edge_index) in path {
-            let edge = &mut self.nodes[*parent_id].children[*edge_index];
-            update_max_rank(&mut edge.backed_lookahead_rank, &backed_rank);
-        }
-        self.nodes[node_id].lookahead_pending_lane = None;
-        // The evaluated lane was deliberately absent while pending. Publish
-        // only that newly grounded view: reinserting every guide here would
-        // silently grant already-serviced one-shot views another expansion.
-        self.shared_agenda
-            .publish_guide_entry(node_id, &self.nodes[node_id], expected_lane);
-        self.used.lookahead_evaluations = self.used.lookahead_evaluations.saturating_add(1);
-        self.used.lookahead_work = self
-            .used
-            .lookahead_work
-            .saturating_add(evaluation.work.max(1));
-        self.used.boundary_lookahead_evaluations =
-            self.used.boundary_lookahead_evaluations.saturating_add(1);
-        self.used.boundary_lookahead_work = self
-            .used
-            .boundary_lookahead_work
-            .saturating_add(evaluation.work.max(1));
-        if let Some(proposal) = evaluation.winning_suffix {
-            self.consume_lookahead_suffix_proposal(node_id, path, proposal, stepper);
-        }
-        true
-    }
-
-    fn consume_lookahead_suffix_proposal(
-        &mut self,
-        node_id: usize,
-        path: &[(usize, usize)],
-        proposal: CombatLookaheadSuffixProposal,
-        stepper: &dyn CombatStepper,
-    ) {
-        self.used.lookahead_suffix_proposals =
-            self.used.lookahead_suffix_proposals.saturating_add(1);
-        let mut position = self.nodes[node_id].generator.root().position().clone();
-        let mut suffix_actions = Vec::with_capacity(proposal.actions.len());
-        let mut validation_engine_steps = 0usize;
-        let transition_step_limit = self.config.generator.max_engine_steps_per_transition.max(1);
-        let mut rejected = proposal.actions.is_empty();
-
-        for input in proposal.actions {
-            if rejected {
-                break;
-            }
-            if stepper.choice_for_legal_input(&position, &input).is_none() {
-                rejected = true;
-                break;
-            }
-            let remaining_engine_steps = self
-                .granted_engine_steps
-                .saturating_sub(self.used.engine_steps)
-                .saturating_sub(validation_engine_steps);
-            if remaining_engine_steps == 0 {
-                rejected = true;
-                break;
-            }
-            let result = stepper.apply_to_stable(
-                &position,
-                input.clone(),
-                CombatStepLimits {
-                    max_engine_steps: transition_step_limit.min(remaining_engine_steps),
-                    deadline: None,
-                },
-            );
-            validation_engine_steps = validation_engine_steps.saturating_add(result.engine_steps);
-            if result.truncated
-                || result.timed_out
-                || validation_engine_steps
-                    > self
-                        .granted_engine_steps
-                        .saturating_sub(self.used.engine_steps)
-            {
-                rejected = true;
-                break;
-            }
-            suffix_actions.push(TurnOptionAction {
-                input,
-                expected_successor_hash: exact_hash(&result.position).into(),
-                engine_steps: result.engine_steps,
-            });
-            position = result.position;
-        }
-        self.used.engine_steps = self
-            .used
-            .engine_steps
-            .saturating_add(validation_engine_steps);
-
-        if rejected
-            || suffix_actions.is_empty()
-            || position.combat.runtime.combat_smoked
-            || stepper.terminal(&position) != CombatTerminal::Win
-            || position.combat.entities.player.current_hp != proposal.final_hp_hint
-        {
-            self.used.lookahead_suffix_proposal_rejections = self
-                .used
-                .lookahead_suffix_proposal_rejections
-                .saturating_add(1);
-            return;
-        }
-
-        let (mut actions, prefix_negative_log_policy) = self.path_actions(path);
-        let suffix_action_count = suffix_actions.len();
-        actions.extend(suffix_actions);
-        let negative_log_policy = prefix_negative_log_policy + suffix_action_count as f64;
-        if !crate::witness::trajectory_within_potion_contract(
-            &self.original_root,
-            &actions,
-            &position,
-            self.config.max_potions_used,
-            self.config.generator.allowed_potion_slots,
-        ) {
-            self.used.lookahead_suffix_proposal_rejections = self
-                .used
-                .lookahead_suffix_proposal_rejections
-                .saturating_add(1);
-            return;
-        }
-        if !terminal_candidate_could_improve_witness_frontier(
-            &self.original_root,
-            &self.witness_frontier,
-            &position,
-            &actions,
-            negative_log_policy,
-            self.config.max_potions_used,
-        ) {
-            self.used.witness_replay_dominated_skips =
-                self.used.witness_replay_dominated_skips.saturating_add(1);
-            return;
-        }
-
-        let required_replay_steps = actions
-            .iter()
-            .map(|action| action.engine_steps.max(1))
-            .sum::<usize>();
-        if required_replay_steps
-            > self
-                .granted_engine_steps
-                .saturating_sub(self.used.engine_steps)
-        {
-            self.used.lookahead_suffix_proposal_rejections = self
-                .used
-                .lookahead_suffix_proposal_rejections
-                .saturating_add(1);
-            return;
-        }
-
-        self.used.witness_replay_attempts = self.used.witness_replay_attempts.saturating_add(1);
-        match replay_witness(
-            &self.original_root,
-            &actions,
-            negative_log_policy,
-            OracleCombatWitnessDiscoverySource::LookaheadProposal,
-            stepper,
-        ) {
-            Ok(witness) => {
-                self.used.engine_steps = self
-                    .used
-                    .engine_steps
-                    .saturating_add(witness.replay_engine_steps);
-                self.used.lookahead_suffix_replay_engine_steps = self
-                    .used
-                    .lookahead_suffix_replay_engine_steps
-                    .saturating_add(witness.replay_engine_steps);
-                let admission = self.remember_witness(witness);
-                if admission.selected_changed {
-                    self.used.witness_replay_improvements =
-                        self.used.witness_replay_improvements.saturating_add(1);
-                }
-                if admission.frontier_changed {
-                    self.used.witness_frontier_changes =
-                        self.used.witness_frontier_changes.saturating_add(1);
-                    self.used.lookahead_suffix_witnesses =
-                        self.used.lookahead_suffix_witnesses.saturating_add(1);
-                }
-            }
-            Err(_) => {
-                // A lookahead suffix is untrusted evidence. Replay rejection
-                // must not poison the exact graph session with ReplayMismatch.
-                self.used.lookahead_suffix_proposal_rejections = self
-                    .used
-                    .lookahead_suffix_proposal_rejections
-                    .saturating_add(1);
-            }
-        }
-    }
-
     pub(super) fn widen(
         &mut self,
         node_id: usize,
@@ -245,11 +11,9 @@ impl LocalTurnGraphWitnessSession {
         deadline: Option<Instant>,
         stepper: &dyn CombatStepper,
     ) -> bool {
-        let remaining_work = self.granted_generation_work.saturating_sub(
-            self.used
-                .generation_work
-                .saturating_add(self.used.lookahead_work),
-        );
+        let remaining_work = self
+            .granted_generation_work
+            .saturating_sub(self.used.generation_work);
         let remaining_steps = self
             .granted_engine_steps
             .saturating_sub(self.used.engine_steps);
@@ -265,20 +29,10 @@ impl LocalTurnGraphWitnessSession {
         if work == 0 || remaining_steps == 0 {
             return false;
         }
-        let remaining_lookahead_evaluations = self
-            .config
-            .lookahead_max_evaluations
-            .saturating_sub(self.used.atomic_lookahead_evaluations);
-        let remaining_lookahead_work = remaining_work.saturating_sub(work);
-
         let generation_started = Instant::now();
         let (
             before,
             after,
-            before_lookahead_evaluations,
-            after_lookahead_evaluations,
-            before_lookahead_work,
-            after_lookahead_work,
             before_diagnostics,
             after_diagnostics,
             before_timing,
@@ -288,18 +42,17 @@ impl LocalTurnGraphWitnessSession {
         ) = {
             let node = &mut self.nodes[node_id];
             node.generator.prefer_lane(match view {
-                LocalServiceView::Anchor => TurnOptionGeneratorPreferredLane::Anchor,
-                LocalServiceView::Guide(lane) => TurnOptionGeneratorPreferredLane::Guide(lane),
-                LocalServiceView::LookaheadEvaluation => {
-                    unreachable!("lookahead evaluation never widens a turn generator")
+                LocalServiceView::Anchor
+                | LocalServiceView::ProposalRoot
+                | LocalServiceView::ProposalContinuation => {
+                    TurnOptionGeneratorPreferredLane::Anchor
                 }
+                LocalServiceView::Guide(lane) => TurnOptionGeneratorPreferredLane::Guide(lane),
             });
             let before = node.generator.counters();
-            let before_lookahead_evaluations = node.generator.lookahead_evaluations();
-            let before_lookahead_work = node.generator.lookahead_work();
             let before_diagnostics = node.generator.diagnostics();
             let before_timing = node.generator.timing();
-            node.generator.advance_with_lookahead(
+            node.generator.advance(
                 stepper,
                 CombatPlanningQuantum {
                     additional_generation_work: work,
@@ -308,13 +61,8 @@ impl LocalTurnGraphWitnessSession {
                     )),
                     deadline,
                 },
-                remaining_lookahead_evaluations,
-                remaining_lookahead_work,
-                self.config.lookahead_work_per_evaluation,
             );
             let after = node.generator.counters();
-            let after_lookahead_evaluations = node.generator.lookahead_evaluations();
-            let after_lookahead_work = node.generator.lookahead_work();
             for lane in node.generator.retained_guide_lanes() {
                 let view = LocalServiceView::Guide(lane);
                 if !node.generation_service_views.contains(&view) {
@@ -332,10 +80,6 @@ impl LocalTurnGraphWitnessSession {
             (
                 before,
                 after,
-                before_lookahead_evaluations,
-                after_lookahead_evaluations,
-                before_lookahead_work,
-                after_lookahead_work,
                 before_diagnostics,
                 after_diagnostics,
                 before_timing,
@@ -350,32 +94,31 @@ impl LocalTurnGraphWitnessSession {
             .saturating_add(elapsed_nanos_u64(generation_started));
 
         let used_work = after.generation_work.saturating_sub(before.generation_work);
-        let used_lookahead_evaluations =
-            after_lookahead_evaluations.saturating_sub(before_lookahead_evaluations);
-        let used_lookahead_work = after_lookahead_work.saturating_sub(before_lookahead_work);
         let used_steps = after.engine_steps.saturating_sub(before.engine_steps);
-        if used_work == 0 && used_lookahead_work == 0 && used_steps == 0 {
+        if used_work == 0 && used_steps == 0 {
             return false;
         }
         self.used.generation_work = self.used.generation_work.saturating_add(used_work);
-        self.used.lookahead_evaluations = self
-            .used
-            .lookahead_evaluations
-            .saturating_add(used_lookahead_evaluations);
-        self.used.lookahead_work = self.used.lookahead_work.saturating_add(used_lookahead_work);
-        self.used.atomic_lookahead_evaluations = self
-            .used
-            .atomic_lookahead_evaluations
-            .saturating_add(used_lookahead_evaluations);
-        self.used.atomic_lookahead_work = self
-            .used
-            .atomic_lookahead_work
-            .saturating_add(used_lookahead_work);
         self.used.engine_steps = self.used.engine_steps.saturating_add(used_steps);
         self.used.applied_action_transitions = self.used.applied_action_transitions.saturating_add(
             after_diagnostics
                 .applied_action_transitions
                 .saturating_sub(before_diagnostics.applied_action_transitions),
+        );
+        self.used.plan_prefix_attempts = self.used.plan_prefix_attempts.saturating_add(
+            after_diagnostics
+                .plan_prefix_attempts
+                .saturating_sub(before_diagnostics.plan_prefix_attempts),
+        );
+        self.used.plan_prefix_completed = self.used.plan_prefix_completed.saturating_add(
+            after_diagnostics
+                .plan_prefix_completed
+                .saturating_sub(before_diagnostics.plan_prefix_completed),
+        );
+        self.used.plan_prefix_rejections = self.used.plan_prefix_rejections.saturating_add(
+            after_diagnostics
+                .plan_prefix_rejections
+                .saturating_sub(before_diagnostics.plan_prefix_rejections),
         );
         self.used.unique_successor_states = self.used.unique_successor_states.saturating_add(
             after_diagnostics
@@ -393,6 +136,7 @@ impl LocalTurnGraphWitnessSession {
 
         let admission_started = Instant::now();
         for option in options {
+            let from_plan_prefix = option.source() == CompleteTurnOptionSource::EncounterPlanPrefix;
             let root_option_started = Instant::now();
             if node_id == 0 {
                 self.record_root_option(&option);
@@ -471,18 +215,26 @@ impl LocalTurnGraphWitnessSession {
                 }
                 CompleteTurnOptionBoundary::Escape => {}
                 CompleteTurnOptionBoundary::NextPlayerTurn => {
-                    let _ = self.accept_successor(node_id, path, option);
+                    if let Some(successor) = self.accept_successor(node_id, path, option) {
+                        if from_plan_prefix
+                            && self
+                                .shared_agenda
+                                .publish_proposal_continuation(successor, &self.nodes[successor])
+                        {
+                            self.used.plan_prefix_continuation_enqueues = self
+                                .used
+                                .plan_prefix_continuation_enqueues
+                                .saturating_add(1);
+                        }
+                    }
                 }
             }
         }
         let refresh_started = Instant::now();
         self.refresh_exhaustion(node_id);
         if self.nodes[node_id].generator.is_finished() || self.nodes[node_id].exhausted {
-            self.shared_agenda.remove_guide_entries(
-                node_id,
-                &self.nodes[node_id],
-                self.lookahead_lane,
-            );
+            self.shared_agenda
+                .remove_guide_entries(node_id, &self.nodes[node_id]);
         }
         self.performance_timing.admission_refresh_elapsed_ns = self
             .performance_timing

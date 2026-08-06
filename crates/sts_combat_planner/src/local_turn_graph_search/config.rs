@@ -9,6 +9,22 @@ use crate::CombatGuideLaneId;
 /// boundary productive without letting a few one-shot guide entries consume
 /// the entire bounded allowance before later high-ranked states are visited.
 pub const DEFAULT_BACKED_GENERATION_QUANTUM_WORK: usize = 128;
+pub const DEFAULT_ROOT_INITIAL_EXPANSION_WORK: usize = 2_048;
+
+/// Keeps the root discovery batch proportional to the caller's complete
+/// allowance. A fixed 2,048-work root batch consumed half of a routine
+/// 4,096-work contract even after a viable opening was already materialized,
+/// leaving too little service for deeper exact boundaries.
+pub fn root_initial_expansion_work_for_budget(total_generation_work: usize) -> usize {
+    if total_generation_work == 0 {
+        return 0;
+    }
+    total_generation_work
+        .div_ceil(8)
+        .max(64)
+        .min(DEFAULT_ROOT_INITIAL_EXPANSION_WORK)
+        .min(total_generation_work)
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct LocalTurnGraphGuideServiceBias {
@@ -43,11 +59,6 @@ pub struct LocalTurnGraphWitnessConfig {
     /// Root-only discovery batch. Root proposals gate every deeper path, so
     /// they receive a wider but still bounded first expansion.
     pub root_initial_expansion_work: usize,
-    /// Maximum number of exact states that may receive an optional expensive
-    /// lookahead evaluation during this session.
-    pub lookahead_max_evaluations: usize,
-    /// Maximum deterministic evaluator work charged to one exact state.
-    pub lookahead_work_per_evaluation: usize,
     pub max_turn_depth: usize,
     pub satisfaction: OracleCombatWitnessSatisfaction,
     /// Require a satisfying terminal witness to leave no stolen gold on a
@@ -71,13 +82,26 @@ impl Default for LocalTurnGraphWitnessConfig {
             backed_generation_quantum_work: DEFAULT_BACKED_GENERATION_QUANTUM_WORK,
             guide_service_bias: None,
             initial_expansion_work: 64,
-            root_initial_expansion_work: 2_048,
-            lookahead_max_evaluations: 384,
-            lookahead_work_per_evaluation: 24,
+            root_initial_expansion_work: DEFAULT_ROOT_INITIAL_EXPANSION_WORK,
             max_turn_depth: 32,
             satisfaction: OracleCombatWitnessSatisfaction::FirstWitness,
             require_no_unrecovered_stolen_gold: false,
             max_potions_used: None,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn root_grounding_is_proportional_for_small_contracts_and_capped_for_large_ones() {
+        assert_eq!(root_initial_expansion_work_for_budget(0), 0);
+        assert_eq!(root_initial_expansion_work_for_budget(16), 16);
+        assert_eq!(root_initial_expansion_work_for_budget(512), 64);
+        assert_eq!(root_initial_expansion_work_for_budget(4_096), 512);
+        assert_eq!(root_initial_expansion_work_for_budget(16_384), 2_048);
+        assert_eq!(root_initial_expansion_work_for_budget(1_000_000), 2_048);
     }
 }

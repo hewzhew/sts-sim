@@ -1,7 +1,7 @@
 use std::time::Instant;
 
 use serde::Serialize;
-use sts_combat_strategy::{CombatPlanProjectionV1, CombatPlanTransitionAnnotationV1};
+use sts_combat_strategy::CombatPlanTransitionAnnotationV1;
 use sts_core::state::core::ClientInput;
 
 use crate::types::{TurnOptionAction, TurnOptionGenerationGap};
@@ -44,23 +44,6 @@ pub struct LocalTurnGraphWitnessCounters {
     pub selections: usize,
     pub node_visits: usize,
     pub generation_work: usize,
-    pub lookahead_evaluations: usize,
-    pub lookahead_work: usize,
-    pub atomic_lookahead_evaluations: usize,
-    pub atomic_lookahead_work: usize,
-    pub boundary_lookahead_evaluations: usize,
-    pub boundary_lookahead_work: usize,
-    /// Complete winning suffixes proposed by bounded boundary lookahead.
-    pub lookahead_suffix_proposals: usize,
-    /// Suffixes rejected for illegality, truncation, contract mismatch,
-    /// insufficient replay budget, or failed authoritative replay.
-    pub lookahead_suffix_proposal_rejections: usize,
-    /// Exact simulator steps spent replaying accepted suffix proposals from
-    /// the unchanged combat root. Proposal validation steps are included in
-    /// `engine_steps` but not in this narrower replay counter.
-    pub lookahead_suffix_replay_engine_steps: usize,
-    /// Replay-verified suffix proposals admitted to the terminal frontier.
-    pub lookahead_suffix_witnesses: usize,
     pub engine_steps: usize,
     pub exact_nodes: usize,
     pub exact_edges: usize,
@@ -69,6 +52,15 @@ pub struct LocalTurnGraphWitnessCounters {
     pub annotated_exact_edges: usize,
     pub completed_turn_options: usize,
     pub applied_action_transitions: usize,
+    /// Encounter-owned current-turn proposals attempted at exact retained
+    /// boundaries. They remain ordinary replayed graph options.
+    pub plan_prefix_attempts: usize,
+    pub plan_prefix_completed: usize,
+    pub plan_prefix_rejections: usize,
+    pub plan_prefix_root_enqueues: usize,
+    pub plan_prefix_root_services: usize,
+    pub plan_prefix_continuation_enqueues: usize,
+    pub plan_prefix_continuation_services: usize,
     pub unique_successor_states: usize,
     pub duplicate_exact_successors: usize,
     pub duplicate_successor_edges: usize,
@@ -88,11 +80,6 @@ pub struct LocalTurnGraphWitnessCounters {
     pub depth_limited_successors: usize,
     pub exhausted_nodes: usize,
     pub maximum_turn_depth: usize,
-    /// Complete tactical lines proposed by an external policy and then
-    /// replayed from this session's unchanged root.
-    pub policy_witness_proposals: usize,
-    /// Exact simulator steps spent authoritatively replaying policy proposals.
-    pub policy_witness_replay_engine_steps: usize,
 }
 
 /// Wall-clock diagnostics kept outside deterministic search counters.
@@ -232,22 +219,6 @@ pub struct LocalTurnGraphWitnessReport {
     pub witness_frontier: Vec<LocalTurnGraphTerminalOutcomeSnapshotV1>,
 }
 
-/// Exact work used to materialize one bounded policy mainline at player-turn
-/// boundaries before ordinary graph search.
-///
-/// A proposal is not a witness. It merely leaves replayable edges in the
-/// shared graph; terminal truth still comes from exact simulation.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
-pub struct LocalTurnGraphSuffixProbeAttempt {
-    pub exact_state_hash: String,
-    pub player_turn: u32,
-    pub plan_projection: Option<CombatPlanProjectionV1>,
-    pub generation_work: usize,
-    pub engine_steps: usize,
-    pub witness_found: bool,
-    pub final_hp: Option<i32>,
-}
-
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]
 pub struct LocalTurnGraphPolicyLineReport {
     pub proposed_turns: usize,
@@ -262,20 +233,6 @@ pub struct LocalTurnGraphPolicyLineReport {
     pub action_identity_elapsed_ns: u64,
     pub plan_annotation_elapsed_ns: u64,
     pub successor_admission_elapsed_ns: u64,
-    pub suffix_probe_attempts: usize,
-    pub suffix_probe_generation_work: usize,
-    pub suffix_probe_engine_steps: usize,
-    pub suffix_probe_completed_turn_options: usize,
-    pub suffix_probe_applied_action_transitions: usize,
-    pub suffix_probe_unique_successor_states: usize,
-    pub suffix_probe_exact_nodes: usize,
-    pub suffix_probe_exact_edges: usize,
-    pub suffix_probe_performance_timing: LocalTurnGraphPerformanceTiming,
-    pub suffix_probe_setup_elapsed_ns: u64,
-    pub suffix_probe_advance_elapsed_ns: u64,
-    pub suffix_probe_replay_elapsed_ns: u64,
-    pub suffix_probe_witness_found: bool,
-    pub suffix_probe_details: Vec<LocalTurnGraphSuffixProbeAttempt>,
     pub reached_terminal_win: bool,
 }
 
@@ -293,11 +250,49 @@ pub struct LocalTurnGraphStateSnapshot {
     pub generator_guided_work_pops: usize,
     pub best_retained_anchor_atomic_depth: Option<usize>,
     pub retained_guide_promises: Vec<LocalTurnGraphRetainedGuidePromiseSnapshot>,
-    pub retained_lookahead_guides: usize,
-    pub lookahead_pending_lane: Option<u32>,
     pub generated_options: usize,
     pub children: usize,
     pub exhausted: bool,
+}
+
+/// Compact accounting of exact search service grouped by relative player-turn
+/// depth. This is a diagnostic view only: it never participates in scheduling
+/// or stopping.
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]
+pub struct LocalTurnGraphDepthServiceSnapshot {
+    pub relative_turn_depth: usize,
+    pub exact_states: usize,
+    pub serviced_states: usize,
+    pub generation_work: usize,
+    pub generated_options: usize,
+    pub exact_children: usize,
+    pub retained_generator_work_items: usize,
+    pub exhausted_states: usize,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct LocalTurnGraphServicedStateSnapshot {
+    pub exact_state_hash: String,
+    pub relative_turn_depth: usize,
+    pub player_turn: u32,
+    pub player_hp: i32,
+    pub alive_enemy_count: usize,
+    pub enemy_total_hp: i32,
+    pub recoverable_stolen_gold: i32,
+    pub unrecovered_stolen_gold: i32,
+    pub generation_work: usize,
+    pub generated_options: usize,
+    pub exact_children: usize,
+    pub retained_generator_work_items: usize,
+    pub path_action_count: usize,
+    pub anchor_ordinal_rank: Option<usize>,
+    pub anchor_candidate_count: usize,
+    pub proposal_root_ordinal_rank: Option<usize>,
+    pub proposal_root_candidate_count: usize,
+    pub proposal_root_services: usize,
+    pub proposal_continuation_ordinal_rank: Option<usize>,
+    pub proposal_continuation_candidate_count: usize,
+    pub proposal_continuation_services: usize,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -356,13 +351,11 @@ pub struct LocalTurnGraphEdgeSnapshot {
     pub parent_widen_anchor_visits: usize,
     pub actions: Vec<TurnOptionAction>,
     pub negative_log_policy: f64,
+    pub plan_prefix_proposed: bool,
     pub plan_transition_annotation: Option<CombatPlanTransitionAnnotationV1>,
     pub visits: usize,
     pub anchor_visits: usize,
     pub backed_visits: usize,
-    pub backed_lookahead_rank: Option<Vec<i32>>,
-    pub lookahead_pending_rank: Option<usize>,
-    pub lookahead_pending_candidates: usize,
     pub successor_path_cost: f64,
     pub successor_anchor_ordinal_rank: Option<usize>,
     pub successor_anchor_candidate_count: usize,

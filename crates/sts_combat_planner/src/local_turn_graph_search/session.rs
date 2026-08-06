@@ -24,38 +24,13 @@ impl LocalTurnGraphWitnessSession {
         config: LocalTurnGraphWitnessConfig,
         policy: SharedCombatActionPolicy,
     ) -> Self {
-        Self::with_optional_lookahead(root, config, policy, None)
-    }
-
-    pub fn with_policy_and_lookahead(
-        root: CombatDecisionRoot,
-        config: LocalTurnGraphWitnessConfig,
-        policy: SharedCombatActionPolicy,
-        lookahead_evaluator: SharedCombatLookaheadEvaluator,
-    ) -> Self {
-        Self::with_optional_lookahead(root, config, policy, Some(lookahead_evaluator))
-    }
-
-    fn with_optional_lookahead(
-        root: CombatDecisionRoot,
-        config: LocalTurnGraphWitnessConfig,
-        policy: SharedCombatActionPolicy,
-        lookahead_evaluator: Option<SharedCombatLookaheadEvaluator>,
-    ) -> Self {
         let original_root = root.position().clone();
         let root_exact_key = root
             .exact_state_key()
             .expect("a newly constructed combat root retains its exact key")
             .clone();
-        let (root_guides, root_lookahead_pending_lane) = guides_with_pending_lookahead(
-            policy.as_ref(),
-            lookahead_evaluator.as_deref(),
-            root.position(),
-        );
+        let root_guides = policy.state_guides(root.position());
         let root_backed_guides = guide_rank_map(&root_guides);
-        // Expensive lookahead evaluates exact player-turn boundaries. Atomic
-        // partial states remain the generator's private proposal mechanism;
-        // evaluating them here would reintroduce an independent inner search.
         let generator = turn_generator_for_potion_budget(
             root.clone(),
             config.generator,
@@ -86,28 +61,29 @@ impl LocalTurnGraphWitnessSession {
             generation_service_views: root_generation_service_views,
             next_generation_service_view: 0,
             widen_anchor_visits: 0,
+            widen_proposal_root_visits: 0,
+            widen_proposal_continuation_visits: 0,
             widen_guide_visits: BTreeMap::new(),
-            lookahead_pending_lane: root_lookahead_pending_lane,
             backed_guides: root_backed_guides,
-            backed_lookahead_rank: None,
             synced_gaps: 0,
             exhausted: false,
         };
-        let mut shared_agenda =
-            SharedBoundaryAgenda::new(lookahead_evaluator.is_some(), config.guide_service_bias);
-        shared_agenda.publish_node(0, &root_node, root_lookahead_pending_lane);
+        let mut shared_agenda = SharedBoundaryAgenda::new(config.guide_service_bias);
+        shared_agenda.publish_node(0, &root_node);
+        let root_proposal_enqueued =
+            combat_plan_turn_prefix_proposal_v1(root_node.generator.root().position()).is_some()
+                && shared_agenda.publish_proposal_root(0, &root_node);
         Self {
             original_root,
             config,
             policy,
-            lookahead_evaluator,
             collect_plan_transition_annotations: false,
-            lookahead_lane: root_lookahead_pending_lane,
             shared_agenda,
             nodes: vec![root_node],
             nodes_by_exact_key,
             used: LocalTurnGraphWitnessCounters {
                 exact_nodes: 1,
+                plan_prefix_root_enqueues: usize::from(root_proposal_enqueued),
                 ..LocalTurnGraphWitnessCounters::default()
             },
             performance_timing: LocalTurnGraphPerformanceTiming::default(),
@@ -128,37 +104,6 @@ impl LocalTurnGraphWitnessSession {
 
     pub fn witness_frontier(&self) -> &[OracleCombatWitness] {
         &self.witness_frontier
-    }
-
-    /// Offers one complete tactical line as an untrusted candidate.
-    ///
-    /// Policy code may discover a useful line cheaply, but it owns neither
-    /// legality nor terminal truth. This session replays every action and
-    /// expected exact successor from its unchanged root before installing a
-    /// witness. Independent local-graph search remains available to improve
-    /// or replace the candidate.
-    pub fn offer_witness_proposal(
-        &mut self,
-        proposal: CombatPolicyWitnessProposal,
-        stepper: &dyn CombatStepper,
-    ) -> Result<bool, OracleCombatWitnessReplayError> {
-        self.used.policy_witness_proposals = self.used.policy_witness_proposals.saturating_add(1);
-        let witness = replay_witness(
-            &self.original_root,
-            &proposal.actions,
-            proposal.actions.len() as f64,
-            OracleCombatWitnessDiscoverySource::PolicyProposal,
-            stepper,
-        )?;
-        self.used.policy_witness_replay_engine_steps = self
-            .used
-            .policy_witness_replay_engine_steps
-            .saturating_add(witness.replay_engine_steps);
-        self.used.engine_steps = self
-            .used
-            .engine_steps
-            .saturating_add(witness.replay_engine_steps);
-        Ok(self.remember_witness(witness).selected_changed)
     }
 
     pub fn restore_verified_witness(&mut self, witness: OracleCombatWitness) -> Result<(), String> {

@@ -23,6 +23,5 @@ impl TurnOptionGeneratorSession {
         self.seen = HashSet::with_hasher(FxBuildHasher);
         self.completed = Vec::new();
         self.gaps = Vec::new();
-        self.lookahead_evaluator = None;
     }
 }

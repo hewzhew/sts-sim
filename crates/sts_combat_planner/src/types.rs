@@ -255,11 +255,18 @@ pub enum CompleteTurnOptionBoundary {
     Escape,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum CompleteTurnOptionSource {
+    ExactEnumeration,
+    EncounterPlanPrefix,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct CompleteTurnOption {
     root_exact_state_identity: ReplaySuccessorHash,
     actions: Vec<TurnOptionAction>,
     boundary: CompleteTurnOptionBoundary,
+    source: CompleteTurnOptionSource,
     exact_successor_hash: ReplaySuccessorHash,
     exact_successor: CombatPosition,
     engine_steps: usize,
@@ -271,6 +278,41 @@ impl CompleteTurnOption {
         root_exact_state_identity: impl Into<ReplaySuccessorHash>,
         actions: Vec<TurnOptionAction>,
         boundary: CompleteTurnOptionBoundary,
+        exact_successor: CombatPosition,
+        negative_log_policy: f64,
+    ) -> Self {
+        Self::with_source(
+            root_exact_state_identity,
+            actions,
+            boundary,
+            CompleteTurnOptionSource::ExactEnumeration,
+            exact_successor,
+            negative_log_policy,
+        )
+    }
+
+    pub(crate) fn from_encounter_plan_prefix(
+        root_exact_state_identity: impl Into<ReplaySuccessorHash>,
+        actions: Vec<TurnOptionAction>,
+        boundary: CompleteTurnOptionBoundary,
+        exact_successor: CombatPosition,
+        negative_log_policy: f64,
+    ) -> Self {
+        Self::with_source(
+            root_exact_state_identity,
+            actions,
+            boundary,
+            CompleteTurnOptionSource::EncounterPlanPrefix,
+            exact_successor,
+            negative_log_policy,
+        )
+    }
+
+    fn with_source(
+        root_exact_state_identity: impl Into<ReplaySuccessorHash>,
+        actions: Vec<TurnOptionAction>,
+        boundary: CompleteTurnOptionBoundary,
+        source: CompleteTurnOptionSource,
         exact_successor: CombatPosition,
         negative_log_policy: f64,
     ) -> Self {
@@ -289,6 +331,7 @@ impl CompleteTurnOption {
             exact_successor_hash,
             actions,
             boundary,
+            source,
             exact_successor,
             engine_steps,
             negative_log_policy,
@@ -305,6 +348,10 @@ impl CompleteTurnOption {
 
     pub fn boundary(&self) -> CompleteTurnOptionBoundary {
         self.boundary
+    }
+
+    pub(crate) fn source(&self) -> CompleteTurnOptionSource {
+        self.source
     }
 
     pub fn exact_successor_hash(&self) -> &str {
@@ -394,6 +441,9 @@ pub struct TurnOptionGenerationDiagnostics {
     pub unique_successor_states: usize,
     pub duplicate_exact_successors: usize,
     pub completed_turn_options: usize,
+    pub plan_prefix_attempts: usize,
+    pub plan_prefix_completed: usize,
+    pub plan_prefix_rejections: usize,
 }
 
 pub(crate) fn exact_hash(position: &CombatPosition) -> String {
