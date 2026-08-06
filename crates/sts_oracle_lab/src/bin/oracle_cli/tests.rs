@@ -391,3 +391,30 @@ fn current_stage_probe_is_a_separate_bounded_command() {
     assert_eq!(quantum_nodes, 128);
     assert_eq!(wall_ms, 250);
 }
+
+#[test]
+fn run_witness_suite_can_list_manifest_entries_without_replay() {
+    let cli = Cli::try_parse_from([
+        "oracle_lab",
+        "verify-run-witness-suite",
+        "--manifest",
+        "suite.json",
+        "--list",
+    ])
+    .expect("run-witness suite inventory should parse");
+    assert!(matches!(cli.command, Command::VerifyRunWitnessSuite { .. }));
+}
+
+#[test]
+fn run_witness_suite_can_select_one_exact_witness() {
+    let cli = Cli::try_parse_from([
+        "oracle_lab",
+        "verify-run-witness-suite",
+        "--manifest",
+        "suite.json",
+        "--witness",
+        "seed006",
+    ])
+    .expect("single run-witness replay should parse");
+    assert!(matches!(cli.command, Command::VerifyRunWitnessSuite { .. }));
+}

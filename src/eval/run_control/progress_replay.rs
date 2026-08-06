@@ -11,9 +11,9 @@ use super::combat_line_trace::{
 };
 use super::oracle_run_explorer::run_session_fingerprint_v2;
 use super::{
-    DecisionCandidateKey, RunCombatResolutionBoundaryV1, RunCombatResolutionV1, RunControlConfig,
-    RunControlSession, RunDecisionBoundaryV1, RunDecisionTransactionV1, RunProgressJournalV1,
-    RunProgressStepV1,
+    CombatAutomationOpportunityStateV1, DecisionCandidateKey, RunCombatResolutionBoundaryV1,
+    RunCombatResolutionV1, RunControlConfig, RunControlSession, RunDecisionBoundaryV1,
+    RunDecisionTransactionV1, RunProgressJournalV1, RunProgressStepV1,
 };
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -1176,7 +1176,11 @@ where
                 let opportunity = combat_automation_opportunity_state_v1(session);
                 if opportunity != action.opportunity_before {
                     return Err(format!(
-                        "journal entry {entry_index} combat action {action_index} opportunity mismatch"
+                        "journal entry {entry_index} combat action {action_index} opportunity mismatch: {}",
+                        combat_opportunity_mismatch_summary(
+                            action.opportunity_before.as_ref(),
+                            opportunity.as_ref(),
+                        )
                     ));
                 }
                 let outcome = session
@@ -1248,9 +1252,74 @@ fn decision_boundaries_match(
         && actual.location == expected.location
 }
 
+fn combat_opportunity_mismatch_summary(
+    expected: Option<&CombatAutomationOpportunityStateV1>,
+    actual: Option<&CombatAutomationOpportunityStateV1>,
+) -> String {
+    let mut differences = serde_json::Map::new();
+    match (expected, actual) {
+        (Some(expected), Some(actual)) => {
+            macro_rules! record_difference {
+                ($field:ident) => {
+                    if expected.$field != actual.$field {
+                        differences.insert(
+                            stringify!($field).to_owned(),
+                            serde_json::json!({
+                                "expected": &expected.$field,
+                                "actual": &actual.$field,
+                            }),
+                        );
+                    }
+                };
+            }
+            record_difference!(turn);
+            record_difference!(energy);
+            record_difference!(hand);
+            record_difference!(potions);
+            record_difference!(playable_card_uuids);
+            record_difference!(usable_potion_uuids);
+        }
+        (expected, actual) => {
+            differences.insert(
+                "presence".to_owned(),
+                serde_json::json!({
+                    "expected": expected.is_some(),
+                    "actual": actual.is_some(),
+                }),
+            );
+        }
+    }
+    serde_json::to_string(&differences)
+        .unwrap_or_else(|error| format!("failed to encode typed mismatch: {error}"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn combat_opportunity_mismatch_reports_only_changed_typed_fields() {
+        let expected = CombatAutomationOpportunityStateV1 {
+            turn: 2,
+            energy: 3,
+            hand: Vec::new(),
+            potions: Vec::new(),
+            playable_card_uuids: Vec::new(),
+            usable_potion_uuids: Vec::new(),
+        };
+        let actual = CombatAutomationOpportunityStateV1 {
+            energy: 2,
+            ..expected.clone()
+        };
+
+        let summary = combat_opportunity_mismatch_summary(Some(&expected), Some(&actual));
+        let summary = serde_json::from_str::<serde_json::Value>(&summary)
+            .expect("typed mismatch should be valid JSON");
+        assert_eq!(summary["energy"]["expected"], 3);
+        assert_eq!(summary["energy"]["actual"], 2);
+        assert!(summary.get("turn").is_none());
+        assert!(summary.get("hand").is_none());
+    }
 
     #[test]
     fn owner_relation_classifies_same_kind_potion_discards_without_collapsing_other_potions() {

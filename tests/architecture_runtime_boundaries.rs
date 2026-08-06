@@ -2449,3 +2449,26 @@ fn planner_capture_uses_candidate_enumeration_without_incumbent_explanations() {
         );
     }
 }
+
+#[test]
+fn oracle_wrapper_help_does_not_duplicate_cli_subcommand_inventory() {
+    let source = std::fs::read_to_string("ol.cmd").expect("read canonical oracle wrapper");
+    for duplicated_operation in [
+        "contract combat",
+        "artifact summary",
+        "artifact search",
+        "artifact trace",
+        "artifact compare",
+        "artifact turn",
+        "artifact rerun",
+        "case import",
+        "case list",
+    ] {
+        assert!(
+            !source.contains(duplicated_operation),
+            "ol.cmd compact help must not duplicate canonical operation '{duplicated_operation}'"
+        );
+    }
+    assert!(source.contains("ol.cmd help for the full canonical command surface"));
+    assert!(source.contains("\"%oracle_binary%\" --canonical-oracle --help"));
+}

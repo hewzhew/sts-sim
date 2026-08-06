@@ -34,6 +34,11 @@ The heavy `oracle_lab` and `oracle_lab_service` targets require the internal
 ad-hoc Cargo build. The retired `fast-run` profile and target directory are
 not operational entry points.
 
+`.\ol.cmd --help` is a deliberately non-enumerating gateway to the maintained
+command groups; it must not duplicate their subcommand inventory. Use
+`.\ol.cmd <command> --help` for one current typed surface or `.\ol.cmd help`
+to delegate the full top-level help to the canonical binary.
+
 Detailed recipes:
 
 - [Combat Evidence And Offline Laboratories](runbooks/combat-evidence.md)
