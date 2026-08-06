@@ -1,0 +1,361 @@
+use serde::{Deserialize, Serialize};
+
+use crate::ai::combat_public_observation::{
+    combat_public_observation_v1, CombatPublicObservationV1,
+};
+use crate::ai::planner_core::{LegalCandidateSet, PlannerObservation};
+use crate::sim::combat_action_surface::{
+    combat_legal_action_surface_v2, pending_choice_input_is_legal, CombatLegalActionSurfaceV2,
+};
+use crate::state::core::{ClientInput, EngineState, RunResult};
+
+use super::{
+    capture_planner_boundary_yield_v1, PlannerBoundaryYieldKindV1, RunControlConfig,
+    RunControlSession, RunControlSessionCheckpointV1,
+};
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum LearningCombatObservationGapV1 {
+    CombatPhaseAndTurnCounters,
+    PlayerPowersStanceAndOrbs,
+    MonsterPowersAndRuntimeState,
+    Relics,
+    PublicDiscardAndExhaustContents,
+    PendingChoiceContext,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(tag = "status", rename_all = "snake_case")]
+pub enum LearningObservationCompletenessV1 {
+    Complete,
+    Incomplete {
+        combat_gaps: Vec<LearningCombatObservationGapV1>,
+    },
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct LearningStrategicBoundaryV1 {
+    pub observation: PlannerObservation,
+    pub legal_candidates: LegalCandidateSet,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct LearningCombatBoundaryV1 {
+    pub observation: CombatPublicObservationV1,
+    pub observation_completeness: LearningObservationCompletenessV1,
+    pub legal_actions: CombatLegalActionSurfaceV2,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum LearningBoundaryV1 {
+    Strategic {
+        boundary: LearningStrategicBoundaryV1,
+    },
+    Combat {
+        boundary: LearningCombatBoundaryV1,
+    },
+    Terminal {
+        result: RunResult,
+    },
+    Unsupported,
+}
+
+impl LearningBoundaryV1 {
+    pub fn terminal_reward(&self) -> i8 {
+        match self {
+            Self::Terminal {
+                result: RunResult::Victory,
+            } => 1,
+            Self::Terminal {
+                result: RunResult::Defeat,
+            } => -1,
+            _ => 0,
+        }
+    }
+
+    pub fn is_terminal(&self) -> bool {
+        matches!(self, Self::Terminal { .. })
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum LearningActionV1 {
+    StrategicCandidate { candidate_id: String },
+    CombatInput { input: ClientInput },
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct LearningStepV1 {
+    pub reward: i8,
+    pub terminated: bool,
+    pub boundary: LearningBoundaryV1,
+}
+
+#[derive(Clone, Debug)]
+pub struct LearningEnvV1 {
+    session: RunControlSession,
+}
+
+impl LearningEnvV1 {
+    pub fn new(config: RunControlConfig) -> Self {
+        Self {
+            session: RunControlSession::new(config),
+        }
+    }
+
+    pub fn from_session(session: RunControlSession) -> Self {
+        Self { session }
+    }
+
+    pub fn from_checkpoint(checkpoint: RunControlSessionCheckpointV1) -> Result<Self, String> {
+        Ok(Self {
+            session: checkpoint.into_session()?,
+        })
+    }
+
+    pub fn checkpoint(&self) -> RunControlSessionCheckpointV1 {
+        RunControlSessionCheckpointV1::from_session(&self.session)
+    }
+
+    pub fn restore(&mut self, checkpoint: RunControlSessionCheckpointV1) -> Result<(), String> {
+        self.session = checkpoint.into_session()?;
+        Ok(())
+    }
+
+    pub fn into_session(self) -> RunControlSession {
+        self.session
+    }
+
+    pub fn observe(&self) -> Result<LearningBoundaryV1, String> {
+        if let EngineState::GameOver(result) = &self.session.engine_state {
+            return Ok(LearningBoundaryV1::Terminal {
+                result: result.clone(),
+            });
+        }
+        if matches!(
+            self.session.engine_state,
+            EngineState::CombatPlayerTurn
+                | EngineState::CombatProcessing
+                | EngineState::PendingChoice(_)
+        ) {
+            let position = self.session.current_combat_position_for_actions()?;
+            return Ok(LearningBoundaryV1::Combat {
+                boundary: LearningCombatBoundaryV1 {
+                    observation: combat_public_observation_v1(&position.combat),
+                    observation_completeness: LearningObservationCompletenessV1::Incomplete {
+                        combat_gaps: current_combat_observation_gaps_v1(),
+                    },
+                    legal_actions: combat_legal_action_surface_v2(
+                        &position.engine,
+                        &position.combat,
+                    ),
+                },
+            });
+        }
+
+        let segment = capture_planner_boundary_yield_v1(
+            &self.session,
+            PlannerBoundaryYieldKindV1::CallbackStop,
+        )?;
+        let [visit] = segment.visits.as_slice() else {
+            return Ok(LearningBoundaryV1::Unsupported);
+        };
+        Ok(LearningBoundaryV1::Strategic {
+            boundary: LearningStrategicBoundaryV1 {
+                observation: visit.observation.clone(),
+                legal_candidates: visit.legal_candidate_set.clone(),
+            },
+        })
+    }
+
+    pub fn step(&mut self, action: LearningActionV1) -> Result<LearningStepV1, String> {
+        match action {
+            LearningActionV1::StrategicCandidate { candidate_id } => {
+                self.apply_strategic_candidate(&candidate_id)?;
+            }
+            LearningActionV1::CombatInput { input } => {
+                self.apply_combat_input(input)?;
+            }
+        }
+        let boundary = self.observe()?;
+        Ok(LearningStepV1 {
+            reward: boundary.terminal_reward(),
+            terminated: boundary.is_terminal(),
+            boundary,
+        })
+    }
+
+    fn apply_strategic_candidate(&mut self, planner_candidate_id: &str) -> Result<(), String> {
+        let segment = capture_planner_boundary_yield_v1(
+            &self.session,
+            PlannerBoundaryYieldKindV1::CallbackStop,
+        )?;
+        let [visit] = segment.visits.as_slice() else {
+            return Err(
+                "strategic learning action requires a represented planner boundary".to_string(),
+            );
+        };
+        let link = visit
+            .candidate_links
+            .iter()
+            .find(|link| link.planner_candidate_id == planner_candidate_id)
+            .ok_or_else(|| {
+                format!(
+                    "planner candidate '{planner_candidate_id}' is not legal at the current boundary"
+                )
+            })?;
+        self.session.apply_candidate_id(&link.run_candidate_id)?;
+        Ok(())
+    }
+
+    fn apply_combat_input(&mut self, input: ClientInput) -> Result<(), String> {
+        let position = self.session.current_combat_position_for_actions()?;
+        let surface = combat_legal_action_surface_v2(&position.engine, &position.combat);
+        let legal = surface.atomic_actions.contains(&input)
+            || match &position.engine {
+                EngineState::PendingChoice(choice) => {
+                    pending_choice_input_is_legal(choice, &position.combat, &input)
+                }
+                _ => false,
+            };
+        if !legal {
+            return Err("combat learning input is not legal at the current boundary".to_string());
+        }
+        self.session
+            .apply_decision_action(super::RunDecisionAction::Input(input))?;
+        Ok(())
+    }
+}
+
+fn current_combat_observation_gaps_v1() -> Vec<LearningCombatObservationGapV1> {
+    vec![
+        LearningCombatObservationGapV1::CombatPhaseAndTurnCounters,
+        LearningCombatObservationGapV1::PlayerPowersStanceAndOrbs,
+        LearningCombatObservationGapV1::MonsterPowersAndRuntimeState,
+        LearningCombatObservationGapV1::Relics,
+        LearningCombatObservationGapV1::PublicDiscardAndExhaustContents,
+        LearningCombatObservationGapV1::PendingChoiceContext,
+    ]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::state::core::{ActiveCombat, CombatContext, RoomCombatContext};
+    use crate::state::map::node::RoomType;
+
+    #[test]
+    fn strategic_boundary_steps_by_typed_planner_candidate_and_restores_exactly() {
+        let mut env = LearningEnvV1::new(RunControlConfig::default());
+        let before = env.observe().expect("observe initial learning boundary");
+        let LearningBoundaryV1::Strategic { boundary } = &before else {
+            panic!("new run should begin at a represented strategic boundary");
+        };
+        let candidate_id = boundary
+            .legal_candidates
+            .candidates
+            .first()
+            .expect("initial boundary should have a legal candidate")
+            .candidate_id
+            .clone();
+        let checkpoint = env.checkpoint();
+
+        let step = env
+            .step(LearningActionV1::StrategicCandidate { candidate_id })
+            .expect("apply typed strategic learning action");
+        assert_eq!(step.reward, 0);
+        assert!(!step.terminated);
+        assert_ne!(step.boundary, before);
+
+        env.restore(checkpoint)
+            .expect("restore exact learning checkpoint");
+        assert_eq!(
+            env.observe().expect("observe restored learning boundary"),
+            before
+        );
+    }
+
+    #[test]
+    fn repeated_in_memory_checkpoint_restore_preserves_the_learning_boundary() {
+        let env = LearningEnvV1::new(RunControlConfig::default());
+        let expected = env.observe().expect("observe initial learning boundary");
+        let checkpoint = env.checkpoint();
+
+        for _ in 0..1_000 {
+            let restored = LearningEnvV1::from_checkpoint(checkpoint.clone())
+                .expect("restore in-memory learning checkpoint");
+            assert_eq!(
+                restored
+                    .observe()
+                    .expect("observe repeated restored boundary"),
+                expected
+            );
+        }
+    }
+
+    #[test]
+    fn combat_boundary_exposes_exact_actions_but_rejects_incomplete_observation_claim() {
+        let mut session = RunControlSession::new(RunControlConfig::default());
+        let combat = crate::test_support::blank_test_combat();
+        session.engine_state = EngineState::CombatPlayerTurn;
+        session.active_combat = Some(ActiveCombat::new(
+            EngineState::CombatPlayerTurn,
+            combat,
+            CombatContext::Room(RoomCombatContext {
+                room_type: RoomType::MonsterRoom,
+            }),
+        ));
+        let env = LearningEnvV1::from_session(session);
+
+        let LearningBoundaryV1::Combat { boundary } =
+            env.observe().expect("observe combat learning boundary")
+        else {
+            panic!("active combat should expose a combat learning boundary");
+        };
+        assert!(matches!(
+            boundary.observation_completeness,
+            LearningObservationCompletenessV1::Incomplete { .. }
+        ));
+        assert!(boundary
+            .legal_actions
+            .atomic_actions
+            .contains(&ClientInput::EndTurn));
+    }
+
+    #[test]
+    fn illegal_combat_input_is_rejected_without_mutating_the_boundary() {
+        let mut session = RunControlSession::new(RunControlConfig::default());
+        let combat = crate::test_support::blank_test_combat();
+        session.engine_state = EngineState::CombatPlayerTurn;
+        session.active_combat = Some(ActiveCombat::new(
+            EngineState::CombatPlayerTurn,
+            combat,
+            CombatContext::Room(RoomCombatContext {
+                room_type: RoomType::MonsterRoom,
+            }),
+        ));
+        let mut env = LearningEnvV1::from_session(session);
+        let before = env.observe().expect("observe combat learning boundary");
+
+        let error = env
+            .step(LearningActionV1::CombatInput {
+                input: ClientInput::PlayCard {
+                    card_index: 99,
+                    target: None,
+                },
+            })
+            .expect_err("illegal combat input should fail");
+
+        assert!(error.contains("not legal"));
+        assert_eq!(
+            env.observe().expect("observe after rejected combat input"),
+            before
+        );
+    }
+}

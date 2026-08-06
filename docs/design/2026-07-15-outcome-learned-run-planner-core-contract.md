@@ -546,6 +546,28 @@ Training and evaluation partitions are assigned by seed and root state before
 counterfactual children are generated. Siblings, reruns, and derived samples
 from one root remain in the same partition.
 
+### Online environment bridge
+
+`LearningEnvV1` now provides the smallest in-process online boundary over
+run-control: reset from config or an exact checkpoint, observe one typed
+strategic or combat boundary, apply one typed action, and receive sparse
+terminal reward. It reuses the existing mutation and checkpoint authorities;
+it does not create another journal, workspace, or executor.
+
+This is infrastructure, not a claim that end-to-end training is ready.
+Strategic observations already use the hidden-free planner contract. Combat
+actions use the complete linear typed action surface, including symbolic
+selection families, but `CombatPublicObservationV1` remains a fingerprint
+projection rather than a complete learning observation. The environment
+therefore publishes typed combat-observation gaps and must not mark those
+samples complete until the missing public state is represented.
+
+Recovery curricula are callers of this boundary, not mechanics. Restoring an
+exact checkpoint must preserve its RNG state; a curriculum may count, limit,
+or schedule retries but may not obtain value by rerolling the same state.
+Strict zero-recovery held-out evaluation remains separate from any
+training-time curriculum metric.
+
 ## Relationship To Existing Code
 
 The new core may reuse:
@@ -677,6 +699,10 @@ model or alter a decision:
    complete candidates and which still have typed gaps.
 6. Use that report to select, in a later reviewed change, the first owner and
    the smallest outcome-prediction experiment.
+7. **Online bridge complete; combat observation incomplete.** Reuse
+   run-control for typed online stepping, exact checkpoint/restore, and sparse
+   terminal reward. Close the declared public-combat observation gaps before
+   starting end-to-end combat training.
 
 The slice should prefer a transparent tabular or small-set baseline before a
 large neural model. Architecture is earned by data and ablation, not by model

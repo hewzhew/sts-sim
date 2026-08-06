@@ -2472,3 +2472,23 @@ fn oracle_wrapper_help_does_not_duplicate_cli_subcommand_inventory() {
     assert!(source.contains("ol.cmd help for the full canonical command surface"));
     assert!(source.contains("\"%oracle_binary%\" --canonical-oracle --help"));
 }
+
+#[test]
+fn online_learning_env_uses_public_state_and_typed_legality_without_policy_scores() {
+    let source = std::fs::read_to_string("src/eval/run_control/learning_env.rs")
+        .expect("read online learning environment");
+    assert!(source.contains("combat_public_observation_v1"));
+    assert!(source.contains("combat_legal_action_surface_v2"));
+    assert!(source.contains("LegalCandidateSet"));
+    for forbidden in [
+        "semantic_combat_state_features",
+        "combat_search",
+        "strategy::",
+        "_policy_v1",
+    ] {
+        assert!(
+            !source.contains(forbidden),
+            "online learning environment must not import privileged or incumbent-policy input '{forbidden}'"
+        );
+    }
+}

@@ -37,6 +37,7 @@ mod decision_transaction;
 mod exact_run_model;
 mod forced_transition;
 mod input_gate;
+mod learning_env;
 mod next_hint;
 mod noncombat_boundary;
 mod noncombat_policy_annotation;
@@ -145,6 +146,10 @@ pub use exact_run_model::{exact_run_decision_successor_v1, ExactRunDecisionSucce
 pub use forced_transition::{
     RunForcedTransitionKindV1, RunForcedTransitionV1, RUN_FORCED_TRANSITION_SCHEMA_NAME,
     RUN_FORCED_TRANSITION_SCHEMA_VERSION,
+};
+pub use learning_env::{
+    LearningActionV1, LearningBoundaryV1, LearningCombatBoundaryV1, LearningCombatObservationGapV1,
+    LearningEnvV1, LearningObservationCompletenessV1, LearningStepV1, LearningStrategicBoundaryV1,
 };
 pub use oracle_analysis_session::{
     OracleAnalysisAdvanceReportV1, OracleAnalysisAdvanceRequestV1, OracleAnalysisAdvanceStatusV1,

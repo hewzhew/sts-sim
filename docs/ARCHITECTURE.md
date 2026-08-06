@@ -63,6 +63,18 @@ The intended flow is:
 domain -> analysis -> strategy -> policy -> runtime
 ```
 
+The learned-policy path is a separate clean-room flow:
+
+```text
+domain -> hidden-free observation + complete typed action surface
+       -> learned policy/value -> runtime
+```
+
+It must not pass through current strategy scores, owner ranks, explanation
+strings, or search-private state. Existing owners may supply behavior
+trajectories, but their selected actions are provenance rather than teacher
+labels.
+
 Do not add another scene-local strategic model when reward, shop, route, and
 branch retention need the same concept. Shared concepts belong in `analysis` or
 `strategy`; scene-specific button mapping belongs in `policy`; applying a
@@ -95,6 +107,20 @@ authority.
 Automation should stop when the current site lacks a bounded policy answer. Do
 not encode stale global rules such as "shops always stop" or "events always
 stop"; each high-agency site needs its own owner/compiler boundary.
+
+`LearningEnvV1` is the in-process online-learning boundary over the same
+run-control mutation authority. It exposes strategic decisions through
+`PlannerObservation` and `LegalCandidateSet`, combat decisions through the
+typed combat action surface, exact checkpoint/restore, and only sparse terminal
+reward. A curriculum or recovery controller stays outside the environment and
+must not change RNG when restoring a checkpoint.
+
+The current combat branch deliberately reports its public observation as
+incomplete. `CombatPublicObservationV1` was built for stable public
+fingerprints and still omits visible state required for learning, including
+turn/phase counters, powers, stance/orbs, relics, public discard/exhaust
+contents, and pending-choice context. End-to-end training must not treat that
+projection as complete; close the typed gaps before admitting combat samples.
 
 On an ordinary reward screen, the reward owner claims typed low-agency public
 resources before opening a nested card-reward choice. This lets the card owner
