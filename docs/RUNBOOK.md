@@ -56,6 +56,8 @@ then run and reproduce it through the stable V2 protocol:
 .\ol.cmd artifact compare <artifact-directory>
 .\ol.cmd artifact turn <artifact-directory> --candidate contract --turn 1
 .\ol.cmd artifact turn <artifact-directory> --candidate contract --turn 1 --follow-plan 2
+.\ol.cmd artifact turn <artifact-directory> --candidate contract --turn 1 `
+  --follow-state <exact-successor-prefix> --successor-state <next-successor-prefix>
 .\ol.cmd artifact rerun <artifact-directory>
 ```
 
@@ -75,15 +77,20 @@ semantic role and enumerates a bounded exact complete-turn surface at the
 requested observed turn; it never asks callers for action sidecar paths or
 scratch ids. Repeat `--follow-plan <displayed-index>` to walk exact complete-turn
 successors and inspect the reached turn directly; the command replay-validates
-each successor and does not export an intermediate case. Callers never join
-case and action paths or restate the contract.
+each successor and does not export an intermediate case. Prefer
+`--follow-state <exact-hash-or-prefix>` when the successor identity is already
+known, and use `--successor-state <exact-hash-or-prefix>` to return only one
+matching plan from the reached surface instead of printing and reparsing every
+sibling. Callers never join case and action paths or restate the contract.
 `artifact search --state` reports whether one exact state was retained and
 whether its complete-turn generator received service, its current anchor,
 proposal-root, and proposal-continuation queue positions, and their service
 counts. It also reports whether the boundary's typed proposal was applicable,
-attempted, completed, or rejected, the exact successor identities it
-materialized, and whether generator work used anchor or guide service; it
-never parses the opaque full report.
+root-eligible or continuation-only, attempted, completed, or rejected, the
+exact successor identities it
+materialized, the boundary service source that actually consumed work, and
+whether the generator's internal lane used anchor or guide service; it never
+parses the opaque full report.
 These commands deliberately reject earlier manifest schemas and legacy reports
 instead of guessing their fields.
 

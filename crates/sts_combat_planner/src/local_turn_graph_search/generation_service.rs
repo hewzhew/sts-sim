@@ -6,7 +6,8 @@ impl LocalTurnGraphWitnessSession {
         &mut self,
         node_id: usize,
         path: &[(usize, usize)],
-        view: LocalServiceView,
+        boundary_service_view: LocalServiceView,
+        generation_view: LocalServiceView,
         requested_work: usize,
         deadline: Option<Instant>,
         stepper: &dyn CombatStepper,
@@ -41,7 +42,7 @@ impl LocalTurnGraphWitnessSession {
             new_gaps,
         ) = {
             let node = &mut self.nodes[node_id];
-            node.generator.prefer_lane(match view {
+            node.generator.prefer_lane(match generation_view {
                 LocalServiceView::Anchor
                 | LocalServiceView::ProposalRoot
                 | LocalServiceView::ProposalContinuation => {
@@ -52,16 +53,26 @@ impl LocalTurnGraphWitnessSession {
             let before = node.generator.counters();
             let before_diagnostics = node.generator.diagnostics();
             let before_timing = node.generator.timing();
-            node.generator.advance(
-                stepper,
+            let quantum =
                 CombatPlanningQuantum {
                     additional_generation_work: work,
                     additional_engine_steps: remaining_steps.min(work.saturating_mul(
                         self.config.generator.max_engine_steps_per_transition.max(1),
                     )),
                     deadline,
-                },
-            );
+                };
+            match boundary_service_view {
+                LocalServiceView::ProposalRoot => {
+                    node.generator.advance_with_root_proposal(stepper, quantum);
+                }
+                LocalServiceView::ProposalContinuation => {
+                    node.generator
+                        .advance_with_continuation_proposal(stepper, quantum);
+                }
+                LocalServiceView::Anchor | LocalServiceView::Guide(_) => {
+                    node.generator.advance(stepper, quantum);
+                }
+            }
             let after = node.generator.counters();
             for lane in node.generator.retained_guide_lanes() {
                 let view = LocalServiceView::Guide(lane);
@@ -98,7 +109,29 @@ impl LocalTurnGraphWitnessSession {
         if used_work == 0 && used_steps == 0 {
             return false;
         }
-        match view {
+        match boundary_service_view {
+            LocalServiceView::Anchor => {
+                self.nodes[node_id].boundary_anchor_services = self.nodes[node_id]
+                    .boundary_anchor_services
+                    .saturating_add(1);
+            }
+            LocalServiceView::ProposalRoot => {
+                self.nodes[node_id].boundary_proposal_root_services = self.nodes[node_id]
+                    .boundary_proposal_root_services
+                    .saturating_add(1);
+            }
+            LocalServiceView::ProposalContinuation => {
+                self.nodes[node_id].boundary_proposal_continuation_services = self.nodes[node_id]
+                    .boundary_proposal_continuation_services
+                    .saturating_add(1);
+            }
+            LocalServiceView::Guide(_) => {
+                self.nodes[node_id].boundary_guide_services = self.nodes[node_id]
+                    .boundary_guide_services
+                    .saturating_add(1);
+            }
+        }
+        match generation_view {
             LocalServiceView::Anchor
             | LocalServiceView::ProposalRoot
             | LocalServiceView::ProposalContinuation => {

@@ -414,6 +414,7 @@ pub struct TurnOptionGenerationGap {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum TurnOptionGenerationStatus {
     Complete,
+    PlanPrefixServiced,
     Partial(GenerationInterruption),
     PartialWithMechanicsGaps,
 }

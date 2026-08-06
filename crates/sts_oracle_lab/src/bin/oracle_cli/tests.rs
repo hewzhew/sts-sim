@@ -108,6 +108,26 @@ fn artifact_turn_can_follow_displayed_exact_plan_indices() {
 }
 
 #[test]
+fn artifact_turn_can_navigate_and_filter_by_exact_successor_identity() {
+    let cli = Cli::try_parse_from([
+        "oracle_lab",
+        "artifact",
+        "turn",
+        "contract-artifact",
+        "--candidate",
+        "contract",
+        "--turn",
+        "1",
+        "--follow-state",
+        "3273823f",
+        "--successor-state",
+        "8122e07a",
+    ])
+    .expect("artifact-owned exact-state traversal should parse");
+    assert!(matches!(cli.command, Command::Artifact(_)));
+}
+
+#[test]
 fn retired_rollout_control_surfaces_are_not_accepted() {
     assert!(
         Cli::try_parse_from(["oracle_lab", "artifact", "rollout", "contract-artifact"]).is_err()

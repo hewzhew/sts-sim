@@ -35,7 +35,7 @@ use sts_combat_strategy::{
     combat_plan_action_timing_v1, combat_plan_has_timed_action_preference_v1,
     combat_plan_projection_v1, combat_plan_selection_member_timing_v1,
     combat_plan_supports_initial_policy_prefix_v1, combat_plan_transition_annotation_v1,
-    combat_plan_turn_prefix_proposal_v1, CombatPlanActionTimingV1,
+    combat_plan_turn_prefix_proposal_v1, CombatPlanActionTimingV1, CombatPlanPrefixServiceScopeV1,
     CombatPlanTransitionAnnotationV1,
 };
 use sts_core::ai::combat_state_key::combat_exact_state_key;
@@ -59,6 +59,12 @@ use super::witness::{
     OracleCombatWitnessSatisfaction, OracleCombatWitnessStateProgressSnapshot,
 };
 use super::TurnOptionGeneratorSession;
+
+fn plan_prefix_root_eligible(position: &CombatPosition) -> bool {
+    combat_plan_turn_prefix_proposal_v1(position).is_some_and(|proposal| {
+        proposal.service_scope == CombatPlanPrefixServiceScopeV1::RootEligible
+    })
+}
 
 #[derive(Clone)]
 struct LocalRootActionFamilyAccumulator {
@@ -141,6 +147,10 @@ struct GraphNode {
     widen_proposal_root_visits: usize,
     widen_proposal_continuation_visits: usize,
     widen_guide_visits: BTreeMap<CombatGuideLaneId, usize>,
+    boundary_anchor_services: usize,
+    boundary_proposal_root_services: usize,
+    boundary_proposal_continuation_services: usize,
+    boundary_guide_services: usize,
     generation_anchor_services: usize,
     generation_guide_services: usize,
     /// Best exact descendant observed for each cheap semantic guide.
@@ -181,7 +191,8 @@ enum SelectedWork {
     Widen {
         node_id: usize,
         path: Vec<(usize, usize)>,
-        view: LocalServiceView,
+        boundary_service_view: LocalServiceView,
+        generation_view: LocalServiceView,
         requested_work: usize,
     },
     Exhausted,
@@ -341,14 +352,16 @@ impl LocalTurnGraphWitnessSession {
                 SelectedWork::Widen {
                     node_id,
                     path,
-                    view,
+                    boundary_service_view,
+                    generation_view,
                     requested_work,
                 } => {
                     self.used.selections = self.used.selections.saturating_add(1);
                     if !self.widen(
                         node_id,
                         &path,
-                        view,
+                        boundary_service_view,
+                        generation_view,
                         requested_work,
                         quantum.deadline,
                         stepper,
@@ -456,7 +469,8 @@ impl LocalTurnGraphWitnessSession {
             return SelectedWork::Widen {
                 node_id,
                 path,
-                view: generation_view,
+                boundary_service_view: service_view,
+                generation_view,
                 requested_work: selected_boundary_generation_work(
                     &self.config,
                     node_id,
@@ -485,7 +499,8 @@ impl LocalTurnGraphWitnessSession {
             return SelectedWork::Widen {
                 node_id,
                 path,
-                view: generation_view,
+                boundary_service_view: LocalServiceView::Anchor,
+                generation_view,
                 requested_work: self.config.generation_quantum_work,
             };
         }

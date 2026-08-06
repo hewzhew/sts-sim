@@ -465,18 +465,44 @@ A typed encounter plan may expose categorical action timing to one bounded,
 plan-compatible exact prefix proposal. Strategy owns the timing semantics; the
 planner marks exact boundaries where the source is applicable before their
 generator runs, materializes the prefix as ordinary graph edges, and retains
-typed proposal provenance on those edges. Each applicable boundary receives
+typed proposal provenance on those edges. Each root-eligible boundary receives
 one deduplicated proposal-root service opportunity while remaining in the
-anchor queue for ordinary completeness. A materialized proposal's immediate
-exact successor receives one opportunity in the independent continuation
-queue; this does not recursively grant service to later descendants.
+anchor queue for ordinary completeness. Anchor, guide, and ordinary generator
+service never execute proposals; proposal-root service admits only
+root-eligible stages, while inherited proposal-continuation service may admit
+the continuation-only stage at that exact boundary. A continuation-only
+proposal cannot enter the global proposal-root queue. A materialized proposal's
+immediate exact successor receives one opportunity in the independent
+continuation queue; later continuation-only stages must materialize another
+typed proposal to carry that lineage onward.
 Run-control only gates the proposal, charges its actual work, and reports root
 and continuation enqueue, generation, and service counts.
+Proposal-root and proposal-continuation service stop after the applicable
+prefix is completed or rejected; unused allowance is not spent on ordinary
+enumeration in that privileged view. The same node remains available to the
+anchor for later completeness work.
 The proposal never prunes alternatives, claims a win, recursively services its
 descendants, or becomes another global frontier scheduler. Acceptance still
 requires the ordinary exact witness and replay contract. Production admission
 is explicit and evidence-backed per encounter plan; merely having categorical
 action timing does not opt a plan in.
+
+The double-thief encounter owns two narrow current-turn proposals. One splits
+two Strikes around a playable Power Through bridge. The continuation may
+instead play Shrug It Off, take an exact one-Strike lethal on a thief carrying
+stolen gold, and convert already-held non-attack fuel with Second Wind only
+when the resulting conservative block covers the other thief's visible
+attack. The check does not assume that Shrug draws useful fuel. These proposals
+encode encounter timing and exact resource composition, not a global card
+preference or a hard-coded turn-plan index. Once only one thief carrying stolen
+gold remains, its visible Smoke Bomb or Escape turn admits a bounded pressure
+prefix from two one-cost Strikes, applying a playable one-cost Thunderclap
+first when present. If the combat ends before the prefix's trailing End Turn,
+the exact terminal boundary completes the proposal without fabricating that
+now-illegal input. Only the first bridge is root-eligible. The exhaust-block,
+Smoke Bomb, and Escape stages are continuation-only, so they extend an existing
+typed lineage without broadcasting proposal-root claims across every
+lookalike state.
 
 Maintained production and V2 contract execution do not install an external
 complete-line or bounded-lookahead witness producer. Terminal evidence must be
@@ -551,19 +577,23 @@ complete-turn generator was retained but never serviced, and reports its
 current anchor, proposal-root, and proposal-continuation queue positions and
 service counts, plus per-boundary proposal applicability, attempt outcome,
 exact proposal-successor identities, and generator anchor/guide service
-attribution without parsing the opaque report. `artifact summary`,
+attribution separately from the shared boundary service source that actually
+consumed work, without parsing the opaque report. `artifact summary`,
 `artifact search`, and `artifact rerun`
 read only the manifest. `artifact trace` replays the contract-aligned candidate;
 `artifact compare` replays it alongside the local-HP candidate and locates their
 first exact divergence. `artifact turn` resolves either candidate by semantic
 role, inspects one exact complete-turn surface, and may follow displayed plan
-indices through replay-checked exact successors without exposing sidecar paths,
-scratch ids, or intermediate case files. An explicit diagnostic may enumerate
-one additional exact complete turn from every selected parent and aggregate
-terminal HP and stolen-gold facts; it does not recurse, propose policy, or
-become a second witness search. None of these commands may make callers recover
-paths or restate constraints. They must not guess fields in the full report or
-earlier artifact schemas. Combat cases enter the V2 catalog
+indices or exact successor identities through replay-checked exact successors
+without exposing sidecar paths, scratch ids, or intermediate case files. When
+the caller already knows one successor identity, the command filters that
+surface before display rather than requiring a large sibling dump and external
+JSON parsing. An explicit diagnostic may enumerate one additional exact
+complete turn from every selected parent and aggregate terminal HP and
+stolen-gold facts; it does not recurse, propose policy, or become a second
+witness search. None of these commands may make callers recover paths or
+restate constraints. They must not guess fields in the full report or earlier
+artifact schemas. Combat cases enter the V2 catalog
 explicitly, keyed by exact root identity, so routine discovery never depends on
 filenames or recursive shell scans.
 

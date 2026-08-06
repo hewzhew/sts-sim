@@ -400,6 +400,23 @@ fn double_thief_bridge_root() -> CombatDecisionRoot {
     CombatDecisionRoot::new(CombatPosition::new(EngineState::CombatPlayerTurn, combat)).unwrap()
 }
 
+fn escaping_thief_lethal_root() -> CombatDecisionRoot {
+    let mut combat = sts_core::test_support::blank_test_combat();
+    combat.turn.energy = 3;
+    let mut looter = sts_core::test_support::planned_monster(EnemyId::Looter, 3);
+    looter.id = 10;
+    looter.current_hp = 4;
+    looter.max_hp = 47;
+    looter.thief.stolen_gold = 45;
+    combat.entities.monsters = vec![looter];
+    combat.zones.hand = vec![
+        CombatCard::new(CardId::ThunderClap, 10003),
+        CombatCard::new(CardId::Strike, 1),
+        CombatCard::new(CardId::Strike, 2),
+    ];
+    CombatDecisionRoot::new(CombatPosition::new(EngineState::CombatPlayerTurn, combat)).unwrap()
+}
+
 #[test]
 fn combat_root_accepts_a_stable_pre_turn_selection_boundary() {
     let mut combat = sts_core::test_support::blank_test_combat();

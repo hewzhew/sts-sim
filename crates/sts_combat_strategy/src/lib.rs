@@ -24,9 +24,11 @@ use sts_core::state::core::{ClientInput, HandSelectReason};
 
 mod bronze_automaton;
 mod champ;
+mod double_thief;
 
 pub use bronze_automaton::{bronze_automaton_combat_plan_v1, bronze_automaton_plan_transition_v1};
 pub use champ::{champ_combat_plan_v1, champ_plan_transition_v1};
+pub use double_thief::combat_plan_turn_prefix_proposal_v1;
 
 pub const COMBAT_PLAN_SCHEMA_V1: &str = "typed-combat-plan/v1";
 
@@ -115,6 +117,15 @@ pub enum CombatPlanPrefixStepV1 {
 #[serde(rename_all = "snake_case")]
 pub enum CombatPlanPrefixKindV1 {
     SplitThiefPressureAroundDefensiveBridge,
+    SecureThiefKillBehindExhaustBlock,
+    PressSingleThiefEscapeWindow,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CombatPlanPrefixServiceScopeV1 {
+    RootEligible,
+    ContinuationOnly,
 }
 
 /// One non-authoritative exact-turn proposal owned by encounter semantics.
@@ -124,6 +135,7 @@ pub enum CombatPlanPrefixKindV1 {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct CombatPlanTurnPrefixProposalV1 {
     pub kind: CombatPlanPrefixKindV1,
+    pub service_scope: CombatPlanPrefixServiceScopeV1,
     pub steps: Vec<CombatPlanPrefixStepV1>,
 }
 
@@ -1010,95 +1022,6 @@ pub fn combat_plan_supports_initial_policy_prefix_v1(position: &CombatPosition) 
     })
 }
 
-/// Proposes one complete current-turn allocation when a double-thief fight
-/// exposes the measured "attack, large bridge, attack the other thief"
-/// corridor.
-///
-/// The proposal is deliberately narrower than an action prior. It activates
-/// only with two attacking thieves, two ordinary one-cost Strikes, and a
-/// playable one-cost Power Through. Other card orders, targets, defenses, and
-/// every ordinary search edge remain untouched.
-pub fn combat_plan_turn_prefix_proposal_v1(
-    position: &CombatPosition,
-) -> Option<CombatPlanTurnPrefixProposalV1> {
-    let combat = &position.combat;
-    let mut thieves = combat
-        .entities
-        .monsters
-        .iter()
-        .filter(|monster| {
-            monster.is_alive_for_action()
-                && matches!(enemy_id(monster), Some(EnemyId::Looter | EnemyId::Mugger))
-        })
-        .collect::<Vec<_>>();
-    if thieves.len() != 2
-        || combat
-            .entities
-            .monsters
-            .iter()
-            .filter(|monster| monster.is_alive_for_action())
-            .count()
-            != 2
-        || thieves.iter().any(|monster| {
-            !matches!(
-                project_monster_move_preview_in_combat(combat, monster).visible_intent,
-                VisibleIntentKind::Attack
-                    | VisibleIntentKind::AttackBuff
-                    | VisibleIntentKind::AttackDebuff
-                    | VisibleIntentKind::AttackDefend
-            )
-        })
-    {
-        return None;
-    }
-
-    let power_through = combat.zones.hand.iter().find(|card| {
-        card.id == CardId::PowerThrough
-            && card.cost_for_turn_java() == 1
-            && cards::can_play_card(card, combat).is_ok()
-    })?;
-    let strikes = combat
-        .zones
-        .hand
-        .iter()
-        .filter(|card| {
-            card.id == CardId::Strike
-                && card.cost_for_turn_java() == 1
-                && cards::can_play_card(card, combat).is_ok()
-        })
-        .take(2)
-        .collect::<Vec<_>>();
-    if strikes.len() != 2 || combat.turn.energy < 3 {
-        return None;
-    }
-
-    thieves.sort_by(|left, right| {
-        left.current_hp
-            .cmp(&right.current_hp)
-            .then_with(|| left.id.cmp(&right.id))
-    });
-    let lower_hp_thief = thieves[0];
-    let higher_hp_thief = thieves[1];
-    Some(CombatPlanTurnPrefixProposalV1 {
-        kind: CombatPlanPrefixKindV1::SplitThiefPressureAroundDefensiveBridge,
-        steps: vec![
-            CombatPlanPrefixStepV1::PlayCard {
-                card_uuid: strikes[0].uuid,
-                target: Some(higher_hp_thief.id),
-            },
-            CombatPlanPrefixStepV1::PlayCard {
-                card_uuid: power_through.uuid,
-                target: None,
-            },
-            CombatPlanPrefixStepV1::PlayCard {
-                card_uuid: strikes[1].uuid,
-                target: Some(lower_hp_thief.id),
-            },
-            CombatPlanPrefixStepV1::EndTurn,
-        ],
-    })
-}
-
 fn undeployed_card_supplies_plan_resource(
     card: &CombatCard,
     resources: &CombatPlanResourcesV1,
@@ -1523,6 +1446,48 @@ mod tests {
         CombatPosition::new(EngineState::CombatPlayerTurn, combat)
     }
 
+    fn double_thief_exhaust_block_position() -> CombatPosition {
+        let mut combat = blank_test_combat();
+        combat.turn.energy = 3;
+        let mut looter = planned_monster(EnemyId::Looter, 1);
+        looter.id = 10;
+        looter.current_hp = 34;
+        looter.max_hp = 47;
+        looter.thief.stolen_gold = 30;
+        let mut mugger = planned_monster(EnemyId::Mugger, 1);
+        mugger.id = 20;
+        mugger.current_hp = 5;
+        mugger.max_hp = 48;
+        mugger.thief.stolen_gold = 30;
+        combat.entities.monsters = vec![looter, mugger];
+        combat.zones.hand = vec![
+            CombatCard::new(CardId::Bash, 9),
+            CombatCard::new(CardId::SecondWind, 10001),
+            CombatCard::new(CardId::Defend, 7),
+            CombatCard::new(CardId::Strike, 4),
+            CombatCard::new(CardId::ShrugItOff, 10004),
+            CombatCard::new(CardId::Strike, 1),
+        ];
+        CombatPosition::new(EngineState::CombatPlayerTurn, combat)
+    }
+
+    fn escaping_single_thief_position(move_id: u8) -> CombatPosition {
+        let mut combat = blank_test_combat();
+        combat.turn.energy = 3;
+        let mut looter = planned_monster(EnemyId::Looter, move_id);
+        looter.id = 10;
+        looter.current_hp = 22;
+        looter.max_hp = 47;
+        looter.thief.stolen_gold = 45;
+        combat.entities.monsters = vec![looter];
+        combat.zones.hand = vec![
+            CombatCard::new(CardId::Strike, 2),
+            CombatCard::new(CardId::Wound, 20),
+            CombatCard::new(CardId::Strike, 1),
+        ];
+        CombatPosition::new(EngineState::CombatPlayerTurn, combat)
+    }
+
     #[test]
     fn double_thief_bridge_proposal_uses_stable_card_and_target_identity() {
         let position = double_thief_bridge_position();
@@ -1533,6 +1498,10 @@ mod tests {
         assert_eq!(
             proposal.kind,
             CombatPlanPrefixKindV1::SplitThiefPressureAroundDefensiveBridge
+        );
+        assert_eq!(
+            proposal.service_scope,
+            CombatPlanPrefixServiceScopeV1::RootEligible
         );
         assert_eq!(
             proposal.steps,
@@ -1564,6 +1533,116 @@ mod tests {
             .retain(|card| card.id != CardId::PowerThrough);
 
         assert!(combat_plan_turn_prefix_proposal_v1(&position).is_none());
+    }
+
+    #[test]
+    fn double_thief_continuation_secures_lethal_behind_existing_exhaust_block() {
+        let position = double_thief_exhaust_block_position();
+
+        let proposal =
+            combat_plan_turn_prefix_proposal_v1(&position).expect("typed thief continuation");
+
+        assert_eq!(
+            proposal.kind,
+            CombatPlanPrefixKindV1::SecureThiefKillBehindExhaustBlock
+        );
+        assert_eq!(
+            proposal.service_scope,
+            CombatPlanPrefixServiceScopeV1::ContinuationOnly
+        );
+        assert_eq!(
+            proposal.steps,
+            vec![
+                CombatPlanPrefixStepV1::PlayCard {
+                    card_uuid: 10004,
+                    target: None,
+                },
+                CombatPlanPrefixStepV1::PlayCard {
+                    card_uuid: 4,
+                    target: Some(20),
+                },
+                CombatPlanPrefixStepV1::PlayCard {
+                    card_uuid: 10001,
+                    target: None,
+                },
+                CombatPlanPrefixStepV1::EndTurn,
+            ]
+        );
+    }
+
+    #[test]
+    fn double_thief_continuation_requires_held_exhaust_fuel_for_visible_margin() {
+        let mut position = double_thief_exhaust_block_position();
+        position
+            .combat
+            .zones
+            .hand
+            .retain(|card| card.id != CardId::Defend);
+
+        assert!(combat_plan_turn_prefix_proposal_v1(&position).is_none());
+    }
+
+    #[test]
+    fn single_thief_smoke_bomb_window_spends_safe_energy_on_pressure() {
+        let position = escaping_single_thief_position(2);
+
+        let proposal =
+            combat_plan_turn_prefix_proposal_v1(&position).expect("typed smoke-bomb pressure");
+
+        assert_eq!(
+            proposal.kind,
+            CombatPlanPrefixKindV1::PressSingleThiefEscapeWindow
+        );
+        assert_eq!(
+            proposal.service_scope,
+            CombatPlanPrefixServiceScopeV1::ContinuationOnly
+        );
+        assert_eq!(
+            proposal.steps,
+            vec![
+                CombatPlanPrefixStepV1::PlayCard {
+                    card_uuid: 2,
+                    target: Some(10),
+                },
+                CombatPlanPrefixStepV1::PlayCard {
+                    card_uuid: 1,
+                    target: Some(10),
+                },
+                CombatPlanPrefixStepV1::EndTurn,
+            ]
+        );
+    }
+
+    #[test]
+    fn single_thief_escape_window_applies_vulnerability_before_strikes() {
+        let mut position = escaping_single_thief_position(3);
+        position
+            .combat
+            .zones
+            .hand
+            .push(CombatCard::new(CardId::ThunderClap, 10003));
+
+        let proposal =
+            combat_plan_turn_prefix_proposal_v1(&position).expect("typed escape lethal pressure");
+
+        assert_eq!(
+            proposal.steps,
+            vec![
+                CombatPlanPrefixStepV1::PlayCard {
+                    card_uuid: 10003,
+                    target: None,
+                },
+                CombatPlanPrefixStepV1::PlayCard {
+                    card_uuid: 2,
+                    target: Some(10),
+                },
+                CombatPlanPrefixStepV1::PlayCard {
+                    card_uuid: 1,
+                    target: Some(10),
+                },
+                CombatPlanPrefixStepV1::EndTurn,
+            ]
+        );
     }
 
     #[test]

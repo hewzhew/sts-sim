@@ -46,6 +46,12 @@ mod work_slots;
 /// from becoming a material part of the search being measured.
 pub const DETAIL_TIMING_SAMPLE_INTERVAL: usize = 16;
 
+enum PlanPrefixAdvance {
+    NotServiced,
+    Serviced,
+    Interrupted(GenerationInterruption),
+}
+
 #[derive(Clone, Debug)]
 struct PartialTurnOption {
     position: CombatPosition,
@@ -461,13 +467,32 @@ impl TurnOptionGeneratorSession {
         stepper: &dyn CombatStepper,
         quantum: CombatPlanningQuantum,
     ) -> TurnOptionGenerationReport {
-        self.advance_internal(stepper, quantum)
+        self.advance_internal(stepper, quantum, false, false, false)
+    }
+
+    pub(crate) fn advance_with_root_proposal(
+        &mut self,
+        stepper: &dyn CombatStepper,
+        quantum: CombatPlanningQuantum,
+    ) -> TurnOptionGenerationReport {
+        self.advance_internal(stepper, quantum, true, false, true)
+    }
+
+    pub(crate) fn advance_with_continuation_proposal(
+        &mut self,
+        stepper: &dyn CombatStepper,
+        quantum: CombatPlanningQuantum,
+    ) -> TurnOptionGenerationReport {
+        self.advance_internal(stepper, quantum, true, true, true)
     }
 
     fn advance_internal(
         &mut self,
         stepper: &dyn CombatStepper,
         quantum: CombatPlanningQuantum,
+        allow_root_eligible_proposal: bool,
+        allow_continuation_only_proposal: bool,
+        stop_after_plan_prefix_service: bool,
     ) -> TurnOptionGenerationReport {
         let before = self.used;
         let before_diagnostics = self.diagnostics();
@@ -476,160 +501,173 @@ impl TurnOptionGeneratorSession {
             generation_work: quantum.additional_generation_work,
             engine_steps: quantum.additional_engine_steps,
         });
-        let prefix_interruption = self.advance_plan_prefix_proposal(stepper, quantum.deadline);
+        let prefix_advance = self.advance_plan_prefix_proposal(
+            stepper,
+            quantum.deadline,
+            allow_root_eligible_proposal,
+            allow_continuation_only_proposal,
+        );
         // Freeze one current head from every scheduling view before serving
         // the round. Without this boundary, work expanded by an earlier lane
         // can publish a new head into a later lane and repeatedly overtake the
         // item which was already first there. A finite pending transaction can
         // consequently remain live forever despite round-robin lane service.
-        let interruption = if let Some(cause) = prefix_interruption {
-            Some(cause)
-        } else {
-            loop {
-                if self.is_finished() {
-                    break None;
-                }
-                if deadline_reached(quantum.deadline) {
-                    break Some(GenerationInterruption::Deadline);
-                }
-                if self.used.generation_work >= self.granted.generation_work {
-                    break Some(GenerationInterruption::GenerationWorkBudget);
-                }
-                while self
-                    .scheduled_round
-                    .front()
-                    .is_some_and(|(_, handle)| !self.is_live_work_handle(*handle))
-                {
-                    self.scheduled_round.pop_front();
-                }
-                if self.scheduled_round.is_empty() {
-                    self.reclaim_stale_scheduling_entries();
-                    self.scheduled_round = self.snapshot_scheduling_round();
-                    if self.scheduled_round.is_empty() {
-                        debug_assert!(self.is_finished());
+        let (interruption, plan_prefix_serviced) = match prefix_advance {
+            PlanPrefixAdvance::Interrupted(cause) => (Some(cause), false),
+            PlanPrefixAdvance::Serviced if stop_after_plan_prefix_service => (None, true),
+            PlanPrefixAdvance::NotServiced | PlanPrefixAdvance::Serviced => {
+                let interruption = loop {
+                    if self.is_finished() {
                         break None;
                     }
-                }
-                let (lane, handle) = *self
-                    .scheduled_round
-                    .front()
-                    .expect("a non-empty scheduling round has a head");
-                let transition_reservation = self.config.max_engine_steps_per_transition.max(1);
-                if self.live_work(handle).is_some_and(|work| {
-                    matches!(
-                        work,
-                        GeneratorWork::AtomicActions(_) | GeneratorWork::ApplyAction(_)
-                    )
-                }) && self
-                    .granted
-                    .engine_steps
-                    .saturating_sub(self.used.engine_steps)
-                    < transition_reservation
-                {
-                    break Some(GenerationInterruption::EngineStepBudget);
-                }
+                    if deadline_reached(quantum.deadline) {
+                        break Some(GenerationInterruption::Deadline);
+                    }
+                    if self.used.generation_work >= self.granted.generation_work {
+                        break Some(GenerationInterruption::GenerationWorkBudget);
+                    }
+                    while self
+                        .scheduled_round
+                        .front()
+                        .is_some_and(|(_, handle)| !self.is_live_work_handle(*handle))
+                    {
+                        self.scheduled_round.pop_front();
+                    }
+                    if self.scheduled_round.is_empty() {
+                        self.reclaim_stale_scheduling_entries();
+                        self.scheduled_round = self.snapshot_scheduling_round();
+                        if self.scheduled_round.is_empty() {
+                            debug_assert!(self.is_finished());
+                            break None;
+                        }
+                    }
+                    let (lane, handle) = *self
+                        .scheduled_round
+                        .front()
+                        .expect("a non-empty scheduling round has a head");
+                    let transition_reservation = self.config.max_engine_steps_per_transition.max(1);
+                    if self.live_work(handle).is_some_and(|work| {
+                        matches!(
+                            work,
+                            GeneratorWork::AtomicActions(_) | GeneratorWork::ApplyAction(_)
+                        )
+                    }) && self
+                        .granted
+                        .engine_steps
+                        .saturating_sub(self.used.engine_steps)
+                        < transition_reservation
+                    {
+                        break Some(GenerationInterruption::EngineStepBudget);
+                    }
 
-                self.scheduled_round.pop_front();
-                let work = self.take_live_work(handle);
-                if lane == 0 {
-                    self.anchor_work_pops = self.anchor_work_pops.saturating_add(1);
-                } else {
-                    self.guided_work_pops = self.guided_work_pops.saturating_add(1);
-                }
-                self.next_scheduler_lane =
-                    (lane + 1) % self.guided_frontiers.len().saturating_add(1);
-                self.used.generation_work = self.used.generation_work.saturating_add(1);
-                match work {
-                    GeneratorWork::Expand(partial) => {
-                        self.atomic_state_expansions =
-                            self.atomic_state_expansions.saturating_add(1);
-                        let expand_started = Instant::now();
-                        self.expand(stepper, partial);
-                        self.atomic_expand_elapsed_ns = self
-                            .atomic_expand_elapsed_ns
-                            .saturating_add(elapsed_nanos_u64(expand_started));
+                    self.scheduled_round.pop_front();
+                    let work = self.take_live_work(handle);
+                    if lane == 0 {
+                        self.anchor_work_pops = self.anchor_work_pops.saturating_add(1);
+                    } else {
+                        self.guided_work_pops = self.guided_work_pops.saturating_add(1);
                     }
-                    GeneratorWork::AtomicActions(mut cursor) => {
-                        let action = cursor
-                            .current_transition()
-                            .expect("a scheduled atomic cursor has a candidate");
-                        if self.apply_action_transition(
-                            stepper,
-                            action,
-                            transition_reservation,
-                            quantum.deadline,
-                        ) == ActionTransitionStatus::TimedOut
-                        {
-                            let priority = cursor
-                                .priority()
-                                .expect("a timed-out cursor retains its candidate");
-                            self.push_work(GeneratorWork::AtomicActions(cursor), priority);
-                            break Some(GenerationInterruption::Deadline);
+                    self.next_scheduler_lane =
+                        (lane + 1) % self.guided_frontiers.len().saturating_add(1);
+                    self.used.generation_work = self.used.generation_work.saturating_add(1);
+                    match work {
+                        GeneratorWork::Expand(partial) => {
+                            self.atomic_state_expansions =
+                                self.atomic_state_expansions.saturating_add(1);
+                            let expand_started = Instant::now();
+                            self.expand(stepper, partial);
+                            self.atomic_expand_elapsed_ns = self
+                                .atomic_expand_elapsed_ns
+                                .saturating_add(elapsed_nanos_u64(expand_started));
                         }
-                        cursor.consume_current();
-                        if let Some(priority) = cursor.priority() {
-                            self.push_work(GeneratorWork::AtomicActions(cursor), priority);
-                        }
-                    }
-                    GeneratorWork::StructuredSelection(mut selection) => {
-                        let remaining_inputs = selection.cursor.remaining_input_count().max(1);
-                        if let Some(input) = selection.cursor.next_input() {
-                            // Every concrete member of a finite symbolic family
-                            // receives equal conditional mass. The former
-                            // geometric split made enumeration order an
-                            // exponential strategic prior (1/2, 1/4, 1/8, ...).
-                            let input_conditional_mass =
-                                selection.remaining_conditional_mass / remaining_inputs as f64;
-                            if !selection.cursor.is_exhausted() {
-                                selection.remaining_conditional_mass -= input_conditional_mass;
-                                let residual_negative_log = selection.family_negative_log_policy
-                                    - selection.remaining_conditional_mass.ln();
-                                let residual_priority = GeneratorWorkPriority::for_path(
-                                    selection.parent.atomic_depth.saturating_add(1),
-                                    residual_negative_log,
-                                );
-                                self.push_work(
-                                    GeneratorWork::StructuredSelection(selection.clone()),
-                                    residual_priority,
-                                );
+                        GeneratorWork::AtomicActions(mut cursor) => {
+                            let action = cursor
+                                .current_transition()
+                                .expect("a scheduled atomic cursor has a candidate");
+                            if self.apply_action_transition(
+                                stepper,
+                                action,
+                                transition_reservation,
+                                quantum.deadline,
+                            ) == ActionTransitionStatus::TimedOut
+                            {
+                                let priority = cursor
+                                    .priority()
+                                    .expect("a timed-out cursor retains its candidate");
+                                self.push_work(GeneratorWork::AtomicActions(cursor), priority);
+                                break Some(GenerationInterruption::Deadline);
                             }
-                            let negative_log_policy =
-                                selection.family_negative_log_policy - input_conditional_mass.ln();
-                            let atomic_depth = selection.parent.atomic_depth.saturating_add(1);
-                            let priority =
-                                GeneratorWorkPriority::for_path(atomic_depth, negative_log_policy);
-                            self.push_work(
-                                GeneratorWork::ApplyAction(ActionTransitionWork {
-                                    parent: selection.parent,
-                                    input,
+                            cursor.consume_current();
+                            if let Some(priority) = cursor.priority() {
+                                self.push_work(GeneratorWork::AtomicActions(cursor), priority);
+                            }
+                        }
+                        GeneratorWork::StructuredSelection(mut selection) => {
+                            let remaining_inputs = selection.cursor.remaining_input_count().max(1);
+                            if let Some(input) = selection.cursor.next_input() {
+                                // Every concrete member of a finite symbolic family
+                                // receives equal conditional mass. The former
+                                // geometric split made enumeration order an
+                                // exponential strategic prior (1/2, 1/4, 1/8, ...).
+                                let input_conditional_mass =
+                                    selection.remaining_conditional_mass / remaining_inputs as f64;
+                                if !selection.cursor.is_exhausted() {
+                                    selection.remaining_conditional_mass -= input_conditional_mass;
+                                    let residual_negative_log = selection
+                                        .family_negative_log_policy
+                                        - selection.remaining_conditional_mass.ln();
+                                    let residual_priority = GeneratorWorkPriority::for_path(
+                                        selection.parent.atomic_depth.saturating_add(1),
+                                        residual_negative_log,
+                                    );
+                                    self.push_work(
+                                        GeneratorWork::StructuredSelection(selection.clone()),
+                                        residual_priority,
+                                    );
+                                }
+                                let negative_log_policy = selection.family_negative_log_policy
+                                    - input_conditional_mass.ln();
+                                let atomic_depth = selection.parent.atomic_depth.saturating_add(1);
+                                let priority = GeneratorWorkPriority::for_path(
                                     atomic_depth,
                                     negative_log_policy,
-                                }),
-                                priority,
+                                );
+                                self.push_work(
+                                    GeneratorWork::ApplyAction(ActionTransitionWork {
+                                        parent: selection.parent,
+                                        input,
+                                        atomic_depth,
+                                        negative_log_policy,
+                                    }),
+                                    priority,
+                                );
+                            }
+                        }
+                        GeneratorWork::ApplyAction(action) => {
+                            let priority = GeneratorWorkPriority::for_path(
+                                action.atomic_depth,
+                                action.negative_log_policy,
                             );
+                            if self.apply_action_transition(
+                                stepper,
+                                action.clone(),
+                                transition_reservation,
+                                quantum.deadline,
+                            ) == ActionTransitionStatus::TimedOut
+                            {
+                                self.push_work(GeneratorWork::ApplyAction(action), priority);
+                                break Some(GenerationInterruption::Deadline);
+                            }
                         }
                     }
-                    GeneratorWork::ApplyAction(action) => {
-                        let priority = GeneratorWorkPriority::for_path(
-                            action.atomic_depth,
-                            action.negative_log_policy,
-                        );
-                        if self.apply_action_transition(
-                            stepper,
-                            action.clone(),
-                            transition_reservation,
-                            quantum.deadline,
-                        ) == ActionTransitionStatus::TimedOut
-                        {
-                            self.push_work(GeneratorWork::ApplyAction(action), priority);
-                            break Some(GenerationInterruption::Deadline);
-                        }
-                    }
-                }
+                };
+                (interruption, false)
             }
         };
 
-        let status = if let Some(cause) = interruption {
+        let status = if plan_prefix_serviced {
+            TurnOptionGenerationStatus::PlanPrefixServiced
+        } else if let Some(cause) = interruption {
             TurnOptionGenerationStatus::Partial(cause)
         } else if self.gaps.is_empty() {
             TurnOptionGenerationStatus::Complete

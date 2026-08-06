@@ -43,7 +43,7 @@ pub(super) fn run(
 
     let config = turn_probe_config(args, artifact);
     let source = branch_state(&position);
-    let mut followed = Vec::with_capacity(args.follow_plan.len());
+    let mut followed = Vec::with_capacity(args.follow_plan.len() + args.follow_state.len());
     for (depth, plan_index) in args.follow_plan.iter().copied().enumerate() {
         ensure_player_turn(&position, depth)?;
         let audit = enumerate_turn(&position, &config);
@@ -67,19 +67,71 @@ pub(super) fn run(
         }));
         position = candidate.position;
     }
+    for (depth, state_query) in args.follow_state.iter().enumerate() {
+        ensure_player_turn(&position, depth)?;
+        let audit = enumerate_turn(&position, &config);
+        let (candidate, matching_plan_count) =
+            unique_state_candidate(&audit, state_query)?.ok_or_else(|| {
+                format!(
+                    "turn surface has no exact successor matching '{state_query}' across {} selected plans",
+                    audit.candidates.len()
+                )
+            })?;
+        followed.push(json!({
+            "depth": depth,
+            "from_turn": position.combat.turn.turn_count,
+            "state_query": state_query,
+            "matching_plan_count": matching_plan_count,
+            "plan": candidate_summary(candidate),
+        }));
+        position = candidate.position.clone();
+    }
 
     let terminal = combat_terminal(&position.engine, &position.combat);
     let surface = if terminal == CombatTerminal::Unresolved {
-        ensure_player_turn(&position, args.follow_plan.len())?;
+        ensure_player_turn(&position, args.follow_plan.len() + args.follow_state.len())?;
         let audit = enumerate_turn(&position, &config);
-        let selected = audit
-            .candidates
-            .iter()
-            .filter(|candidate| candidate.report.bucket != "terminal_loss")
-            .take(args.limit)
-            .map(candidate_summary)
-            .collect::<Vec<Value>>();
-        let outcome_groups = turn_outcome_groups(&audit);
+        let successor_selection = args
+            .successor_state
+            .as_deref()
+            .map(|query| {
+                unique_state_candidate(&audit, query).map(|matched| {
+                    matched.map_or_else(
+                        || {
+                            json!({
+                                "query": query,
+                                "matched": false,
+                                "matching_plan_count": 0,
+                            })
+                        },
+                        |(candidate, matching_plan_count)| {
+                            json!({
+                                "query": query,
+                                "matched": true,
+                                "matching_plan_count": matching_plan_count,
+                                "plan": candidate_summary(candidate),
+                            })
+                        },
+                    )
+                })
+            })
+            .transpose()?;
+        let selected = if args.successor_state.is_some() {
+            Vec::new()
+        } else {
+            audit
+                .candidates
+                .iter()
+                .filter(|candidate| candidate.report.bucket != "terminal_loss")
+                .take(args.limit)
+                .map(candidate_summary)
+                .collect::<Vec<Value>>()
+        };
+        let outcome_groups = if args.successor_state.is_some() {
+            Vec::new()
+        } else {
+            turn_outcome_groups(&audit)
+        };
         let next_terminal_scan = if args.scan_next_terminal {
             scan_next_terminal(&audit, &config, artifact, args.limit)
         } else {
@@ -93,6 +145,7 @@ pub(super) fn run(
             "enumeration": audit.report.enumeration,
             "outcome_groups": outcome_groups,
             "selected_non_loss": selected,
+            "successor_selection": successor_selection,
             "next_terminal_scan": next_terminal_scan,
         })
     } else {
@@ -100,7 +153,7 @@ pub(super) fn run(
     };
     print_json(&json!({
         "schema_name": "OracleCombatContractCandidateTurnV2",
-        "schema_version": 3,
+        "schema_version": 4,
         "artifact": args.artifact,
         "case_id": artifact.request.case_id,
         "candidate": candidate,
@@ -176,6 +229,33 @@ fn candidate_by_plan_index(
                 "turn surface has no selected plan index {plan_index}; available selected indices (up to 32): [{available}]"
             )
         })
+}
+
+fn unique_state_candidate<'a>(
+    audit: &'a CombatSearchV2TurnPlanProbeEnumeration,
+    query: &str,
+) -> Result<Option<(&'a CombatSearchV2TurnPlanProbeCandidate, usize)>, String> {
+    if query.is_empty() {
+        return Err("exact successor state query must not be empty".to_owned());
+    }
+    let mut by_hash = BTreeMap::<String, Vec<&CombatSearchV2TurnPlanProbeCandidate>>::new();
+    for candidate in &audit.candidates {
+        let exact_hash =
+            combat_exact_state_hash_v2(&candidate.position.engine, &candidate.position.combat);
+        if exact_hash.starts_with(query) {
+            by_hash.entry(exact_hash).or_default().push(candidate);
+        }
+    }
+    if by_hash.len() > 1 {
+        return Err(format!(
+            "exact successor prefix '{query}' is ambiguous across {} states",
+            by_hash.len()
+        ));
+    }
+    Ok(by_hash.into_values().next().map(|mut candidates| {
+        candidates.sort_by_key(|candidate| candidate.report.plan_index);
+        (candidates[0], candidates.len())
+    }))
 }
 
 fn candidate_summary(candidate: &CombatSearchV2TurnPlanProbeCandidate) -> Value {

@@ -64,6 +64,10 @@ impl LocalTurnGraphWitnessSession {
             widen_proposal_root_visits: 0,
             widen_proposal_continuation_visits: 0,
             widen_guide_visits: BTreeMap::new(),
+            boundary_anchor_services: 0,
+            boundary_proposal_root_services: 0,
+            boundary_proposal_continuation_services: 0,
+            boundary_guide_services: 0,
             generation_anchor_services: 0,
             generation_guide_services: 0,
             backed_guides: root_backed_guides,
@@ -73,7 +77,7 @@ impl LocalTurnGraphWitnessSession {
         let mut shared_agenda = SharedBoundaryAgenda::new(config.guide_service_bias);
         shared_agenda.publish_node(0, &root_node);
         let root_proposal_enqueued =
-            combat_plan_turn_prefix_proposal_v1(root_node.generator.root().position()).is_some()
+            plan_prefix_root_eligible(root_node.generator.root().position())
                 && shared_agenda.publish_proposal_root(0, &root_node);
         Self {
             original_root,

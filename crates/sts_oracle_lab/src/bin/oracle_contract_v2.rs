@@ -15,6 +15,7 @@ use sts_combat_planner::{
     LocalTurnGraphDepthServiceSnapshot, LocalTurnGraphServicedStateSnapshot,
     LocalTurnGraphWitnessConfig, OracleCombatWitnessSatisfaction,
 };
+use sts_combat_strategy::CombatPlanPrefixServiceScopeV1;
 use sts_oracle_runtime::ai::combat_state_key::combat_exact_state_hash_v2;
 use sts_oracle_runtime::eval::combat_case::load_combat_case;
 use sts_oracle_runtime::eval::run_control::{
@@ -53,7 +54,7 @@ use classification::{
 };
 
 const ARTIFACT_SCHEMA: &str = "OracleCombatContractArtifactV2";
-const ARTIFACT_SCHEMA_VERSION: u32 = 8;
+const ARTIFACT_SCHEMA_VERSION: u32 = 9;
 
 #[derive(Debug, Args)]
 pub(super) struct ContractCommandArgs {
@@ -125,8 +126,16 @@ struct ArtifactTurnArgs {
     turn: u32,
     /// Follow one displayed plan index to its exact successor. Repeat to walk
     /// several complete-turn branches without exporting cases or action files.
-    #[arg(long)]
+    #[arg(long, conflicts_with = "follow_state")]
     follow_plan: Vec<usize>,
+    /// Follow one exact successor hash or unique prefix. Repeat to walk several
+    /// complete-turn branches without printing every sibling plan.
+    #[arg(long, conflicts_with = "follow_plan")]
+    follow_state: Vec<String>,
+    /// Return only the reached surface plan whose exact successor matches this
+    /// full hash or unique prefix.
+    #[arg(long)]
+    successor_state: Option<String>,
     /// From every candidate on the reached surface, enumerate exactly one more
     /// complete turn and aggregate terminal HP and stolen-gold outcomes.
     #[arg(long)]
@@ -261,11 +270,16 @@ struct CombatContractSearchStateV2 {
     retained_generator_work_items: usize,
     path_action_count: usize,
     plan_prefix_applicable: bool,
+    plan_prefix_service_scope: Option<CombatPlanPrefixServiceScopeV1>,
     plan_prefix_step_count: Option<usize>,
     plan_prefix_attempts: usize,
     plan_prefix_completed: usize,
     plan_prefix_rejections: usize,
     plan_prefix_successor_exact_state_hashes: Vec<String>,
+    boundary_anchor_services: usize,
+    boundary_proposal_root_services: usize,
+    boundary_proposal_continuation_services: usize,
+    boundary_guide_services: usize,
     generation_anchor_services: usize,
     generation_guide_services: usize,
     anchor_ordinal_rank: Option<usize>,
@@ -539,7 +553,7 @@ fn run_combat_contract(request: CombatContractRequestV2) -> Result<CombatContrac
     search.states = reservation.final_path.join("search-states.json");
     let search_state_index = CombatContractSearchStateIndexV2 {
         schema_name: "OracleCombatContractSearchStateIndexV2".to_owned(),
-        schema_version: 4,
+        schema_version: 5,
         root_exact_state_hash: root_exact_state_hash.clone(),
         states: session
             .state_service_index()
@@ -681,12 +695,18 @@ impl From<LocalTurnGraphServicedStateSnapshot> for CombatContractSearchStateV2 {
             retained_generator_work_items: snapshot.retained_generator_work_items,
             path_action_count: snapshot.path_action_count,
             plan_prefix_applicable: snapshot.plan_prefix_applicable,
+            plan_prefix_service_scope: snapshot.plan_prefix_service_scope,
             plan_prefix_step_count: snapshot.plan_prefix_step_count,
             plan_prefix_attempts: snapshot.plan_prefix_attempts,
             plan_prefix_completed: snapshot.plan_prefix_completed,
             plan_prefix_rejections: snapshot.plan_prefix_rejections,
             plan_prefix_successor_exact_state_hashes: snapshot
                 .plan_prefix_successor_exact_state_hashes,
+            boundary_anchor_services: snapshot.boundary_anchor_services,
+            boundary_proposal_root_services: snapshot.boundary_proposal_root_services,
+            boundary_proposal_continuation_services: snapshot
+                .boundary_proposal_continuation_services,
+            boundary_guide_services: snapshot.boundary_guide_services,
             generation_anchor_services: snapshot.generation_anchor_services,
             generation_guide_services: snapshot.generation_guide_services,
             anchor_ordinal_rank: snapshot.anchor_ordinal_rank,
@@ -719,7 +739,7 @@ fn query_search_state(artifact: &CombatContractArtifactV2, query: &str) -> Resul
             )
         })?;
     if index.schema_name != "OracleCombatContractSearchStateIndexV2"
-        || index.schema_version != 4
+        || index.schema_version != 5
         || index.root_exact_state_hash != artifact.root_exact_state_hash
     {
         return Err(format!(
@@ -741,7 +761,7 @@ fn query_search_state(artifact: &CombatContractArtifactV2, query: &str) -> Resul
     let state = matches.first().copied();
     print_json(&serde_json::json!({
         "schema_name": "OracleCombatContractSearchStateQueryV2",
-        "schema_version": 4,
+        "schema_version": 5,
         "root_exact_state_hash": artifact.root_exact_state_hash,
         "query": query,
         "retained": state.is_some(),

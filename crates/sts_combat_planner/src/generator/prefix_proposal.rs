@@ -1,9 +1,11 @@
 use std::sync::Arc;
 use std::time::Instant;
 
-use sts_combat_strategy::{combat_plan_turn_prefix_proposal_v1, CombatPlanPrefixStepV1};
+use sts_combat_strategy::{
+    combat_plan_turn_prefix_proposal_v1, CombatPlanPrefixServiceScopeV1, CombatPlanPrefixStepV1,
+};
 use sts_core::ai::combat_state_key::combat_exact_state_key;
-use sts_core::sim::combat::{CombatPosition, CombatStepLimits, CombatStepper};
+use sts_core::sim::combat::{CombatPosition, CombatStepLimits, CombatStepper, CombatTerminal};
 use sts_core::state::core::ClientInput;
 
 use crate::policy::{normalized_probabilities, CombatPolicyChoice};
@@ -12,7 +14,7 @@ use crate::types::{
     TurnOptionAction,
 };
 
-use super::{deadline_reached, TurnOptionGeneratorSession};
+use super::{deadline_reached, PlanPrefixAdvance, TurnOptionGeneratorSession};
 
 impl TurnOptionGeneratorSession {
     /// Materializes one encounter-owned current-turn proposal before ordinary
@@ -27,19 +29,29 @@ impl TurnOptionGeneratorSession {
         &mut self,
         stepper: &dyn CombatStepper,
         deadline: Option<Instant>,
-    ) -> Option<GenerationInterruption> {
+        allow_root_eligible_proposal: bool,
+        allow_continuation_only_proposal: bool,
+    ) -> PlanPrefixAdvance {
         if self.plan_prefix_attempted {
-            return None;
+            return PlanPrefixAdvance::NotServiced;
+        }
+        if !allow_root_eligible_proposal {
+            return PlanPrefixAdvance::NotServiced;
         }
         let Some(proposal) = combat_plan_turn_prefix_proposal_v1(self.root.position()) else {
             self.plan_prefix_attempted = true;
-            return None;
+            return PlanPrefixAdvance::NotServiced;
         };
+        if proposal.service_scope == CombatPlanPrefixServiceScopeV1::ContinuationOnly
+            && !allow_continuation_only_proposal
+        {
+            return PlanPrefixAdvance::NotServiced;
+        }
         let required_work = proposal.steps.len();
         let transition_reservation = self.config.max_engine_steps_per_transition.max(1);
         let required_steps = required_work.saturating_mul(transition_reservation);
         if deadline_reached(deadline) {
-            return Some(GenerationInterruption::Deadline);
+            return PlanPrefixAdvance::Interrupted(GenerationInterruption::Deadline);
         }
         if self
             .granted
@@ -47,7 +59,7 @@ impl TurnOptionGeneratorSession {
             .saturating_sub(self.used.generation_work)
             < required_work
         {
-            return Some(GenerationInterruption::GenerationWorkBudget);
+            return PlanPrefixAdvance::Interrupted(GenerationInterruption::GenerationWorkBudget);
         }
         if self
             .granted
@@ -55,7 +67,7 @@ impl TurnOptionGeneratorSession {
             .saturating_sub(self.used.engine_steps)
             < required_steps
         {
-            return Some(GenerationInterruption::EngineStepBudget);
+            return PlanPrefixAdvance::Interrupted(GenerationInterruption::EngineStepBudget);
         }
 
         self.plan_prefix_attempted = true;
@@ -67,11 +79,11 @@ impl TurnOptionGeneratorSession {
         for semantic_step in &proposal.steps {
             if deadline_reached(deadline) {
                 self.plan_prefix_attempted = false;
-                return Some(GenerationInterruption::Deadline);
+                return PlanPrefixAdvance::Interrupted(GenerationInterruption::Deadline);
             }
             let Some(input) = resolve_plan_prefix_step(&position, semantic_step) else {
                 self.plan_prefix_rejections = self.plan_prefix_rejections.saturating_add(1);
-                return None;
+                return PlanPrefixAdvance::Serviced;
             };
             let surface = stepper.legal_action_surface(&position);
             let choices = surface
@@ -97,7 +109,7 @@ impl TurnOptionGeneratorSession {
                 .position(|candidate| candidate == &input)
             else {
                 self.plan_prefix_rejections = self.plan_prefix_rejections.saturating_add(1);
-                return None;
+                return PlanPrefixAdvance::Serviced;
             };
             negative_log_policy -= probabilities[input_index].max(f64::MIN_POSITIVE).ln();
 
@@ -113,11 +125,11 @@ impl TurnOptionGeneratorSession {
             self.used.engine_steps = self.used.engine_steps.saturating_add(result.engine_steps);
             if result.timed_out {
                 self.plan_prefix_attempted = false;
-                return Some(GenerationInterruption::Deadline);
+                return PlanPrefixAdvance::Interrupted(GenerationInterruption::Deadline);
             }
             if result.truncated {
                 self.plan_prefix_rejections = self.plan_prefix_rejections.saturating_add(1);
-                return None;
+                return PlanPrefixAdvance::Serviced;
             }
             self.applied_action_transitions = self.applied_action_transitions.saturating_add(1);
             let successor_key = Arc::new(combat_exact_state_key(
@@ -130,12 +142,15 @@ impl TurnOptionGeneratorSession {
                 engine_steps: result.engine_steps,
             });
             position = result.position;
+            if stepper.terminal(&position) != CombatTerminal::Unresolved {
+                break;
+            }
         }
 
         let Some(boundary) = supported_boundary(&self.root, &position, stepper.terminal(&position))
         else {
             self.plan_prefix_rejections = self.plan_prefix_rejections.saturating_add(1);
-            return None;
+            return PlanPrefixAdvance::Serviced;
         };
         self.publish_completed(CompleteTurnOption::from_encounter_plan_prefix(
             self.root.exact_state_identity().clone(),
@@ -145,7 +160,7 @@ impl TurnOptionGeneratorSession {
             negative_log_policy,
         ));
         self.plan_prefix_completed = self.plan_prefix_completed.saturating_add(1);
-        None
+        PlanPrefixAdvance::Serviced
     }
 }
 

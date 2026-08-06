@@ -1,4 +1,5 @@
 use super::*;
+use crate::types::CompleteTurnOptionSource;
 
 #[test]
 fn local_turn_graph_retires_finished_generator_search_storage() {
@@ -310,6 +311,7 @@ fn state_service_index_attributes_plan_prefix_work_to_its_exact_boundary() {
         },
         Arc::new(PreferPlayPolicy),
     );
+    assert_eq!(session.counters().plan_prefix_root_enqueues, 1);
 
     session.advance(
         LocalTurnGraphWitnessQuantum {
@@ -333,6 +335,114 @@ fn state_service_index_attributes_plan_prefix_work_to_its_exact_boundary() {
     assert_eq!(state.plan_prefix_rejections, 0);
     assert_eq!(state.plan_prefix_successor_exact_state_hashes.len(), 1);
     assert!(state.generation_anchor_services > 0);
+}
+
+#[test]
+fn plan_prefix_completes_when_combat_ends_before_a_trailing_end_turn() {
+    let mut generator = TurnOptionGeneratorSession::new(
+        escaping_thief_lethal_root(),
+        TurnOptionGeneratorConfig {
+            max_engine_steps_per_transition: 250,
+            ..TurnOptionGeneratorConfig::default()
+        },
+    );
+
+    let report = generator.advance_with_continuation_proposal(
+        &EngineCombatStepper,
+        CombatPlanningQuantum {
+            additional_generation_work: 16,
+            additional_engine_steps: 4_000,
+            deadline: None,
+        },
+    );
+    assert_eq!(
+        report.status,
+        TurnOptionGenerationStatus::PlanPrefixServiced
+    );
+
+    let diagnostics = generator.diagnostics();
+    let options = generator.take_completed_options();
+    let prefix = options
+        .iter()
+        .find(|option| option.source() == CompleteTurnOptionSource::EncounterPlanPrefix)
+        .expect("terminal prefix should become an exact option");
+    assert_eq!(prefix.actions().len(), 1);
+    assert_eq!(prefix.boundary(), CompleteTurnOptionBoundary::TerminalWin);
+    assert_eq!(diagnostics.plan_prefix_attempts, 1);
+    assert_eq!(diagnostics.plan_prefix_completed, 1);
+    assert_eq!(diagnostics.plan_prefix_rejections, 0);
+}
+
+#[test]
+fn continuation_only_prefix_waits_for_continuation_service() {
+    let mut generator = TurnOptionGeneratorSession::new(
+        escaping_thief_lethal_root(),
+        TurnOptionGeneratorConfig {
+            max_engine_steps_per_transition: 250,
+            ..TurnOptionGeneratorConfig::default()
+        },
+    );
+
+    generator.advance(
+        &EngineCombatStepper,
+        CombatPlanningQuantum {
+            additional_generation_work: 1,
+            additional_engine_steps: 250,
+            deadline: None,
+        },
+    );
+    assert_eq!(generator.diagnostics().plan_prefix_attempts, 0);
+
+    let report = generator.advance_with_continuation_proposal(
+        &EngineCombatStepper,
+        CombatPlanningQuantum {
+            additional_generation_work: 16,
+            additional_engine_steps: 4_000,
+            deadline: None,
+        },
+    );
+    assert_eq!(
+        report.status,
+        TurnOptionGenerationStatus::PlanPrefixServiced
+    );
+    assert_eq!(generator.diagnostics().plan_prefix_attempts, 1);
+    assert_eq!(generator.diagnostics().plan_prefix_completed, 1);
+}
+
+#[test]
+fn root_eligible_prefix_waits_for_proposal_root_service() {
+    let mut generator = TurnOptionGeneratorSession::new(
+        double_thief_bridge_root(),
+        TurnOptionGeneratorConfig {
+            max_engine_steps_per_transition: 250,
+            ..TurnOptionGeneratorConfig::default()
+        },
+    );
+
+    generator.advance(
+        &EngineCombatStepper,
+        CombatPlanningQuantum {
+            additional_generation_work: 1,
+            additional_engine_steps: 250,
+            deadline: None,
+        },
+    );
+    assert_eq!(generator.diagnostics().plan_prefix_attempts, 0);
+
+    let report = generator.advance_with_root_proposal(
+        &EngineCombatStepper,
+        CombatPlanningQuantum {
+            additional_generation_work: 16,
+            additional_engine_steps: 4_000,
+            deadline: None,
+        },
+    );
+    assert_eq!(
+        report.status,
+        TurnOptionGenerationStatus::PlanPrefixServiced
+    );
+    assert_eq!(generator.diagnostics().plan_prefix_attempts, 1);
+    assert_eq!(generator.diagnostics().plan_prefix_completed, 1);
 }
 
 #[test]
