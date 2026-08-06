@@ -2,94 +2,66 @@ use std::collections::{BTreeMap, HashSet};
 
 use serde_json::{json, Value};
 use sts_oracle_runtime::ai::combat_search_v2::{
-    enumerate_combat_search_v2_turn_plan_probe_candidates_across_pending_choices,
     recoverable_stolen_gold, unrecovered_stolen_gold, CombatSearchV2Config,
-    CombatSearchV2PotionPolicy, CombatSearchV2TurnPlanProbeCandidate,
-    CombatSearchV2TurnPlanProbeEnumeration,
+    CombatSearchV2TurnPlanProbeCandidate, CombatSearchV2TurnPlanProbeEnumeration,
 };
 use sts_oracle_runtime::ai::combat_state_key::combat_exact_state_hash_v2;
-use sts_oracle_runtime::sim::combat::{combat_terminal, CombatPosition, CombatTerminal};
+use sts_oracle_runtime::sim::combat::{combat_terminal, CombatTerminal};
 use sts_oracle_runtime::state::core::EngineState;
 
 use super::super::combat_trace_view::combat_turn_snapshot;
 use super::super::print_json;
-use super::artifact_trace::{load_root, replay_candidate, ReplayedActionTraceV2};
-use super::{
-    ArtifactCandidateRole, ArtifactTurnArgs, CombatContractArtifactV2,
-    CombatContractTerminalCandidateV2,
+use super::artifact_navigation::{
+    branch_state, ensure_player_turn, enumerate_turn, resolve, unique_state_candidate,
+    ArtifactNavigationSpec,
 };
+use super::{ArtifactTurnArgs, CombatContractArtifactV2};
 
 pub(super) fn run(
     args: &ArtifactTurnArgs,
     artifact: &CombatContractArtifactV2,
 ) -> Result<(), String> {
-    if args.max_inner_nodes == 0
-        || args.max_end_states == 0
-        || args.per_bucket_limit == 0
-        || args.limit == 0
-    {
-        return Err("artifact turn limits must be positive".to_owned());
+    if args.limit == 0 {
+        return Err("artifact turn output limit must be positive".to_owned());
     }
-    let candidate = candidate_for_role(artifact, args.candidate).ok_or_else(|| {
-        format!(
-            "V2 artifact '{}' has no {:?} terminal candidate",
-            args.artifact.display(),
-            args.candidate
-        )
-    })?;
-    let root = load_root(&args.artifact, artifact)?;
-    let (_, trace) = replay_candidate(&root, candidate)?;
-    let mut position = position_at_player_turn(&root, &trace, args.turn)?.clone();
-
-    let config = turn_probe_config(args, artifact);
-    let source = branch_state(&position);
-    let mut followed = Vec::with_capacity(args.follow_plan.len() + args.follow_state.len());
-    for (depth, plan_index) in args.follow_plan.iter().copied().enumerate() {
-        ensure_player_turn(&position, depth)?;
-        let audit = enumerate_turn(&position, &config);
-        let candidate = candidate_by_plan_index(&audit, plan_index)?;
-        let expected_hash = candidate
-            .report
-            .steps
-            .last()
-            .map(|step| step.state_after_exact_state_hash.as_str());
-        let actual_hash =
-            combat_exact_state_hash_v2(&candidate.position.engine, &candidate.position.combat);
-        if expected_hash != Some(actual_hash.as_str()) {
-            return Err(format!(
-                "followed plan {plan_index} exact successor drifted: report={expected_hash:?}, replay={actual_hash}"
-            ));
-        }
-        followed.push(json!({
-            "depth": depth,
-            "from_turn": position.combat.turn.turn_count,
-            "plan": candidate_summary(&candidate),
-        }));
-        position = candidate.position;
-    }
-    for (depth, state_query) in args.follow_state.iter().enumerate() {
-        ensure_player_turn(&position, depth)?;
-        let audit = enumerate_turn(&position, &config);
-        let (candidate, matching_plan_count) =
-            unique_state_candidate(&audit, state_query)?.ok_or_else(|| {
-                format!(
-                    "turn surface has no exact successor matching '{state_query}' across {} selected plans",
-                    audit.candidates.len()
-                )
-            })?;
-        followed.push(json!({
-            "depth": depth,
-            "from_turn": position.combat.turn.turn_count,
-            "state_query": state_query,
-            "matching_plan_count": matching_plan_count,
-            "plan": candidate_summary(candidate),
-        }));
-        position = candidate.position.clone();
-    }
+    let navigation = resolve(
+        &args.artifact,
+        artifact,
+        ArtifactNavigationSpec {
+            candidate: args.navigation.candidate,
+            turn: args.navigation.turn,
+            follow_plan: &args.navigation.follow_plan,
+            follow_state: &args.navigation.follow_state,
+            max_inner_nodes: args.navigation.max_inner_nodes,
+            max_end_states: args.navigation.max_end_states,
+            per_bucket_limit: args.navigation.per_bucket_limit,
+            input_label: "oracle_contract_v2_artifact_turn",
+        },
+    )?;
+    let candidate = navigation.candidate;
+    let position = navigation.position;
+    let config = navigation.config;
+    let source = navigation.source;
+    let followed = navigation
+        .followed
+        .iter()
+        .map(|step| {
+            json!({
+                "depth": step.depth,
+                "from_turn": step.from_turn,
+                "state_query": step.state_query,
+                "matching_plan_count": step.matching_plan_count,
+                "plan": candidate_summary(&step.candidate),
+            })
+        })
+        .collect::<Vec<_>>();
 
     let terminal = combat_terminal(&position.engine, &position.combat);
     let surface = if terminal == CombatTerminal::Unresolved {
-        ensure_player_turn(&position, args.follow_plan.len() + args.follow_state.len())?;
+        ensure_player_turn(
+            &position,
+            args.navigation.follow_plan.len() + args.navigation.follow_state.len(),
+        )?;
         let audit = enumerate_turn(&position, &config);
         let successor_selection = args
             .successor_state
@@ -162,99 +134,6 @@ pub(super) fn run(
         "reached": branch_state(&position),
         "terminal": format!("{terminal:?}"),
         "surface": surface,
-    }))
-}
-
-fn turn_probe_config(
-    args: &ArtifactTurnArgs,
-    artifact: &CombatContractArtifactV2,
-) -> CombatSearchV2Config {
-    let mut config = CombatSearchV2Config::default();
-    config.max_engine_steps_per_action = 250;
-    config.turn_plan_probe_max_inner_nodes = Some(args.max_inner_nodes);
-    config.turn_plan_probe_max_end_states = Some(args.max_end_states);
-    config.turn_plan_probe_per_bucket_limit = Some(args.per_bucket_limit);
-    config.potion_policy = if artifact.request.max_potions_used == 0 {
-        CombatSearchV2PotionPolicy::Never
-    } else {
-        CombatSearchV2PotionPolicy::All
-    };
-    config.max_potions_used = Some(artifact.request.max_potions_used);
-    config.allow_potion_discard = Some(false);
-    config.input_label = Some("oracle_contract_v2_artifact_turn".to_owned());
-    config
-}
-
-fn enumerate_turn(
-    position: &CombatPosition,
-    config: &CombatSearchV2Config,
-) -> CombatSearchV2TurnPlanProbeEnumeration {
-    enumerate_combat_search_v2_turn_plan_probe_candidates_across_pending_choices(
-        &position.engine,
-        &position.combat,
-        config,
-    )
-}
-
-fn ensure_player_turn(position: &CombatPosition, branch_depth: usize) -> Result<(), String> {
-    if matches!(position.engine, EngineState::CombatPlayerTurn) {
-        Ok(())
-    } else {
-        Err(format!(
-            "followed branch depth {branch_depth} did not reach a player-turn boundary: engine={:?}, terminal={:?}",
-            position.engine,
-            combat_terminal(&position.engine, &position.combat),
-        ))
-    }
-}
-
-fn candidate_by_plan_index(
-    audit: &CombatSearchV2TurnPlanProbeEnumeration,
-    plan_index: usize,
-) -> Result<CombatSearchV2TurnPlanProbeCandidate, String> {
-    audit
-        .candidates
-        .iter()
-        .find(|candidate| candidate.report.plan_index == plan_index)
-        .cloned()
-        .ok_or_else(|| {
-            let available = audit
-                .candidates
-                .iter()
-                .take(32)
-                .map(|candidate| candidate.report.plan_index.to_string())
-                .collect::<Vec<_>>()
-                .join(",");
-            format!(
-                "turn surface has no selected plan index {plan_index}; available selected indices (up to 32): [{available}]"
-            )
-        })
-}
-
-fn unique_state_candidate<'a>(
-    audit: &'a CombatSearchV2TurnPlanProbeEnumeration,
-    query: &str,
-) -> Result<Option<(&'a CombatSearchV2TurnPlanProbeCandidate, usize)>, String> {
-    if query.is_empty() {
-        return Err("exact successor state query must not be empty".to_owned());
-    }
-    let mut by_hash = BTreeMap::<String, Vec<&CombatSearchV2TurnPlanProbeCandidate>>::new();
-    for candidate in &audit.candidates {
-        let exact_hash =
-            combat_exact_state_hash_v2(&candidate.position.engine, &candidate.position.combat);
-        if exact_hash.starts_with(query) {
-            by_hash.entry(exact_hash).or_default().push(candidate);
-        }
-    }
-    if by_hash.len() > 1 {
-        return Err(format!(
-            "exact successor prefix '{query}' is ambiguous across {} states",
-            by_hash.len()
-        ));
-    }
-    Ok(by_hash.into_values().next().map(|mut candidates| {
-        candidates.sort_by_key(|candidate| candidate.report.plan_index);
-        (candidates[0], candidates.len())
     }))
 }
 
@@ -489,43 +368,4 @@ fn action_keys(candidate: &CombatSearchV2TurnPlanProbeCandidate) -> Vec<&str> {
         .iter()
         .map(|action| action.action_key.as_str())
         .collect()
-}
-
-fn branch_state(position: &CombatPosition) -> Value {
-    json!({
-        "turn": position.combat.turn.turn_count,
-        "exact_state_hash": combat_exact_state_hash_v2(&position.engine, &position.combat),
-        "recoverable_stolen_gold": recoverable_stolen_gold(&position.combat),
-        "unrecovered_stolen_gold": unrecovered_stolen_gold(&position.combat),
-        "state": combat_turn_snapshot(position),
-    })
-}
-
-fn candidate_for_role(
-    artifact: &CombatContractArtifactV2,
-    role: ArtifactCandidateRole,
-) -> Option<&CombatContractTerminalCandidateV2> {
-    artifact
-        .terminal_candidates
-        .iter()
-        .find(|candidate| match role {
-            ArtifactCandidateRole::Contract => candidate.selected_by_contract_view,
-            ArtifactCandidateRole::LocalHp => candidate.selected_by_local_hp_view,
-        })
-}
-
-fn position_at_player_turn<'a>(
-    root: &'a CombatPosition,
-    trace: &'a ReplayedActionTraceV2,
-    turn: u32,
-) -> Result<&'a CombatPosition, String> {
-    std::iter::once(root)
-        .chain(trace.prefix_positions.iter())
-        .find(|position| {
-            position.combat.turn.turn_count == turn
-                && matches!(position.engine, EngineState::CombatPlayerTurn)
-        })
-        .ok_or_else(|| {
-            format!("candidate does not contain an exact player-turn boundary for turn {turn}")
-        })
 }

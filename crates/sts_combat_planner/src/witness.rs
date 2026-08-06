@@ -138,6 +138,16 @@ pub(crate) fn trajectory_potion_contract_usage(
     }
 }
 
+/// Counts potion expenditures on one replay-exact action line, including
+/// passive starting-potion consumption such as Fairy Potion.
+pub fn exact_trajectory_potion_expenditures(
+    root: &CombatPosition,
+    actions: &[TurnOptionAction],
+    final_position: &CombatPosition,
+) -> u32 {
+    trajectory_potion_contract_usage(root, actions, final_position).expenditures
+}
+
 pub(crate) fn trajectory_within_potion_contract(
     root: &CombatPosition,
     actions: &[TurnOptionAction],

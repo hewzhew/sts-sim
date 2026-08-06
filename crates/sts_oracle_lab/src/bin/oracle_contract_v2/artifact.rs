@@ -203,4 +203,18 @@ mod tests {
             "unsupported artifact 'v2-manifest.json'; V2 commands do not parse legacy reports"
         );
     }
+
+    #[test]
+    fn loader_rejects_schema_nine_without_composed_prefix_contracts() {
+        let error = parse_artifact(
+            Path::new("v2-manifest.json"),
+            br#"{"schema_name":"OracleCombatContractArtifactV2","schema_version":9}"#,
+        )
+        .unwrap_err();
+
+        assert_eq!(
+            error,
+            "unsupported artifact 'v2-manifest.json'; V2 commands do not parse legacy reports"
+        );
+    }
 }

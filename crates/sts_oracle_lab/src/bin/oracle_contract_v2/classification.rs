@@ -64,6 +64,9 @@ pub(super) struct CombatContractResultV2 {
     pub(super) terminal_outcome_count: usize,
     pub(super) resource_contract_candidate_count: usize,
     pub(super) local_hp_candidate: Option<CombatContractCandidateSummaryV2>,
+    pub(super) search_root_exact_state_hash: Option<String>,
+    pub(super) diagnostic_prefix_action_count: usize,
+    pub(super) diagnostic_prefix_potions_used: u32,
     pub(super) generation_work: usize,
     pub(super) elapsed_ms: u128,
 }
@@ -121,7 +124,7 @@ pub(super) fn classify_contract(
     CombatContractAssessmentV2 {
         result: CombatContractResultV2 {
             schema_name: "OracleCombatContractResultV2".to_owned(),
-            schema_version: 2,
+            schema_version: 3,
             artifact: artifact.to_path_buf(),
             classification,
             contract_passed: classification == CombatContractClassificationV2::Passed,
@@ -143,6 +146,9 @@ pub(super) fn classify_contract(
             local_hp_candidate: indexes
                 .local_hp
                 .and_then(|index| candidate_summary(report, witness_frontier, index)),
+            search_root_exact_state_hash: None,
+            diagnostic_prefix_action_count: 0,
+            diagnostic_prefix_potions_used: 0,
             generation_work: report.counters.generation_work,
             elapsed_ms: elapsed.as_millis(),
         },
@@ -307,6 +313,7 @@ mod tests {
             require_recovered_stolen_gold: true,
             generation_work: 4_096,
             wall_ms: 2_000,
+            diagnostic_prefix: None,
         }
     }
 

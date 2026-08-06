@@ -569,6 +569,23 @@ fn exact_actions(
         .collect()
 }
 
+#[test]
+fn exact_action_line_materialization_records_replayable_successors() {
+    let root = root();
+    let stepper = TinyTurnStepper::plain();
+    let inputs = vec![PLAY, ClientInput::EndTurn];
+
+    let line = materialize_exact_action_line(&stepper, root.position(), &inputs, 4)
+        .expect("legal public inputs should materialize");
+    let (replayed, engine_steps) =
+        crate::atomic_witness::replay_atomic_actions(&stepper, root.position(), &line.actions, 4)
+            .expect("materialized line should replay");
+
+    assert_eq!(line.actions.len(), inputs.len());
+    assert_eq!(line.replay_engine_steps, engine_steps);
+    assert_eq!(exact_hash(&line.final_position), exact_hash(&replayed));
+}
+
 fn finish(
     session: &mut TurnOptionGeneratorSession,
     stepper: &TinyTurnStepper,

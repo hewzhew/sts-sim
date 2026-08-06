@@ -128,6 +128,28 @@ fn artifact_turn_can_navigate_and_filter_by_exact_successor_identity() {
 }
 
 #[test]
+fn artifact_branch_inherits_contract_and_selects_one_exact_successor() {
+    let cli = Cli::try_parse_from([
+        "oracle_lab",
+        "artifact",
+        "branch",
+        "contract-artifact",
+        "--candidate",
+        "contract",
+        "--turn",
+        "1",
+        "--follow-state",
+        "3273823f",
+        "--generation-work",
+        "4096",
+        "--wall-ms",
+        "2000",
+    ])
+    .expect("artifact-owned exact branch contract should parse");
+    assert!(matches!(cli.command, Command::Artifact(_)));
+}
+
+#[test]
 fn retired_rollout_control_surfaces_are_not_accepted() {
     assert!(
         Cli::try_parse_from(["oracle_lab", "artifact", "rollout", "contract-artifact"]).is_err()

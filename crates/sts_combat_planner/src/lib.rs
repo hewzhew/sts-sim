@@ -18,7 +18,9 @@ mod selection_transaction;
 mod types;
 mod witness;
 
-pub use atomic_witness::ExactAtomicWitness;
+pub use atomic_witness::{
+    materialize_exact_action_line, AtomicWitnessReplayError, ExactAtomicWitness,
+};
 pub use depth_beam_turn::{
     generate_depth_beam_turn_options, DepthBeamTurnBudget, DepthBeamTurnConfig,
     DepthBeamTurnCounters, DepthBeamTurnInterruption, DepthBeamTurnLayerReport,
@@ -28,7 +30,8 @@ pub use generator::{
     LiveActionTransitionSnapshot, TurnOptionGeneratorSession, DETAIL_TIMING_SAMPLE_INTERVAL,
 };
 pub use local_turn_graph_search::{
-    root_initial_expansion_work_for_budget, LocalTurnGraphDepthServiceSnapshot,
+    replay_oracle_combat_witness, root_initial_expansion_work_for_budget,
+    summarize_oracle_combat_witness_outcome, LocalTurnGraphDepthServiceSnapshot,
     LocalTurnGraphEdgeSnapshot, LocalTurnGraphGuideServiceBias, LocalTurnGraphGuideServiceSnapshot,
     LocalTurnGraphPlanAnnotationEnableError, LocalTurnGraphPlanTransitionEdgeSnapshot,
     LocalTurnGraphPolicyLineReport, LocalTurnGraphRetainedGuidePromiseSnapshot,
@@ -63,8 +66,9 @@ pub use types::{
     TurnOptionGeneratorConfig,
 };
 pub use witness::{
-    OracleCombatDeepStateSnapshot, OracleCombatGuideQueueSnapshot, OracleCombatGuideRankSnapshot,
-    OracleCombatWitness, OracleCombatWitnessDiscoverySource, OracleCombatWitnessProgressSnapshot,
+    exact_trajectory_potion_expenditures, OracleCombatDeepStateSnapshot,
+    OracleCombatGuideQueueSnapshot, OracleCombatGuideRankSnapshot, OracleCombatWitness,
+    OracleCombatWitnessDiscoverySource, OracleCombatWitnessProgressSnapshot,
     OracleCombatWitnessReplayError, OracleCombatWitnessSatisfaction,
     OracleCombatWitnessStateProgressSnapshot,
 };

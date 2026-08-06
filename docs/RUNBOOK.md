@@ -58,6 +58,8 @@ then run and reproduce it through the stable V2 protocol:
 .\ol.cmd artifact turn <artifact-directory> --candidate contract --turn 1 --follow-plan 2
 .\ol.cmd artifact turn <artifact-directory> --candidate contract --turn 1 `
   --follow-state <exact-successor-prefix> --successor-state <next-successor-prefix>
+.\ol.cmd artifact branch <artifact-directory> --candidate contract --turn 1 `
+  --follow-state <exact-successor-prefix> --generation-work 4096 --wall-ms 2000
 .\ol.cmd artifact rerun <artifact-directory>
 ```
 
@@ -91,6 +93,18 @@ exact successor identities it
 materialized, the boundary service source that actually consumed work, and
 whether the generator's internal lane used anchor or guide service; it never
 parses the opaque full report.
+`artifact branch` inherits the artifact's exact original root and complete
+contract, replays the retained candidate to `--turn`, follows the requested
+plan indices or exact successor identities, and starts one fresh bounded suffix
+search there. It does not export a descendant case or ask the caller to restate
+HP, potion, or stolen-gold constraints. Every retained suffix is concatenated
+with the bounded diagnostic prefix and replayed from the unchanged original
+root before it can enter the new ordinary V2 artifact. Prefix potion
+expenditures reduce the suffix allowance; the prefix itself is reported
+separately from charged generation work. `artifact summary`, `search`, `trace`,
+`turn`, and `rerun` work unchanged on the result. Search-state queries are
+relative to the manifest's explicit `search_root_exact_state_hash`, while
+trace and terminal candidates remain relative to the original exact root.
 These commands deliberately reject earlier manifest schemas and legacy reports
 instead of guessing their fields.
 

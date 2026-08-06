@@ -12,6 +12,7 @@ use clap::{Args, Subcommand, ValueEnum};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sts_combat_planner::{
+    exact_trajectory_potion_expenditures, summarize_oracle_combat_witness_outcome,
     LocalTurnGraphDepthServiceSnapshot, LocalTurnGraphServicedStateSnapshot,
     LocalTurnGraphWitnessConfig, OracleCombatWitnessSatisfaction,
 };
@@ -21,7 +22,8 @@ use sts_oracle_runtime::eval::combat_case::load_combat_case;
 use sts_oracle_runtime::eval::run_control::{
     existing_combat_guide_service_bias_v1, existing_combat_knowledge_policy_v1,
 };
-use sts_oracle_runtime::sim::combat::EngineCombatStepper;
+use sts_oracle_runtime::sim::combat::{combat_terminal, CombatTerminal, EngineCombatStepper};
+use sts_oracle_runtime::state::core::ClientInput;
 
 use super::canonical_launch::{runtime_identity, runtime_source_content_fingerprint};
 use super::combat_case_performance;
@@ -42,10 +44,13 @@ use super::oracle_case_catalog_v2::{register_case, resolve_case};
 use super::print_json;
 
 mod artifact;
+mod artifact_branch;
 mod artifact_compare;
+mod artifact_navigation;
 mod artifact_trace;
 mod artifact_turn;
 mod classification;
+mod diagnostic_prefix;
 
 use artifact::{load_artifact, reserve_artifact_directory, write_json_create_new};
 use classification::{
@@ -54,7 +59,7 @@ use classification::{
 };
 
 const ARTIFACT_SCHEMA: &str = "OracleCombatContractArtifactV2";
-const ARTIFACT_SCHEMA_VERSION: u32 = 9;
+const ARTIFACT_SCHEMA_VERSION: u32 = 10;
 
 #[derive(Debug, Args)]
 pub(super) struct ContractCommandArgs {
@@ -86,6 +91,8 @@ enum ArtifactCommand {
     Compare(ArtifactPathArgs),
     /// Enumerate one exact complete-turn surface along a retained candidate.
     Turn(ArtifactTurnArgs),
+    /// Continue the same contract after one replay-exact diagnostic prefix.
+    Branch(ArtifactBranchArgs),
     /// Re-run the typed request stored in a V2 artifact.
     Rerun(ArtifactPathArgs),
 }
@@ -118,6 +125,22 @@ enum ArtifactCandidateRole {
 struct ArtifactTurnArgs {
     /// V2 artifact directory or its manifest.json.
     artifact: PathBuf,
+    #[command(flatten)]
+    navigation: ArtifactNavigationArgs,
+    /// Return only the reached surface plan whose exact successor matches this
+    /// full hash or unique prefix.
+    #[arg(long)]
+    successor_state: Option<String>,
+    /// From every candidate on the reached surface, enumerate exactly one more
+    /// complete turn and aggregate terminal HP and stolen-gold outcomes.
+    #[arg(long)]
+    scan_next_terminal: bool,
+    #[arg(long, default_value_t = 16)]
+    limit: usize,
+}
+
+#[derive(Debug, Args)]
+struct ArtifactNavigationArgs {
     /// Retained terminal candidate whose exact prefix owns the turn.
     #[arg(long, value_enum, default_value_t = ArtifactCandidateRole::Contract)]
     candidate: ArtifactCandidateRole,
@@ -132,22 +155,25 @@ struct ArtifactTurnArgs {
     /// complete-turn branches without printing every sibling plan.
     #[arg(long, conflicts_with = "follow_plan")]
     follow_state: Vec<String>,
-    /// Return only the reached surface plan whose exact successor matches this
-    /// full hash or unique prefix.
-    #[arg(long)]
-    successor_state: Option<String>,
-    /// From every candidate on the reached surface, enumerate exactly one more
-    /// complete turn and aggregate terminal HP and stolen-gold outcomes.
-    #[arg(long)]
-    scan_next_terminal: bool,
     #[arg(long, default_value_t = 1_024)]
     max_inner_nodes: usize,
     #[arg(long, default_value_t = 96)]
     max_end_states: usize,
     #[arg(long, default_value_t = 96)]
     per_bucket_limit: usize,
-    #[arg(long, default_value_t = 16)]
-    limit: usize,
+}
+
+#[derive(Debug, Args)]
+struct ArtifactBranchArgs {
+    /// V2 artifact whose exact root and contract are inherited.
+    artifact: PathBuf,
+    #[command(flatten)]
+    navigation: ArtifactNavigationArgs,
+    /// Fresh suffix-search work. The inherited prefix is replayed, not charged.
+    #[arg(long, default_value_t = 4_096)]
+    generation_work: usize,
+    #[arg(long, default_value_t = 2_000)]
+    wall_ms: u64,
 }
 
 #[derive(Clone, Debug, Args, Deserialize, Eq, PartialEq, Serialize)]
@@ -179,6 +205,19 @@ struct CombatContractRequestV2 {
     require_recovered_stolen_gold: bool,
     generation_work: usize,
     wall_ms: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    diagnostic_prefix: Option<CombatContractDiagnosticPrefixV2>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+struct CombatContractDiagnosticPrefixV2 {
+    source_candidate_id: String,
+    source_candidate_terminal_exact_state_hash: String,
+    source_turn: u32,
+    follow_plan: Vec<usize>,
+    follow_state: Vec<String>,
+    expected_search_root_exact_state_hash: String,
+    inputs: Vec<ClientInput>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -187,6 +226,7 @@ struct CombatContractArtifactV2 {
     schema_version: u32,
     request: CombatContractRequestV2,
     root_exact_state_hash: String,
+    search_root_exact_state_hash: String,
     source_content_fingerprint: String,
     runtime: Value,
     report: PathBuf,
@@ -312,6 +352,7 @@ pub(super) fn run_contract_command(args: ContractCommandArgs) -> Result<(), Stri
                 require_recovered_stolen_gold: args.require_recovered_stolen_gold,
                 generation_work: args.generation_work,
                 wall_ms: args.wall_ms,
+                diagnostic_prefix: None,
             };
             let result = run_combat_contract(request)?;
             print_json(&result)
@@ -347,6 +388,10 @@ pub(super) fn run_artifact_command(args: ArtifactCommandArgs) -> Result<(), Stri
             let artifact = load_artifact(&args.artifact)?;
             artifact_turn::run(&args, &artifact)
         }
+        ArtifactCommand::Branch(args) => {
+            let artifact = load_artifact(&args.artifact)?;
+            artifact_branch::run(&args, &artifact)
+        }
         ArtifactCommand::Rerun(args) => {
             let artifact = load_artifact(&args.artifact)?;
             let current = register_case(&artifact.request.case)?;
@@ -379,8 +424,35 @@ fn run_combat_contract(request: CombatContractRequestV2) -> Result<CombatContrac
             request.case_id, root_exact_state_hash
         ));
     }
+    let (prefix_line, prefix_negative_log_policy) =
+        diagnostic_prefix::materialize(&request, &loaded.position)?;
+    let search_position = prefix_line.as_ref().map_or_else(
+        || loaded.position.clone(),
+        |prefix| prefix.final_position.clone(),
+    );
+    if combat_terminal(&search_position.engine, &search_position.combat)
+        != CombatTerminal::Unresolved
+    {
+        return Err("contract search prefix must end before combat becomes terminal".to_owned());
+    }
+    let search_root_exact_state_hash =
+        combat_exact_state_hash_v2(&search_position.engine, &search_position.combat);
+    let prefix_potions_used = prefix_line.as_ref().map_or(0, |prefix| {
+        exact_trajectory_potion_expenditures(
+            &loaded.position,
+            &prefix.actions,
+            &prefix.final_position,
+        )
+    });
+    if prefix_potions_used > request.max_potions_used {
+        return Err(format!(
+            "diagnostic prefix spent {prefix_potions_used} potions but the inherited contract allows {}",
+            request.max_potions_used
+        ));
+    }
+    let remaining_potion_budget = request.max_potions_used - prefix_potions_used;
     let initial_hp = loaded.position.combat.entities.player.current_hp;
-    let root_player_turn = loaded.position.combat.turn.turn_count;
+    let root_player_turn = search_position.combat.turn.turn_count;
     let satisfaction = request
         .min_final_hp
         .map(OracleCombatWitnessSatisfaction::FinalHpAtLeast)
@@ -395,16 +467,16 @@ fn run_combat_contract(request: CombatContractRequestV2) -> Result<CombatContrac
         50_000,
         4,
         32,
-        Some(request.max_potions_used),
+        Some(remaining_potion_budget),
         false,
         None,
         None,
         None,
     );
     let mut config: LocalTurnGraphWitnessConfig = search_spec.planner_config(satisfaction);
-    config.guide_service_bias = existing_combat_guide_service_bias_v1(&loaded.position);
+    config.guide_service_bias = existing_combat_guide_service_bias_v1(&search_position);
     config.require_no_unrecovered_stolen_gold = request.require_recovered_stolen_gold;
-    let root = sts_combat_planner::CombatDecisionRoot::new(loaded.position.clone())
+    let root = sts_combat_planner::CombatDecisionRoot::new(search_position.clone())
         .map_err(|error| format!("invalid combat case root: {error:?}"))?;
     let mut session = execution_profile.prepare_session(
         root,
@@ -436,10 +508,48 @@ fn run_combat_contract(request: CombatContractRequestV2) -> Result<CombatContrac
     }
     let report = session.advance(search_quantum, &EngineCombatStepper);
     let search_elapsed = search_started.elapsed();
+    let contract_witness_frontier = diagnostic_prefix::compose_witnesses(
+        &loaded.position,
+        prefix_line.as_ref(),
+        prefix_negative_log_policy,
+        session.witness_frontier(),
+    )?;
+    if contract_witness_frontier.len() != report.witness_frontier.len() {
+        return Err(format!(
+            "search witness frontier attribution drifted: {} typed outcomes for {} exact witnesses",
+            report.witness_frontier.len(),
+            contract_witness_frontier.len()
+        ));
+    }
+    let mut contract_report = report.clone();
+    contract_report.witness_frontier = report
+        .witness_frontier
+        .iter()
+        .zip(&contract_witness_frontier)
+        .map(|(suffix_outcome, witness)| {
+            summarize_oracle_combat_witness_outcome(
+                &loaded.position,
+                witness,
+                suffix_outcome.selected_by_local_hp_view,
+            )
+        })
+        .collect();
+    contract_report.witness = report
+        .witness
+        .as_ref()
+        .map(|witness| {
+            diagnostic_prefix::compose_witness(
+                &loaded.position,
+                prefix_line.as_ref(),
+                prefix_negative_log_policy,
+                witness,
+            )
+        })
+        .transpose()?;
     let progress = session.progress_snapshot();
     let diagnostics = materialize_local_graph_diagnostics(
         &session,
-        &loaded.position,
+        &search_position,
         LocalGraphDiagnosticPaths {
             deepest_survival: &progress.deepest_survival_actions,
             deepest_progress: &progress.deepest_progress_actions,
@@ -451,9 +561,12 @@ fn run_combat_contract(request: CombatContractRequestV2) -> Result<CombatContrac
         false,
         250,
     )?;
-    let observation = capture_local_graph_observation(&session, &loaded.position, &[], None);
+    let observation = capture_local_graph_observation(&session, &search_position, &[], None);
+    let mut search_case = loaded.clone();
+    search_case.position = search_position.clone();
+    search_case.refresh_derived_summaries_and_clear_production_context();
     let exports = export_local_graph_paths(
-        &loaded,
+        &search_case,
         Some(&request.case),
         LocalGraphExportPaths {
             witness_actions: None,
@@ -520,7 +633,7 @@ fn run_combat_contract(request: CombatContractRequestV2) -> Result<CombatContrac
             counterfactual: LocalGraphCounterfactual {
                 full_health: false,
                 original_hp: initial_hp,
-                search_hp: initial_hp,
+                search_hp: search_position.combat.entities.player.current_hp,
             },
         },
         report: &report,
@@ -553,8 +666,8 @@ fn run_combat_contract(request: CombatContractRequestV2) -> Result<CombatContrac
     search.states = reservation.final_path.join("search-states.json");
     let search_state_index = CombatContractSearchStateIndexV2 {
         schema_name: "OracleCombatContractSearchStateIndexV2".to_owned(),
-        schema_version: 5,
-        root_exact_state_hash: root_exact_state_hash.clone(),
+        schema_version: 6,
+        root_exact_state_hash: search_root_exact_state_hash.clone(),
         states: session
             .state_service_index()
             .into_iter()
@@ -565,16 +678,16 @@ fn run_combat_contract(request: CombatContractRequestV2) -> Result<CombatContrac
     let manifest_path = reservation.final_path.join("manifest.json");
     let assessment = classify_contract(
         &request,
-        &report,
-        session.witness_frontier(),
+        &contract_report,
+        &contract_witness_frontier,
         &manifest_path,
         started.elapsed(),
     );
     let candidate_index = assessment.selected_witness_index;
-    let terminal_candidates = report
+    let terminal_candidates = contract_report
         .witness_frontier
         .iter()
-        .zip(session.witness_frontier())
+        .zip(&contract_witness_frontier)
         .enumerate()
         .map(|(index, (outcome, witness))| {
             let terminal_exact_state_hash = combat_exact_state_hash_v2(
@@ -608,11 +721,17 @@ fn run_combat_contract(request: CombatContractRequestV2) -> Result<CombatContrac
     let mut result = assessment.result;
     result.artifact = manifest_path.clone();
     result.witness_actions = witness_actions_path.clone();
+    result.search_root_exact_state_hash = Some(search_root_exact_state_hash.clone());
+    result.diagnostic_prefix_action_count = prefix_line
+        .as_ref()
+        .map_or(0, |prefix| prefix.actions.len());
+    result.diagnostic_prefix_potions_used = prefix_potions_used;
     let artifact = CombatContractArtifactV2 {
         schema_name: ARTIFACT_SCHEMA.to_owned(),
         schema_version: ARTIFACT_SCHEMA_VERSION,
         request,
         root_exact_state_hash,
+        search_root_exact_state_hash,
         source_content_fingerprint,
         runtime: runtime_identity(),
         report: report_path.clone(),
@@ -635,7 +754,7 @@ fn run_combat_contract(request: CombatContractRequestV2) -> Result<CombatContrac
             })?;
         }
         for candidate in &artifact.terminal_candidates {
-            let actions = session.witness_frontier()[candidate.frontier_index]
+            let actions = contract_witness_frontier[candidate.frontier_index]
                 .actions
                 .iter()
                 .map(|action| &action.input)
@@ -739,8 +858,8 @@ fn query_search_state(artifact: &CombatContractArtifactV2, query: &str) -> Resul
             )
         })?;
     if index.schema_name != "OracleCombatContractSearchStateIndexV2"
-        || index.schema_version != 5
-        || index.root_exact_state_hash != artifact.root_exact_state_hash
+        || index.schema_version != 6
+        || index.root_exact_state_hash != artifact.search_root_exact_state_hash
     {
         return Err(format!(
             "search-state index '{}' does not match its V2 artifact",
@@ -761,8 +880,9 @@ fn query_search_state(artifact: &CombatContractArtifactV2, query: &str) -> Resul
     let state = matches.first().copied();
     print_json(&serde_json::json!({
         "schema_name": "OracleCombatContractSearchStateQueryV2",
-        "schema_version": 5,
+        "schema_version": 6,
         "root_exact_state_hash": artifact.root_exact_state_hash,
+        "search_root_exact_state_hash": artifact.search_root_exact_state_hash,
         "query": query,
         "retained": state.is_some(),
         "serviced": state.is_some_and(|state| state.generation_work > 0),

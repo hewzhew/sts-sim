@@ -60,6 +60,36 @@ use super::witness::{
 };
 use super::TurnOptionGeneratorSession;
 
+/// Replays one exact terminal candidate from its unchanged combat root.
+///
+/// This is the shared composition boundary for diagnostic prefixes and
+/// planner-produced suffixes. It does not admit the line into a search.
+pub fn replay_oracle_combat_witness(
+    root: &CombatPosition,
+    actions: &[TurnOptionAction],
+    negative_log_policy: f64,
+    discovery_source: OracleCombatWitnessDiscoverySource,
+    stepper: &dyn CombatStepper,
+) -> Result<OracleCombatWitness, OracleCombatWitnessReplayError> {
+    scheduling::replay_witness(
+        root,
+        actions,
+        negative_log_policy,
+        discovery_source,
+        stepper,
+    )
+}
+
+/// Projects one replayed terminal witness into the stable typed outcome facts
+/// consumed by contract tooling.
+pub fn summarize_oracle_combat_witness_outcome(
+    root: &CombatPosition,
+    witness: &OracleCombatWitness,
+    selected_by_local_hp_view: bool,
+) -> LocalTurnGraphTerminalOutcomeSnapshotV1 {
+    scheduling::terminal_outcome_snapshot(root, witness, selected_by_local_hp_view)
+}
+
 fn plan_prefix_root_eligible(position: &CombatPosition) -> bool {
     combat_plan_turn_prefix_proposal_v1(position).is_some_and(|proposal| {
         proposal.service_scope == CombatPlanPrefixServiceScopeV1::RootEligible

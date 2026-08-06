@@ -588,7 +588,19 @@ indices or exact successor identities through replay-checked exact successors
 without exposing sidecar paths, scratch ids, or intermediate case files. When
 the caller already knows one successor identity, the command filters that
 surface before display rather than requiring a large sibling dump and external
-JSON parsing. An explicit diagnostic may enumerate one additional exact
+JSON parsing. `artifact branch` uses that same typed navigation owner to select
+one bounded diagnostic prefix, then runs the inherited contract from its exact
+successor without writing a descendant case or creating another report
+protocol. The request stores the bounded public inputs, their expected search
+root identity, and source candidate provenance. Suffix witnesses are
+concatenated with the prefix and replayed from the unchanged original root
+before contract classification or persistence. Prefix potion expenditures
+reduce the suffix allowance, while generation accounting remains scoped to the
+fresh suffix search. The manifest distinguishes original root identity from
+search-root identity so `trace` remains full-root evidence and state service
+queries remain honest about the graph actually searched. This is
+counterfactual diagnostic evidence and never restores production-context
+parity or admits the chosen prefix into policy. An explicit diagnostic may enumerate one additional exact
 complete turn from every selected parent and aggregate terminal HP and
 stolen-gold facts; it does not recurse, propose policy, or become a second
 witness search. None of these commands may make callers recover paths or
