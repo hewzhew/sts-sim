@@ -132,6 +132,17 @@ Looter/Mugger's stolen gold. Private protocol flags, unrevealed random damage,
 and raw monster runtime bundles remain absent. With these fields the combat
 observation is complete for the maintained in-process learning environment.
 
+`LearningModelDecisionV1` is the in-process model adapter over those
+boundaries. Its observation views omit schema labels, artifact identity, opaque
+candidate ids, and mechanics manifests while retaining typed public semantics.
+Candidate sets remain ragged and use row splits as their default batch mask;
+rectangular padding masks are materialized only when a backend asks for one.
+Atomic combat inputs carry aligned typed indexed-choice semantics. Symbolic
+selection families are decoded as an ordered append-or-submit language without
+enumerating complete payloads, and only explicit submit produces an
+environment action. The adapter does not serialize per-step JSON and does not
+define a feature dictionary, network architecture, or policy objective.
+
 On an ordinary reward screen, the reward owner claims typed low-agency public
 resources before opening a nested card-reward choice. This lets the card owner
 observe already-claimed gold, non-conflicting relics, and empty-slot potions

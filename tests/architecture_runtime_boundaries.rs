@@ -2492,6 +2492,26 @@ fn online_learning_env_uses_public_state_and_typed_legality_without_policy_score
         );
     }
 
+    let model_input_source =
+        std::fs::read_to_string("src/eval/run_control/learning_model_input.rs")
+            .expect("read learning model input");
+    assert!(model_input_source.contains("candidate_row_splits"));
+    assert!(model_input_source.contains("LearningSelectionDraftV1"));
+    for forbidden in [
+        "semantic_combat_state_features",
+        "combat_search",
+        "strategy::",
+        "_policy_v1",
+        "serde_json",
+        "Serialize",
+        "Deserialize",
+    ] {
+        assert!(
+            !model_input_source.contains(forbidden),
+            "learning model input must not import incumbent policy, diagnostic features, or per-step serialization through '{forbidden}'"
+        );
+    }
+
     let observation_source =
         std::fs::read_to_string("src/ai/combat_learning_observation.rs")
             .expect("read combat learning observation");

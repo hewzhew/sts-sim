@@ -570,6 +570,18 @@ history, powers, cards, or ordinary entity state. The maintained in-process
 combat observation is therefore complete without exposing raw monster runtime
 bundles or unrevealed random damage.
 
+The first model-facing adapter is also in process. It gives encoders semantic
+observation references with artifact/schema identity removed, plus one ragged
+candidate row per decision. Row splits are the default legal-action mask;
+dense padding masks are an optional projection for backends that require
+rectangular tensors. A candidate ordinal resolves through a private runtime
+table, so opaque strategic ids are never candidate features. Indexed combat
+choices carry their typed card or stance semantics. Combinatorial selections
+use an uncommitted typed decoder whose candidates are append-domain-item and
+submit; only submit creates the complete environment action. This establishes
+the batch and action-decoding boundary without choosing a numeric feature
+dictionary or a learning framework.
+
 Recovery curricula are callers of this boundary, not mechanics. Restoring an
 exact checkpoint must preserve its RNG state; a curriculum may count, limit,
 or schedule retries but may not obtain value by rerolling the same state.

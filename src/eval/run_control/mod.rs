@@ -38,6 +38,7 @@ mod exact_run_model;
 mod forced_transition;
 mod input_gate;
 mod learning_env;
+mod learning_model_input;
 mod next_hint;
 mod noncombat_boundary;
 mod noncombat_policy_annotation;
@@ -150,6 +151,14 @@ pub use forced_transition::{
 pub use learning_env::{
     LearningActionV1, LearningBoundaryV1, LearningCombatBoundaryV1, LearningEnvV1,
     LearningObservationCompletenessV1, LearningStepV1, LearningStrategicBoundaryV1,
+};
+pub use learning_model_input::{
+    LearningCombatModelObservationV1, LearningDenseActionMaskV1, LearningModelBatchV1,
+    LearningModelCandidateSemanticsV1, LearningModelCandidateV1, LearningModelChoiceV1,
+    LearningModelDecisionV1, LearningModelInputError, LearningModelObservationV1,
+    LearningSelectionCandidateSemanticsV1, LearningSelectionCandidateV1,
+    LearningSelectionDecisionV1, LearningSelectionDraftV1, LearningSelectionStepV1,
+    LearningStrategicModelObservationV1,
 };
 pub use oracle_analysis_session::{
     OracleAnalysisAdvanceReportV1, OracleAnalysisAdvanceRequestV1, OracleAnalysisAdvanceStatusV1,

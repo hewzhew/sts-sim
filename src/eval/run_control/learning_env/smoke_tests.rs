@@ -1,10 +1,7 @@
 use super::*;
-use crate::sim::combat_action_surface::{
-    CombatLegalActionSurfaceV2, CombatSelectionActionFamilyV2, CombatSelectionDomainCandidateV2,
-    CombatSelectionInputEncodingV2, CombatSelectionStatusV2,
+use crate::eval::run_control::{
+    LearningModelChoiceV1, LearningModelDecisionV1, LearningSelectionStepV1,
 };
-use crate::state::selection::{SelectionResolution, SelectionScope};
-use std::collections::HashSet;
 use std::time::{Duration, Instant};
 
 const EPISODE_STEP_LIMIT: usize = 20_000;
@@ -76,131 +73,33 @@ fn smoke_action(
     stats: &mut SmokeStats,
 ) -> Result<LearningActionV1, String> {
     match boundary {
-        LearningBoundaryV1::Strategic { boundary } => {
-            if !boundary.legal_candidates.completeness.is_complete() {
-                return Err("incomplete strategic action surface".to_string());
-            }
-            let candidates = &boundary.legal_candidates.candidates;
-            if candidates.is_empty() {
-                return Err("complete strategic boundary has no candidate".to_string());
-            }
-            stats.strategic_steps += 1;
-            Ok(LearningActionV1::StrategicCandidate {
-                candidate_id: candidates[rng.pick(candidates.len())].candidate_id.clone(),
-            })
-        }
-        LearningBoundaryV1::Combat { boundary } => {
-            if boundary.observation_completeness != LearningObservationCompletenessV1::Complete {
-                return Err("incomplete combat observation".to_string());
-            }
-            stats.combat_steps += 1;
-            Ok(LearningActionV1::CombatInput {
-                input: smoke_combat_input(&boundary.legal_actions, rng)?,
-            })
-        }
+        LearningBoundaryV1::Strategic { .. } => stats.strategic_steps += 1,
+        LearningBoundaryV1::Combat { .. } => stats.combat_steps += 1,
         LearningBoundaryV1::Terminal { .. } => {
-            Err("terminal boundary was not marked terminated by the prior step".to_string())
+            return Err("terminal boundary was not marked terminated by the prior step".to_string())
         }
-        LearningBoundaryV1::Unsupported => Err("unsupported learning boundary".to_string()),
-    }
-}
-
-fn smoke_combat_input(
-    surface: &CombatLegalActionSurfaceV2,
-    rng: &mut SmokeRng,
-) -> Result<ClientInput, String> {
-    let enabled_families = surface
-        .selection_families
-        .iter()
-        .filter(|family| family.selection_status == CombatSelectionStatusV2::Enabled)
-        .collect::<Vec<_>>();
-    let choice_count = surface.atomic_actions.len() + enabled_families.len();
-    if choice_count == 0 {
-        return Err("complete combat action surface has no legal action".to_string());
-    }
-    let choice = rng.pick(choice_count);
-    if let Some(input) = surface.atomic_actions.get(choice) {
-        return Ok(input.clone());
-    }
-    smoke_selection_input(enabled_families[choice - surface.atomic_actions.len()], rng)
-}
-
-fn smoke_selection_input(
-    family: &CombatSelectionActionFamilyV2,
-    rng: &mut SmokeRng,
-) -> Result<ClientInput, String> {
-    let required = usize::try_from(family.declared_min)
-        .map_err(|_| "selection minimum does not fit usize".to_string())?;
-    match family.input_encoding {
-        CombatSelectionInputEncodingV2::SubmitSelectionHandCardUuids
-        | CombatSelectionInputEncodingV2::SubmitSelectionGridCardUuids => {
-            let mut eligible = family
-                .raw_domain
-                .iter()
-                .filter_map(|candidate| match candidate {
-                    CombatSelectionDomainCandidateV2::CardUuid {
-                        uuid,
-                        eligible: true,
-                        ..
-                    } => Some(*uuid),
-                    _ => None,
-                })
-                .collect::<Vec<_>>();
-            let selected = pick_distinct(&mut eligible, required, rng)?;
-            let scope = match family.input_encoding {
-                CombatSelectionInputEncodingV2::SubmitSelectionHandCardUuids => {
-                    SelectionScope::Hand
-                }
-                CombatSelectionInputEncodingV2::SubmitSelectionGridCardUuids => {
-                    SelectionScope::Grid
-                }
-                CombatSelectionInputEncodingV2::SubmitScryDiscardIndices => unreachable!(),
-            };
-            Ok(ClientInput::SubmitSelection(
-                SelectionResolution::card_uuids(scope, selected),
-            ))
-        }
-        CombatSelectionInputEncodingV2::SubmitScryDiscardIndices => {
-            let mut seen_uuids = HashSet::new();
-            let mut eligible = family
-                .raw_domain
-                .iter()
-                .filter_map(|candidate| match candidate {
-                    CombatSelectionDomainCandidateV2::ScryIndex {
-                        index,
-                        card_uuid: Some(uuid),
-                        currently_present: true,
-                        ..
-                    } if seen_uuids.insert(*uuid) => usize::try_from(*index).ok(),
-                    _ => None,
-                })
-                .collect::<Vec<_>>();
-            Ok(ClientInput::SubmitScryDiscard(pick_distinct(
-                &mut eligible,
-                required,
-                rng,
-            )?))
+        LearningBoundaryV1::Unsupported => {
+            return Err("unsupported learning boundary".to_string());
         }
     }
-}
-
-fn pick_distinct<T: Copy>(
-    candidates: &mut Vec<T>,
-    amount: usize,
-    rng: &mut SmokeRng,
-) -> Result<Vec<T>, String> {
-    if amount > candidates.len() {
-        return Err(format!(
-            "selection requires {amount} values but only {} are eligible",
-            candidates.len()
-        ));
+    let decision = LearningModelDecisionV1::from_boundary(boundary)
+        .map_err(|error| format!("model input: {error}"))?;
+    match decision
+        .choose(rng.pick(decision.candidates.len()))
+        .map_err(|error| format!("root choice: {error}"))?
+    {
+        LearningModelChoiceV1::Apply(action) => Ok(action),
+        LearningModelChoiceV1::DecodeSelection(mut draft) => loop {
+            let selection = draft.decision();
+            match draft
+                .choose(rng.pick(selection.candidates.len()))
+                .map_err(|error| format!("selection choice: {error}"))?
+            {
+                LearningSelectionStepV1::Continue => {}
+                LearningSelectionStepV1::Apply(action) => break Ok(action),
+            }
+        },
     }
-    let mut selected = Vec::with_capacity(amount);
-    for _ in 0..amount {
-        let index = rng.pick(candidates.len());
-        selected.push(candidates.swap_remove(index));
-    }
-    Ok(selected)
 }
 
 fn print_summary(episodes: usize, stats: &SmokeStats, elapsed: Duration) {
