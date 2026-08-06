@@ -2497,6 +2497,7 @@ fn online_learning_env_uses_public_state_and_typed_legality_without_policy_score
             .expect("read learning model input");
     assert!(model_input_source.contains("candidate_row_splits"));
     assert!(model_input_source.contains("LearningSelectionDraftV1"));
+    assert!(model_input_source.contains("LearningSelectionModelBatchV1"));
     for forbidden in [
         "semantic_combat_state_features",
         "combat_search",
@@ -2509,6 +2510,27 @@ fn online_learning_env_uses_public_state_and_typed_legality_without_policy_score
         assert!(
             !model_input_source.contains(forbidden),
             "learning model input must not import incumbent policy, diagnostic features, or per-step serialization through '{forbidden}'"
+        );
+    }
+
+    let pool_source = std::fs::read_to_string("src/eval/run_control/learning_env_pool.rs")
+        .expect("read learning environment pool");
+    assert!(pool_source.contains("active_model_batch"));
+    assert!(pool_source.contains("prepare_action"));
+    assert!(pool_source.contains("PoolPoisoned"));
+    for forbidden in [
+        "semantic_combat_state_features",
+        "combat_search",
+        "strategy::",
+        "_policy_v1",
+        "serde_json",
+        "Serialize",
+        "Deserialize",
+        "thread::spawn",
+    ] {
+        assert!(
+            !pool_source.contains(forbidden),
+            "learning environment pool must not own policy, serialization, or hidden execution concurrency through '{forbidden}'"
         );
     }
 

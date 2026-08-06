@@ -140,8 +140,22 @@ rectangular padding masks are materialized only when a backend asks for one.
 Atomic combat inputs carry aligned typed indexed-choice semantics. Symbolic
 selection families are decoded as an ordered append-or-submit language without
 enumerating complete payloads, and only explicit submit produces an
-environment action. The adapter does not serialize per-step JSON and does not
-define a feature dictionary, network architecture, or policy objective.
+environment action. Active decoders can themselves form a ragged batch; each
+row retains the unchanged parent observation, so autoregressive selection does
+not fall back to one backend call per environment slot. The adapter does not
+serialize per-step JSON and does not define a feature dictionary, network
+architecture, or policy objective.
+
+`LearningEnvPoolV1` owns a fixed set of independent environments and exposes
+all non-terminal slots as one aligned ragged model batch. It prepares every
+selected action against the unchanged slots before applying any of them, so an
+invalid model output cannot partly advance a batch. An unexpected engine error
+poisons the pool instead of allowing mixed advancement to continue. Terminal
+slots leave the active batch and return only through an explicit caller-owned
+replacement or reset; curriculum, recovery, seed scheduling, numeric encoding,
+and policy inference remain outside the pool. This is the maintained boundary
+for amortizing a future Rust or Python backend call across environments without
+per-step JSON or one foreign-language call per slot.
 
 On an ordinary reward screen, the reward owner claims typed low-agency public
 resources before opening a nested card-reward choice. This lets the card owner

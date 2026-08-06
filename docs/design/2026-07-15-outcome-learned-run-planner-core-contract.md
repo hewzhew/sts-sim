@@ -578,9 +578,21 @@ rectangular tensors. A candidate ordinal resolves through a private runtime
 table, so opaque strategic ids are never candidate features. Indexed combat
 choices carry their typed card or stance semantics. Combinatorial selections
 use an uncommitted typed decoder whose candidates are append-domain-item and
-submit; only submit creates the complete environment action. This establishes
-the batch and action-decoding boundary without choosing a numeric feature
-dictionary or a learning framework.
+submit; only submit creates the complete environment action. Multiple active
+decoders form another ragged batch with their unchanged parent observations,
+so an autoregressive backend can preserve state context and batch every decode
+round. This establishes the batch and action-decoding boundary without
+choosing a numeric feature dictionary or a learning framework.
+
+`LearningEnvPoolV1` batches independent environment slots without becoming a
+policy or curriculum owner. It exposes one row-to-slot mapping, prepares all
+actions before mutation, removes terminal slots from later batches, and
+requires explicit replacement or reset before a slot returns. This permits one
+backend inference call for many environments while keeping recovery counts,
+seed scheduling, numeric tokenization, and optimizer state outside the
+simulator boundary. A bad action is rejected before any slot advances; an
+unexpected engine failure poisons the pool rather than silently continuing
+from a partly advanced batch.
 
 Recovery curricula are callers of this boundary, not mechanics. Restoring an
 exact checkpoint must preserve its RNG state; a curriculum may count, limit,

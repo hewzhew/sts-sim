@@ -1,6 +1,7 @@
 use super::*;
 use crate::eval::run_control::{
-    LearningModelChoiceV1, LearningModelDecisionV1, LearningSelectionStepV1,
+    LearningEnvPoolV1, LearningModelChoiceV1, LearningModelDecisionV1, LearningModelObservationV1,
+    LearningSelectionStepV1,
 };
 use std::time::{Duration, Instant};
 
@@ -31,59 +32,54 @@ impl SmokeRng {
 fn seeded_legal_action_walk_reaches_terminal_without_unsupported_boundary() {
     let started = Instant::now();
     let mut stats = SmokeStats::default();
-    let seeds = 1..=5;
-
-    for seed in seeds.clone() {
-        run_smoke_episode(seed, &mut stats).unwrap_or_else(|error| panic!("seed {seed}: {error}"));
-    }
-
-    print_summary(seeds.count(), &stats, started.elapsed());
-}
-
-fn run_smoke_episode(seed: u64, stats: &mut SmokeStats) -> Result<(), String> {
-    let mut env = LearningEnvV1::new(RunControlConfig {
-        seed,
+    let seeds = (1..=5).collect::<Vec<_>>();
+    let mut pool = LearningEnvPoolV1::from_configs(seeds.iter().map(|seed| RunControlConfig {
+        seed: *seed,
         ..RunControlConfig::default()
-    });
-    let mut rng = SmokeRng(seed ^ 0x9e37_79b9_7f4a_7c15);
-    let mut boundary = env.observe()?;
+    }))
+    .expect("create learning environment pool");
+    let mut rngs = seeds
+        .iter()
+        .map(|seed| SmokeRng(seed ^ 0x9e37_79b9_7f4a_7c15))
+        .collect::<Vec<_>>();
 
-    for episode_step in 0..EPISODE_STEP_LIMIT {
-        let action = smoke_action(&boundary, &mut rng, stats)
-            .map_err(|error| format!("step {episode_step}: {error}"))?;
-        let step = env
-            .step(action)
-            .map_err(|error| format!("step {episode_step}: {error}"))?;
-        stats.total_steps += 1;
-        boundary = step.boundary;
-        if step.terminated {
-            stats.victories += usize::from(step.reward > 0);
-            return Ok(());
+    while !pool.all_terminal() {
+        assert!(
+            stats.total_steps < EPISODE_STEP_LIMIT * seeds.len(),
+            "legal action pool exceeded the aggregate step cap"
+        );
+        let batch = pool.active_model_batch().expect("build active model batch");
+        let actions = batch
+            .active_slot_indices
+            .iter()
+            .copied()
+            .zip(&batch.model_batch.decisions)
+            .map(|(slot_index, decision)| {
+                smoke_action(decision, &mut rngs[slot_index], &mut stats)
+                    .unwrap_or_else(|error| panic!("slot {slot_index}: {error}"))
+            })
+            .collect::<Vec<_>>();
+        let step = pool.step_active(actions).expect("step active pool");
+        stats.total_steps += step.slots.len();
+        for slot in step.slots {
+            if slot.terminated {
+                stats.victories += usize::from(slot.reward > 0);
+            }
         }
     }
 
-    Err(format!(
-        "legal action walk exceeded the {EPISODE_STEP_LIMIT}-step cap"
-    ))
+    print_summary(seeds.len(), &stats, started.elapsed());
 }
 
 fn smoke_action(
-    boundary: &LearningBoundaryV1,
+    decision: &LearningModelDecisionV1<'_>,
     rng: &mut SmokeRng,
     stats: &mut SmokeStats,
 ) -> Result<LearningActionV1, String> {
-    match boundary {
-        LearningBoundaryV1::Strategic { .. } => stats.strategic_steps += 1,
-        LearningBoundaryV1::Combat { .. } => stats.combat_steps += 1,
-        LearningBoundaryV1::Terminal { .. } => {
-            return Err("terminal boundary was not marked terminated by the prior step".to_string())
-        }
-        LearningBoundaryV1::Unsupported => {
-            return Err("unsupported learning boundary".to_string());
-        }
+    match decision.observation {
+        LearningModelObservationV1::Strategic(_) => stats.strategic_steps += 1,
+        LearningModelObservationV1::Combat(_) => stats.combat_steps += 1,
     }
-    let decision = LearningModelDecisionV1::from_boundary(boundary)
-        .map_err(|error| format!("model input: {error}"))?;
     match decision
         .choose(rng.pick(decision.candidates.len()))
         .map_err(|error| format!("root choice: {error}"))?

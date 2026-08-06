@@ -268,8 +268,16 @@ impl<'a> LearningModelBatchV1<'a> {
     pub fn from_boundaries(
         boundaries: &'a [LearningBoundaryV1],
     ) -> Result<Self, LearningModelInputError> {
-        let mut decisions = Vec::with_capacity(boundaries.len());
-        let mut candidate_row_splits = Vec::with_capacity(boundaries.len() + 1);
+        Self::from_boundary_refs(boundaries.iter())
+    }
+
+    pub fn from_boundary_refs(
+        boundaries: impl IntoIterator<Item = &'a LearningBoundaryV1>,
+    ) -> Result<Self, LearningModelInputError> {
+        let boundaries = boundaries.into_iter();
+        let (lower_bound, _) = boundaries.size_hint();
+        let mut decisions = Vec::with_capacity(lower_bound);
+        let mut candidate_row_splits = Vec::with_capacity(lower_bound.saturating_add(1));
         candidate_row_splits.push(0);
         for boundary in boundaries {
             let decision = LearningModelDecisionV1::from_boundary(boundary)?;
@@ -293,22 +301,84 @@ impl<'a> LearningModelBatchV1<'a> {
     }
 
     pub fn dense_action_mask(&self) -> LearningDenseActionMaskV1 {
-        let width = self
-            .decisions
-            .iter()
-            .map(|decision| decision.candidates.len())
-            .max()
-            .unwrap_or(0);
-        let mut values = vec![false; self.decisions.len().saturating_mul(width)];
-        for (row, decision) in self.decisions.iter().enumerate() {
-            let start = row * width;
-            values[start..start + decision.candidates.len()].fill(true);
+        dense_action_mask(
+            self.decisions
+                .iter()
+                .map(|decision| decision.candidates.len()),
+        )
+    }
+}
+
+/// Batched autoregressive selection decisions.
+///
+/// Each row carries the unchanged parent observation alongside the current
+/// append-or-submit candidates, so a backend can batch symbolic decoding
+/// across environment slots without losing state context.
+#[derive(Clone, Debug)]
+pub struct LearningSelectionModelBatchV1<'a> {
+    pub rows: Vec<LearningSelectionModelRowV1<'a>>,
+    pub candidate_row_splits: Vec<usize>,
+}
+
+impl<'a> LearningSelectionModelBatchV1<'a> {
+    pub fn from_rows(
+        rows: impl IntoIterator<Item = (LearningModelObservationV1<'a>, &'a LearningSelectionDraftV1)>,
+    ) -> Result<Self, LearningModelInputError> {
+        let rows = rows.into_iter();
+        let (lower_bound, _) = rows.size_hint();
+        let mut batch_rows = Vec::with_capacity(lower_bound);
+        let mut candidate_row_splits = Vec::with_capacity(lower_bound.saturating_add(1));
+        candidate_row_splits.push(0);
+        for (observation, draft) in rows {
+            let decision = draft.decision();
+            ensure_nonempty(decision.candidates.len())?;
+            let next = candidate_row_splits
+                .last()
+                .copied()
+                .unwrap_or(0usize)
+                .checked_add(decision.candidates.len())
+                .ok_or(LearningModelInputError::CandidateCountOverflow)?;
+            batch_rows.push(LearningSelectionModelRowV1 {
+                observation,
+                decision,
+            });
+            candidate_row_splits.push(next);
         }
-        LearningDenseActionMaskV1 {
-            rows: self.decisions.len(),
-            width,
-            values,
-        }
+        Ok(Self {
+            rows: batch_rows,
+            candidate_row_splits,
+        })
+    }
+
+    pub fn flattened_candidate_count(&self) -> usize {
+        self.candidate_row_splits.last().copied().unwrap_or(0)
+    }
+
+    pub fn dense_action_mask(&self) -> LearningDenseActionMaskV1 {
+        dense_action_mask(self.rows.iter().map(|row| row.decision.candidates.len()))
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct LearningSelectionModelRowV1<'a> {
+    pub observation: LearningModelObservationV1<'a>,
+    pub decision: LearningSelectionDecisionV1<'a>,
+}
+
+fn dense_action_mask(
+    candidate_counts: impl IntoIterator<Item = usize>,
+) -> LearningDenseActionMaskV1 {
+    let candidate_counts = candidate_counts.into_iter().collect::<Vec<_>>();
+    let width = candidate_counts.iter().copied().max().unwrap_or(0);
+    let mut values = vec![false; candidate_counts.len().saturating_mul(width)];
+    for (row, candidate_count) in candidate_counts.iter().copied().enumerate() {
+        let start = row * width;
+        values[start..start + candidate_count].fill(true);
+    }
+    LearningDenseActionMaskV1 {
+        rows: candidate_counts.len(),
+        width,
+        values,
     }
 }
 
@@ -813,6 +883,67 @@ mod tests {
         assert!(matches!(
             draft.decision().candidates[0].semantics,
             LearningSelectionCandidateSemanticsV1::Submit
+        ));
+    }
+
+    #[test]
+    fn symbolic_decoder_rows_batch_with_their_parent_observations() {
+        let mut session = RunControlSession::new(RunControlConfig::default());
+        session.engine_state = EngineState::CombatPlayerTurn;
+        session.active_combat = Some(ActiveCombat::new(
+            EngineState::CombatPlayerTurn,
+            crate::test_support::blank_test_combat(),
+            CombatContext::Room(RoomCombatContext {
+                room_type: RoomType::MonsterRoom,
+            }),
+        ));
+        let boundary = LearningEnvV1::from_session(session)
+            .observe()
+            .expect("combat boundary");
+        let observation = LearningModelDecisionV1::from_boundary(&boundary)
+            .expect("model decision")
+            .observation;
+
+        let mut selection_combat = crate::test_support::blank_test_combat();
+        selection_combat.zones.draw_pile = ((1..=3)
+            .map(|uuid| CombatCard::new(CardId::Strike, uuid))
+            .collect::<Vec<_>>())
+        .into();
+        let surface = combat_legal_action_surface_v2(
+            &EngineState::PendingChoice(PendingChoice::ScrySelect {
+                cards: vec![CardId::Strike; 3],
+                card_uuids: vec![1, 2, 3],
+            }),
+            &selection_combat,
+        );
+        let first = LearningSelectionDraftV1 {
+            family: surface.selection_families[0].clone(),
+            selected_domain_indices: Vec::new(),
+        };
+        let mut second = first.clone();
+        assert!(matches!(
+            second.choose(1).expect("append first domain item"),
+            LearningSelectionStepV1::Continue
+        ));
+
+        let batch = LearningSelectionModelBatchV1::from_rows([
+            (observation, &first),
+            (observation, &second),
+        ])
+        .expect("batch selection decisions");
+        assert_eq!(batch.candidate_row_splits, vec![0, 4, 7]);
+        assert_eq!(batch.flattened_candidate_count(), 7);
+        assert_eq!(
+            batch.dense_action_mask(),
+            LearningDenseActionMaskV1 {
+                rows: 2,
+                width: 4,
+                values: vec![true, true, true, true, true, true, true, false],
+            }
+        );
+        assert!(matches!(
+            batch.rows[0].observation,
+            LearningModelObservationV1::Combat(_)
         ));
     }
 

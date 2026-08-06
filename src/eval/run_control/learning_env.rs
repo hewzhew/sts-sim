@@ -159,12 +159,33 @@ impl LearningEnvV1 {
     }
 
     pub fn step(&mut self, action: LearningActionV1) -> Result<LearningStepV1, String> {
+        let prepared = self.prepare_action(action)?;
+        self.step_prepared(prepared)
+    }
+
+    pub(super) fn prepare_action(
+        &self,
+        action: LearningActionV1,
+    ) -> Result<LearningPreparedActionV1, String> {
         match action {
             LearningActionV1::StrategicCandidate { candidate_id } => {
-                self.apply_strategic_candidate(&candidate_id)?;
+                self.prepare_strategic_candidate(&candidate_id)
             }
-            LearningActionV1::CombatInput { input } => {
-                self.apply_combat_input(input)?;
+            LearningActionV1::CombatInput { input } => self.prepare_combat_input(input),
+        }
+    }
+
+    pub(super) fn step_prepared(
+        &mut self,
+        action: LearningPreparedActionV1,
+    ) -> Result<LearningStepV1, String> {
+        match action {
+            LearningPreparedActionV1::StrategicCandidate { run_candidate_id } => {
+                self.session.apply_candidate_id(&run_candidate_id)?;
+            }
+            LearningPreparedActionV1::CombatInput { input } => {
+                self.session
+                    .apply_decision_action(super::RunDecisionAction::Input(input))?;
             }
         }
         let boundary = self.observe()?;
@@ -175,7 +196,10 @@ impl LearningEnvV1 {
         })
     }
 
-    fn apply_strategic_candidate(&mut self, planner_candidate_id: &str) -> Result<(), String> {
+    fn prepare_strategic_candidate(
+        &self,
+        planner_candidate_id: &str,
+    ) -> Result<LearningPreparedActionV1, String> {
         let segment = capture_planner_boundary_yield_v1(
             &self.session,
             PlannerBoundaryYieldKindV1::CallbackStop,
@@ -194,11 +218,12 @@ impl LearningEnvV1 {
                     "planner candidate '{planner_candidate_id}' is not legal at the current boundary"
                 )
             })?;
-        self.session.apply_candidate_id(&link.run_candidate_id)?;
-        Ok(())
+        Ok(LearningPreparedActionV1::StrategicCandidate {
+            run_candidate_id: link.run_candidate_id.clone(),
+        })
     }
 
-    fn apply_combat_input(&mut self, input: ClientInput) -> Result<(), String> {
+    fn prepare_combat_input(&self, input: ClientInput) -> Result<LearningPreparedActionV1, String> {
         let position = self.session.current_combat_position_for_actions()?;
         let surface = combat_legal_action_surface_v2(&position.engine, &position.combat);
         let legal = surface.atomic_actions.contains(&input)
@@ -211,10 +236,14 @@ impl LearningEnvV1 {
         if !legal {
             return Err("combat learning input is not legal at the current boundary".to_string());
         }
-        self.session
-            .apply_decision_action(super::RunDecisionAction::Input(input))?;
-        Ok(())
+        Ok(LearningPreparedActionV1::CombatInput { input })
     }
+}
+
+#[derive(Clone, Debug)]
+pub(super) enum LearningPreparedActionV1 {
+    StrategicCandidate { run_candidate_id: String },
+    CombatInput { input: ClientInput },
 }
 
 #[cfg(test)]
