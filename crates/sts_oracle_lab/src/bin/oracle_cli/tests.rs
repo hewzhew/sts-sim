@@ -66,6 +66,34 @@ fn artifact_trace_needs_only_the_v2_artifact_identity() {
 }
 
 #[test]
+fn artifact_trace_accepts_explicit_policy_detail_projection() {
+    let cli = Cli::try_parse_from([
+        "oracle_lab",
+        "artifact",
+        "trace",
+        "contract-artifact",
+        "--detail",
+        "policy",
+    ])
+    .expect("artifact trace policy detail opt-in should parse");
+    assert!(matches!(cli.command, Command::Artifact(_)));
+}
+
+#[test]
+fn artifact_trace_accepts_checkpoint_only_projection() {
+    let cli = Cli::try_parse_from([
+        "oracle_lab",
+        "artifact",
+        "trace",
+        "contract-artifact",
+        "--detail",
+        "checkpoints",
+    ])
+    .expect("artifact trace checkpoint projection should parse");
+    assert!(matches!(cli.command, Command::Artifact(_)));
+}
+
+#[test]
 fn artifact_search_needs_only_the_v2_artifact_identity() {
     let cli = Cli::try_parse_from(["oracle_lab", "artifact", "search", "contract-artifact"])
         .expect("artifact-owned search accounting should parse");
@@ -83,6 +111,20 @@ fn artifact_search_accepts_one_exact_state_query() {
         "3273823f",
     ])
     .expect("artifact-owned exact-state service query should parse");
+    assert!(matches!(cli.command, Command::Artifact(_)));
+}
+
+#[test]
+fn artifact_summaries_accepts_several_artifacts_without_shell_aggregation() {
+    let cli = Cli::try_parse_from([
+        "oracle_lab",
+        "artifact",
+        "summaries",
+        "contract-artifact-a",
+        "contract-artifact-b",
+        "contract-artifact-c",
+    ])
+    .expect("artifact-owned result collection should parse");
     assert!(matches!(cli.command, Command::Artifact(_)));
 }
 
@@ -125,6 +167,42 @@ fn artifact_turn_can_navigate_and_filter_by_exact_successor_identity() {
     ])
     .expect("artifact-owned exact-state traversal should parse");
     assert!(matches!(cli.command, Command::Artifact(_)));
+}
+
+#[test]
+fn artifact_turn_can_return_only_the_replay_checked_reached_state() {
+    let cli = Cli::try_parse_from([
+        "oracle_lab",
+        "artifact",
+        "turn",
+        "contract-artifact",
+        "--candidate",
+        "contract",
+        "--turn",
+        "1",
+        "--follow-state",
+        "3273823f",
+        "--reached-only",
+    ])
+    .expect("artifact-owned compact reached-state traversal should parse");
+    assert!(matches!(cli.command, Command::Artifact(_)));
+}
+
+#[test]
+fn artifact_turn_reached_only_rejects_surface_queries() {
+    let error = Cli::try_parse_from([
+        "oracle_lab",
+        "artifact",
+        "turn",
+        "contract-artifact",
+        "--turn",
+        "1",
+        "--reached-only",
+        "--successor-state",
+        "8122e07a",
+    ])
+    .expect_err("reached-only traversal must not silently ignore a surface query");
+    assert_eq!(error.kind(), clap::error::ErrorKind::ArgumentConflict);
 }
 
 #[test]

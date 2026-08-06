@@ -57,7 +57,9 @@ pub(super) fn run(
         .collect::<Vec<_>>();
 
     let terminal = combat_terminal(&position.engine, &position.combat);
-    let surface = if terminal == CombatTerminal::Unresolved {
+    let surface = if args.reached_only {
+        Value::Null
+    } else if terminal == CombatTerminal::Unresolved {
         ensure_player_turn(
             &position,
             args.navigation.follow_plan.len() + args.navigation.follow_state.len(),

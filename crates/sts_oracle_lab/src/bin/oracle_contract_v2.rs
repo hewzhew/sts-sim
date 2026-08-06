@@ -10,7 +10,7 @@ use std::time::{Duration, Instant};
 
 use clap::{Args, Subcommand, ValueEnum};
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde_json::{json, Value};
 use sts_combat_planner::{
     exact_trajectory_potion_expenditures, summarize_oracle_combat_witness_outcome,
     LocalTurnGraphDepthServiceSnapshot, LocalTurnGraphServicedStateSnapshot,
@@ -83,10 +83,12 @@ pub(super) struct ArtifactCommandArgs {
 enum ArtifactCommand {
     /// Print only the stable compact result from a V2 artifact.
     Summary(ArtifactPathArgs),
+    /// Collect stable compact results from several V2 artifacts.
+    Summaries(ArtifactPathsArgs),
     /// Inspect compact exact-search service accounting without parsing report.json.
     Search(ArtifactSearchArgs),
     /// Replay and inspect the selected witness without reading the full report.
-    Trace(ArtifactPathArgs),
+    Trace(ArtifactTraceArgs),
     /// Replay-compare the contract-aligned and local-HP terminal candidates.
     Compare(ArtifactPathArgs),
     /// Enumerate one exact complete-turn surface along a retained candidate.
@@ -104,6 +106,13 @@ struct ArtifactPathArgs {
 }
 
 #[derive(Debug, Args)]
+struct ArtifactPathsArgs {
+    /// V2 artifact directories or manifest.json files.
+    #[arg(required = true, num_args = 1..)]
+    artifacts: Vec<PathBuf>,
+}
+
+#[derive(Debug, Args)]
 struct ArtifactSearchArgs {
     /// V2 artifact directory or its manifest.json.
     artifact: PathBuf,
@@ -113,6 +122,23 @@ struct ArtifactSearchArgs {
     /// Query one retained exact state by its full hash or a unique prefix.
     #[arg(long, conflicts_with = "states")]
     state: Option<String>,
+}
+
+#[derive(Debug, Args)]
+struct ArtifactTraceArgs {
+    /// V2 artifact directory or its manifest.json.
+    artifact: PathBuf,
+    /// Select the replay projection: compact action ranks, turn checkpoints
+    /// only, or complete per-action policy evidence.
+    #[arg(long, value_enum, default_value_t = ArtifactTraceDetail::Compact)]
+    detail: ArtifactTraceDetail,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
+enum ArtifactTraceDetail {
+    Compact,
+    Checkpoints,
+    Policy,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
@@ -133,8 +159,12 @@ struct ArtifactTurnArgs {
     successor_state: Option<String>,
     /// From every candidate on the reached surface, enumerate exactly one more
     /// complete turn and aggregate terminal HP and stolen-gold outcomes.
-    #[arg(long)]
+    #[arg(long, conflicts_with = "reached_only")]
     scan_next_terminal: bool,
+    /// Return only the replay-checked source, followed plans, and reached
+    /// state without enumerating the reached turn surface.
+    #[arg(long, conflicts_with_all = ["successor_state", "scan_next_terminal"])]
+    reached_only: bool,
     #[arg(long, default_value_t = 16)]
     limit: usize,
 }
@@ -366,6 +396,18 @@ pub(super) fn run_artifact_command(args: ArtifactCommandArgs) -> Result<(), Stri
             let artifact = load_artifact(&args.artifact)?;
             print_json(&artifact.result)
         }
+        ArtifactCommand::Summaries(args) => {
+            let results = args
+                .artifacts
+                .iter()
+                .map(|path| load_artifact(path).map(|artifact| artifact.result))
+                .collect::<Result<Vec<_>, _>>()?;
+            print_json(&json!({
+                "schema_name": "OracleCombatContractResultSetV2",
+                "schema_version": 1,
+                "results": results,
+            }))
+        }
         ArtifactCommand::Search(args) => {
             let artifact = load_artifact(&args.artifact)?;
             if let Some(query) = args.state.as_deref() {
@@ -378,7 +420,7 @@ pub(super) fn run_artifact_command(args: ArtifactCommandArgs) -> Result<(), Stri
         }
         ArtifactCommand::Trace(args) => {
             let artifact = load_artifact(&args.artifact)?;
-            artifact_trace::run(&args.artifact, &artifact)
+            artifact_trace::run(&args, &artifact)
         }
         ArtifactCommand::Compare(args) => {
             let artifact = load_artifact(&args.artifact)?;

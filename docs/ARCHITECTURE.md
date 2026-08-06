@@ -579,8 +579,13 @@ service counts, plus per-boundary proposal applicability, attempt outcome,
 exact proposal-successor identities, and generator anchor/guide service
 attribution separately from the shared boundary service source that actually
 consumed work, without parsing the opaque report. `artifact summary`,
-`artifact search`, and `artifact rerun`
-read only the manifest. `artifact trace` replays the contract-aligned candidate;
+`artifact summaries`, `artifact search`, and `artifact rerun` read only
+manifests; the plural summary owns typed multi-artifact collection instead of
+delegating JSON aggregation to a shell. `artifact trace` replays the
+contract-aligned candidate and defaults to compact action identity and rank
+facts plus turn checkpoints. A checkpoint-only projection omits action policy
+payloads entirely; complete per-action probability and choice payloads require
+an explicit diagnostic opt-in.
 `artifact compare` replays it alongside the local-HP candidate and locates their
 first exact divergence. `artifact turn` resolves either candidate by semantic
 role, inspects one exact complete-turn surface, and may follow displayed plan
@@ -588,7 +593,9 @@ indices or exact successor identities through replay-checked exact successors
 without exposing sidecar paths, scratch ids, or intermediate case files. When
 the caller already knows one successor identity, the command filters that
 surface before display rather than requiring a large sibling dump and external
-JSON parsing. `artifact branch` uses that same typed navigation owner to select
+JSON parsing. Navigation may also return only the replay-checked reached state
+without enumerating its next complete-turn surface. `artifact branch` uses that
+same typed navigation owner to select
 one bounded diagnostic prefix, then runs the inherited contract from its exact
 successor without writing a descendant case or creating another report
 protocol. The request stores the bounded public inputs, their expected search

@@ -11,7 +11,10 @@ use super::super::combat_trace_view::{
 };
 use super::super::exact_turn_corridor::load_action_segments;
 use super::super::print_json;
-use super::{CombatContractArtifactV2, CombatContractTerminalCandidateV2};
+use super::{
+    ArtifactTraceArgs, ArtifactTraceDetail, CombatContractArtifactV2,
+    CombatContractTerminalCandidateV2,
+};
 
 pub(super) struct ReplayedActionTraceV2 {
     pub(super) final_exact_state_hash: String,
@@ -112,7 +115,11 @@ pub(super) fn replay_candidate(
     Ok((actions, trace))
 }
 
-pub(super) fn run(artifact_path: &Path, artifact: &CombatContractArtifactV2) -> Result<(), String> {
+pub(super) fn run(
+    args: &ArtifactTraceArgs,
+    artifact: &CombatContractArtifactV2,
+) -> Result<(), String> {
+    let artifact_path = &args.artifact;
     let candidate = artifact
         .terminal_candidates
         .iter()
@@ -138,9 +145,15 @@ pub(super) fn run(artifact_path: &Path, artifact: &CombatContractArtifactV2) -> 
         ));
     }
 
+    let policy_trace = match args.detail {
+        ArtifactTraceDetail::Checkpoints => Value::Array(Vec::new()),
+        ArtifactTraceDetail::Compact => Value::Array(compact_policy_trace(&trace.policy_trace)),
+        ArtifactTraceDetail::Policy => serde_json::to_value(&trace.policy_trace)
+            .map_err(|error| format!("failed to encode policy trace: {error}"))?,
+    };
     print_json(&json!({
         "schema_name": "OracleCombatContractWitnessTraceV2",
-        "schema_version": 2,
+        "schema_version": 3,
         "artifact": artifact_path,
         "case_id": artifact.request.case_id,
         "classification": artifact.result.classification,
@@ -153,7 +166,58 @@ pub(super) fn run(artifact_path: &Path, artifact: &CombatContractArtifactV2) -> 
             "final_hp": trace.final_hp,
             "action_count": actions.len(),
         },
-        "policy_trace": trace.policy_trace,
+        "detail": match args.detail {
+            ArtifactTraceDetail::Compact => "compact",
+            ArtifactTraceDetail::Checkpoints => "checkpoints",
+            ArtifactTraceDetail::Policy => "policy",
+        },
+        "policy_trace": policy_trace,
         "turn_checkpoints": trace.turn_checkpoints,
     }))
+}
+
+fn compact_policy_trace(trace: &[AtomicPolicyTraceStepV2]) -> Vec<Value> {
+    trace
+        .iter()
+        .map(|step| {
+            json!({
+                "step": step.step,
+                "turn": step.turn,
+                "action_key": step.action_key,
+                "legal_action_count": step.legal_action_count,
+                "ordinal_rank": step.ordinal_rank,
+                "negative_log_probability": step.negative_log_probability,
+            })
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn compact_policy_trace_omits_verbose_choice_payloads() {
+        let compact = compact_policy_trace(&[AtomicPolicyTraceStepV2 {
+            step: 3,
+            turn: 1,
+            action: "end turn".to_owned(),
+            input: ClientInput::EndTurn,
+            action_key: "combat/end_turn".to_owned(),
+            legal_action_count: 4,
+            ordinal_rank: Some(1),
+            raw_weight: Some(0.5),
+            probability: Some(0.4),
+            negative_log_probability: Some(0.9),
+            surface: "atomic",
+            top_choices: Vec::new(),
+        }]);
+
+        assert_eq!(compact.len(), 1);
+        assert_eq!(compact[0]["action_key"], "combat/end_turn");
+        assert_eq!(compact[0]["ordinal_rank"], 1);
+        assert!(compact[0].get("input").is_none());
+        assert!(compact[0].get("top_choices").is_none());
+        assert!(compact[0].get("raw_weight").is_none());
+    }
 }

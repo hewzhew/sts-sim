@@ -22,7 +22,7 @@ Use the narrowest maintained surface for the task:
 | `combat_search_v2_driver` | Fixed combat starts, captures, benchmarks, and offline laboratories. |
 | `cargo oracle-lab contract --help` | Rebuild the canonical oracle host and show the compact V2 contract surface. |
 | `.\ol.cmd contract combat` | One bounded exact-combat experiment with compact stdout and automatic full evidence. |
-| `.\ol.cmd artifact summary/search/trace/compare/turn/rerun` | Read the result, inspect search service, replay/compare candidates, inspect one exact turn, or reproduce a V2 request without parsing its full report. |
+| `.\ol.cmd artifact summary/summaries/search/trace/compare/turn/rerun` | Read one or several results, inspect search service, replay/compare candidates, inspect one exact turn, or reproduce a V2 request without parsing full reports. |
 | `.\ol.cmd case import/list` | Admit and query exact roots in the explicit V2 catalog. |
 | `.\ol.cmd drive` | Bounded current-owner and ordinary-combat progression in one process. |
 | `cargo ol-live` | Build or rebuild the lightweight resident client, then run it. |
@@ -50,12 +50,17 @@ then run and reproduce it through the stable V2 protocol:
   --min-final-hp 20 --max-potions-used 0 `
   --require-recovered-stolen-gold --generation-work 4096
 .\ol.cmd artifact summary <artifact-directory>
+.\ol.cmd artifact summaries <artifact-a> <artifact-b> <artifact-c>
 .\ol.cmd artifact search <artifact-directory>
 .\ol.cmd artifact search <artifact-directory> --state <exact-hash-or-prefix>
 .\ol.cmd artifact trace <artifact-directory>
+.\ol.cmd artifact trace <artifact-directory> --detail checkpoints
+.\ol.cmd artifact trace <artifact-directory> --detail policy
 .\ol.cmd artifact compare <artifact-directory>
 .\ol.cmd artifact turn <artifact-directory> --candidate contract --turn 1
 .\ol.cmd artifact turn <artifact-directory> --candidate contract --turn 1 --follow-plan 2
+.\ol.cmd artifact turn <artifact-directory> --candidate contract --turn 1 `
+  --follow-state <exact-successor-prefix> --reached-only
 .\ol.cmd artifact turn <artifact-directory> --candidate contract --turn 1 `
   --follow-state <exact-successor-prefix> --successor-state <next-successor-prefix>
 .\ol.cmd artifact branch <artifact-directory> --candidate contract --turn 1 `
@@ -70,9 +75,14 @@ generation, and independent service counts), source identity,
 and paths to `report.json`,
 the compact exact-state service index, plus one
 replay-exact action sidecar for every retained non-dominated terminal candidate.
-Summary, search, and rerun read only the V2 manifest. Trace replays the
-contract-aligned candidate and emits compact policy ranks plus turn-boundary
-checkpoints. Compare authoritatively replays both the contract-aligned and
+Summary, summaries, search, and rerun read only V2 manifests. `summaries`
+returns one typed result set in caller order so comparisons do not require a
+PowerShell JSON aggregation pipeline. Trace replays the
+contract-aligned candidate and emits only compact action keys, policy ranks,
+and turn-boundary checkpoints by default. `--detail checkpoints` omits action
+policy payloads entirely; full per-action inputs, probabilities, and top
+choices require the explicit `--detail policy` opt-in.
+Compare authoritatively replays both the contract-aligned and
 local-HP candidates, then reports their first exact action divergence and both
 turn-boundary histories. Turn resolves one of those retained candidates by
 semantic role and enumerates a bounded exact complete-turn surface at the
@@ -83,7 +93,10 @@ each successor and does not export an intermediate case. Prefer
 `--follow-state <exact-hash-or-prefix>` when the successor identity is already
 known, and use `--successor-state <exact-hash-or-prefix>` to return only one
 matching plan from the reached surface instead of printing and reparsing every
-sibling. Callers never join case and action paths or restate the contract.
+sibling. Use `--reached-only` when the selected successor itself is the answer:
+it replay-checks the navigation and returns the source, followed plan summary,
+and reached state without enumerating the next surface. Callers never join case
+and action paths or restate the contract.
 `artifact search --state` reports whether one exact state was retained and
 whether its complete-turn generator received service, its current anchor,
 proposal-root, and proposal-continuation queue positions, and their service
