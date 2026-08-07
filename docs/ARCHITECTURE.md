@@ -308,6 +308,15 @@ unknown bridge fields, cross-row relations, and malformed boundaries. Model
 scores for a selected row must equal its scores in the original batch; this is
 the boundary that permits later per-attempt memory accounting without a second
 semantic dictionary or whole-batch retention.
+The same structural algebra can concatenate independently retained decision
+batches for training. It first applies the strict row validator, requires an
+exact schema version and column dtype agreement, and then reindexes token
+splits, candidate splits, categorical/scalar token references, relations, and
+candidate tokens without interpreting feature ids. Repeated slot ids across
+time are legal; cross-row relations, optional-mask disagreement, dtype overflow,
+and malformed tables fail closed. Callers must supply row and input-array-byte
+limits. Validation copies, output, and transient split arrays have an explicit
+conservative additional-memory bound rather than an unbounded convenience API.
 
 Complete attempt assembly remains a caller-owned synchronous segment sink. It
 retains independently selected read-only decision rows under explicit maximum

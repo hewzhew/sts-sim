@@ -132,6 +132,15 @@ id. Unknown bridge fields and cross-row graph edges fail closed instead of
 being silently discarded. Scoring a selected row is contract-tested to equal
 scoring that same row in its original batch.
 
+`sts_learning.semantic_concat` combines independently retained rows into one
+training batch without defining feature meanings. It reuses strict row
+validation, requires matching schema versions and NumPy dtypes, and reindexes
+all token, candidate, fact, and relation tables. Temporal repeats of one slot
+remain distinct rows, while cross-row edges, dense-mask disagreement, overflow,
+and malformed schemas fail closed. Both maximum rows and maximum input-array
+bytes are mandatory; the limits also expose a conservative bound for validation
+copies, output, and transient arrays.
+
 `sts_learning.attempts.BoundedAttemptAssembler` consumes those ordered sealed
 segments as a synchronous sink. It owns independently sliced, read-only rows
 for each exact attempt lineage across segment boundaries and delivers one

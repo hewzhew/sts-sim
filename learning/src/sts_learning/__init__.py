@@ -79,6 +79,10 @@ from .seeds import (
     reset_scheduled_with_accounting,
 )
 from .semantic_batch import SemanticBatchError, select_semantic_decision_rows
+from .semantic_concat import (
+    SemanticBatchConcatLimits,
+    concatenate_semantic_decision_batches,
+)
 
 __all__ = [
     "AttemptAssemblerSnapshot",
@@ -136,6 +140,7 @@ __all__ = [
     "SeedSchedule",
     "SeedScheduleError",
     "SemanticBatchError",
+    "SemanticBatchConcatLimits",
     "SegmentCloseReason",
     "TerminalAttemptOutcome",
     "TerminalAccountingBatch",
@@ -143,6 +148,7 @@ __all__ = [
     "TerminalBatchError",
     "TerminalStepBatch",
     "initialize_population",
+    "concatenate_semantic_decision_batches",
     "iter_payload_arrays",
     "reset_with_accounting",
     "reset_scheduled_checkpointed_with_accounting",
