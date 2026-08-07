@@ -2,7 +2,7 @@
 //!
 //! This module deliberately does not serialize anything. It removes artifact
 //! ids and schema labels from the inference view, keeps variable candidate
-//! sets ragged, and decodes symbolic combat selections without eagerly
+//! sets ragged, and decodes symbolic combat or run selections without eagerly
 //! enumerating their combinatorial payloads.
 
 use std::fmt;
@@ -25,7 +25,7 @@ use crate::sim::combat_action_surface::{
     CombatSelectionPayloadLanguageV2, CombatSelectionReasonV2, CombatSelectionStatusV2,
 };
 use crate::state::core::{ClientInput, PileType};
-use crate::state::selection::{SelectionResolution, SelectionScope};
+use crate::state::selection::{SelectionReason, SelectionResolution, SelectionScope};
 
 use super::{
     LearningActionV1, LearningBoundaryV1, LearningCombatBoundaryV1, LearningStrategicBoundaryV1,
@@ -42,10 +42,65 @@ pub struct LearningStrategicModelObservationV1<'a> {
     pub run: &'a PlannerRunScalars,
     pub cards: &'a [PlannerCardObservation],
     pub relics: &'a [PlannerRelicObservation],
-    pub potions: &'a [PlannerPotionSlotObservation],
+    potions: &'a [PlannerPotionSlotObservation],
     pub public_map: &'a PlannerPublicMap,
     pub context: &'a PlannerDecisionContext,
     pub public_history: &'a PlannerPublicHistory,
+}
+
+impl<'a> LearningStrategicModelObservationV1<'a> {
+    pub fn potion_slots(
+        &self,
+    ) -> impl ExactSizeIterator<Item = LearningStrategicPotionSlotV1<'a>> + '_ {
+        self.potions
+            .iter()
+            .map(|slot| LearningStrategicPotionSlotV1 { slot })
+    }
+}
+
+#[derive(Clone, Copy)]
+pub struct LearningStrategicPotionSlotV1<'a> {
+    slot: &'a PlannerPotionSlotObservation,
+}
+
+impl<'a> LearningStrategicPotionSlotV1<'a> {
+    pub fn slot(&self) -> usize {
+        self.slot.slot
+    }
+
+    pub fn potion(&self) -> Option<LearningStrategicPotionV1<'a>> {
+        self.slot
+            .potion
+            .as_ref()
+            .map(|potion| LearningStrategicPotionV1 { potion })
+    }
+}
+
+#[derive(Clone, Copy)]
+pub struct LearningStrategicPotionV1<'a> {
+    potion: &'a crate::ai::planner_core::PlannerPotionObservation,
+}
+
+impl LearningStrategicPotionV1<'_> {
+    pub fn potion(&self) -> crate::content::potions::PotionId {
+        self.potion.potion
+    }
+
+    pub fn relation_key(&self) -> u32 {
+        self.potion.potion_uuid
+    }
+
+    pub fn can_use(&self) -> bool {
+        self.potion.can_use
+    }
+
+    pub fn can_discard(&self) -> bool {
+        self.potion.can_discard
+    }
+
+    pub fn requires_target(&self) -> bool {
+        self.potion.requires_target
+    }
 }
 
 /// The semantic combat state visible to a model.
@@ -390,6 +445,14 @@ enum LearningCandidateResolutionV1<'a> {
     CombatSelectionFamily {
         family: &'a CombatSelectionActionFamilyV2,
     },
+    RunSelectionFamily {
+        planner_candidate_id: &'a str,
+        scope: SelectionScope,
+        reason: SelectionReason,
+        min_choices: usize,
+        max_choices: usize,
+        selectable_card_uuids: &'a [u32],
+    },
 }
 
 #[derive(Clone, Debug)]
@@ -432,11 +495,25 @@ impl<'a> LearningModelDecisionV1<'a> {
                 })
             }
             LearningCandidateResolutionV1::CombatSelectionFamily { family } => {
-                LearningModelChoiceV1::DecodeSelection(LearningSelectionDraftV1 {
-                    family: family.clone(),
-                    selected_domain_indices: Vec::new(),
-                })
+                LearningModelChoiceV1::DecodeSelection(LearningSelectionDraftV1::from_combat(
+                    family.clone(),
+                ))
             }
+            LearningCandidateResolutionV1::RunSelectionFamily {
+                planner_candidate_id,
+                scope,
+                reason,
+                min_choices,
+                max_choices,
+                selectable_card_uuids,
+            } => LearningModelChoiceV1::DecodeSelection(LearningSelectionDraftV1::from_run(
+                planner_candidate_id.to_string(),
+                scope,
+                reason,
+                min_choices,
+                max_choices,
+                selectable_card_uuids.to_vec(),
+            )),
         })
     }
 
@@ -471,13 +548,32 @@ impl<'a> LearningModelDecisionV1<'a> {
             .legal_candidates
             .candidates
             .iter()
-            .map(|candidate| LearningModelCandidateV1 {
-                semantics: LearningModelCandidateSemanticsV1::Strategic {
-                    action: &candidate.action,
-                },
-                resolution: LearningCandidateResolutionV1::StrategicCandidate {
-                    candidate_id: &candidate.candidate_id,
-                },
+            .map(|candidate| {
+                let resolution = match &candidate.action {
+                    PlannerAction::BeginRunCardSelection {
+                        scope,
+                        reason,
+                        min_choices,
+                        max_choices,
+                        selectable_card_uuids,
+                    } => LearningCandidateResolutionV1::RunSelectionFamily {
+                        planner_candidate_id: &candidate.candidate_id,
+                        scope: *scope,
+                        reason: *reason,
+                        min_choices: *min_choices,
+                        max_choices: *max_choices,
+                        selectable_card_uuids,
+                    },
+                    _ => LearningCandidateResolutionV1::StrategicCandidate {
+                        candidate_id: &candidate.candidate_id,
+                    },
+                };
+                LearningModelCandidateV1 {
+                    semantics: LearningModelCandidateSemanticsV1::Strategic {
+                        action: &candidate.action,
+                    },
+                    resolution,
+                }
             })
             .collect::<Vec<_>>();
         ensure_nonempty(candidates.len())?;
@@ -656,7 +752,7 @@ impl<'a> LearningSelectionModelBatchV1<'a> {
 #[derive(Clone, Debug)]
 pub struct LearningSelectionModelRowV1<'a> {
     pub observation: LearningModelObservationV1<'a>,
-    pub decision: LearningSelectionDecisionV1<'a>,
+    pub decision: LearningSelectionDecisionV1,
 }
 
 fn dense_action_mask(
@@ -695,8 +791,75 @@ pub enum LearningModelChoiceV1 {
 /// Appending to this draft does not step the simulator. Only selecting the
 /// explicit submit candidate produces a [`LearningActionV1`].
 #[derive(Clone)]
+enum LearningSelectionFamilyStateV1 {
+    Combat(CombatSelectionActionFamilyV2),
+    Run(LearningRunSelectionFamilyStateV1),
+}
+
+#[derive(Clone)]
+struct LearningRunSelectionFamilyStateV1 {
+    planner_candidate_id: String,
+    scope: SelectionScope,
+    reason: SelectionReason,
+    min_choices: usize,
+    max_choices: usize,
+    selectable_card_uuids: Vec<u32>,
+}
+
+#[derive(Clone, Copy)]
+pub struct LearningRunSelectionFamilyV1<'a> {
+    family: &'a LearningRunSelectionFamilyStateV1,
+}
+
+impl fmt::Debug for LearningRunSelectionFamilyV1<'_> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("LearningRunSelectionFamilyV1")
+            .field("scope", &self.scope())
+            .field("reason", &self.reason())
+            .field("declared_min", &self.declared_min())
+            .field("declared_max", &self.declared_max())
+            .field("effective_max", &self.effective_max())
+            .field("domain_count", &self.domain_count())
+            .finish()
+    }
+}
+
+impl LearningRunSelectionFamilyV1<'_> {
+    pub fn scope(&self) -> SelectionScope {
+        self.family.scope
+    }
+
+    pub fn reason(&self) -> SelectionReason {
+        self.family.reason
+    }
+
+    pub fn declared_min(&self) -> usize {
+        self.family.min_choices
+    }
+
+    pub fn declared_max(&self) -> usize {
+        self.family.max_choices
+    }
+
+    pub fn effective_max(&self) -> usize {
+        self.family
+            .max_choices
+            .min(self.family.selectable_card_uuids.len())
+    }
+
+    pub fn domain_count(&self) -> usize {
+        self.family.selectable_card_uuids.len()
+    }
+
+    pub fn domain_card_uuid(&self, index: usize) -> Option<u32> {
+        self.family.selectable_card_uuids.get(index).copied()
+    }
+}
+
+#[derive(Clone)]
 pub struct LearningSelectionDraftV1 {
-    family: CombatSelectionActionFamilyV2,
+    family: LearningSelectionFamilyStateV1,
     selected_domain_indices: Vec<usize>,
 }
 
@@ -704,16 +867,57 @@ impl fmt::Debug for LearningSelectionDraftV1 {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
             .debug_struct("LearningSelectionDraftV1")
-            .field("family", &self.model_family())
+            .field("combat_family", &self.combat_family())
+            .field("run_family", &self.run_family())
             .field("selected_domain_indices", &self.selected_domain_indices)
             .finish()
     }
 }
 
 impl LearningSelectionDraftV1 {
-    pub fn model_family(&self) -> LearningCombatSelectionFamilyV1<'_> {
-        LearningCombatSelectionFamilyV1 {
-            family: &self.family,
+    fn from_combat(family: CombatSelectionActionFamilyV2) -> Self {
+        Self {
+            family: LearningSelectionFamilyStateV1::Combat(family),
+            selected_domain_indices: Vec::new(),
+        }
+    }
+
+    fn from_run(
+        planner_candidate_id: String,
+        scope: SelectionScope,
+        reason: SelectionReason,
+        min_choices: usize,
+        max_choices: usize,
+        selectable_card_uuids: Vec<u32>,
+    ) -> Self {
+        Self {
+            family: LearningSelectionFamilyStateV1::Run(LearningRunSelectionFamilyStateV1 {
+                planner_candidate_id,
+                scope,
+                reason,
+                min_choices,
+                max_choices,
+                selectable_card_uuids,
+            }),
+            selected_domain_indices: Vec::new(),
+        }
+    }
+
+    pub fn combat_family(&self) -> Option<LearningCombatSelectionFamilyV1<'_>> {
+        match &self.family {
+            LearningSelectionFamilyStateV1::Combat(family) => {
+                Some(LearningCombatSelectionFamilyV1 { family })
+            }
+            LearningSelectionFamilyStateV1::Run(_) => None,
+        }
+    }
+
+    pub fn run_family(&self) -> Option<LearningRunSelectionFamilyV1<'_>> {
+        match &self.family {
+            LearningSelectionFamilyStateV1::Combat(_) => None,
+            LearningSelectionFamilyStateV1::Run(family) => {
+                Some(LearningRunSelectionFamilyV1 { family })
+            }
         }
     }
 
@@ -721,7 +925,7 @@ impl LearningSelectionDraftV1 {
         &self.selected_domain_indices
     }
 
-    pub fn decision(&self) -> LearningSelectionDecisionV1<'_> {
+    pub fn decision(&self) -> LearningSelectionDecisionV1 {
         let mut candidates = Vec::new();
         if self.can_submit() {
             candidates.push(LearningSelectionCandidateV1 {
@@ -729,17 +933,16 @@ impl LearningSelectionDraftV1 {
                 resolution: LearningSelectionCandidateResolutionV1::Submit,
             });
         }
-        if self.selected_domain_indices.len() < u64_to_usize(self.family.effective_max) {
-            for (domain_index, domain) in self.family.raw_domain.iter().enumerate() {
-                if self.can_append(domain_index) {
-                    candidates.push(LearningSelectionCandidateV1 {
-                        semantics: LearningSelectionCandidateSemanticsV1::Append {
-                            domain_index,
-                            domain: LearningCombatSelectionDomainV1 { domain },
-                        },
-                        resolution: LearningSelectionCandidateResolutionV1::Append { domain_index },
-                    });
-                }
+        let domain_count = match &self.family {
+            LearningSelectionFamilyStateV1::Combat(family) => family.raw_domain.len(),
+            LearningSelectionFamilyStateV1::Run(family) => family.selectable_card_uuids.len(),
+        };
+        for domain_index in 0..domain_count {
+            if self.can_append(domain_index) {
+                candidates.push(LearningSelectionCandidateV1 {
+                    semantics: LearningSelectionCandidateSemanticsV1::Append { domain_index },
+                    resolution: LearningSelectionCandidateResolutionV1::Append { domain_index },
+                });
             }
         }
         LearningSelectionDecisionV1 { candidates }
@@ -768,66 +971,119 @@ impl LearningSelectionDraftV1 {
     }
 
     fn can_submit(&self) -> bool {
-        self.family.selection_status == CombatSelectionStatusV2::Enabled
-            && self.selected_domain_indices.len() >= u64_to_usize(self.family.declared_min)
-            && self.selected_domain_indices.len() <= u64_to_usize(self.family.effective_max)
+        match &self.family {
+            LearningSelectionFamilyStateV1::Combat(family) => {
+                family.selection_status == CombatSelectionStatusV2::Enabled
+                    && self.selected_domain_indices.len() >= u64_to_usize(family.declared_min)
+                    && self.selected_domain_indices.len() <= u64_to_usize(family.effective_max)
+            }
+            LearningSelectionFamilyStateV1::Run(family) => {
+                self.selected_domain_indices.len() >= family.min_choices
+                    && self.selected_domain_indices.len()
+                        <= family.max_choices.min(family.selectable_card_uuids.len())
+            }
+        }
     }
 
     fn can_append(&self, domain_index: usize) -> bool {
-        if self.family.selection_status != CombatSelectionStatusV2::Enabled {
-            return false;
+        match &self.family {
+            LearningSelectionFamilyStateV1::Combat(family) => {
+                if family.selection_status != CombatSelectionStatusV2::Enabled
+                    || self.selected_domain_indices.len() >= u64_to_usize(family.effective_max)
+                {
+                    return false;
+                }
+                let Some(candidate) = family.raw_domain.get(domain_index) else {
+                    return false;
+                };
+                domain_candidate_is_eligible(candidate)
+                    && !self
+                        .selected_domain_indices
+                        .iter()
+                        .copied()
+                        .any(|selected| same_selection_identity(family, selected, domain_index))
+            }
+            LearningSelectionFamilyStateV1::Run(family) => {
+                if self.selected_domain_indices.len()
+                    >= family.max_choices.min(family.selectable_card_uuids.len())
+                {
+                    return false;
+                }
+                let Some(candidate_uuid) = family.selectable_card_uuids.get(domain_index) else {
+                    return false;
+                };
+                !self.selected_domain_indices.iter().any(|selected| {
+                    family.selectable_card_uuids.get(*selected) == Some(candidate_uuid)
+                })
+            }
         }
-        let Some(candidate) = self.family.raw_domain.get(domain_index) else {
-            return false;
-        };
-        if !domain_candidate_is_eligible(candidate) {
-            return false;
-        }
-        !self
-            .selected_domain_indices
-            .iter()
-            .copied()
-            .any(|selected| same_selection_identity(&self.family, selected, domain_index))
     }
 
     fn to_learning_action(&self) -> Result<LearningActionV1, LearningModelInputError> {
         if !self.can_submit() {
             return Err(LearningModelInputError::SelectionCannotSubmit);
         }
-        let input = match self.family.input_encoding {
-            CombatSelectionInputEncodingV2::SubmitSelectionHandCardUuids => {
-                ClientInput::SubmitSelection(SelectionResolution::card_uuids(
-                    SelectionScope::Hand,
-                    self.selected_card_uuids()?,
-                ))
+        match &self.family {
+            LearningSelectionFamilyStateV1::Combat(family) => {
+                let input = match family.input_encoding {
+                    CombatSelectionInputEncodingV2::SubmitSelectionHandCardUuids => {
+                        ClientInput::SubmitSelection(SelectionResolution::card_uuids(
+                            SelectionScope::Hand,
+                            self.selected_combat_card_uuids(family)?,
+                        ))
+                    }
+                    CombatSelectionInputEncodingV2::SubmitSelectionGridCardUuids => {
+                        ClientInput::SubmitSelection(SelectionResolution::card_uuids(
+                            SelectionScope::Grid,
+                            self.selected_combat_card_uuids(family)?,
+                        ))
+                    }
+                    CombatSelectionInputEncodingV2::SubmitScryDiscardIndices => {
+                        ClientInput::SubmitScryDiscard(self.selected_scry_indices(family)?)
+                    }
+                };
+                Ok(LearningActionV1::CombatInput { input })
             }
-            CombatSelectionInputEncodingV2::SubmitSelectionGridCardUuids => {
-                ClientInput::SubmitSelection(SelectionResolution::card_uuids(
-                    SelectionScope::Grid,
-                    self.selected_card_uuids()?,
-                ))
+            LearningSelectionFamilyStateV1::Run(family) => {
+                let selected = self
+                    .selected_domain_indices
+                    .iter()
+                    .map(|index| {
+                        family
+                            .selectable_card_uuids
+                            .get(*index)
+                            .copied()
+                            .ok_or(LearningModelInputError::SelectionDomainEncodingMismatch)
+                    })
+                    .collect::<Result<Vec<_>, _>>()?;
+                Ok(LearningActionV1::RunSelection {
+                    candidate_id: family.planner_candidate_id.clone(),
+                    resolution: SelectionResolution::card_uuids(family.scope, selected),
+                })
             }
-            CombatSelectionInputEncodingV2::SubmitScryDiscardIndices => {
-                ClientInput::SubmitScryDiscard(self.selected_scry_indices()?)
-            }
-        };
-        Ok(LearningActionV1::CombatInput { input })
+        }
     }
 
-    fn selected_card_uuids(&self) -> Result<Vec<u32>, LearningModelInputError> {
+    fn selected_combat_card_uuids(
+        &self,
+        family: &CombatSelectionActionFamilyV2,
+    ) -> Result<Vec<u32>, LearningModelInputError> {
         self.selected_domain_indices
             .iter()
-            .map(|index| match self.family.raw_domain.get(*index) {
+            .map(|index| match family.raw_domain.get(*index) {
                 Some(CombatSelectionDomainCandidateV2::CardUuid { uuid, .. }) => Ok(*uuid),
                 _ => Err(LearningModelInputError::SelectionDomainEncodingMismatch),
             })
             .collect()
     }
 
-    fn selected_scry_indices(&self) -> Result<Vec<usize>, LearningModelInputError> {
+    fn selected_scry_indices(
+        &self,
+        family: &CombatSelectionActionFamilyV2,
+    ) -> Result<Vec<usize>, LearningModelInputError> {
         self.selected_domain_indices
             .iter()
-            .map(|index| match self.family.raw_domain.get(*index) {
+            .map(|index| match family.raw_domain.get(*index) {
                 Some(CombatSelectionDomainCandidateV2::ScryIndex { index, .. }) => {
                     usize::try_from(*index)
                         .map_err(|_| LearningModelInputError::SelectionIndexOverflow)
@@ -839,17 +1095,14 @@ impl LearningSelectionDraftV1 {
 }
 
 #[derive(Clone, Copy, Debug)]
-pub enum LearningSelectionCandidateSemanticsV1<'a> {
+pub enum LearningSelectionCandidateSemanticsV1 {
     Submit,
-    Append {
-        domain_index: usize,
-        domain: LearningCombatSelectionDomainV1<'a>,
-    },
+    Append { domain_index: usize },
 }
 
 #[derive(Clone, Copy, Debug)]
-pub struct LearningSelectionCandidateV1<'a> {
-    pub semantics: LearningSelectionCandidateSemanticsV1<'a>,
+pub struct LearningSelectionCandidateV1 {
+    pub semantics: LearningSelectionCandidateSemanticsV1,
     resolution: LearningSelectionCandidateResolutionV1,
 }
 
@@ -860,8 +1113,8 @@ enum LearningSelectionCandidateResolutionV1 {
 }
 
 #[derive(Clone, Debug)]
-pub struct LearningSelectionDecisionV1<'a> {
-    pub candidates: Vec<LearningSelectionCandidateV1<'a>>,
+pub struct LearningSelectionDecisionV1 {
+    pub candidates: Vec<LearningSelectionCandidateV1>,
 }
 
 #[derive(Clone, Debug)]
@@ -1095,8 +1348,10 @@ mod tests {
     use crate::sim::combat_action_surface::combat_legal_action_surface_v2;
     use crate::state::core::{
         ActiveCombat, CombatContext, EngineState, HandSelectReason, RoomCombatContext,
+        RunPendingChoiceReason, RunPendingChoiceState,
     };
     use crate::state::map::node::RoomType;
+    use crate::state::selection::DomainEventSource;
     use crate::state::PendingChoice;
 
     use super::super::{LearningEnvV1, RunControlConfig, RunControlSession};
@@ -1282,10 +1537,7 @@ mod tests {
             &combat,
         );
         let family = surface.selection_families[0].clone();
-        let mut draft = LearningSelectionDraftV1 {
-            family,
-            selected_domain_indices: Vec::new(),
-        };
+        let mut draft = LearningSelectionDraftV1::from_combat(family);
 
         let first = draft.decision();
         assert_eq!(first.candidates.len(), 65);
@@ -1311,6 +1563,57 @@ mod tests {
     }
 
     #[test]
+    fn symbolic_run_card_selection_applies_only_after_explicit_submit() {
+        let mut session = RunControlSession::new(RunControlConfig::default());
+        session.run_state.master_deck = vec![
+            CombatCard::new(CardId::Strike, 11),
+            CombatCard::new(CardId::Defend, 22),
+            CombatCard::new(CardId::Bash, 33),
+        ];
+        session.engine_state = EngineState::RunPendingChoice(RunPendingChoiceState {
+            min_choices: 2,
+            max_choices: 2,
+            reason: RunPendingChoiceReason::Transform,
+            source: DomainEventSource::Selection(SelectionReason::Transform),
+            return_state: Box::new(EngineState::MapNavigation),
+        });
+        let mut env = LearningEnvV1::from_session(session);
+        let boundary = env.observe().expect("run selection boundary");
+        let decision =
+            LearningModelDecisionV1::from_boundary(&boundary).expect("root model decision");
+        let LearningModelChoiceV1::DecodeSelection(mut draft) =
+            decision.choose(0).expect("start run selection")
+        else {
+            panic!("run selection root must start a symbolic decoder");
+        };
+
+        assert!(draft.run_family().is_some());
+        assert!(matches!(
+            draft.choose(0).expect("append first card"),
+            LearningSelectionStepV1::Continue
+        ));
+        assert!(matches!(
+            draft.choose(0).expect("append second card"),
+            LearningSelectionStepV1::Continue
+        ));
+        let LearningSelectionStepV1::Apply(action) = draft.choose(0).expect("submit selection")
+        else {
+            panic!("explicit submit must produce a run action");
+        };
+        let LearningActionV1::RunSelection { resolution, .. } = &action else {
+            panic!("run decoder must produce a run selection action");
+        };
+        assert_eq!(resolution.scope, SelectionScope::Deck);
+        assert_eq!(resolution.selected_card_uuids(), vec![11, 22]);
+
+        let step = env.step(action).expect("apply typed run selection");
+        assert!(matches!(
+            step.boundary,
+            LearningBoundaryV1::Strategic { .. }
+        ));
+    }
+
+    #[test]
     fn symbolic_model_views_and_debug_output_hide_runtime_card_uuids() {
         const PRIVATE_UUID: u32 = 3_000_000_001;
         let mut combat = crate::test_support::blank_test_combat();
@@ -1322,11 +1625,8 @@ mod tests {
             }),
             &combat,
         );
-        let draft = LearningSelectionDraftV1 {
-            family: surface.selection_families[0].clone(),
-            selected_domain_indices: Vec::new(),
-        };
-        let family = draft.model_family();
+        let draft = LearningSelectionDraftV1::from_combat(surface.selection_families[0].clone());
+        let family = draft.combat_family().expect("combat family");
         assert_eq!(
             family.domain(0).expect("public domain").semantics(),
             LearningCombatSelectionDomainSemanticsV1::Scry {
@@ -1359,10 +1659,8 @@ mod tests {
             }),
             &combat,
         );
-        let mut draft = LearningSelectionDraftV1 {
-            family: surface.selection_families[0].clone(),
-            selected_domain_indices: Vec::new(),
-        };
+        let mut draft =
+            LearningSelectionDraftV1::from_combat(surface.selection_families[0].clone());
 
         assert_eq!(draft.decision().candidates.len(), 3);
         assert!(matches!(
@@ -1406,10 +1704,7 @@ mod tests {
             }),
             &selection_combat,
         );
-        let first = LearningSelectionDraftV1 {
-            family: surface.selection_families[0].clone(),
-            selected_domain_indices: Vec::new(),
-        };
+        let first = LearningSelectionDraftV1::from_combat(surface.selection_families[0].clone());
         let mut second = first.clone();
         assert!(matches!(
             second.choose(1).expect("append first domain item"),

@@ -21,13 +21,16 @@ use sts_oracle_eval::content::powers::PowerId;
 use sts_oracle_eval::content::relics::RelicId;
 use sts_oracle_eval::eval::run_control::{
     LearningModelCandidateSemanticsV1, LearningModelDecisionV1, LearningModelObservationV1,
-    LearningSelectionDraftV1, LearningStrategicModelObservationV1,
+    LearningRunSelectionFamilyV1, LearningSelectionCandidateSemanticsV1,
+    LearningSelectionDecisionV1, LearningSelectionDraftV1,
+    LearningStrategicModelObservationV1,
 };
+use sts_oracle_eval::sim::combat_action_surface::CombatSelectionDistinctByV2;
 use sts_oracle_eval::state::events::{EventActionKind, EventId};
 use sts_oracle_eval::state::map::node::RoomType;
-use sts_oracle_eval::state::selection::SelectionScope;
+use sts_oracle_eval::state::selection::{SelectionReason, SelectionScope};
 
-pub const SEMANTIC_SCHEMA_VERSION: u32 = 3;
+pub const SEMANTIC_SCHEMA_VERSION: u32 = 4;
 pub const NO_CANDIDATE_TOKEN: u64 = u64::MAX;
 pub const CARD_ID_VOCABULARY_SIZE: u64 = 371;
 pub const RELIC_ID_VOCABULARY_SIZE: u64 = 182;
@@ -37,7 +40,9 @@ pub const EVENT_ID_VOCABULARY_SIZE: u64 = 53;
 pub const ENEMY_ID_VOCABULARY_SIZE: u64 = 65;
 pub const POWER_ID_VOCABULARY_SIZE: u64 = 135;
 
-// Domain identities use their fieldless enum ordinals inside schema v2. These
+const RUN_SELECTION_DECK_CARD_UUID_INPUT_ENCODING: i64 = 3;
+
+// Domain identities use their fieldless enum ordinals inside schema v4. These
 // compile-time size sentinels catch vocabulary extension; any intentional
 // insertion or reordering also requires an explicit schema review and bump.
 const _: () = {
@@ -131,9 +136,9 @@ pub enum TokenKind: u16 {
     CombatCounterItem = 25,
     CombatMove = 26,
     CombatDamageProjection = 27,
-    CombatSelectionDomain = 28,
-    CombatSelectionState = 29,
-    CombatSelectionChosen = 30,
+    SelectionDomain = 28,
+    SelectionState = 29,
+    SelectionChosen = 30,
     CombatActionPayload = 31,
 }}
 
@@ -341,6 +346,7 @@ pub enum RelationKind: u16 {
     SelectionHasChosen = 34,
     ChosenTargetsDomain = 35,
     SelectionHasDomain = 36,
+    SelectionDomainTargets = 37,
 }}
 
 numeric_schema_enum! {
@@ -387,6 +393,7 @@ pub enum ActionKind: i64 {
     Cancel = 25,
     UseRunPotion = 26,
     DiscardRunPotion = 27,
+    BeginRunCardSelection = 28,
 }}
 
 numeric_schema_enum! {
@@ -502,6 +509,14 @@ pub enum SelectionReasonKind: i64 {
     GridDiscardToHandRetain = 19,
     GridOmniscience = 20,
     ScryDiscard = 21,
+    RunUpgrade = 22,
+    RunPurge = 23,
+    RunTransform = 24,
+    RunTransformUpgraded = 25,
+    RunDuplicate = 26,
+    RunBottleFlame = 27,
+    RunBottleLightning = 28,
+    RunBottleTornado = 29,
 }}
 
 numeric_schema_enum! {
@@ -555,7 +570,7 @@ pub const CATEGORICAL_VOCABULARY_SIZES: &[(u16, u64)] = &[
         EVENT_ID_VOCABULARY_SIZE,
     ),
     (CategoricalField::ContextPurgeAvailable as u16, 2),
-    (CategoricalField::ActionKind as u16, 28),
+    (CategoricalField::ActionKind as u16, 29),
     (CategoricalField::ActionFlight as u16, 2),
     (
         CategoricalField::ActionEventId as u16,
@@ -607,8 +622,8 @@ pub const CATEGORICAL_VOCABULARY_SIZES: &[(u16, u64)] = &[
     (CategoricalField::IndexedChoiceDestination as u16, 2),
     (CategoricalField::IndexedChoiceUpgraded as u16, 2),
     (CategoricalField::IndexedChoiceCandidateKind as u16, 3),
-    (CategoricalField::SelectionInputEncoding as u16, 3),
-    (CategoricalField::SelectionReasonKind as u16, 22),
+    (CategoricalField::SelectionInputEncoding as u16, 4),
+    (CategoricalField::SelectionReasonKind as u16, 30),
     (CategoricalField::SelectionSourcePile as u16, 6),
     (CategoricalField::SelectionPayloadDistinctBy as u16, 2),
     (CategoricalField::SelectionCandidateKind as u16, 3),
@@ -650,14 +665,21 @@ pub struct SemanticBatch {
     pub candidate_token_indices: Vec<u64>,
 }
 
+struct StrategicTokenIndex {
+    root: u64,
+    cards: BTreeMap<u32, u64>,
+    potions: BTreeMap<u32, (u64, usize, PotionId)>,
+    map_nodes: BTreeMap<(i32, i32), u64>,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum SemanticEncodingError {
     DuplicateCardIdentity(u32),
     MissingCardTarget(u32),
-    DuplicatePotionIdentity(u32),
-    MissingPotionTarget(u32),
+    DuplicatePotionRelationKey(u32),
+    MissingPotionRelationTarget(u32),
     PotionTargetMismatch {
-        potion_uuid: u32,
+        relation_key: u32,
         slot: usize,
         potion: PotionId,
     },
@@ -670,8 +692,9 @@ pub enum SemanticEncodingError {
     MissingCombatMonsterTarget(usize),
     MissingDamageProjectionMonster(usize),
     UnsupportedCombatAtomicInput,
+    UnsupportedRunSelectionReason(SelectionReason),
     MissingSelectionDomain(usize),
-    NonCombatSelectionRow,
+    SelectionObservationMismatch,
     IndexOverflow,
 }
 
@@ -740,13 +763,18 @@ impl SemanticBatchBuilder {
         observation: LearningModelObservationV1<'_>,
         draft: &LearningSelectionDraftV1,
     ) -> Result<(), SemanticEncodingError> {
-        let LearningModelObservationV1::Combat(observation) = observation else {
-            return Err(SemanticEncodingError::NonCombatSelectionRow);
-        };
         self.completeness.push(SemanticCompleteness::Complete as u8);
         let decision = draft.decision();
         let before = self.candidate_token_indices.len();
-        self.encode_combat_selection(observation, draft, &decision)?;
+        match (observation, draft.combat_family(), draft.run_family()) {
+            (LearningModelObservationV1::Combat(observation), Some(_), None) => {
+                self.encode_combat_selection(observation, draft, &decision)?;
+            }
+            (LearningModelObservationV1::Strategic(observation), None, Some(family)) => {
+                self.encode_strategic_selection(observation, draft, family, &decision)?;
+            }
+            _ => return Err(SemanticEncodingError::SelectionObservationMismatch),
+        }
         let actual = self.candidate_token_indices.len() - before;
         if actual != decision.candidates.len() {
             return Err(SemanticEncodingError::CandidateAlignmentMismatch {
@@ -779,6 +807,34 @@ impl SemanticBatchBuilder {
         observation: LearningStrategicModelObservationV1<'_>,
         decision: &LearningModelDecisionV1<'_>,
     ) -> Result<(), SemanticEncodingError> {
+        let tokens = self.encode_strategic_observation(observation)?;
+        for candidate in &decision.candidates {
+            let LearningModelCandidateSemanticsV1::Strategic { action } = candidate.semantics
+            else {
+                return Err(SemanticEncodingError::NonStrategicCandidateInStrategicRow);
+            };
+            let token = self.add_token(TokenKind::Candidate)?;
+            self.edge(
+                tokens.root,
+                RelationKind::ObservationHasCandidate,
+                token,
+            );
+            self.encode_action(
+                token,
+                action,
+                &tokens.cards,
+                &tokens.potions,
+                &tokens.map_nodes,
+            )?;
+            self.candidate_token_indices.push(token);
+        }
+        Ok(())
+    }
+
+    fn encode_strategic_observation(
+        &mut self,
+        observation: LearningStrategicModelObservationV1<'_>,
+    ) -> Result<StrategicTokenIndex, SemanticEncodingError> {
         let root = self.add_token(TokenKind::Observation)?;
         self.category(root, CategoricalField::RunGoal, observation.run_goal as i64);
         self.category(
@@ -877,45 +933,43 @@ impl SemanticBatchBuilder {
             self.scalar(token, ScalarField::RelicAmount, relic.amount);
         }
 
-        let mut potions = observation.potions.iter().collect::<Vec<_>>();
-        potions.sort_by_key(|potion_slot| potion_slot.slot);
+        let mut potions = observation.potion_slots().collect::<Vec<_>>();
+        potions.sort_by_key(|potion_slot| potion_slot.slot());
         let mut potion_tokens = BTreeMap::new();
         for potion_slot in potions {
             let token = self.add_token(TokenKind::PotionSlot)?;
             self.edge(root, RelationKind::ObservationHasPotionSlot, token);
-            self.scalar(token, ScalarField::PotionSlot, potion_slot.slot);
+            self.scalar(token, ScalarField::PotionSlot, potion_slot.slot());
             self.category(
                 token,
                 CategoricalField::PotionOccupied,
-                bool_value(potion_slot.potion.is_some()),
+                bool_value(potion_slot.potion().is_some()),
             );
-            if let Some(potion) = &potion_slot.potion {
+            if let Some(potion) = potion_slot.potion() {
+                let relation_key = potion.relation_key();
                 if potion_tokens
-                    .insert(
-                        potion.potion_uuid,
-                        (token, potion_slot.slot, potion.potion),
-                    )
+                    .insert(relation_key, (token, potion_slot.slot(), potion.potion()))
                     .is_some()
                 {
-                    return Err(SemanticEncodingError::DuplicatePotionIdentity(
-                        potion.potion_uuid,
+                    return Err(SemanticEncodingError::DuplicatePotionRelationKey(
+                        relation_key,
                     ));
                 }
-                self.category(token, CategoricalField::PotionId, potion.potion as i64);
+                self.category(token, CategoricalField::PotionId, potion.potion() as i64);
                 self.category(
                     token,
                     CategoricalField::PotionCanUse,
-                    bool_value(potion.can_use),
+                    bool_value(potion.can_use()),
                 );
                 self.category(
                     token,
                     CategoricalField::PotionCanDiscard,
-                    bool_value(potion.can_discard),
+                    bool_value(potion.can_discard()),
                 );
                 self.category(
                     token,
                     CategoricalField::PotionRequiresTarget,
-                    bool_value(potion.requires_target),
+                    bool_value(potion.requires_target()),
                 );
             }
         }
@@ -984,22 +1038,188 @@ impl SemanticBatchBuilder {
             observation.public_history.shop_purge_count,
         );
 
+        Ok(StrategicTokenIndex {
+            root,
+            cards: card_tokens,
+            potions: potion_tokens,
+            map_nodes: map_tokens,
+        })
+    }
+
+    fn encode_strategic_selection(
+        &mut self,
+        observation: LearningStrategicModelObservationV1<'_>,
+        draft: &LearningSelectionDraftV1,
+        family: LearningRunSelectionFamilyV1<'_>,
+        decision: &LearningSelectionDecisionV1,
+    ) -> Result<(), SemanticEncodingError> {
+        let tokens = self.encode_strategic_observation(observation)?;
+        let selection = self.add_token(TokenKind::SelectionState)?;
+        self.edge(
+            tokens.root,
+            RelationKind::ObservationHasSelectionState,
+            selection,
+        );
+        let card_uuids = (0..family.domain_count())
+            .map(|index| {
+                family
+                    .domain_card_uuid(index)
+                    .ok_or(SemanticEncodingError::MissingSelectionDomain(index))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let domains = self.encode_run_selection_family(
+            selection,
+            RelationKind::SelectionHasDomain,
+            family.scope(),
+            family.reason(),
+            family.declared_min(),
+            family.declared_max(),
+            &card_uuids,
+            &tokens.cards,
+        )?;
+        for (position, domain_index) in draft.selected_domain_indices().iter().copied().enumerate()
+        {
+            let target = domains
+                .get(domain_index)
+                .copied()
+                .ok_or(SemanticEncodingError::MissingSelectionDomain(domain_index))?;
+            let chosen = self.add_token(TokenKind::SelectionChosen)?;
+            self.scalar(chosen, ScalarField::SelectionChosenPosition, position);
+            self.edge(selection, RelationKind::SelectionHasChosen, chosen);
+            self.edge(chosen, RelationKind::ChosenTargetsDomain, target);
+        }
         for candidate in &decision.candidates {
-            let LearningModelCandidateSemanticsV1::Strategic { action } = candidate.semantics
-            else {
-                return Err(SemanticEncodingError::NonStrategicCandidateInStrategicRow);
-            };
             let token = self.add_token(TokenKind::Candidate)?;
-            self.edge(root, RelationKind::ObservationHasCandidate, token);
-            self.encode_action(
+            self.edge(
+                tokens.root,
+                RelationKind::ObservationHasCandidate,
                 token,
-                action,
-                &card_tokens,
-                &potion_tokens,
-                &map_tokens,
-            )?;
+            );
+            match candidate.semantics {
+                LearningSelectionCandidateSemanticsV1::Submit => self.category(
+                    token,
+                    CategoricalField::SelectionCandidateKind,
+                    SelectionCandidateKind::Submit as i64,
+                ),
+                LearningSelectionCandidateSemanticsV1::Append { domain_index } => {
+                    self.category(
+                        token,
+                        CategoricalField::SelectionCandidateKind,
+                        SelectionCandidateKind::Append as i64,
+                    );
+                    let target = domains
+                        .get(domain_index)
+                        .copied()
+                        .ok_or(SemanticEncodingError::MissingSelectionDomain(domain_index))?;
+                    self.edge(token, RelationKind::CandidateTargets, target);
+                }
+            }
             self.candidate_token_indices.push(token);
         }
+        Ok(())
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn encode_run_selection_family(
+        &mut self,
+        owner: u64,
+        domain_relation: RelationKind,
+        scope: SelectionScope,
+        reason: SelectionReason,
+        declared_min: usize,
+        declared_max: usize,
+        card_uuids: &[u32],
+        card_tokens: &BTreeMap<u32, u64>,
+    ) -> Result<Vec<u64>, SemanticEncodingError> {
+        self.category(
+            owner,
+            CategoricalField::SelectionInputEncoding,
+            RUN_SELECTION_DECK_CARD_UUID_INPUT_ENCODING,
+        );
+        self.category(
+            owner,
+            CategoricalField::ActionSelectionScope,
+            scope as i64,
+        );
+        self.encode_run_selection_reason(owner, reason)?;
+        self.category(
+            owner,
+            CategoricalField::SelectionPayloadDistinctBy,
+            CombatSelectionDistinctByV2::CardUuid as i64,
+        );
+        self.scalar(
+            owner,
+            ScalarField::SelectionRawDomainCount,
+            card_uuids.len(),
+        );
+        self.scalar(
+            owner,
+            ScalarField::SelectionEligibleDomainCount,
+            card_uuids.len(),
+        );
+        self.scalar(
+            owner,
+            ScalarField::SelectionMaxDistinctCount,
+            card_uuids.len(),
+        );
+        self.scalar(owner, ScalarField::SelectionDeclaredMin, declared_min);
+        self.scalar(owner, ScalarField::SelectionDeclaredMax, declared_max);
+        self.scalar(
+            owner,
+            ScalarField::SelectionEffectiveMax,
+            declared_max.min(card_uuids.len()),
+        );
+
+        let mut domains = Vec::with_capacity(card_uuids.len());
+        for (domain_index, card_uuid) in card_uuids.iter().copied().enumerate() {
+            let card = card_tokens
+                .get(&card_uuid)
+                .copied()
+                .ok_or(SemanticEncodingError::MissingCardTarget(card_uuid))?;
+            let domain = self.add_token(TokenKind::SelectionDomain)?;
+            self.edge(owner, domain_relation, domain);
+            self.edge(domain, RelationKind::SelectionDomainTargets, card);
+            self.category(
+                domain,
+                CategoricalField::SelectionDomainKind,
+                SelectionDomainKind::Card as i64,
+            );
+            self.category(
+                domain,
+                CategoricalField::SelectionDomainEligible,
+                bool_value(true),
+            );
+            self.scalar(
+                domain,
+                ScalarField::SelectionDomainAddress,
+                domain_index,
+            );
+            domains.push(domain);
+        }
+        Ok(domains)
+    }
+
+    fn encode_run_selection_reason(
+        &mut self,
+        token: u64,
+        reason: SelectionReason,
+    ) -> Result<(), SemanticEncodingError> {
+        let kind = match reason {
+            SelectionReason::Upgrade => SelectionReasonKind::RunUpgrade,
+            SelectionReason::Purge => SelectionReasonKind::RunPurge,
+            SelectionReason::Transform => SelectionReasonKind::RunTransform,
+            SelectionReason::TransformUpgraded => SelectionReasonKind::RunTransformUpgraded,
+            SelectionReason::Duplicate => SelectionReasonKind::RunDuplicate,
+            SelectionReason::BottleFlame => SelectionReasonKind::RunBottleFlame,
+            SelectionReason::BottleLightning => SelectionReasonKind::RunBottleLightning,
+            SelectionReason::BottleTornado => SelectionReasonKind::RunBottleTornado,
+            _ => return Err(SemanticEncodingError::UnsupportedRunSelectionReason(reason)),
+        };
+        self.category(
+            token,
+            CategoricalField::SelectionReasonKind,
+            kind as i64,
+        );
         Ok(())
     }
 
@@ -1175,7 +1395,7 @@ impl SemanticBatchBuilder {
             PlannerAction::UseRunPotion {
                 slot,
                 potion,
-                potion_uuid,
+                potion_uuid: relation_key,
             } => {
                 self.action_kind(token, ActionKind::UseRunPotion);
                 self.category(token, CategoricalField::ActionPotionId, *potion as i64);
@@ -1183,14 +1403,14 @@ impl SemanticBatchBuilder {
                     token,
                     *slot,
                     *potion,
-                    *potion_uuid,
+                    *relation_key,
                     potion_tokens,
                 )?;
             }
             PlannerAction::DiscardRunPotion {
                 slot,
                 potion,
-                potion_uuid,
+                potion_uuid: relation_key,
             } => {
                 self.action_kind(token, ActionKind::DiscardRunPotion);
                 self.category(token, CategoricalField::ActionPotionId, *potion as i64);
@@ -1198,7 +1418,7 @@ impl SemanticBatchBuilder {
                     token,
                     *slot,
                     *potion,
-                    *potion_uuid,
+                    *relation_key,
                     potion_tokens,
                 )?;
             }
@@ -1226,6 +1446,25 @@ impl SemanticBatchBuilder {
                 self.category(token, CategoricalField::ActionRelicId, *relic as i64);
             }
             PlannerAction::SkipBossRelic => self.action_kind(token, ActionKind::SkipBossRelic),
+            PlannerAction::BeginRunCardSelection {
+                scope,
+                reason,
+                min_choices,
+                max_choices,
+                selectable_card_uuids,
+            } => {
+                self.action_kind(token, ActionKind::BeginRunCardSelection);
+                self.encode_run_selection_family(
+                    token,
+                    RelationKind::CandidateHasSelectionDomain,
+                    *scope,
+                    *reason,
+                    *min_choices,
+                    *max_choices,
+                    selectable_card_uuids,
+                    card_tokens,
+                )?;
+            }
             PlannerAction::SubmitRunSelection {
                 scope,
                 selected_card_uuids,
@@ -1309,16 +1548,18 @@ impl SemanticBatchBuilder {
         candidate: u64,
         slot: usize,
         potion: PotionId,
-        potion_uuid: u32,
+        relation_key: u32,
         potion_tokens: &BTreeMap<u32, (u64, usize, PotionId)>,
     ) -> Result<(), SemanticEncodingError> {
         let (target, observed_slot, observed_potion) = potion_tokens
-            .get(&potion_uuid)
+            .get(&relation_key)
             .copied()
-            .ok_or(SemanticEncodingError::MissingPotionTarget(potion_uuid))?;
+            .ok_or(SemanticEncodingError::MissingPotionRelationTarget(
+                relation_key,
+            ))?;
         if observed_slot != slot || observed_potion != potion {
             return Err(SemanticEncodingError::PotionTargetMismatch {
-                potion_uuid,
+                relation_key,
                 slot,
                 potion,
             });
@@ -1399,4 +1640,91 @@ impl_into_f32!(u8, u16, u32, u64, i8, i32, usize);
 
 fn bool_value(value: bool) -> i64 {
     i64::from(value)
+}
+
+#[cfg(test)]
+mod tests {
+    use sts_oracle_eval::content::cards::CardId;
+    use sts_oracle_eval::eval::run_control::{
+        LearningEnvV1, LearningModelChoiceV1, LearningModelDecisionV1, LearningSelectionStepV1,
+        RunControlConfig, RunControlSession,
+    };
+    use sts_oracle_eval::runtime::combat::CombatCard;
+    use sts_oracle_eval::state::core::{
+        EngineState, RunPendingChoiceReason, RunPendingChoiceState,
+    };
+    use sts_oracle_eval::state::selection::{DomainEventSource, SelectionReason};
+
+    use super::*;
+
+    #[test]
+    fn run_selection_root_and_prefix_share_one_complete_strategic_encoding() {
+        let mut session = RunControlSession::new(RunControlConfig::default());
+        session.run_state.master_deck = vec![
+            CombatCard::new(CardId::Strike, 11),
+            CombatCard::new(CardId::Defend, 22),
+            CombatCard::new(CardId::Bash, 33),
+        ];
+        session.engine_state = EngineState::RunPendingChoice(RunPendingChoiceState {
+            min_choices: 2,
+            max_choices: 2,
+            reason: RunPendingChoiceReason::Transform,
+            source: DomainEventSource::Selection(SelectionReason::Transform),
+            return_state: Box::new(EngineState::MapNavigation),
+        });
+        let boundary = LearningEnvV1::from_session(session)
+            .observe()
+            .expect("run selection boundary");
+        let decision =
+            LearningModelDecisionV1::from_boundary(&boundary).expect("root model decision");
+
+        let mut root_builder = SemanticBatchBuilder::new();
+        root_builder
+            .push_decision(&decision)
+            .expect("encode selection root");
+        let root = root_builder.finish();
+        assert!(root
+            .categorical
+            .values
+            .contains(&(ActionKind::BeginRunCardSelection as i64)));
+        assert_eq!(
+            root.token_kinds
+                .iter()
+                .filter(|kind| **kind == TokenKind::SelectionDomain as u16)
+                .count(),
+            3
+        );
+
+        let LearningModelChoiceV1::DecodeSelection(mut draft) =
+            decision.choose(0).expect("begin selection")
+        else {
+            panic!("run root must begin a symbolic decoder");
+        };
+        assert!(matches!(
+            draft.choose(0).expect("append first card"),
+            LearningSelectionStepV1::Continue
+        ));
+        let mut prefix_builder = SemanticBatchBuilder::new();
+        prefix_builder
+            .push_selection(decision.observation, &draft)
+            .expect("encode selection prefix");
+        let prefix = prefix_builder.finish();
+
+        assert!(prefix
+            .token_kinds
+            .contains(&(TokenKind::SelectionState as u16)));
+        assert!(prefix
+            .token_kinds
+            .contains(&(TokenKind::SelectionChosen as u16)));
+        assert_eq!(prefix.candidate_token_indices.len(), 2);
+        assert_eq!(
+            prefix
+                .relation
+                .relations
+                .iter()
+                .filter(|relation| **relation == RelationKind::SelectionDomainTargets as u16)
+                .count(),
+            3
+        );
+    }
 }

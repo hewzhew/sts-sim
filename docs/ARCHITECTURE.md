@@ -139,13 +139,14 @@ Candidate sets remain ragged and use row splits as their default batch mask;
 rectangular padding masks are materialized only when a backend asks for one.
 Atomic combat inputs carry aligned typed indexed-choice semantics, including
 the choice reason and destination as well as the selected card or stance.
-Symbolic selection families are decoded as an ordered append-or-submit language
-without enumerating complete payloads, and only explicit submit produces an
-environment action. Active decoders can themselves form a ragged batch; each
-row retains the unchanged parent observation, so autoregressive selection does
-not fall back to one backend call per environment slot. The adapter does not
-serialize per-step JSON and does not define a feature dictionary, network
-architecture, or policy objective.
+Combat and run-level multi-card selection families are decoded as an ordered
+append-or-submit language without enumerating complete payloads, and only
+explicit submit produces an environment action. Active decoders can themselves
+form a ragged batch; each row retains the unchanged matching combat or
+strategic parent observation, so autoregressive selection does not fall back to
+one backend call per environment slot. The adapter does not serialize per-step
+JSON and does not define a feature dictionary, network architecture, or policy
+objective.
 
 `LearningEnvPoolV1` owns a fixed set of independent environments and exposes
 all non-terminal slots as one aligned ragged model batch. It prepares every
@@ -173,7 +174,9 @@ symbolic-selection rows as token, categorical-feature, scalar-feature,
 relation-edge, and candidate-token NumPy tables. Combat rows retain the full
 public learning observation, ordered/unordered evidence, action targets,
 indexed-choice reason/destination, and symbolic selection family plus chosen
-prefix. Opaque observation/candidate ids and entity UUIDs are not features;
+prefix. Run-selection rows retain the full strategic observation and link each
+selection-domain token to its eligible master-deck card. Opaque
+observation/candidate ids and entity UUIDs are not features;
 internal identities may only resolve graph relationships. An unexpected
 out-of-surface combat input fails closed rather than emitting a partial row.
 `semantic_schema()` exposes enum dictionaries and categorical vocabulary sizes

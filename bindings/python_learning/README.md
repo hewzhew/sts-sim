@@ -6,7 +6,7 @@ without per-step JSON or one Python call per environment slot.
 
 The control surface exposes slot identity, decision phase, ragged candidate row
 splits, candidate counts, and an optional dense legal-action mask. Calling
-`decision_batch(semantic=True)` additionally returns semantic schema version 3
+`decision_batch(semantic=True)` additionally returns semantic schema version 4
 as five sparse, columnar NumPy table families:
 
 - `token`: token kinds plus per-decision row splits;
@@ -30,14 +30,16 @@ stances, and public encounter counters. Atomic candidates link directly to
 their hand card, potion slot, and monster target. Indexed choices also carry
 their reason and destination, not just the offered card or stance.
 
-Symbolic-selection rows retain the unchanged combat observation, the complete
-selection family/domain, the ordered chosen prefix, and the current
-append-or-submit candidates. Public entity collections use their declared
-ordered/unordered evidence. Candidate order remains fixed by its
-observation-local action ordinal. Internal entity ids and card UUIDs are used
-only to resolve relationships and never cross the bridge as feature values.
-An unexpected action outside the maintained combat surface fails encoding
-instead of producing a partial row.
+Symbolic-selection rows retain the unchanged matching combat or strategic
+observation, the complete selection family/domain, the ordered chosen prefix,
+and the current append-or-submit candidates. Run-level multi-card domains link
+back to their eligible master-deck card tokens without enumerating complete
+combinations. Public entity collections use their declared ordered/unordered
+evidence. Candidate order remains fixed by its observation-local action
+ordinal. Internal entity ids and card UUIDs are used only to resolve
+relationships and never cross the bridge as feature values. An unexpected
+action outside the maintained surface fails encoding instead of producing a
+partial row.
 
 `checkpoint_slot(slot_index)` returns an opaque, in-process exact checkpoint;
 `restore_slot(slot_index, checkpoint)` restores both the simulator and any

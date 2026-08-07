@@ -383,7 +383,8 @@ fn selection_probability(source: RunDecisionSelectionSourceV1) -> SelectionProba
         | RunDecisionSelectionSourceV1::RoutinePolicy
         | RunDecisionSelectionSourceV1::RoutePolicy
         | RunDecisionSelectionSourceV1::OwnerPolicy
-        | RunDecisionSelectionSourceV1::RewardPolicy => SelectionProbability::Unknown,
+        | RunDecisionSelectionSourceV1::RewardPolicy
+        | RunDecisionSelectionSourceV1::LearnedPolicy => SelectionProbability::Unknown,
     }
 }
 

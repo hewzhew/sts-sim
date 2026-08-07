@@ -1,4 +1,4 @@
-//! Complete combat-side encoding for semantic schema v2.
+//! Complete combat-side encoding for semantic schema v4.
 
 use sts_oracle_eval::ai::combat_learning_observation::{
     CombatLearningCardCollectionV1, CombatLearningCardV1, CombatLearningEnemyIdentityV1,
@@ -76,10 +76,10 @@ impl SemanticBatchBuilder {
         &mut self,
         observation: LearningCombatModelObservationV1<'_>,
         draft: &LearningSelectionDraftV1,
-        decision: &LearningSelectionDecisionV1<'_>,
+        decision: &LearningSelectionDecisionV1,
     ) -> Result<(), SemanticEncodingError> {
         let tokens = self.encode_combat_observation(observation)?;
-        let selection = self.add_token(TokenKind::CombatSelectionState)?;
+        let selection = self.add_token(TokenKind::SelectionState)?;
         self.edge(
             tokens.root,
             RelationKind::ObservationHasSelectionState,
@@ -88,7 +88,9 @@ impl SemanticBatchBuilder {
         let domains = self.encode_selection_family(
             selection,
             RelationKind::SelectionHasDomain,
-            draft.model_family(),
+            draft
+                .combat_family()
+                .ok_or(SemanticEncodingError::SelectionObservationMismatch)?,
         )?;
         for (position, domain_index) in draft.selected_domain_indices().iter().copied().enumerate()
         {
@@ -96,7 +98,7 @@ impl SemanticBatchBuilder {
                 .get(domain_index)
                 .copied()
                 .ok_or(SemanticEncodingError::MissingSelectionDomain(domain_index))?;
-            let chosen = self.add_token(TokenKind::CombatSelectionChosen)?;
+            let chosen = self.add_token(TokenKind::SelectionChosen)?;
             self.scalar(chosen, ScalarField::SelectionChosenPosition, position);
             self.edge(selection, RelationKind::SelectionHasChosen, chosen);
             self.edge(chosen, RelationKind::ChosenTargetsDomain, target);
@@ -113,10 +115,7 @@ impl SemanticBatchBuilder {
                         SelectionCandidateKind::Submit as i64,
                     );
                 }
-                LearningSelectionCandidateSemanticsV1::Append {
-                    domain_index,
-                    domain: _,
-                } => {
+                LearningSelectionCandidateSemanticsV1::Append { domain_index } => {
                     self.category(
                         token,
                         CategoricalField::SelectionCandidateKind,
@@ -921,7 +920,7 @@ impl SemanticBatchBuilder {
             let domain = family
                 .domain(domain_index)
                 .ok_or(SemanticEncodingError::MissingSelectionDomain(domain_index))?;
-            let token = self.add_token(TokenKind::CombatSelectionDomain)?;
+            let token = self.add_token(TokenKind::SelectionDomain)?;
             self.edge(owner, domain_relation, token);
             match domain.semantics() {
                 LearningCombatSelectionDomainSemanticsV1::Card {
@@ -1136,10 +1135,10 @@ mod tests {
         assert_eq!(batch.candidate_token_indices.len(), expected_candidates);
         assert!(batch
             .token_kinds
-            .contains(&(TokenKind::CombatSelectionState as u16)));
+            .contains(&(TokenKind::SelectionState as u16)));
         assert!(batch
             .token_kinds
-            .contains(&(TokenKind::CombatSelectionChosen as u16)));
+            .contains(&(TokenKind::SelectionChosen as u16)));
         assert!(batch
             .relation
             .relations

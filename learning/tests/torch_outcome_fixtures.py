@@ -23,7 +23,7 @@ from sts_learning import (
 
 def behavior_manifest_template_fixture(
     *,
-    semantic_schema_version: int = 3,
+    semantic_schema_version: int = 4,
     behavior_rule: BehaviorRuleBinding = GREEDY_BEHAVIOR_RULE_V1,
 ) -> BehaviorManifestTemplate:
     def artifact(kind: ManifestArtifactKind) -> ManifestArtifactId:

@@ -164,10 +164,11 @@ pub use learning_model_input::{
     LearningCombatSelectionDomainV1, LearningCombatSelectionFamilyV1, LearningDenseActionMaskV1,
     LearningModelBatchV1, LearningModelCandidateSemanticsV1, LearningModelCandidateV1,
     LearningModelChoiceV1, LearningModelDecisionV1, LearningModelInputError,
-    LearningModelObservationV1, LearningSelectionCandidateSemanticsV1,
-    LearningSelectionCandidateV1, LearningSelectionDecisionV1, LearningSelectionDraftV1,
-    LearningSelectionModelBatchV1, LearningSelectionModelRowV1, LearningSelectionStepV1,
-    LearningStrategicModelObservationV1,
+    LearningModelObservationV1, LearningRunSelectionFamilyV1,
+    LearningSelectionCandidateSemanticsV1, LearningSelectionCandidateV1,
+    LearningSelectionDecisionV1, LearningSelectionDraftV1, LearningSelectionModelBatchV1,
+    LearningSelectionModelRowV1, LearningSelectionStepV1, LearningStrategicModelObservationV1,
+    LearningStrategicPotionSlotV1, LearningStrategicPotionV1,
 };
 pub use oracle_analysis_session::{
     OracleAnalysisAdvanceReportV1, OracleAnalysisAdvanceRequestV1, OracleAnalysisAdvanceStatusV1,

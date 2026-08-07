@@ -518,6 +518,49 @@ fn planner_action_for_candidate(
         return Ok(CandidateProjection::Unavailable);
     }
     if matches!(candidate.action, CandidateAction::Parameterized { .. }) {
+        if let Some(DecisionCandidateKey::SelectionSubmit {
+            scope,
+            reason,
+            min_choices,
+            max_choices,
+            item_count,
+        }) = candidate.key.as_ref()
+        {
+            if !matches!(session.engine_state, EngineState::RunPendingChoice(_)) {
+                return Ok(CandidateProjection::Gap(
+                    CandidateRepresentationGap::ParameterizedActionFamily,
+                ));
+            }
+            let Some(surface) = super::selection_surface::active_selection_surface(session) else {
+                return Ok(CandidateProjection::Gap(
+                    CandidateRepresentationGap::UnsupportedBoundaryAction,
+                ));
+            };
+            if surface.scope != *scope
+                || surface.reason != *reason
+                || surface.min_choices != *min_choices
+                || surface.max_choices != *max_choices
+                || surface.item_count != *item_count
+                || surface.items.len() != *item_count
+            {
+                return Ok(CandidateProjection::Gap(
+                    CandidateRepresentationGap::UnsupportedBoundaryAction,
+                ));
+            }
+            return Ok(CandidateProjection::Legal(
+                PlannerAction::BeginRunCardSelection {
+                    scope: *scope,
+                    reason: *reason,
+                    min_choices: *min_choices,
+                    max_choices: *max_choices,
+                    selectable_card_uuids: surface
+                        .items
+                        .iter()
+                        .map(|item| item.target.card_uuid())
+                        .collect(),
+                },
+            ));
+        }
         return Ok(CandidateProjection::Gap(
             CandidateRepresentationGap::ParameterizedActionFamily,
         ));
@@ -643,13 +686,6 @@ fn planner_action_for_candidate(
     };
     Ok(match action {
         Some(action) => CandidateProjection::Legal(action),
-        None if matches!(
-            candidate.key,
-            Some(DecisionCandidateKey::SelectionSubmit { .. })
-        ) =>
-        {
-            CandidateProjection::Gap(CandidateRepresentationGap::ParameterizedActionFamily)
-        }
         None => CandidateProjection::Gap(CandidateRepresentationGap::UnsupportedBoundaryAction),
     })
 }
@@ -930,7 +966,10 @@ fn next_map_y(session: &RunControlSession) -> i32 {
 mod tests {
     use super::*;
     use crate::content::potions::{Potion, PotionId};
+    use crate::runtime::combat::CombatCard;
+    use crate::state::core::{RunPendingChoiceReason, RunPendingChoiceState};
     use crate::state::events::{EventId, EventState};
+    use crate::state::selection::{DomainEventSource, SelectionReason, SelectionScope};
 
     #[test]
     fn hidden_rng_and_encounter_queues_do_not_change_public_capture_ids() {
@@ -1038,6 +1077,43 @@ mod tests {
                         potion_uuid: 10,
                     })
             }));
+    }
+
+    #[test]
+    fn multi_card_run_choice_is_a_complete_typed_selection_family() {
+        let mut session = RunControlSession::new(Default::default());
+        session.run_state.master_deck = vec![
+            CombatCard::new(crate::content::cards::CardId::Strike, 11),
+            CombatCard::new(crate::content::cards::CardId::Defend, 22),
+            CombatCard::new(crate::content::cards::CardId::Bash, 33),
+        ];
+        session.engine_state = EngineState::RunPendingChoice(RunPendingChoiceState {
+            min_choices: 2,
+            max_choices: 2,
+            reason: RunPendingChoiceReason::Transform,
+            source: DomainEventSource::Selection(SelectionReason::Transform),
+            return_state: Box::new(EngineState::MapNavigation),
+        });
+
+        let pending = capture_planner_boundary_v1(&session)
+            .expect("capture")
+            .expect("run-choice boundary");
+
+        assert!(matches!(
+            pending.legal_candidate_set.completeness,
+            CandidateSetCompleteness::Complete { .. }
+        ));
+        assert_eq!(pending.legal_candidate_set.candidates.len(), 1);
+        assert_eq!(
+            pending.legal_candidate_set.candidates[0].action,
+            PlannerAction::BeginRunCardSelection {
+                scope: SelectionScope::Deck,
+                reason: SelectionReason::Transform,
+                min_choices: 2,
+                max_choices: 2,
+                selectable_card_uuids: vec![11, 22, 33],
+            }
+        );
     }
 
     #[test]

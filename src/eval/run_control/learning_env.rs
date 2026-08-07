@@ -8,6 +8,7 @@ use crate::sim::combat_action_surface::{
     combat_legal_action_surface_v2, pending_choice_input_is_legal, CombatLegalActionSurfaceV2,
 };
 use crate::state::core::{ClientInput, EngineState, RunResult};
+use crate::state::selection::SelectionResolution;
 
 use super::{
     capture_planner_boundary_yield_v1, PlannerBoundaryYieldKindV1, RunControlConfig,
@@ -80,8 +81,16 @@ impl LearningBoundaryV1 {
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum LearningActionV1 {
-    StrategicCandidate { candidate_id: String },
-    CombatInput { input: ClientInput },
+    StrategicCandidate {
+        candidate_id: String,
+    },
+    RunSelection {
+        candidate_id: String,
+        resolution: SelectionResolution,
+    },
+    CombatInput {
+        input: ClientInput,
+    },
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -187,6 +196,10 @@ impl LearningEnvV1 {
             LearningActionV1::StrategicCandidate { candidate_id } => {
                 self.prepare_strategic_candidate(&candidate_id)
             }
+            LearningActionV1::RunSelection {
+                candidate_id,
+                resolution,
+            } => self.prepare_run_selection(&candidate_id, resolution),
             LearningActionV1::CombatInput { input } => self.prepare_combat_input(input),
         }
     }
@@ -198,6 +211,15 @@ impl LearningEnvV1 {
         match action {
             LearningPreparedActionV1::StrategicCandidate { run_candidate_id } => {
                 self.session.apply_candidate_id(&run_candidate_id)?;
+            }
+            LearningPreparedActionV1::RunSelection {
+                run_candidate_id,
+                resolution,
+            } => {
+                self.session.apply_learning_candidate(
+                    &run_candidate_id,
+                    super::RunDecisionAction::Input(ClientInput::SubmitSelection(resolution)),
+                )?;
             }
             LearningPreparedActionV1::CombatInput { input } => {
                 self.session
@@ -254,12 +276,55 @@ impl LearningEnvV1 {
         }
         Ok(LearningPreparedActionV1::CombatInput { input })
     }
+
+    fn prepare_run_selection(
+        &self,
+        planner_candidate_id: &str,
+        resolution: SelectionResolution,
+    ) -> Result<LearningPreparedActionV1, String> {
+        let segment = capture_planner_boundary_yield_v1(
+            &self.session,
+            PlannerBoundaryYieldKindV1::CallbackStop,
+        )?;
+        let [visit] = segment.visits.as_slice() else {
+            return Err("run selection requires a represented planner boundary".to_string());
+        };
+        let link = visit
+            .candidate_links
+            .iter()
+            .find(|link| link.planner_candidate_id == planner_candidate_id)
+            .ok_or_else(|| {
+                format!(
+                    "run selection family '{planner_candidate_id}' is not legal at the current boundary"
+                )
+            })?;
+        let input = ClientInput::SubmitSelection(resolution.clone());
+        if super::selection_surface::current_selection_input_is_allowed(&self.session, &input)
+            != Some(true)
+        {
+            return Err(
+                "run selection resolution is not legal at the current boundary".to_string(),
+            );
+        }
+        Ok(LearningPreparedActionV1::RunSelection {
+            run_candidate_id: link.run_candidate_id.clone(),
+            resolution,
+        })
+    }
 }
 
 #[derive(Clone, Debug)]
 pub(super) enum LearningPreparedActionV1 {
-    StrategicCandidate { run_candidate_id: String },
-    CombatInput { input: ClientInput },
+    StrategicCandidate {
+        run_candidate_id: String,
+    },
+    RunSelection {
+        run_candidate_id: String,
+        resolution: SelectionResolution,
+    },
+    CombatInput {
+        input: ClientInput,
+    },
 }
 
 #[cfg(test)]

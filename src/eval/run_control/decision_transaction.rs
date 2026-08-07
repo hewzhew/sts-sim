@@ -8,7 +8,7 @@ use super::RunProgressStepV1;
 use super::{build_decision_surface, render_run_control_state, RunDecisionAction};
 
 pub const RUN_DECISION_TRANSACTION_SCHEMA_NAME: &str = "RunDecisionTransaction";
-pub const RUN_DECISION_TRANSACTION_SCHEMA_VERSION: u32 = 1;
+pub const RUN_DECISION_TRANSACTION_SCHEMA_VERSION: u32 = 2;
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -19,6 +19,7 @@ pub enum RunDecisionSelectionSourceV1 {
     RoutePolicy,
     OwnerPolicy,
     RewardPolicy,
+    LearnedPolicy,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]

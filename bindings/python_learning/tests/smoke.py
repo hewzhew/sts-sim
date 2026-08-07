@@ -123,7 +123,7 @@ def _assert_semantic(batch: dict) -> tuple[bool, bool, bool, bool]:
             saw_selection = True
             assert np.any(
                 token_kinds[token_start:token_end]
-                == _SCHEMA["token_kind"]["CombatSelectionState"]
+                == _SCHEMA["token_kind"]["SelectionState"]
             )
 
     saw_candidate_target = bool(
@@ -270,7 +270,7 @@ def main() -> None:
     assert schema["version"] == SEMANTIC_SCHEMA_VERSION
     assert schema["completeness"]["Complete"] == SEMANTIC_COMPLETE
     assert schema["token_kind"]["Candidate"] == SEMANTIC_TOKEN_CANDIDATE
-    assert len(schema["action_kind"]) == 27
+    assert len(schema["action_kind"]) == 28
     assert len(schema["combat_action_kind"]) == 8
     assert set(schema["categorical_field"].values()) == set(
         schema["categorical_vocabulary_size"]

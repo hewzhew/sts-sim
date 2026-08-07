@@ -13,7 +13,7 @@ pub use types::*;
 pub const PLANNER_OBSERVATION_SCHEMA_NAME: &str = "PlannerObservation";
 pub const PLANNER_OBSERVATION_SCHEMA_VERSION: u32 = 1;
 pub const LEGAL_CANDIDATE_SET_SCHEMA_NAME: &str = "LegalCandidateSet";
-pub const LEGAL_CANDIDATE_SET_SCHEMA_VERSION: u32 = 1;
+pub const LEGAL_CANDIDATE_SET_SCHEMA_VERSION: u32 = 2;
 pub const PLANNER_BEHAVIOR_EVENT_SCHEMA_NAME: &str = "PlannerBehaviorEvent";
 pub const PLANNER_BEHAVIOR_EVENT_SCHEMA_VERSION: u32 = 1;
 pub const PLANNER_MECHANICS_ID: &str = "sts_simulator_rust_mechanics";

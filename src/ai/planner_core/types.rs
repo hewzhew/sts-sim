@@ -6,7 +6,7 @@ use crate::content::potions::PotionId;
 use crate::content::relics::RelicId;
 use crate::state::events::{EventActionKind, EventId};
 use crate::state::map::node::RoomType;
-use crate::state::selection::SelectionScope;
+use crate::state::selection::{SelectionReason, SelectionScope};
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -312,6 +312,13 @@ pub enum PlannerAction {
         relic: RelicId,
     },
     SkipBossRelic,
+    BeginRunCardSelection {
+        scope: SelectionScope,
+        reason: SelectionReason,
+        min_choices: usize,
+        max_choices: usize,
+        selectable_card_uuids: Vec<u32>,
+    },
     SubmitRunSelection {
         scope: SelectionScope,
         selected_card_uuids: Vec<u32>,

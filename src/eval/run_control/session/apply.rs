@@ -143,6 +143,20 @@ impl RunControlSession {
         Ok(transaction.project_progress_outcome(self))
     }
 
+    pub fn apply_learning_candidate(
+        &mut self,
+        candidate_id: &str,
+        action: RunDecisionAction,
+    ) -> Result<RunProgressOutcome, String> {
+        let transaction = self.execute_bound_candidate_transaction_with_source(
+            candidate_id,
+            Some(action),
+            RunDecisionSelectionSourceV1::LearnedPolicy,
+            Vec::new(),
+        )?;
+        Ok(transaction.project_progress_outcome(self))
+    }
+
     pub fn execute_forced_transition(
         &mut self,
         kind: RunForcedTransitionKindV1,
