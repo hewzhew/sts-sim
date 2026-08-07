@@ -616,6 +616,11 @@ or schedule retries but may not obtain value by rerolling the same state.
 Strict zero-recovery held-out evaluation remains separate from any
 training-time curriculum metric.
 
+The Python bridge exposes this authority only as an explicit opaque single-slot
+checkpoint. It restores the matching simulator state and any unfinished
+selection prefix without serializing a session, retaining an automatic
+checkpoint graph, or choosing when recovery should occur.
+
 ## Relationship To Existing Code
 
 The new core may reuse:

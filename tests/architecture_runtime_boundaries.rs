@@ -2577,6 +2577,9 @@ fn python_learning_bridge_stays_outside_the_root_workspace_and_policy_layer() {
     .join("\n");
     for required in [
         "LearningEnvPoolV1",
+        "LearningSlotCheckpoint",
+        "checkpoint_slot",
+        "restore_slot",
         "candidate_row_splits",
         "dense_action_mask",
         "LearningSelectionStepV1",

@@ -39,6 +39,14 @@ only to resolve relationships and never cross the bridge as feature values.
 An unexpected action outside the maintained combat surface fails encoding
 instead of producing a partial row.
 
+`checkpoint_slot(slot_index)` returns an opaque, in-process exact checkpoint;
+`restore_slot(slot_index, checkpoint)` restores both the simulator and any
+unfinished symbolic-selection prefix without rerolling RNG. Checkpoints are
+created only on an explicit caller request, are never serialized through the
+bridge, and do not form an automatic history. A recovery curriculum therefore
+owns checkpoint retention, retry counts, and replacement policy without
+becoming part of environment mechanics.
+
 The bridge still contains no policy, optimizer, automatic reset, or PyTorch
 dependency. Its semantic arrays are an input contract, not evidence that a
 particular model or learning objective is correct.

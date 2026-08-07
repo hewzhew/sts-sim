@@ -4,9 +4,9 @@ use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
 use sts_oracle_eval::eval::run_control::{
-    LearningActionV1, LearningBoundaryV1, LearningEnvPoolV1, LearningModelChoiceV1,
+    LearningActionV1, LearningBoundaryV1, LearningEnvPoolV1, LearningEnvV1, LearningModelChoiceV1,
     LearningModelDecisionV1, LearningModelObservationV1, LearningSelectionDraftV1,
-    LearningSelectionStepV1, RunControlConfig,
+    LearningSelectionStepV1, RunControlConfig, RunControlSessionCheckpointV1,
 };
 
 mod semantic;
@@ -32,6 +32,17 @@ enum BridgeSlotState {
     Root,
     Selection(LearningSelectionDraftV1),
     Ready(LearningActionV1),
+}
+
+/// Opaque, in-process exact state owned by the caller.
+///
+/// The bridge creates no automatic history and exposes no serialized session
+/// payload. Retaining or discarding checkpoints is a curriculum decision.
+#[pyclass(skip_from_py_object)]
+#[derive(Clone)]
+struct LearningSlotCheckpoint {
+    session: RunControlSessionCheckpointV1,
+    bridge_state: BridgeSlotState,
 }
 
 #[derive(Debug)]
@@ -224,6 +235,59 @@ impl LearningBatchEnv {
             )
             .map_err(runtime_error)?;
         self.states[slot_index] = BridgeSlotState::Root;
+        Ok(())
+    }
+
+    fn checkpoint_slot(&self, slot_index: usize) -> PyResult<LearningSlotCheckpoint> {
+        let bridge_state = self.states.get(slot_index).cloned().ok_or_else(|| {
+            PyValueError::new_err(format!(
+                "slot {slot_index} is outside 0..{}",
+                self.states.len()
+            ))
+        })?;
+        let session = self
+            .pool
+            .checkpoint_slot(slot_index)
+            .map_err(runtime_error)?;
+        Ok(LearningSlotCheckpoint {
+            session,
+            bridge_state,
+        })
+    }
+
+    fn restore_slot(
+        &mut self,
+        slot_index: usize,
+        checkpoint: PyRef<'_, LearningSlotCheckpoint>,
+    ) -> PyResult<()> {
+        if slot_index >= self.states.len() {
+            return Err(PyValueError::new_err(format!(
+                "slot {slot_index} is outside 0..{}",
+                self.states.len()
+            )));
+        }
+        self.restore_slot_checkpoint(slot_index, &checkpoint)
+            .map_err(runtime_error)
+    }
+}
+
+impl LearningBatchEnv {
+    fn restore_slot_checkpoint(
+        &mut self,
+        slot_index: usize,
+        checkpoint: &LearningSlotCheckpoint,
+    ) -> Result<(), String> {
+        if slot_index >= self.states.len() {
+            return Err(format!(
+                "slot {slot_index} is outside 0..{}",
+                self.states.len()
+            ));
+        }
+        let env = LearningEnvV1::from_checkpoint(checkpoint.session.clone())?;
+        self.pool
+            .replace_slot(slot_index, env)
+            .map_err(|error| error.to_string())?;
+        self.states[slot_index] = checkpoint.bridge_state.clone();
         Ok(())
     }
 }
@@ -483,6 +547,7 @@ fn runtime_error(error: impl ToString) -> PyErr {
 #[pymodule]
 fn _native(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_class::<LearningBatchEnv>()?;
+    module.add_class::<LearningSlotCheckpoint>()?;
     module.add_function(wrap_pyfunction!(semantic_schema, module)?)?;
     module.add("PHASE_STRATEGIC_ROOT", PHASE_STRATEGIC_ROOT)?;
     module.add("PHASE_COMBAT_ROOT", PHASE_COMBAT_ROOT)?;
@@ -504,4 +569,78 @@ fn _native(module: &Bound<'_, PyModule>) -> PyResult<()> {
         RelationKind::CandidateTargets as u16,
     )?;
     Ok(())
+}
+
+#[cfg(test)]
+mod checkpoint_tests {
+    use sts_oracle_eval::content::cards::CardId;
+    use sts_oracle_eval::eval::run_control::{LearningEnvV1, RunControlSession};
+    use sts_oracle_eval::runtime::combat::CombatCard;
+    use sts_oracle_eval::state::core::{
+        ActiveCombat, CombatContext, EngineState, PendingChoice, RoomCombatContext,
+    };
+    use sts_oracle_eval::state::map::node::RoomType;
+
+    use super::*;
+
+    #[test]
+    fn opaque_checkpoint_restores_unfinished_symbolic_prefix() {
+        // A real Scry boundary is the smallest fixture whose exact state spans
+        // both the simulator checkpoint and bridge-only decoder progress.
+        let mut session = RunControlSession::new(RunControlConfig::default());
+        let mut combat = sts_oracle_eval::test_support::blank_test_combat();
+        combat.zones.draw_pile = (vec![
+            CombatCard::new(CardId::Strike, 11),
+            CombatCard::new(CardId::Defend, 12),
+        ])
+        .into();
+        let choice = PendingChoice::ScrySelect {
+            cards: vec![CardId::Strike, CardId::Defend],
+            card_uuids: vec![11, 12],
+        };
+        session.engine_state = EngineState::PendingChoice(choice.clone());
+        session.active_combat = Some(ActiveCombat::new(
+            EngineState::PendingChoice(choice),
+            combat,
+            CombatContext::Room(RoomCombatContext {
+                room_type: RoomType::MonsterRoom,
+            }),
+        ));
+        let pool = LearningEnvPoolV1::from_envs([LearningEnvV1::from_session(session)])
+            .expect("create selection pool");
+        let mut env = LearningBatchEnv {
+            states: states_from_pool(&pool),
+            pool,
+        };
+
+        let boundary = env.pool.boundary(0).expect("selection boundary");
+        let decision =
+            LearningModelDecisionV1::from_boundary(boundary).expect("build symbolic root decision");
+        let LearningModelChoiceV1::DecodeSelection(mut draft) =
+            decision.choose(0).expect("start symbolic selection")
+        else {
+            panic!("scry root must start a symbolic decoder");
+        };
+        assert!(matches!(
+            draft.choose(1).expect("append first scry card"),
+            LearningSelectionStepV1::Continue
+        ));
+        let checkpoint = LearningSlotCheckpoint {
+            session: env.pool.checkpoint_slot(0).expect("checkpoint prefix"),
+            bridge_state: BridgeSlotState::Selection(draft.clone()),
+        };
+        let LearningSelectionStepV1::Apply(action) = draft.choose(0).expect("submit prefix") else {
+            panic!("submit must produce an action");
+        };
+        env.states[0] = BridgeSlotState::Ready(action);
+        assert!(matches!(env.states[0], BridgeSlotState::Ready(_)));
+
+        env.restore_slot_checkpoint(0, &checkpoint)
+            .expect("restore prefix");
+        let BridgeSlotState::Selection(draft) = &env.states[0] else {
+            panic!("restored slot must resume symbolic selection");
+        };
+        assert_eq!(draft.selected_domain_indices(), &[0]);
+        assert_eq!(draft.decision().candidates.len(), 2);
+    }
 }

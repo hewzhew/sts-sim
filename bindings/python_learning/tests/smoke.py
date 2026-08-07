@@ -149,6 +149,55 @@ def _assert_semantic_equal(left: dict, right: dict) -> None:
     )
 
 
+def _assert_decision_batch_equal(left: dict, right: dict) -> None:
+    for field in (
+        "slot_indices",
+        "phase",
+        "candidate_counts",
+        "candidate_row_splits",
+        "dense_action_mask",
+    ):
+        assert np.array_equal(left[field], right[field])
+    _assert_semantic_equal(left["semantic"], right["semantic"])
+
+
+def _choose_first_until_ready(env: LearningBatchEnv) -> None:
+    rounds = 0
+    while not env.ready:
+        batch = env.decision_batch()
+        env.choose([0] * int(batch["slot_indices"].size))
+        rounds += 1
+        assert rounds < 100
+
+
+def _assert_explicit_checkpoint_replays_exactly() -> None:
+    env = LearningBatchEnv([37])
+    root = env.decision_batch(dense_mask=True, semantic=True)
+    root_checkpoint = env.checkpoint_slot(0)
+    try:
+        env.restore_slot(1, root_checkpoint)
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("out-of-range checkpoint restore was accepted")
+    _choose_first_until_ready(env)
+    ready_checkpoint = env.checkpoint_slot(0)
+
+    first_step = env.step()
+    first_after = env.decision_batch(dense_mask=True, semantic=True)
+    env.restore_slot(0, ready_checkpoint)
+    assert env.ready
+    replay_step = env.step()
+    replay_after = env.decision_batch(dense_mask=True, semantic=True)
+    for field in ("slot_indices", "reward", "terminated"):
+        assert np.array_equal(first_step[field], replay_step[field])
+    _assert_decision_batch_equal(first_after, replay_after)
+
+    env.restore_slot(0, root_checkpoint)
+    restored_root = env.decision_batch(dense_mask=True, semantic=True)
+    _assert_decision_batch_equal(root, restored_root)
+
+
 def main() -> None:
     schema = _SCHEMA
     assert schema["version"] == SEMANTIC_SCHEMA_VERSION
@@ -188,6 +237,7 @@ def main() -> None:
     )
     assert schema["domain_vocabulary_size"]["enemy_id"] == 65
     assert schema["domain_vocabulary_size"]["power_id"] == 135
+    _assert_explicit_checkpoint_replays_exactly()
 
     seeds = list(range(1, 6))
     random_states = [seed ^ _SEED_XOR for seed in seeds]

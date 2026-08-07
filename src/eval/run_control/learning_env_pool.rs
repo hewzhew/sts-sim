@@ -8,7 +8,7 @@ use std::fmt;
 
 use super::{
     LearningActionV1, LearningBoundaryV1, LearningEnvV1, LearningModelBatchV1,
-    LearningModelInputError, RunControlConfig,
+    LearningModelInputError, RunControlConfig, RunControlSessionCheckpointV1,
 };
 
 #[derive(Clone, Debug)]
@@ -76,6 +76,26 @@ impl LearningEnvPoolV1 {
 
     pub fn boundary(&self, slot_index: usize) -> Option<&LearningBoundaryV1> {
         self.slots.get(slot_index).map(|slot| &slot.boundary)
+    }
+
+    /// Captures one exact in-memory slot for a caller-owned recovery or
+    /// curriculum policy. Nothing is serialized and the pool does not retain
+    /// an automatic checkpoint history.
+    pub fn checkpoint_slot(
+        &self,
+        slot_index: usize,
+    ) -> Result<RunControlSessionCheckpointV1, LearningEnvPoolError> {
+        if self.poisoned {
+            return Err(LearningEnvPoolError::PoolPoisoned);
+        }
+        let slot = self
+            .slots
+            .get(slot_index)
+            .ok_or(LearningEnvPoolError::SlotIndexOutOfRange {
+                slot_index,
+                slot_count: self.slots.len(),
+            })?;
+        Ok(slot.env.checkpoint())
     }
 
     /// Explicitly replaces one slot after a caller has chosen its reset or
@@ -271,6 +291,28 @@ mod tests {
         assert!(batch.active_slot_indices.is_empty());
         assert!(batch.model_batch.decisions.is_empty());
         assert_eq!(batch.model_batch.candidate_row_splits, vec![0]);
+    }
+
+    #[test]
+    fn slot_checkpoint_is_explicit_exact_and_bounds_checked() {
+        let pool = LearningEnvPoolV1::from_configs([RunControlConfig {
+            seed: 17,
+            ..RunControlConfig::default()
+        }])
+        .expect("create pool");
+
+        assert_eq!(
+            pool.checkpoint_slot(0).expect("checkpoint first slot"),
+            pool.slots[0].env.checkpoint()
+        );
+        assert_eq!(
+            pool.checkpoint_slot(1)
+                .expect_err("missing slot must not produce a checkpoint"),
+            LearningEnvPoolError::SlotIndexOutOfRange {
+                slot_index: 1,
+                slot_count: 1,
+            }
+        );
     }
 
     #[test]

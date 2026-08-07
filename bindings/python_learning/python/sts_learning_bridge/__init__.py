@@ -2,6 +2,7 @@
 
 from ._native import (
     LearningBatchEnv,
+    LearningSlotCheckpoint,
     PHASE_COMBAT_ROOT,
     PHASE_SELECTION,
     PHASE_STRATEGIC_ROOT,
@@ -17,6 +18,7 @@ from ._native import (
 
 __all__ = [
     "LearningBatchEnv",
+    "LearningSlotCheckpoint",
     "PHASE_COMBAT_ROOT",
     "PHASE_SELECTION",
     "PHASE_STRATEGIC_ROOT",
