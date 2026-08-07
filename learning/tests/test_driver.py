@@ -102,6 +102,95 @@ class BatchDriverTests(unittest.TestCase):
         self.assertEqual(driver.ledger.snapshot(1).episode_generation, 1)
         self.assertNotEqual(tuple(env.seeds), initial_seeds)
 
+    def test_terminal_target_run_stops_after_an_atomic_multi_terminal_step(self) -> None:
+        population = initialize_population(
+            lambda seeds: FakeBatchEnv(
+                seeds,
+                terminal_plans=({0: 1, 1: -1}, {0: 1}),
+            ),
+            slot_count=2,
+            schedule=SeedSchedule(SeedPartition.HELD_OUT),
+            max_recoveries_per_episode=0,
+        )
+        driver = OnlineBatchDriver(
+            population,
+            policy=RecordingPolicy(),
+            curriculum=NoRecovery(),
+        )
+
+        result = driver.run_until_terminal_attempts(
+            terminal_attempts=1,
+            max_batch_steps=5,
+        )
+
+        self.assertTrue(result.target_reached)
+        self.assertFalse(result.step_limit_reached)
+        self.assertEqual(result.summary.batch_steps, 1)
+        self.assertEqual(result.summary.terminal_attempts, 2)
+
+    def test_terminal_target_run_reports_limit_and_continues_from_same_driver(self) -> None:
+        population = initialize_population(
+            lambda seeds: FakeBatchEnv(
+                seeds,
+                terminal_plans=({}, {0: 1}),
+            ),
+            slot_count=1,
+            schedule=SeedSchedule(SeedPartition.HELD_OUT),
+            max_recoveries_per_episode=0,
+        )
+        driver = OnlineBatchDriver(
+            population,
+            policy=RecordingPolicy(),
+            curriculum=NoRecovery(),
+        )
+
+        exhausted = driver.run_until_terminal_attempts(
+            terminal_attempts=1,
+            max_batch_steps=1,
+        )
+        reached = driver.run_until_terminal_attempts(
+            terminal_attempts=1,
+            max_batch_steps=1,
+        )
+
+        self.assertFalse(exhausted.target_reached)
+        self.assertTrue(exhausted.step_limit_reached)
+        self.assertEqual(exhausted.summary.terminal_attempts, 0)
+        self.assertTrue(reached.target_reached)
+        self.assertEqual(reached.summary.batch_steps, 1)
+        self.assertEqual(reached.summary.terminal_attempts, 1)
+
+    def test_zero_terminal_target_mutates_nothing_and_parameters_are_typed(self) -> None:
+        population = initialize_population(
+            FakeBatchEnv,
+            slot_count=1,
+            schedule=SeedSchedule(SeedPartition.HELD_OUT),
+            max_recoveries_per_episode=0,
+        )
+        policy = RecordingPolicy()
+        driver = OnlineBatchDriver(
+            population,
+            policy=policy,
+            curriculum=NoRecovery(),
+        )
+
+        result = driver.run_until_terminal_attempts(
+            terminal_attempts=0,
+            max_batch_steps=5,
+        )
+
+        self.assertTrue(result.target_reached)
+        self.assertFalse(result.step_limit_reached)
+        self.assertEqual(result.summary.batch_steps, 0)
+        self.assertEqual(policy.batch_sizes, [])
+        for arguments, message in (
+            ({"terminal_attempts": -1, "max_batch_steps": 1}, "non-negative"),
+            ({"terminal_attempts": 1, "max_batch_steps": True}, "not bool"),
+        ):
+            with self.subTest(arguments=arguments):
+                with self.assertRaisesRegex(BatchDriverError, message):
+                    driver.run_until_terminal_attempts(**arguments)
+
     def test_invalid_policy_is_rejected_before_environment_mutation(self) -> None:
         envs: list[FakeBatchEnv] = []
 

@@ -251,6 +251,12 @@ The checkpoint bank supports only slot-keyed subset selection and replacement,
 not session inspection or serialization. The driver retains one bounded step
 result or compact aggregate statistics and is not a trajectory, replay, model,
 optimizer, or shaped-reward owner.
+Its terminal-target run executes only whole vector transitions and stops after
+the first transition that reaches the requested attempt count or at its
+explicit batch-step limit. One transition may therefore honestly exceed the
+target when several slots terminate together. The typed result distinguishes
+target completion from limit exhaustion; it does not implicitly flush
+experience, train, or promote behavior.
 
 Optional online experience retention is one explicitly bounded segment, not a
 driver history. Before policy inference, the caller recursively copies and

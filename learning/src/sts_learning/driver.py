@@ -169,6 +169,26 @@ class BatchRunSummary:
         return self.slot_steps / self.elapsed_seconds
 
 
+@dataclass(frozen=True)
+class TerminalTargetRunResult:
+    """Exact bounded prefix stopped by a terminal target or a step limit."""
+
+    summary: BatchRunSummary
+    terminal_attempt_target: int
+    batch_step_limit: int
+
+    @property
+    def target_reached(self) -> bool:
+        return self.summary.terminal_attempts >= self.terminal_attempt_target
+
+    @property
+    def step_limit_reached(self) -> bool:
+        return (
+            not self.target_reached
+            and self.summary.batch_steps == self.batch_step_limit
+        )
+
+
 def initialize_population(
     env_factory: Callable[[list[int]], BatchEnvironment],
     *,
@@ -448,6 +468,45 @@ class OnlineBatchDriver:
         """Run a fixed number of vector transitions without retaining results."""
 
         requested_steps = _normalize_count(batch_steps, "batch_steps", allow_zero=True)
+        return self._run_normalized(
+            batch_step_limit=requested_steps,
+            terminal_attempt_target=None,
+        )
+
+    def run_until_terminal_attempts(
+        self,
+        *,
+        terminal_attempts: int,
+        max_batch_steps: int,
+    ) -> TerminalTargetRunResult:
+        """Run an atomic step prefix until its terminal target or explicit limit."""
+
+        target = _normalize_count(
+            terminal_attempts,
+            "terminal_attempts",
+            allow_zero=True,
+        )
+        step_limit = _normalize_count(
+            max_batch_steps,
+            "max_batch_steps",
+            allow_zero=True,
+        )
+        summary = self._run_normalized(
+            batch_step_limit=step_limit,
+            terminal_attempt_target=target,
+        )
+        return TerminalTargetRunResult(
+            summary=summary,
+            terminal_attempt_target=target,
+            batch_step_limit=step_limit,
+        )
+
+    def _run_normalized(
+        self,
+        *,
+        batch_step_limit: int,
+        terminal_attempt_target: int | None,
+    ) -> BatchRunSummary:
         slot_steps = 0
         decision_rounds = 0
         terminal_attempts = 0
@@ -456,9 +515,16 @@ class OnlineBatchDriver:
         experience_segments = 0
         experience_decisions = 0
         experience_payload_bytes = 0
+        batch_steps = 0
         started = time.perf_counter()
-        for _ in range(requested_steps):
+        for _ in range(batch_step_limit):
+            if (
+                terminal_attempt_target is not None
+                and terminal_attempts >= terminal_attempt_target
+            ):
+                break
             result = self.advance()
+            batch_steps += 1
             slot_steps += result.slot_steps
             decision_rounds += result.decision_rounds
             terminal_attempts += len(result.attempts)
@@ -481,7 +547,7 @@ class OnlineBatchDriver:
         return BatchRunSummary(
             mode=self.ledger.mode,
             active_slots=self.ledger.slot_count - operator.index(self.env.terminal_count),
-            batch_steps=requested_steps,
+            batch_steps=batch_steps,
             slot_steps=slot_steps,
             decision_rounds=decision_rounds,
             terminal_attempts=terminal_attempts,

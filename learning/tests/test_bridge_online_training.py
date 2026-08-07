@@ -277,20 +277,14 @@ class RealBridgeOnlineTrainingTests(unittest.TestCase):
 
             with warnings.catch_warnings():
                 warnings.simplefilter("error")
-                steps_used = 0
-
-                def advance_to_terminal():
-                    nonlocal steps_used
-                    while steps_used < 160:
-                        result = driver.advance()
-                        steps_used += 1
-                        if result.attempts:
-                            self.assertEqual(len(result.attempts), 1)
-                            driver.flush_experience()
-                            return result.attempts[0]
-                    self.fail("fixed categorical bridge run found fewer than two terminals")
-
-                first_terminal = advance_to_terminal()
+                first_run = driver.run_until_terminal_attempts(
+                    terminal_attempts=1,
+                    max_batch_steps=160,
+                )
+                self.assertTrue(first_run.target_reached)
+                self.assertEqual(first_run.summary.terminal_attempts, 1)
+                driver.flush_experience()
+                generation_after_first = driver.ledger.snapshot(0).episode_generation
                 first_training = trainer.snapshot
                 first_manifest_evidence = first_training.last_behavior_manifest_ids
                 first_probability_evidence = first_training.last_selection_probabilities
@@ -319,7 +313,17 @@ class RealBridgeOnlineTrainingTests(unittest.TestCase):
                     shadow,
                     training_step=first_training.optimizer_steps,
                 )
-                second_terminal = advance_to_terminal()
+                second_run = driver.run_until_terminal_attempts(
+                    terminal_attempts=1,
+                    max_batch_steps=160 - first_run.summary.batch_steps,
+                )
+                self.assertTrue(second_run.target_reached)
+                self.assertEqual(second_run.summary.terminal_attempts, 1)
+                self.assertLessEqual(
+                    first_run.summary.batch_steps + second_run.summary.batch_steps,
+                    160,
+                )
+                driver.flush_experience()
 
             second_training = trainer.snapshot
             second_manifest_evidence = second_training.last_behavior_manifest_ids
@@ -327,8 +331,8 @@ class RealBridgeOnlineTrainingTests(unittest.TestCase):
 
             self.assertNotEqual(generation_zero.manifest_id, generation_one.manifest_id)
             self.assertEqual(
-                second_terminal.episode_generation,
-                first_terminal.episode_generation + 1,
+                driver.ledger.snapshot(0).episode_generation,
+                generation_after_first + 1,
             )
             self.assertEqual(
                 first_manifest_evidence,

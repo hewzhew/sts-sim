@@ -69,8 +69,13 @@ seed plan. The atomic reset returns each replacement episode-root checkpoint
 before the ledger and schedule commit, then updates the same opaque bank without
 exposing or serializing simulator sessions. `run(batch_steps=N)` keeps only
 aggregate counts and timing; `advance()` returns at most one bounded step's
-attempts, completions, and recovery events. Neither API stores trajectories,
-writes JSON, defines a game policy, or turns terminal HP and gold into reward.
+attempts, completions, and recovery events.
+`run_until_terminal_attempts(terminal_attempts=T, max_batch_steps=N)` removes
+caller-written advance loops while preserving the same boundary: it stops only
+after a complete vector transition, reports whether the target or step limit
+ended the prefix, and never flushes experience or triggers training and policy
+promotion. Neither run API stores trajectories, writes JSON, defines a game
+policy, or turns terminal HP and gold into reward.
 
 `sts_learning.experience` provides the optional bounded training handoff. Each
 decision batch is copied before policy inference into a recursively frozen,
