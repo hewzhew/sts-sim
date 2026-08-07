@@ -4,6 +4,7 @@
 //! recovery rule. It only keeps environment slots aligned with one ragged
 //! model batch and applies one already-selected action per active slot.
 
+use std::collections::BTreeSet;
 use std::fmt;
 
 use super::{
@@ -106,22 +107,44 @@ impl LearningEnvPoolV1 {
         slot_index: usize,
         env: LearningEnvV1,
     ) -> Result<(), LearningEnvPoolError> {
+        self.replace_slots([(slot_index, env)])
+    }
+
+    /// Atomically replaces an arbitrary set of slots.
+    ///
+    /// Every target and replacement observation is validated before the first
+    /// slot changes, so a malformed recovery batch cannot partially restore a
+    /// pool.
+    pub fn replace_slots(
+        &mut self,
+        replacements: impl IntoIterator<Item = (usize, LearningEnvV1)>,
+    ) -> Result<(), LearningEnvPoolError> {
         if self.poisoned {
             return Err(LearningEnvPoolError::PoolPoisoned);
         }
-        if slot_index >= self.slots.len() {
-            return Err(LearningEnvPoolError::SlotIndexOutOfRange {
-                slot_index,
-                slot_count: self.slots.len(),
-            });
-        }
-        let boundary =
-            env.observe()
-                .map_err(|message| LearningEnvPoolError::ReplacementObservation {
+        let mut seen = BTreeSet::new();
+        let mut prepared = Vec::new();
+        for (slot_index, env) in replacements {
+            if slot_index >= self.slots.len() {
+                return Err(LearningEnvPoolError::SlotIndexOutOfRange {
                     slot_index,
-                    message,
-                })?;
-        self.slots[slot_index] = LearningEnvPoolSlotV1 { env, boundary };
+                    slot_count: self.slots.len(),
+                });
+            }
+            if !seen.insert(slot_index) {
+                return Err(LearningEnvPoolError::DuplicateSlotIndex { slot_index });
+            }
+            let boundary =
+                env.observe()
+                    .map_err(|message| LearningEnvPoolError::ReplacementObservation {
+                        slot_index,
+                        message,
+                    })?;
+            prepared.push((slot_index, LearningEnvPoolSlotV1 { env, boundary }));
+        }
+        for (slot_index, slot) in prepared {
+            self.slots[slot_index] = slot;
+        }
         Ok(())
     }
 
@@ -252,6 +275,9 @@ pub enum LearningEnvPoolError {
         slot_index: usize,
         slot_count: usize,
     },
+    DuplicateSlotIndex {
+        slot_index: usize,
+    },
     ActionCountMismatch {
         active_slot_count: usize,
         action_count: usize,
@@ -312,6 +338,76 @@ mod tests {
                 slot_index: 1,
                 slot_count: 1,
             }
+        );
+    }
+
+    #[test]
+    fn replacement_batch_rejects_duplicate_or_missing_targets_without_partial_mutation() {
+        // Both rejection paths must be checked against the same retained pool
+        // snapshots to prove that validation never commits the valid prefix.
+        let mut pool = LearningEnvPoolV1::from_configs([
+            RunControlConfig {
+                seed: 17,
+                ..RunControlConfig::default()
+            },
+            RunControlConfig {
+                seed: 18,
+                ..RunControlConfig::default()
+            },
+        ])
+        .expect("create pool");
+        let before = (0..pool.slot_count())
+            .map(|slot| pool.checkpoint_slot(slot).expect("checkpoint slot"))
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            pool.replace_slots([
+                (
+                    0,
+                    LearningEnvV1::new(RunControlConfig {
+                        seed: 70,
+                        ..RunControlConfig::default()
+                    }),
+                ),
+                (
+                    0,
+                    LearningEnvV1::new(RunControlConfig {
+                        seed: 71,
+                        ..RunControlConfig::default()
+                    }),
+                ),
+            ])
+            .expect_err("duplicate targets must fail"),
+            LearningEnvPoolError::DuplicateSlotIndex { slot_index: 0 }
+        );
+        assert_eq!(
+            pool.replace_slots([
+                (
+                    0,
+                    LearningEnvV1::new(RunControlConfig {
+                        seed: 72,
+                        ..RunControlConfig::default()
+                    }),
+                ),
+                (
+                    2,
+                    LearningEnvV1::new(RunControlConfig {
+                        seed: 73,
+                        ..RunControlConfig::default()
+                    }),
+                ),
+            ])
+            .expect_err("missing target must fail"),
+            LearningEnvPoolError::SlotIndexOutOfRange {
+                slot_index: 2,
+                slot_count: 2,
+            }
+        );
+        assert_eq!(
+            (0..pool.slot_count())
+                .map(|slot| pool.checkpoint_slot(slot).expect("checkpoint slot"))
+                .collect::<Vec<_>>(),
+            before
         );
     }
 

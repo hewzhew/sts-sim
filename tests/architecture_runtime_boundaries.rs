@@ -2578,8 +2578,11 @@ fn python_learning_bridge_stays_outside_the_root_workspace_and_policy_layer() {
     for required in [
         "LearningEnvPoolV1",
         "LearningSlotCheckpoint",
+        "LearningCheckpointBatch",
         "checkpoint_slot",
+        "checkpoint_slots",
         "restore_slot",
+        "restore_slots",
         "candidate_row_splits",
         "dense_action_mask",
         "LearningSelectionStepV1",

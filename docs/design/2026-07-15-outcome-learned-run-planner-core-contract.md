@@ -620,6 +620,10 @@ The Python bridge exposes this authority only as an explicit opaque single-slot
 checkpoint. It restores the matching simulator state and any unfinished
 selection prefix without serializing a session, retaining an automatic
 checkpoint graph, or choosing when recovery should occur.
+Vectorized recovery crosses the language boundary as one opaque checkpoint
+batch and applies atomically after all target slots and restored observations
+validate; it does not degrade into one Python call or a partial mutation per
+environment slot.
 
 ## Relationship To Existing Code
 

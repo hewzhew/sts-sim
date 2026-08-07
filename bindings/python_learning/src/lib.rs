@@ -1,3 +1,5 @@
+use std::collections::BTreeSet;
+
 use numpy::ndarray::Array2;
 use numpy::{IntoPyArray, PyArray1};
 use pyo3::exceptions::{PyRuntimeError, PyValueError};
@@ -43,6 +45,19 @@ enum BridgeSlotState {
 struct LearningSlotCheckpoint {
     session: RunControlSessionCheckpointV1,
     bridge_state: BridgeSlotState,
+}
+
+/// Opaque collection used for one foreign-language call per recovery batch.
+#[pyclass(skip_from_py_object)]
+struct LearningCheckpointBatch {
+    checkpoints: Vec<LearningSlotCheckpoint>,
+}
+
+#[pymethods]
+impl LearningCheckpointBatch {
+    fn __len__(&self) -> usize {
+        self.checkpoints.len()
+    }
 }
 
 #[derive(Debug)]
@@ -255,6 +270,20 @@ impl LearningBatchEnv {
         })
     }
 
+    fn checkpoint_slots(&self, slot_indices: Vec<usize>) -> PyResult<LearningCheckpointBatch> {
+        let mut seen = BTreeSet::new();
+        let mut checkpoints = Vec::with_capacity(slot_indices.len());
+        for slot_index in slot_indices {
+            if !seen.insert(slot_index) {
+                return Err(PyValueError::new_err(format!(
+                    "slot {slot_index} appears more than once in checkpoint batch"
+                )));
+            }
+            checkpoints.push(self.checkpoint_slot(slot_index)?);
+        }
+        Ok(LearningCheckpointBatch { checkpoints })
+    }
+
     fn restore_slot(
         &mut self,
         slot_index: usize,
@@ -268,6 +297,45 @@ impl LearningBatchEnv {
         }
         self.restore_slot_checkpoint(slot_index, &checkpoint)
             .map_err(runtime_error)
+    }
+
+    fn restore_slots(
+        &mut self,
+        slot_indices: Vec<usize>,
+        checkpoints: PyRef<'_, LearningCheckpointBatch>,
+    ) -> PyResult<()> {
+        if slot_indices.len() != checkpoints.checkpoints.len() {
+            return Err(PyValueError::new_err(format!(
+                "expected {} target slots, received {}",
+                checkpoints.checkpoints.len(),
+                slot_indices.len()
+            )));
+        }
+        let mut seen = BTreeSet::new();
+        let mut replacements = Vec::with_capacity(slot_indices.len());
+        for (slot_index, checkpoint) in slot_indices.iter().copied().zip(&checkpoints.checkpoints) {
+            if slot_index >= self.states.len() {
+                return Err(PyValueError::new_err(format!(
+                    "slot {slot_index} is outside 0..{}",
+                    self.states.len()
+                )));
+            }
+            if !seen.insert(slot_index) {
+                return Err(PyValueError::new_err(format!(
+                    "slot {slot_index} appears more than once in restore batch"
+                )));
+            }
+            let env =
+                LearningEnvV1::from_checkpoint(checkpoint.session.clone()).map_err(value_error)?;
+            replacements.push((slot_index, env));
+        }
+        self.pool
+            .replace_slots(replacements)
+            .map_err(runtime_error)?;
+        for (slot_index, checkpoint) in slot_indices.into_iter().zip(&checkpoints.checkpoints) {
+            self.states[slot_index] = checkpoint.bridge_state.clone();
+        }
+        Ok(())
     }
 }
 
@@ -547,6 +615,7 @@ fn runtime_error(error: impl ToString) -> PyErr {
 #[pymodule]
 fn _native(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_class::<LearningBatchEnv>()?;
+    module.add_class::<LearningCheckpointBatch>()?;
     module.add_class::<LearningSlotCheckpoint>()?;
     module.add_function(wrap_pyfunction!(semantic_schema, module)?)?;
     module.add("PHASE_STRATEGIC_ROOT", PHASE_STRATEGIC_ROOT)?;

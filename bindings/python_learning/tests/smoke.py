@@ -197,6 +197,33 @@ def _assert_explicit_checkpoint_replays_exactly() -> None:
     restored_root = env.decision_batch(dense_mask=True, semantic=True)
     _assert_decision_batch_equal(root, restored_root)
 
+    batch_env = LearningBatchEnv([41, 42])
+    batch_root = batch_env.decision_batch(dense_mask=True, semantic=True)
+    checkpoint_batch = batch_env.checkpoint_slots([0, 1])
+    assert len(checkpoint_batch) == 2
+    _choose_first_until_ready(batch_env)
+    first_batch_step = batch_env.step()
+    first_batch_after = batch_env.decision_batch(dense_mask=True, semantic=True)
+
+    batch_env.restore_slots([0, 1], checkpoint_batch)
+    restored_batch_root = batch_env.decision_batch(dense_mask=True, semantic=True)
+    _assert_decision_batch_equal(batch_root, restored_batch_root)
+    try:
+        batch_env.restore_slots([0, 0], checkpoint_batch)
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("duplicate-target checkpoint batch was accepted")
+    after_rejected_batch = batch_env.decision_batch(dense_mask=True, semantic=True)
+    _assert_decision_batch_equal(restored_batch_root, after_rejected_batch)
+
+    _choose_first_until_ready(batch_env)
+    replay_batch_step = batch_env.step()
+    replay_batch_after = batch_env.decision_batch(dense_mask=True, semantic=True)
+    for field in ("slot_indices", "reward", "terminated"):
+        assert np.array_equal(first_batch_step[field], replay_batch_step[field])
+    _assert_decision_batch_equal(first_batch_after, replay_batch_after)
+
 
 def main() -> None:
     schema = _SCHEMA

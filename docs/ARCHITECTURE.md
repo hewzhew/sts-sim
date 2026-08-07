@@ -182,6 +182,9 @@ Saving one clones that exact in-memory run-control state only when requested;
 restoring it also restores any unfinished symbolic decoder or already selected
 action and therefore does not reroll RNG. The bridge serializes no checkpoint,
 keeps no automatic history, and owns no retry or resurrection policy.
+Vectorized callers use opaque checkpoint batches. Every target and replacement
+boundary is validated before the first mutation, so a failed recovery batch
+cannot partly restore the environment pool.
 
 On an ordinary reward screen, the reward owner claims typed low-agency public
 resources before opening a nested card-reward choice. This lets the card owner

@@ -47,6 +47,12 @@ bridge, and do not form an automatic history. A recovery curriculum therefore
 owns checkpoint retention, retry counts, and replacement policy without
 becoming part of environment mechanics.
 
+For vectorized curricula, `checkpoint_slots(slot_indices)` and
+`restore_slots(slot_indices, checkpoints)` perform one cross-language call for
+the whole selected subset. Restore validates every target, reconstructs every
+environment, and observes every replacement before changing the first slot;
+an invalid batch therefore cannot leave a partially restored pool.
+
 The bridge still contains no policy, optimizer, automatic reset, or PyTorch
 dependency. Its semantic arrays are an input contract, not evidence that a
 particular model or learning objective is correct.
