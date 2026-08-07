@@ -272,6 +272,18 @@ Reusing the same schedule and the same policy RNG state therefore
 repeats the same seed prefix without retaining trajectories. A budget-exhausted
 prefix remains incomplete evidence; small victory/defeat counts are not
 silently converted into a generalization or teacher-label claim.
+The caller-owned paired held-out evaluator receives one immutable schedule and
+one evaluation bound for two distinct frozen behavior manifest identities. It
+rejects a reused policy object or identity before environment creation and
+delegates each side to the same manifest-locked single-policy evaluator with a
+fresh population. The result retains both schedule endpoints, completion and
+limit state, terminal counts, victories, defeats, and batch steps. Its only
+derived values are fixed-direction `right - left` integer differences; it does
+not emit `better`, `worse`, a win-rate improvement, or a teacher label. A pair
+is comparable only when both sides complete the same terminal target. Either
+side exhausting its batch-step bound remains explicitly incomparable. Policy
+RNG equivalence is prepared by the caller and may be asserted before the call;
+the evaluator does not introspect or serialize opaque policy state.
 
 Optional online experience retention is one explicitly bounded segment, not a
 driver history. Before policy inference, the caller recursively copies and

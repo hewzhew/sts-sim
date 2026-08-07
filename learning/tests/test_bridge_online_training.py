@@ -25,11 +25,12 @@ from sts_learning import (
     ExperienceSegmentBuffer,
     HeldOutEvaluationSpec,
     OnlineBatchDriver,
+    PairedHeldOutEvaluationSpec,
     SemanticBatchConcatLimits,
     SeedPartition,
     SeedSchedule,
     initialize_population,
-    evaluate_held_out_behavior,
+    evaluate_paired_held_out_behaviors,
 )
 
 
@@ -453,19 +454,19 @@ class RealBridgeOnlineTrainingTests(unittest.TestCase):
                 )
             )
 
-            generation_zero_evaluation = evaluate_held_out_behavior(
+            held_out_comparison = evaluate_paired_held_out_behaviors(
                 LearningBatchEnv,
                 generation_zero_policy,
-                schedule=evaluation_schedule,
-                spec=evaluation_spec,
-            )
-            generation_two_evaluation = evaluate_held_out_behavior(
-                LearningBatchEnv,
                 generation_two_policy,
-                schedule=evaluation_schedule,
-                spec=evaluation_spec,
+                spec=PairedHeldOutEvaluationSpec(
+                    schedule=evaluation_schedule,
+                    evaluation=evaluation_spec,
+                ),
             )
+            generation_zero_evaluation = held_out_comparison.left
+            generation_two_evaluation = held_out_comparison.right
 
+            self.assertTrue(held_out_comparison.comparable)
             self.assertTrue(generation_zero_evaluation.complete)
             self.assertTrue(generation_two_evaluation.complete)
             self.assertEqual(

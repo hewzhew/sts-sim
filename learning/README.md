@@ -88,6 +88,17 @@ contains only the start/end schedule and terminal-target aggregates, so the
 same schedule plus the same policy RNG state repeats the same prefix. A
 step-limited result stays visibly incomplete, and its small victory/defeat
 sample is not automatically interpreted as generalized policy quality.
+`evaluate_paired_held_out_behaviors` accepts one typed pair contract containing
+that shared schedule and evaluation bound. It rejects reused policy objects or
+manifest identities before creating an environment, then calls the same
+single-policy evaluator for each distinct frozen behavior. Its typed result
+retains both manifest-owned evaluations and a fixed `right - left` integer
+delta for terminal attempts, victories, defeats, and batch steps. The delta is
+arithmetic only: it creates no ranking, improvement claim, or teacher label.
+The result is comparable only when both sides complete the same terminal
+target; budget exhaustion on either side remains explicit incomplete evidence.
+Equivalent policy RNG initial states remain a caller-owned input because the
+generic evaluator does not inspect opaque policy state.
 
 `sts_learning.experience` provides the optional bounded training handoff. Each
 decision batch is copied before policy inference into a recursively frozen,

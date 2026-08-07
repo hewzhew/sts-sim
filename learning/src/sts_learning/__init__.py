@@ -40,10 +40,14 @@ from .experience import (
     iter_payload_arrays,
 )
 from .evaluation import (
+    HeldOutEvaluationDelta,
     HeldOutEvaluationError,
     HeldOutEvaluationResult,
     HeldOutEvaluationSpec,
+    PairedHeldOutEvaluationResult,
+    PairedHeldOutEvaluationSpec,
     evaluate_held_out_behavior,
+    evaluate_paired_held_out_behaviors,
 )
 from .manifests import (
     BehaviorManifest,
@@ -149,6 +153,7 @@ __all__ = [
     "ExperienceSegmentBuffer",
     "ExperienceSegmentSink",
     "GREEDY_BEHAVIOR_RULE_V1",
+    "HeldOutEvaluationDelta",
     "HeldOutEvaluationError",
     "HeldOutEvaluationResult",
     "HeldOutEvaluationSpec",
@@ -156,6 +161,8 @@ __all__ = [
     "ManifestArtifactId",
     "ManifestArtifactKind",
     "OnlineBatchDriver",
+    "PairedHeldOutEvaluationResult",
+    "PairedHeldOutEvaluationSpec",
     "PreparedDecisionBatch",
     "PreparedBehaviorManifest",
     "PolicyChoiceError",
@@ -185,6 +192,7 @@ __all__ = [
     "initialize_population",
     "concatenate_semantic_decision_batches",
     "evaluate_held_out_behavior",
+    "evaluate_paired_held_out_behaviors",
     "iter_payload_arrays",
     "reset_with_accounting",
     "reset_scheduled_checkpointed_with_accounting",
