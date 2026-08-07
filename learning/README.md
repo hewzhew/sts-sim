@@ -75,6 +75,15 @@ feature dictionary. Every row carries its exact slot, seed, episode generation,
 attempt index, and recovery count alongside the selected candidate ordinal.
 Each batch also retains the exact behavior manifest identity returned by that
 model call, not policy scores or a reconstructed later version.
+`sts_learning.manifests` gives that identity an exact bounded owner. A behavior
+manifest references externally stored model checkpoints, model definitions,
+model configurations, semantic schemas, optimizer configurations, and trainer
+implementations only through typed SHA-256 content ids, together with its
+schema version and training step. The fixed-capacity registry stores only those
+small bindings: it does not copy a model, optimizer, checkpoint payload, file
+path, or display label into experience. Unknown ids, conflicting claimed ids,
+registry overflow, and exact-binding mismatches are rejected rather than
+guessed or silently evicted.
 An `ExperienceSegmentBuffer` requires both a maximum decision count and a
 maximum retained-payload byte count. The byte count conservatively includes
 owned NumPy buffers and headers plus mappings, keys, and scalar values; the row

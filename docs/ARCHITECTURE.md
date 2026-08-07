@@ -253,6 +253,14 @@ attempt index, recovery count, and the subsequently selected candidate ordinal.
 Every retained decision batch also carries that exact behavior manifest
 identity. It is provenance for the continuation policy and never a semantic
 feature, teacher label, or stored policy-score vector.
+Behavior manifests are caller-owned, content-addressed records over typed
+SHA-256 identities for the external model checkpoint, model definition, model
+configuration, semantic schema, optimizer configuration, and trainer
+implementation, plus the exact schema version and training step. A fixed-size
+registry resolves those identities without retaining model objects, checkpoint
+payloads, file paths, or display strings. Unknown identities, conflicting
+claimed identities, capacity overflow, and any expected checkpoint/config/schema
+mismatch fail closed; the registry never evicts an older binding implicitly.
 Every buffer has mandatory decision-row and retained-payload-byte limits. The
 byte accounting includes owned NumPy storage and Python payload metadata; the
 row limit bounds lineage and choice metadata. A complete incoming batch either

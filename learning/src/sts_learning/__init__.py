@@ -38,6 +38,14 @@ from .experience import (
     SegmentCloseReason,
     iter_payload_arrays,
 )
+from .manifests import (
+    BehaviorManifest,
+    BehaviorManifestError,
+    BehaviorManifestRegistry,
+    BehaviorManifestRegistrySnapshot,
+    ManifestArtifactId,
+    ManifestArtifactKind,
+)
 from .outcomes import (
     TerminalAttemptOutcome,
     TerminalBatchError,
@@ -85,6 +93,10 @@ __all__ = [
     "BatchRunSummary",
     "BatchStepResult",
     "BehaviorManifestId",
+    "BehaviorManifest",
+    "BehaviorManifestError",
+    "BehaviorManifestRegistry",
+    "BehaviorManifestRegistrySnapshot",
     "BoundedAttemptAssembler",
     "CheckpointBatch",
     "CheckpointedEpisodeResetTarget",
@@ -103,6 +115,8 @@ __all__ = [
     "ExperienceSegmentBuffer",
     "ExperienceSegmentSink",
     "InitialPopulation",
+    "ManifestArtifactId",
+    "ManifestArtifactKind",
     "OnlineBatchDriver",
     "PreparedDecisionBatch",
     "PolicyChoiceError",
