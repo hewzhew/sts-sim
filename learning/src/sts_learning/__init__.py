@@ -39,6 +39,12 @@ from .experience import (
     SegmentCloseReason,
     iter_payload_arrays,
 )
+from .evaluation import (
+    HeldOutEvaluationError,
+    HeldOutEvaluationResult,
+    HeldOutEvaluationSpec,
+    evaluate_held_out_behavior,
+)
 from .manifests import (
     BehaviorManifest,
     BehaviorManifestError,
@@ -143,6 +149,9 @@ __all__ = [
     "ExperienceSegmentBuffer",
     "ExperienceSegmentSink",
     "GREEDY_BEHAVIOR_RULE_V1",
+    "HeldOutEvaluationError",
+    "HeldOutEvaluationResult",
+    "HeldOutEvaluationSpec",
     "InitialPopulation",
     "ManifestArtifactId",
     "ManifestArtifactKind",
@@ -175,6 +184,7 @@ __all__ = [
     "TerminalTargetRunResult",
     "initialize_population",
     "concatenate_semantic_decision_batches",
+    "evaluate_held_out_behavior",
     "iter_payload_arrays",
     "reset_with_accounting",
     "reset_scheduled_checkpointed_with_accounting",

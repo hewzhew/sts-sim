@@ -94,6 +94,9 @@ class BatchDriverTests(unittest.TestCase):
         self.assertEqual(summary.slot_steps, 4)
         self.assertEqual(summary.decision_rounds, 4)
         self.assertEqual(summary.terminal_attempts, 3)
+        self.assertEqual(summary.victories, 1)
+        self.assertEqual(summary.defeats, 2)
+        self.assertEqual(summary.victories + summary.defeats, summary.terminal_attempts)
         self.assertEqual(summary.completed_episodes, 2)
         self.assertEqual(summary.recoveries, 1)
         self.assertEqual(summary.active_slots, 2)
@@ -127,6 +130,8 @@ class BatchDriverTests(unittest.TestCase):
         self.assertFalse(result.step_limit_reached)
         self.assertEqual(result.summary.batch_steps, 1)
         self.assertEqual(result.summary.terminal_attempts, 2)
+        self.assertEqual(result.summary.victories, 1)
+        self.assertEqual(result.summary.defeats, 1)
 
     def test_terminal_target_run_reports_limit_and_continues_from_same_driver(self) -> None:
         population = initialize_population(
@@ -156,9 +161,13 @@ class BatchDriverTests(unittest.TestCase):
         self.assertFalse(exhausted.target_reached)
         self.assertTrue(exhausted.step_limit_reached)
         self.assertEqual(exhausted.summary.terminal_attempts, 0)
+        self.assertEqual(exhausted.summary.victories, 0)
+        self.assertEqual(exhausted.summary.defeats, 0)
         self.assertTrue(reached.target_reached)
         self.assertEqual(reached.summary.batch_steps, 1)
         self.assertEqual(reached.summary.terminal_attempts, 1)
+        self.assertEqual(reached.summary.victories, 1)
+        self.assertEqual(reached.summary.defeats, 0)
 
     def test_zero_terminal_target_mutates_nothing_and_parameters_are_typed(self) -> None:
         population = initialize_population(

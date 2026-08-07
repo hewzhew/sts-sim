@@ -189,6 +189,7 @@ class OneRejectedChoiceEnv(NumpyFakeBatchEnv):
 
 class RecordingPolicy:
     def __init__(self) -> None:
+        self.behavior_manifest_id = BEHAVIOR_MANIFEST_ID
         self.batch_sizes: list[int] = []
 
     def choose(self, decision_batch: Mapping[str, object]) -> BatchPolicyChoice:

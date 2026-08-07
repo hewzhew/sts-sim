@@ -153,6 +153,8 @@ class BatchRunSummary:
     slot_steps: int
     decision_rounds: int
     terminal_attempts: int
+    victories: int
+    defeats: int
     completed_episodes: int
     recoveries: int
     emitted_experience_segments: int
@@ -516,6 +518,8 @@ class OnlineBatchDriver:
         slot_steps = 0
         decision_rounds = 0
         terminal_attempts = 0
+        victories = 0
+        defeats = 0
         completed_episodes = 0
         recoveries = 0
         experience_segments = 0
@@ -534,6 +538,12 @@ class OnlineBatchDriver:
             slot_steps += result.slot_steps
             decision_rounds += result.decision_rounds
             terminal_attempts += len(result.attempts)
+            victories += sum(
+                attempt.terminal_reward == 1 for attempt in result.attempts
+            )
+            defeats += sum(
+                attempt.terminal_reward == -1 for attempt in result.attempts
+            )
             completed_episodes += len(result.completed_episodes)
             recoveries += len(result.recoveries)
             experience_segments += result.emitted_experience_segments
@@ -557,6 +567,8 @@ class OnlineBatchDriver:
             slot_steps=slot_steps,
             decision_rounds=decision_rounds,
             terminal_attempts=terminal_attempts,
+            victories=victories,
+            defeats=defeats,
             completed_episodes=completed_episodes,
             recoveries=recoveries,
             emitted_experience_segments=experience_segments,

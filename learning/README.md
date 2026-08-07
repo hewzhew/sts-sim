@@ -74,8 +74,20 @@ attempts, completions, and recovery events.
 caller-written advance loops while preserving the same boundary: it stops only
 after a complete vector transition, reports whether the target or step limit
 ended the prefix, and never flushes experience or triggers training and policy
-promotion. Neither run API stores trajectories, writes JSON, defines a game
+promotion. Both run summaries aggregate typed terminal victories and defeats;
+their sum equals terminal attempts, but they are not a shaped score. Neither
+run API stores trajectories, writes JSON, defines a game
 policy, or turns terminal HP and gold into reward.
+
+`sts_learning.evaluation.evaluate_held_out_behavior` creates a fresh population
+from one explicit `HELD_OUT` schedule and a typed slot/terminal/step bound. It
+hard-codes zero recovery and attaches no experience buffer or trainer. The
+policy must expose one typed behavior manifest id, and every returned choice is
+checked against it before execution; the result is bound to that id. It also
+contains only the start/end schedule and terminal-target aggregates, so the
+same schedule plus the same policy RNG state repeats the same prefix. A
+step-limited result stays visibly incomplete, and its small victory/defeat
+sample is not automatically interpreted as generalized policy quality.
 
 `sts_learning.experience` provides the optional bounded training handoff. Each
 decision batch is copied before policy inference into a recursively frozen,

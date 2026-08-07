@@ -12,6 +12,7 @@ from sts_learning import (
     ExperienceLimits,
     ExperienceSegment,
     ExperienceSegmentBuffer,
+    HeldOutEvaluationSpec,
     OnlineBatchDriver,
     RecoveryPlan,
     RecoverySlotSnapshot,
@@ -20,6 +21,7 @@ from sts_learning import (
     TerminalAccountingBatch,
     initialize_population,
     iter_payload_arrays,
+    evaluate_held_out_behavior,
 )
 
 try:
@@ -29,6 +31,8 @@ except ImportError:
 
 
 class FirstLegalPolicy:
+    behavior_manifest_id = BEHAVIOR_MANIFEST_ID
+
     def choose(self, decision_batch: Mapping[str, object]) -> BatchPolicyChoice:
         return BatchPolicyChoice.deterministic(
             [0] * len(decision_batch["slot_indices"]),  # type: ignore[arg-type]
@@ -88,6 +92,35 @@ class CountingAttemptSink:
 
 @unittest.skipIf(LearningBatchEnv is None, "standalone bridge wheel is not installed")
 class BridgeDriverIntegrationTests(unittest.TestCase):
+    def test_real_bridge_held_out_evaluation_repeats_exact_prefix(self) -> None:
+        assert LearningBatchEnv is not None
+        schedule = SeedSchedule(SeedPartition.HELD_OUT, next_candidate=23)
+        spec = HeldOutEvaluationSpec(
+            slot_count=1,
+            terminal_attempt_target=1,
+            max_batch_steps=160,
+        )
+
+        first = evaluate_held_out_behavior(
+            LearningBatchEnv,
+            FirstLegalPolicy(),
+            schedule=schedule,
+            spec=spec,
+        )
+        second = evaluate_held_out_behavior(
+            LearningBatchEnv,
+            FirstLegalPolicy(),
+            schedule=schedule,
+            spec=spec,
+        )
+
+        self.assertTrue(first.complete)
+        self.assertTrue(second.complete)
+        self.assertEqual(first.schedule_end, second.schedule_end)
+        self.assertEqual(first.run.summary.batch_steps, second.run.summary.batch_steps)
+        self.assertEqual(first.run.summary.victories, second.run.summary.victories)
+        self.assertEqual(first.run.summary.defeats, second.run.summary.defeats)
+
     def test_real_bridge_runs_bounded_continuous_population(self) -> None:
         assert LearningBatchEnv is not None
         population = initialize_population(
@@ -124,6 +157,7 @@ class BridgeDriverIntegrationTests(unittest.TestCase):
         self.assertEqual(summary.batch_steps, 160)
         self.assertEqual(summary.slot_steps, 480)
         self.assertGreater(summary.terminal_attempts, 0)
+        self.assertEqual(summary.victories + summary.defeats, summary.terminal_attempts)
         self.assertEqual(summary.terminal_attempts, summary.completed_episodes)
         self.assertEqual(summary.recoveries, 0)
         self.assertEqual(summary.active_slots, 3)

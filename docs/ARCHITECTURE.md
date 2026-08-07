@@ -257,6 +257,21 @@ explicit batch-step limit. One transition may therefore honestly exceed the
 target when several slots terminate together. The typed result distinguishes
 target completion from limit exhaustion; it does not implicitly flush
 experience, train, or promote behavior.
+Both fixed-step and terminal-target summaries count terminal victories and
+defeats directly from typed attempt records, with their sum equal to terminal
+attempts. These are prefix outcomes, not a shaped score or an automatic claim
+about policy quality.
+
+The caller-owned held-out evaluator builds a fresh population only from an
+explicit `HELD_OUT` seed schedule, uses zero recovery, installs no experience
+buffer or trainer, and returns the schedule endpoints plus one terminal-target
+result. It requires one typed behavior manifest identity, checks every policy
+choice against that identity before execution, and binds the result to it; a
+mutable controller cannot silently mix generations inside one evaluation.
+Reusing the same schedule and the same policy RNG state therefore
+repeats the same seed prefix without retaining trajectories. A budget-exhausted
+prefix remains incomplete evidence; small victory/defeat counts are not
+silently converted into a generalization or teacher-label claim.
 
 Optional online experience retention is one explicitly bounded segment, not a
 driver history. Before policy inference, the caller recursively copies and
