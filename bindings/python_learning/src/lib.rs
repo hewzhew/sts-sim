@@ -12,11 +12,14 @@ use sts_oracle_eval::eval::run_control::{
 mod semantic;
 
 use semantic::{
-    ActionKind, CategoricalField, ContextKind, RelationKind, RewardKind, ScalarField,
-    SemanticBatch, SemanticBatchBuilder, SemanticCompleteness, TokenKind, CARD_ID_VOCABULARY_SIZE,
-    CATEGORICAL_VOCABULARY_SIZES, ENCOUNTER_ID_VOCABULARY_SIZE, EVENT_ID_VOCABULARY_SIZE,
-    NO_CANDIDATE_TOKEN, POTION_ID_VOCABULARY_SIZE, RELIC_ID_VOCABULARY_SIZE,
-    SEMANTIC_SCHEMA_VERSION,
+    ActionKind, CardZoneKind, CategoricalField, CombatActionKind, ContextKind, CounterItemKind,
+    EnemyIdentityKind, IndexedChoiceCandidateKind, IndexedChoiceReasonKind, IntentKind,
+    PublicCounterKind, RelationKind, RewardKind, ScalarField, SelectionCandidateKind,
+    SelectionDomainKind, SelectionReasonKind, SemanticBatch, SemanticBatchBuilder,
+    SemanticCompleteness, TokenKind, CARD_ID_VOCABULARY_SIZE, CATEGORICAL_VOCABULARY_SIZES,
+    ENCOUNTER_ID_VOCABULARY_SIZE, ENEMY_ID_VOCABULARY_SIZE, EVENT_ID_VOCABULARY_SIZE,
+    NO_CANDIDATE_TOKEN, POTION_ID_VOCABULARY_SIZE, POWER_ID_VOCABULARY_SIZE,
+    RELIC_ID_VOCABULARY_SIZE, SEMANTIC_SCHEMA_VERSION,
 };
 
 const PHASE_STRATEGIC_ROOT: u8 = 0;
@@ -289,8 +292,14 @@ impl LearningBatchEnv {
                     builder.push_decision(&decision).map_err(runtime_error)?;
                 }
                 BridgeSlotState::Selection(draft) => {
-                    builder.push_not_encoded_candidates(draft.decision().candidates.len());
-                    builder.finish_not_encoded_row().map_err(runtime_error)?;
+                    let boundary = self.pool.boundary(slot_index).ok_or_else(|| {
+                        PyRuntimeError::new_err(format!("missing pool slot {slot_index}"))
+                    })?;
+                    let decision =
+                        LearningModelDecisionV1::from_boundary(boundary).map_err(value_error)?;
+                    builder
+                        .push_selection(decision.observation, draft)
+                        .map_err(runtime_error)?;
                 }
                 BridgeSlotState::Terminal | BridgeSlotState::Ready(_) => {}
             }
@@ -392,6 +401,47 @@ fn semantic_schema(py: Python<'_>) -> PyResult<Bound<'_, PyDict>> {
     )?;
     result.set_item("action_kind", numeric_schema_dict(py, ActionKind::SCHEMA)?)?;
     result.set_item("reward_kind", numeric_schema_dict(py, RewardKind::SCHEMA)?)?;
+    result.set_item(
+        "combat_action_kind",
+        numeric_schema_dict(py, CombatActionKind::SCHEMA)?,
+    )?;
+    result.set_item("intent_kind", numeric_schema_dict(py, IntentKind::SCHEMA)?)?;
+    result.set_item(
+        "enemy_identity_kind",
+        numeric_schema_dict(py, EnemyIdentityKind::SCHEMA)?,
+    )?;
+    result.set_item(
+        "public_counter_kind",
+        numeric_schema_dict(py, PublicCounterKind::SCHEMA)?,
+    )?;
+    result.set_item(
+        "card_zone_kind",
+        numeric_schema_dict(py, CardZoneKind::SCHEMA)?,
+    )?;
+    result.set_item(
+        "indexed_choice_reason_kind",
+        numeric_schema_dict(py, IndexedChoiceReasonKind::SCHEMA)?,
+    )?;
+    result.set_item(
+        "indexed_choice_candidate_kind",
+        numeric_schema_dict(py, IndexedChoiceCandidateKind::SCHEMA)?,
+    )?;
+    result.set_item(
+        "selection_reason_kind",
+        numeric_schema_dict(py, SelectionReasonKind::SCHEMA)?,
+    )?;
+    result.set_item(
+        "selection_candidate_kind",
+        numeric_schema_dict(py, SelectionCandidateKind::SCHEMA)?,
+    )?;
+    result.set_item(
+        "selection_domain_kind",
+        numeric_schema_dict(py, SelectionDomainKind::SCHEMA)?,
+    )?;
+    result.set_item(
+        "counter_item_kind",
+        numeric_schema_dict(py, CounterItemKind::SCHEMA)?,
+    )?;
 
     let vocabulary_sizes = PyDict::new(py);
     for (field, size) in CATEGORICAL_VOCABULARY_SIZES {
@@ -405,6 +455,8 @@ fn semantic_schema(py: Python<'_>) -> PyResult<Bound<'_, PyDict>> {
     domains.set_item("potion_id", POTION_ID_VOCABULARY_SIZE)?;
     domains.set_item("encounter_id", ENCOUNTER_ID_VOCABULARY_SIZE)?;
     domains.set_item("event_id", EVENT_ID_VOCABULARY_SIZE)?;
+    domains.set_item("enemy_id", ENEMY_ID_VOCABULARY_SIZE)?;
+    domains.set_item("power_id", POWER_ID_VOCABULARY_SIZE)?;
     result.set_item("domain_vocabulary_size", domains)?;
     Ok(result)
 }

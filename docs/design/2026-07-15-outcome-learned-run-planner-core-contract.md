@@ -576,9 +576,10 @@ candidate row per decision. Row splits are the default legal-action mask;
 dense padding masks are an optional projection for backends that require
 rectangular tensors. A candidate ordinal resolves through a private runtime
 table, so opaque strategic ids are never candidate features. Indexed combat
-choices carry their typed card or stance semantics. Combinatorial selections
-use an uncommitted typed decoder whose candidates are append-domain-item and
-submit; only submit creates the complete environment action. Multiple active
+choices carry their typed reason/destination together with card or stance
+semantics. Combinatorial selections use an uncommitted typed decoder whose
+candidates are append-domain-item and submit; only submit creates the complete
+environment action. Multiple active
 decoders form another ragged batch with their unchanged parent observations,
 so an autoregressive backend can preserve state context and batch every decode
 round. This establishes the batch and action-decoding boundary without
@@ -598,15 +599,16 @@ The first foreign-language adapter is an excluded standalone Maturin crate
 rather than a root-workspace dependency. Typed root and selection resolution
 remain in Rust. In addition to batched NumPy control arrays and
 observation-local candidate ordinals, an opt-in versioned sparse graph now
-encodes complete strategic observations and every strategic `PlannerAction`.
-Its five columnar table families preserve ragged entities, map edges, owned-card
-targets, and candidate alignment without exporting opaque ids or using UUIDs as
-learnable values. Combat and symbolic-selection rows deliberately report
-`not_encoded` until a complete combat vocabulary is added. The maintained smoke
-proves wheel construction, semantic/token/candidate alignment, explicit
-incompleteness, atomic rejection of a bad ordinal, terminal reset, and a
-complete five-environment walk. This is a transport and encoding contract, not
-evidence for a policy or model architecture.
+encodes complete strategic observations, every strategic `PlannerAction`, the
+complete public combat observation, atomic combat actions, indexed-choice
+context, and symbolic selection families/prefixes. Its five columnar table
+families preserve ragged entities, map edges, card/potion/monster targets,
+ordered public evidence, and candidate alignment without exporting opaque ids
+or using UUIDs as learnable values. The maintained Rust and Python smoke tests
+prove wheel construction, semantic/token/candidate alignment, selection-prefix
+encoding, atomic rejection of a bad ordinal, terminal reset, and a complete
+five-environment walk. This is a transport and encoding contract, not evidence
+for a policy or model architecture.
 
 Recovery curricula are callers of this boundary, not mechanics. Restoring an
 exact checkpoint must preserve its RNG state; a curriculum may count, limit,
@@ -747,9 +749,9 @@ model or alter a decision:
    the smallest outcome-prediction experiment.
 7. **Complete.** Reuse run-control for typed online stepping, exact
    checkpoint/restore, sparse terminal reward, and a complete typed combat
-   observation. The standalone Python bridge currently encodes the strategic
-   half of that observation contract and marks combat rows `not_encoded`; its
-   combat numeric vocabulary is the next independent slice.
+   observation. The standalone Python bridge now carries complete strategic,
+   combat-root, and symbolic-selection numeric rows without changing the
+   environment's mechanics or action authority.
 
 The slice should prefer a transparent tabular or small-set baseline before a
 large neural model. Architecture is earned by data and ablation, not by model

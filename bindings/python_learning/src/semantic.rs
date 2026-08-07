@@ -5,6 +5,8 @@
 //! such as card UUIDs are used to resolve graph edges and are never emitted as
 //! categorical or scalar features.
 
+mod combat;
+
 use std::collections::BTreeMap;
 use std::fmt;
 
@@ -13,26 +15,29 @@ use sts_oracle_eval::ai::planner_core::{
     PlannerRewardDescriptor, PlannerRunGoal,
 };
 use sts_oracle_eval::content::cards::CardId;
-use sts_oracle_eval::content::monsters::factory::EncounterId;
+use sts_oracle_eval::content::monsters::{factory::EncounterId, EnemyId};
 use sts_oracle_eval::content::potions::PotionId;
+use sts_oracle_eval::content::powers::PowerId;
 use sts_oracle_eval::content::relics::RelicId;
 use sts_oracle_eval::eval::run_control::{
     LearningModelCandidateSemanticsV1, LearningModelDecisionV1, LearningModelObservationV1,
-    LearningStrategicModelObservationV1,
+    LearningSelectionDraftV1, LearningStrategicModelObservationV1,
 };
 use sts_oracle_eval::state::events::{EventActionKind, EventId};
 use sts_oracle_eval::state::map::node::RoomType;
 use sts_oracle_eval::state::selection::SelectionScope;
 
-pub const SEMANTIC_SCHEMA_VERSION: u32 = 1;
+pub const SEMANTIC_SCHEMA_VERSION: u32 = 2;
 pub const NO_CANDIDATE_TOKEN: u64 = u64::MAX;
 pub const CARD_ID_VOCABULARY_SIZE: u64 = 371;
 pub const RELIC_ID_VOCABULARY_SIZE: u64 = 182;
 pub const POTION_ID_VOCABULARY_SIZE: u64 = 42;
 pub const ENCOUNTER_ID_VOCABULARY_SIZE: u64 = 65;
 pub const EVENT_ID_VOCABULARY_SIZE: u64 = 53;
+pub const ENEMY_ID_VOCABULARY_SIZE: u64 = 65;
+pub const POWER_ID_VOCABULARY_SIZE: u64 = 135;
 
-// Domain identities use their fieldless enum ordinals inside schema v1. These
+// Domain identities use their fieldless enum ordinals inside schema v2. These
 // compile-time size sentinels catch vocabulary extension; any intentional
 // insertion or reordering also requires an explicit schema review and bump.
 const _: () = {
@@ -46,6 +51,10 @@ const _: () = {
     assert!(EncounterId::TheHeart as u64 + 1 == ENCOUNTER_ID_VOCABULARY_SIZE);
     assert!(EventId::BigFish as i64 == 0);
     assert!(EventId::Neow as u64 + 1 == EVENT_ID_VOCABULARY_SIZE);
+    assert!(EnemyId::JawWorm as i64 == 0);
+    assert!(EnemyId::CorruptHeart as u64 + 1 == ENEMY_ID_VOCABULARY_SIZE);
+    assert!(PowerId::Strength as i64 == 0);
+    assert!(PowerId::Study as u64 + 1 == POWER_ID_VOCABULARY_SIZE);
     assert!(EventActionKind::Unknown as i64 == 0);
     assert!(EventActionKind::Special as i64 == 9);
     assert!(RoomType::EventRoom as i64 == 0);
@@ -106,6 +115,26 @@ pub enum TokenKind: u16 {
     MapNode = 9,
     Candidate = 10,
     OfferedCard = 11,
+    CombatEncounter = 12,
+    CombatTurn = 13,
+    CombatTurnCounters = 14,
+    CombatPlayer = 15,
+    CombatOrb = 16,
+    CombatPower = 17,
+    CombatMonster = 18,
+    CombatIntent = 19,
+    CombatMoveHistory = 20,
+    CombatPublicCounter = 21,
+    CombatCardZone = 22,
+    CombatCard = 23,
+    CombatHiddenReason = 24,
+    CombatCounterItem = 25,
+    CombatMove = 26,
+    CombatDamageProjection = 27,
+    CombatSelectionDomain = 28,
+    CombatSelectionState = 29,
+    CombatSelectionChosen = 30,
+    CombatActionPayload = 31,
 }}
 
 numeric_schema_enum! {
@@ -142,6 +171,45 @@ pub enum CategoricalField: u16 {
     ActionSelectionScope = 29,
     ActionSite = 30,
     RewardKind = 31,
+    CombatPhase = 32,
+    CombatIsBoss = 33,
+    CombatIsElite = 34,
+    HiddenReason = 35,
+    PlayerFacingLeft = 36,
+    StanceId = 37,
+    OrbId = 38,
+    PowerId = 39,
+    PowerJustApplied = 40,
+    EnemyIdentityKind = 41,
+    EnemyId = 42,
+    MonsterAlive = 43,
+    MonsterEscaped = 44,
+    MonsterDying = 45,
+    MonsterHalfDead = 46,
+    EvidenceKind = 47,
+    IntentKind = 48,
+    PublicCounterKind = 49,
+    CardZoneKind = 50,
+    CardExhaustOverride = 51,
+    CardRetainOverride = 52,
+    CardFreeToPlay = 53,
+    CombatActionKind = 54,
+    IndexedChoiceInputEncoding = 55,
+    IndexedChoiceReasonKind = 56,
+    IndexedChoiceColorless = 57,
+    IndexedChoiceCardType = 58,
+    IndexedChoiceDestination = 59,
+    IndexedChoiceUpgraded = 60,
+    IndexedChoiceCandidateKind = 61,
+    SelectionInputEncoding = 62,
+    SelectionReasonKind = 63,
+    SelectionSourcePile = 64,
+    SelectionPayloadDistinctBy = 65,
+    SelectionCandidateKind = 66,
+    SelectionDomainKind = 67,
+    SelectionDomainEligible = 68,
+    CounterItemKind = 69,
+    SelectionReasonFlag = 70,
 }}
 
 numeric_schema_enum! {
@@ -179,6 +247,59 @@ pub enum ScalarField: u16 {
     ActionShopSlot = 30,
     ActionPrice = 31,
     RewardAmount = 32,
+    CombatTurnCount = 33,
+    CombatEnergy = 34,
+    TurnStartDrawModifier = 35,
+    CardsPlayedThisTurn = 36,
+    AttacksPlayedThisTurn = 37,
+    CardsDiscardedThisTurn = 38,
+    MantraGainedThisCombat = 39,
+    TimesDamagedThisCombat = 40,
+    DiscoveryCostForTurn = 41,
+    CombatPlayerHp = 42,
+    CombatPlayerMaxHp = 43,
+    CombatPlayerBlock = 44,
+    CombatPlayerGold = 45,
+    GoldDeltaThisCombat = 46,
+    EnergyMaster = 47,
+    MaxOrbs = 48,
+    CollectionPosition = 49,
+    OrbBasePassive = 50,
+    OrbBaseEvoke = 51,
+    OrbPassive = 52,
+    OrbEvoke = 53,
+    PowerAmount = 54,
+    PowerExtraData = 55,
+    MonsterSlot = 56,
+    MonsterHp = 57,
+    MonsterMaxHp = 58,
+    MonsterBlock = 59,
+    UnmappedMonsterType = 60,
+    IntentPreviewDamagePerHit = 61,
+    IntentDamage = 62,
+    IntentHits = 63,
+    MoveId = 64,
+    PublicCounterValue = 65,
+    CardCostForTurn = 66,
+    CardEffectiveCost = 67,
+    CardBaseDamageMut = 68,
+    CardBaseBlockMut = 69,
+    CardBaseMagicNumberMut = 70,
+    CardEnergyOnUse = 71,
+    DamageProjectionValue = 72,
+    ActionIndex = 73,
+    ActionSecondaryIndex = 74,
+    PayloadPosition = 75,
+    IndexedChoiceAmount = 76,
+    SelectionRawDomainCount = 77,
+    SelectionEligibleDomainCount = 78,
+    SelectionMaxDistinctCount = 79,
+    SelectionDeclaredMin = 80,
+    SelectionDeclaredMax = 81,
+    SelectionEffectiveMax = 82,
+    SelectionDomainAddress = 83,
+    SelectionChosenPosition = 84,
+    SelectionReasonAmount = 85,
 }}
 
 numeric_schema_enum! {
@@ -196,6 +317,30 @@ pub enum RelationKind: u16 {
     MapPathTo = 10,
     CandidateTargets = 11,
     CandidateHasPayload = 12,
+    ObservationHasEncounter = 13,
+    ObservationHasTurn = 14,
+    ObservationHasPlayer = 15,
+    ObservationHasHiddenReason = 16,
+    ObservationHasCardZone = 17,
+    ObservationHasMonster = 18,
+    PlayerHasRelic = 19,
+    PlayerHasOrb = 20,
+    EntityHasPower = 21,
+    PowerHasPayloadCard = 22,
+    MonsterHasIntent = 23,
+    MonsterHasMoveHistory = 24,
+    MonsterHasPublicCounter = 25,
+    ZoneHasCard = 26,
+    TurnHasCounters = 27,
+    CountersHasItem = 28,
+    HistoryHasMove = 29,
+    CardHasDamageProjection = 30,
+    DamageTargetsMonster = 31,
+    CandidateHasSelectionDomain = 32,
+    ObservationHasSelectionState = 33,
+    SelectionHasChosen = 34,
+    ChosenTargetsDomain = 35,
+    SelectionHasDomain = 36,
 }}
 
 numeric_schema_enum! {
@@ -254,6 +399,132 @@ pub enum RewardKind: i64 {
     SapphireKey = 7,
 }}
 
+numeric_schema_enum! {
+#[derive(Clone, Copy, Debug)]
+pub enum CombatActionKind: i64 {
+    PlayCard = 1,
+    UsePotion = 2,
+    DiscardPotion = 3,
+    EndTurn = 4,
+    SubmitIndexedChoice = 5,
+    Proceed = 6,
+    Cancel = 7,
+    BeginSelection = 8,
+}}
+
+numeric_schema_enum! {
+#[derive(Clone, Copy, Debug)]
+pub enum IntentKind: i64 {
+    Attack = 1,
+    AttackBuff = 2,
+    AttackDebuff = 3,
+    AttackDefend = 4,
+    Buff = 5,
+    Debuff = 6,
+    StrongDebuff = 7,
+    Debug = 8,
+    Defend = 9,
+    DefendDebuff = 10,
+    DefendBuff = 11,
+    Escape = 12,
+    Magic = 13,
+    None = 14,
+    Sleep = 15,
+    Stun = 16,
+    Unknown = 17,
+}}
+
+numeric_schema_enum! {
+#[derive(Clone, Copy, Debug)]
+pub enum EnemyIdentityKind: i64 {
+    Known = 1,
+    Unmapped = 2,
+}}
+
+numeric_schema_enum! {
+#[derive(Clone, Copy, Debug)]
+pub enum PublicCounterKind: i64 {
+    HexaghostActiveOrbs = 1,
+    StolenGold = 2,
+}}
+
+numeric_schema_enum! {
+#[derive(Clone, Copy, Debug)]
+pub enum CardZoneKind: i64 {
+    MasterDeck = 1,
+    Hand = 2,
+    Draw = 3,
+    Discard = 4,
+    Exhaust = 5,
+    Limbo = 6,
+}}
+
+numeric_schema_enum! {
+#[derive(Clone, Copy, Debug)]
+pub enum IndexedChoiceReasonKind: i64 {
+    Discovery = 1,
+    CardReward = 2,
+    ForeignInfluence = 3,
+    ChooseOne = 4,
+    Stance = 5,
+}}
+
+numeric_schema_enum! {
+#[derive(Clone, Copy, Debug)]
+pub enum IndexedChoiceCandidateKind: i64 {
+    Card = 1,
+    Stance = 2,
+}}
+
+numeric_schema_enum! {
+#[derive(Clone, Copy, Debug)]
+pub enum SelectionReasonKind: i64 {
+    HandExhaust = 1,
+    HandDiscard = 2,
+    HandRetain = 3,
+    HandPutOnDrawPile = 4,
+    HandPutToBottomOfDraw = 5,
+    HandSetup = 6,
+    HandCopy = 7,
+    HandNightmare = 8,
+    HandUpgrade = 9,
+    HandGamblingChip = 10,
+    HandRecycle = 11,
+    GridMoveToDrawPile = 12,
+    GridExhume = 13,
+    GridDrawPileToHand = 14,
+    GridSkillFromDeckToHand = 15,
+    GridAttackFromDeckToHand = 16,
+    GridDiscardToHand = 17,
+    GridDiscardToHandNoCostChange = 18,
+    GridDiscardToHandRetain = 19,
+    GridOmniscience = 20,
+    ScryDiscard = 21,
+}}
+
+numeric_schema_enum! {
+#[derive(Clone, Copy, Debug)]
+pub enum SelectionCandidateKind: i64 {
+    Submit = 1,
+    Append = 2,
+}}
+
+numeric_schema_enum! {
+#[derive(Clone, Copy, Debug)]
+pub enum SelectionDomainKind: i64 {
+    Card = 1,
+    Scry = 2,
+}}
+
+numeric_schema_enum! {
+#[derive(Clone, Copy, Debug)]
+pub enum CounterItemKind: i64 {
+    CardPlayedThisTurn = 1,
+    CardPlayedThisCombat = 2,
+    OrbChanneledThisTurn = 3,
+    OrbChanneledThisCombat = 4,
+}}
+
 pub const CATEGORICAL_VOCABULARY_SIZES: &[(u16, u64)] = &[
     (CategoricalField::RunGoal as u16, 2),
     (CategoricalField::DecisionSite as u16, 10),
@@ -275,14 +546,14 @@ pub const CATEGORICAL_VOCABULARY_SIZES: &[(u16, u64)] = &[
     ),
     (CategoricalField::MapRoom as u16, 8),
     (CategoricalField::MapNodeHasEmeraldKey as u16, 2),
-    (CategoricalField::ContextKind as u16, 9),
+    (CategoricalField::ContextKind as u16, 10),
     (CategoricalField::ContextOverlay as u16, 2),
     (
         CategoricalField::ContextEventId as u16,
         EVENT_ID_VOCABULARY_SIZE,
     ),
     (CategoricalField::ContextPurgeAvailable as u16, 2),
-    (CategoricalField::ActionKind as u16, 25),
+    (CategoricalField::ActionKind as u16, 26),
     (CategoricalField::ActionFlight as u16, 2),
     (
         CategoricalField::ActionEventId as u16,
@@ -303,7 +574,46 @@ pub const CATEGORICAL_VOCABULARY_SIZES: &[(u16, u64)] = &[
     ),
     (CategoricalField::ActionSelectionScope as u16, 3),
     (CategoricalField::ActionSite as u16, 10),
-    (CategoricalField::RewardKind as u16, 7),
+    (CategoricalField::RewardKind as u16, 8),
+    (CategoricalField::CombatPhase as u16, 3),
+    (CategoricalField::CombatIsBoss as u16, 2),
+    (CategoricalField::CombatIsElite as u16, 2),
+    (CategoricalField::HiddenReason as u16, 3),
+    (CategoricalField::PlayerFacingLeft as u16, 2),
+    (CategoricalField::StanceId as u16, 4),
+    (CategoricalField::OrbId as u16, 5),
+    (CategoricalField::PowerId as u16, POWER_ID_VOCABULARY_SIZE),
+    (CategoricalField::PowerJustApplied as u16, 2),
+    (CategoricalField::EnemyIdentityKind as u16, 3),
+    (CategoricalField::EnemyId as u16, ENEMY_ID_VOCABULARY_SIZE),
+    (CategoricalField::MonsterAlive as u16, 2),
+    (CategoricalField::MonsterEscaped as u16, 2),
+    (CategoricalField::MonsterDying as u16, 2),
+    (CategoricalField::MonsterHalfDead as u16, 2),
+    (CategoricalField::EvidenceKind as u16, 4),
+    (CategoricalField::IntentKind as u16, 18),
+    (CategoricalField::PublicCounterKind as u16, 3),
+    (CategoricalField::CardZoneKind as u16, 7),
+    (CategoricalField::CardExhaustOverride as u16, 2),
+    (CategoricalField::CardRetainOverride as u16, 2),
+    (CategoricalField::CardFreeToPlay as u16, 2),
+    (CategoricalField::CombatActionKind as u16, 9),
+    (CategoricalField::IndexedChoiceInputEncoding as u16, 1),
+    (CategoricalField::IndexedChoiceReasonKind as u16, 6),
+    (CategoricalField::IndexedChoiceColorless as u16, 2),
+    (CategoricalField::IndexedChoiceCardType as u16, 5),
+    (CategoricalField::IndexedChoiceDestination as u16, 2),
+    (CategoricalField::IndexedChoiceUpgraded as u16, 2),
+    (CategoricalField::IndexedChoiceCandidateKind as u16, 3),
+    (CategoricalField::SelectionInputEncoding as u16, 3),
+    (CategoricalField::SelectionReasonKind as u16, 22),
+    (CategoricalField::SelectionSourcePile as u16, 6),
+    (CategoricalField::SelectionPayloadDistinctBy as u16, 2),
+    (CategoricalField::SelectionCandidateKind as u16, 3),
+    (CategoricalField::SelectionDomainKind as u16, 3),
+    (CategoricalField::SelectionDomainEligible as u16, 2),
+    (CategoricalField::CounterItemKind as u16, 5),
+    (CategoricalField::SelectionReasonFlag as u16, 2),
 ];
 
 #[derive(Clone, Debug, Default)]
@@ -346,6 +656,13 @@ pub enum SemanticEncodingError {
     MissingMapTarget { x: i32, y: i32 },
     NonStrategicCandidateInStrategicRow,
     CandidateAlignmentMismatch { expected: usize, actual: usize },
+    MissingCombatHandCard(usize),
+    MissingCombatPotionSlot(usize),
+    MissingCombatMonsterTarget(usize),
+    MissingDamageProjectionMonster(usize),
+    UnsupportedCombatAtomicInput,
+    MissingSelectionDomain(usize),
+    NonCombatSelectionRow,
     IndexOverflow,
 }
 
@@ -393,21 +710,41 @@ impl SemanticBatchBuilder {
                     });
                 }
             }
-            LearningModelObservationV1::Combat(_) => {
-                self.push_not_encoded_candidates(decision.candidates.len());
+            LearningModelObservationV1::Combat(observation) => {
+                self.completeness.push(SemanticCompleteness::Complete as u8);
+                let before = self.candidate_token_indices.len();
+                self.encode_combat_root(observation, decision)?;
+                let actual = self.candidate_token_indices.len() - before;
+                if actual != decision.candidates.len() {
+                    return Err(SemanticEncodingError::CandidateAlignmentMismatch {
+                        expected: decision.candidates.len(),
+                        actual,
+                    });
+                }
             }
         }
         self.finish_row()
     }
 
-    pub fn push_not_encoded_candidates(&mut self, candidate_count: usize) {
-        self.completeness
-            .push(SemanticCompleteness::NotEncoded as u8);
-        self.candidate_token_indices
-            .extend(std::iter::repeat_n(NO_CANDIDATE_TOKEN, candidate_count));
-    }
-
-    pub fn finish_not_encoded_row(&mut self) -> Result<(), SemanticEncodingError> {
+    pub fn push_selection(
+        &mut self,
+        observation: LearningModelObservationV1<'_>,
+        draft: &LearningSelectionDraftV1,
+    ) -> Result<(), SemanticEncodingError> {
+        let LearningModelObservationV1::Combat(observation) = observation else {
+            return Err(SemanticEncodingError::NonCombatSelectionRow);
+        };
+        self.completeness.push(SemanticCompleteness::Complete as u8);
+        let decision = draft.decision();
+        let before = self.candidate_token_indices.len();
+        self.encode_combat_selection(observation, draft, &decision)?;
+        let actual = self.candidate_token_indices.len() - before;
+        if actual != decision.candidates.len() {
+            return Err(SemanticEncodingError::CandidateAlignmentMismatch {
+                expected: decision.candidates.len(),
+                actual,
+            });
+        }
         self.finish_row()
     }
 
@@ -977,7 +1314,7 @@ macro_rules! impl_into_f32 {
     };
 }
 
-impl_into_f32!(u8, i8, i32, usize);
+impl_into_f32!(u8, u16, u32, u64, i8, i32, usize);
 
 fn bool_value(value: bool) -> i64 {
     i64::from(value)

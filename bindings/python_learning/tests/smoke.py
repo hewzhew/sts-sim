@@ -6,10 +6,11 @@ import numpy as np
 
 from sts_learning_bridge import (
     LearningBatchEnv,
+    PHASE_COMBAT_ROOT,
+    PHASE_SELECTION,
     PHASE_STRATEGIC_ROOT,
     SEMANTIC_COMPLETE,
     SEMANTIC_NO_CANDIDATE_TOKEN,
-    SEMANTIC_NOT_ENCODED,
     SEMANTIC_RELATION_CANDIDATE_TARGETS,
     SEMANTIC_RELATION_OBSERVATION_HAS_CANDIDATE,
     SEMANTIC_SCHEMA_VERSION,
@@ -22,6 +23,12 @@ _MULTIPLIER = 6_364_136_223_846_793_005
 _INCREMENT = 1_442_695_040_888_963_407
 _MASK_64 = (1 << 64) - 1
 _SEED_XOR = 0x9E37_79B9_7F4A_7C15
+_SCHEMA = semantic_schema()
+_CATEGORY_VOCABULARY_SIZE = np.zeros(
+    max(_SCHEMA["categorical_field"].values()) + 1, dtype=np.int64
+)
+for _field, _size in _SCHEMA["categorical_vocabulary_size"].items():
+    _CATEGORY_VOCABULARY_SIZE[int(_field)] = int(_size)
 
 
 def _pick(states: list[int], slot: int, length: int) -> int:
@@ -38,7 +45,7 @@ def _assert_parallel_table(table: dict, value_dtype: np.dtype) -> None:
     assert table["field"].shape == table["value"].shape
 
 
-def _assert_semantic(batch: dict) -> tuple[bool, bool]:
+def _assert_semantic(batch: dict) -> tuple[bool, bool, bool, bool]:
     semantic = batch["semantic"]
     assert semantic["schema_version"] == SEMANTIC_SCHEMA_VERSION
     completeness = semantic["completeness"]
@@ -60,6 +67,11 @@ def _assert_semantic(batch: dict) -> tuple[bool, bool]:
     relation = semantic["relation"]
     _assert_parallel_table(categorical, np.dtype(np.int64))
     _assert_parallel_table(scalar, np.dtype(np.float32))
+    assert np.all(categorical["value"] >= 0)
+    assert np.all(
+        categorical["value"]
+        < _CATEGORY_VOCABULARY_SIZE[categorical["field"]]
+    )
     assert relation["source_token_indices"].dtype == np.uint64
     assert relation["relation"].dtype == np.uint16
     assert relation["target_token_indices"].dtype == np.uint64
@@ -78,33 +90,51 @@ def _assert_semantic(batch: dict) -> tuple[bool, bool]:
     assert candidate_tokens.dtype == np.uint64
     assert candidate_tokens.size == candidate_splits[-1]
 
-    saw_not_encoded = False
+    saw_combat = False
+    saw_selection = False
+    saw_combat_candidate_target = False
     for row, phase in enumerate(batch["phase"]):
         token_start = int(token_splits[row])
         token_end = int(token_splits[row + 1])
         candidate_start = int(candidate_splits[row])
         candidate_end = int(candidate_splits[row + 1])
         row_candidates = candidate_tokens[candidate_start:candidate_end]
-        if int(phase) == PHASE_STRATEGIC_ROOT:
-            assert completeness[row] == SEMANTIC_COMPLETE
-            assert token_start < token_end
-            assert np.all(row_candidates != SEMANTIC_NO_CANDIDATE_TOKEN)
-            assert np.all(token_kinds[row_candidates] == SEMANTIC_TOKEN_CANDIDATE)
-            for candidate in row_candidates:
-                assert np.any(
-                    (relation["relation"] == SEMANTIC_RELATION_OBSERVATION_HAS_CANDIDATE)
-                    & (relation["target_token_indices"] == candidate)
+        assert completeness[row] == SEMANTIC_COMPLETE
+        assert token_start < token_end
+        assert np.all(row_candidates != SEMANTIC_NO_CANDIDATE_TOKEN)
+        assert np.all(token_kinds[row_candidates] == SEMANTIC_TOKEN_CANDIDATE)
+        for candidate in row_candidates:
+            assert np.any(
+                (relation["relation"] == SEMANTIC_RELATION_OBSERVATION_HAS_CANDIDATE)
+                & (relation["target_token_indices"] == candidate)
+            )
+        if int(phase) in (PHASE_COMBAT_ROOT, PHASE_SELECTION):
+            saw_combat = True
+            row_kinds = token_kinds[token_start:token_end]
+            assert np.any(row_kinds == _SCHEMA["token_kind"]["CombatPlayer"])
+            assert np.any(row_kinds == _SCHEMA["token_kind"]["CombatCardZone"])
+            saw_combat_candidate_target |= bool(
+                np.any(
+                    (relation["relation"] == SEMANTIC_RELATION_CANDIDATE_TARGETS)
+                    & np.isin(relation["source_token_indices"], row_candidates)
                 )
-        else:
-            saw_not_encoded = True
-            assert completeness[row] == SEMANTIC_NOT_ENCODED
-            assert token_start == token_end
-            assert np.all(row_candidates == SEMANTIC_NO_CANDIDATE_TOKEN)
+            )
+        if int(phase) == PHASE_SELECTION:
+            saw_selection = True
+            assert np.any(
+                token_kinds[token_start:token_end]
+                == _SCHEMA["token_kind"]["CombatSelectionState"]
+            )
 
     saw_candidate_target = bool(
         np.any(relation["relation"] == SEMANTIC_RELATION_CANDIDATE_TARGETS)
     )
-    return saw_not_encoded, saw_candidate_target
+    return (
+        saw_combat,
+        saw_selection,
+        saw_candidate_target,
+        saw_combat_candidate_target,
+    )
 
 
 def _assert_semantic_equal(left: dict, right: dict) -> None:
@@ -120,11 +150,35 @@ def _assert_semantic_equal(left: dict, right: dict) -> None:
 
 
 def main() -> None:
-    schema = semantic_schema()
+    schema = _SCHEMA
     assert schema["version"] == SEMANTIC_SCHEMA_VERSION
     assert schema["completeness"]["Complete"] == SEMANTIC_COMPLETE
     assert schema["token_kind"]["Candidate"] == SEMANTIC_TOKEN_CANDIDATE
     assert len(schema["action_kind"]) == 25
+    assert len(schema["combat_action_kind"]) == 8
+    assert set(schema["categorical_field"].values()) == set(
+        schema["categorical_vocabulary_size"]
+    )
+    for field_name, enum_name in (
+        ("ContextKind", "context_kind"),
+        ("ActionKind", "action_kind"),
+        ("RewardKind", "reward_kind"),
+        ("CombatActionKind", "combat_action_kind"),
+        ("IntentKind", "intent_kind"),
+        ("EnemyIdentityKind", "enemy_identity_kind"),
+        ("PublicCounterKind", "public_counter_kind"),
+        ("CardZoneKind", "card_zone_kind"),
+        ("IndexedChoiceReasonKind", "indexed_choice_reason_kind"),
+        ("IndexedChoiceCandidateKind", "indexed_choice_candidate_kind"),
+        ("SelectionReasonKind", "selection_reason_kind"),
+        ("SelectionCandidateKind", "selection_candidate_kind"),
+        ("SelectionDomainKind", "selection_domain_kind"),
+        ("CounterItemKind", "counter_item_kind"),
+    ):
+        field = schema["categorical_field"][field_name]
+        assert max(schema[enum_name].values()) < schema[
+            "categorical_vocabulary_size"
+        ][field]
     assert (
         schema["categorical_vocabulary_size"][
             schema["categorical_field"]["ActionCardId"]
@@ -132,6 +186,8 @@ def main() -> None:
         == schema["domain_vocabulary_size"]["card_id"]
         == 371
     )
+    assert schema["domain_vocabulary_size"]["enemy_id"] == 65
+    assert schema["domain_vocabulary_size"]["power_id"] == 135
 
     seeds = list(range(1, 6))
     random_states = [seed ^ _SEED_XOR for seed in seeds]
@@ -140,8 +196,12 @@ def main() -> None:
     started = time.perf_counter()
 
     initial = env.decision_batch(dense_mask=True, semantic=True)
-    initial_not_encoded, _ = _assert_semantic(initial)
-    assert not initial_not_encoded
+    initial_combat, initial_selection, _, initial_combat_target = _assert_semantic(
+        initial
+    )
+    assert not initial_combat
+    assert not initial_selection
+    assert not initial_combat_target
     invalid = [0] * int(initial["slot_indices"].size)
     invalid[0] = int(initial["candidate_counts"][0])
     try:
@@ -161,8 +221,10 @@ def main() -> None:
         assert np.array_equal(initial[field], after_rejection[field])
     _assert_semantic_equal(initial["semantic"], after_rejection["semantic"])
 
-    saw_not_encoded = False
+    saw_combat = False
+    saw_selection = False
     saw_candidate_target = False
+    saw_combat_candidate_target = False
 
     while env.terminal_count < env.slot_count:
         while not env.ready:
@@ -179,9 +241,16 @@ def main() -> None:
             assert row_splits.shape == (slots.size + 1,)
             assert np.array_equal(np.diff(row_splits), counts)
             assert np.array_equal(mask.sum(axis=1), counts)
-            batch_not_encoded, batch_candidate_target = _assert_semantic(batch)
-            saw_not_encoded |= batch_not_encoded
+            (
+                batch_combat,
+                batch_selection,
+                batch_candidate_target,
+                batch_combat_candidate_target,
+            ) = _assert_semantic(batch)
+            saw_combat |= batch_combat
+            saw_selection |= batch_selection
             saw_candidate_target |= batch_candidate_target
+            saw_combat_candidate_target |= batch_combat_candidate_target
 
             ordinals = [
                 _pick(random_states, int(slot), int(count))
@@ -195,8 +264,9 @@ def main() -> None:
 
     elapsed = time.perf_counter() - started
     assert total_steps == 330
-    assert saw_not_encoded
+    assert saw_combat
     assert saw_candidate_target
+    assert saw_combat_candidate_target
     print(
         "python_learning_bridge_smoke "
         f"episodes={env.slot_count} steps={total_steps} "

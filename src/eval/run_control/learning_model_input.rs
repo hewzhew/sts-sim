@@ -18,11 +18,12 @@ use crate::ai::planner_core::{
     PlannerRunGoal, PlannerRunScalars,
 };
 use crate::sim::combat_action_surface::{
-    CombatIndexedChoiceCandidateV2, CombatLegalActionSurfaceV2, CombatSelectionActionFamilyV2,
+    CombatIndexedChoiceCandidateV2, CombatIndexedChoiceInputEncodingV2,
+    CombatIndexedChoiceReasonV2, CombatLegalActionSurfaceV2, CombatSelectionActionFamilyV2,
     CombatSelectionDistinctByV2, CombatSelectionDomainCandidateV2, CombatSelectionInputEncodingV2,
-    CombatSelectionPayloadLanguageV2, CombatSelectionStatusV2,
+    CombatSelectionPayloadLanguageV2, CombatSelectionReasonV2, CombatSelectionStatusV2,
 };
-use crate::state::core::ClientInput;
+use crate::state::core::{ClientInput, PileType};
 use crate::state::selection::{SelectionResolution, SelectionScope};
 
 use super::{
@@ -59,7 +60,7 @@ pub struct LearningCombatModelObservationV1<'a> {
     pub turn: &'a CombatLearningTurnV1,
     pub player: &'a CombatLearningPlayerStateV1,
     pub cards: &'a CombatLearningCardZonesV1,
-    pub monsters: &'a [CombatLearningMonsterStateV1],
+    pub monsters: LearningCombatMonstersV1<'a>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -79,18 +80,302 @@ pub enum LearningModelCandidateSemanticsV1<'a> {
         action: &'a PlannerAction,
     },
     CombatAtomic {
-        input: &'a ClientInput,
-        indexed_choice: Option<&'a CombatIndexedChoiceCandidateV2>,
+        action: LearningCombatAtomicActionV1<'a>,
     },
     CombatSelectionFamily {
-        family: &'a CombatSelectionActionFamilyV2,
+        family: LearningCombatSelectionFamilyV1<'a>,
     },
 }
 
 #[derive(Clone, Copy, Debug)]
+pub struct LearningCombatIndexedChoiceV1<'a> {
+    pub input_encoding: CombatIndexedChoiceInputEncodingV2,
+    pub reason: &'a CombatIndexedChoiceReasonV2,
+    pub candidate: &'a CombatIndexedChoiceCandidateV2,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub enum LearningCombatAtomicActionV1<'a> {
+    PlayCard {
+        hand_index: usize,
+        target_monster_index: Option<usize>,
+    },
+    UsePotion {
+        potion_index: usize,
+        target_monster_index: Option<usize>,
+    },
+    DiscardPotion {
+        potion_index: usize,
+    },
+    EndTurn,
+    SubmitIndexedChoice {
+        choice_index: usize,
+        indexed: LearningCombatIndexedChoiceV1<'a>,
+    },
+    Proceed,
+    Cancel,
+}
+
+#[derive(Clone, Copy)]
+pub struct LearningCombatMonstersV1<'a> {
+    monsters: &'a [CombatLearningMonsterStateV1],
+}
+
+impl LearningCombatMonstersV1<'_> {
+    pub fn len(&self) -> usize {
+        self.monsters.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.monsters.is_empty()
+    }
+
+    pub fn get(&self, index: usize) -> Option<LearningCombatMonsterV1<'_>> {
+        self.monsters
+            .get(index)
+            .map(|monster| LearningCombatMonsterV1 { monster })
+    }
+}
+
+impl fmt::Debug for LearningCombatMonstersV1<'_> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("LearningCombatMonstersV1")
+            .field("len", &self.len())
+            .finish()
+    }
+}
+
+#[derive(Clone, Copy)]
+pub struct LearningCombatMonsterV1<'a> {
+    monster: &'a CombatLearningMonsterStateV1,
+}
+
+impl LearningCombatMonsterV1<'_> {
+    pub fn slot(&self) -> u8 {
+        self.monster.slot
+    }
+
+    pub fn enemy(&self) -> crate::ai::combat_learning_observation::CombatLearningEnemyIdentityV1 {
+        self.monster.enemy
+    }
+
+    pub fn hp(&self) -> i32 {
+        self.monster.hp
+    }
+
+    pub fn max_hp(&self) -> i32 {
+        self.monster.max_hp
+    }
+
+    pub fn block(&self) -> i32 {
+        self.monster.block
+    }
+
+    pub fn alive(&self) -> bool {
+        self.monster.alive
+    }
+
+    pub fn escaped(&self) -> bool {
+        self.monster.escaped
+    }
+
+    pub fn dying(&self) -> bool {
+        self.monster.dying
+    }
+
+    pub fn half_dead(&self) -> bool {
+        self.monster.half_dead
+    }
+
+    pub fn intent(&self) -> &crate::ai::combat_learning_observation::CombatLearningIntentV1 {
+        &self.monster.intent
+    }
+
+    pub fn executed_moves(
+        &self,
+    ) -> &crate::ai::combat_learning_observation::CombatLearningMonsterMoveHistoryV1 {
+        &self.monster.executed_moves
+    }
+
+    pub fn public_counters(
+        &self,
+    ) -> &[crate::ai::combat_learning_observation::CombatLearningMonsterPublicCounterV1] {
+        &self.monster.public_counters
+    }
+
+    pub fn powers(&self) -> &[crate::ai::combat_learning_observation::CombatLearningPowerV1] {
+        &self.monster.powers
+    }
+}
+
+impl fmt::Debug for LearningCombatMonsterV1<'_> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("LearningCombatMonsterV1")
+            .field("slot", &self.slot())
+            .field("enemy", &self.enemy())
+            .field("hp", &self.hp())
+            .field("max_hp", &self.max_hp())
+            .field("block", &self.block())
+            .field("alive", &self.alive())
+            .field("escaped", &self.escaped())
+            .field("dying", &self.dying())
+            .field("half_dead", &self.half_dead())
+            .field("intent", &self.intent())
+            .field("executed_moves", &self.executed_moves())
+            .field("public_counters", &self.public_counters())
+            .field("powers", &self.powers())
+            .finish()
+    }
+}
+
+#[derive(Clone, Copy)]
+pub struct LearningCombatSelectionFamilyV1<'a> {
+    family: &'a CombatSelectionActionFamilyV2,
+}
+
+impl fmt::Debug for LearningCombatSelectionFamilyV1<'_> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("LearningCombatSelectionFamilyV1")
+            .field("input_encoding", &self.input_encoding())
+            .field("reason", &self.reason())
+            .field("source_pile", &self.source_pile())
+            .field("raw_domain_count", &self.raw_domain_count())
+            .field("eligible_domain_count", &self.eligible_domain_count())
+            .field("declared_min", &self.declared_min())
+            .field("declared_max", &self.declared_max())
+            .field("effective_max", &self.effective_max())
+            .field("payload_language", &self.payload_language())
+            .finish_non_exhaustive()
+    }
+}
+
+impl<'a> LearningCombatSelectionFamilyV1<'a> {
+    pub fn input_encoding(&self) -> CombatSelectionInputEncodingV2 {
+        self.family.input_encoding
+    }
+
+    pub fn reason(&self) -> &CombatSelectionReasonV2 {
+        &self.family.reason
+    }
+
+    pub fn source_pile(&self) -> Option<PileType> {
+        self.family.source_pile
+    }
+
+    pub fn raw_domain_count(&self) -> u64 {
+        self.family.raw_domain_count
+    }
+
+    pub fn eligible_domain_count(&self) -> u64 {
+        self.family.eligible_domain_count
+    }
+
+    pub fn max_distinct_selection_count(&self) -> u64 {
+        self.family.max_distinct_selection_count
+    }
+
+    pub fn declared_min(&self) -> u64 {
+        self.family.declared_min
+    }
+
+    pub fn declared_max(&self) -> u64 {
+        self.family.declared_max
+    }
+
+    pub fn effective_max(&self) -> u64 {
+        self.family.effective_max
+    }
+
+    pub fn payload_language(&self) -> CombatSelectionPayloadLanguageV2 {
+        self.family.payload_language
+    }
+
+    pub fn domain_count(&self) -> usize {
+        self.family.raw_domain.len()
+    }
+
+    pub fn domain(&self, index: usize) -> Option<LearningCombatSelectionDomainV1<'a>> {
+        self.family
+            .raw_domain
+            .get(index)
+            .map(|domain| LearningCombatSelectionDomainV1 { domain })
+    }
+}
+
+#[derive(Clone, Copy)]
+pub struct LearningCombatSelectionDomainV1<'a> {
+    domain: &'a CombatSelectionDomainCandidateV2,
+}
+
+impl fmt::Debug for LearningCombatSelectionDomainV1<'_> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_tuple("LearningCombatSelectionDomainV1")
+            .field(&self.semantics())
+            .finish()
+    }
+}
+
+impl LearningCombatSelectionDomainV1<'_> {
+    pub fn semantics(&self) -> LearningCombatSelectionDomainSemanticsV1 {
+        match self.domain {
+            CombatSelectionDomainCandidateV2::CardUuid {
+                ordinal,
+                card_id,
+                upgrades,
+                eligible,
+                ..
+            } => LearningCombatSelectionDomainSemanticsV1::Card {
+                ordinal: *ordinal,
+                card_id: *card_id,
+                upgrades: *upgrades,
+                eligible: *eligible,
+            },
+            CombatSelectionDomainCandidateV2::ScryIndex {
+                index,
+                card_id,
+                currently_present,
+                ..
+            } => LearningCombatSelectionDomainSemanticsV1::Scry {
+                index: *index,
+                card_id: *card_id,
+                currently_present: *currently_present,
+            },
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum LearningCombatSelectionDomainSemanticsV1 {
+    Card {
+        ordinal: u64,
+        card_id: Option<crate::content::cards::CardId>,
+        upgrades: Option<u8>,
+        eligible: bool,
+    },
+    Scry {
+        index: u64,
+        card_id: Option<crate::content::cards::CardId>,
+        currently_present: bool,
+    },
+}
+
+#[derive(Clone, Copy)]
 pub struct LearningModelCandidateV1<'a> {
     pub semantics: LearningModelCandidateSemanticsV1<'a>,
     resolution: LearningCandidateResolutionV1<'a>,
+}
+
+impl fmt::Debug for LearningModelCandidateV1<'_> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("LearningModelCandidateV1")
+            .field("semantics", &self.semantics)
+            .finish()
+    }
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -222,8 +507,7 @@ impl<'a> LearningModelDecisionV1<'a> {
         for input in &boundary.legal_actions.atomic_actions {
             candidates.push(LearningModelCandidateV1 {
                 semantics: LearningModelCandidateSemanticsV1::CombatAtomic {
-                    input,
-                    indexed_choice: indexed_choice_semantics(&boundary.legal_actions, input),
+                    action: combat_atomic_semantics(boundary, input)?,
                 },
                 resolution: LearningCandidateResolutionV1::CombatAtomic { input },
             });
@@ -231,7 +515,9 @@ impl<'a> LearningModelDecisionV1<'a> {
         for family in &boundary.legal_actions.selection_families {
             if family.selection_status == CombatSelectionStatusV2::Enabled {
                 candidates.push(LearningModelCandidateV1 {
-                    semantics: LearningModelCandidateSemanticsV1::CombatSelectionFamily { family },
+                    semantics: LearningModelCandidateSemanticsV1::CombatSelectionFamily {
+                        family: LearningCombatSelectionFamilyV1 { family },
+                    },
                     resolution: LearningCandidateResolutionV1::CombatSelectionFamily { family },
                 });
             }
@@ -246,7 +532,9 @@ impl<'a> LearningModelDecisionV1<'a> {
                 turn: &observation.turn,
                 player: &observation.player,
                 cards: &observation.cards,
-                monsters: &observation.monsters,
+                monsters: LearningCombatMonstersV1 {
+                    monsters: &observation.monsters,
+                },
             }),
             candidates,
         })
@@ -400,13 +688,29 @@ pub enum LearningModelChoiceV1 {
 ///
 /// Appending to this draft does not step the simulator. Only selecting the
 /// explicit submit candidate produces a [`LearningActionV1`].
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct LearningSelectionDraftV1 {
     family: CombatSelectionActionFamilyV2,
     selected_domain_indices: Vec<usize>,
 }
 
+impl fmt::Debug for LearningSelectionDraftV1 {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("LearningSelectionDraftV1")
+            .field("family", &self.model_family())
+            .field("selected_domain_indices", &self.selected_domain_indices)
+            .finish()
+    }
+}
+
 impl LearningSelectionDraftV1 {
+    pub fn model_family(&self) -> LearningCombatSelectionFamilyV1<'_> {
+        LearningCombatSelectionFamilyV1 {
+            family: &self.family,
+        }
+    }
+
     pub fn selected_domain_indices(&self) -> &[usize] {
         &self.selected_domain_indices
     }
@@ -423,7 +727,10 @@ impl LearningSelectionDraftV1 {
             for (domain_index, domain) in self.family.raw_domain.iter().enumerate() {
                 if self.can_append(domain_index) {
                     candidates.push(LearningSelectionCandidateV1 {
-                        semantics: LearningSelectionCandidateSemanticsV1::Append { domain },
+                        semantics: LearningSelectionCandidateSemanticsV1::Append {
+                            domain_index,
+                            domain: LearningCombatSelectionDomainV1 { domain },
+                        },
                         resolution: LearningSelectionCandidateResolutionV1::Append { domain_index },
                     });
                 }
@@ -529,7 +836,8 @@ impl LearningSelectionDraftV1 {
 pub enum LearningSelectionCandidateSemanticsV1<'a> {
     Submit,
     Append {
-        domain: &'a CombatSelectionDomainCandidateV2,
+        domain_index: usize,
+        domain: LearningCombatSelectionDomainV1<'a>,
     },
 }
 
@@ -571,6 +879,8 @@ pub enum LearningModelInputError {
     IndexedChoiceAtomicActionMissing {
         index: usize,
     },
+    UnsupportedCombatAtomicInput,
+    CombatTargetMissing,
     NoLegalCandidates,
     CandidateCountOverflow,
     CandidateOrdinalOutOfRange {
@@ -634,14 +944,83 @@ fn validate_indexed_choice_alignment(
 fn indexed_choice_semantics<'a>(
     surface: &'a CombatLegalActionSurfaceV2,
     input: &ClientInput,
-) -> Option<&'a CombatIndexedChoiceCandidateV2> {
+) -> Option<LearningCombatIndexedChoiceV1<'a>> {
     let ClientInput::SubmitDiscoverChoice(index) = input else {
         return None;
     };
-    surface
-        .indexed_choice
-        .as_ref()
-        .and_then(|choice| choice.candidates.get(*index))
+    let indexed = surface.indexed_choice.as_ref()?;
+    Some(LearningCombatIndexedChoiceV1 {
+        input_encoding: indexed.input_encoding,
+        reason: &indexed.reason,
+        candidate: indexed.candidates.get(*index)?,
+    })
+}
+
+fn combat_atomic_semantics<'a>(
+    boundary: &'a LearningCombatBoundaryV1,
+    input: &ClientInput,
+) -> Result<LearningCombatAtomicActionV1<'a>, LearningModelInputError> {
+    let target_index = |target: Option<usize>| {
+        target
+            .map(|entity_id| {
+                boundary
+                    .observation
+                    .monsters
+                    .iter()
+                    .position(|monster| monster.entity_id == entity_id)
+                    .ok_or(LearningModelInputError::CombatTargetMissing)
+            })
+            .transpose()
+    };
+    match input {
+        ClientInput::PlayCard { card_index, target } => {
+            Ok(LearningCombatAtomicActionV1::PlayCard {
+                hand_index: *card_index,
+                target_monster_index: target_index(*target)?,
+            })
+        }
+        ClientInput::UsePotion {
+            potion_index,
+            target,
+        } => Ok(LearningCombatAtomicActionV1::UsePotion {
+            potion_index: *potion_index,
+            target_monster_index: target_index(*target)?,
+        }),
+        ClientInput::DiscardPotion(potion_index) => {
+            Ok(LearningCombatAtomicActionV1::DiscardPotion {
+                potion_index: *potion_index,
+            })
+        }
+        ClientInput::EndTurn => Ok(LearningCombatAtomicActionV1::EndTurn),
+        ClientInput::SubmitDiscoverChoice(choice_index) => {
+            Ok(LearningCombatAtomicActionV1::SubmitIndexedChoice {
+                choice_index: *choice_index,
+                indexed: indexed_choice_semantics(&boundary.legal_actions, input)
+                    .ok_or(LearningModelInputError::IndexedChoiceMetadataMissing)?,
+            })
+        }
+        ClientInput::Proceed => Ok(LearningCombatAtomicActionV1::Proceed),
+        ClientInput::Cancel => Ok(LearningCombatAtomicActionV1::Cancel),
+        ClientInput::SubmitCardChoice(_)
+        | ClientInput::SelectMapNode(_)
+        | ClientInput::FlyToNode(_, _)
+        | ClientInput::SelectEventOption(_)
+        | ClientInput::CampfireOption(_)
+        | ClientInput::EventChoice(_)
+        | ClientInput::SubmitScryDiscard(_)
+        | ClientInput::SubmitSelection(_)
+        | ClientInput::ClaimReward(_)
+        | ClientInput::OpenRewardOverlay
+        | ClientInput::OpenChest
+        | ClientInput::SelectCard(_)
+        | ClientInput::BuyCard(_)
+        | ClientInput::BuyRelic(_)
+        | ClientInput::BuyPotion(_)
+        | ClientInput::PurgeCard(_)
+        | ClientInput::SubmitRelicChoice(_) => {
+            Err(LearningModelInputError::UnsupportedCombatAtomicInput)
+        }
+    }
 }
 
 fn domain_candidate_is_eligible(candidate: &CombatSelectionDomainCandidateV2) -> bool {
@@ -780,6 +1159,52 @@ mod tests {
     }
 
     #[test]
+    fn combat_model_views_use_local_monster_indices_and_hide_runtime_entity_ids() {
+        const PRIVATE_ENTITY_ID: usize = 3_000_000_001;
+        let mut session = RunControlSession::new(RunControlConfig::default());
+        let mut combat = crate::test_support::blank_test_combat();
+        combat.zones.hand = vec![CombatCard::new(CardId::Bash, 51)];
+        let mut monster = crate::test_support::test_monster(EnemyId::JawWorm);
+        monster.id = PRIVATE_ENTITY_ID;
+        combat.entities.monsters.push(monster);
+        session.engine_state = EngineState::CombatPlayerTurn;
+        session.active_combat = Some(ActiveCombat::new(
+            EngineState::CombatPlayerTurn,
+            combat,
+            CombatContext::Room(RoomCombatContext {
+                room_type: RoomType::MonsterRoom,
+            }),
+        ));
+        let boundary = LearningEnvV1::from_session(session)
+            .observe()
+            .expect("targeted combat boundary");
+        let decision =
+            LearningModelDecisionV1::from_boundary(&boundary).expect("build model decision");
+
+        assert!(decision.candidates.iter().any(|candidate| matches!(
+            candidate.semantics,
+            LearningModelCandidateSemanticsV1::CombatAtomic {
+                action: LearningCombatAtomicActionV1::PlayCard {
+                    hand_index: 0,
+                    target_monster_index: Some(0),
+                },
+            }
+        )));
+        assert!(matches!(
+            decision.observation,
+            LearningModelObservationV1::Combat(LearningCombatModelObservationV1 {
+                monsters,
+                ..
+            }) if monsters.len() == 1 && monsters.get(0).is_some()
+        ));
+        let rendered = format!("{decision:?}");
+        assert!(
+            !rendered.contains(&PRIVATE_ENTITY_ID.to_string()),
+            "model-facing debug output leaked a private monster entity id: {rendered}"
+        );
+    }
+
+    #[test]
     fn indexed_atomic_choice_carries_typed_semantics() {
         let mut session = RunControlSession::new(RunControlConfig::default());
         let choice = PendingChoice::DiscoverySelect(crate::state::DiscoveryChoiceState {
@@ -803,16 +1228,34 @@ mod tests {
         let decision =
             LearningModelDecisionV1::from_boundary(&boundary).expect("build model decision");
 
-        assert!(decision.candidates.iter().any(|candidate| matches!(
-            candidate.semantics,
-            LearningModelCandidateSemanticsV1::CombatAtomic {
-                input: ClientInput::SubmitDiscoverChoice(1),
-                indexed_choice: Some(CombatIndexedChoiceCandidateV2::Card {
-                    card_id: CardId::FiendFire,
-                    upgrades: 0,
-                }),
-            }
-        )));
+        assert!(decision.candidates.iter().any(|candidate| {
+            let LearningModelCandidateSemanticsV1::CombatAtomic {
+                action:
+                    LearningCombatAtomicActionV1::SubmitIndexedChoice {
+                        choice_index: 1,
+                        indexed,
+                    },
+            } = candidate.semantics
+            else {
+                return false;
+            };
+            indexed.input_encoding == CombatIndexedChoiceInputEncodingV2::SubmitDiscoverChoiceIndex
+                && matches!(
+                    indexed.reason,
+                    CombatIndexedChoiceReasonV2::Discovery {
+                        colorless: false,
+                        card_type: None,
+                        amount: 1,
+                    }
+                )
+                && matches!(
+                    indexed.candidate,
+                    CombatIndexedChoiceCandidateV2::Card {
+                        card_id: CardId::FiendFire,
+                        upgrades: 0,
+                    }
+                )
+        }));
     }
 
     #[test]
@@ -856,6 +1299,44 @@ mod tests {
                 input: ClientInput::SubmitScryDiscard(vec![0]),
             }
         );
+    }
+
+    #[test]
+    fn symbolic_model_views_and_debug_output_hide_runtime_card_uuids() {
+        const PRIVATE_UUID: u32 = 3_000_000_001;
+        let mut combat = crate::test_support::blank_test_combat();
+        combat.zones.draw_pile = (vec![CombatCard::new(CardId::Strike, PRIVATE_UUID)]).into();
+        let surface = combat_legal_action_surface_v2(
+            &EngineState::PendingChoice(PendingChoice::ScrySelect {
+                cards: vec![CardId::Strike],
+                card_uuids: vec![PRIVATE_UUID],
+            }),
+            &combat,
+        );
+        let draft = LearningSelectionDraftV1 {
+            family: surface.selection_families[0].clone(),
+            selected_domain_indices: Vec::new(),
+        };
+        let family = draft.model_family();
+        assert_eq!(
+            family.domain(0).expect("public domain").semantics(),
+            LearningCombatSelectionDomainSemanticsV1::Scry {
+                index: 0,
+                card_id: Some(CardId::Strike),
+                currently_present: true,
+            }
+        );
+        for rendered in [
+            format!("{family:?}"),
+            format!("{:?}", family.domain(0).expect("public domain")),
+            format!("{draft:?}"),
+            format!("{:?}", draft.decision()),
+        ] {
+            assert!(
+                !rendered.contains(&PRIVATE_UUID.to_string()),
+                "model-facing debug output leaked a private card UUID: {rendered}"
+            );
+        }
     }
 
     #[test]

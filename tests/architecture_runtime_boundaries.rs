@@ -2571,6 +2571,8 @@ fn python_learning_bridge_stays_outside_the_root_workspace_and_policy_layer() {
             .expect("read Python learning bridge"),
         std::fs::read_to_string("bindings/python_learning/src/semantic.rs")
             .expect("read Python semantic encoder"),
+        std::fs::read_to_string("bindings/python_learning/src/semantic/combat.rs")
+            .expect("read Python combat semantic encoder"),
     ]
     .join("\n");
     for required in [
@@ -2586,6 +2588,9 @@ fn python_learning_bridge_stays_outside_the_root_workspace_and_policy_layer() {
         "relics.sort_by_key",
         "potions.sort_by_key",
         "nodes.sort_by_key",
+        "encode_combat_root",
+        "encode_combat_selection",
+        "LearningCombatIndexedChoiceV1",
     ] {
         assert!(
             source.contains(required),
@@ -2605,10 +2610,41 @@ fn python_learning_bridge_stays_outside_the_root_workspace_and_policy_layer() {
         "CardUuid =",
         "PotionUuid =",
         ".potion_uuid",
+        ".entity_id",
+        "ClientInput",
+        "CombatSelectionActionFamilyV2",
+        "CombatSelectionDomainCandidateV2",
     ] {
         assert!(
             !source.contains(forbidden),
             "Python learning bridge must not import policy, search, JSON, or training framework through '{forbidden}'"
         );
     }
+
+    let model_input =
+        std::fs::read_to_string("src/eval/run_control/learning_model_input.rs")
+            .expect("read typed learning model input");
+    for required in [
+        "pub struct LearningCombatIndexedChoiceV1",
+        "pub enum LearningCombatAtomicActionV1",
+        "pub struct LearningCombatMonstersV1",
+        "pub struct LearningCombatMonsterV1",
+        "pub struct LearningCombatSelectionFamilyV1",
+        "pub struct LearningCombatSelectionDomainV1",
+        "pub reason: &'a CombatIndexedChoiceReasonV2",
+        "pub candidate: &'a CombatIndexedChoiceCandidateV2",
+    ] {
+        assert!(
+            model_input.contains(required),
+            "indexed combat choices must retain model-visible context '{required}'"
+        );
+    }
+    assert!(
+        !model_input.contains("pub fn family(&self) -> &CombatSelectionActionFamilyV2"),
+        "selection drafts must not expose the raw runtime family or its UUID-bearing domains"
+    );
+    assert!(
+        !model_input.contains("pub monsters: &'a [CombatLearningMonsterStateV1]"),
+        "combat model observations must expose sanitized monster views, not raw entity ids"
+    );
 }

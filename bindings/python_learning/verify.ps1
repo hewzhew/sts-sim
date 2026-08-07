@@ -12,6 +12,7 @@ $runRoot = Join-Path $repositoryRoot ".oracle-lab\python-learning-bridge\$runId"
 $wheelRoot = Join-Path $runRoot "wheels"
 $venvRoot = Join-Path $runRoot "venv"
 $buildLog = Join-Path $runRoot "build.log"
+$rustTestLog = Join-Path $runRoot "rust-tests.log"
 $smokeLog = Join-Path $runRoot "smoke.log"
 
 New-Item -ItemType Directory -Path $wheelRoot -Force | Out-Null
@@ -34,6 +35,18 @@ $ErrorActionPreference = $savedErrorPreference
 if ($buildExit -ne 0) {
     Get-Content -LiteralPath $buildLog -Tail 80
     throw "Maturin wheel build failed; full log: $buildLog"
+}
+
+$ErrorActionPreference = "Continue"
+& cargo test `
+    --manifest-path (Join-Path $bridgeRoot "Cargo.toml") `
+    --release `
+    --lib *> $rustTestLog
+$rustTestExit = $LASTEXITCODE
+$ErrorActionPreference = $savedErrorPreference
+if ($rustTestExit -ne 0) {
+    Get-Content -LiteralPath $rustTestLog -Tail 80
+    throw "Rust learning bridge contract tests failed; full log: $rustTestLog"
 }
 
 $wheel = Get-ChildItem -LiteralPath $wheelRoot -Filter "*.whl" | Select-Object -First 1
@@ -78,4 +91,5 @@ if (-not $summary) {
 Write-Output $summary
 Write-Output ("python=" + $pythonPath)
 Write-Output ("wheel=" + $wheel.Name)
+Write-Output "rust_tests=passed"
 Write-Output ("artifact_root=" + $runRoot)
