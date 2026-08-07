@@ -28,6 +28,7 @@ if _TORCH_AVAILABLE:
     import torch
 
     from sts_learning.torch_behavior import (
+        CheckpointedCategoricalTorchPolicy,
         CheckpointedGreedyTorchPolicy,
         TorchBehaviorError,
         TorchBehaviorPublisher,
@@ -37,7 +38,11 @@ if _TORCH_AVAILABLE:
         TorchCheckpointError,
         TorchCheckpointLimits,
     )
-    from sts_learning.torch_policy import RaggedCandidateScorer, RaggedScorerConfig
+    from sts_learning.torch_policy import (
+        RaggedCandidateScorer,
+        RaggedCategoricalPolicyConfig,
+        RaggedScorerConfig,
+    )
 
 
 def _scorer(*, schema=None):
@@ -238,6 +243,110 @@ class TorchBehaviorPublicationTests(unittest.TestCase):
                     _scorer,
                 )
             self.assertEqual(fresh_registry.snapshot.registered_manifests, 0)
+
+    def test_categorical_promotion_and_recovery_reproduce_injected_rng(self) -> None:
+        config = RaggedCategoricalPolicyConfig(temperature=0.75)
+        registry = BehaviorManifestRegistry(capacity=1)
+        batch = semantic_batch_fixture()
+        with tempfile.TemporaryDirectory() as root:
+            store = _store(Path(root, "checkpoints"))
+            catalog = _catalog(Path(root, "manifests"))
+            publication = TorchBehaviorPublisher(
+                store,
+                catalog,
+                registry,
+                behavior_manifest_template_fixture(
+                    behavior_rule=config.behavior_rule,
+                ),
+            ).publish(_scorer(), training_step=0)
+            promoted = CheckpointedCategoricalTorchPolicy.promote(
+                publication,
+                store,
+                catalog,
+                registry,
+                _scorer,
+                config,
+                torch.Generator().manual_seed(55),
+            )
+            recovered_registry = BehaviorManifestRegistry(capacity=1)
+            recovered = CheckpointedCategoricalTorchPolicy.recover(
+                publication.manifest_id,
+                store,
+                catalog,
+                recovered_registry,
+                _scorer,
+                config,
+                torch.Generator().manual_seed(55),
+            )
+            global_state = torch.random.get_rng_state().clone()
+
+            promoted_choice = promoted.choose(batch)
+            recovered_choice = recovered.choose(batch)
+
+            self.assertEqual(promoted_choice, recovered_choice)
+            self.assertTrue(torch.equal(torch.random.get_rng_state(), global_state))
+            self.assertEqual(
+                promoted_choice.behavior_manifest_id,
+                publication.manifest_id,
+            )
+            self.assertTrue(
+                all(
+                    probability.value is not None
+                    and 0.0 < probability.value <= 1.0
+                    for probability in promoted_choice.selection_probabilities
+                )
+            )
+            self.assertEqual(
+                recovered_registry.resolve(publication.manifest_id),
+                publication.manifest,
+            )
+
+    def test_categorical_rule_mismatch_fails_before_rng_or_registry_mutation(
+        self,
+    ) -> None:
+        config = RaggedCategoricalPolicyConfig(temperature=0.5)
+        wrong_config = RaggedCategoricalPolicyConfig(temperature=1.0)
+        registry = BehaviorManifestRegistry(capacity=1)
+        with tempfile.TemporaryDirectory() as root:
+            store = _store(Path(root, "checkpoints"))
+            catalog = _catalog(Path(root, "manifests"))
+            publication = TorchBehaviorPublisher(
+                store,
+                catalog,
+                registry,
+                behavior_manifest_template_fixture(
+                    behavior_rule=config.behavior_rule,
+                ),
+            ).publish(_scorer(), training_step=0)
+            generator = torch.Generator().manual_seed(66)
+            generator_state = generator.get_state().clone()
+            fresh_registry = BehaviorManifestRegistry(capacity=1)
+
+            with self.assertRaisesRegex(
+                TorchBehaviorError,
+                "categorical candidate rule",
+            ):
+                CheckpointedCategoricalTorchPolicy.recover(
+                    publication.manifest_id,
+                    store,
+                    catalog,
+                    fresh_registry,
+                    _scorer,
+                    wrong_config,
+                    generator,
+                )
+            self.assertEqual(fresh_registry.snapshot.registered_manifests, 0)
+            self.assertTrue(torch.equal(generator.get_state(), generator_state))
+            with self.assertRaisesRegex(TorchBehaviorError, "global generator"):
+                CheckpointedCategoricalTorchPolicy.promote(
+                    publication,
+                    store,
+                    catalog,
+                    registry,
+                    _scorer,
+                    config,
+                    torch.default_generator,
+                )
 
     def test_unregistered_or_schema_mismatched_publication_cannot_run(self) -> None:
         registry = BehaviorManifestRegistry(capacity=1)

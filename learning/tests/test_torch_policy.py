@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import math
 import unittest
 
 from learning.tests.policy_fixtures import BEHAVIOR_MANIFEST_ID
@@ -17,11 +18,14 @@ if _TORCH_AVAILABLE:
 
     from sts_learning.torch_policy import (
         GreedyTorchPolicy,
+        RaggedCandidateLogits,
         RaggedCandidateScorer,
+        RaggedCategoricalPolicyConfig,
         RaggedScorerConfig,
         SemanticSchemaDimensions,
         TorchPolicyError,
         ragged_cross_entropy,
+        sample_ragged_categorical,
     )
 
 try:
@@ -96,6 +100,89 @@ class TorchPolicyTests(unittest.TestCase):
 
         self.assertEqual(selected.row_splits.tolist(), [0, 3, 5])
         torch.testing.assert_close(selected.values, expected)
+
+    def test_categorical_config_has_canonical_rule_identity(self) -> None:
+        first = RaggedCategoricalPolicyConfig(temperature=0.5)
+        same = RaggedCategoricalPolicyConfig(temperature=0.5)
+        different = RaggedCategoricalPolicyConfig(temperature=1.0)
+
+        self.assertEqual(first.behavior_rule, same.behavior_rule)
+        self.assertNotEqual(first.behavior_rule, different.behavior_rule)
+        for invalid in (0.0, -1.0, float("nan"), float("inf")):
+            with self.assertRaisesRegex(TorchPolicyError, "finite and positive"):
+                RaggedCategoricalPolicyConfig(temperature=invalid)
+        with self.assertRaisesRegex(TorchPolicyError, "real number"):
+            RaggedCategoricalPolicyConfig(temperature="1")  # type: ignore[arg-type]
+
+    def test_categorical_sampling_is_ragged_reproducible_and_rng_local(self) -> None:
+        logits = RaggedCandidateLogits(
+            values=torch.tensor([0.0, math.log(3.0), 0.0, 0.0, 0.0]),
+            row_splits=torch.tensor([0, 2, 5]),
+        )
+        first_generator = torch.Generator().manual_seed(1234)
+        second_generator = torch.Generator().manual_seed(1234)
+        global_state = torch.random.get_rng_state().clone()
+
+        first = sample_ragged_categorical(
+            logits,
+            RaggedCategoricalPolicyConfig(),
+            first_generator,
+        )
+        second = sample_ragged_categorical(
+            logits,
+            RaggedCategoricalPolicyConfig(),
+            second_generator,
+        )
+
+        self.assertEqual(first, second)
+        self.assertTrue(torch.equal(torch.random.get_rng_state(), global_state))
+        self.assertIn(first.ordinals[0], (0, 1))
+        self.assertIn(first.ordinals[1], (0, 1, 2))
+        self.assertAlmostEqual(
+            first.selection_probabilities[0].value,
+            (0.25, 0.75)[first.ordinals[0]],
+        )
+        self.assertAlmostEqual(
+            first.selection_probabilities[1].value,
+            1.0 / 3.0,
+        )
+
+    def test_categorical_sampling_validates_all_rows_before_consuming_rng(self) -> None:
+        generator = torch.Generator().manual_seed(9)
+        state = generator.get_state().clone()
+        invalid = RaggedCandidateLogits(
+            values=torch.tensor([0.0]),
+            row_splits=torch.tensor([0, 2, 1]),
+        )
+
+        with self.assertRaisesRegex(TorchPolicyError, "non-empty increasing"):
+            sample_ragged_categorical(
+                invalid,
+                RaggedCategoricalPolicyConfig(),
+                generator,
+            )
+        self.assertTrue(torch.equal(generator.get_state(), state))
+
+        non_finite = RaggedCandidateLogits(
+            values=torch.tensor([float("nan")]),
+            row_splits=torch.tensor([0, 1]),
+        )
+        with self.assertRaisesRegex(TorchPolicyError, "must be finite"):
+            sample_ragged_categorical(
+                non_finite,
+                RaggedCategoricalPolicyConfig(),
+                generator,
+            )
+        self.assertTrue(torch.equal(generator.get_state(), state))
+        with self.assertRaisesRegex(TorchPolicyError, "global generator"):
+            sample_ragged_categorical(
+                RaggedCandidateLogits(
+                    values=torch.tensor([0.0]),
+                    row_splits=torch.tensor([0, 1]),
+                ),
+                RaggedCategoricalPolicyConfig(),
+                torch.default_generator,
+            )
 
 
 @unittest.skipUnless(

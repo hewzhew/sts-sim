@@ -184,13 +184,25 @@ relations, and row-pooled context produce one flat candidate-logit tensor whose
 boundaries are the unchanged bridge `candidate_row_splits`.
 
 The optional module supplies a ragged cross-entropy loss and a greedy
-`BatchPolicy` adapter; the caller must bind the adapter to its registered exact
-behavior manifest identity. Both CPU and CUDA execution are selected by where
-the caller places the model; the scorer contains no hard-coded device. The first
-contract is deliberately architecture-neutral: finite batched logits, exact
-row boundaries, finite loss, backward gradients, and an optimizer update. It
-is not yet a claim that this small graph network is the final policy model or
-that a particular training objective is sufficient.
+`BatchPolicy` adapter. It also supplies a temperature-scaled ragged categorical
+sampler that validates every row before consuming randomness and samples by
+inverse CDF from an explicitly injected `torch.Generator`; it refuses the
+global generator. The selected probability is returned from that same sampling
+call. Temperature has a canonical behavior-rule configuration identity, so two
+temperatures cannot share a manifest. Both CPU and CUDA execution are selected
+by where the caller places the model and independent generator; the scorer
+contains no hard-coded device. The first contract is deliberately
+architecture-neutral: finite batched logits, exact row boundaries, finite
+loss, backward gradients, and an optimizer update. It is not yet a claim that
+this small graph network is the final policy model or that a particular
+training objective is sufficient.
+
+`CheckpointedCategoricalTorchPolicy` promotes or recovers only a publication
+whose exact behavior-rule binding matches its typed categorical configuration.
+A fixed injected generator reproduces the same local choices after model
+recovery without touching global RNG. The manifest identifies the behavior
+distribution; mutable generator state remains caller-owned and must be restored
+separately if a future durable training runner resumes mid-stream.
 
 `sts_learning.torch_outcomes` supplies the first honest terminal objective.
 It consumes only `CompletedAttemptExperience`, resolves every behavior manifest

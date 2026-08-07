@@ -359,6 +359,16 @@ candidate row splits. The caller chooses CPU or CUDA by placing the model on
 that device. The bridge, default caller dependency set, simulator workspace,
 and experience format remain PyTorch-free.
 
+The first stochastic adapter is a temperature-scaled ragged categorical rule
+bound into the behavior manifest independently of model weights. It validates
+all rows and probability tensors before consuming randomness, then samples by
+inverse CDF from one explicitly injected `torch.Generator` on the scorer's
+device. It never uses the global generator. The resulting policy choice carries
+the selected probability computed in that same call. The manifest identifies
+the distribution rule and canonical temperature, not mutable RNG state; a
+caller that needs exact continuation across process restart must separately own
+and restore its random-stream state before resuming decisions.
+
 The first terminal objective is realized-behavior candidate value, not
 imitation. It accepts only bounded complete-attempt deliveries, resolves every
 batch's exact behavior manifest, and applies the sparse terminal win/loss target

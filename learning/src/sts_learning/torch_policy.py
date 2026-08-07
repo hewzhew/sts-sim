@@ -7,15 +7,27 @@ want this scorer opt into PyTorch and import this module explicitly.
 
 from __future__ import annotations
 
+import math
 import operator
+import struct
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from numbers import Real
 
 import numpy as np
 import torch
 from torch import Tensor, nn
 
-from .policy import BatchPolicyChoice, BehaviorManifestId
+from .manifests import (
+    BehaviorRuleBinding,
+    ManifestArtifactId,
+    ManifestArtifactKind,
+)
+from .policy import (
+    BatchPolicyChoice,
+    BehaviorManifestId,
+    SelectionProbability,
+)
 
 
 class TorchPolicyError(ValueError):
@@ -158,6 +170,112 @@ class RaggedCandidateLogits:
             ordinal = int(torch.argmax(self.values[start:end]).item())
             ordinals.append(ordinal)
         return ordinals
+
+
+_RAGGED_CATEGORICAL_RULE_V1 = ManifestArtifactId.from_content(
+    ManifestArtifactKind.BEHAVIOR_RULE,
+    b"sts_learning.ragged_categorical_inverse_cdf\x00v1",
+)
+
+
+@dataclass(frozen=True)
+class RaggedCategoricalPolicyConfig:
+    """Temperature-scaled categorical behavior with canonical provenance."""
+
+    temperature: float = 1.0
+
+    def __post_init__(self) -> None:
+        if isinstance(self.temperature, bool) or not isinstance(self.temperature, Real):
+            raise TorchPolicyError("categorical temperature must be a real number")
+        normalized = float(self.temperature)
+        if not math.isfinite(normalized) or normalized <= 0.0:
+            raise TorchPolicyError("categorical temperature must be finite and positive")
+        object.__setattr__(self, "temperature", normalized)
+
+    @property
+    def behavior_rule(self) -> BehaviorRuleBinding:
+        payload = b"sts_learning.ragged_categorical_temperature\x00v1" + struct.pack(
+            ">d",
+            self.temperature,
+        )
+        return BehaviorRuleBinding(
+            implementation=_RAGGED_CATEGORICAL_RULE_V1,
+            configuration=ManifestArtifactId.from_content(
+                ManifestArtifactKind.BEHAVIOR_RULE_CONFIG,
+                payload,
+            ),
+        )
+
+
+@dataclass(frozen=True)
+class RaggedCategoricalSample:
+    """Aligned sampled ordinals and their probabilities at selection time."""
+
+    ordinals: tuple[int, ...]
+    selection_probabilities: tuple[SelectionProbability, ...]
+
+
+def sample_ragged_categorical(
+    logits: RaggedCandidateLogits,
+    config: RaggedCategoricalPolicyConfig,
+    generator: torch.Generator,
+) -> RaggedCategoricalSample:
+    """Sample every legal ragged row from one caller-owned random stream."""
+
+    if not isinstance(logits, RaggedCandidateLogits):
+        raise TorchPolicyError("categorical sampling requires RaggedCandidateLogits")
+    if not isinstance(config, RaggedCategoricalPolicyConfig):
+        raise TorchPolicyError("categorical sampling requires typed config")
+    if not isinstance(generator, torch.Generator):
+        raise TorchPolicyError("categorical sampling requires a caller-owned generator")
+    if generator is torch.default_generator:
+        raise TorchPolicyError("categorical sampling refuses the global generator")
+    generator_device = torch.device(generator.device)
+    if generator_device != logits.values.device:
+        raise TorchPolicyError(
+            "categorical generator device must match candidate logits"
+        )
+    if not bool(torch.all(torch.isfinite(logits.values))):
+        raise TorchPolicyError("categorical candidate logits must be finite")
+
+    splits = logits.row_splits.detach().cpu().tolist()
+    probability_rows: list[Tensor] = []
+    for start, end in zip(splits[:-1], splits[1:], strict=True):
+        if start >= end:
+            raise TorchPolicyError(
+                "categorical sampling requires non-empty increasing rows"
+            )
+        row = logits.values[start:end].detach().to(dtype=torch.float64)
+        probabilities = torch.softmax(row / config.temperature, dim=0)
+        if not bool(torch.all(torch.isfinite(probabilities))):
+            raise TorchPolicyError("categorical probabilities must be finite")
+        if not bool(torch.any(probabilities > 0.0)):
+            raise TorchPolicyError("categorical row has no positive probability")
+        probability_rows.append(probabilities)
+
+    uniforms = torch.rand(
+        (len(probability_rows),),
+        dtype=torch.float64,
+        device=logits.values.device,
+        generator=generator,
+    )
+    ordinals: list[int] = []
+    selected_probabilities: list[SelectionProbability] = []
+    for probabilities, uniform in zip(
+        probability_rows,
+        uniforms,
+        strict=True,
+    ):
+        cumulative = torch.cumsum(probabilities, dim=0)
+        cumulative[-1] = 1.0
+        ordinal = int(torch.searchsorted(cumulative, uniform, right=True).item())
+        probability = float(probabilities[ordinal].item())
+        ordinals.append(ordinal)
+        selected_probabilities.append(SelectionProbability.known(probability))
+    return RaggedCategoricalSample(
+        ordinals=tuple(ordinals),
+        selection_probabilities=tuple(selected_probabilities),
+    )
 
 
 class _RelationLayer(nn.Module):

@@ -11,13 +11,19 @@ from .manifests import (
     BehaviorManifest,
     BehaviorManifestRegistry,
     BehaviorManifestTemplate,
+    BehaviorRuleBinding,
     GREEDY_BEHAVIOR_RULE_V1,
     ManifestArtifactId,
 )
 from .manifest_catalog import BoundedBehaviorManifestCatalog
 from .policy import BatchPolicyChoice, BehaviorManifestId
 from .torch_checkpoints import BoundedTorchCheckpointStore
-from .torch_policy import RaggedCandidateLogits, RaggedCandidateScorer
+from .torch_policy import (
+    RaggedCandidateLogits,
+    RaggedCandidateScorer,
+    RaggedCategoricalPolicyConfig,
+    sample_ragged_categorical,
+)
 
 
 class TorchBehaviorError(RuntimeError):
@@ -126,28 +132,16 @@ class CheckpointedGreedyTorchPolicy:
         registry: BehaviorManifestRegistry,
         scorer_factory: Callable[[], RaggedCandidateScorer],
     ) -> CheckpointedGreedyTorchPolicy:
-        if not isinstance(publication, TorchBehaviorPublication):
-            raise TorchBehaviorError("promotion requires a typed publication")
-        if not isinstance(store, BoundedTorchCheckpointStore):
-            raise TorchBehaviorError("promotion requires a checkpoint store")
-        if not isinstance(catalog, BoundedBehaviorManifestCatalog):
-            raise TorchBehaviorError("promotion requires a durable manifest catalog")
-        if not isinstance(registry, BehaviorManifestRegistry):
-            raise TorchBehaviorError("promotion requires a manifest registry")
-        try:
-            durable = catalog.resolve(publication.manifest_id)
-            if durable != publication.manifest:
-                raise TorchBehaviorError(
-                    "durable manifest does not match behavior publication"
-                )
-            registry.require_exact(publication.manifest_id, publication.manifest)
-        except ValueError as error:
-            raise TorchBehaviorError(
-                "publication is not registered for behavior promotion"
-            ) from error
-        _require_greedy_behavior_rule(publication.manifest)
-        model = store.materialize(publication.checkpoint_id, scorer_factory)
-        return cls._from_restored(model, publication)
+        model = _promote_frozen_scorer(
+            publication,
+            store,
+            catalog,
+            registry,
+            scorer_factory,
+            expected_rule=GREEDY_BEHAVIOR_RULE_V1,
+            rule_name="greedy candidate rule",
+        )
+        return cls(model, publication, _token=_PROMOTION_TOKEN)
 
     @classmethod
     def recover(
@@ -160,46 +154,15 @@ class CheckpointedGreedyTorchPolicy:
     ) -> CheckpointedGreedyTorchPolicy:
         """Recover from durable owners without a prior in-memory publication."""
 
-        if not isinstance(manifest_id, BehaviorManifestId):
-            raise TorchBehaviorError("recovery manifest id must be typed")
-        if not isinstance(store, BoundedTorchCheckpointStore):
-            raise TorchBehaviorError("recovery requires a checkpoint store")
-        if not isinstance(catalog, BoundedBehaviorManifestCatalog):
-            raise TorchBehaviorError("recovery requires a durable manifest catalog")
-        if not isinstance(registry, BehaviorManifestRegistry):
-            raise TorchBehaviorError("recovery requires a manifest registry")
-        try:
-            manifest = catalog.resolve(manifest_id)
-        except RuntimeError as error:
-            raise TorchBehaviorError("durable behavior manifest is unavailable") from error
-        _require_greedy_behavior_rule(manifest)
-        publication = TorchBehaviorPublication(
-            manifest_id=manifest_id,
-            manifest=manifest,
-            checkpoint_id=manifest.model_checkpoint,
+        model, publication = _recover_frozen_scorer(
+            manifest_id,
+            store,
+            catalog,
+            registry,
+            scorer_factory,
+            expected_rule=GREEDY_BEHAVIOR_RULE_V1,
+            rule_name="greedy candidate rule",
         )
-        model = store.materialize(publication.checkpoint_id, scorer_factory)
-        registry.preview_registration(manifest, claimed_id=manifest_id)
-        registry.register(manifest, claimed_id=manifest_id)
-        return cls._from_restored(model, publication)
-
-    @classmethod
-    def _from_restored(
-        cls,
-        model: torch.nn.Module,
-        publication: TorchBehaviorPublication,
-    ) -> CheckpointedGreedyTorchPolicy:
-        if not isinstance(model, RaggedCandidateScorer):
-            raise TorchBehaviorError(
-                "checkpoint factory did not create a RaggedCandidateScorer"
-            )
-        _require_greedy_behavior_rule(publication.manifest)
-        if model.schema.version != publication.manifest.semantic_schema_version:
-            raise TorchBehaviorError(
-                "restored scorer schema version does not match publication"
-            )
-        model.eval()
-        model.requires_grad_(False)
         return cls(model, publication, _token=_PROMOTION_TOKEN)
 
     @property
@@ -215,8 +178,234 @@ class CheckpointedGreedyTorchPolicy:
         return BatchPolicyChoice.deterministic(ordinals, self.behavior_manifest_id)
 
 
-def _require_greedy_behavior_rule(manifest: BehaviorManifest) -> None:
-    if manifest.behavior_rule != GREEDY_BEHAVIOR_RULE_V1:
+class CheckpointedCategoricalTorchPolicy:
+    """Frozen checkpoint behavior sampled through one injected random stream."""
+
+    def __init__(
+        self,
+        scorer: RaggedCandidateScorer,
+        publication: TorchBehaviorPublication,
+        config: RaggedCategoricalPolicyConfig,
+        generator: torch.Generator,
+        *,
+        _token: object,
+    ) -> None:
+        if _token is not _PROMOTION_TOKEN:
+            raise TorchBehaviorError("behavior policy must be created through promote")
+        _validate_categorical_inputs(config, generator)
+        _require_generator_device(scorer, generator)
+        self._scorer = scorer
+        self.publication = publication
+        self.config = config
+        self.generator = generator
+
+    @classmethod
+    def promote(
+        cls,
+        publication: TorchBehaviorPublication,
+        store: BoundedTorchCheckpointStore,
+        catalog: BoundedBehaviorManifestCatalog,
+        registry: BehaviorManifestRegistry,
+        scorer_factory: Callable[[], RaggedCandidateScorer],
+        config: RaggedCategoricalPolicyConfig,
+        generator: torch.Generator,
+    ) -> CheckpointedCategoricalTorchPolicy:
+        _validate_categorical_inputs(config, generator)
+        model = _promote_frozen_scorer(
+            publication,
+            store,
+            catalog,
+            registry,
+            scorer_factory,
+            expected_rule=config.behavior_rule,
+            rule_name="categorical candidate rule",
+            model_validator=lambda scorer: _require_generator_device(
+                scorer,
+                generator,
+            ),
+        )
+        return cls(
+            model,
+            publication,
+            config,
+            generator,
+            _token=_PROMOTION_TOKEN,
+        )
+
+    @classmethod
+    def recover(
+        cls,
+        manifest_id: BehaviorManifestId,
+        store: BoundedTorchCheckpointStore,
+        catalog: BoundedBehaviorManifestCatalog,
+        registry: BehaviorManifestRegistry,
+        scorer_factory: Callable[[], RaggedCandidateScorer],
+        config: RaggedCategoricalPolicyConfig,
+        generator: torch.Generator,
+    ) -> CheckpointedCategoricalTorchPolicy:
+        _validate_categorical_inputs(config, generator)
+        model, publication = _recover_frozen_scorer(
+            manifest_id,
+            store,
+            catalog,
+            registry,
+            scorer_factory,
+            expected_rule=config.behavior_rule,
+            rule_name="categorical candidate rule",
+            model_validator=lambda scorer: _require_generator_device(
+                scorer,
+                generator,
+            ),
+        )
+        return cls(
+            model,
+            publication,
+            config,
+            generator,
+            _token=_PROMOTION_TOKEN,
+        )
+
+    @property
+    def behavior_manifest_id(self) -> BehaviorManifestId:
+        return self.publication.manifest_id
+
+    def score(self, decision_batch: Mapping[str, object]) -> RaggedCandidateLogits:
+        with torch.inference_mode():
+            return self._scorer(decision_batch)
+
+    def choose(self, decision_batch: Mapping[str, object]) -> BatchPolicyChoice:
+        sample = sample_ragged_categorical(
+            self.score(decision_batch),
+            self.config,
+            self.generator,
+        )
+        return BatchPolicyChoice.create(
+            sample.ordinals,
+            self.behavior_manifest_id,
+            sample.selection_probabilities,
+        )
+
+
+def _promote_frozen_scorer(
+    publication: TorchBehaviorPublication,
+    store: BoundedTorchCheckpointStore,
+    catalog: BoundedBehaviorManifestCatalog,
+    registry: BehaviorManifestRegistry,
+    scorer_factory: Callable[[], RaggedCandidateScorer],
+    *,
+    expected_rule: BehaviorRuleBinding,
+    rule_name: str,
+    model_validator: Callable[[RaggedCandidateScorer], None] | None = None,
+) -> RaggedCandidateScorer:
+    if not isinstance(publication, TorchBehaviorPublication):
+        raise TorchBehaviorError("promotion requires a typed publication")
+    if not isinstance(store, BoundedTorchCheckpointStore):
+        raise TorchBehaviorError("promotion requires a checkpoint store")
+    if not isinstance(catalog, BoundedBehaviorManifestCatalog):
+        raise TorchBehaviorError("promotion requires a durable manifest catalog")
+    if not isinstance(registry, BehaviorManifestRegistry):
+        raise TorchBehaviorError("promotion requires a manifest registry")
+    try:
+        durable = catalog.resolve(publication.manifest_id)
+        if durable != publication.manifest:
+            raise TorchBehaviorError(
+                "durable manifest does not match behavior publication"
+            )
+        registry.require_exact(publication.manifest_id, publication.manifest)
+    except ValueError as error:
         raise TorchBehaviorError(
-            "behavior manifest is not bound to the greedy candidate rule"
+            "publication is not registered for behavior promotion"
+        ) from error
+    _require_behavior_rule(publication.manifest, expected_rule, rule_name)
+    model = store.materialize(publication.checkpoint_id, scorer_factory)
+    return _freeze_scorer(model, publication, model_validator)
+
+
+def _recover_frozen_scorer(
+    manifest_id: BehaviorManifestId,
+    store: BoundedTorchCheckpointStore,
+    catalog: BoundedBehaviorManifestCatalog,
+    registry: BehaviorManifestRegistry,
+    scorer_factory: Callable[[], RaggedCandidateScorer],
+    *,
+    expected_rule: BehaviorRuleBinding,
+    rule_name: str,
+    model_validator: Callable[[RaggedCandidateScorer], None] | None = None,
+) -> tuple[RaggedCandidateScorer, TorchBehaviorPublication]:
+    if not isinstance(manifest_id, BehaviorManifestId):
+        raise TorchBehaviorError("recovery manifest id must be typed")
+    if not isinstance(store, BoundedTorchCheckpointStore):
+        raise TorchBehaviorError("recovery requires a checkpoint store")
+    if not isinstance(catalog, BoundedBehaviorManifestCatalog):
+        raise TorchBehaviorError("recovery requires a durable manifest catalog")
+    if not isinstance(registry, BehaviorManifestRegistry):
+        raise TorchBehaviorError("recovery requires a manifest registry")
+    try:
+        manifest = catalog.resolve(manifest_id)
+    except RuntimeError as error:
+        raise TorchBehaviorError("durable behavior manifest is unavailable") from error
+    _require_behavior_rule(manifest, expected_rule, rule_name)
+    publication = TorchBehaviorPublication(
+        manifest_id=manifest_id,
+        manifest=manifest,
+        checkpoint_id=manifest.model_checkpoint,
+    )
+    model = store.materialize(publication.checkpoint_id, scorer_factory)
+    frozen = _freeze_scorer(model, publication, model_validator)
+    registry.preview_registration(manifest, claimed_id=manifest_id)
+    registry.register(manifest, claimed_id=manifest_id)
+    return frozen, publication
+
+
+def _freeze_scorer(
+    model: torch.nn.Module,
+    publication: TorchBehaviorPublication,
+    validator: Callable[[RaggedCandidateScorer], None] | None,
+) -> RaggedCandidateScorer:
+    if not isinstance(model, RaggedCandidateScorer):
+        raise TorchBehaviorError(
+            "checkpoint factory did not create a RaggedCandidateScorer"
+        )
+    if model.schema.version != publication.manifest.semantic_schema_version:
+        raise TorchBehaviorError(
+            "restored scorer schema version does not match publication"
+        )
+    model.eval()
+    model.requires_grad_(False)
+    if validator is not None:
+        validator(model)
+    return model
+
+
+def _require_behavior_rule(
+    manifest: BehaviorManifest,
+    expected: BehaviorRuleBinding,
+    name: str,
+) -> None:
+    if manifest.behavior_rule != expected:
+        raise TorchBehaviorError(
+            f"behavior manifest is not bound to the {name}"
+        )
+
+
+def _validate_categorical_inputs(
+    config: RaggedCategoricalPolicyConfig,
+    generator: torch.Generator,
+) -> None:
+    if not isinstance(config, RaggedCategoricalPolicyConfig):
+        raise TorchBehaviorError("categorical policy requires typed config")
+    if not isinstance(generator, torch.Generator):
+        raise TorchBehaviorError("categorical policy requires an injected generator")
+    if generator is torch.default_generator:
+        raise TorchBehaviorError("categorical policy refuses the global generator")
+
+
+def _require_generator_device(
+    scorer: RaggedCandidateScorer,
+    generator: torch.Generator,
+) -> None:
+    model_device = next(scorer.parameters()).device
+    if torch.device(generator.device) != model_device:
+        raise TorchBehaviorError(
+            "categorical generator device must match the restored scorer"
         )
