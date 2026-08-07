@@ -59,6 +59,50 @@ impl LearningCheckpointBatch {
     fn __len__(&self) -> usize {
         self.checkpoints.len()
     }
+
+    fn select(&self, slot_indices: Vec<usize>) -> PyResult<Self> {
+        let mut seen = BTreeSet::new();
+        let mut selected = Vec::with_capacity(slot_indices.len());
+        for slot_index in slot_indices {
+            if !seen.insert(slot_index) {
+                return Err(PyValueError::new_err(format!(
+                    "slot {slot_index} appears more than once in checkpoint selection"
+                )));
+            }
+            let checkpoint = self
+                .checkpoints
+                .iter()
+                .find(|checkpoint| checkpoint.source_slot_index == slot_index)
+                .ok_or_else(|| {
+                    PyValueError::new_err(format!(
+                        "checkpoint batch does not contain slot {slot_index}"
+                    ))
+                })?;
+            selected.push(checkpoint.clone());
+        }
+        Ok(Self {
+            checkpoints: selected,
+        })
+    }
+
+    fn updated(&self, replacements: PyRef<'_, LearningCheckpointBatch>) -> PyResult<Self> {
+        let mut updated = self.checkpoints.clone();
+        for replacement in &replacements.checkpoints {
+            let checkpoint = updated
+                .iter_mut()
+                .find(|checkpoint| checkpoint.source_slot_index == replacement.source_slot_index)
+                .ok_or_else(|| {
+                    PyValueError::new_err(format!(
+                        "checkpoint batch does not contain slot {}",
+                        replacement.source_slot_index
+                    ))
+                })?;
+            *checkpoint = replacement.clone();
+        }
+        Ok(Self {
+            checkpoints: updated,
+        })
+    }
 }
 
 #[derive(Debug)]

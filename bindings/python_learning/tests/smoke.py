@@ -201,6 +201,19 @@ def _assert_explicit_checkpoint_replays_exactly() -> None:
     batch_root = batch_env.decision_batch(dense_mask=True, semantic=True)
     checkpoint_batch = batch_env.checkpoint_slots([0, 1])
     assert len(checkpoint_batch) == 2
+    assert len(checkpoint_batch.select([1])) == 1
+    try:
+        checkpoint_batch.select([1, 1])
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("duplicate checkpoint selection was accepted")
+    try:
+        checkpoint_batch.select([2])
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("missing checkpoint selection was accepted")
     _choose_first_until_ready(batch_env)
     first_batch_step = batch_env.step()
     first_batch_after = batch_env.decision_batch(dense_mask=True, semantic=True)
@@ -233,6 +246,23 @@ def _assert_explicit_checkpoint_replays_exactly() -> None:
     for field in ("slot_indices", "reward", "terminated"):
         assert np.array_equal(first_batch_step[field], replay_batch_step[field])
     _assert_decision_batch_equal(first_batch_after, replay_batch_after)
+
+    replacement = batch_env.checkpoint_slots([0])
+    checkpoint_batch = checkpoint_batch.updated(replacement)
+    assert len(checkpoint_batch) == 2
+    batch_env.restore_slots([0, 1], checkpoint_batch.select([0, 1]))
+    restored_after_update = batch_env.decision_batch(dense_mask=True, semantic=True)
+    assert np.array_equal(
+        restored_after_update["slot_indices"],
+        np.array([0, 1], dtype=np.uint64),
+    )
+    foreign = LearningBatchEnv([44, 45, 46]).checkpoint_slots([2])
+    try:
+        checkpoint_batch.updated(foreign)
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("checkpoint update added a missing slot")
 
 
 def main() -> None:

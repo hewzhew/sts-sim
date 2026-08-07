@@ -52,6 +52,12 @@ For vectorized curricula, `checkpoint_slots(slot_indices)` and
 the whole selected subset. Restore validates every target, reconstructs every
 environment, and observes every replacement before changing the first slot;
 an invalid batch therefore cannot leave a partially restored pool.
+An opaque checkpoint batch can select an ordered slot subset and return an
+updated copy with replacement checkpoints for existing slots. This lets a
+continuous caller retain one bounded episode-root bank across asynchronous
+slot resets without inspecting sessions or falling back to per-slot bridge
+calls. Selection rejects duplicate or missing slots, and update never adds a
+new slot implicitly.
 `reset_slots(slot_indices, seeds)` applies the same all-or-nothing rule when a
 caller starts new episodes in terminal slots.
 Every recovery checkpoint is bound to the slot that created it. The ordinary
