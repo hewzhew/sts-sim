@@ -49,6 +49,16 @@ class RegisteredFirstLegalPolicy:
         )
 
 
+class CountingScorer:
+    def __init__(self, scorer) -> None:
+        self.scorer = scorer
+        self.calls = 0
+
+    def __call__(self, decision_batch):
+        self.calls += 1
+        return self.scorer(decision_batch)
+
+
 @unittest.skipUnless(
     _TORCH_AVAILABLE and LearningBatchEnv is not None,
     "optional PyTorch dependency or standalone bridge wheel is not installed",
@@ -68,8 +78,9 @@ class RealBridgeOnlineTrainingTests(unittest.TestCase):
             schema,
             RaggedScorerConfig(hidden_dim=8, relation_layers=0),
         )
+        counting_scorer = CountingScorer(scorer)
         trainer = SynchronousValueTrainer(
-            scorer,
+            counting_scorer,
             torch.optim.SGD(scorer.parameters(), lr=0.001),
             registry,
             SemanticBatchConcatLimits(
@@ -116,6 +127,12 @@ class RealBridgeOnlineTrainingTests(unittest.TestCase):
             assembler.snapshot.completed_attempts,
         )
         self.assertGreater(trainer.snapshot.trained_decisions, 0)
+        self.assertEqual(counting_scorer.calls, trainer.snapshot.optimizer_steps)
+        self.assertGreater(
+            trainer.snapshot.trained_decisions,
+            counting_scorer.calls,
+        )
+        self.assertGreater(trainer.snapshot.total_training_seconds, 0.0)
         self.assertFalse(trainer.snapshot.poisoned)
 
 

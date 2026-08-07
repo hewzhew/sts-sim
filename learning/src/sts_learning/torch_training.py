@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+import time
 from dataclasses import dataclass
 
 import torch
@@ -27,6 +28,8 @@ class SynchronousValueTrainerSnapshot:
     trained_decisions: int
     last_loss: float | None
     last_behavior_manifest_ids: tuple[tuple[BehaviorManifestId, ...], ...] | None
+    total_training_seconds: float
+    last_training_seconds: float | None
     poisoned: bool
 
 
@@ -61,6 +64,8 @@ class SynchronousValueTrainer:
         self._last_behavior_manifest_ids: (
             tuple[tuple[BehaviorManifestId, ...], ...] | None
         ) = None
+        self._total_training_seconds = 0.0
+        self._last_training_seconds: float | None = None
         self._poisoned = False
 
     @property
@@ -73,6 +78,8 @@ class SynchronousValueTrainer:
             trained_decisions=self._trained_decisions,
             last_loss=self._last_loss,
             last_behavior_manifest_ids=self._last_behavior_manifest_ids,
+            total_training_seconds=self._total_training_seconds,
+            last_training_seconds=self._last_training_seconds,
             poisoned=self._poisoned,
         )
 
@@ -94,6 +101,7 @@ class SynchronousValueTrainer:
             self._dropped_attempts += dropped_count
             return
 
+        training_started = time.perf_counter()
         objective = realized_outcome_value_loss(
             self.scorer,
             delivery.completed,
@@ -134,3 +142,6 @@ class SynchronousValueTrainer:
         self._trained_decisions += objective.decision_count
         self._last_loss = loss
         self._last_behavior_manifest_ids = objective.behavior_manifest_ids
+        elapsed = time.perf_counter() - training_started
+        self._total_training_seconds += elapsed
+        self._last_training_seconds = elapsed

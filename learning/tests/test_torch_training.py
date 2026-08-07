@@ -74,6 +74,8 @@ class SynchronousValueTrainerTests(unittest.TestCase):
             trainer.snapshot.last_behavior_manifest_ids,
             ((manifest_id,),),
         )
+        self.assertGreater(trainer.snapshot.total_training_seconds, 0.0)
+        self.assertGreater(trainer.snapshot.last_training_seconds, 0.0)
 
     def test_unknown_manifest_fails_before_optimizer_and_can_be_retried(self) -> None:
         registry = BehaviorManifestRegistry(capacity=1)
