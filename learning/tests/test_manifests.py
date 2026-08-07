@@ -37,6 +37,17 @@ def _manifest(*, checkpoint_marker: int = 1, config_marker: int = 3) -> Behavior
 
 
 class BehaviorManifestTests(unittest.TestCase):
+    def test_canonical_manifest_round_trips_and_rejects_trailing_bytes(self) -> None:
+        manifest = _manifest()
+        payload = manifest.to_bytes()
+
+        self.assertEqual(BehaviorManifest.from_bytes(payload), manifest)
+        self.assertEqual(BehaviorManifest.from_bytes(payload).identity, manifest.identity)
+        with self.assertRaisesRegex(BehaviorManifestError, "trailing bytes"):
+            BehaviorManifest.from_bytes(payload + b"extra")
+        with self.assertRaisesRegex(BehaviorManifestError, "magic"):
+            BehaviorManifest.from_bytes(b"invalid")
+
     def test_artifact_content_hash_does_not_retain_or_accept_mutable_bytes(self) -> None:
         artifact = ManifestArtifactId.from_content(
             ManifestArtifactKind.MODEL_CONFIG,

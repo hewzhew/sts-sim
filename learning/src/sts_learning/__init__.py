@@ -47,6 +47,13 @@ from .manifests import (
     ManifestArtifactId,
     ManifestArtifactKind,
 )
+from .manifest_catalog import (
+    BehaviorManifestCatalogError,
+    BehaviorManifestCatalogLimits,
+    BehaviorManifestCatalogSnapshot,
+    BoundedBehaviorManifestCatalog,
+    PreparedBehaviorManifest,
+)
 from .outcomes import (
     TerminalAttemptOutcome,
     TerminalBatchError,
@@ -100,10 +107,14 @@ __all__ = [
     "BehaviorManifestId",
     "BehaviorManifest",
     "BehaviorManifestError",
+    "BehaviorManifestCatalogError",
+    "BehaviorManifestCatalogLimits",
+    "BehaviorManifestCatalogSnapshot",
     "BehaviorManifestRegistry",
     "BehaviorManifestRegistrySnapshot",
     "BehaviorManifestTemplate",
     "BoundedAttemptAssembler",
+    "BoundedBehaviorManifestCatalog",
     "CheckpointBatch",
     "CheckpointedEpisodeResetTarget",
     "CompletedAttemptExperience",
@@ -125,6 +136,7 @@ __all__ = [
     "ManifestArtifactKind",
     "OnlineBatchDriver",
     "PreparedDecisionBatch",
+    "PreparedBehaviorManifest",
     "PolicyChoiceError",
     "RecoveryEvent",
     "RecoveryLedger",

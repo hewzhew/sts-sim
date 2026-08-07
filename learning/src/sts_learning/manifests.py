@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import operator
 import struct
+from collections.abc import Sequence
 from dataclasses import dataclass
 from enum import IntEnum
 
@@ -101,15 +102,17 @@ class BehaviorManifest:
     def identity(self) -> BehaviorManifestId:
         """Return the canonical identity without retaining any artifact payload."""
 
-        digest = hashlib.sha256(self._canonical_bytes()).digest()
+        digest = hashlib.sha256(self.to_bytes()).digest()
         return BehaviorManifestId(digest)
 
-    def _canonical_bytes(self) -> bytes:
-        payload = bytearray(b"sts-behavior-manifest\x00")
+    def to_bytes(self) -> bytes:
+        """Encode the complete manifest in its versioned canonical format."""
+
+        payload = bytearray(_BEHAVIOR_MANIFEST_MAGIC)
         payload.extend(
             struct.pack(
                 ">IQQ",
-                1,
+                _BEHAVIOR_MANIFEST_VERSION,
                 self.semantic_schema_version,
                 self.training_step,
             )
@@ -125,6 +128,63 @@ class BehaviorManifest:
             payload.append(int(artifact.kind))
             payload.extend(artifact.digest)
         return bytes(payload)
+
+    @classmethod
+    def from_bytes(cls, payload: bytes) -> BehaviorManifest:
+        """Decode only the exact maintained canonical format."""
+
+        if not isinstance(payload, bytes):
+            raise BehaviorManifestError("behavior manifest payload must be immutable bytes")
+        if not payload.startswith(_BEHAVIOR_MANIFEST_MAGIC):
+            raise BehaviorManifestError("behavior manifest magic is invalid")
+        position = len(_BEHAVIOR_MANIFEST_MAGIC)
+        header_end = position + struct.calcsize(">IQQ")
+        if header_end > len(payload):
+            raise BehaviorManifestError("behavior manifest header is truncated")
+        version, schema_version, training_step = struct.unpack(
+            ">IQQ",
+            payload[position:header_end],
+        )
+        position = header_end
+        if version != _BEHAVIOR_MANIFEST_VERSION:
+            raise BehaviorManifestError("behavior manifest version is unsupported")
+
+        artifacts: list[ManifestArtifactId] = []
+        for expected_kind in (
+            ManifestArtifactKind.MODEL_CHECKPOINT,
+            ManifestArtifactKind.MODEL_DEFINITION,
+            ManifestArtifactKind.MODEL_CONFIG,
+            ManifestArtifactKind.SEMANTIC_SCHEMA,
+            ManifestArtifactKind.OPTIMIZER_CONFIG,
+            ManifestArtifactKind.TRAINER_IMPLEMENTATION,
+        ):
+            end = position + 33
+            if end > len(payload):
+                raise BehaviorManifestError("behavior manifest artifact is truncated")
+            try:
+                kind = ManifestArtifactKind(payload[position])
+            except ValueError as error:
+                raise BehaviorManifestError(
+                    "behavior manifest artifact kind is unknown"
+                ) from error
+            if kind is not expected_kind:
+                raise BehaviorManifestError(
+                    f"behavior manifest expected artifact kind {expected_kind.name}"
+                )
+            artifacts.append(ManifestArtifactId(kind, payload[position + 1 : end]))
+            position = end
+        if position != len(payload):
+            raise BehaviorManifestError("behavior manifest contains trailing bytes")
+        return cls(
+            model_checkpoint=artifacts[0],
+            model_definition=artifacts[1],
+            model_config=artifacts[2],
+            semantic_schema=artifacts[3],
+            optimizer_config=artifacts[4],
+            trainer_implementation=artifacts[5],
+            semantic_schema_version=schema_version,
+            training_step=training_step,
+        )
 
 
 @dataclass(frozen=True)
@@ -255,6 +315,45 @@ class BehaviorManifestRegistry:
         except KeyError as error:
             raise BehaviorManifestError("unknown behavior manifest identity") from error
 
+    def register_many(
+        self,
+        entries: Sequence[tuple[BehaviorManifestId, BehaviorManifest]],
+    ) -> tuple[BehaviorManifestId, ...]:
+        """Atomically hydrate multiple exact bindings without partial capacity use."""
+
+        try:
+            normalized = tuple(entries)
+        except TypeError as error:
+            raise BehaviorManifestError("manifest entries must be a sequence") from error
+        tentative = dict(self._entries)
+        identities: list[BehaviorManifestId] = []
+        for entry in normalized:
+            if not isinstance(entry, tuple) or len(entry) != 2:
+                raise BehaviorManifestError("manifest entry must be an id/manifest pair")
+            claimed_id, manifest = entry
+            if not isinstance(claimed_id, BehaviorManifestId):
+                raise BehaviorManifestError("manifest entry id must be typed")
+            if not isinstance(manifest, BehaviorManifest):
+                raise BehaviorManifestError("manifest entry content must be typed")
+            if manifest.identity != claimed_id:
+                raise BehaviorManifestError(
+                    "manifest entry id conflicts with manifest content"
+                )
+            existing = tentative.get(claimed_id)
+            if existing is not None and existing != manifest:
+                raise BehaviorManifestError(
+                    "manifest entry conflicts with registered content"
+                )
+            if existing is None:
+                if len(tentative) >= self.capacity:
+                    raise BehaviorManifestError(
+                        "behavior manifest registry capacity exceeded"
+                    )
+                tentative[claimed_id] = manifest
+            identities.append(claimed_id)
+        self._entries = tentative
+        return tuple(identities)
+
     def require_exact(
         self,
         identity: BehaviorManifestId,
@@ -293,3 +392,7 @@ def _integer(value: object, name: str) -> int:
         return operator.index(value)
     except TypeError as error:
         raise BehaviorManifestError(f"{name} must be an integer") from error
+
+
+_BEHAVIOR_MANIFEST_MAGIC = b"sts-behavior-manifest\x00"
+_BEHAVIOR_MANIFEST_VERSION = 1
