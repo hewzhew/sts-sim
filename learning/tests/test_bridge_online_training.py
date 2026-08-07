@@ -23,11 +23,13 @@ from sts_learning import (
     BoundedBehaviorManifestCatalog,
     ExperienceLimits,
     ExperienceSegmentBuffer,
+    HeldOutEvaluationSpec,
     OnlineBatchDriver,
     SemanticBatchConcatLimits,
     SeedPartition,
     SeedSchedule,
     initialize_population,
+    evaluate_held_out_behavior,
 )
 
 
@@ -43,6 +45,7 @@ if _TORCH_AVAILABLE:
 
     from sts_learning.torch_behavior import (
         CategoricalTorchBehaviorController,
+        CheckpointedCategoricalTorchPolicy,
         TorchBehaviorPublisher,
     )
     from sts_learning.torch_checkpoints import (
@@ -412,6 +415,82 @@ class RealBridgeOnlineTrainingTests(unittest.TestCase):
             self.assertEqual(
                 controller.choose(next_decision),
                 recovered.choose(next_decision),
+            )
+
+            evaluation_schedule = SeedSchedule(
+                SeedPartition.HELD_OUT,
+                next_candidate=107,
+            )
+            evaluation_spec = HeldOutEvaluationSpec(
+                slot_count=1,
+                terminal_attempt_target=1,
+                max_batch_steps=160,
+            )
+            generation_zero_generator = torch.Generator().manual_seed(501)
+            generation_two_generator = torch.Generator().manual_seed(501)
+            generation_zero_policy = CheckpointedCategoricalTorchPolicy.recover(
+                generation_zero.manifest_id,
+                store,
+                catalog,
+                BehaviorManifestRegistry(capacity=1),
+                scorer_factory,
+                behavior_config,
+                generation_zero_generator,
+            )
+            generation_two_policy = CheckpointedCategoricalTorchPolicy.recover(
+                generation_two.manifest_id,
+                store,
+                catalog,
+                BehaviorManifestRegistry(capacity=1),
+                scorer_factory,
+                behavior_config,
+                generation_two_generator,
+            )
+            self.assertTrue(
+                torch.equal(
+                    generation_zero_generator.get_state(),
+                    generation_two_generator.get_state(),
+                )
+            )
+
+            generation_zero_evaluation = evaluate_held_out_behavior(
+                LearningBatchEnv,
+                generation_zero_policy,
+                schedule=evaluation_schedule,
+                spec=evaluation_spec,
+            )
+            generation_two_evaluation = evaluate_held_out_behavior(
+                LearningBatchEnv,
+                generation_two_policy,
+                schedule=evaluation_schedule,
+                spec=evaluation_spec,
+            )
+
+            self.assertTrue(generation_zero_evaluation.complete)
+            self.assertTrue(generation_two_evaluation.complete)
+            self.assertEqual(
+                generation_zero_evaluation.behavior_manifest_id,
+                generation_zero.manifest_id,
+            )
+            self.assertEqual(
+                generation_two_evaluation.behavior_manifest_id,
+                generation_two.manifest_id,
+            )
+            self.assertEqual(
+                generation_zero_evaluation.schedule_start,
+                generation_two_evaluation.schedule_start,
+            )
+            self.assertEqual(generation_zero_evaluation.run.summary.recoveries, 0)
+            self.assertEqual(generation_two_evaluation.run.summary.recoveries, 0)
+            self.assertEqual(
+                generation_zero_evaluation.run.summary.victories
+                + generation_zero_evaluation.run.summary.defeats,
+                generation_zero_evaluation.run.summary.terminal_attempts,
+            )
+            self.assertEqual(
+                generation_two_evaluation.run.summary.victories
+                + generation_two_evaluation.run.summary.defeats,
+                generation_two_evaluation.run.summary.terminal_attempts,
             )
 
         self.assertEqual(assembler.snapshot.completed_attempts, 2)
