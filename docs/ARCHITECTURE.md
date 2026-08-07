@@ -306,6 +306,18 @@ materializes the checkpoint before hydrating the registry. A missing checkpoint
 therefore cannot leave a partially executable registry row. The optimizer-owned
 shadow model is never reused as live behavior, so later training cannot silently
 change a published policy. Any owner failure produces no policy switch.
+
+A long-lived categorical behavior controller is the stable policy object held
+by the online driver across generations. It accepts only strictly increasing
+training steps, completes publication and verified frozen-scorer promotion,
+and only then replaces its internal live policy. A failed promotion may leave
+an already committed durable publication available for an idempotent retry,
+but it leaves the incumbent live policy, successful-promotion counter, and
+injected selection-generator state unchanged. The controller retains only the
+active manifest identity, its training step, and a compact promotion count;
+restart recovery begins from an inactive controller and one durable manifest
+identity rather than a serialized live model.
+
 Every buffer has mandatory decision-row and retained-payload-byte limits. The
 byte accounting includes owned NumPy storage and Python payload metadata; the
 row limit bounds lineage and choice metadata. A complete incoming batch either

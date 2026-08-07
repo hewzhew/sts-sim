@@ -42,7 +42,7 @@ if _TORCH_AVAILABLE:
     import torch
 
     from sts_learning.torch_behavior import (
-        CheckpointedCategoricalTorchPolicy,
+        CategoricalTorchBehaviorController,
         TorchBehaviorPublisher,
     )
     from sts_learning.torch_checkpoints import (
@@ -185,7 +185,7 @@ class RealBridgeOnlineTrainingTests(unittest.TestCase):
         self.assertGreater(trainer.snapshot.total_training_seconds, 0.0)
         self.assertFalse(trainer.snapshot.poisoned)
 
-    def test_categorical_behavior_reaches_bounded_online_value_training(self) -> None:
+    def test_categorical_behavior_promotes_one_bounded_online_generation(self) -> None:
         assert LearningBatchEnv is not None
         assert semantic_schema is not None
         # This is deliberately end-to-end: publication, bridge decoding,
@@ -199,25 +199,25 @@ class RealBridgeOnlineTrainingTests(unittest.TestCase):
 
         torch.manual_seed(43)
         shadow = scorer_factory()
-        registry = BehaviorManifestRegistry(capacity=1)
+        registry = BehaviorManifestRegistry(capacity=2)
         with tempfile.TemporaryDirectory() as root:
             store = BoundedTorchCheckpointStore(
                 Path(root, "checkpoints"),
                 TorchCheckpointLimits(
-                    max_checkpoints=1,
+                    max_checkpoints=2,
                     max_bytes_per_checkpoint=2 * 1024 * 1024,
-                    max_total_bytes=2 * 1024 * 1024,
+                    max_total_bytes=4 * 1024 * 1024,
                 ),
             )
             catalog = BoundedBehaviorManifestCatalog(
                 Path(root, "manifests"),
                 BehaviorManifestCatalogLimits(
-                    max_manifests=1,
+                    max_manifests=2,
                     max_bytes_per_manifest=1024,
-                    max_total_bytes=1024,
+                    max_total_bytes=2 * 1024,
                 ),
             )
-            publication = TorchBehaviorPublisher(
+            publisher = TorchBehaviorPublisher(
                 store,
                 catalog,
                 registry,
@@ -225,15 +225,17 @@ class RealBridgeOnlineTrainingTests(unittest.TestCase):
                     semantic_schema_version=int(schema["version"]),
                     behavior_rule=behavior_config.behavior_rule,
                 ),
-            ).publish(shadow, training_step=0)
-            policy = CheckpointedCategoricalTorchPolicy.promote(
-                publication,
-                store,
-                catalog,
-                registry,
+            )
+            behavior_generator = torch.Generator().manual_seed(94)
+            controller = CategoricalTorchBehaviorController(
+                publisher,
                 scorer_factory,
                 behavior_config,
-                torch.Generator().manual_seed(94),
+                behavior_generator,
+            )
+            generation_zero = controller.publish_and_promote(
+                shadow,
+                training_step=0,
             )
             counting_scorer = CountingScorer(shadow)
             trainer = SynchronousValueTrainer(
@@ -262,7 +264,7 @@ class RealBridgeOnlineTrainingTests(unittest.TestCase):
             )
             driver = OnlineBatchDriver(
                 population,
-                policy=policy,
+                policy=controller,
                 curriculum=NoRecovery(),
                 experience_buffer=ExperienceSegmentBuffer(
                     ExperienceLimits(
@@ -275,11 +277,120 @@ class RealBridgeOnlineTrainingTests(unittest.TestCase):
 
             with warnings.catch_warnings():
                 warnings.simplefilter("error")
-                summary = driver.run(batch_steps=160)
-                driver.flush_experience()
+                steps_used = 0
 
-        self.assertGreater(summary.terminal_attempts, 0)
-        self.assertGreater(trainer.snapshot.optimizer_steps, 0)
+                def advance_to_terminal():
+                    nonlocal steps_used
+                    while steps_used < 160:
+                        result = driver.advance()
+                        steps_used += 1
+                        if result.attempts:
+                            self.assertEqual(len(result.attempts), 1)
+                            driver.flush_experience()
+                            return result.attempts[0]
+                    self.fail("fixed categorical bridge run found fewer than two terminals")
+
+                first_terminal = advance_to_terminal()
+                first_training = trainer.snapshot
+                first_manifest_evidence = first_training.last_behavior_manifest_ids
+                first_probability_evidence = first_training.last_selection_probabilities
+
+                self.assertEqual(first_training.optimizer_steps, 1)
+                self.assertIsNotNone(first_manifest_evidence)
+                self.assertIsNotNone(first_probability_evidence)
+                assert first_manifest_evidence is not None
+                assert first_probability_evidence is not None
+                self.assertTrue(
+                    all(
+                        manifest_id == generation_zero.manifest_id
+                        for attempt in first_manifest_evidence
+                        for manifest_id in attempt
+                    )
+                )
+                self.assertTrue(
+                    all(
+                        probability.value is not None
+                        for attempt in first_probability_evidence
+                        for probability in attempt
+                    )
+                )
+
+                generation_one = controller.publish_and_promote(
+                    shadow,
+                    training_step=first_training.optimizer_steps,
+                )
+                second_terminal = advance_to_terminal()
+
+            second_training = trainer.snapshot
+            second_manifest_evidence = second_training.last_behavior_manifest_ids
+            second_probability_evidence = second_training.last_selection_probabilities
+
+            self.assertNotEqual(generation_zero.manifest_id, generation_one.manifest_id)
+            self.assertEqual(
+                second_terminal.episode_generation,
+                first_terminal.episode_generation + 1,
+            )
+            self.assertEqual(
+                first_manifest_evidence,
+                ((generation_zero.manifest_id,) * len(first_manifest_evidence[0]),),
+            )
+            self.assertEqual(second_training.optimizer_steps, 2)
+            self.assertIsNotNone(second_manifest_evidence)
+            self.assertIsNotNone(second_probability_evidence)
+            assert second_manifest_evidence is not None
+            assert second_probability_evidence is not None
+            self.assertTrue(
+                all(
+                    manifest_id == generation_one.manifest_id
+                    for attempt in second_manifest_evidence
+                    for manifest_id in attempt
+                )
+            )
+            self.assertTrue(
+                all(
+                    probability.value is not None
+                    for attempt in second_probability_evidence
+                    for probability in attempt
+                )
+            )
+            self.assertEqual(
+                controller.snapshot.active_manifest_id,
+                generation_one.manifest_id,
+            )
+            self.assertEqual(controller.snapshot.active_training_step, 1)
+            self.assertEqual(controller.snapshot.successful_promotions, 2)
+            self.assertEqual(store.snapshot.checkpoints, 2)
+            self.assertEqual(catalog.snapshot.manifests, 2)
+            self.assertEqual(registry.snapshot.registered_manifests, 2)
+
+            recovered_generator = torch.Generator()
+            recovered_generator.set_state(behavior_generator.get_state())
+            recovered = CategoricalTorchBehaviorController(
+                TorchBehaviorPublisher(
+                    store,
+                    catalog,
+                    BehaviorManifestRegistry(capacity=1),
+                    behavior_manifest_template_fixture(
+                        semantic_schema_version=int(schema["version"]),
+                        behavior_rule=behavior_config.behavior_rule,
+                    ),
+                ),
+                scorer_factory,
+                behavior_config,
+                recovered_generator,
+            )
+            recovered_publication = recovered.recover_and_promote(
+                generation_one.manifest_id
+            )
+            next_decision = driver.env.decision_batch(semantic=True)
+
+            self.assertEqual(recovered_publication, generation_one)
+            self.assertEqual(
+                controller.choose(next_decision),
+                recovered.choose(next_decision),
+            )
+
+        self.assertEqual(assembler.snapshot.completed_attempts, 2)
         self.assertEqual(assembler.snapshot.dropped_attempts, 0)
         self.assertEqual(counting_scorer.calls, trainer.snapshot.optimizer_steps)
         self.assertGreater(observing_trainer.observed_probabilities, 0)

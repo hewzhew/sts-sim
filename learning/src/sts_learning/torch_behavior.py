@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import operator
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 
@@ -286,6 +287,101 @@ class CheckpointedCategoricalTorchPolicy:
         )
 
 
+@dataclass(frozen=True)
+class CategoricalTorchBehaviorControllerSnapshot:
+    active_manifest_id: BehaviorManifestId | None
+    active_training_step: int | None
+    successful_promotions: int
+
+
+class CategoricalTorchBehaviorController:
+    """Atomically switch one live categorical behavior after verified promotion."""
+
+    def __init__(
+        self,
+        publisher: TorchBehaviorPublisher,
+        scorer_factory: Callable[[], RaggedCandidateScorer],
+        config: RaggedCategoricalPolicyConfig,
+        generator: torch.Generator,
+    ) -> None:
+        if not isinstance(publisher, TorchBehaviorPublisher):
+            raise TorchBehaviorError("controller requires a behavior publisher")
+        if not callable(scorer_factory):
+            raise TorchBehaviorError("controller requires a scorer factory")
+        _validate_categorical_inputs(config, generator)
+        self.publisher = publisher
+        self.scorer_factory = scorer_factory
+        self.config = config
+        self.generator = generator
+        self._policy: CheckpointedCategoricalTorchPolicy | None = None
+        self._successful_promotions = 0
+
+    @property
+    def snapshot(self) -> CategoricalTorchBehaviorControllerSnapshot:
+        publication = self._policy.publication if self._policy is not None else None
+        return CategoricalTorchBehaviorControllerSnapshot(
+            active_manifest_id=(
+                publication.manifest_id if publication is not None else None
+            ),
+            active_training_step=(
+                publication.manifest.training_step if publication is not None else None
+            ),
+            successful_promotions=self._successful_promotions,
+        )
+
+    def publish_and_promote(
+        self,
+        scorer: RaggedCandidateScorer,
+        *,
+        training_step: int,
+    ) -> TorchBehaviorPublication:
+        step = _training_step(training_step)
+        current = self.snapshot.active_training_step
+        if current is not None and step <= current:
+            raise TorchBehaviorError(
+                "controller training step must increase across promotions"
+            )
+        publication = self.publisher.publish(scorer, training_step=step)
+        policy = CheckpointedCategoricalTorchPolicy.promote(
+            publication,
+            self.publisher.store,
+            self.publisher.catalog,
+            self.publisher.registry,
+            self.scorer_factory,
+            self.config,
+            self.generator,
+        )
+        self._policy = policy
+        self._successful_promotions += 1
+        return publication
+
+    def recover_and_promote(
+        self,
+        manifest_id: BehaviorManifestId,
+    ) -> TorchBehaviorPublication:
+        if self._policy is not None:
+            raise TorchBehaviorError(
+                "controller recovery requires an inactive behavior slot"
+            )
+        policy = CheckpointedCategoricalTorchPolicy.recover(
+            manifest_id,
+            self.publisher.store,
+            self.publisher.catalog,
+            self.publisher.registry,
+            self.scorer_factory,
+            self.config,
+            self.generator,
+        )
+        self._policy = policy
+        self._successful_promotions = 1
+        return policy.publication
+
+    def choose(self, decision_batch: Mapping[str, object]) -> BatchPolicyChoice:
+        if self._policy is None:
+            raise TorchBehaviorError("categorical behavior controller is inactive")
+        return self._policy.choose(decision_batch)
+
+
 def _promote_frozen_scorer(
     publication: TorchBehaviorPublication,
     store: BoundedTorchCheckpointStore,
@@ -409,3 +505,15 @@ def _require_generator_device(
         raise TorchBehaviorError(
             "categorical generator device must match the restored scorer"
         )
+
+
+def _training_step(value: object) -> int:
+    if isinstance(value, bool):
+        raise TorchBehaviorError("training step must be an integer")
+    try:
+        step = operator.index(value)
+    except TypeError as error:
+        raise TorchBehaviorError("training step must be an integer") from error
+    if step < 0:
+        raise TorchBehaviorError("training step must be non-negative")
+    return step

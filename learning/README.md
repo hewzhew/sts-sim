@@ -126,6 +126,13 @@ its exact behavior-rule binding before it can execute. They never hand the
 optimizer's live shadow scorer directly to behavior, so subsequent shadow
 updates cannot drift a published manifest. The
 live policy emits the recovered registered manifest id on every batched choice.
+`CategoricalTorchBehaviorController` is the stable policy object retained by a
+long-running driver. It accepts only increasing training steps and swaps its
+internal frozen categorical policy only after publication and promotion both
+succeed; a failed promotion leaves the prior live policy and injected selection
+RNG unchanged. A fresh inactive controller can recover the active generation
+from its durable manifest identity after restart.
+
 An `ExperienceSegmentBuffer` requires both a maximum decision count and a
 maximum retained-payload byte count. The byte count conservatively includes
 owned NumPy buffers and headers plus mappings, keys, and scalar values; the row
