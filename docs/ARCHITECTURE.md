@@ -264,6 +264,15 @@ while a rejected choice produces no experience row. Checkpoints, simulator
 sessions, display text, JSON, policy scores, and inferred outcomes are not
 experience payloads.
 
+The Python caller may structurally select rows from a semantic decision batch
+to avoid retaining unrelated environment slots. Selection copies and compacts
+the requested token ranges and reindexes every token-bearing sparse table and
+candidate boundary without interpreting numeric feature ids. It rejects
+unknown bridge fields, cross-row relations, and malformed boundaries. Model
+scores for a selected row must equal its scores in the original batch; this is
+the boundary that permits later per-attempt memory accounting without a second
+semantic dictionary or whole-batch retention.
+
 An optional PyTorch candidate scorer lives only in the Python `learning/`
 owner and is not imported by the ordinary package root. Construction consumes
 one bridge `semantic_schema()` result and derives numeric embedding dimensions

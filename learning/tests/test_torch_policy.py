@@ -3,7 +3,11 @@ from __future__ import annotations
 import importlib.util
 import unittest
 
-import numpy as np
+from learning.tests.semantic_fixtures import (
+    semantic_batch_fixture,
+    semantic_schema_fixture,
+)
+from sts_learning import select_semantic_decision_rows
 
 
 _TORCH_AVAILABLE = importlib.util.find_spec("torch") is not None
@@ -26,56 +30,12 @@ except ImportError:
     semantic_schema = None  # type: ignore[assignment]
 
 
-def _schema() -> dict[str, object]:
-    return {
-        "version": 2,
-        "token_kind": {"Observation": 0, "Candidate": 1, "Entity": 2},
-        "categorical_field": {"Kind": 0, "Flag": 1},
-        "scalar_field": {"Amount": 0},
-        "relation_kind": {"HasCandidate": 0, "Targets": 1},
-        "categorical_vocabulary_size": {0: 3, 1: 2},
-    }
-
-
-def _batch() -> dict[str, object]:
-    return {
-        "slot_indices": np.array([4, 9], dtype=np.uint64),
-        "candidate_counts": np.array([2, 3], dtype=np.uint64),
-        "candidate_row_splits": np.array([0, 2, 5], dtype=np.uint64),
-        "semantic": {
-            "schema_version": 2,
-            "token": {
-                "row_splits": np.array([0, 4, 9], dtype=np.uint64),
-                "kind": np.array([0, 1, 1, 2, 0, 1, 1, 1, 2], dtype=np.uint16),
-            },
-            "categorical": {
-                "token_indices": np.array([0, 1, 2, 4, 5, 6, 7], dtype=np.uint64),
-                "field": np.array([0, 1, 1, 0, 1, 1, 1], dtype=np.uint16),
-                "value": np.array([2, 0, 1, 1, 1, 0, 1], dtype=np.int64),
-            },
-            "scalar": {
-                "token_indices": np.array([0, 3, 4, 8], dtype=np.uint64),
-                "field": np.array([0, 0, 0, 0], dtype=np.uint16),
-                "value": np.array([0.5, -1.0, 2.0, 0.25], dtype=np.float32),
-            },
-            "relation": {
-                "source_token_indices": np.array(
-                    [0, 0, 1, 4, 4, 4, 5], dtype=np.uint64
-                ),
-                "relation": np.array([0, 0, 1, 0, 0, 0, 1], dtype=np.uint16),
-                "target_token_indices": np.array(
-                    [1, 2, 3, 5, 6, 7, 8], dtype=np.uint64
-                ),
-            },
-            "candidate_token_indices": np.array([1, 2, 5, 6, 7], dtype=np.uint64),
-        },
-    }
-
-
 @unittest.skipUnless(_TORCH_AVAILABLE, "optional PyTorch dependency is not installed")
 class TorchPolicyTests(unittest.TestCase):
     def test_schema_dimensions_come_only_from_bridge_schema(self) -> None:
-        dimensions = SemanticSchemaDimensions.from_bridge_schema(_schema())
+        dimensions = SemanticSchemaDimensions.from_bridge_schema(
+            semantic_schema_fixture()
+        )
 
         self.assertEqual(dimensions.token_kind_size, 3)
         self.assertEqual(dimensions.categorical_field_size, 2)
@@ -86,12 +46,12 @@ class TorchPolicyTests(unittest.TestCase):
         assert _TORCH_AVAILABLE
         torch.manual_seed(7)
         scorer = RaggedCandidateScorer.from_bridge_schema(
-            _schema(),
+            semantic_schema_fixture(),
             RaggedScorerConfig(hidden_dim=24, relation_layers=1),
         )
         optimizer = torch.optim.SGD(scorer.parameters(), lr=0.05)
 
-        logits = scorer(_batch())
+        logits = scorer(semantic_batch_fixture())
         self.assertEqual(tuple(logits.values.shape), (5,))
         self.assertEqual(logits.row_splits.tolist(), [0, 2, 5])
         self.assertTrue(bool(torch.all(torch.isfinite(logits.values))))
@@ -113,13 +73,28 @@ class TorchPolicyTests(unittest.TestCase):
         self.assertFalse(torch.equal(before, scorer.scorer[-1].weight.detach()))
 
     def test_cross_row_relation_is_rejected(self) -> None:
-        scorer = RaggedCandidateScorer.from_bridge_schema(_schema())
-        batch = _batch()
+        scorer = RaggedCandidateScorer.from_bridge_schema(semantic_schema_fixture())
+        batch = semantic_batch_fixture()
         relation = batch["semantic"]["relation"]  # type: ignore[index]
         relation["target_token_indices"][0] = 5  # type: ignore[index]
 
         with self.assertRaisesRegex(TorchPolicyError, "relation escapes"):
             scorer(batch)
+
+    def test_row_selection_preserves_logits_without_cross_row_leakage(self) -> None:
+        torch.manual_seed(9)
+        scorer = RaggedCandidateScorer.from_bridge_schema(
+            semantic_schema_fixture(),
+            RaggedScorerConfig(hidden_dim=20, relation_layers=2),
+        )
+        batch = semantic_batch_fixture()
+
+        original = scorer(batch)
+        selected = scorer(select_semantic_decision_rows(batch, [1, 0]))
+        expected = torch.cat((original.values[2:5], original.values[0:2]))
+
+        self.assertEqual(selected.row_splits.tolist(), [0, 3, 5])
+        torch.testing.assert_close(selected.values, expected)
 
 
 @unittest.skipUnless(
@@ -142,7 +117,18 @@ class RealBridgeTorchPolicyTests(unittest.TestCase):
         loss = ragged_cross_entropy(logits, targets)
         loss.backward()
 
+        selected_batch = select_semantic_decision_rows(batch, [2, 0])
+        selected_logits = scorer(selected_batch)
+        original_splits = logits.row_splits.tolist()
+        expected = torch.cat(
+            tuple(
+                logits.values[original_splits[row] : original_splits[row + 1]]
+                for row in (2, 0)
+            )
+        )
+
         self.assertEqual(logits.row_splits.tolist(), batch["candidate_row_splits"].tolist())
+        torch.testing.assert_close(selected_logits.values, expected)
         self.assertTrue(bool(torch.isfinite(loss)))
         choices = GreedyTorchPolicy(scorer).choose(batch)
         self.assertEqual(len(choices), len(batch["slot_indices"]))

@@ -57,6 +57,7 @@ from .seeds import (
     reset_scheduled_checkpointed_with_accounting,
     reset_scheduled_with_accounting,
 )
+from .semantic_batch import SemanticBatchError, select_semantic_decision_rows
 
 __all__ = [
     "BatchCurriculum",
@@ -94,6 +95,7 @@ __all__ = [
     "SeedResetBatch",
     "SeedSchedule",
     "SeedScheduleError",
+    "SemanticBatchError",
     "SegmentCloseReason",
     "TerminalAttemptOutcome",
     "TerminalAccountingBatch",
@@ -106,4 +108,5 @@ __all__ = [
     "reset_scheduled_checkpointed_with_accounting",
     "reset_scheduled_with_accounting",
     "restore_with_accounting",
+    "select_semantic_decision_rows",
 ]

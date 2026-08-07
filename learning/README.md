@@ -88,6 +88,15 @@ environment action cannot become training experience. One open segment remains
 bounded across `run()` calls and can be deliberately sealed by
 `flush_experience()`.
 
+`sts_learning.semantic_batch` provides the NumPy-only row algebra needed to
+retain or train on exact attempt subsets without pinning unrelated environment
+slots. A selection validates the complete structural bridge schema, copies rows
+in the requested order, compacts token storage, and reindexes categorical,
+scalar, relation, and candidate token columns. It interprets no numeric feature
+id. Unknown bridge fields and cross-row graph edges fail closed instead of
+being silently discarded. Scoring a selected row is contract-tested to equal
+scoring that same row in its original batch.
+
 `sts_learning.torch_policy` is an optional, device-agnostic PyTorch baseline
 over that same bridge-owned semantic graph. It is intentionally absent from
 the package root, so ordinary caller imports still require only NumPy. The
