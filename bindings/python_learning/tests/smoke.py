@@ -280,6 +280,7 @@ def main() -> None:
     random_states = [seed ^ _SEED_XOR for seed in seeds]
     env = LearningBatchEnv(seeds)
     total_steps = 0
+    terminal_slots_seen: set[int] = set()
     started = time.perf_counter()
 
     initial = env.decision_batch(dense_mask=True, semantic=True)
@@ -347,10 +348,40 @@ def main() -> None:
 
         step = env.step()
         total_steps += int(step["slot_indices"].size)
+        terminal_count = int(step["terminal_slot_indices"].size)
+        assert step["terminal_slot_indices"].dtype == np.uint64
+        assert np.array_equal(
+            step["terminal_slot_indices"],
+            step["slot_indices"][step["terminated"]],
+        )
+        assert step["terminal_reward"].dtype == np.int8
+        assert np.array_equal(
+            step["terminal_reward"],
+            step["reward"][step["terminated"]],
+        )
+        assert np.all(step["terminal_reward"] != 0)
+        assert step["terminal_act"].dtype == np.uint8
+        for key in (
+            "terminal_floor",
+            "terminal_hp",
+            "terminal_max_hp",
+            "terminal_gold",
+        ):
+            assert step[key].dtype == np.int32
+            assert step[key].shape == (terminal_count,)
+        assert step["terminal_act"].shape == (terminal_count,)
+        if terminal_count:
+            assert np.all(step["terminal_act"] >= 1)
+            assert np.all(step["terminal_floor"] >= 0)
+            assert np.all(step["terminal_max_hp"] > 0)
+            assert np.all(step["terminal_hp"] <= step["terminal_max_hp"])
+            assert np.all(step["terminal_gold"] >= 0)
+        terminal_slots_seen.update(int(slot) for slot in step["terminal_slot_indices"])
         assert total_steps < 100_000
 
     elapsed = time.perf_counter() - started
     assert total_steps == 330
+    assert terminal_slots_seen == set(range(env.slot_count))
     assert saw_combat
     assert saw_candidate_target
     assert saw_combat_candidate_target

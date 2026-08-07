@@ -36,6 +36,17 @@ pub struct LearningCombatBoundaryV1 {
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct LearningTerminalOutcomeV1 {
+    pub result: RunResult,
+    pub terminal_act: u8,
+    pub terminal_floor: i32,
+    pub terminal_hp: i32,
+    pub terminal_max_hp: i32,
+    pub terminal_gold: i32,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum LearningBoundaryV1 {
     Strategic {
@@ -45,7 +56,7 @@ pub enum LearningBoundaryV1 {
         boundary: LearningCombatBoundaryV1,
     },
     Terminal {
-        result: RunResult,
+        outcome: LearningTerminalOutcomeV1,
     },
     Unsupported,
 }
@@ -53,12 +64,10 @@ pub enum LearningBoundaryV1 {
 impl LearningBoundaryV1 {
     pub fn terminal_reward(&self) -> i8 {
         match self {
-            Self::Terminal {
-                result: RunResult::Victory,
-            } => 1,
-            Self::Terminal {
-                result: RunResult::Defeat,
-            } => -1,
+            Self::Terminal { outcome } => match &outcome.result {
+                RunResult::Victory => 1,
+                RunResult::Defeat => -1,
+            },
             _ => 0,
         }
     }
@@ -121,7 +130,14 @@ impl LearningEnvV1 {
     pub fn observe(&self) -> Result<LearningBoundaryV1, String> {
         if let EngineState::GameOver(result) = &self.session.engine_state {
             return Ok(LearningBoundaryV1::Terminal {
-                result: result.clone(),
+                outcome: LearningTerminalOutcomeV1 {
+                    result: result.clone(),
+                    terminal_act: self.session.run_state.act_num,
+                    terminal_floor: self.session.run_state.floor_num,
+                    terminal_hp: self.session.run_state.current_hp,
+                    terminal_max_hp: self.session.run_state.max_hp,
+                    terminal_gold: self.session.run_state.gold,
+                },
             });
         }
         if matches!(
@@ -256,9 +272,33 @@ mod tests {
     use crate::sim::combat_action_surface::{
         CombatIndexedChoiceCandidateV2, CombatIndexedChoiceReasonV2,
     };
-    use crate::state::core::{ActiveCombat, CombatContext, RoomCombatContext};
+    use crate::state::core::{ActiveCombat, CombatContext, RoomCombatContext, RunResult};
     use crate::state::map::node::RoomType;
     use crate::state::{DiscoveryChoiceState, PendingChoice};
+
+    #[test]
+    fn terminal_boundary_retains_public_run_outcome_facts() {
+        let mut session = RunControlSession::new(RunControlConfig::default());
+        session.engine_state = EngineState::GameOver(RunResult::Defeat);
+        session.run_state.act_num = 3;
+        session.run_state.floor_num = 47;
+        session.run_state.current_hp = 0;
+        session.run_state.max_hp = 91;
+        session.run_state.gold = 123;
+        let env = LearningEnvV1::from_session(session);
+
+        let LearningBoundaryV1::Terminal { outcome } =
+            env.observe().expect("observe terminal learning boundary")
+        else {
+            panic!("game over should expose a terminal learning boundary");
+        };
+        assert_eq!(outcome.result, RunResult::Defeat);
+        assert_eq!(outcome.terminal_act, 3);
+        assert_eq!(outcome.terminal_floor, 47);
+        assert_eq!(outcome.terminal_hp, 0);
+        assert_eq!(outcome.terminal_max_hp, 91);
+        assert_eq!(outcome.terminal_gold, 123);
+    }
 
     #[test]
     fn strategic_boundary_steps_by_typed_planner_candidate_and_restores_exactly() {

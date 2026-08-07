@@ -158,6 +158,11 @@ and policy inference remain outside the pool. This is the maintained boundary
 for amortizing a future Rust or Python backend call across environments without
 per-step JSON or one foreign-language call per slot.
 
+Terminal learning steps retain the typed run result plus public terminal act,
+floor, HP, max HP, and gold. The Python bridge returns those facts as compact
+columns aligned only to terminal slots. They are outcome evidence for progress
+and lower-tail targets, not a shaped reward or a context-free resource score.
+
 The standalone `bindings/python_learning` Maturin crate is excluded from the
 root Cargo workspace. Python supplies observation-local candidate ordinals,
 while Rust owns typed root/selection decoding and batched environment mutation.

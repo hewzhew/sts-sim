@@ -61,6 +61,11 @@ the wrong environment lineage.
 The bridge still contains no policy, optimizer, automatic reset, or PyTorch
 dependency. Its semantic arrays are an input contract, not evidence that a
 particular model or learning objective is correct.
+Terminal step batches retain aligned `terminal_slot_indices`,
+`terminal_reward`, public `terminal_act`, `terminal_floor`, `terminal_hp`,
+`terminal_max_hp`, and `terminal_gold` columns. These raw outcome facts support
+progress and lower-tail auxiliary targets without turning HP or gold into a
+handcrafted reward.
 
 Run the maintained end-to-end verification with:
 

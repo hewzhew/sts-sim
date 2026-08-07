@@ -232,6 +232,74 @@ impl LearningBatchEnv {
             "terminated",
             PyArray1::from_vec(py, step.slots.iter().map(|slot| slot.terminated).collect()),
         )?;
+        let terminal_slots = step
+            .slots
+            .iter()
+            .filter_map(|slot| {
+                slot.terminal_outcome
+                    .as_ref()
+                    .map(|outcome| (slot, outcome))
+            })
+            .collect::<Vec<_>>();
+        result.set_item(
+            "terminal_slot_indices",
+            usize_array(
+                py,
+                terminal_slots
+                    .iter()
+                    .map(|(slot, _)| slot.slot_index)
+                    .collect(),
+            ),
+        )?;
+        result.set_item(
+            "terminal_reward",
+            PyArray1::from_vec(
+                py,
+                terminal_slots.iter().map(|(slot, _)| slot.reward).collect(),
+            ),
+        )?;
+        result.set_item(
+            "terminal_act",
+            PyArray1::from_vec(
+                py,
+                terminal_slots
+                    .iter()
+                    .map(|(_, outcome)| outcome.terminal_act)
+                    .collect(),
+            ),
+        )?;
+        for (key, values) in [
+            (
+                "terminal_floor",
+                terminal_slots
+                    .iter()
+                    .map(|(_, outcome)| outcome.terminal_floor)
+                    .collect(),
+            ),
+            (
+                "terminal_hp",
+                terminal_slots
+                    .iter()
+                    .map(|(_, outcome)| outcome.terminal_hp)
+                    .collect(),
+            ),
+            (
+                "terminal_max_hp",
+                terminal_slots
+                    .iter()
+                    .map(|(_, outcome)| outcome.terminal_max_hp)
+                    .collect(),
+            ),
+            (
+                "terminal_gold",
+                terminal_slots
+                    .iter()
+                    .map(|(_, outcome)| outcome.terminal_gold)
+                    .collect(),
+            ),
+        ] {
+            result.set_item(key, PyArray1::from_vec(py, values))?;
+        }
         Ok(result)
     }
 

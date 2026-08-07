@@ -625,6 +625,10 @@ batch and applies atomically after all target slots and restored observations
 validate; it does not degrade into one Python call or a partial mutation per
 environment slot.
 
+Terminal batches also carry public act, floor, HP, max HP, and gold alongside
+the sparse win/loss reward. These are raw outcome facts for auxiliary progress
+and lower-tail targets; the bridge does not combine them into shaped reward.
+
 Online curriculum and evaluation accounting live in the separate Python
 caller package. Its two-phase tickets change ledger attempt/generation state
 only after an atomic restore or reset succeeds. It keeps no automatic

@@ -9,7 +9,8 @@ use std::fmt;
 
 use super::{
     LearningActionV1, LearningBoundaryV1, LearningEnvV1, LearningModelBatchV1,
-    LearningModelInputError, RunControlConfig, RunControlSessionCheckpointV1,
+    LearningModelInputError, LearningTerminalOutcomeV1, RunControlConfig,
+    RunControlSessionCheckpointV1,
 };
 
 #[derive(Clone, Debug)]
@@ -241,10 +242,15 @@ impl LearningEnvPoolV1 {
                     });
                 }
             };
+            let terminal_outcome = match &step.boundary {
+                LearningBoundaryV1::Terminal { outcome } => Some(outcome.clone()),
+                _ => None,
+            };
             slots.push(LearningEnvPoolSlotStepV1 {
                 slot_index,
                 reward: step.reward,
                 terminated: step.terminated,
+                terminal_outcome,
             });
             self.slots[slot_index].boundary = step.boundary;
         }
@@ -259,14 +265,15 @@ pub struct LearningEnvPoolModelBatchV1<'a> {
     pub model_batch: LearningModelBatchV1<'a>,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct LearningEnvPoolSlotStepV1 {
     pub slot_index: usize,
     pub reward: i8,
     pub terminated: bool,
+    pub terminal_outcome: Option<LearningTerminalOutcomeV1>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct LearningEnvPoolStepV1 {
     pub slots: Vec<LearningEnvPoolSlotStepV1>,
 }
