@@ -289,6 +289,16 @@ pub enum PlannerAction {
         potion: PotionId,
         price: i32,
     },
+    UseRunPotion {
+        slot: usize,
+        potion: PotionId,
+        potion_uuid: u32,
+    },
+    DiscardRunPotion {
+        slot: usize,
+        potion: PotionId,
+        potion_uuid: u32,
+    },
     RemoveCard {
         card_uuid: u32,
         card: CardId,

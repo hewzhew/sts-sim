@@ -13,9 +13,10 @@ use crate::ai::combat_learning_observation::{
 };
 use crate::ai::combat_public_observation::HiddenInformationReasonV1;
 use crate::ai::planner_core::{
-    PlannerAction, PlannerCardObservation, PlannerDecisionContext, PlannerDecisionSite,
-    PlannerPotionSlotObservation, PlannerPublicHistory, PlannerPublicMap, PlannerRelicObservation,
-    PlannerRunGoal, PlannerRunScalars,
+    CandidateRepresentationGap, CandidateSetCompleteness, PlannerAction, PlannerCardObservation,
+    PlannerDecisionContext, PlannerDecisionSite, PlannerPotionSlotObservation,
+    PlannerPublicHistory, PlannerPublicMap, PlannerRelicObservation, PlannerRunGoal,
+    PlannerRunScalars,
 };
 use crate::sim::combat_action_surface::{
     CombatIndexedChoiceCandidateV2, CombatIndexedChoiceInputEncodingV2,
@@ -442,8 +443,13 @@ impl<'a> LearningModelDecisionV1<'a> {
     fn from_strategic(
         boundary: &'a LearningStrategicBoundaryV1,
     ) -> Result<Self, LearningModelInputError> {
-        if !boundary.legal_candidates.completeness.is_complete() {
-            return Err(LearningModelInputError::IncompleteStrategicCandidateSet);
+        if let CandidateSetCompleteness::Incomplete { gaps, .. } =
+            &boundary.legal_candidates.completeness
+        {
+            return Err(LearningModelInputError::IncompleteStrategicCandidateSet {
+                site: boundary.observation.decision_site,
+                gaps: gaps.clone(),
+            });
         }
         if boundary.legal_candidates.observation_id != boundary.observation.observation_id {
             return Err(LearningModelInputError::StrategicObservationIdentityMismatch);
@@ -864,11 +870,14 @@ pub enum LearningSelectionStepV1 {
     Apply(LearningActionV1),
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum LearningModelInputError {
     TerminalBoundary,
     UnsupportedBoundary,
-    IncompleteStrategicCandidateSet,
+    IncompleteStrategicCandidateSet {
+        site: PlannerDecisionSite,
+        gaps: Vec<CandidateRepresentationGap>,
+    },
     StrategicObservationIdentityMismatch,
     StrategicDecisionSiteMismatch,
     StrategicMechanicsMismatch,
@@ -1501,7 +1510,12 @@ mod tests {
         assert_eq!(
             LearningModelDecisionV1::from_boundary(&LearningBoundaryV1::Strategic { boundary })
                 .expect_err("incomplete surface must not reach inference"),
-            LearningModelInputError::IncompleteStrategicCandidateSet
+            LearningModelInputError::IncompleteStrategicCandidateSet {
+                site: crate::ai::planner_core::PlannerDecisionSite::Neow,
+                gaps: vec![
+                    crate::ai::planner_core::CandidateRepresentationGap::UnsupportedBoundaryAction,
+                ],
+            }
         );
     }
 

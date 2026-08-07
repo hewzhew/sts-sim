@@ -270,7 +270,7 @@ def main() -> None:
     assert schema["version"] == SEMANTIC_SCHEMA_VERSION
     assert schema["completeness"]["Complete"] == SEMANTIC_COMPLETE
     assert schema["token_kind"]["Candidate"] == SEMANTIC_TOKEN_CANDIDATE
-    assert len(schema["action_kind"]) == 25
+    assert len(schema["action_kind"]) == 27
     assert len(schema["combat_action_kind"]) == 8
     assert set(schema["categorical_field"].values()) == set(
         schema["categorical_vocabulary_size"]

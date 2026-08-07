@@ -27,7 +27,7 @@ use sts_oracle_eval::state::events::{EventActionKind, EventId};
 use sts_oracle_eval::state::map::node::RoomType;
 use sts_oracle_eval::state::selection::SelectionScope;
 
-pub const SEMANTIC_SCHEMA_VERSION: u32 = 2;
+pub const SEMANTIC_SCHEMA_VERSION: u32 = 3;
 pub const NO_CANDIDATE_TOKEN: u64 = u64::MAX;
 pub const CARD_ID_VOCABULARY_SIZE: u64 = 371;
 pub const RELIC_ID_VOCABULARY_SIZE: u64 = 182;
@@ -385,6 +385,8 @@ pub enum ActionKind: i64 {
     OpenChest = 23,
     Proceed = 24,
     Cancel = 25,
+    UseRunPotion = 26,
+    DiscardRunPotion = 27,
 }}
 
 numeric_schema_enum! {
@@ -553,7 +555,7 @@ pub const CATEGORICAL_VOCABULARY_SIZES: &[(u16, u64)] = &[
         EVENT_ID_VOCABULARY_SIZE,
     ),
     (CategoricalField::ContextPurgeAvailable as u16, 2),
-    (CategoricalField::ActionKind as u16, 26),
+    (CategoricalField::ActionKind as u16, 28),
     (CategoricalField::ActionFlight as u16, 2),
     (
         CategoricalField::ActionEventId as u16,
@@ -652,6 +654,13 @@ pub struct SemanticBatch {
 pub enum SemanticEncodingError {
     DuplicateCardIdentity(u32),
     MissingCardTarget(u32),
+    DuplicatePotionIdentity(u32),
+    MissingPotionTarget(u32),
+    PotionTargetMismatch {
+        potion_uuid: u32,
+        slot: usize,
+        potion: PotionId,
+    },
     DuplicateMapNode { x: i32, y: i32 },
     MissingMapTarget { x: i32, y: i32 },
     NonStrategicCandidateInStrategicRow,
@@ -870,6 +879,7 @@ impl SemanticBatchBuilder {
 
         let mut potions = observation.potions.iter().collect::<Vec<_>>();
         potions.sort_by_key(|potion_slot| potion_slot.slot);
+        let mut potion_tokens = BTreeMap::new();
         for potion_slot in potions {
             let token = self.add_token(TokenKind::PotionSlot)?;
             self.edge(root, RelationKind::ObservationHasPotionSlot, token);
@@ -880,6 +890,17 @@ impl SemanticBatchBuilder {
                 bool_value(potion_slot.potion.is_some()),
             );
             if let Some(potion) = &potion_slot.potion {
+                if potion_tokens
+                    .insert(
+                        potion.potion_uuid,
+                        (token, potion_slot.slot, potion.potion),
+                    )
+                    .is_some()
+                {
+                    return Err(SemanticEncodingError::DuplicatePotionIdentity(
+                        potion.potion_uuid,
+                    ));
+                }
                 self.category(token, CategoricalField::PotionId, potion.potion as i64);
                 self.category(
                     token,
@@ -970,7 +991,13 @@ impl SemanticBatchBuilder {
             };
             let token = self.add_token(TokenKind::Candidate)?;
             self.edge(root, RelationKind::ObservationHasCandidate, token);
-            self.encode_action(token, action, &card_tokens, &map_tokens)?;
+            self.encode_action(
+                token,
+                action,
+                &card_tokens,
+                &potion_tokens,
+                &map_tokens,
+            )?;
             self.candidate_token_indices.push(token);
         }
         Ok(())
@@ -1022,6 +1049,7 @@ impl SemanticBatchBuilder {
         token: u64,
         action: &PlannerAction,
         card_tokens: &BTreeMap<u32, u64>,
+        potion_tokens: &BTreeMap<u32, (u64, usize, PotionId)>,
         map_tokens: &BTreeMap<(i32, i32), u64>,
     ) -> Result<(), SemanticEncodingError> {
         match action {
@@ -1144,6 +1172,36 @@ impl SemanticBatchBuilder {
                 self.scalar(token, ScalarField::ActionPrice, *price);
                 self.category(token, CategoricalField::ActionPotionId, *potion as i64);
             }
+            PlannerAction::UseRunPotion {
+                slot,
+                potion,
+                potion_uuid,
+            } => {
+                self.action_kind(token, ActionKind::UseRunPotion);
+                self.category(token, CategoricalField::ActionPotionId, *potion as i64);
+                self.link_potion_target(
+                    token,
+                    *slot,
+                    *potion,
+                    *potion_uuid,
+                    potion_tokens,
+                )?;
+            }
+            PlannerAction::DiscardRunPotion {
+                slot,
+                potion,
+                potion_uuid,
+            } => {
+                self.action_kind(token, ActionKind::DiscardRunPotion);
+                self.category(token, CategoricalField::ActionPotionId, *potion as i64);
+                self.link_potion_target(
+                    token,
+                    *slot,
+                    *potion,
+                    *potion_uuid,
+                    potion_tokens,
+                )?;
+            }
             PlannerAction::RemoveCard {
                 card_uuid,
                 card,
@@ -1242,6 +1300,29 @@ impl SemanticBatchBuilder {
             .get(&uuid)
             .copied()
             .ok_or(SemanticEncodingError::MissingCardTarget(uuid))?;
+        self.edge(candidate, RelationKind::CandidateTargets, target);
+        Ok(())
+    }
+
+    fn link_potion_target(
+        &mut self,
+        candidate: u64,
+        slot: usize,
+        potion: PotionId,
+        potion_uuid: u32,
+        potion_tokens: &BTreeMap<u32, (u64, usize, PotionId)>,
+    ) -> Result<(), SemanticEncodingError> {
+        let (target, observed_slot, observed_potion) = potion_tokens
+            .get(&potion_uuid)
+            .copied()
+            .ok_or(SemanticEncodingError::MissingPotionTarget(potion_uuid))?;
+        if observed_slot != slot || observed_potion != potion {
+            return Err(SemanticEncodingError::PotionTargetMismatch {
+                potion_uuid,
+                slot,
+                potion,
+            });
+        }
         self.edge(candidate, RelationKind::CandidateTargets, target);
         Ok(())
     }

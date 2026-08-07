@@ -568,11 +568,23 @@ fn planner_action_for_candidate(
             relic: *relic,
         }),
         Some(DecisionCandidateKey::BossRelicSkip) => Some(PlannerAction::SkipBossRelic),
+        Some(DecisionCandidateKey::RunPotionUse { slot, potion, uuid }) => {
+            Some(PlannerAction::UseRunPotion {
+                slot: *slot,
+                potion: *potion,
+                potion_uuid: *uuid,
+            })
+        }
+        Some(DecisionCandidateKey::RunPotionDiscard { slot, potion, uuid }) => {
+            Some(PlannerAction::DiscardRunPotion {
+                slot: *slot,
+                potion: *potion,
+                potion_uuid: *uuid,
+            })
+        }
         Some(
             DecisionCandidateKey::RouteSelect { .. }
             | DecisionCandidateKey::RouteCancel
-            | DecisionCandidateKey::RunPotionUse { .. }
-            | DecisionCandidateKey::RunPotionDiscard { .. }
             | DecisionCandidateKey::RewardPotionClaim { .. }
             | DecisionCandidateKey::CampfireRest
             | DecisionCandidateKey::CampfireSmith { .. }
@@ -917,6 +929,7 @@ fn next_map_y(session: &RunControlSession) -> i32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::content::potions::{Potion, PotionId};
     use crate::state::events::{EventId, EventState};
 
     #[test]
@@ -961,6 +974,70 @@ mod tests {
         };
 
         assert!(represented == visible || gap_count > 0);
+    }
+
+    #[test]
+    fn map_fruit_juice_is_a_complete_typed_planner_action() {
+        let mut session = RunControlSession::new(Default::default());
+        session.engine_state = EngineState::MapNavigation;
+        session.run_state.potions = vec![Some(Potion::new(PotionId::FruitJuice, 10))];
+
+        let pending = capture_planner_boundary_v1(&session)
+            .expect("capture")
+            .expect("map boundary");
+
+        assert!(matches!(
+            pending.legal_candidate_set.completeness,
+            CandidateSetCompleteness::Complete { .. }
+        ));
+        assert!(pending
+            .legal_candidate_set
+            .candidates
+            .iter()
+            .any(|candidate| {
+                candidate.action
+                    == (PlannerAction::UseRunPotion {
+                        slot: 0,
+                        potion: PotionId::FruitJuice,
+                        potion_uuid: 10,
+                    })
+            }));
+    }
+
+    #[test]
+    fn full_belt_discard_is_a_complete_typed_planner_action() {
+        let mut session = RunControlSession::new(Default::default());
+        session.run_state.potions = vec![
+            Some(Potion::new(PotionId::Elixir, 10)),
+            Some(Potion::new(PotionId::FairyPotion, 20)),
+            Some(Potion::new(PotionId::GamblersBrew, 30)),
+        ];
+        let mut reward = RewardState::new();
+        reward.items = vec![RewardItem::Potion {
+            potion_id: PotionId::CultistPotion,
+        }];
+        session.engine_state = EngineState::RewardScreen(reward);
+
+        let pending = capture_planner_boundary_v1(&session)
+            .expect("capture")
+            .expect("reward boundary");
+
+        assert!(matches!(
+            pending.legal_candidate_set.completeness,
+            CandidateSetCompleteness::Complete { .. }
+        ));
+        assert!(pending
+            .legal_candidate_set
+            .candidates
+            .iter()
+            .any(|candidate| {
+                candidate.action
+                    == (PlannerAction::DiscardRunPotion {
+                        slot: 0,
+                        potion: PotionId::Elixir,
+                        potion_uuid: 10,
+                    })
+            }));
     }
 
     #[test]
