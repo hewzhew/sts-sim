@@ -308,6 +308,16 @@ candidate row splits. The caller chooses CPU or CUDA by placing the model on
 that device. The bridge, default caller dependency set, simulator workspace,
 and experience format remain PyTorch-free.
 
+The first terminal objective is realized-behavior candidate value, not
+imitation. It accepts only bounded complete-attempt deliveries, resolves every
+batch's exact behavior manifest, and applies the sparse terminal win/loss target
+only to each decision's actually selected candidate. Unselected candidates get
+no fabricated target. Squared errors are averaged within each attempt before
+attempts are averaged, so longer attempts do not gain more weight merely by
+containing more decisions. Censored and dropped attempts cannot enter this
+objective through its input type, and the aligned per-attempt sequence of
+behavior manifest identities remains attached to the loss result.
+
 On an ordinary reward screen, the reward owner claims typed low-agency public
 resources before opening a nested card-reward choice. This lets the card owner
 observe already-claimed gold, non-conflicting relics, and empty-slot potions

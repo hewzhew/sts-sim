@@ -141,6 +141,16 @@ row boundaries, finite loss, backward gradients, and an optimizer update. It
 is not yet a claim that this small graph network is the final policy model or
 that a particular training objective is sufficient.
 
+`sts_learning.torch_outcomes` supplies the first honest terminal objective.
+It consumes only `CompletedAttemptExperience`, resolves every behavior manifest
+before scoring, and regresses only the actually selected candidate value to the
+sparse terminal `-1/1` outcome. It never turns the behavior choice into a
+teacher label or assigns that outcome to unselected candidates. Decision errors
+are averaged inside each attempt and then across attempts, so a long attempt has
+the same total weight as a short one. The result retains the batch-aligned
+manifest-id sequence for every attempt; censored and dropped attempt types are
+rejected structurally.
+
 The bridge verification command installs a fresh wheel and runs both bridge
 smoke tests and these caller contracts:
 
