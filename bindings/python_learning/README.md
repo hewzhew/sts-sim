@@ -59,7 +59,10 @@ slot resets without inspecting sessions or falling back to per-slot bridge
 calls. Selection rejects duplicate or missing slots, and update never adds a
 new slot implicitly.
 `reset_slots(slot_indices, seeds)` applies the same all-or-nothing rule when a
-caller starts new episodes in terminal slots.
+caller starts new episodes in terminal slots. Continuous callers use
+`reset_slots_checkpointed(slot_indices, seeds)` to receive the exact new root
+checkpoints from that same atomic bridge operation; there is no interval where
+new episode seeds are active but only old roots are available.
 Every recovery checkpoint is bound to the slot that created it. The ordinary
 restore API rejects cross-slot cloning so recovery counts cannot be attached to
 the wrong environment lineage.

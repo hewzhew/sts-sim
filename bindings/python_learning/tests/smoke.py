@@ -421,7 +421,8 @@ def main() -> None:
         f"elapsed_ms={elapsed * 1000:.1f} "
         f"steps_per_second={total_steps / elapsed:.0f}"
     )
-    env.reset_slots([0, 1], [99, 100])
+    reset_checkpoints = env.reset_slots_checkpointed([0, 1], [99, 100])
+    assert len(reset_checkpoints) == 2
     assert env.terminal_count == env.slot_count - 2
     reset_batch = env.decision_batch(dense_mask=True, semantic=True)
     assert np.array_equal(reset_batch["slot_indices"], np.array([0, 1], dtype=np.uint64))
@@ -440,6 +441,13 @@ def main() -> None:
         pass
     else:
         raise AssertionError("active slot reset was accepted")
+    _choose_first_until_ready(env)
+    env.step()
+    env.restore_slots([0, 1], reset_checkpoints)
+    _assert_decision_batch_equal(
+        reset_batch,
+        env.decision_batch(dense_mask=True, semantic=True),
+    )
 
 
 if __name__ == "__main__":

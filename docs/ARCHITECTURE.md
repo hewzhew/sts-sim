@@ -229,6 +229,19 @@ is immutable; an advanced cursor becomes visible only after atomic environment
 reset and ledger commit succeed. Reset failure therefore consumes neither a
 ledger generation nor a seed, and ledger mode rejects the opposite partition.
 
+The online batch driver creates its initial environment population, ledger,
+next schedule cursor, and episode-root checkpoints from one seed plan. Policy
+inference is called once per ragged decision round, never once per slot. After
+one atomic environment step, a caller-owned curriculum chooses recovery slots
+for the complete terminal batch; the driver restores that opaque checkpoint
+subset together, completes the remaining defeats, and resets completed slots
+from one next seed plan. Reset and creation of its replacement root checkpoints
+are one bridge operation; ledger and schedule commit only after both succeed.
+The checkpoint bank supports only slot-keyed subset selection and replacement,
+not session inspection or serialization. The driver retains one bounded step
+result or compact aggregate statistics and is not a trajectory, replay, model,
+optimizer, or shaped-reward owner.
+
 On an ordinary reward screen, the reward owner claims typed low-agency public
 resources before opening a nested card-reward choice. This lets the card owner
 observe already-claimed gold, non-conflicting relics, and empty-slot potions

@@ -352,6 +352,15 @@ impl LearningBatchEnv {
     }
 
     fn reset_slots(&mut self, slot_indices: Vec<usize>, seeds: Vec<u64>) -> PyResult<()> {
+        self.reset_slots_checkpointed(slot_indices, seeds)
+            .map(|_| ())
+    }
+
+    fn reset_slots_checkpointed(
+        &mut self,
+        slot_indices: Vec<usize>,
+        seeds: Vec<u64>,
+    ) -> PyResult<LearningCheckpointBatch> {
         if slot_indices.len() != seeds.len() {
             return Err(PyValueError::new_err(format!(
                 "expected {} reset seeds, received {}",
@@ -375,27 +384,27 @@ impl LearningBatchEnv {
                 )));
             }
         }
+        let mut checkpoints = Vec::with_capacity(slot_indices.len());
+        let mut replacements = Vec::with_capacity(slot_indices.len());
+        for (slot_index, seed) in slot_indices.iter().copied().zip(seeds) {
+            let env = LearningEnvV1::new(RunControlConfig {
+                seed,
+                ..RunControlConfig::default()
+            });
+            checkpoints.push(LearningSlotCheckpoint {
+                source_slot_index: slot_index,
+                session: env.checkpoint(),
+                bridge_state: BridgeSlotState::Root,
+            });
+            replacements.push((slot_index, env));
+        }
         self.pool
-            .reset_slots(
-                slot_indices
-                    .iter()
-                    .copied()
-                    .zip(seeds)
-                    .map(|(slot_index, seed)| {
-                        (
-                            slot_index,
-                            RunControlConfig {
-                                seed,
-                                ..RunControlConfig::default()
-                            },
-                        )
-                    }),
-            )
+            .replace_slots(replacements)
             .map_err(runtime_error)?;
         for slot_index in slot_indices {
             self.states[slot_index] = BridgeSlotState::Root;
         }
-        Ok(())
+        Ok(LearningCheckpointBatch { checkpoints })
     }
 
     fn checkpoint_slot(&self, slot_index: usize) -> PyResult<LearningSlotCheckpoint> {

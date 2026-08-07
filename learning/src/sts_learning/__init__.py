@@ -1,5 +1,18 @@
 """Online learning callers for sts_simulator."""
 
+from .driver import (
+    BatchCurriculum,
+    BatchDriverError,
+    BatchEnvironment,
+    BatchPolicy,
+    BatchRunSummary,
+    BatchStepResult,
+    CheckpointBatch,
+    InitialPopulation,
+    OnlineBatchDriver,
+    RecoveryPlan,
+    initialize_population,
+)
 from .outcomes import (
     TerminalAttemptOutcome,
     TerminalBatchError,
@@ -21,21 +34,34 @@ from .recovery import (
     restore_with_accounting,
 )
 from .seeds import (
+    CheckpointedEpisodeResetTarget,
     SeedPartition,
     SeedPartitionSpec,
     SeedResetBatch,
     SeedSchedule,
     SeedScheduleError,
+    reset_scheduled_checkpointed_with_accounting,
     reset_scheduled_with_accounting,
 )
 
 __all__ = [
+    "BatchCurriculum",
+    "BatchDriverError",
+    "BatchEnvironment",
+    "BatchPolicy",
+    "BatchRunSummary",
+    "BatchStepResult",
+    "CheckpointBatch",
+    "CheckpointedEpisodeResetTarget",
     "EpisodeResetTicket",
     "EpisodeOutcome",
+    "InitialPopulation",
+    "OnlineBatchDriver",
     "RecoveryEvent",
     "RecoveryLedger",
     "RecoveryMode",
     "RecoveryProtocolError",
+    "RecoveryPlan",
     "RecoverySlotSnapshot",
     "RecoverySlotStatus",
     "RecoveryTicket",
@@ -49,7 +75,9 @@ __all__ = [
     "TerminalAttemptRecord",
     "TerminalBatchError",
     "TerminalStepBatch",
+    "initialize_population",
     "reset_with_accounting",
+    "reset_scheduled_checkpointed_with_accounting",
     "reset_scheduled_with_accounting",
     "restore_with_accounting",
 ]

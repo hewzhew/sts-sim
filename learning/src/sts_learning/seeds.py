@@ -6,7 +6,7 @@ import hashlib
 import operator
 from dataclasses import dataclass, replace
 from enum import Enum
-from typing import Sequence
+from typing import Protocol, Sequence
 
 from .recovery import (
     EpisodeResetTarget,
@@ -27,6 +27,14 @@ class SeedScheduleError(ValueError):
 class SeedPartition(Enum):
     TRAINING = "training"
     HELD_OUT = "held_out"
+
+
+class CheckpointedEpisodeResetTarget(Protocol):
+    def reset_slots_checkpointed(
+        self,
+        slot_indices: list[int],
+        seeds: list[int],
+    ) -> object: ...
 
 
 @dataclass(frozen=True)
@@ -124,6 +132,40 @@ def reset_scheduled_with_accounting(
 ) -> tuple[SeedResetBatch, SeedSchedule]:
     """Atomically reset one planned batch and return the advanced schedule."""
 
+    _validate_ledger_partition(ledger, schedule)
+    batch, next_schedule = schedule.plan(slot_indices)
+    reset_with_accounting(
+        env,
+        batch.slot_indices,
+        batch.seeds,
+        ledger,
+    )
+    return batch, next_schedule
+
+
+def reset_scheduled_checkpointed_with_accounting(
+    env: CheckpointedEpisodeResetTarget,
+    slot_indices: Sequence[int],
+    ledger: RecoveryLedger,
+    schedule: SeedSchedule,
+) -> tuple[SeedResetBatch, SeedSchedule, object]:
+    """Atomically reset slots and return their exact new root checkpoints."""
+
+    _validate_ledger_partition(ledger, schedule)
+    batch, next_schedule = schedule.plan(slot_indices)
+    ticket = ledger.prepare_reset(batch.slot_indices, batch.seeds)
+    checkpoints = env.reset_slots_checkpointed(
+        list(ticket.slot_indices),
+        list(ticket.new_seeds),
+    )
+    ledger.commit_reset(ticket)
+    return batch, next_schedule, checkpoints
+
+
+def _validate_ledger_partition(
+    ledger: RecoveryLedger,
+    schedule: SeedSchedule,
+) -> None:
     expected_partition = (
         SeedPartition.TRAINING
         if ledger.mode is RecoveryMode.TRAINING
@@ -133,14 +175,6 @@ def reset_scheduled_with_accounting(
         raise SeedScheduleError(
             f"{ledger.mode.value} ledger requires {expected_partition.value} seeds"
         )
-    batch, next_schedule = schedule.plan(slot_indices)
-    reset_with_accounting(
-        env,
-        batch.slot_indices,
-        batch.seeds,
-        ledger,
-    )
-    return batch, next_schedule
 
 
 def _normalize_seed(seed: int) -> int:

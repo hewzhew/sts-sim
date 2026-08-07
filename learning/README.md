@@ -48,6 +48,24 @@ retries cannot be mistaken for new independent runs.
 attempt index, and recovery count; callers do not reconstruct intermediate
 attempt lineage by joining mutable slot state after the fact.
 
+`sts_learning.driver` is the bounded online population loop. One immutable
+`SeedSchedule.plan(range(slot_count))` creates the bridge environments, recovery
+ledger, next schedule cursor, and opaque episode-root checkpoint bank together,
+so initial seed identity cannot drift between owners. A `BatchPolicy` receives
+one ragged semantic decision batch and returns every active row's candidate
+ordinal in one call, including symbolic-selection rounds. The driver then
+performs one atomic environment step and copies only its compact terminal rows.
+
+An explicit `BatchCurriculum` returns a `RecoveryPlan` for the whole terminal
+batch. Selected defeats restore through one opaque checkpoint subset; all other
+defeats complete, and completed slots reset together from the next immutable
+seed plan. The atomic reset returns each replacement episode-root checkpoint
+before the ledger and schedule commit, then updates the same opaque bank without
+exposing or serializing simulator sessions. `run(batch_steps=N)` keeps only
+aggregate counts and timing; `advance()` returns at most one bounded step's
+attempts, completions, and recovery events. Neither API stores trajectories,
+writes JSON, defines a game policy, or turns terminal HP and gold into reward.
+
 The bridge verification command installs a fresh wheel and runs both bridge
 smoke tests and these caller contracts:
 

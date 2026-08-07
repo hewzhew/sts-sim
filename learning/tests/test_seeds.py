@@ -10,6 +10,7 @@ from sts_learning import (
     SeedScheduleError,
     TerminalAttemptOutcome,
     TerminalStepBatch,
+    reset_scheduled_checkpointed_with_accounting,
     reset_scheduled_with_accounting,
 )
 
@@ -32,14 +33,23 @@ def terminal_batch(*rows: tuple[int, int]) -> TerminalStepBatch:
 
 
 class FakeResetEnv:
-    def __init__(self, *, fail: bool = False) -> None:
+    def __init__(self, *, fail: bool = False, checkpoints: object = None) -> None:
         self.fail = fail
+        self.checkpoints = checkpoints
         self.calls: list[tuple[list[int], list[int]]] = []
 
     def reset_slots(self, slot_indices: list[int], seeds: list[int]) -> None:
         self.calls.append((slot_indices, seeds))
         if self.fail:
             raise RuntimeError("reset failed")
+
+    def reset_slots_checkpointed(
+        self,
+        slot_indices: list[int],
+        seeds: list[int],
+    ) -> object:
+        self.reset_slots(slot_indices, seeds)
+        return self.checkpoints
 
 
 class SeedScheduleTests(unittest.TestCase):
@@ -125,6 +135,42 @@ class SeedScheduleTests(unittest.TestCase):
             )
         self.assertEqual(env.calls, [])
         self.assertEqual(ledger.snapshot(0).episode_generation, 0)
+
+    def test_checkpointed_reset_commits_only_with_exact_new_roots(self) -> None:
+        initial, schedule = SeedSchedule(SeedPartition.TRAINING).plan([0, 1])
+        ledger = RecoveryLedger.training(
+            initial.seeds,
+            max_recoveries_per_episode=0,
+        )
+        ledger.record_terminal(terminal_batch((0, 1), (1, -1)))
+        ledger.complete_defeats([1])
+        failing = FakeResetEnv(fail=True)
+
+        with self.assertRaisesRegex(RuntimeError, "reset failed"):
+            reset_scheduled_checkpointed_with_accounting(
+                failing,
+                [0, 1],
+                ledger,
+                schedule,
+            )
+        self.assertEqual(ledger.snapshot(0).episode_generation, 0)
+        self.assertEqual(ledger.snapshot(1).episode_generation, 0)
+
+        roots = object()
+        working = FakeResetEnv(checkpoints=roots)
+        batch, next_schedule, returned = (
+            reset_scheduled_checkpointed_with_accounting(
+                working,
+                [0, 1],
+                ledger,
+                schedule,
+            )
+        )
+        self.assertIs(returned, roots)
+        self.assertEqual(working.calls, [([0, 1], list(batch.seeds))])
+        self.assertEqual(ledger.snapshot(0).episode_generation, 1)
+        self.assertEqual(ledger.snapshot(1).episode_generation, 1)
+        self.assertGreater(next_schedule.next_candidate, schedule.next_candidate)
 
     def test_invalid_or_empty_schedules_fail_before_scanning(self) -> None:
         with self.assertRaisesRegex(SeedScheduleError, "must be a SeedPartition"):
