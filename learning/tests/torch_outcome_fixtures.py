@@ -6,12 +6,14 @@ from sts_learning import (
     BehaviorManifest,
     BehaviorManifestId,
     BehaviorManifestTemplate,
+    BehaviorRuleBinding,
     CompletedAttemptExperience,
     DETERMINISTIC_SELECTION,
     DecisionExperienceBatch,
     DecisionLineage,
     ManifestArtifactId,
     ManifestArtifactKind,
+    GREEDY_BEHAVIOR_RULE_V1,
     SelectionProbability,
     TerminalAttemptOutcome,
     TerminalAttemptRecord,
@@ -22,6 +24,7 @@ from sts_learning import (
 def behavior_manifest_template_fixture(
     *,
     semantic_schema_version: int = 2,
+    behavior_rule: BehaviorRuleBinding = GREEDY_BEHAVIOR_RULE_V1,
 ) -> BehaviorManifestTemplate:
     def artifact(kind: ManifestArtifactKind) -> ManifestArtifactId:
         return ManifestArtifactId(kind, bytes([int(kind)]) * 32)
@@ -29,6 +32,7 @@ def behavior_manifest_template_fixture(
     return BehaviorManifestTemplate(
         model_definition=artifact(ManifestArtifactKind.MODEL_DEFINITION),
         model_config=artifact(ManifestArtifactKind.MODEL_CONFIG),
+        behavior_rule=behavior_rule,
         semantic_schema=artifact(ManifestArtifactKind.SEMANTIC_SCHEMA),
         optimizer_config=artifact(ManifestArtifactKind.OPTIMIZER_CONFIG),
         trainer_implementation=artifact(

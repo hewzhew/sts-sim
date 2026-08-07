@@ -83,9 +83,11 @@ reconstructed later version. Row selection, segment rotation, and attempt
 assembly preserve known and unknown probabilities without reinterpretation.
 `sts_learning.manifests` gives that identity an exact bounded owner. A behavior
 manifest references externally stored model checkpoints, model definitions,
-model configurations, semantic schemas, optimizer configurations, and trainer
-implementations only through typed SHA-256 content ids, together with its
-schema version and training step. The fixed-capacity registry stores only those
+model configurations, behavior-rule implementations and configurations,
+semantic schemas, optimizer configurations, and trainer implementations only
+through typed SHA-256 content ids, together with its schema version and training
+step. Equal weights under greedy and stochastic selection cannot share one
+manifest identity. The fixed-capacity registry stores only those
 small bindings: it does not copy a model, optimizer, checkpoint payload, file
 path, or display label into experience. Unknown ids, conflicting claimed ids,
 registry overflow, and exact-binding mismatches are rejected rather than
@@ -108,7 +110,8 @@ owned filename, size, digest, and tensor stream and rejects leftover partial or
 foreign files. Restore first builds a fresh model and validates all keys,
 dtypes, and shapes, so an incumbent scorer is not partially overwritten. A
 `BehaviorManifestTemplate` then binds the checkpoint identity to the fixed
-model/config/schema/optimizer/trainer identities and exact training step.
+model/config/behavior-rule/schema/optimizer/trainer identities and exact
+training step.
 
 `sts_learning.torch_behavior` makes publication and promotion separate typed
 operations. Publication prepares the checkpoint and manifest, previews all
@@ -118,8 +121,10 @@ promotion refuses a bare checkpoint, a missing catalog row, or an unregistered
 manifest. Restart recovery needs only the manifest id and newly opened owners;
 it verifies/materializes a fresh scorer before atomically hydrating the fresh
 registry. Both paths validate schema version, enter evaluation mode, and freeze
-gradients. They never hand the optimizer's live shadow scorer directly to
-behavior, so subsequent shadow updates cannot drift a published manifest. The
+gradients. A concrete policy adapter also verifies that the manifest carries
+its exact behavior-rule binding before it can execute. They never hand the
+optimizer's live shadow scorer directly to behavior, so subsequent shadow
+updates cannot drift a published manifest. The
 live policy emits the recovered registered manifest id on every batched choice.
 An `ExperienceSegmentBuffer` requires both a maximum decision count and a
 maximum retained-payload byte count. The byte count conservatively includes

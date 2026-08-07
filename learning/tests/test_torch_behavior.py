@@ -16,7 +16,10 @@ from learning.tests.torch_outcome_fixtures import (
 from sts_learning import (
     BehaviorManifestCatalogLimits,
     BehaviorManifestRegistry,
+    BehaviorRuleBinding,
     BoundedBehaviorManifestCatalog,
+    ManifestArtifactId,
+    ManifestArtifactKind,
 )
 
 
@@ -62,6 +65,19 @@ def _catalog(root, *, manifests: int = 3):
             max_manifests=manifests,
             max_bytes_per_manifest=1024,
             max_total_bytes=manifests * 1024,
+        ),
+    )
+
+
+def _alternative_behavior_rule() -> BehaviorRuleBinding:
+    return BehaviorRuleBinding(
+        implementation=ManifestArtifactId.from_content(
+            ManifestArtifactKind.BEHAVIOR_RULE,
+            b"test.alternative_behavior_rule\x00v1",
+        ),
+        configuration=ManifestArtifactId.from_content(
+            ManifestArtifactKind.BEHAVIOR_RULE_CONFIG,
+            b"test.alternative_behavior_rule.config\x00v1",
         ),
     )
 
@@ -178,6 +194,50 @@ class TorchBehaviorPublicationTests(unittest.TestCase):
             self.assertNotEqual(first.manifest_id, second.manifest_id)
             self.assertEqual(store.snapshot.checkpoints, 1)
             self.assertEqual(registry.snapshot.registered_manifests, 2)
+
+    def test_behavior_rule_changes_manifest_and_greedy_recovery_fails_closed(
+        self,
+    ) -> None:
+        registry = BehaviorManifestRegistry(capacity=2)
+        scorer = _scorer()
+        with tempfile.TemporaryDirectory() as root:
+            store = _store(Path(root, "checkpoints"))
+            catalog = _catalog(Path(root, "manifests"))
+            greedy = TorchBehaviorPublisher(
+                store,
+                catalog,
+                registry,
+                behavior_manifest_template_fixture(),
+            ).publish(scorer, training_step=0)
+            alternative = TorchBehaviorPublisher(
+                store,
+                catalog,
+                registry,
+                behavior_manifest_template_fixture(
+                    behavior_rule=_alternative_behavior_rule(),
+                ),
+            ).publish(scorer, training_step=0)
+
+            self.assertEqual(greedy.checkpoint_id, alternative.checkpoint_id)
+            self.assertNotEqual(greedy.manifest_id, alternative.manifest_id)
+            with self.assertRaisesRegex(TorchBehaviorError, "greedy candidate rule"):
+                CheckpointedGreedyTorchPolicy.promote(
+                    alternative,
+                    store,
+                    catalog,
+                    registry,
+                    _scorer,
+                )
+            fresh_registry = BehaviorManifestRegistry(capacity=1)
+            with self.assertRaisesRegex(TorchBehaviorError, "greedy candidate rule"):
+                CheckpointedGreedyTorchPolicy.recover(
+                    alternative.manifest_id,
+                    store,
+                    catalog,
+                    fresh_registry,
+                    _scorer,
+                )
+            self.assertEqual(fresh_registry.snapshot.registered_manifests, 0)
 
     def test_unregistered_or_schema_mismatched_publication_cannot_run(self) -> None:
         registry = BehaviorManifestRegistry(capacity=1)

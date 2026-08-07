@@ -8,6 +8,7 @@ from sts_learning import (
     BehaviorManifestId,
     BehaviorManifestRegistry,
     BehaviorManifestTemplate,
+    BehaviorRuleBinding,
     ManifestArtifactId,
     ManifestArtifactKind,
 )
@@ -17,7 +18,12 @@ def _artifact(kind: ManifestArtifactKind, marker: int) -> ManifestArtifactId:
     return ManifestArtifactId(kind, bytes([marker]) * 32)
 
 
-def _manifest(*, checkpoint_marker: int = 1, config_marker: int = 3) -> BehaviorManifest:
+def _manifest(
+    *,
+    checkpoint_marker: int = 1,
+    config_marker: int = 3,
+    behavior_config_marker: int = 8,
+) -> BehaviorManifest:
     return BehaviorManifest(
         model_checkpoint=_artifact(
             ManifestArtifactKind.MODEL_CHECKPOINT,
@@ -25,6 +31,13 @@ def _manifest(*, checkpoint_marker: int = 1, config_marker: int = 3) -> Behavior
         ),
         model_definition=_artifact(ManifestArtifactKind.MODEL_DEFINITION, 2),
         model_config=_artifact(ManifestArtifactKind.MODEL_CONFIG, config_marker),
+        behavior_rule=BehaviorRuleBinding(
+            implementation=_artifact(ManifestArtifactKind.BEHAVIOR_RULE, 7),
+            configuration=_artifact(
+                ManifestArtifactKind.BEHAVIOR_RULE_CONFIG,
+                behavior_config_marker,
+            ),
+        ),
         semantic_schema=_artifact(ManifestArtifactKind.SEMANTIC_SCHEMA, 4),
         optimizer_config=_artifact(ManifestArtifactKind.OPTIMIZER_CONFIG, 5),
         trainer_implementation=_artifact(
@@ -67,13 +80,15 @@ class BehaviorManifestTests(unittest.TestCase):
                 bytearray(b"mutable"),  # type: ignore[arg-type]
             )
 
-    def test_identity_is_canonical_and_changes_with_exact_checkpoint(self) -> None:
+    def test_identity_changes_with_checkpoint_or_behavior_rule(self) -> None:
         first = _manifest()
         same = _manifest()
         updated = _manifest(checkpoint_marker=7)
+        changed_rule = _manifest(behavior_config_marker=9)
 
         self.assertEqual(first.identity, same.identity)
         self.assertNotEqual(first.identity, updated.identity)
+        self.assertNotEqual(first.identity, changed_rule.identity)
 
     def test_artifact_kind_cannot_be_swapped_between_manifest_fields(self) -> None:
         with self.assertRaisesRegex(BehaviorManifestError, "MODEL_CHECKPOINT"):
@@ -81,6 +96,13 @@ class BehaviorManifestTests(unittest.TestCase):
                 model_checkpoint=_artifact(ManifestArtifactKind.MODEL_CONFIG, 1),
                 model_definition=_artifact(ManifestArtifactKind.MODEL_DEFINITION, 2),
                 model_config=_artifact(ManifestArtifactKind.MODEL_CONFIG, 3),
+                behavior_rule=BehaviorRuleBinding(
+                    implementation=_artifact(ManifestArtifactKind.BEHAVIOR_RULE, 7),
+                    configuration=_artifact(
+                        ManifestArtifactKind.BEHAVIOR_RULE_CONFIG,
+                        8,
+                    ),
+                ),
                 semantic_schema=_artifact(ManifestArtifactKind.SEMANTIC_SCHEMA, 4),
                 optimizer_config=_artifact(ManifestArtifactKind.OPTIMIZER_CONFIG, 5),
                 trainer_implementation=_artifact(
@@ -141,6 +163,7 @@ class BehaviorManifestTests(unittest.TestCase):
         template = BehaviorManifestTemplate(
             model_definition=manifest.model_definition,
             model_config=manifest.model_config,
+            behavior_rule=manifest.behavior_rule,
             semantic_schema=manifest.semantic_schema,
             optimizer_config=manifest.optimizer_config,
             trainer_implementation=manifest.trainer_implementation,

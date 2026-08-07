@@ -25,6 +25,8 @@ class ManifestArtifactKind(IntEnum):
     SEMANTIC_SCHEMA = 4
     OPTIMIZER_CONFIG = 5
     TRAINER_IMPLEMENTATION = 6
+    BEHAVIOR_RULE = 7
+    BEHAVIOR_RULE_CONFIG = 8
 
 
 @dataclass(frozen=True, order=True)
@@ -56,12 +58,48 @@ class ManifestArtifactId:
 
 
 @dataclass(frozen=True)
+class BehaviorRuleBinding:
+    """Exact implementation and configuration identities for choosing actions."""
+
+    implementation: ManifestArtifactId
+    configuration: ManifestArtifactId
+
+    def __post_init__(self) -> None:
+        for field_name, expected_kind in (
+            ("implementation", ManifestArtifactKind.BEHAVIOR_RULE),
+            ("configuration", ManifestArtifactKind.BEHAVIOR_RULE_CONFIG),
+        ):
+            artifact = getattr(self, field_name)
+            if not isinstance(artifact, ManifestArtifactId):
+                raise BehaviorManifestError(
+                    f"behavior rule {field_name} must be a ManifestArtifactId"
+                )
+            if artifact.kind is not expected_kind:
+                raise BehaviorManifestError(
+                    f"behavior rule {field_name} must have kind {expected_kind.name}"
+                )
+
+
+GREEDY_BEHAVIOR_RULE_V1 = BehaviorRuleBinding(
+    implementation=ManifestArtifactId.from_content(
+        ManifestArtifactKind.BEHAVIOR_RULE,
+        b"sts_learning.greedy_candidate_argmax\x00v1",
+    ),
+    configuration=ManifestArtifactId.from_content(
+        ManifestArtifactKind.BEHAVIOR_RULE_CONFIG,
+        b"sts_learning.greedy_candidate_argmax.config\x00v1",
+    ),
+)
+
+
+@dataclass(frozen=True)
 class BehaviorManifest:
     """Exact external identities needed to reproduce one behavior policy."""
 
     model_checkpoint: ManifestArtifactId
     model_definition: ManifestArtifactId
     model_config: ManifestArtifactId
+    behavior_rule: BehaviorRuleBinding
     semantic_schema: ManifestArtifactId
     optimizer_config: ManifestArtifactId
     trainer_implementation: ManifestArtifactId
@@ -69,6 +107,10 @@ class BehaviorManifest:
     training_step: int
 
     def __post_init__(self) -> None:
+        if not isinstance(self.behavior_rule, BehaviorRuleBinding):
+            raise BehaviorManifestError(
+                "behavior_rule must be a BehaviorRuleBinding"
+            )
         for field_name, expected_kind in (
             ("model_checkpoint", ManifestArtifactKind.MODEL_CHECKPOINT),
             ("model_definition", ManifestArtifactKind.MODEL_DEFINITION),
@@ -121,6 +163,8 @@ class BehaviorManifest:
             self.model_checkpoint,
             self.model_definition,
             self.model_config,
+            self.behavior_rule.implementation,
+            self.behavior_rule.configuration,
             self.semantic_schema,
             self.optimizer_config,
             self.trainer_implementation,
@@ -154,6 +198,8 @@ class BehaviorManifest:
             ManifestArtifactKind.MODEL_CHECKPOINT,
             ManifestArtifactKind.MODEL_DEFINITION,
             ManifestArtifactKind.MODEL_CONFIG,
+            ManifestArtifactKind.BEHAVIOR_RULE,
+            ManifestArtifactKind.BEHAVIOR_RULE_CONFIG,
             ManifestArtifactKind.SEMANTIC_SCHEMA,
             ManifestArtifactKind.OPTIMIZER_CONFIG,
             ManifestArtifactKind.TRAINER_IMPLEMENTATION,
@@ -179,9 +225,13 @@ class BehaviorManifest:
             model_checkpoint=artifacts[0],
             model_definition=artifacts[1],
             model_config=artifacts[2],
-            semantic_schema=artifacts[3],
-            optimizer_config=artifacts[4],
-            trainer_implementation=artifacts[5],
+            behavior_rule=BehaviorRuleBinding(
+                implementation=artifacts[3],
+                configuration=artifacts[4],
+            ),
+            semantic_schema=artifacts[5],
+            optimizer_config=artifacts[6],
+            trainer_implementation=artifacts[7],
             semantic_schema_version=schema_version,
             training_step=training_step,
         )
@@ -193,12 +243,17 @@ class BehaviorManifestTemplate:
 
     model_definition: ManifestArtifactId
     model_config: ManifestArtifactId
+    behavior_rule: BehaviorRuleBinding
     semantic_schema: ManifestArtifactId
     optimizer_config: ManifestArtifactId
     trainer_implementation: ManifestArtifactId
     semantic_schema_version: int
 
     def __post_init__(self) -> None:
+        if not isinstance(self.behavior_rule, BehaviorRuleBinding):
+            raise BehaviorManifestError(
+                "behavior_rule must be a BehaviorRuleBinding"
+            )
         for field_name, expected_kind in (
             ("model_definition", ManifestArtifactKind.MODEL_DEFINITION),
             ("model_config", ManifestArtifactKind.MODEL_CONFIG),
@@ -234,6 +289,7 @@ class BehaviorManifestTemplate:
             model_checkpoint=model_checkpoint,
             model_definition=self.model_definition,
             model_config=self.model_config,
+            behavior_rule=self.behavior_rule,
             semantic_schema=self.semantic_schema,
             optimizer_config=self.optimizer_config,
             trainer_implementation=self.trainer_implementation,
@@ -395,4 +451,4 @@ def _integer(value: object, name: str) -> int:
 
 
 _BEHAVIOR_MANIFEST_MAGIC = b"sts-behavior-manifest\x00"
-_BEHAVIOR_MANIFEST_VERSION = 1
+_BEHAVIOR_MANIFEST_VERSION = 2

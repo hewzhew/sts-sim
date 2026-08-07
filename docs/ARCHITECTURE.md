@@ -261,8 +261,11 @@ vectors. Explicit unknown remains unknown through row selection, segment
 rotation, and complete-attempt assembly.
 Behavior manifests are caller-owned, content-addressed records over typed
 SHA-256 identities for the external model checkpoint, model definition, model
-configuration, semantic schema, optimizer configuration, and trainer
-implementation, plus the exact schema version and training step. A fixed-size
+configuration, behavior-rule implementation, behavior-rule configuration,
+semantic schema, optimizer configuration, and trainer implementation, plus the
+exact schema version and training step. A model checkpoint therefore cannot
+claim the same behavior identity when logits are converted to actions by a
+different rule. A fixed-size
 registry resolves those identities without retaining model objects, checkpoint
 payloads, file paths, or display strings. Unknown identities, conflicting
 claimed identities, capacity overflow, and any expected checkpoint/config/schema
@@ -291,7 +294,8 @@ catalog, and registry capacity/conflicts without mutation, then commits in the
 order checkpoint, durable manifest, and in-memory registry. The returned typed
 publication is the sole same-process promotion input; a checkpoint file by
 itself is not executable authority. Promotion re-resolves the durable and
-registered manifest, materializes a fresh scorer from the verified checkpoint,
+registered manifest, verifies the exact behavior rule expected by the concrete
+policy adapter, materializes a fresh scorer from the verified checkpoint,
 checks its schema version, switches it to evaluation mode, and disables
 gradients before exposing a batched policy. After restart, recovery begins from
 only a manifest id and fresh store/catalog/registry owners; it verifies and

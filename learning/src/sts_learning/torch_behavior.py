@@ -11,6 +11,7 @@ from .manifests import (
     BehaviorManifest,
     BehaviorManifestRegistry,
     BehaviorManifestTemplate,
+    GREEDY_BEHAVIOR_RULE_V1,
     ManifestArtifactId,
 )
 from .manifest_catalog import BoundedBehaviorManifestCatalog
@@ -144,6 +145,7 @@ class CheckpointedGreedyTorchPolicy:
             raise TorchBehaviorError(
                 "publication is not registered for behavior promotion"
             ) from error
+        _require_greedy_behavior_rule(publication.manifest)
         model = store.materialize(publication.checkpoint_id, scorer_factory)
         return cls._from_restored(model, publication)
 
@@ -170,6 +172,7 @@ class CheckpointedGreedyTorchPolicy:
             manifest = catalog.resolve(manifest_id)
         except RuntimeError as error:
             raise TorchBehaviorError("durable behavior manifest is unavailable") from error
+        _require_greedy_behavior_rule(manifest)
         publication = TorchBehaviorPublication(
             manifest_id=manifest_id,
             manifest=manifest,
@@ -190,6 +193,7 @@ class CheckpointedGreedyTorchPolicy:
             raise TorchBehaviorError(
                 "checkpoint factory did not create a RaggedCandidateScorer"
             )
+        _require_greedy_behavior_rule(publication.manifest)
         if model.schema.version != publication.manifest.semantic_schema_version:
             raise TorchBehaviorError(
                 "restored scorer schema version does not match publication"
@@ -209,3 +213,10 @@ class CheckpointedGreedyTorchPolicy:
     def choose(self, decision_batch: Mapping[str, object]) -> BatchPolicyChoice:
         ordinals = self.score(decision_batch).greedy_ordinals()
         return BatchPolicyChoice.deterministic(ordinals, self.behavior_manifest_id)
+
+
+def _require_greedy_behavior_rule(manifest: BehaviorManifest) -> None:
+    if manifest.behavior_rule != GREEDY_BEHAVIOR_RULE_V1:
+        raise TorchBehaviorError(
+            "behavior manifest is not bound to the greedy candidate rule"
+        )
