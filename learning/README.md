@@ -88,9 +88,30 @@ environment action cannot become training experience. One open segment remains
 bounded across `run()` calls and can be deliberately sealed by
 `flush_experience()`.
 
+`sts_learning.torch_policy` is an optional, device-agnostic PyTorch baseline
+over that same bridge-owned semantic graph. It is intentionally absent from
+the package root, so ordinary caller imports still require only NumPy. The
+scorer derives every embedding-table dimension and categorical offset from one
+injected `semantic_schema()` result; it does not copy enum names, card ids, or
+feature dictionaries into Python. Token kinds, categorical and scalar facts,
+relations, and row-pooled context produce one flat candidate-logit tensor whose
+boundaries are the unchanged bridge `candidate_row_splits`.
+
+The optional module supplies a ragged cross-entropy loss and a greedy
+`BatchPolicy` adapter. Both CPU and CUDA execution are selected by where the
+caller places the model; the scorer contains no hard-coded device. The first
+contract is deliberately architecture-neutral: finite batched logits, exact
+row boundaries, finite loss, backward gradients, and an optimizer update. It
+is not yet a claim that this small graph network is the final policy model or
+that a particular training objective is sufficient.
+
 The bridge verification command installs a fresh wheel and runs both bridge
 smoke tests and these caller contracts:
 
 ```powershell
 .\bindings\python_learning\verify.ps1 -Python <python-3.12-executable>
 ```
+
+When that isolated verification environment exposes PyTorch, the same caller
+test discovery also enables the scorer's synthetic optimizer contract and its
+real-bridge semantic-batch integration test.

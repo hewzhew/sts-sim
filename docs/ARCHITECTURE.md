@@ -264,6 +264,16 @@ while a rejected choice produces no experience row. Checkpoints, simulator
 sessions, display text, JSON, policy scores, and inferred outcomes are not
 experience payloads.
 
+An optional PyTorch candidate scorer lives only in the Python `learning/`
+owner and is not imported by the ordinary package root. Construction consumes
+one bridge `semantic_schema()` result and derives numeric embedding dimensions
+and categorical offsets from it; Python does not retain a named game-feature
+dictionary. Forward inference consumes the existing sparse semantic NumPy
+tables and emits one flat logit tensor with the bridge's unchanged ragged
+candidate row splits. The caller chooses CPU or CUDA by placing the model on
+that device. The bridge, default caller dependency set, simulator workspace,
+and experience format remain PyTorch-free.
+
 On an ordinary reward screen, the reward owner claims typed low-agency public
 resources before opening a nested card-reward choice. This lets the card owner
 observe already-claimed gold, non-conflicting relics, and empty-slot potions
