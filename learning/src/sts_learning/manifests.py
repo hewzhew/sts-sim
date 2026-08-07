@@ -41,6 +41,18 @@ class ManifestArtifactId:
         if len(self.digest) != 32:
             raise BehaviorManifestError("manifest artifact digest must contain 32 bytes")
 
+    @classmethod
+    def from_content(
+        cls,
+        kind: ManifestArtifactKind,
+        content: bytes,
+    ) -> ManifestArtifactId:
+        """Hash one immutable externally owned artifact without retaining it."""
+
+        if not isinstance(content, bytes):
+            raise BehaviorManifestError("manifest artifact content must be immutable bytes")
+        return cls(kind, hashlib.sha256(content).digest())
+
 
 @dataclass(frozen=True)
 class BehaviorManifest:
@@ -198,6 +210,20 @@ class BehaviorManifestRegistry:
     ) -> BehaviorManifestId:
         """Register one manifest after checking any persisted claimed identity."""
 
+        identity = self.preview_registration(manifest, claimed_id=claimed_id)
+        if identity in self._entries:
+            return identity
+        self._entries[identity] = manifest
+        return identity
+
+    def preview_registration(
+        self,
+        manifest: BehaviorManifest,
+        *,
+        claimed_id: BehaviorManifestId | None = None,
+    ) -> BehaviorManifestId:
+        """Validate a registration without consuming registry capacity."""
+
         if not isinstance(manifest, BehaviorManifest):
             raise BehaviorManifestError("registry accepts only BehaviorManifest values")
         identity = manifest.identity
@@ -208,7 +234,6 @@ class BehaviorManifestRegistry:
                 raise BehaviorManifestError(
                     "claimed behavior manifest id conflicts with manifest content"
                 )
-
         existing = self._entries.get(identity)
         if existing is not None:
             if existing != manifest:
@@ -218,7 +243,6 @@ class BehaviorManifestRegistry:
             return identity
         if len(self._entries) >= self.capacity:
             raise BehaviorManifestError("behavior manifest registry capacity exceeded")
-        self._entries[identity] = manifest
         return identity
 
     def resolve(self, identity: BehaviorManifestId) -> BehaviorManifest:

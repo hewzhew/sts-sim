@@ -273,6 +273,16 @@ created model before that model can replace a live scorer; it does not load
 pickle or partially overwrite the incumbent. A manifest template binds this
 checkpoint to fixed model/config/schema/optimizer/trainer provenance and an
 explicit training step.
+A PyTorch behavior publication prepares both records, previews manifest
+capacity and conflicts without mutation, publishes the checkpoint, and only
+then commits the manifest. The returned typed publication is the sole promotion
+input; a checkpoint file by itself is not executable authority. Promotion
+re-resolves the exact manifest, materializes a fresh scorer from the verified
+checkpoint, checks its schema version, switches it to evaluation mode, and
+disables gradients before exposing a batched policy. The optimizer-owned shadow
+model is never reused as the live behavior object, so later training cannot
+silently change an already published policy. Registry or store failure produces
+no policy switch, and inference cannot begin from an unregistered publication.
 Every buffer has mandatory decision-row and retained-payload-byte limits. The
 byte accounting includes owned NumPy storage and Python payload metadata; the
 row limit bounds lineage and choice metadata. A complete incoming batch either

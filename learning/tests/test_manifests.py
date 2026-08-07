@@ -37,6 +37,25 @@ def _manifest(*, checkpoint_marker: int = 1, config_marker: int = 3) -> Behavior
 
 
 class BehaviorManifestTests(unittest.TestCase):
+    def test_artifact_content_hash_does_not_retain_or_accept_mutable_bytes(self) -> None:
+        artifact = ManifestArtifactId.from_content(
+            ManifestArtifactKind.MODEL_CONFIG,
+            b"exact-config",
+        )
+
+        self.assertEqual(
+            artifact,
+            ManifestArtifactId.from_content(
+                ManifestArtifactKind.MODEL_CONFIG,
+                b"exact-config",
+            ),
+        )
+        with self.assertRaisesRegex(BehaviorManifestError, "immutable bytes"):
+            ManifestArtifactId.from_content(
+                ManifestArtifactKind.MODEL_CONFIG,
+                bytearray(b"mutable"),  # type: ignore[arg-type]
+            )
+
     def test_identity_is_canonical_and_changes_with_exact_checkpoint(self) -> None:
         first = _manifest()
         same = _manifest()
@@ -97,6 +116,14 @@ class BehaviorManifestTests(unittest.TestCase):
         with self.assertRaisesRegex(BehaviorManifestError, "capacity"):
             registry.register(_manifest(checkpoint_marker=9))
         self.assertEqual(registry.snapshot.registered_manifests, 1)
+
+    def test_registration_preview_consumes_no_capacity(self) -> None:
+        registry = BehaviorManifestRegistry(capacity=1)
+        manifest = _manifest()
+
+        self.assertEqual(registry.preview_registration(manifest), manifest.identity)
+        self.assertEqual(registry.snapshot.registered_manifests, 0)
+        self.assertEqual(registry.register(manifest), manifest.identity)
 
     def test_template_binds_one_checkpoint_and_training_step(self) -> None:
         manifest = _manifest()

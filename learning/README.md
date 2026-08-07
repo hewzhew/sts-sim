@@ -96,6 +96,16 @@ foreign files. Restore first builds a fresh model and validates all keys,
 dtypes, and shapes, so an incumbent scorer is not partially overwritten. A
 `BehaviorManifestTemplate` then binds the checkpoint identity to the fixed
 model/config/schema/optimizer/trainer identities and exact training step.
+
+`sts_learning.torch_behavior` makes publication and promotion separate typed
+operations. Publication prepares the checkpoint and manifest, previews
+registry capacity/conflicts, commits the checkpoint, and registers the manifest
+before returning an executable candidate. Promotion refuses a bare checkpoint
+or unregistered manifest: it restores a fresh scorer, validates schema version,
+enters evaluation mode, and freezes gradients. It never hands the optimizer's
+live shadow scorer directly to behavior, so subsequent shadow updates cannot
+drift a published manifest. The live policy emits the registered manifest id on
+every batched choice.
 An `ExperienceSegmentBuffer` requires both a maximum decision count and a
 maximum retained-payload byte count. The byte count conservatively includes
 owned NumPy buffers and headers plus mappings, keys, and scalar values; the row

@@ -4,6 +4,7 @@ from sts_learning import (
     AttemptKey,
     BehaviorManifest,
     BehaviorManifestId,
+    BehaviorManifestTemplate,
     CompletedAttemptExperience,
     DecisionExperienceBatch,
     DecisionLineage,
@@ -14,12 +15,14 @@ from sts_learning import (
 )
 
 
-def behavior_manifest_fixture() -> BehaviorManifest:
+def behavior_manifest_template_fixture(
+    *,
+    semantic_schema_version: int = 2,
+) -> BehaviorManifestTemplate:
     def artifact(kind: ManifestArtifactKind) -> ManifestArtifactId:
         return ManifestArtifactId(kind, bytes([int(kind)]) * 32)
 
-    return BehaviorManifest(
-        model_checkpoint=artifact(ManifestArtifactKind.MODEL_CHECKPOINT),
+    return BehaviorManifestTemplate(
         model_definition=artifact(ManifestArtifactKind.MODEL_DEFINITION),
         model_config=artifact(ManifestArtifactKind.MODEL_CONFIG),
         semantic_schema=artifact(ManifestArtifactKind.SEMANTIC_SCHEMA),
@@ -27,7 +30,16 @@ def behavior_manifest_fixture() -> BehaviorManifest:
         trainer_implementation=artifact(
             ManifestArtifactKind.TRAINER_IMPLEMENTATION
         ),
-        semantic_schema_version=2,
+        semantic_schema_version=semantic_schema_version,
+    )
+
+
+def behavior_manifest_fixture() -> BehaviorManifest:
+    return behavior_manifest_template_fixture().bind(
+        ManifestArtifactId(
+            ManifestArtifactKind.MODEL_CHECKPOINT,
+            bytes([int(ManifestArtifactKind.MODEL_CHECKPOINT)]) * 32,
+        ),
         training_step=0,
     )
 

@@ -1,0 +1,171 @@
+from __future__ import annotations
+
+import importlib.util
+import tempfile
+import unittest
+
+from learning.tests.semantic_fixtures import (
+    semantic_batch_fixture,
+    semantic_schema_fixture,
+)
+from learning.tests.torch_outcome_fixtures import (
+    behavior_manifest_fixture,
+    behavior_manifest_template_fixture,
+)
+from sts_learning import BehaviorManifestRegistry
+
+
+_TORCH_AVAILABLE = importlib.util.find_spec("torch") is not None
+if _TORCH_AVAILABLE:
+    import torch
+
+    from sts_learning.torch_behavior import (
+        CheckpointedGreedyTorchPolicy,
+        TorchBehaviorError,
+        TorchBehaviorPublisher,
+    )
+    from sts_learning.torch_checkpoints import (
+        BoundedTorchCheckpointStore,
+        TorchCheckpointError,
+        TorchCheckpointLimits,
+    )
+    from sts_learning.torch_policy import RaggedCandidateScorer, RaggedScorerConfig
+
+
+def _scorer(*, schema=None):
+    return RaggedCandidateScorer.from_bridge_schema(
+        schema or semantic_schema_fixture(),
+        RaggedScorerConfig(hidden_dim=8, relation_layers=1),
+    )
+
+
+def _store(root, *, checkpoints: int = 3):
+    return BoundedTorchCheckpointStore(
+        root,
+        TorchCheckpointLimits(
+            max_checkpoints=checkpoints,
+            max_bytes_per_checkpoint=2 * 1024 * 1024,
+            max_total_bytes=checkpoints * 2 * 1024 * 1024,
+        ),
+    )
+
+
+@unittest.skipUnless(_TORCH_AVAILABLE, "optional PyTorch dependency is not installed")
+class TorchBehaviorPublicationTests(unittest.TestCase):
+    def test_promotion_uses_fresh_frozen_checkpoint_not_live_shadow_model(self) -> None:
+        torch.manual_seed(21)
+        shadow = _scorer()
+        batch = semantic_batch_fixture()
+        expected = shadow(batch).values.detach().clone()
+        registry = BehaviorManifestRegistry(capacity=3)
+
+        with tempfile.TemporaryDirectory() as root:
+            store = _store(root)
+            publication = TorchBehaviorPublisher(
+                store,
+                registry,
+                behavior_manifest_template_fixture(),
+            ).publish(shadow, training_step=4)
+            with torch.no_grad():
+                shadow.scorer[-1].bias.add_(20.0)
+
+            policy = CheckpointedGreedyTorchPolicy.promote(
+                publication,
+                store,
+                registry,
+                _scorer,
+            )
+            actual = policy.score(batch).values
+            choice = policy.choose(batch)
+
+            torch.testing.assert_close(actual, expected)
+            self.assertFalse(actual.requires_grad)
+            self.assertEqual(choice.behavior_manifest_id, publication.manifest_id)
+            self.assertEqual(publication.manifest.training_step, 4)
+            self.assertNotEqual(shadow(batch).values.detach().tolist(), expected.tolist())
+
+    def test_registry_capacity_failure_publishes_no_checkpoint(self) -> None:
+        registry = BehaviorManifestRegistry(capacity=1)
+        registry.register(behavior_manifest_fixture())
+        with tempfile.TemporaryDirectory() as root:
+            store = _store(root)
+            publisher = TorchBehaviorPublisher(
+                store,
+                registry,
+                behavior_manifest_template_fixture(),
+            )
+
+            with self.assertRaisesRegex(ValueError, "capacity"):
+                publisher.publish(_scorer(), training_step=1)
+            self.assertEqual(store.snapshot.checkpoints, 0)
+
+    def test_store_failure_registers_no_manifest(self) -> None:
+        registry = BehaviorManifestRegistry(capacity=2)
+        torch.manual_seed(22)
+        with tempfile.TemporaryDirectory() as root:
+            store = _store(root, checkpoints=1)
+            publisher = TorchBehaviorPublisher(
+                store,
+                registry,
+                behavior_manifest_template_fixture(),
+            )
+            publisher.publish(_scorer(), training_step=0)
+            updated = _scorer()
+
+            with self.assertRaisesRegex(TorchCheckpointError, "capacity"):
+                publisher.publish(updated, training_step=1)
+            self.assertEqual(registry.snapshot.registered_manifests, 1)
+
+    def test_training_step_changes_manifest_but_reuses_identical_checkpoint(self) -> None:
+        registry = BehaviorManifestRegistry(capacity=2)
+        scorer = _scorer()
+        with tempfile.TemporaryDirectory() as root:
+            store = _store(root)
+            publisher = TorchBehaviorPublisher(
+                store,
+                registry,
+                behavior_manifest_template_fixture(),
+            )
+
+            first = publisher.publish(scorer, training_step=2)
+            second = publisher.publish(scorer, training_step=3)
+
+            self.assertEqual(first.checkpoint_id, second.checkpoint_id)
+            self.assertNotEqual(first.manifest_id, second.manifest_id)
+            self.assertEqual(store.snapshot.checkpoints, 1)
+            self.assertEqual(registry.snapshot.registered_manifests, 2)
+
+    def test_unregistered_or_schema_mismatched_publication_cannot_run(self) -> None:
+        registry = BehaviorManifestRegistry(capacity=1)
+        with tempfile.TemporaryDirectory() as root:
+            store = _store(root)
+            publication = TorchBehaviorPublisher(
+                store,
+                registry,
+                behavior_manifest_template_fixture(),
+            ).publish(_scorer(), training_step=0)
+
+            with self.assertRaisesRegex(TorchBehaviorError, "not registered"):
+                CheckpointedGreedyTorchPolicy.promote(
+                    publication,
+                    store,
+                    BehaviorManifestRegistry(capacity=1),
+                    _scorer,
+                )
+
+        mismatched_schema = dict(semantic_schema_fixture())
+        mismatched_schema["version"] = 9
+        with tempfile.TemporaryDirectory() as root:
+            store = _store(root)
+            publisher = TorchBehaviorPublisher(
+                store,
+                BehaviorManifestRegistry(capacity=1),
+                behavior_manifest_template_fixture(),
+            )
+            with self.assertRaisesRegex(TorchBehaviorError, "schema version"):
+                publisher.publish(_scorer(schema=mismatched_schema), training_step=0)
+            self.assertEqual(store.snapshot.checkpoints, 0)
+
+
+if __name__ == "__main__":
+    unittest.main()
