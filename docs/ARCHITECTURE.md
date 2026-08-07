@@ -242,6 +242,28 @@ not session inspection or serialization. The driver retains one bounded step
 result or compact aggregate statistics and is not a trajectory, replay, model,
 optimizer, or shaped-reward owner.
 
+Optional online experience retention is one explicitly bounded segment, not a
+driver history. Before policy inference, the caller recursively copies and
+freezes the bridge's existing semantic decision batch without re-declaring its
+feature schema. Rows are aligned to exact slot, seed, episode generation,
+attempt index, recovery count, and the subsequently selected candidate ordinal.
+Every buffer has mandatory decision-row and retained-payload-byte limits. The
+byte accounting includes owned NumPy storage and Python payload metadata; the
+row limit bounds lineage and choice metadata. A complete incoming batch either
+fits or seals the preceding segment before admission, and a single oversized
+batch fails before environment mutation.
+
+Sealed segments identify every represented attempt as either carrying its
+exact terminal attempt record or being censored at that segment boundary. A
+continued attempt may therefore appear in a later segment under the same exact
+lineage without the earlier fragment being relabeled. The driver delivers each
+sealed prior segment synchronously to a caller-owned sink, applies the current
+choice through the bridge, and only then commits that choice to the open
+segment. It keeps no delivery queue; a sink failure stops before the choice,
+while a rejected choice produces no experience row. Checkpoints, simulator
+sessions, display text, JSON, policy scores, and inferred outcomes are not
+experience payloads.
+
 On an ordinary reward screen, the reward owner claims typed low-agency public
 resources before opening a nested card-reward choice. This lets the card owner
 observe already-claimed gold, non-conflicting relics, and empty-slot potions

@@ -66,6 +66,28 @@ aggregate counts and timing; `advance()` returns at most one bounded step's
 attempts, completions, and recovery events. Neither API stores trajectories,
 writes JSON, defines a game policy, or turns terminal HP and gold into reward.
 
+`sts_learning.experience` provides the optional bounded training handoff. Each
+decision batch is copied before policy inference into a recursively frozen,
+read-only view of the bridge-owned semantic schema; it does not define another
+feature dictionary. Every row carries its exact slot, seed, episode generation,
+attempt index, and recovery count alongside the selected candidate ordinal.
+An `ExperienceSegmentBuffer` requires both a maximum decision count and a
+maximum retained-payload byte count. The byte count conservatively includes
+owned NumPy buffers and headers plus mappings, keys, and scalar values; the row
+limit separately bounds lineage and ordinal metadata.
+
+When the next complete decision batch would cross either bound, the current
+segment seals before that batch is retained. Each attempt fragment in a sealed
+segment contains either its exact `TerminalAttemptRecord` or an explicit
+`censored` state; a limit boundary never fabricates defeat. `OnlineBatchDriver`
+accepts the buffer only together with a synchronous `ExperienceSegmentSink` and
+hands off sealed segments immediately instead of queueing them. Sink failure is
+fail-stop before the current model choice mutates the environment. The choice
+is committed to the new segment only after the bridge accepts it, so a rejected
+environment action cannot become training experience. One open segment remains
+bounded across `run()` calls and can be deliberately sealed by
+`flush_experience()`.
+
 The bridge verification command installs a fresh wheel and runs both bridge
 smoke tests and these caller contracts:
 

@@ -2668,6 +2668,10 @@ fn python_learning_bridge_stays_outside_the_root_workspace_and_policy_layer() {
         .expect("read caller-owned seed schedule");
     let outcomes = std::fs::read_to_string("learning/src/sts_learning/outcomes.py")
         .expect("read caller-owned terminal batches");
+    let driver = std::fs::read_to_string("learning/src/sts_learning/driver.py")
+        .expect("read caller-owned online batch driver");
+    let experience = std::fs::read_to_string("learning/src/sts_learning/experience.py")
+        .expect("read caller-owned bounded experience segments");
     for required in [
         "class RecoveryLedger",
         "def prepare_recovery",
@@ -2710,6 +2714,56 @@ fn python_learning_bridge_stays_outside_the_root_workspace_and_policy_layer() {
         assert!(
             !outcomes.contains(forbidden),
             "terminal batch adapter must not retain a backend dependency through '{forbidden}'"
+        );
+    }
+    for required in [
+        "class ExperienceLimits",
+        "class ExperienceSegmentBuffer",
+        "class SegmentCloseReason",
+        "class AttemptFragment",
+        "MappingProxyType",
+        "setflags(write=False)",
+        "sys.getsizeof",
+        "def record_terminals",
+    ] {
+        assert!(
+            experience.contains(required),
+            "online experience retention must preserve bounded contract '{required}'"
+        );
+    }
+    for required in [
+        "class ExperienceSegmentSink",
+        "experience_buffer and experience_sink must be configured together",
+        "rotate_before",
+        "commit(experience_batch)",
+        "def flush_experience",
+        "def _consume_experience",
+    ] {
+        assert!(
+            driver.contains(required),
+            "online batch driver must preserve immediate experience handoff '{required}'"
+        );
+    }
+    assert!(
+        learning_manifest.contains("numpy>=2.0"),
+        "online experience snapshots must declare their NumPy buffer dependency"
+    );
+    for forbidden in [
+        "serde_json",
+        "torch",
+        "sts_oracle_eval",
+        "sts_learning_bridge",
+        "semantic_schema",
+    ] {
+        assert!(
+            !driver.contains(forbidden) && !experience.contains(forbidden),
+            "online driver and experience buffer must not cross authority through '{forbidden}'"
+        );
+    }
+    for forbidden in ["checkpoint", "session", "json"] {
+        assert!(
+            !experience.to_ascii_lowercase().contains(forbidden),
+            "experience payloads must not retain forbidden state through '{forbidden}'"
         );
     }
     for forbidden in [

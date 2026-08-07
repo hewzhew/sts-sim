@@ -8,6 +8,12 @@ from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Protocol
 
+from .experience import (
+    DecisionExperienceBatch,
+    ExperienceSegment,
+    ExperienceSegmentBuffer,
+    PreparedDecisionBatch,
+)
 from .outcomes import TerminalStepBatch
 from .recovery import (
     EpisodeOutcome,
@@ -106,6 +112,12 @@ class BatchCurriculum(Protocol):
     ) -> RecoveryPlan: ...
 
 
+class ExperienceSegmentSink(Protocol):
+    """Synchronous consumer; the driver never queues sealed segments."""
+
+    def __call__(self, segment: ExperienceSegment) -> None: ...
+
+
 @dataclass(frozen=True)
 class InitialPopulation:
     """Seed-aligned environment, ledger, cursor, and episode-root checkpoints."""
@@ -125,6 +137,9 @@ class BatchStepResult:
     attempts: tuple[TerminalAttemptRecord, ...]
     completed_episodes: tuple[EpisodeOutcome, ...]
     recoveries: tuple[RecoveryEvent, ...]
+    emitted_experience_segments: int
+    emitted_experience_decisions: int
+    emitted_experience_payload_bytes: int
 
 
 @dataclass(frozen=True)
@@ -139,6 +154,11 @@ class BatchRunSummary:
     terminal_attempts: int
     completed_episodes: int
     recoveries: int
+    emitted_experience_segments: int
+    emitted_experience_decisions: int
+    emitted_experience_payload_bytes: int
+    open_experience_decisions: int
+    open_experience_payload_bytes: int
     elapsed_seconds: float
 
     @property
@@ -211,13 +231,22 @@ class OnlineBatchDriver:
         policy: BatchPolicy,
         curriculum: BatchCurriculum,
         max_decision_rounds_per_step: int = 256,
+        experience_buffer: ExperienceSegmentBuffer | None = None,
+        experience_sink: ExperienceSegmentSink | None = None,
     ) -> None:
+        if (experience_buffer is None) != (experience_sink is None):
+            raise BatchDriverError(
+                "experience_buffer and experience_sink must be configured together"
+            )
         self.env = population.env
         self.ledger = population.ledger
         self.schedule = population.schedule
         self._checkpoint_bank = population.checkpoint_bank
         self.policy = policy
         self.curriculum = curriculum
+        self._experience_buffer = experience_buffer
+        self._experience_sink = experience_sink
+        self._experience_sink_failed = False
         self.max_decision_rounds_per_step = _normalize_count(
             max_decision_rounds_per_step,
             "max_decision_rounds_per_step",
@@ -227,7 +256,12 @@ class OnlineBatchDriver:
     def advance(self) -> BatchStepResult:
         """Resolve decisions, step once, and immediately refill completed slots."""
 
+        if self._experience_sink_failed:
+            raise BatchDriverError("experience sink previously failed")
         decision_rounds = 0
+        experience_segments = 0
+        experience_decisions = 0
+        experience_payload_bytes = 0
         while not self.env.ready:
             if decision_rounds >= self.max_decision_rounds_per_step:
                 raise BatchDriverError(
@@ -247,6 +281,12 @@ class OnlineBatchDriver:
             )
             if len(slots) != len(candidate_counts):
                 raise BatchDriverError("decision slot and candidate columns are misaligned")
+            prepared_experience: PreparedDecisionBatch | None = None
+            if self._experience_buffer is not None:
+                prepared_experience = self._experience_buffer.prepare(
+                    decision_batch,
+                    tuple(self.ledger.snapshot(slot) for slot in slots),
+                )
             ordinals = _normalize_integer_sequence(
                 self.policy.choose(decision_batch),
                 "policy ordinals",
@@ -267,7 +307,19 @@ class OnlineBatchDriver:
                     raise BatchDriverError(
                         f"slot {slot} candidate ordinal {ordinal} is outside 0..{count}"
                     )
+            if prepared_experience is not None:
+                experience_batch = DecisionExperienceBatch.from_prepared(
+                    prepared_experience,
+                    ordinals,
+                )
+                emitted = self._experience_buffer.rotate_before(experience_batch)
+                segments, decisions, payload_bytes = self._consume_experience(emitted)
+                experience_segments += segments
+                experience_decisions += decisions
+                experience_payload_bytes += payload_bytes
             self.env.choose(list(ordinals))
+            if prepared_experience is not None:
+                self._experience_buffer.commit(experience_batch)
             decision_rounds += 1
 
         bridge_step = self.env.step()
@@ -289,9 +341,14 @@ class OnlineBatchDriver:
                 attempts=(),
                 completed_episodes=(),
                 recoveries=(),
+                emitted_experience_segments=experience_segments,
+                emitted_experience_decisions=experience_decisions,
+                emitted_experience_payload_bytes=experience_payload_bytes,
             )
 
         accounting = self.ledger.record_terminal(terminal)
+        if self._experience_buffer is not None:
+            self._experience_buffer.record_terminals(accounting.attempts)
         snapshots = tuple(
             self.ledger.snapshot(slot) for slot in terminal.slot_indices
         )
@@ -355,7 +412,22 @@ class OnlineBatchDriver:
             attempts=accounting.attempts,
             completed_episodes=completed,
             recoveries=recoveries,
+            emitted_experience_segments=experience_segments,
+            emitted_experience_decisions=experience_decisions,
+            emitted_experience_payload_bytes=experience_payload_bytes,
         )
+
+    def flush_experience(self) -> ExperienceSegment | None:
+        """Seal and synchronously consume the current bounded segment."""
+
+        if self._experience_sink_failed:
+            raise BatchDriverError("experience sink previously failed")
+        if self._experience_buffer is None:
+            return None
+        segment = self._experience_buffer.flush()
+        if segment is not None:
+            self._consume_experience((segment,))
+        return segment
 
     def run(self, *, batch_steps: int) -> BatchRunSummary:
         """Run a fixed number of vector transitions without retaining results."""
@@ -366,6 +438,9 @@ class OnlineBatchDriver:
         terminal_attempts = 0
         completed_episodes = 0
         recoveries = 0
+        experience_segments = 0
+        experience_decisions = 0
+        experience_payload_bytes = 0
         started = time.perf_counter()
         for _ in range(requested_steps):
             result = self.advance()
@@ -374,7 +449,20 @@ class OnlineBatchDriver:
             terminal_attempts += len(result.attempts)
             completed_episodes += len(result.completed_episodes)
             recoveries += len(result.recoveries)
+            experience_segments += result.emitted_experience_segments
+            experience_decisions += result.emitted_experience_decisions
+            experience_payload_bytes += result.emitted_experience_payload_bytes
         elapsed = time.perf_counter() - started
+        open_experience_decisions = (
+            self._experience_buffer.decision_count
+            if self._experience_buffer is not None
+            else 0
+        )
+        open_experience_payload_bytes = (
+            self._experience_buffer.payload_bytes
+            if self._experience_buffer is not None
+            else 0
+        )
         return BatchRunSummary(
             mode=self.ledger.mode,
             active_slots=self.ledger.slot_count - operator.index(self.env.terminal_count),
@@ -384,8 +472,34 @@ class OnlineBatchDriver:
             terminal_attempts=terminal_attempts,
             completed_episodes=completed_episodes,
             recoveries=recoveries,
+            emitted_experience_segments=experience_segments,
+            emitted_experience_decisions=experience_decisions,
+            emitted_experience_payload_bytes=experience_payload_bytes,
+            open_experience_decisions=open_experience_decisions,
+            open_experience_payload_bytes=open_experience_payload_bytes,
             elapsed_seconds=elapsed,
         )
+
+    def _consume_experience(
+        self,
+        segments: Sequence[ExperienceSegment],
+    ) -> tuple[int, int, int]:
+        if not segments:
+            return 0, 0, 0
+        sink = self._experience_sink
+        if sink is None:
+            raise AssertionError("experience segments exist without a sink")
+        decisions = 0
+        payload_bytes = 0
+        try:
+            for segment in segments:
+                sink(segment)
+                decisions += segment.decision_count
+                payload_bytes += segment.payload_bytes
+        except Exception:
+            self._experience_sink_failed = True
+            raise
+        return len(segments), decisions, payload_bytes
 
 
 def _normalize_count(value: int, name: str, *, allow_zero: bool) -> int:

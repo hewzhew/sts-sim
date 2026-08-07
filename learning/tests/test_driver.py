@@ -3,8 +3,13 @@ from __future__ import annotations
 import unittest
 from collections.abc import Mapping, Sequence
 
+import numpy as np
+
 from sts_learning import (
     BatchDriverError,
+    ExperienceLimits,
+    ExperienceSegment,
+    ExperienceSegmentBuffer,
     OnlineBatchDriver,
     RecoveryPlan,
     RecoverySlotSnapshot,
@@ -147,6 +152,48 @@ class FakeBatchEnv:
         return self.checkpoint_slots(slot_indices)
 
 
+class NumpyFakeBatchEnv(FakeBatchEnv):
+    def decision_batch(self, *, semantic: bool = False) -> dict[str, object]:
+        raw = super().decision_batch(semantic=semantic)
+        slots = np.array(raw["slot_indices"], dtype=np.uint64)
+        counts = np.array(raw["candidate_counts"], dtype=np.uint64)
+        splits = np.zeros(len(slots) + 1, dtype=np.uint64)
+        splits[1:] = np.cumsum(counts)
+        return {
+            "slot_indices": slots,
+            "phase": np.zeros(len(slots), dtype=np.uint8),
+            "candidate_counts": counts,
+            "candidate_row_splits": splits,
+            "semantic": {
+                "schema_version": 2,
+                "completeness": np.ones(len(slots), dtype=np.uint8),
+                "token": {
+                    "row_splits": np.arange(
+                        len(slots) + 1,
+                        dtype=np.uint64,
+                    ),
+                    "kind": np.zeros(len(slots), dtype=np.uint16),
+                },
+                "candidate_token_indices": np.arange(
+                    int(splits[-1]),
+                    dtype=np.uint64,
+                ),
+            },
+        }
+
+
+class OneRejectedChoiceEnv(NumpyFakeBatchEnv):
+    def __init__(self, seeds: list[int]) -> None:
+        super().__init__(seeds)
+        self.rejected = False
+
+    def choose(self, ordinals: list[int]) -> None:
+        if len(self.choose_calls) == 1 and not self.rejected:
+            self.rejected = True
+            raise RuntimeError("choice rejected")
+        super().choose(ordinals)
+
+
 class RecordingPolicy:
     def __init__(self) -> None:
         self.batch_sizes: list[int] = []
@@ -185,6 +232,11 @@ class FirstAttemptRecovery:
 class InvalidPolicy:
     def choose(self, decision_batch: Mapping[str, object]) -> Sequence[int]:
         return [2] * len(decision_batch["slot_indices"])  # type: ignore[arg-type]
+
+
+class ArrayFirstPolicy:
+    def choose(self, decision_batch: Mapping[str, object]) -> Sequence[int]:
+        return [0] * len(decision_batch["slot_indices"])  # type: ignore[arg-type]
 
 
 class NoRecovery:
@@ -303,6 +355,148 @@ class BatchDriverTests(unittest.TestCase):
                 schedule=SeedSchedule(SeedPartition.TRAINING),
                 max_recoveries_per_episode=0,
             )
+
+    def test_driver_consumes_bounded_segments_without_retaining_a_queue(self) -> None:
+        envs: list[NumpyFakeBatchEnv] = []
+
+        def factory(seeds: list[int]) -> NumpyFakeBatchEnv:
+            env = NumpyFakeBatchEnv(
+                seeds,
+                terminal_plans=({0: 1, 1: -1},),
+            )
+            envs.append(env)
+            return env
+
+        population = initialize_population(
+            factory,
+            slot_count=2,
+            schedule=SeedSchedule(SeedPartition.HELD_OUT),
+            max_recoveries_per_episode=0,
+        )
+        buffer = ExperienceSegmentBuffer(
+            ExperienceLimits(
+                max_decisions=2,
+                max_payload_bytes=1_000_000,
+            )
+        )
+        consumed: list[ExperienceSegment] = []
+        driver = OnlineBatchDriver(
+            population,
+            policy=ArrayFirstPolicy(),
+            curriculum=NoRecovery(),
+            experience_buffer=buffer,
+            experience_sink=consumed.append,
+        )
+
+        result = driver.advance()
+
+        self.assertEqual(result.emitted_experience_segments, 1)
+        self.assertEqual(result.emitted_experience_decisions, 2)
+        self.assertEqual(len(consumed), 1)
+        self.assertTrue(consumed[0].censored)
+        self.assertEqual(buffer.decision_count, 2)
+        final = driver.flush_experience()
+        assert final is not None
+        self.assertEqual(len(consumed), 2)
+        self.assertFalse(final.censored)
+        self.assertTrue(all(fragment.terminal for fragment in final.attempts))
+        self.assertTrue(buffer.empty)
+
+    def test_experience_buffer_and_sink_must_be_paired(self) -> None:
+        population = initialize_population(
+            lambda seeds: FakeBatchEnv(seeds),
+            slot_count=1,
+            schedule=SeedSchedule(SeedPartition.TRAINING),
+            max_recoveries_per_episode=0,
+        )
+        with self.assertRaisesRegex(BatchDriverError, "configured together"):
+            OnlineBatchDriver(
+                population,
+                policy=RecordingPolicy(),
+                curriculum=NoRecovery(),
+                experience_buffer=ExperienceSegmentBuffer(
+                    ExperienceLimits(
+                        max_decisions=1,
+                        max_payload_bytes=1024,
+                    )
+                ),
+            )
+
+    def test_failing_experience_sink_stops_before_the_current_choice(self) -> None:
+        envs: list[NumpyFakeBatchEnv] = []
+
+        def factory(seeds: list[int]) -> NumpyFakeBatchEnv:
+            env = NumpyFakeBatchEnv(seeds)
+            envs.append(env)
+            return env
+
+        population = initialize_population(
+            factory,
+            slot_count=2,
+            schedule=SeedSchedule(SeedPartition.TRAINING),
+            max_recoveries_per_episode=0,
+        )
+
+        def fail_sink(segment: ExperienceSegment) -> None:
+            raise RuntimeError("sink failed")
+
+        driver = OnlineBatchDriver(
+            population,
+            policy=ArrayFirstPolicy(),
+            curriculum=NoRecovery(),
+            experience_buffer=ExperienceSegmentBuffer(
+                ExperienceLimits(
+                    max_decisions=2,
+                    max_payload_bytes=1_000_000,
+                )
+            ),
+            experience_sink=fail_sink,
+        )
+
+        with self.assertRaisesRegex(RuntimeError, "sink failed"):
+            driver.advance()
+        self.assertEqual(len(envs[0].choose_calls), 1)
+        with self.assertRaisesRegex(BatchDriverError, "previously failed"):
+            driver.advance()
+
+    def test_rejected_choice_is_not_committed_as_experience(self) -> None:
+        envs: list[OneRejectedChoiceEnv] = []
+
+        def factory(seeds: list[int]) -> OneRejectedChoiceEnv:
+            env = OneRejectedChoiceEnv(seeds)
+            envs.append(env)
+            return env
+
+        population = initialize_population(
+            factory,
+            slot_count=2,
+            schedule=SeedSchedule(SeedPartition.TRAINING),
+            max_recoveries_per_episode=0,
+        )
+        buffer = ExperienceSegmentBuffer(
+            ExperienceLimits(
+                max_decisions=2,
+                max_payload_bytes=1_000_000,
+            )
+        )
+        consumed: list[ExperienceSegment] = []
+        driver = OnlineBatchDriver(
+            population,
+            policy=ArrayFirstPolicy(),
+            curriculum=NoRecovery(),
+            experience_buffer=buffer,
+            experience_sink=consumed.append,
+        )
+
+        with self.assertRaisesRegex(RuntimeError, "choice rejected"):
+            driver.advance()
+        self.assertEqual(len(consumed), 1)
+        self.assertTrue(buffer.empty)
+
+        result = driver.advance()
+        self.assertEqual(result.emitted_experience_segments, 0)
+        self.assertEqual(buffer.decision_count, 2)
+        self.assertEqual(len(envs[0].choose_calls), 2)
 
 
 if __name__ == "__main__":
