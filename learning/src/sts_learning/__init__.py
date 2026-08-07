@@ -43,6 +43,7 @@ from .manifests import (
     BehaviorManifestError,
     BehaviorManifestRegistry,
     BehaviorManifestRegistrySnapshot,
+    BehaviorManifestTemplate,
     ManifestArtifactId,
     ManifestArtifactKind,
 )
@@ -97,6 +98,7 @@ __all__ = [
     "BehaviorManifestError",
     "BehaviorManifestRegistry",
     "BehaviorManifestRegistrySnapshot",
+    "BehaviorManifestTemplate",
     "BoundedAttemptAssembler",
     "CheckpointBatch",
     "CheckpointedEpisodeResetTarget",

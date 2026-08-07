@@ -116,6 +116,61 @@ class BehaviorManifest:
 
 
 @dataclass(frozen=True)
+class BehaviorManifestTemplate:
+    """Fixed non-checkpoint provenance used to bind a published model state."""
+
+    model_definition: ManifestArtifactId
+    model_config: ManifestArtifactId
+    semantic_schema: ManifestArtifactId
+    optimizer_config: ManifestArtifactId
+    trainer_implementation: ManifestArtifactId
+    semantic_schema_version: int
+
+    def __post_init__(self) -> None:
+        for field_name, expected_kind in (
+            ("model_definition", ManifestArtifactKind.MODEL_DEFINITION),
+            ("model_config", ManifestArtifactKind.MODEL_CONFIG),
+            ("semantic_schema", ManifestArtifactKind.SEMANTIC_SCHEMA),
+            ("optimizer_config", ManifestArtifactKind.OPTIMIZER_CONFIG),
+            ("trainer_implementation", ManifestArtifactKind.TRAINER_IMPLEMENTATION),
+        ):
+            artifact = getattr(self, field_name)
+            if not isinstance(artifact, ManifestArtifactId):
+                raise BehaviorManifestError(f"{field_name} must be a ManifestArtifactId")
+            if artifact.kind is not expected_kind:
+                raise BehaviorManifestError(
+                    f"{field_name} must have kind {expected_kind.name}"
+                )
+        object.__setattr__(
+            self,
+            "semantic_schema_version",
+            _non_negative_integer(
+                self.semantic_schema_version,
+                "semantic_schema_version",
+            ),
+        )
+
+    def bind(
+        self,
+        model_checkpoint: ManifestArtifactId,
+        *,
+        training_step: int,
+    ) -> BehaviorManifest:
+        """Create one exact manifest; the returned identity includes the step."""
+
+        return BehaviorManifest(
+            model_checkpoint=model_checkpoint,
+            model_definition=self.model_definition,
+            model_config=self.model_config,
+            semantic_schema=self.semantic_schema,
+            optimizer_config=self.optimizer_config,
+            trainer_implementation=self.trainer_implementation,
+            semantic_schema_version=self.semantic_schema_version,
+            training_step=training_step,
+        )
+
+
+@dataclass(frozen=True)
 class BehaviorManifestRegistrySnapshot:
     capacity: int
     registered_manifests: int

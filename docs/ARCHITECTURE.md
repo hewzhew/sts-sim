@@ -261,6 +261,18 @@ registry resolves those identities without retaining model objects, checkpoint
 payloads, file paths, or display strings. Unknown identities, conflicting
 claimed identities, capacity overflow, and any expected checkpoint/config/schema
 mismatch fail closed; the registry never evicts an older binding implicitly.
+Optional PyTorch model checkpoints use a separate versioned tensor-only binary
+format rather than pickle. Canonical state keys, explicit dtype and shape, and
+little-endian tensor bytes determine the `MODEL_CHECKPOINT` SHA-256 identity.
+The caller-owned file store has mandatory checkpoint-count, per-checkpoint-byte,
+and total-byte limits and never evicts implicitly. It publishes a fully flushed
+temporary file through an atomic same-directory link, verifies all files and
+digests when reopened, and rejects partial, foreign, corrupt, or unsupported
+entries. Restore decodes and validates every key, dtype, and shape into a newly
+created model before that model can replace a live scorer; it does not load
+pickle or partially overwrite the incumbent. A manifest template binds this
+checkpoint to fixed model/config/schema/optimizer/trainer provenance and an
+explicit training step.
 Every buffer has mandatory decision-row and retained-payload-byte limits. The
 byte accounting includes owned NumPy storage and Python payload metadata; the
 row limit bounds lineage and choice metadata. A complete incoming batch either

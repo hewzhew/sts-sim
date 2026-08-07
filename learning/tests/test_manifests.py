@@ -7,6 +7,7 @@ from sts_learning import (
     BehaviorManifestError,
     BehaviorManifestId,
     BehaviorManifestRegistry,
+    BehaviorManifestTemplate,
     ManifestArtifactId,
     ManifestArtifactKind,
 )
@@ -96,6 +97,22 @@ class BehaviorManifestTests(unittest.TestCase):
         with self.assertRaisesRegex(BehaviorManifestError, "capacity"):
             registry.register(_manifest(checkpoint_marker=9))
         self.assertEqual(registry.snapshot.registered_manifests, 1)
+
+    def test_template_binds_one_checkpoint_and_training_step(self) -> None:
+        manifest = _manifest()
+        template = BehaviorManifestTemplate(
+            model_definition=manifest.model_definition,
+            model_config=manifest.model_config,
+            semantic_schema=manifest.semantic_schema,
+            optimizer_config=manifest.optimizer_config,
+            trainer_implementation=manifest.trainer_implementation,
+            semantic_schema_version=manifest.semantic_schema_version,
+        )
+
+        self.assertEqual(
+            template.bind(manifest.model_checkpoint, training_step=10),
+            manifest,
+        )
 
 
 if __name__ == "__main__":

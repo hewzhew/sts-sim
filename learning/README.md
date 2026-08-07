@@ -84,6 +84,18 @@ small bindings: it does not copy a model, optimizer, checkpoint payload, file
 path, or display label into experience. Unknown ids, conflicting claimed ids,
 registry overflow, and exact-binding mismatches are rejected rather than
 guessed or silently evicted.
+
+`sts_learning.torch_checkpoints` is the optional persistence owner for model
+weights. It writes a versioned tensor-only format with sorted state keys,
+explicit dtype/shape, canonical bytes, and a SHA-256-derived filename; it never
+loads pickle. Its caller-supplied limits cap checkpoint count, each payload, and
+total retained bytes, with no implicit eviction. Publication uses a flushed
+same-directory temporary plus an atomic hard link. Reopening verifies every
+owned filename, size, digest, and tensor stream and rejects leftover partial or
+foreign files. Restore first builds a fresh model and validates all keys,
+dtypes, and shapes, so an incumbent scorer is not partially overwritten. A
+`BehaviorManifestTemplate` then binds the checkpoint identity to the fixed
+model/config/schema/optimizer/trainer identities and exact training step.
 An `ExperienceSegmentBuffer` requires both a maximum decision count and a
 maximum retained-payload byte count. The byte count conservatively includes
 owned NumPy buffers and headers plus mappings, keys, and scalar values; the row
