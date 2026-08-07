@@ -146,6 +146,9 @@ class BehaviorManifestTests(unittest.TestCase):
         identity = registry.register(manifest)
 
         self.assertEqual(registry.register(manifest), identity)
+        self.assertEqual(registry.preview_registration(manifest), identity)
+        with self.assertRaisesRegex(BehaviorManifestError, "capacity"):
+            registry.preview_novel_registration()
         with self.assertRaisesRegex(BehaviorManifestError, "capacity"):
             registry.register(_manifest(checkpoint_marker=9))
         self.assertEqual(registry.snapshot.registered_manifests, 1)

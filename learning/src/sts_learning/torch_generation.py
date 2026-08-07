@@ -104,6 +104,16 @@ class BoundedCategoricalGenerationRunner:
             )
 
         target_step = active_step + self.optimizer_steps_per_generation
+        if trainer_before.optimizer_steps < target_step:
+            self.controller.publisher.preview_novel(
+                self.shadow_scorer,
+                training_step=target_step,
+            )
+        else:
+            self.controller.publisher.preview(
+                self.shadow_scorer,
+                training_step=trainer_before.optimizer_steps,
+            )
         batch_steps = 0
         terminal_attempts = 0
         terminal_flushes = 0

@@ -162,6 +162,44 @@ class TorchBehaviorPublicationTests(unittest.TestCase):
                 publisher.publish(updated, training_step=1)
             self.assertEqual(registry.snapshot.registered_manifests, 1)
 
+    def test_exact_preview_is_idempotent_but_novel_preview_requires_capacity(
+        self,
+    ) -> None:
+        registry = BehaviorManifestRegistry(capacity=1)
+        scorer = _scorer()
+        with tempfile.TemporaryDirectory() as root:
+            store = _store(Path(root, "checkpoints"), checkpoints=1)
+            catalog = _catalog(Path(root, "manifests"), manifests=1)
+            publisher = TorchBehaviorPublisher(
+                store,
+                catalog,
+                registry,
+                behavior_manifest_template_fixture(),
+            )
+            publication = publisher.publish(scorer, training_step=0)
+
+            exact = publisher.preview(scorer, training_step=0)
+            self.assertEqual(exact.manifest_id, publication.manifest_id)
+            self.assertEqual(exact.checkpoint_id, publication.checkpoint_id)
+            self.assertEqual(exact.training_step, 0)
+            self.assertGreater(exact.checkpoint_payload_bytes, 0)
+            self.assertGreater(exact.manifest_payload_bytes, 0)
+            self.assertFalse(exact.requires_novel_capacity)
+            with self.assertRaisesRegex(TorchBehaviorError, "typed publication"):
+                CheckpointedGreedyTorchPolicy.promote(
+                    exact,  # type: ignore[arg-type]
+                    store,
+                    catalog,
+                    registry,
+                    _scorer,
+                )
+            with self.assertRaisesRegex(TorchCheckpointError, "capacity"):
+                publisher.preview_novel(scorer, training_step=1)
+
+            self.assertEqual(store.snapshot.checkpoints, 1)
+            self.assertEqual(catalog.snapshot.manifests, 1)
+            self.assertEqual(registry.snapshot.registered_manifests, 1)
+
     def test_catalog_capacity_failure_publishes_no_checkpoint_or_registry_row(self) -> None:
         registry = BehaviorManifestRegistry(capacity=2)
         with tempfile.TemporaryDirectory() as root:

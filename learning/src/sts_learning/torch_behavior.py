@@ -16,9 +16,15 @@ from .manifests import (
     GREEDY_BEHAVIOR_RULE_V1,
     ManifestArtifactId,
 )
-from .manifest_catalog import BoundedBehaviorManifestCatalog
+from .manifest_catalog import (
+    BoundedBehaviorManifestCatalog,
+    PreparedBehaviorManifest,
+)
 from .policy import BatchPolicyChoice, BehaviorManifestId
-from .torch_checkpoints import BoundedTorchCheckpointStore
+from .torch_checkpoints import (
+    BoundedTorchCheckpointStore,
+    PreparedTorchCheckpoint,
+)
 from .torch_policy import (
     RaggedCandidateLogits,
     RaggedCandidateScorer,
@@ -50,6 +56,25 @@ class TorchBehaviorPublication:
             raise TorchBehaviorError("publication checkpoint conflicts with manifest")
 
 
+@dataclass(frozen=True)
+class TorchBehaviorPublicationPreview:
+    """Non-authoritative exact identity and capacity facts for one preview."""
+
+    manifest_id: BehaviorManifestId
+    checkpoint_id: ManifestArtifactId
+    training_step: int
+    checkpoint_payload_bytes: int
+    manifest_payload_bytes: int
+    requires_novel_capacity: bool
+
+
+@dataclass(frozen=True)
+class _PreparedTorchBehaviorPublication:
+    checkpoint: PreparedTorchCheckpoint
+    durable_manifest: PreparedBehaviorManifest
+    publication: TorchBehaviorPublication
+
+
 class TorchBehaviorPublisher:
     """Publish checkpoint then manifest; returning is the visibility boundary."""
 
@@ -79,31 +104,107 @@ class TorchBehaviorPublisher:
         *,
         training_step: int,
     ) -> TorchBehaviorPublication:
+        prepared = self._prepare(scorer, training_step=training_step)
+        self._preview(prepared, novel=False)
+        manifest = prepared.publication.manifest
+        checkpoint_id = self.store.commit(prepared.checkpoint)
+        if checkpoint_id != manifest.model_checkpoint:
+            raise TorchBehaviorError("checkpoint store committed a different identity")
+        durable_id = self.catalog.commit(prepared.durable_manifest)
+        if durable_id != prepared.publication.manifest_id:
+            raise TorchBehaviorError("manifest catalog committed a different identity")
+        registered_id = self.registry.register(manifest, claimed_id=durable_id)
+        if registered_id != prepared.publication.manifest_id:
+            raise TorchBehaviorError("manifest registry committed a different identity")
+        return prepared.publication
+
+    def preview(
+        self,
+        scorer: RaggedCandidateScorer,
+        *,
+        training_step: int,
+    ) -> TorchBehaviorPublicationPreview:
+        """Verify an exact publication without mutating any owner."""
+
+        prepared = self._prepare(scorer, training_step=training_step)
+        self._preview(prepared, novel=False)
+        return _publication_preview(prepared, novel=False)
+
+    def preview_novel(
+        self,
+        scorer: RaggedCandidateScorer,
+        *,
+        training_step: int,
+    ) -> TorchBehaviorPublicationPreview:
+        """Reserve capacity for one new same-shape generation without mutation."""
+
+        prepared = self._prepare(scorer, training_step=training_step)
+        self._preview(prepared, novel=True)
+        return _publication_preview(prepared, novel=True)
+
+    def _prepare(
+        self,
+        scorer: RaggedCandidateScorer,
+        *,
+        training_step: int,
+    ) -> _PreparedTorchBehaviorPublication:
         if not isinstance(scorer, RaggedCandidateScorer):
             raise TorchBehaviorError("publisher requires a RaggedCandidateScorer")
         if scorer.schema.version != self.template.semantic_schema_version:
             raise TorchBehaviorError(
                 "scorer schema version does not match behavior manifest template"
             )
-        prepared = self.store.prepare(scorer)
+        checkpoint = self.store.prepare(scorer)
         manifest = self.template.bind(
-            prepared.artifact_id,
+            checkpoint.artifact_id,
             training_step=training_step,
         )
-        prepared_manifest = self.catalog.prepare(manifest)
-        manifest_id = self.registry.preview_registration(manifest)
-        self.store.preview_commit(prepared)
-        self.catalog.preview_commit(prepared_manifest)
-        checkpoint_id = self.store.commit(prepared)
-        if checkpoint_id != manifest.model_checkpoint:
-            raise TorchBehaviorError("checkpoint store committed a different identity")
-        durable_id = self.catalog.commit(prepared_manifest)
-        if durable_id != manifest_id:
-            raise TorchBehaviorError("manifest catalog committed a different identity")
-        registered_id = self.registry.register(manifest, claimed_id=durable_id)
-        if registered_id != manifest_id:
-            raise TorchBehaviorError("manifest registry committed a different identity")
-        return TorchBehaviorPublication(manifest_id, manifest, checkpoint_id)
+        durable_manifest = self.catalog.prepare(manifest)
+        publication = TorchBehaviorPublication(
+            manifest.identity,
+            manifest,
+            checkpoint.artifact_id,
+        )
+        return _PreparedTorchBehaviorPublication(
+            checkpoint=checkpoint,
+            durable_manifest=durable_manifest,
+            publication=publication,
+        )
+
+    def _preview(
+        self,
+        prepared: _PreparedTorchBehaviorPublication,
+        *,
+        novel: bool,
+    ) -> None:
+        if novel:
+            self.store.preview_novel_commit(prepared.checkpoint)
+            self.catalog.preview_novel_commit(prepared.durable_manifest)
+            self.registry.preview_novel_registration()
+            return
+        publication = prepared.publication
+        self.store.preview_commit(prepared.checkpoint)
+        self.catalog.preview_commit(prepared.durable_manifest)
+        self.registry.preview_registration(
+            publication.manifest,
+            claimed_id=publication.manifest_id,
+        )
+
+
+def _publication_preview(
+    prepared: _PreparedTorchBehaviorPublication,
+    *,
+    novel: bool,
+) -> TorchBehaviorPublicationPreview:
+    publication = prepared.publication
+    return TorchBehaviorPublicationPreview(
+        manifest_id=publication.manifest_id,
+        checkpoint_id=publication.checkpoint_id,
+        training_step=publication.manifest.training_step,
+        checkpoint_payload_bytes=prepared.checkpoint.payload_bytes,
+        manifest_payload_bytes=prepared.durable_manifest.payload_bytes,
+        requires_novel_capacity=novel,
+    )
 
 
 _PROMOTION_TOKEN = object()

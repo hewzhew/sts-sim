@@ -312,6 +312,14 @@ materializes the checkpoint before hydrating the registry. A missing checkpoint
 therefore cannot leave a partially executable registry row. The optimizer-owned
 shadow model is never reused as live behavior, so later training cannot silently
 change a published policy. Any owner failure produces no policy switch.
+Publication exposes two non-mutating previews with deliberately different
+capacity semantics. Exact preview accepts an already stored identical
+checkpoint/manifest/registry binding and is therefore suitable for retry.
+Novel preview ignores identity deduplication and requires count and byte room
+for one additional same-shape checkpoint, manifest, and registry row; it is a
+conservative reservation for a model whose parameter values will change after
+training. Neither preview writes a file or consumes a registry row, and its
+typed preview summary is not accepted as publication or promotion authority.
 
 A long-lived categorical behavior controller is the stable policy object held
 by the online driver across generations. It accepts only strictly increasing
@@ -427,7 +435,11 @@ manifest registry, the shadow scorer, and every optimizer parameter before any
 environment mutation. Each generation target is an explicit positive number
 of optimizer steps beyond the active behavior's training step, not a terminal
 count or wall-clock guess. A call advances at most its declared batch-step
-limit and explicitly flushes experience only after a terminal batch. Partial
+limit and explicitly flushes experience only after a terminal batch. Before
+advancing toward an unfinished target it novel-previews the next publication;
+when the shadow has already reached the target it exact-previews the current
+identity so a previously durable publication can be retried at full capacity.
+Partial
 optimizer progress leaves the prior frozen behavior active and counts toward
 the same absolute target on the next call; reaching the target publishes the
 current shadow checkpoint and promotes exactly once. The result retains only

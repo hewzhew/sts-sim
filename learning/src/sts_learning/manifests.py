@@ -361,6 +361,12 @@ class BehaviorManifestRegistry:
             raise BehaviorManifestError("behavior manifest registry capacity exceeded")
         return identity
 
+    def preview_novel_registration(self) -> None:
+        """Require one free row without treating an existing identity as capacity."""
+
+        if len(self._entries) >= self.capacity:
+            raise BehaviorManifestError("behavior manifest registry capacity exceeded")
+
     def resolve(self, identity: BehaviorManifestId) -> BehaviorManifest:
         """Resolve only known typed identities."""
 

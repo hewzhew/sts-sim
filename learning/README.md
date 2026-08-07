@@ -131,6 +131,13 @@ its exact behavior-rule binding before it can execute. They never hand the
 optimizer's live shadow scorer directly to behavior, so subsequent shadow
 updates cannot drift a published manifest. The
 live policy emits the recovered registered manifest id on every batched choice.
+The publisher's exact preview permits a fully existing identity at capacity,
+while its novel preview requires count and byte room for one additional
+same-shape checkpoint, manifest, and registry row even when the current digest
+already exists. This lets bounded training fail before mutation when its next
+updated model cannot be published without blocking idempotent promotion retry.
+Both return non-authoritative typed summaries; only `publish()` can return the
+authority accepted by promotion.
 `CategoricalTorchBehaviorController` is the stable policy object retained by a
 long-running driver. It accepts only increasing training steps and swaps its
 internal frozen categorical policy only after publication and promotion both
@@ -256,7 +263,10 @@ parameters form one exact chain. A generation is an explicit positive number
 of optimizer steps beyond the active behavior manifest's training step. Each
 call has a caller-supplied batch-step limit, flushes the experience segment only
 after a terminal batch, and promotes only after the shadow trainer reaches that
-absolute target. An exhausted call leaves the old frozen behavior live while
+absolute target. It novel-previews capacity before training toward an unfinished
+target and exact-previews an already reached target, so a durable failed
+promotion remains retryable even when every owner is full. An exhausted call
+leaves the old frozen behavior live while
 preserving partial shadow progress for the next bounded call. Its result is
 aggregate-only and never retains step results or attempts. This runner is not
 yet durable: restarting exact training still needs separately persisted

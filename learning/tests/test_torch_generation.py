@@ -127,6 +127,28 @@ class BoundedCategoricalGenerationRunnerTests(unittest.TestCase):
 
             self.assertEqual(driver.env.choose_calls, [])  # type: ignore[attr-defined]
 
+    def test_novel_publication_capacity_fails_before_training_or_environment(self) -> None:
+        with tempfile.TemporaryDirectory() as root:
+            driver, assembler, trainer, controller, shadow = _components(
+                Path(root),
+                owner_capacity=1,
+            )
+            runner = BoundedCategoricalGenerationRunner(
+                driver,
+                assembler,
+                trainer,
+                controller,
+                shadow,
+                optimizer_steps_per_generation=1,
+            )
+
+            with self.assertRaisesRegex(RuntimeError, "capacity"):
+                runner.advance(max_batch_steps=1)
+
+            self.assertEqual(driver.env.choose_calls, [])  # type: ignore[attr-defined]
+            self.assertEqual(trainer.snapshot.optimizer_steps, 0)
+            self.assertEqual(controller.snapshot.active_training_step, 0)
+
     def test_partial_optimizer_progress_promotes_without_replaying_environment(self) -> None:
         with tempfile.TemporaryDirectory() as root:
             driver, assembler, trainer, controller, shadow = _components(Path(root))
@@ -151,12 +173,14 @@ class BoundedCategoricalGenerationRunnerTests(unittest.TestCase):
             self.assertEqual(controller.snapshot.active_training_step, 0)
 
             trainer(_delivery(slot=2, manifest_id=manifest_id))
+            durable = controller.publisher.publish(shadow, training_step=2)
             promoted = runner.advance(max_batch_steps=0)
 
             self.assertTrue(promoted.promoted)
             self.assertEqual(promoted.batch_steps, 0)
             self.assertEqual(promoted.optimizer_steps_before, 2)
             self.assertEqual(promoted.optimizer_steps_after, 2)
+            self.assertEqual(promoted.publication, durable)
             self.assertEqual(controller.snapshot.active_training_step, 2)
             self.assertEqual(driver.env.choose_calls, [])  # type: ignore[attr-defined]
 
@@ -165,24 +189,25 @@ def _components(
     root: Path,
     *,
     optimizer_model=None,
+    owner_capacity: int = 2,
 ):
     shadow = _scorer()
     behavior_config = RaggedCategoricalPolicyConfig(temperature=0.8)
-    registry = BehaviorManifestRegistry(capacity=2)
+    registry = BehaviorManifestRegistry(capacity=owner_capacity)
     store = BoundedTorchCheckpointStore(
         root / "checkpoints",
         TorchCheckpointLimits(
-            max_checkpoints=2,
+            max_checkpoints=owner_capacity,
             max_bytes_per_checkpoint=2 * 1024 * 1024,
-            max_total_bytes=4 * 1024 * 1024,
+            max_total_bytes=owner_capacity * 2 * 1024 * 1024,
         ),
     )
     catalog = BoundedBehaviorManifestCatalog(
         root / "manifests",
         BehaviorManifestCatalogLimits(
-            max_manifests=2,
+            max_manifests=owner_capacity,
             max_bytes_per_manifest=1024,
-            max_total_bytes=2 * 1024,
+            max_total_bytes=owner_capacity * 1024,
         ),
     )
 

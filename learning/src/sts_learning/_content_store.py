@@ -137,6 +137,18 @@ class BoundedContentStore:
             raise ContentStoreError("content store total byte limit exceeded")
         return prepared.digest
 
+    def preview_novel_commit(self, prepared: PreparedContent) -> None:
+        """Require room for one new payload even if this digest already exists."""
+
+        if not isinstance(prepared, PreparedContent):
+            raise ContentStoreError("content commit must be prepared")
+        if prepared.payload_bytes > self.limits.max_bytes_per_artifact:
+            raise ContentStoreError("content exceeds its per-artifact byte limit")
+        if len(self._entries) >= self.limits.max_artifacts:
+            raise ContentStoreError("content store capacity exceeded")
+        if self.snapshot.total_bytes + prepared.payload_bytes > self.limits.max_total_bytes:
+            raise ContentStoreError("content store total byte limit exceeded")
+
     def commit(self, prepared: PreparedContent) -> bytes:
         digest = self.preview_commit(prepared)
         if digest in self._entries:

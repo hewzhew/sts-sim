@@ -63,6 +63,12 @@ class BehaviorManifestCatalogTests(unittest.TestCase):
             with self.assertRaisesRegex(BehaviorManifestCatalogError, "capacity"):
                 catalog.commit(catalog.prepare(second))
             self.assertEqual(catalog.snapshot.manifests, 1)
+            self.assertEqual(
+                catalog.preview_commit(catalog.prepare(first)),
+                first.identity,
+            )
+            with self.assertRaisesRegex(BehaviorManifestCatalogError, "capacity"):
+                catalog.preview_novel_commit(catalog.prepare(first))
 
             path = next(Path(root).glob("*.stsmanifest"))
             path.write_bytes(path.read_bytes() + b"corrupt")

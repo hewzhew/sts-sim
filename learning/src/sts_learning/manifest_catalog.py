@@ -162,6 +162,16 @@ class BoundedBehaviorManifestCatalog:
             )
         return prepared.manifest_id
 
+    def preview_novel_commit(self, prepared: PreparedBehaviorManifest) -> None:
+        """Require capacity for one additional manifest of this exact size."""
+
+        if not isinstance(prepared, PreparedBehaviorManifest):
+            raise BehaviorManifestCatalogError("manifest commit must be prepared")
+        try:
+            self._store.preview_novel_commit(prepared._content)
+        except ContentStoreError as error:
+            raise BehaviorManifestCatalogError(str(error)) from error
+
     def commit(self, prepared: PreparedBehaviorManifest) -> BehaviorManifestId:
         self.preview_commit(prepared)
         try:

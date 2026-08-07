@@ -151,6 +151,16 @@ class BoundedTorchCheckpointStore:
             raise TorchCheckpointError("checkpoint preview returned a different identity")
         return prepared.artifact_id
 
+    def preview_novel_commit(self, prepared: PreparedTorchCheckpoint) -> None:
+        """Require capacity for one additional checkpoint of this exact size."""
+
+        if not isinstance(prepared, PreparedTorchCheckpoint):
+            raise TorchCheckpointError("checkpoint commit must be prepared")
+        try:
+            self._store.preview_novel_commit(prepared._content)
+        except ContentStoreError as error:
+            raise TorchCheckpointError(str(error)) from error
+
     def commit(self, prepared: PreparedTorchCheckpoint) -> ManifestArtifactId:
         self.preview_commit(prepared)
         try:

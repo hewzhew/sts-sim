@@ -90,6 +90,8 @@ class BoundedTorchCheckpointStoreTests(unittest.TestCase):
                 store.commit(updated)
             self.assertEqual(store.snapshot.checkpoints, 1)
             self.assertEqual(store.commit(first), first.artifact_id)
+            with self.assertRaisesRegex(TorchCheckpointError, "capacity"):
+                store.preview_novel_commit(first)
 
     def test_per_checkpoint_limit_fails_before_any_file_is_published(self) -> None:
         with tempfile.TemporaryDirectory() as root:
