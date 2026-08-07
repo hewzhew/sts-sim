@@ -317,6 +317,15 @@ attempts are averaged, so longer attempts do not gain more weight merely by
 containing more decisions. Censored and dropped attempts cannot enter this
 objective through its input type, and the aligned per-attempt sequence of
 behavior manifest identities remains attached to the loss result.
+A synchronous optional trainer can serve directly as the complete-attempt
+assembler sink. It performs at most one optimizer step for one delivery, keeps
+only aggregate counters plus the most recent bounded manifest-id sequence, and
+never queues attempts or tensor payloads. Unknown provenance fails before
+optimizer mutation; an exception during backward or optimizer mutation poisons
+the trainer so partially mutable state cannot be retried as if it were clean.
+Dropped-only deliveries update accounting but never the model. This trainer is
+a shadow value-model owner: using its scorer as a later behavior policy requires
+publishing and binding a new exact checkpoint manifest before inference.
 
 On an ordinary reward screen, the reward owner claims typed low-agency public
 resources before opening a nested card-reward choice. This lets the card owner

@@ -1,0 +1,130 @@
+"""Optional synchronous optimizer sink for bounded complete-attempt delivery."""
+
+from __future__ import annotations
+
+import math
+from dataclasses import dataclass
+
+import torch
+
+from .attempts import AttemptAssemblyDelivery, DroppedAttemptExperience
+from .manifests import BehaviorManifestRegistry
+from .policy import BehaviorManifestId
+from .torch_outcomes import CandidateValueScorer, realized_outcome_value_loss
+
+
+class TorchTrainingError(RuntimeError):
+    """A synchronous training delivery cannot safely commit."""
+
+
+@dataclass(frozen=True)
+class SynchronousValueTrainerSnapshot:
+    deliveries: int
+    optimizer_steps: int
+    completed_attempts: int
+    dropped_attempts: int
+    trained_decisions: int
+    last_loss: float | None
+    last_behavior_manifest_ids: tuple[tuple[BehaviorManifestId, ...], ...] | None
+    poisoned: bool
+
+
+class SynchronousValueTrainer:
+    """Train once per delivery and retain no experience queue or tensor payload."""
+
+    def __init__(
+        self,
+        scorer: CandidateValueScorer,
+        optimizer: torch.optim.Optimizer,
+        registry: BehaviorManifestRegistry,
+    ) -> None:
+        if not callable(scorer):
+            raise TorchTrainingError("candidate value scorer must be callable")
+        if not isinstance(optimizer, torch.optim.Optimizer):
+            raise TorchTrainingError("optimizer must be a torch Optimizer")
+        if not isinstance(registry, BehaviorManifestRegistry):
+            raise TorchTrainingError("trainer requires a behavior manifest registry")
+        self.scorer = scorer
+        self.optimizer = optimizer
+        self.registry = registry
+        self._deliveries = 0
+        self._optimizer_steps = 0
+        self._completed_attempts = 0
+        self._dropped_attempts = 0
+        self._trained_decisions = 0
+        self._last_loss: float | None = None
+        self._last_behavior_manifest_ids: (
+            tuple[tuple[BehaviorManifestId, ...], ...] | None
+        ) = None
+        self._poisoned = False
+
+    @property
+    def snapshot(self) -> SynchronousValueTrainerSnapshot:
+        return SynchronousValueTrainerSnapshot(
+            deliveries=self._deliveries,
+            optimizer_steps=self._optimizer_steps,
+            completed_attempts=self._completed_attempts,
+            dropped_attempts=self._dropped_attempts,
+            trained_decisions=self._trained_decisions,
+            last_loss=self._last_loss,
+            last_behavior_manifest_ids=self._last_behavior_manifest_ids,
+            poisoned=self._poisoned,
+        )
+
+    def __call__(self, delivery: AttemptAssemblyDelivery) -> None:
+        if self._poisoned:
+            raise TorchTrainingError("trainer is poisoned after an optimizer failure")
+        if not isinstance(delivery, AttemptAssemblyDelivery):
+            raise TorchTrainingError("trainer requires AttemptAssemblyDelivery input")
+        if not all(
+            isinstance(attempt, DroppedAttemptExperience)
+            for attempt in delivery.dropped
+        ):
+            raise TorchTrainingError("dropped delivery rows are malformed")
+
+        completed_count = len(delivery.completed)
+        dropped_count = len(delivery.dropped)
+        if completed_count == 0:
+            self._deliveries += 1
+            self._dropped_attempts += dropped_count
+            return
+
+        objective = realized_outcome_value_loss(
+            self.scorer,
+            delivery.completed,
+            self.registry,
+        )
+        if objective.value.ndim != 0 or not objective.value.requires_grad:
+            raise TorchTrainingError(
+                "realized outcome objective must be a differentiable scalar"
+            )
+
+        try:
+            self.optimizer.zero_grad(set_to_none=True)
+            objective.value.backward()
+            gradients = tuple(
+                parameter.grad
+                for group in self.optimizer.param_groups
+                for parameter in group["params"]
+                if parameter.grad is not None
+            )
+            if not gradients:
+                raise TorchTrainingError("optimizer received no gradients")
+            if not all(bool(torch.all(torch.isfinite(gradient))) for gradient in gradients):
+                raise TorchTrainingError("optimizer gradients must be finite")
+            self.optimizer.step()
+        except Exception:
+            self._poisoned = True
+            raise
+
+        loss = float(objective.value.detach().item())
+        if not math.isfinite(loss):
+            self._poisoned = True
+            raise TorchTrainingError("committed optimizer loss must be finite")
+        self._deliveries += 1
+        self._optimizer_steps += 1
+        self._completed_attempts += completed_count
+        self._dropped_attempts += dropped_count
+        self._trained_decisions += objective.decision_count
+        self._last_loss = loss
+        self._last_behavior_manifest_ids = objective.behavior_manifest_ids

@@ -11,6 +11,7 @@ import operator
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
+import numpy as np
 import torch
 from torch import Tensor, nn
 
@@ -556,7 +557,11 @@ def _validate_aligned(values: tuple[Tensor, ...], name: str) -> None:
 
 def _index_tensor(value: object, device: torch.device, name: str) -> Tensor:
     try:
-        result = torch.as_tensor(value, dtype=torch.long, device=device)
+        result = torch.as_tensor(
+            _writable_numpy_copy(value),
+            dtype=torch.long,
+            device=device,
+        )
     except (TypeError, ValueError, RuntimeError, OverflowError) as error:
         raise TorchPolicyError(f"{name} is not an integer tensor") from error
     if result.ndim != 1:
@@ -566,12 +571,22 @@ def _index_tensor(value: object, device: torch.device, name: str) -> Tensor:
 
 def _float_tensor(value: object, device: torch.device, name: str) -> Tensor:
     try:
-        result = torch.as_tensor(value, dtype=torch.float32, device=device)
+        result = torch.as_tensor(
+            _writable_numpy_copy(value),
+            dtype=torch.float32,
+            device=device,
+        )
     except (TypeError, ValueError, RuntimeError, OverflowError) as error:
         raise TorchPolicyError(f"{name} is not a float tensor") from error
     if result.ndim != 1:
         raise TorchPolicyError(f"{name} must be one-dimensional")
     return result
+
+
+def _writable_numpy_copy(value: object) -> object:
+    if isinstance(value, np.ndarray) and not value.flags.writeable:
+        return value.copy()
+    return value
 
 
 def _enum_dimension(

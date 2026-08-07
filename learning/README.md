@@ -151,6 +151,17 @@ the same total weight as a short one. The result retains the batch-aligned
 manifest-id sequence for every attempt; censored and dropped attempt types are
 rejected structurally.
 
+`sts_learning.torch_training.SynchronousValueTrainer` plugs directly into the
+complete-attempt assembler as a synchronous shadow-model sink. One delivery
+causes at most one optimizer step; the trainer retains no attempt queue and no
+semantic arrays, only scalar totals and the latest bounded manifest-id
+sequence. Unknown provenance fails before mutation, while a backward or
+optimizer exception poisons the trainer instead of inviting a retry over
+possibly partial state. Dropped-only deliveries never train. If the trained
+scorer is later promoted into behavior, the caller must publish its new exact
+checkpoint manifest first; the trainer does not silently rewrite behavior
+identity.
+
 The bridge verification command installs a fresh wheel and runs both bridge
 smoke tests and these caller contracts:
 
