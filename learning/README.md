@@ -248,6 +248,20 @@ scorer is later promoted into behavior, the caller must publish its new exact
 checkpoint manifest first; the trainer does not silently rewrite behavior
 identity.
 
+`sts_learning.torch_generation.BoundedCategoricalGenerationRunner` is the
+first deliberately finite composition of these owners. Construction fails
+before environment mutation unless the driver, attempt assembler, synchronous
+trainer, categorical controller, shared registry, shadow scorer, and optimizer
+parameters form one exact chain. A generation is an explicit positive number
+of optimizer steps beyond the active behavior manifest's training step. Each
+call has a caller-supplied batch-step limit, flushes the experience segment only
+after a terminal batch, and promotes only after the shadow trainer reaches that
+absolute target. An exhausted call leaves the old frozen behavior live while
+preserving partial shadow progress for the next bounded call. Its result is
+aggregate-only and never retains step results or attempts. This runner is not
+yet durable: restarting exact training still needs separately persisted
+optimizer and categorical-generator state.
+
 The bridge verification command installs a fresh wheel and runs both bridge
 smoke tests and these caller contracts:
 

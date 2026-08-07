@@ -49,6 +49,7 @@ if _TORCH_AVAILABLE:
         BoundedTorchCheckpointStore,
         TorchCheckpointLimits,
     )
+    from sts_learning.torch_generation import BoundedCategoricalGenerationRunner
     from sts_learning.torch_policy import (
         RaggedCandidateScorer,
         RaggedCategoricalPolicyConfig,
@@ -76,27 +77,6 @@ class CountingScorer:
     def __call__(self, decision_batch):
         self.calls += 1
         return self.scorer(decision_batch)
-
-
-class ProbabilityObservingTrainer:
-    """Retain only aggregate propensity facts before synchronous training."""
-
-    def __init__(self, trainer) -> None:
-        self.trainer = trainer
-        self.observed_probabilities = 0
-        self.saw_non_unit_probability = False
-        self.saw_unknown_probability = False
-
-    def __call__(self, delivery) -> None:
-        for attempt in delivery.completed:
-            for batch in attempt.batches:
-                for probability in batch.selection_probabilities:
-                    self.observed_probabilities += 1
-                    if probability.value is None:
-                        self.saw_unknown_probability = True
-                    elif probability.value != 1.0:
-                        self.saw_non_unit_probability = True
-        self.trainer(delivery)
 
 
 @unittest.skipUnless(
@@ -237,9 +217,8 @@ class RealBridgeOnlineTrainingTests(unittest.TestCase):
                 shadow,
                 training_step=0,
             )
-            counting_scorer = CountingScorer(shadow)
             trainer = SynchronousValueTrainer(
-                counting_scorer,
+                shadow,
                 torch.optim.SGD(shadow.parameters(), lr=0.001),
                 registry,
                 SemanticBatchConcatLimits(
@@ -247,14 +226,13 @@ class RealBridgeOnlineTrainingTests(unittest.TestCase):
                     max_input_array_bytes=32 * 1024 * 1024,
                 ),
             )
-            observing_trainer = ProbabilityObservingTrainer(trainer)
             assembler = BoundedAttemptAssembler(
                 AttemptAssemblyLimits(
                     max_open_attempts=1,
                     max_decisions_per_attempt=1_024,
                     max_payload_bytes_per_attempt=32 * 1024 * 1024,
                 ),
-                observing_trainer,
+                trainer,
             )
             population = initialize_population(
                 LearningBatchEnv,
@@ -274,16 +252,42 @@ class RealBridgeOnlineTrainingTests(unittest.TestCase):
                 ),
                 experience_sink=assembler,
             )
+            generation_runner = BoundedCategoricalGenerationRunner(
+                driver,
+                assembler,
+                trainer,
+                controller,
+                shadow,
+                optimizer_steps_per_generation=1,
+            )
 
             with warnings.catch_warnings():
                 warnings.simplefilter("error")
-                first_run = driver.run_until_terminal_attempts(
-                    terminal_attempts=1,
-                    max_batch_steps=160,
+                partial_generation = generation_runner.advance(max_batch_steps=1)
+                self.assertFalse(partial_generation.promoted)
+                self.assertTrue(partial_generation.step_limit_reached)
+                self.assertEqual(partial_generation.optimizer_steps_after, 0)
+                self.assertEqual(
+                    controller.snapshot.active_manifest_id,
+                    generation_zero.manifest_id,
                 )
-                self.assertTrue(first_run.target_reached)
-                self.assertEqual(first_run.summary.terminal_attempts, 1)
-                driver.flush_experience()
+                promoted_generation = generation_runner.advance(max_batch_steps=159)
+                self.assertTrue(promoted_generation.promoted)
+                self.assertEqual(
+                    promoted_generation.active_manifest_id_before,
+                    generation_zero.manifest_id,
+                )
+                self.assertEqual(promoted_generation.active_training_step_before, 0)
+                self.assertEqual(promoted_generation.optimizer_steps_before, 0)
+                self.assertEqual(promoted_generation.optimizer_steps_after, 1)
+                self.assertEqual(
+                    promoted_generation.promotion_target_training_step,
+                    1,
+                )
+                self.assertEqual(promoted_generation.terminal_attempts, 1)
+                self.assertEqual(promoted_generation.terminal_flushes, 1)
+                generation_one = promoted_generation.publication
+                assert generation_one is not None
                 generation_after_first = driver.ledger.snapshot(0).episode_generation
                 first_training = trainer.snapshot
                 first_manifest_evidence = first_training.last_behavior_manifest_ids
@@ -309,18 +313,20 @@ class RealBridgeOnlineTrainingTests(unittest.TestCase):
                     )
                 )
 
-                generation_one = controller.publish_and_promote(
-                    shadow,
-                    training_step=first_training.optimizer_steps,
-                )
                 second_run = driver.run_until_terminal_attempts(
                     terminal_attempts=1,
-                    max_batch_steps=160 - first_run.summary.batch_steps,
+                    max_batch_steps=(
+                        160
+                        - partial_generation.batch_steps
+                        - promoted_generation.batch_steps
+                    ),
                 )
                 self.assertTrue(second_run.target_reached)
                 self.assertEqual(second_run.summary.terminal_attempts, 1)
                 self.assertLessEqual(
-                    first_run.summary.batch_steps + second_run.summary.batch_steps,
+                    partial_generation.batch_steps
+                    + promoted_generation.batch_steps
+                    + second_run.summary.batch_steps,
                     160,
                 )
                 driver.flush_experience()
@@ -396,10 +402,17 @@ class RealBridgeOnlineTrainingTests(unittest.TestCase):
 
         self.assertEqual(assembler.snapshot.completed_attempts, 2)
         self.assertEqual(assembler.snapshot.dropped_attempts, 0)
-        self.assertEqual(counting_scorer.calls, trainer.snapshot.optimizer_steps)
-        self.assertGreater(observing_trainer.observed_probabilities, 0)
-        self.assertTrue(observing_trainer.saw_non_unit_probability)
-        self.assertFalse(observing_trainer.saw_unknown_probability)
+        self.assertTrue(
+            any(
+                probability.value != 1.0
+                for evidence in (
+                    first_probability_evidence,
+                    second_probability_evidence,
+                )
+                for attempt in evidence
+                for probability in attempt
+            )
+        )
         self.assertFalse(trainer.snapshot.poisoned)
 
 

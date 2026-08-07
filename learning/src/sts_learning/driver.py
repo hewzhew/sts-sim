@@ -274,6 +274,12 @@ class OnlineBatchDriver:
             allow_zero=False,
         )
 
+    @property
+    def experience_sink(self) -> ExperienceSegmentSink | None:
+        """Return the configured synchronous sink owner without exposing a queue."""
+
+        return self._experience_sink
+
     def advance(self) -> BatchStepResult:
         """Resolve decisions, step once, and immediately refill completed slots."""
 

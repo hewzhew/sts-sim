@@ -142,6 +142,12 @@ class BoundedAttemptAssembler:
         self._dropped_attempts = 0
 
     @property
+    def completed_attempt_sink(self) -> CompletedAttemptSink:
+        """Return the exact synchronous owner wired after attempt assembly."""
+
+        return self._sink
+
+    @property
     def snapshot(self) -> AttemptAssemblerSnapshot:
         retained = tuple(state for state in self._open.values() if not state.dropped)
         return AttemptAssemblerSnapshot(

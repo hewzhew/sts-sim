@@ -420,6 +420,22 @@ Dropped-only deliveries update accounting but never the model. This trainer is
 a shadow value-model owner: using its scorer as a later behavior policy requires
 publishing and binding a new exact checkpoint manifest before inference.
 
+The optional bounded categorical generation runner composes one exact
+driver-to-assembler-to-trainer-to-controller chain without becoming another
+experience store. It verifies object identity for that chain, the shared
+manifest registry, the shadow scorer, and every optimizer parameter before any
+environment mutation. Each generation target is an explicit positive number
+of optimizer steps beyond the active behavior's training step, not a terminal
+count or wall-clock guess. A call advances at most its declared batch-step
+limit and explicitly flushes experience only after a terminal batch. Partial
+optimizer progress leaves the prior frozen behavior active and counts toward
+the same absolute target on the next call; reaching the target publishes the
+current shadow checkpoint and promotes exactly once. The result retains only
+aggregate progress and the optional publication. This is an in-process
+boundary: exact restart still requires future durable ownership of optimizer
+state and the categorical generator state, and cannot be inferred from the
+model checkpoint alone.
+
 On an ordinary reward screen, the reward owner claims typed low-agency public
 resources before opening a nested card-reward choice. This lets the card owner
 observe already-claimed gold, non-conflicting relics, and empty-slot potions
