@@ -261,6 +261,13 @@ registry resolves those identities without retaining model objects, checkpoint
 payloads, file paths, or display strings. Unknown identities, conflicting
 claimed identities, capacity overflow, and any expected checkpoint/config/schema
 mismatch fail closed; the registry never evicts an older binding implicitly.
+The manifest itself has a canonical versioned binary encoding. A separate
+durable catalog stores that exact payload under its manifest SHA-256 with
+mandatory count, per-manifest-byte, and total-byte limits. It shares the atomic
+content-store kernel with checkpoints, rejects foreign or partial files, and
+can hydrate a fresh in-memory registry as one all-or-nothing batch. The catalog
+contains only small typed identities and counters, never model or optimizer
+objects.
 Optional PyTorch model checkpoints use a separate versioned tensor-only binary
 format rather than pickle. Canonical state keys, explicit dtype and shape, and
 little-endian tensor bytes determine the `MODEL_CHECKPOINT` SHA-256 identity.
@@ -273,16 +280,19 @@ created model before that model can replace a live scorer; it does not load
 pickle or partially overwrite the incumbent. A manifest template binds this
 checkpoint to fixed model/config/schema/optimizer/trainer provenance and an
 explicit training step.
-A PyTorch behavior publication prepares both records, previews manifest
-capacity and conflicts without mutation, publishes the checkpoint, and only
-then commits the manifest. The returned typed publication is the sole promotion
-input; a checkpoint file by itself is not executable authority. Promotion
-re-resolves the exact manifest, materializes a fresh scorer from the verified
-checkpoint, checks its schema version, switches it to evaluation mode, and
-disables gradients before exposing a batched policy. The optimizer-owned shadow
-model is never reused as the live behavior object, so later training cannot
-silently change an already published policy. Registry or store failure produces
-no policy switch, and inference cannot begin from an unregistered publication.
+A PyTorch behavior publication prepares all records, previews checkpoint-store,
+catalog, and registry capacity/conflicts without mutation, then commits in the
+order checkpoint, durable manifest, and in-memory registry. The returned typed
+publication is the sole same-process promotion input; a checkpoint file by
+itself is not executable authority. Promotion re-resolves the durable and
+registered manifest, materializes a fresh scorer from the verified checkpoint,
+checks its schema version, switches it to evaluation mode, and disables
+gradients before exposing a batched policy. After restart, recovery begins from
+only a manifest id and fresh store/catalog/registry owners; it verifies and
+materializes the checkpoint before hydrating the registry. A missing checkpoint
+therefore cannot leave a partially executable registry row. The optimizer-owned
+shadow model is never reused as live behavior, so later training cannot silently
+change a published policy. Any owner failure produces no policy switch.
 Every buffer has mandatory decision-row and retained-payload-byte limits. The
 byte accounting includes owned NumPy storage and Python payload metadata; the
 row limit bounds lineage and choice metadata. A complete incoming batch either

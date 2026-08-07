@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib.util
 import tempfile
 import unittest
+from pathlib import Path
 
 from learning.tests.semantic_fixtures import (
     semantic_batch_fixture,
@@ -12,7 +13,11 @@ from learning.tests.torch_outcome_fixtures import (
     behavior_manifest_fixture,
     behavior_manifest_template_fixture,
 )
-from sts_learning import BehaviorManifestRegistry
+from sts_learning import (
+    BehaviorManifestCatalogLimits,
+    BehaviorManifestRegistry,
+    BoundedBehaviorManifestCatalog,
+)
 
 
 _TORCH_AVAILABLE = importlib.util.find_spec("torch") is not None
@@ -50,6 +55,17 @@ def _store(root, *, checkpoints: int = 3):
     )
 
 
+def _catalog(root, *, manifests: int = 3):
+    return BoundedBehaviorManifestCatalog(
+        root,
+        BehaviorManifestCatalogLimits(
+            max_manifests=manifests,
+            max_bytes_per_manifest=1024,
+            max_total_bytes=manifests * 1024,
+        ),
+    )
+
+
 @unittest.skipUnless(_TORCH_AVAILABLE, "optional PyTorch dependency is not installed")
 class TorchBehaviorPublicationTests(unittest.TestCase):
     def test_promotion_uses_fresh_frozen_checkpoint_not_live_shadow_model(self) -> None:
@@ -60,9 +76,11 @@ class TorchBehaviorPublicationTests(unittest.TestCase):
         registry = BehaviorManifestRegistry(capacity=3)
 
         with tempfile.TemporaryDirectory() as root:
-            store = _store(root)
+            store = _store(Path(root, "checkpoints"))
+            catalog = _catalog(Path(root, "manifests"))
             publication = TorchBehaviorPublisher(
                 store,
+                catalog,
                 registry,
                 behavior_manifest_template_fixture(),
             ).publish(shadow, training_step=4)
@@ -72,6 +90,7 @@ class TorchBehaviorPublicationTests(unittest.TestCase):
             policy = CheckpointedGreedyTorchPolicy.promote(
                 publication,
                 store,
+                catalog,
                 registry,
                 _scorer,
             )
@@ -88,9 +107,11 @@ class TorchBehaviorPublicationTests(unittest.TestCase):
         registry = BehaviorManifestRegistry(capacity=1)
         registry.register(behavior_manifest_fixture())
         with tempfile.TemporaryDirectory() as root:
-            store = _store(root)
+            store = _store(Path(root, "checkpoints"))
+            catalog = _catalog(Path(root, "manifests"))
             publisher = TorchBehaviorPublisher(
                 store,
+                catalog,
                 registry,
                 behavior_manifest_template_fixture(),
             )
@@ -98,14 +119,17 @@ class TorchBehaviorPublicationTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "capacity"):
                 publisher.publish(_scorer(), training_step=1)
             self.assertEqual(store.snapshot.checkpoints, 0)
+            self.assertEqual(catalog.snapshot.manifests, 0)
 
     def test_store_failure_registers_no_manifest(self) -> None:
         registry = BehaviorManifestRegistry(capacity=2)
         torch.manual_seed(22)
         with tempfile.TemporaryDirectory() as root:
-            store = _store(root, checkpoints=1)
+            store = _store(Path(root, "checkpoints"), checkpoints=1)
+            catalog = _catalog(Path(root, "manifests"))
             publisher = TorchBehaviorPublisher(
                 store,
+                catalog,
                 registry,
                 behavior_manifest_template_fixture(),
             )
@@ -116,13 +140,33 @@ class TorchBehaviorPublicationTests(unittest.TestCase):
                 publisher.publish(updated, training_step=1)
             self.assertEqual(registry.snapshot.registered_manifests, 1)
 
+    def test_catalog_capacity_failure_publishes_no_checkpoint_or_registry_row(self) -> None:
+        registry = BehaviorManifestRegistry(capacity=2)
+        with tempfile.TemporaryDirectory() as root:
+            store = _store(Path(root, "checkpoints"))
+            catalog = _catalog(Path(root, "manifests"), manifests=1)
+            catalog.commit(catalog.prepare(behavior_manifest_fixture()))
+            publisher = TorchBehaviorPublisher(
+                store,
+                catalog,
+                registry,
+                behavior_manifest_template_fixture(),
+            )
+
+            with self.assertRaisesRegex(RuntimeError, "capacity"):
+                publisher.publish(_scorer(), training_step=8)
+            self.assertEqual(store.snapshot.checkpoints, 0)
+            self.assertEqual(registry.snapshot.registered_manifests, 0)
+
     def test_training_step_changes_manifest_but_reuses_identical_checkpoint(self) -> None:
         registry = BehaviorManifestRegistry(capacity=2)
         scorer = _scorer()
         with tempfile.TemporaryDirectory() as root:
-            store = _store(root)
+            store = _store(Path(root, "checkpoints"))
+            catalog = _catalog(Path(root, "manifests"))
             publisher = TorchBehaviorPublisher(
                 store,
+                catalog,
                 registry,
                 behavior_manifest_template_fixture(),
             )
@@ -138,9 +182,11 @@ class TorchBehaviorPublicationTests(unittest.TestCase):
     def test_unregistered_or_schema_mismatched_publication_cannot_run(self) -> None:
         registry = BehaviorManifestRegistry(capacity=1)
         with tempfile.TemporaryDirectory() as root:
-            store = _store(root)
+            store = _store(Path(root, "checkpoints"))
+            catalog = _catalog(Path(root, "manifests"))
             publication = TorchBehaviorPublisher(
                 store,
+                catalog,
                 registry,
                 behavior_manifest_template_fixture(),
             ).publish(_scorer(), training_step=0)
@@ -149,6 +195,7 @@ class TorchBehaviorPublicationTests(unittest.TestCase):
                 CheckpointedGreedyTorchPolicy.promote(
                     publication,
                     store,
+                    catalog,
                     BehaviorManifestRegistry(capacity=1),
                     _scorer,
                 )
@@ -156,15 +203,35 @@ class TorchBehaviorPublicationTests(unittest.TestCase):
         mismatched_schema = dict(semantic_schema_fixture())
         mismatched_schema["version"] = 9
         with tempfile.TemporaryDirectory() as root:
-            store = _store(root)
+            store = _store(Path(root, "checkpoints"))
+            catalog = _catalog(Path(root, "manifests"))
             publisher = TorchBehaviorPublisher(
                 store,
+                catalog,
                 BehaviorManifestRegistry(capacity=1),
                 behavior_manifest_template_fixture(),
             )
             with self.assertRaisesRegex(TorchBehaviorError, "schema version"):
                 publisher.publish(_scorer(schema=mismatched_schema), training_step=0)
             self.assertEqual(store.snapshot.checkpoints, 0)
+
+    def test_missing_checkpoint_does_not_partly_hydrate_recovery_registry(self) -> None:
+        manifest = behavior_manifest_fixture()
+        with tempfile.TemporaryDirectory() as root:
+            store = _store(Path(root, "checkpoints"))
+            catalog = _catalog(Path(root, "manifests"))
+            catalog.commit(catalog.prepare(manifest))
+            registry = BehaviorManifestRegistry(capacity=1)
+
+            with self.assertRaisesRegex(TorchCheckpointError, "unknown model"):
+                CheckpointedGreedyTorchPolicy.recover(
+                    manifest.identity,
+                    store,
+                    catalog,
+                    registry,
+                    _scorer,
+                )
+            self.assertEqual(registry.snapshot.registered_manifests, 0)
 
 
 if __name__ == "__main__":

@@ -3,11 +3,16 @@ from __future__ import annotations
 import importlib.util
 import tempfile
 import unittest
+from pathlib import Path
 
 from learning.tests.torch_outcome_fixtures import (
     behavior_manifest_template_fixture,
 )
-from sts_learning import BehaviorManifestRegistry
+from sts_learning import (
+    BehaviorManifestCatalogLimits,
+    BehaviorManifestRegistry,
+    BoundedBehaviorManifestCatalog,
+)
 
 
 _TORCH_AVAILABLE = importlib.util.find_spec("torch") is not None
@@ -58,25 +63,47 @@ class RealBridgeBehaviorPublicationTests(unittest.TestCase):
         )
 
         with tempfile.TemporaryDirectory() as root:
-            store = BoundedTorchCheckpointStore(root, limits)
+            checkpoint_root = Path(root, "checkpoints")
+            manifest_root = Path(root, "manifests")
+            store = BoundedTorchCheckpointStore(checkpoint_root, limits)
+            catalog_limits = BehaviorManifestCatalogLimits(
+                max_manifests=1,
+                max_bytes_per_manifest=1024,
+                max_total_bytes=1024,
+            )
+            catalog = BoundedBehaviorManifestCatalog(
+                manifest_root,
+                catalog_limits,
+            )
             publication = TorchBehaviorPublisher(
                 store,
+                catalog,
                 registry,
                 behavior_manifest_template_fixture(
                     semantic_schema_version=int(schema["version"]),
                 ),
             ).publish(shadow, training_step=7)
-            reopened = BoundedTorchCheckpointStore(root, limits)
-            policy = CheckpointedGreedyTorchPolicy.promote(
-                publication,
-                reopened,
-                registry,
+            reopened_store = BoundedTorchCheckpointStore(checkpoint_root, limits)
+            reopened_catalog = BoundedBehaviorManifestCatalog(
+                manifest_root,
+                catalog_limits,
+            )
+            recovered_registry = BehaviorManifestRegistry(capacity=1)
+            policy = CheckpointedGreedyTorchPolicy.recover(
+                publication.manifest_id,
+                reopened_store,
+                reopened_catalog,
+                recovered_registry,
                 scorer_factory,
             )
 
             torch.testing.assert_close(policy.score(batch).values, expected)
             choice = policy.choose(batch)
             self.assertEqual(choice.behavior_manifest_id, publication.manifest_id)
+            self.assertEqual(
+                recovered_registry.resolve(publication.manifest_id),
+                publication.manifest,
+            )
             env.choose(list(choice.ordinals))
             self.assertTrue(env.ready)
 

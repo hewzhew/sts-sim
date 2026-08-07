@@ -85,6 +85,13 @@ path, or display label into experience. Unknown ids, conflicting claimed ids,
 registry overflow, and exact-binding mismatches are rejected rather than
 guessed or silently evicted.
 
+`sts_learning.manifest_catalog` durably stores the manifest's canonical,
+versioned binary payload under that same SHA-256 identity. Count,
+per-manifest-byte, and total-byte limits are mandatory, and the catalog never
+loads JSON or evicts implicitly. It uses the same atomic content-store kernel as
+model checkpoints, rejects partial/foreign/corrupt files on reopen, and can
+hydrate a fresh in-memory registry as one all-or-nothing batch.
+
 `sts_learning.torch_checkpoints` is the optional persistence owner for model
 weights. It writes a versioned tensor-only format with sorted state keys,
 explicit dtype/shape, canonical bytes, and a SHA-256-derived filename; it never
@@ -98,14 +105,16 @@ dtypes, and shapes, so an incumbent scorer is not partially overwritten. A
 model/config/schema/optimizer/trainer identities and exact training step.
 
 `sts_learning.torch_behavior` makes publication and promotion separate typed
-operations. Publication prepares the checkpoint and manifest, previews
-registry capacity/conflicts, commits the checkpoint, and registers the manifest
-before returning an executable candidate. Promotion refuses a bare checkpoint
-or unregistered manifest: it restores a fresh scorer, validates schema version,
-enters evaluation mode, and freezes gradients. It never hands the optimizer's
-live shadow scorer directly to behavior, so subsequent shadow updates cannot
-drift a published manifest. The live policy emits the registered manifest id on
-every batched choice.
+operations. Publication prepares the checkpoint and manifest, previews all
+three owners, then commits checkpoint, durable catalog row, and in-memory
+registry in that order before returning an executable candidate. Same-process
+promotion refuses a bare checkpoint, a missing catalog row, or an unregistered
+manifest. Restart recovery needs only the manifest id and newly opened owners;
+it verifies/materializes a fresh scorer before atomically hydrating the fresh
+registry. Both paths validate schema version, enter evaluation mode, and freeze
+gradients. They never hand the optimizer's live shadow scorer directly to
+behavior, so subsequent shadow updates cannot drift a published manifest. The
+live policy emits the recovered registered manifest id on every batched choice.
 An `ExperienceSegmentBuffer` requires both a maximum decision count and a
 maximum retained-payload byte count. The byte count conservatively includes
 owned NumPy buffers and headers plus mappings, keys, and scalar values; the row
