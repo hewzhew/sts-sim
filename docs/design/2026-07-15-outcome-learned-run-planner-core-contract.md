@@ -630,6 +630,10 @@ caller package. Its two-phase tickets change ledger attempt/generation state
 only after an atomic restore or reset succeeds. It keeps no automatic
 checkpoint or trajectory history, and the held-out constructor cannot allocate
 a nonzero recovery budget.
+Training and held-out seeds are partitioned by one stable seed-only hash before
+derived attempts exist. Immutable schedule plans advance only after atomic
+environment reset and ledger accounting succeed, so a failed batch does not
+silently skip seeds or change the evaluation population.
 
 ## Relationship To Existing Code
 

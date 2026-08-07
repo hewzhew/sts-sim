@@ -200,6 +200,12 @@ slot generations; trajectory history belongs in an explicit training artifact,
 not an unbounded in-memory side channel. Held-out ledgers have a structurally
 zero recovery budget.
 
+Training and held-out seed partitions use one stable seed-only hash before any
+recovery attempt or derived trajectory is created. The caller's seed schedule
+is immutable; an advanced cursor becomes visible only after atomic environment
+reset and ledger commit succeed. Reset failure therefore consumes neither a
+ledger generation nor a seed, and ledger mode rejects the opposite partition.
+
 On an ordinary reward screen, the reward owner claims typed low-agency public
 resources before opening a nested card-reward choice. This lets the card owner
 observe already-claimed gold, non-conflicting relics, and empty-slot potions

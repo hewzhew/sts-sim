@@ -2660,6 +2660,8 @@ fn python_learning_bridge_stays_outside_the_root_workspace_and_policy_layer() {
     assert!(learning_manifest.contains("name = \"sts-learning\""));
     let recovery = std::fs::read_to_string("learning/src/sts_learning/recovery.py")
         .expect("read caller-owned recovery accounting");
+    let seeds = std::fs::read_to_string("learning/src/sts_learning/seeds.py")
+        .expect("read caller-owned seed schedule");
     for required in [
         "class RecoveryLedger",
         "def prepare_recovery",
@@ -2675,6 +2677,16 @@ fn python_learning_bridge_stays_outside_the_root_workspace_and_policy_layer() {
             "online learning caller must retain recovery contract '{required}'"
         );
     }
+    for required in [
+        "class SeedSchedule",
+        "class SeedPartitionSpec",
+        "def reset_scheduled_with_accounting",
+    ] {
+        assert!(
+            seeds.contains(required),
+            "online learning caller must retain seed contract '{required}'"
+        );
+    }
     for forbidden in [
         "serde_json",
         "torch",
@@ -2683,7 +2695,7 @@ fn python_learning_bridge_stays_outside_the_root_workspace_and_policy_layer() {
         "semantic_schema",
     ] {
         assert!(
-            !recovery.contains(forbidden),
+            !recovery.contains(forbidden) && !seeds.contains(forbidden),
             "online learning caller must not reproduce bridge or simulator authority through '{forbidden}'"
         );
     }
