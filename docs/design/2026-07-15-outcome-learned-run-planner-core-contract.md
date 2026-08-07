@@ -639,6 +639,13 @@ integers from the bridge and is bounded by the environment slot count. The
 ledger holds at most one pending defeat row per slot, clears it only after a
 successful restore, and attaches the final row to the completed episode. It
 does not retain observation tensors or become a second trajectory journal.
+Every slot has an exact episode seed from ledger construction. Recovery binds
+that unchanged seed and generation; reset validates replacement seeds before
+environment mutation and commits them only after success. Completed outcomes
+therefore distinguish retries from independent episodes without inferring
+lineage from slot position.
+Terminal accounting emits the seed, generation, attempt index, and recovery
+count for every terminal attempt before any later recovery can reuse that slot.
 Training and held-out seeds are partitioned by one stable seed-only hash before
 derived attempts exist. Immutable schedule plans advance only after atomic
 environment reset and ledger accounting succeed, so a failed batch does not

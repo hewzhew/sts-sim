@@ -15,6 +15,8 @@ from .recovery import (
     RecoverySlotSnapshot,
     RecoverySlotStatus,
     RecoveryTicket,
+    TerminalAccountingBatch,
+    TerminalAttemptRecord,
     reset_with_accounting,
     restore_with_accounting,
 )
@@ -43,6 +45,8 @@ __all__ = [
     "SeedSchedule",
     "SeedScheduleError",
     "TerminalAttemptOutcome",
+    "TerminalAccountingBatch",
+    "TerminalAttemptRecord",
     "TerminalBatchError",
     "TerminalStepBatch",
     "reset_with_accounting",

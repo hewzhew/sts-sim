@@ -83,8 +83,10 @@ class SeedScheduleTests(unittest.TestCase):
 
     def test_failed_reset_consumes_neither_generation_nor_schedule(self) -> None:
         spec = SeedPartitionSpec(held_out_numerator=1, denominator=3)
-        schedule = SeedSchedule(SeedPartition.HELD_OUT, spec)
-        ledger = RecoveryLedger.held_out(2)
+        initial_batch, schedule = SeedSchedule(SeedPartition.HELD_OUT, spec).plan(
+            [0, 1]
+        )
+        ledger = RecoveryLedger.held_out(initial_batch.seeds)
         ledger.record_terminal(terminal_batch((0, 1), (1, -1)))
         ledger.complete_defeats([1])
         failing = FakeResetEnv(fail=True)
@@ -93,6 +95,8 @@ class SeedScheduleTests(unittest.TestCase):
             reset_scheduled_with_accounting(failing, [0, 1], ledger, schedule)
         self.assertEqual(ledger.snapshot(0).episode_generation, 0)
         self.assertEqual(ledger.snapshot(1).episode_generation, 0)
+        self.assertEqual(ledger.snapshot(0).episode_seed, initial_batch.seeds[0])
+        self.assertEqual(ledger.snapshot(1).episode_seed, initial_batch.seeds[1])
 
         working = FakeResetEnv()
         batch, next_schedule = reset_scheduled_with_accounting(
@@ -101,10 +105,14 @@ class SeedScheduleTests(unittest.TestCase):
         self.assertEqual(working.calls, [([0, 1], list(batch.seeds))])
         self.assertEqual(ledger.snapshot(0).episode_generation, 1)
         self.assertEqual(ledger.snapshot(1).episode_generation, 1)
+        self.assertEqual(ledger.snapshot(0).episode_seed, batch.seeds[0])
+        self.assertEqual(ledger.snapshot(1).episode_seed, batch.seeds[1])
+        self.assertTrue(set(initial_batch.seeds).isdisjoint(batch.seeds))
         self.assertGreater(next_schedule.next_candidate, schedule.next_candidate)
 
     def test_ledger_mode_must_match_seed_partition(self) -> None:
-        ledger = RecoveryLedger.held_out(1)
+        initial_batch, _ = SeedSchedule(SeedPartition.HELD_OUT).plan([0])
+        ledger = RecoveryLedger.held_out(initial_batch.seeds)
         ledger.record_terminal(terminal_batch((0, 1)))
         env = FakeResetEnv()
 

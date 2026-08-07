@@ -5,10 +5,11 @@ scheduling, curriculum, and evaluation accounting. It consumes the installed
 `sts-learning-bridge` wheel; simulator mechanics, typed legality, checkpoint
 contents, and NumPy semantic-schema production remain in Rust.
 
-The first maintained component is `sts_learning.recovery`. It records only the
-current episode generation for each environment slot. It keeps no trajectory
-or checkpoint history and never decides automatically that a defeat should be
-retried. A training caller explicitly performs:
+The first maintained component is `sts_learning.recovery`. It records the
+current episode seed and generation for each environment slot. Missing initial
+seed identity is not accepted. It keeps no trajectory or checkpoint history
+and never decides automatically that a defeat should be retried. A training
+caller explicitly performs:
 
 ```text
 record terminal defeat
@@ -22,6 +23,8 @@ held-out constructor fixes the recovery budget at zero, so evaluation cannot
 silently become a training-style resurrection run.
 Starting new episodes uses the same two-phase rule around the bridge's atomic
 `reset_slots`: a failed reset leaves every completed ledger generation intact.
+It also leaves the old episode seed intact; the validated new seed is committed
+only after the environment reset succeeds.
 
 `sts_learning.seeds` assigns a seed to training or held-out evaluation with a
 stable seed-only hash before any recovery attempt or derived trajectory exists.
@@ -39,6 +42,11 @@ this typed batch. It holds at most one pending defeat outcome per slot, clears
 that row only after successful recovery, and attaches the final exact terminal
 facts to `EpisodeOutcome` when the episode completes. It is not a trajectory
 buffer or a second mutation journal.
+Recovery events and completed outcomes carry the unchanged episode seed, so
+retries cannot be mistaken for new independent runs.
+`record_terminal` also returns every terminal attempt with its seed, generation,
+attempt index, and recovery count; callers do not reconstruct intermediate
+attempt lineage by joining mutable slot state after the fact.
 
 The bridge verification command installs a fresh wheel and runs both bridge
 smoke tests and these caller contracts:

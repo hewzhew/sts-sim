@@ -33,6 +33,7 @@ class RecoverySlotStatus(Enum):
 @dataclass(frozen=True)
 class RecoverySlotSnapshot:
     slot_index: int
+    episode_seed: int
     episode_generation: int
     attempt_index: int
     recoveries_used: int
@@ -43,6 +44,7 @@ class RecoverySlotSnapshot:
 @dataclass(frozen=True)
 class RecoveryTicket:
     slot_indices: tuple[int, ...]
+    episode_seeds: tuple[int, ...]
     episode_generations: tuple[int, ...]
     recoveries_before: tuple[int, ...]
     _owner: object = field(repr=False, compare=False)
@@ -52,12 +54,14 @@ class RecoveryTicket:
 class EpisodeResetTicket:
     slot_indices: tuple[int, ...]
     episode_generations: tuple[int, ...]
+    new_seeds: tuple[int, ...]
     _owner: object = field(repr=False, compare=False)
 
 
 @dataclass(frozen=True)
 class RecoveryEvent:
     slot_index: int
+    episode_seed: int
     episode_generation: int
     attempt_index: int
     recoveries_used: int
@@ -65,6 +69,7 @@ class RecoveryEvent:
 
 @dataclass(frozen=True)
 class EpisodeOutcome:
+    episode_seed: int
     episode_generation: int
     attempts: int
     recoveries_used: int
@@ -83,6 +88,29 @@ class EpisodeOutcome:
         return self.recoveries_used == 0
 
 
+@dataclass(frozen=True)
+class TerminalAttemptRecord:
+    episode_seed: int
+    episode_generation: int
+    attempt_index: int
+    recoveries_used: int
+    terminal: TerminalAttemptOutcome
+
+    @property
+    def slot_index(self) -> int:
+        return self.terminal.slot_index
+
+    @property
+    def terminal_reward(self) -> int:
+        return self.terminal.terminal_reward
+
+
+@dataclass(frozen=True)
+class TerminalAccountingBatch:
+    attempts: tuple[TerminalAttemptRecord, ...]
+    completed_episodes: tuple[EpisodeOutcome, ...]
+
+
 class RecoveryRestoreTarget(Protocol):
     def restore_slots(self, slot_indices: list[int], checkpoints: object) -> None: ...
 
@@ -96,13 +124,12 @@ class RecoveryLedger:
 
     def __init__(
         self,
-        slot_count: int,
+        episode_seeds: Sequence[int],
         *,
         mode: RecoveryMode,
         max_recoveries_per_episode: int,
     ) -> None:
-        if slot_count < 0:
-            raise RecoveryProtocolError("slot_count must be non-negative")
+        seeds = _normalize_seeds(episode_seeds)
         if max_recoveries_per_episode < 0:
             raise RecoveryProtocolError(
                 "max_recoveries_per_episode must be non-negative"
@@ -115,6 +142,8 @@ class RecoveryLedger:
         self.mode = mode
         self.max_recoveries_per_episode = max_recoveries_per_episode
         self._ticket_owner = object()
+        self._episode_seed = list(seeds)
+        slot_count = len(seeds)
         self._episode_generation = [0] * slot_count
         self._attempt_index = [1] * slot_count
         self._recoveries_used = [0] * slot_count
@@ -123,18 +152,18 @@ class RecoveryLedger:
 
     @classmethod
     def training(
-        cls, slot_count: int, *, max_recoveries_per_episode: int
+        cls, episode_seeds: Sequence[int], *, max_recoveries_per_episode: int
     ) -> RecoveryLedger:
         return cls(
-            slot_count,
+            episode_seeds,
             mode=RecoveryMode.TRAINING,
             max_recoveries_per_episode=max_recoveries_per_episode,
         )
 
     @classmethod
-    def held_out(cls, slot_count: int) -> RecoveryLedger:
+    def held_out(cls, episode_seeds: Sequence[int]) -> RecoveryLedger:
         return cls(
-            slot_count,
+            episode_seeds,
             mode=RecoveryMode.HELD_OUT_ZERO_RECOVERY,
             max_recoveries_per_episode=0,
         )
@@ -147,6 +176,7 @@ class RecoveryLedger:
         slot = self._validate_slots([slot_index])[0]
         return RecoverySlotSnapshot(
             slot_index=slot,
+            episode_seed=self._episode_seed[slot],
             episode_generation=self._episode_generation[slot],
             attempt_index=self._attempt_index[slot],
             recoveries_used=self._recoveries_used[slot],
@@ -157,7 +187,7 @@ class RecoveryLedger:
     def snapshots(self) -> tuple[RecoverySlotSnapshot, ...]:
         return tuple(self.snapshot(slot) for slot in range(self.slot_count))
 
-    def record_terminal(self, batch: TerminalStepBatch) -> tuple[EpisodeOutcome, ...]:
+    def record_terminal(self, batch: TerminalStepBatch) -> TerminalAccountingBatch:
         if not isinstance(batch, TerminalStepBatch):
             raise RecoveryProtocolError("terminal input must be a TerminalStepBatch")
         slots = self._validate_slots(batch.slot_indices)
@@ -167,16 +197,23 @@ class RecoveryLedger:
             if self._pending_terminal[slot] is not None:
                 raise RecoveryProtocolError(f"slot {slot} already has a pending terminal")
 
-        outcomes = []
+        records = tuple(
+            self._attempt_record(terminal.slot_index, terminal)
+            for terminal in batch.attempts
+        )
+        completed = []
         for terminal in batch.attempts:
             slot = terminal.slot_index
             if terminal.terminal_reward == 1:
                 self._status[slot] = RecoverySlotStatus.VICTORY_COMPLETE
-                outcomes.append(self._outcome(slot, terminal))
+                completed.append(self._outcome(slot, terminal))
             else:
                 self._status[slot] = RecoverySlotStatus.DEFEAT_PENDING
                 self._pending_terminal[slot] = terminal
-        return tuple(outcomes)
+        return TerminalAccountingBatch(
+            attempts=records,
+            completed_episodes=tuple(completed),
+        )
 
     def prepare_recovery(self, slot_indices: Sequence[int]) -> RecoveryTicket:
         slots = self._validate_slots(slot_indices)
@@ -191,6 +228,7 @@ class RecoveryLedger:
                 raise RecoveryProtocolError(f"slot {slot} exhausted its recovery budget")
         return RecoveryTicket(
             slot_indices=slots,
+            episode_seeds=tuple(self._episode_seed[slot] for slot in slots),
             episode_generations=tuple(self._episode_generation[slot] for slot in slots),
             recoveries_before=tuple(self._recoveries_used[slot] for slot in slots),
             _owner=self._ticket_owner,
@@ -202,18 +240,22 @@ class RecoveryLedger:
         slots = self._validate_slots(ticket.slot_indices)
         if not (
             len(slots)
+            == len(ticket.episode_seeds)
             == len(ticket.episode_generations)
             == len(ticket.recoveries_before)
         ):
             raise RecoveryProtocolError("recovery ticket columns are misaligned")
-        for slot, generation, recoveries_before in zip(
+        for slot, seed, generation, recoveries_before in zip(
             slots,
+            ticket.episode_seeds,
             ticket.episode_generations,
             ticket.recoveries_before,
             strict=True,
         ):
             if self._status[slot] is not RecoverySlotStatus.DEFEAT_PENDING:
                 raise RecoveryProtocolError(f"slot {slot} no longer has a pending defeat")
+            if self._episode_seed[slot] != seed:
+                raise RecoveryProtocolError(f"slot {slot} episode seed changed")
             if self._episode_generation[slot] != generation:
                 raise RecoveryProtocolError(f"slot {slot} episode generation changed")
             if self._recoveries_used[slot] != recoveries_before:
@@ -230,6 +272,7 @@ class RecoveryLedger:
             events.append(
                 RecoveryEvent(
                     slot_index=slot,
+                    episode_seed=self._episode_seed[slot],
                     episode_generation=self._episode_generation[slot],
                     attempt_index=self._attempt_index[slot],
                     recoveries_used=self._recoveries_used[slot],
@@ -258,8 +301,17 @@ class RecoveryLedger:
             self._pending_terminal[slot] = None
         return outcomes
 
-    def prepare_reset(self, slot_indices: Sequence[int]) -> EpisodeResetTicket:
+    def prepare_reset(
+        self,
+        slot_indices: Sequence[int],
+        new_seeds: Sequence[int],
+    ) -> EpisodeResetTicket:
         slots = self._validate_slots(slot_indices)
+        seeds = _normalize_seeds(new_seeds)
+        if len(slots) != len(seeds):
+            raise RecoveryProtocolError(
+                f"expected {len(slots)} reset seeds, received {len(seeds)}"
+            )
         completed = {
             RecoverySlotStatus.VICTORY_COMPLETE,
             RecoverySlotStatus.DEFEAT_COMPLETE,
@@ -270,6 +322,7 @@ class RecoveryLedger:
         return EpisodeResetTicket(
             slot_indices=slots,
             episode_generations=tuple(self._episode_generation[slot] for slot in slots),
+            new_seeds=seeds,
             _owner=self._ticket_owner,
         )
 
@@ -277,7 +330,12 @@ class RecoveryLedger:
         if ticket._owner is not self._ticket_owner:
             raise RecoveryProtocolError("reset ticket belongs to another ledger")
         slots = self._validate_slots(ticket.slot_indices)
-        if len(slots) != len(ticket.episode_generations):
+        new_seeds = _normalize_seeds(ticket.new_seeds)
+        if not (
+            len(slots)
+            == len(ticket.episode_generations)
+            == len(new_seeds)
+        ):
             raise RecoveryProtocolError("reset ticket columns are misaligned")
         completed = {
             RecoverySlotStatus.VICTORY_COMPLETE,
@@ -290,7 +348,8 @@ class RecoveryLedger:
                 raise RecoveryProtocolError(f"slot {slot} episode is not complete")
             if self._episode_generation[slot] != generation:
                 raise RecoveryProtocolError(f"slot {slot} episode generation changed")
-        for slot in slots:
+        for slot, seed in zip(slots, new_seeds, strict=True):
+            self._episode_seed[slot] = seed
             self._episode_generation[slot] += 1
             self._attempt_index[slot] = 1
             self._recoveries_used[slot] = 0
@@ -314,8 +373,22 @@ class RecoveryLedger:
         if terminal.slot_index != slot:
             raise RecoveryProtocolError("terminal outcome belongs to another slot")
         return EpisodeOutcome(
+            episode_seed=self._episode_seed[slot],
             episode_generation=self._episode_generation[slot],
             attempts=self._attempt_index[slot],
+            recoveries_used=self._recoveries_used[slot],
+            terminal=terminal,
+        )
+
+    def _attempt_record(
+        self, slot: int, terminal: TerminalAttemptOutcome
+    ) -> TerminalAttemptRecord:
+        if terminal.slot_index != slot:
+            raise RecoveryProtocolError("terminal attempt belongs to another slot")
+        return TerminalAttemptRecord(
+            episode_seed=self._episode_seed[slot],
+            episode_generation=self._episode_generation[slot],
+            attempt_index=self._attempt_index[slot],
             recoveries_used=self._recoveries_used[slot],
             terminal=terminal,
         )
@@ -342,11 +415,21 @@ def reset_with_accounting(
 ) -> None:
     """Start new episodes, committing ledger generations only after success."""
 
-    ticket = ledger.prepare_reset(slot_indices)
-    reset_seeds = [operator.index(seed) for seed in seeds]
-    if len(ticket.slot_indices) != len(reset_seeds):
-        raise RecoveryProtocolError(
-            f"expected {len(ticket.slot_indices)} reset seeds, received {len(reset_seeds)}"
-        )
-    env.reset_slots(list(ticket.slot_indices), reset_seeds)
+    ticket = ledger.prepare_reset(slot_indices, seeds)
+    env.reset_slots(list(ticket.slot_indices), list(ticket.new_seeds))
     ledger.commit_reset(ticket)
+
+
+def _normalize_seeds(seeds: Sequence[int]) -> tuple[int, ...]:
+    normalized = []
+    for seed in seeds:
+        if isinstance(seed, bool):
+            raise RecoveryProtocolError("episode seed must be an integer, not bool")
+        try:
+            value = operator.index(seed)
+        except TypeError as error:
+            raise RecoveryProtocolError("episode seed must be an integer") from error
+        if not 0 <= value < 1 << 64:
+            raise RecoveryProtocolError("episode seed must be in 0..2^64-1")
+        normalized.append(value)
+    return tuple(normalized)

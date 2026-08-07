@@ -2677,6 +2677,9 @@ fn python_learning_bridge_stays_outside_the_root_workspace_and_policy_layer() {
         "def restore_with_accounting",
         "def reset_with_accounting",
         "HELD_OUT_ZERO_RECOVERY",
+        "episode_seed",
+        "new_seeds",
+        "class TerminalAttemptRecord",
     ] {
         assert!(
             recovery.contains(required),
