@@ -53,8 +53,10 @@ attempt lineage by joining mutable slot state after the fact.
 ledger, next schedule cursor, and opaque episode-root checkpoint bank together,
 so initial seed identity cannot drift between owners. A `BatchPolicy` receives
 one ragged semantic decision batch and returns every active row's candidate
-ordinal in one call, including symbolic-selection rounds. The driver then
-performs one atomic environment step and copies only its compact terminal rows.
+ordinal in one typed call, including symbolic-selection rounds, together with
+the caller-owned SHA-256 identity of the exact behavior-policy manifest used
+for that inference. A naked ordinal list is rejected. The driver then performs
+one atomic environment step and copies only its compact terminal rows.
 
 An explicit `BatchCurriculum` returns a `RecoveryPlan` for the whole terminal
 batch. Selected defeats restore through one opaque checkpoint subset; all other
@@ -71,6 +73,8 @@ decision batch is copied before policy inference into a recursively frozen,
 read-only view of the bridge-owned semantic schema; it does not define another
 feature dictionary. Every row carries its exact slot, seed, episode generation,
 attempt index, and recovery count alongside the selected candidate ordinal.
+Each batch also retains the exact behavior manifest identity returned by that
+model call, not policy scores or a reconstructed later version.
 An `ExperienceSegmentBuffer` requires both a maximum decision count and a
 maximum retained-payload byte count. The byte count conservatively includes
 owned NumPy buffers and headers plus mappings, keys, and scalar values; the row
@@ -106,6 +110,9 @@ memory bound. An over-limit attempt releases all retained arrays immediately,
 remains a compact dropped marker until terminal, and is reported as dropped
 rather than relabeled as complete. One delivery contains every terminal from a
 segment; sink failure commits neither assembler state nor segment sequence.
+The batches inside one completed attempt may intentionally carry different
+behavior manifest ids when online updates occurred while that attempt remained
+active.
 
 `sts_learning.torch_policy` is an optional, device-agnostic PyTorch baseline
 over that same bridge-owned semantic graph. It is intentionally absent from
@@ -117,8 +124,9 @@ relations, and row-pooled context produce one flat candidate-logit tensor whose
 boundaries are the unchanged bridge `candidate_row_splits`.
 
 The optional module supplies a ragged cross-entropy loss and a greedy
-`BatchPolicy` adapter. Both CPU and CUDA execution are selected by where the
-caller places the model; the scorer contains no hard-coded device. The first
+`BatchPolicy` adapter; the caller must bind the adapter to its registered exact
+behavior manifest identity. Both CPU and CUDA execution are selected by where
+the caller places the model; the scorer contains no hard-coded device. The first
 contract is deliberately architecture-neutral: finite batched logits, exact
 row boundaries, finite loss, backward gradients, and an optimizer update. It
 is not yet a claim that this small graph network is the final policy model or

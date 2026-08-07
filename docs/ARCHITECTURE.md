@@ -231,8 +231,11 @@ ledger generation nor a seed, and ledger mode rejects the opposite partition.
 
 The online batch driver creates its initial environment population, ledger,
 next schedule cursor, and episode-root checkpoints from one seed plan. Policy
-inference is called once per ragged decision round, never once per slot. After
-one atomic environment step, a caller-owned curriculum chooses recovery slots
+inference is called once per ragged decision round, never once per slot. Its
+typed result contains aligned candidate ordinals plus the caller-owned SHA-256
+identity of the exact behavior-policy manifest used for that call; naked
+ordinal lists are rejected. After one atomic environment step, a caller-owned
+curriculum chooses recovery slots
 for the complete terminal batch; the driver restores that opaque checkpoint
 subset together, completes the remaining defeats, and resets completed slots
 from one next seed plan. Reset and creation of its replacement root checkpoints
@@ -247,6 +250,9 @@ driver history. Before policy inference, the caller recursively copies and
 freezes the bridge's existing semantic decision batch without re-declaring its
 feature schema. Rows are aligned to exact slot, seed, episode generation,
 attempt index, recovery count, and the subsequently selected candidate ordinal.
+Every retained decision batch also carries that exact behavior manifest
+identity. It is provenance for the continuation policy and never a semantic
+feature, teacher label, or stored policy-score vector.
 Every buffer has mandatory decision-row and retained-payload-byte limits. The
 byte accounting includes owned NumPy storage and Python payload metadata; the
 row limit bounds lineage and choice metadata. A complete incoming batch either

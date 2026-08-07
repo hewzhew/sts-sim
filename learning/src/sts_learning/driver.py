@@ -15,6 +15,7 @@ from .experience import (
     PreparedDecisionBatch,
 )
 from .outcomes import TerminalStepBatch
+from .policy import BatchPolicyChoice
 from .recovery import (
     EpisodeOutcome,
     RecoveryEvent,
@@ -84,7 +85,7 @@ class BatchEnvironment(Protocol):
 class BatchPolicy(Protocol):
     """One inference call over every row in one ragged decision batch."""
 
-    def choose(self, decision_batch: Mapping[str, object]) -> Sequence[int]: ...
+    def choose(self, decision_batch: Mapping[str, object]) -> BatchPolicyChoice: ...
 
 
 @dataclass(frozen=True)
@@ -287,10 +288,10 @@ class OnlineBatchDriver:
                     decision_batch,
                     tuple(self.ledger.snapshot(slot) for slot in slots),
                 )
-            ordinals = _normalize_integer_sequence(
-                self.policy.choose(decision_batch),
-                "policy ordinals",
-            )
+            choice = self.policy.choose(decision_batch)
+            if not isinstance(choice, BatchPolicyChoice):
+                raise BatchDriverError("policy must return BatchPolicyChoice")
+            ordinals = choice.ordinals
             if len(ordinals) != len(slots):
                 raise BatchDriverError(
                     f"policy returned {len(ordinals)} ordinals for {len(slots)} rows"
@@ -311,6 +312,7 @@ class OnlineBatchDriver:
                 experience_batch = DecisionExperienceBatch.from_prepared(
                     prepared_experience,
                     ordinals,
+                    choice.behavior_manifest_id,
                 )
                 emitted = self._experience_buffer.rotate_before(experience_batch)
                 segments, decisions, payload_bytes = self._consume_experience(emitted)

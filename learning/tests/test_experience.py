@@ -5,6 +5,7 @@ from dataclasses import replace
 
 import numpy as np
 
+from learning.tests.policy_fixtures import BEHAVIOR_MANIFEST_ID
 from sts_learning import (
     ExperienceError,
     ExperienceLimits,
@@ -163,13 +164,17 @@ class ExperienceSegmentTests(unittest.TestCase):
             )
         )
 
-        self.assertEqual(buffer.record(first, [0, 1]), ())
-        emitted = buffer.record(second, [1])
+        self.assertEqual(buffer.record(first, [0, 1], BEHAVIOR_MANIFEST_ID), ())
+        emitted = buffer.record(second, [1], BEHAVIOR_MANIFEST_ID)
 
         self.assertEqual(len(emitted), 1)
         self.assertEqual(emitted[0].close_reason, SegmentCloseReason.DECISION_LIMIT)
         self.assertEqual(emitted[0].decision_count, 2)
         self.assertTrue(emitted[0].censored)
+        self.assertEqual(
+            emitted[0].batches[0].behavior_manifest_id,
+            BEHAVIOR_MANIFEST_ID,
+        )
         self.assertEqual(buffer.decision_count, 1)
         self.assertEqual(buffer.payload_bytes, second.payload_bytes)
 
@@ -184,9 +189,9 @@ class ExperienceSegmentTests(unittest.TestCase):
                 max_payload_bytes=prepared.payload_bytes,
             )
         )
-        buffer.record(prepared, [0])
+        buffer.record(prepared, [0], BEHAVIOR_MANIFEST_ID)
 
-        emitted = buffer.record(prepared, [1])
+        emitted = buffer.record(prepared, [1], BEHAVIOR_MANIFEST_ID)
 
         self.assertEqual(
             emitted[0].close_reason,
@@ -238,7 +243,7 @@ class ExperienceSegmentTests(unittest.TestCase):
                 max_payload_bytes=prepared.payload_bytes * 2,
             )
         )
-        buffer.record(prepared, [0, 1])
+        buffer.record(prepared, [0, 1], BEHAVIOR_MANIFEST_ID)
         first_terminal = terminal(0)
         buffer.record_terminals([first_terminal])
 
@@ -272,10 +277,10 @@ class ExperienceSegmentTests(unittest.TestCase):
                 max_payload_bytes=first.payload_bytes + second.payload_bytes,
             )
         )
-        buffer.record(first, [0])
+        buffer.record(first, [0], BEHAVIOR_MANIFEST_ID)
         first_terminal = terminal(0, attempt=1, recoveries=0, reward=-1)
         buffer.record_terminals([first_terminal])
-        buffer.record(second, [1])
+        buffer.record(second, [1], BEHAVIOR_MANIFEST_ID)
 
         segment = buffer.flush()
 
@@ -300,7 +305,7 @@ class ExperienceSegmentTests(unittest.TestCase):
                 max_payload_bytes=prepared.payload_bytes * 2,
             )
         )
-        buffer.record(prepared, [0])
+        buffer.record(prepared, [0], BEHAVIOR_MANIFEST_ID)
         valid = terminal(0)
 
         with self.assertRaisesRegex(ExperienceError, "absent"):

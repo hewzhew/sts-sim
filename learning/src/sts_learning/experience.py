@@ -11,6 +11,7 @@ from types import MappingProxyType
 
 import numpy as np
 
+from .policy import BehaviorManifestId
 from .recovery import (
     RecoverySlotSnapshot,
     RecoverySlotStatus,
@@ -153,6 +154,7 @@ class DecisionExperienceBatch:
     payload: Mapping[str, object]
     lineages: tuple[DecisionLineage, ...]
     selected_ordinals: tuple[int, ...]
+    behavior_manifest_id: BehaviorManifestId
     decision_count: int
     payload_bytes: int
 
@@ -161,10 +163,15 @@ class DecisionExperienceBatch:
         cls,
         prepared: PreparedDecisionBatch,
         selected_ordinals: Sequence[int],
+        behavior_manifest_id: BehaviorManifestId,
     ) -> DecisionExperienceBatch:
         if not isinstance(prepared, PreparedDecisionBatch):
             raise ExperienceError("experience input must be a PreparedDecisionBatch")
         ordinals = _integer_sequence(selected_ordinals, "selected ordinals")
+        if not isinstance(behavior_manifest_id, BehaviorManifestId):
+            raise ExperienceError(
+                "decision experience requires a BehaviorManifestId"
+            )
         if len(ordinals) != prepared.decision_count:
             raise ExperienceError(
                 f"received {len(ordinals)} ordinals for "
@@ -181,6 +188,7 @@ class DecisionExperienceBatch:
             payload=prepared.payload,
             lineages=prepared.lineages,
             selected_ordinals=ordinals,
+            behavior_manifest_id=behavior_manifest_id,
             decision_count=prepared.decision_count,
             payload_bytes=prepared.payload_bytes,
         )
@@ -200,6 +208,7 @@ class DecisionExperienceBatch:
             payload=payload,
             lineages=tuple(self.lineages[row] for row in rows),
             selected_ordinals=tuple(self.selected_ordinals[row] for row in rows),
+            behavior_manifest_id=self.behavior_manifest_id,
             decision_count=len(rows),
             payload_bytes=payload_bytes,
         )
@@ -277,10 +286,12 @@ class ExperienceSegmentBuffer:
         self,
         prepared: PreparedDecisionBatch,
         selected_ordinals: Sequence[int],
+        behavior_manifest_id: BehaviorManifestId,
     ) -> tuple[ExperienceSegment, ...]:
         batch = DecisionExperienceBatch.from_prepared(
             prepared,
             selected_ordinals,
+            behavior_manifest_id,
         )
         emitted = self.rotate_before(batch)
         self.commit(batch)
@@ -312,6 +323,8 @@ class ExperienceSegmentBuffer:
     def _validate_batch(self, batch: DecisionExperienceBatch) -> None:
         if not isinstance(batch, DecisionExperienceBatch):
             raise ExperienceError("experience input must be DecisionExperienceBatch")
+        if not isinstance(batch.behavior_manifest_id, BehaviorManifestId):
+            raise ExperienceError("experience batch has no behavior manifest identity")
         if batch.decision_count > self.limits.max_decisions:
             raise ExperienceError("prepared batch exceeds the decision limit")
         if batch.payload_bytes > self.limits.max_payload_bytes:

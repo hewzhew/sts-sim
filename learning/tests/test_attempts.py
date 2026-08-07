@@ -2,6 +2,10 @@ from __future__ import annotations
 
 import unittest
 
+from learning.tests.policy_fixtures import (
+    BEHAVIOR_MANIFEST_ID,
+    UPDATED_BEHAVIOR_MANIFEST_ID,
+)
 from learning.tests.semantic_fixtures import semantic_batch_fixture
 from sts_learning import (
     AttemptAssemblyDelivery,
@@ -10,6 +14,7 @@ from sts_learning import (
     AttemptDropReason,
     AttemptFragment,
     AttemptKey,
+    BehaviorManifestId,
     BoundedAttemptAssembler,
     DecisionExperienceBatch,
     ExperienceSegment,
@@ -38,6 +43,7 @@ def _snapshot(slot: int, *, generation: int = 0) -> RecoverySlotSnapshot:
 def _experience_batch(
     *,
     generations: tuple[int, int] = (0, 0),
+    behavior_manifest_id: BehaviorManifestId = BEHAVIOR_MANIFEST_ID,
 ) -> DecisionExperienceBatch:
     prepared = PreparedDecisionBatch.capture(
         semantic_batch_fixture(),
@@ -46,7 +52,11 @@ def _experience_batch(
             _snapshot(9, generation=generations[1]),
         ],
     )
-    return DecisionExperienceBatch.from_prepared(prepared, [1, 2])
+    return DecisionExperienceBatch.from_prepared(
+        prepared,
+        [1, 2],
+        behavior_manifest_id,
+    )
 
 
 def _terminal(lineage) -> TerminalAttemptRecord:
@@ -120,7 +130,9 @@ class BoundedAttemptAssemblerTests(unittest.TestCase):
             sink,
         )
         first = _experience_batch()
-        second = _experience_batch()
+        second = _experience_batch(
+            behavior_manifest_id=UPDATED_BEHAVIOR_MANIFEST_ID
+        )
         third = _experience_batch().select_rows([1])
 
         assembler(_segment(0, (first,)))
@@ -133,6 +145,10 @@ class BoundedAttemptAssemblerTests(unittest.TestCase):
         self.assertEqual(first_completed.lineage.key.slot_index, 4)
         self.assertEqual(first_completed.decision_count, 2)
         self.assertEqual(len(first_completed.batches), 2)
+        self.assertEqual(
+            tuple(batch.behavior_manifest_id for batch in first_completed.batches),
+            (BEHAVIOR_MANIFEST_ID, UPDATED_BEHAVIOR_MANIFEST_ID),
+        )
         self.assertTrue(
             all(
                 int(batch.payload["slot_indices"][0]) == 4

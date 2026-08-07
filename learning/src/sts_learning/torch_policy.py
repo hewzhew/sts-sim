@@ -14,6 +14,8 @@ from dataclasses import dataclass
 import torch
 from torch import Tensor, nn
 
+from .policy import BatchPolicyChoice, BehaviorManifestId
+
 
 class TorchPolicyError(ValueError):
     """A schema, semantic batch, or ragged target violated the model contract."""
@@ -438,12 +440,20 @@ class RaggedCandidateScorer(nn.Module):
 class GreedyTorchPolicy:
     """Driver adapter that performs one batched scorer call per decision round."""
 
-    def __init__(self, scorer: RaggedCandidateScorer) -> None:
+    def __init__(
+        self,
+        scorer: RaggedCandidateScorer,
+        behavior_manifest_id: BehaviorManifestId,
+    ) -> None:
+        if not isinstance(behavior_manifest_id, BehaviorManifestId):
+            raise TorchPolicyError("greedy policy requires a BehaviorManifestId")
         self.scorer = scorer
+        self.behavior_manifest_id = behavior_manifest_id
 
-    def choose(self, decision_batch: Mapping[str, object]) -> Sequence[int]:
+    def choose(self, decision_batch: Mapping[str, object]) -> BatchPolicyChoice:
         with torch.inference_mode():
-            return self.scorer(decision_batch).greedy_ordinals()
+            ordinals = self.scorer(decision_batch).greedy_ordinals()
+        return BatchPolicyChoice.create(ordinals, self.behavior_manifest_id)
 
 
 def ragged_cross_entropy(

@@ -43,6 +43,7 @@ from .outcomes import (
     TerminalBatchError,
     TerminalStepBatch,
 )
+from .policy import BatchPolicyChoice, BehaviorManifestId, PolicyChoiceError
 from .recovery import (
     EpisodeResetTicket,
     EpisodeOutcome,
@@ -80,8 +81,10 @@ __all__ = [
     "BatchDriverError",
     "BatchEnvironment",
     "BatchPolicy",
+    "BatchPolicyChoice",
     "BatchRunSummary",
     "BatchStepResult",
+    "BehaviorManifestId",
     "BoundedAttemptAssembler",
     "CheckpointBatch",
     "CheckpointedEpisodeResetTarget",
@@ -102,6 +105,7 @@ __all__ = [
     "InitialPopulation",
     "OnlineBatchDriver",
     "PreparedDecisionBatch",
+    "PolicyChoiceError",
     "RecoveryEvent",
     "RecoveryLedger",
     "RecoveryMode",

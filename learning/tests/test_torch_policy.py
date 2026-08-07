@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib.util
 import unittest
 
+from learning.tests.policy_fixtures import BEHAVIOR_MANIFEST_ID
 from learning.tests.semantic_fixtures import (
     semantic_batch_fixture,
     semantic_schema_fixture,
@@ -130,15 +131,20 @@ class RealBridgeTorchPolicyTests(unittest.TestCase):
         self.assertEqual(logits.row_splits.tolist(), batch["candidate_row_splits"].tolist())
         torch.testing.assert_close(selected_logits.values, expected)
         self.assertTrue(bool(torch.isfinite(loss)))
-        choices = GreedyTorchPolicy(scorer).choose(batch)
-        self.assertEqual(len(choices), len(batch["slot_indices"]))
+        choice = GreedyTorchPolicy(scorer, BEHAVIOR_MANIFEST_ID).choose(batch)
+        self.assertEqual(choice.behavior_manifest_id, BEHAVIOR_MANIFEST_ID)
+        self.assertEqual(len(choice.ordinals), len(batch["slot_indices"]))
         self.assertTrue(
             all(
-                0 <= choice < int(count)
-                for choice, count in zip(choices, batch["candidate_counts"], strict=True)
+                0 <= ordinal < int(count)
+                for ordinal, count in zip(
+                    choice.ordinals,
+                    batch["candidate_counts"],
+                    strict=True,
+                )
             )
         )
-        env.choose(list(choices))
+        env.choose(list(choice.ordinals))
         self.assertTrue(env.ready)
 
 

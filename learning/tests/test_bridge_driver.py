@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import unittest
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Mapping
 
+from learning.tests.policy_fixtures import BEHAVIOR_MANIFEST_ID
 from sts_learning import (
     AttemptAssemblyDelivery,
     AttemptAssemblyLimits,
+    BatchPolicyChoice,
     BoundedAttemptAssembler,
     ExperienceLimits,
     ExperienceSegment,
@@ -27,8 +29,11 @@ except ImportError:
 
 
 class FirstLegalPolicy:
-    def choose(self, decision_batch: Mapping[str, object]) -> Sequence[int]:
-        return [0] * len(decision_batch["slot_indices"])  # type: ignore[arg-type]
+    def choose(self, decision_batch: Mapping[str, object]) -> BatchPolicyChoice:
+        return BatchPolicyChoice.create(
+            [0] * len(decision_batch["slot_indices"]),  # type: ignore[arg-type]
+            BEHAVIOR_MANIFEST_ID,
+        )
 
 
 class NoRecoveryCurriculum:
