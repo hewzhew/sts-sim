@@ -59,7 +59,13 @@ from .outcomes import (
     TerminalBatchError,
     TerminalStepBatch,
 )
-from .policy import BatchPolicyChoice, BehaviorManifestId, PolicyChoiceError
+from .policy import (
+    BatchPolicyChoice,
+    BehaviorManifestId,
+    DETERMINISTIC_SELECTION,
+    PolicyChoiceError,
+    SelectionProbability,
+)
 from .recovery import (
     EpisodeResetTicket,
     EpisodeOutcome,
@@ -113,6 +119,7 @@ __all__ = [
     "BehaviorManifestRegistry",
     "BehaviorManifestRegistrySnapshot",
     "BehaviorManifestTemplate",
+    "DETERMINISTIC_SELECTION",
     "BoundedAttemptAssembler",
     "BoundedBehaviorManifestCatalog",
     "CheckpointBatch",
@@ -151,6 +158,7 @@ __all__ = [
     "SeedResetBatch",
     "SeedSchedule",
     "SeedScheduleError",
+    "SelectionProbability",
     "SemanticBatchError",
     "SemanticBatchConcatLimits",
     "SegmentCloseReason",

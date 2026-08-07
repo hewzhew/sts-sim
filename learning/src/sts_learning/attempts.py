@@ -14,6 +14,7 @@ from .experience import (
     DecisionLineage,
     ExperienceSegment,
 )
+from .policy import SelectionProbability
 from .recovery import TerminalAttemptRecord
 
 
@@ -282,6 +283,17 @@ def _validate_segment(segment: ExperienceSegment) -> dict[AttemptKey, AttemptFra
             raise AttemptAssemblyError("decision batch lineage rows are misaligned")
         if batch.decision_count != len(batch.selected_ordinals):
             raise AttemptAssemblyError("decision batch ordinal rows are misaligned")
+        if batch.decision_count != len(batch.selection_probabilities):
+            raise AttemptAssemblyError(
+                "decision batch selection probability rows are misaligned"
+            )
+        if not all(
+            isinstance(probability, SelectionProbability)
+            for probability in batch.selection_probabilities
+        ):
+            raise AttemptAssemblyError(
+                "decision batch selection probabilities must be typed"
+            )
         batch_keys.update(lineage.key for lineage in batch.lineages)
     if batch_keys != set(fragments):
         raise AttemptAssemblyError(

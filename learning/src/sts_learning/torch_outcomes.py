@@ -12,7 +12,7 @@ from torch import Tensor
 from .attempts import CompletedAttemptExperience
 from .experience import DecisionExperienceBatch
 from .manifests import BehaviorManifestRegistry
-from .policy import BehaviorManifestId
+from .policy import BehaviorManifestId, SelectionProbability
 from .semantic_concat import (
     SemanticBatchConcatLimits,
     concatenate_semantic_decision_batches,
@@ -36,6 +36,7 @@ class RealizedOutcomeValueLoss:
     attempt_count: int
     decision_count: int
     behavior_manifest_ids: tuple[tuple[BehaviorManifestId, ...], ...]
+    selection_probabilities: tuple[tuple[SelectionProbability, ...], ...]
 
 
 def realized_outcome_value_loss(
@@ -61,6 +62,7 @@ def realized_outcome_value_loss(
         raise TorchOutcomeError("value objective requires at least one complete attempt")
 
     behavior_ids: list[tuple[BehaviorManifestId, ...]] = []
+    probability_evidence: list[tuple[SelectionProbability, ...]] = []
     payloads: list[Mapping[str, object]] = []
     selected_ordinals: list[int] = []
     targets: list[int] = []
@@ -76,6 +78,7 @@ def realized_outcome_value_loss(
             )
 
         attempt_behavior_ids: list[BehaviorManifestId] = []
+        attempt_probabilities: list[SelectionProbability] = []
         for batch in attempt.batches:
             _validate_batch(batch)
             try:
@@ -87,6 +90,7 @@ def realized_outcome_value_loss(
             attempt_behavior_ids.append(batch.behavior_manifest_id)
             payloads.append(batch.payload)
             selected_ordinals.extend(batch.selected_ordinals)
+            attempt_probabilities.extend(batch.selection_probabilities)
             targets.extend(
                 [attempt.terminal.terminal_reward] * batch.decision_count
             )
@@ -95,6 +99,7 @@ def realized_outcome_value_loss(
                 * batch.decision_count
             )
         behavior_ids.append(tuple(attempt_behavior_ids))
+        probability_evidence.append(tuple(attempt_probabilities))
         total_decisions += expected_decisions
 
     combined = concatenate_semantic_decision_batches(payloads, concat_limits)
@@ -123,6 +128,7 @@ def realized_outcome_value_loss(
         attempt_count=len(normalized),
         decision_count=total_decisions,
         behavior_manifest_ids=tuple(behavior_ids),
+        selection_probabilities=tuple(probability_evidence),
     )
 
 
@@ -133,6 +139,17 @@ def _validate_batch(batch: object) -> None:
         )
     if batch.decision_count != len(batch.selected_ordinals):
         raise TorchOutcomeError("decision batch ordinals are misaligned")
+    if batch.decision_count != len(batch.selection_probabilities):
+        raise TorchOutcomeError(
+            "decision batch selection probabilities are misaligned"
+        )
+    if not all(
+        isinstance(probability, SelectionProbability)
+        for probability in batch.selection_probabilities
+    ):
+        raise TorchOutcomeError(
+            "decision batch selection probabilities must be typed"
+        )
 
 
 def _selected_values(

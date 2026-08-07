@@ -7,6 +7,7 @@ import numpy as np
 from learning.tests.policy_fixtures import BEHAVIOR_MANIFEST_ID
 from sts_learning import (
     BatchPolicyChoice,
+    DETERMINISTIC_SELECTION,
     RecoveryPlan,
     RecoverySlotSnapshot,
     TerminalAccountingBatch,
@@ -194,7 +195,10 @@ class RecordingPolicy:
         slots = decision_batch["slot_indices"]
         assert isinstance(slots, Sequence)
         self.batch_sizes.append(len(slots))
-        return BatchPolicyChoice.create([0] * len(slots), BEHAVIOR_MANIFEST_ID)
+        return BatchPolicyChoice.deterministic(
+            [0] * len(slots),
+            BEHAVIOR_MANIFEST_ID,
+        )
 
 
 class FirstAttemptRecovery:
@@ -223,7 +227,7 @@ class FirstAttemptRecovery:
 
 class InvalidPolicy:
     def choose(self, decision_batch: Mapping[str, object]) -> BatchPolicyChoice:
-        return BatchPolicyChoice.create(
+        return BatchPolicyChoice.deterministic(
             [2] * len(decision_batch["slot_indices"]),  # type: ignore[arg-type]
             BEHAVIOR_MANIFEST_ID,
         )
@@ -231,7 +235,7 @@ class InvalidPolicy:
 
 class ArrayFirstPolicy:
     def choose(self, decision_batch: Mapping[str, object]) -> BatchPolicyChoice:
-        return BatchPolicyChoice.create(
+        return BatchPolicyChoice.deterministic(
             [0] * len(decision_batch["slot_indices"]),  # type: ignore[arg-type]
             BEHAVIOR_MANIFEST_ID,
         )
@@ -240,6 +244,29 @@ class ArrayFirstPolicy:
 class UntypedPolicy:
     def choose(self, decision_batch: Mapping[str, object]) -> Sequence[int]:
         return [0] * len(decision_batch["slot_indices"])  # type: ignore[arg-type]
+
+
+def _forged_choice(
+    row_count: int,
+    probabilities: tuple[object, ...],
+) -> BatchPolicyChoice:
+    choice = object.__new__(BatchPolicyChoice)
+    object.__setattr__(choice, "ordinals", (0,) * row_count)
+    object.__setattr__(choice, "behavior_manifest_id", BEHAVIOR_MANIFEST_ID)
+    object.__setattr__(choice, "selection_probabilities", probabilities)
+    return choice
+
+
+class MisalignedProbabilityPolicy:
+    def choose(self, decision_batch: Mapping[str, object]) -> BatchPolicyChoice:
+        row_count = len(decision_batch["slot_indices"])  # type: ignore[arg-type]
+        return _forged_choice(row_count, (DETERMINISTIC_SELECTION,))
+
+
+class UntypedProbabilityPolicy:
+    def choose(self, decision_batch: Mapping[str, object]) -> BatchPolicyChoice:
+        row_count = len(decision_batch["slot_indices"])  # type: ignore[arg-type]
+        return _forged_choice(row_count, (1.0,) * row_count)
 
 
 class NoRecovery:

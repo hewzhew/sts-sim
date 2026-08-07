@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 import importlib.util
 import unittest
 
@@ -10,6 +11,7 @@ from learning.tests.torch_outcome_fixtures import (
 )
 from sts_learning import (
     BehaviorManifestRegistry,
+    SelectionProbability,
     SemanticBatchConcatLimits,
 )
 
@@ -196,6 +198,84 @@ class RealizedOutcomeValueLossTests(unittest.TestCase):
             self.assertEqual(values.grad[index].item(), 0.0)
         for index in (2, 4, 6):
             self.assertAlmostEqual(values.grad[index].item(), 1.0 / 3.0, places=6)
+
+    def test_probability_evidence_is_preserved_without_weighting_current_loss(
+        self,
+    ) -> None:
+        registry = BehaviorManifestRegistry(capacity=1)
+        manifest_id = registry.register(behavior_manifest_fixture())
+        deterministic_batches = (
+            decision_batch_fixture(
+                slot=1,
+                semantic_row=0,
+                selected_ordinal=0,
+                manifest_id=manifest_id,
+            ),
+            decision_batch_fixture(
+                slot=1,
+                semantic_row=0,
+                selected_ordinal=1,
+                manifest_id=manifest_id,
+            ),
+        )
+        evidence_batches = (
+            replace(
+                deterministic_batches[0],
+                selection_probabilities=(SelectionProbability.known(0.2),),
+            ),
+            replace(
+                deterministic_batches[1],
+                selection_probabilities=(SelectionProbability.unknown(),),
+            ),
+        )
+        deterministic = completed_attempt_fixture(
+            slot=1,
+            batches=deterministic_batches,
+            reward=1,
+        )
+        evidence = completed_attempt_fixture(
+            slot=1,
+            batches=evidence_batches,
+            reward=1,
+        )
+        values = torch.nn.Parameter(torch.tensor([0.0, 1.0, 2.0, 3.0]))
+
+        def scorer(payload):
+            return RaggedCandidateLogits(
+                values=values,
+                row_splits=torch.as_tensor(
+                    payload["candidate_row_splits"],
+                    dtype=torch.long,
+                ),
+            )
+
+        baseline = realized_outcome_value_loss(
+            scorer,
+            (deterministic,),
+            registry,
+            CONCAT_LIMITS,
+        )
+        baseline.value.backward()
+        baseline_gradient = values.grad.detach().clone()
+        values.grad = None
+
+        observed = realized_outcome_value_loss(
+            scorer,
+            (evidence,),
+            registry,
+            CONCAT_LIMITS,
+        )
+        observed.value.backward()
+
+        torch.testing.assert_close(observed.value, baseline.value)
+        torch.testing.assert_close(values.grad, baseline_gradient)
+        self.assertEqual(
+            tuple(
+                probability.value
+                for probability in observed.selection_probabilities[0]
+            ),
+            (0.2, None),
+        )
 
     def test_unknown_behavior_manifest_fails_before_training(self) -> None:
         manifest = behavior_manifest_fixture()

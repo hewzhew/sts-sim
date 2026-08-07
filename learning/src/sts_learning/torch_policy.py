@@ -456,7 +456,7 @@ class GreedyTorchPolicy:
     def choose(self, decision_batch: Mapping[str, object]) -> BatchPolicyChoice:
         with torch.inference_mode():
             ordinals = self.scorer(decision_batch).greedy_ordinals()
-        return BatchPolicyChoice.create(ordinals, self.behavior_manifest_id)
+        return BatchPolicyChoice.deterministic(ordinals, self.behavior_manifest_id)
 
 
 def ragged_cross_entropy(

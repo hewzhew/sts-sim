@@ -233,9 +233,13 @@ The online batch driver creates its initial environment population, ledger,
 next schedule cursor, and episode-root checkpoints from one seed plan. Policy
 inference is called once per ragged decision round, never once per slot. Its
 typed result contains aligned candidate ordinals plus the caller-owned SHA-256
-identity of the exact behavior-policy manifest used for that call; naked
-ordinal lists are rejected. After one atomic environment step, a caller-owned
-curriculum chooses recovery slots
+identity of the exact behavior-policy manifest used for that call and one typed
+selection probability per row. A policy records either the probability known
+at selection time or explicit unknown; deterministic selection records `1.0`.
+Neither probability nor manifest identity may be reconstructed later from
+logits, display text, or a newer checkpoint. Naked ordinal lists and malformed
+probability rows are rejected before environment mutation. After one atomic
+environment step, a caller-owned curriculum chooses recovery slots
 for the complete terminal batch; the driver restores that opaque checkpoint
 subset together, completes the remaining defeats, and resets completed slots
 from one next seed plan. Reset and creation of its replacement root checkpoints
@@ -249,10 +253,12 @@ Optional online experience retention is one explicitly bounded segment, not a
 driver history. Before policy inference, the caller recursively copies and
 freezes the bridge's existing semantic decision batch without re-declaring its
 feature schema. Rows are aligned to exact slot, seed, episode generation,
-attempt index, recovery count, and the subsequently selected candidate ordinal.
-Every retained decision batch also carries that exact behavior manifest
-identity. It is provenance for the continuation policy and never a semantic
-feature, teacher label, or stored policy-score vector.
+attempt index, recovery count, the subsequently selected candidate ordinal, and
+its typed selection probability. Every retained decision batch also carries
+that exact behavior manifest identity. They are provenance for the continuation
+policy and never semantic features, teacher labels, or stored policy-score
+vectors. Explicit unknown remains unknown through row selection, segment
+rotation, and complete-attempt assembly.
 Behavior manifests are caller-owned, content-addressed records over typed
 SHA-256 identities for the external model checkpoint, model definition, model
 configuration, semantic schema, optimizer configuration, and trainer
@@ -357,7 +363,10 @@ no fabricated target. Squared errors are averaged within each attempt before
 attempts are averaged, so longer attempts do not gain more weight merely by
 containing more decisions. Censored and dropped attempts cannot enter this
 objective through its input type, and the aligned per-attempt sequence of
-behavior manifest identities remains attached to the loss result.
+behavior manifest identities and selection probabilities remains attached to
+the loss result. The initial selected-only objective does not use those
+probabilities as weights; any future off-policy correction requires a separate
+objective with explicit assumptions and handling for unknown propensities.
 After validation, all retained decision payloads in one delivery are combined
 into one semantic ragged batch and scored by exactly one model call. Flat row
 weights are `1 / (attempt_count * decisions_in_that_attempt)`, which is
@@ -366,10 +375,12 @@ historical decision. The trainer must provide explicit semantic concat row and
 array-byte limits; vectorization does not weaken the existing memory bound.
 A synchronous optional trainer can serve directly as the complete-attempt
 assembler sink. It performs at most one optimizer step for one delivery, keeps
-only aggregate counters plus the most recent bounded manifest-id sequence, and
-never queues attempts or tensor payloads. Unknown provenance fails before
-optimizer mutation; an exception during backward or optimizer mutation poisons
-the trainer so partially mutable state cannot be retried as if it were clean.
+only aggregate counters plus the most recent bounded manifest-id and selection-
+probability sequences, and never queues attempts or tensor payloads. Unknown
+selection probability is valid evidence, while unknown manifest identity fails
+before optimizer mutation; an exception during backward or optimizer mutation
+poisons the trainer so partially mutable state cannot be retried as if it were
+clean.
 Dropped-only deliveries update accounting but never the model. This trainer is
 a shadow value-model owner: using its scorer as a later behavior policy requires
 publishing and binding a new exact checkpoint manifest before inference.

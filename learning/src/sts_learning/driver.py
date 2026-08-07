@@ -15,7 +15,7 @@ from .experience import (
     PreparedDecisionBatch,
 )
 from .outcomes import TerminalStepBatch
-from .policy import BatchPolicyChoice
+from .policy import BatchPolicyChoice, SelectionProbability
 from .recovery import (
     EpisodeOutcome,
     RecoveryEvent,
@@ -296,6 +296,18 @@ class OnlineBatchDriver:
                 raise BatchDriverError(
                     f"policy returned {len(ordinals)} ordinals for {len(slots)} rows"
                 )
+            probabilities = choice.selection_probabilities
+            if len(probabilities) != len(slots):
+                raise BatchDriverError(
+                    "policy selection probabilities must contain one value per row"
+                )
+            if not all(
+                isinstance(probability, SelectionProbability)
+                for probability in probabilities
+            ):
+                raise BatchDriverError(
+                    "policy selection probabilities must be typed"
+                )
             for slot, ordinal, count in zip(
                 slots,
                 ordinals,
@@ -312,6 +324,7 @@ class OnlineBatchDriver:
                 experience_batch = DecisionExperienceBatch.from_prepared(
                     prepared_experience,
                     ordinals,
+                    probabilities,
                     choice.behavior_manifest_id,
                 )
                 emitted = self._experience_buffer.rotate_before(experience_batch)

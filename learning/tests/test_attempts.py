@@ -21,6 +21,7 @@ from sts_learning import (
     PreparedDecisionBatch,
     RecoverySlotSnapshot,
     RecoverySlotStatus,
+    SelectionProbability,
     SegmentCloseReason,
     TerminalAttemptOutcome,
     TerminalAttemptRecord,
@@ -44,6 +45,10 @@ def _experience_batch(
     *,
     generations: tuple[int, int] = (0, 0),
     behavior_manifest_id: BehaviorManifestId = BEHAVIOR_MANIFEST_ID,
+    selection_probabilities: tuple[SelectionProbability, SelectionProbability] = (
+        SelectionProbability.known(1.0),
+        SelectionProbability.known(1.0),
+    ),
 ) -> DecisionExperienceBatch:
     prepared = PreparedDecisionBatch.capture(
         semantic_batch_fixture(),
@@ -55,6 +60,7 @@ def _experience_batch(
     return DecisionExperienceBatch.from_prepared(
         prepared,
         [1, 2],
+        selection_probabilities,
         behavior_manifest_id,
     )
 
@@ -131,7 +137,11 @@ class BoundedAttemptAssemblerTests(unittest.TestCase):
         )
         first = _experience_batch()
         second = _experience_batch(
-            behavior_manifest_id=UPDATED_BEHAVIOR_MANIFEST_ID
+            behavior_manifest_id=UPDATED_BEHAVIOR_MANIFEST_ID,
+            selection_probabilities=(
+                SelectionProbability.known(0.25),
+                SelectionProbability.unknown(),
+            ),
         )
         third = _experience_batch().select_rows([1])
 
@@ -149,6 +159,14 @@ class BoundedAttemptAssemblerTests(unittest.TestCase):
             tuple(batch.behavior_manifest_id for batch in first_completed.batches),
             (BEHAVIOR_MANIFEST_ID, UPDATED_BEHAVIOR_MANIFEST_ID),
         )
+        self.assertEqual(
+            tuple(
+                probability.value
+                for batch in first_completed.batches
+                for probability in batch.selection_probabilities
+            ),
+            (1.0, 0.25),
+        )
         self.assertTrue(
             all(
                 int(batch.payload["slot_indices"][0]) == 4
@@ -164,6 +182,14 @@ class BoundedAttemptAssemblerTests(unittest.TestCase):
         )
         self.assertEqual(second_completed.lineage.key.slot_index, 9)
         self.assertEqual(second_completed.decision_count, 3)
+        self.assertEqual(
+            tuple(
+                probability.value
+                for batch in second_completed.batches
+                for probability in batch.selection_probabilities
+            ),
+            (1.0, None, 1.0),
+        )
         self.assertEqual(assembler.snapshot.open_attempts, 0)
         self.assertEqual(assembler.snapshot.completed_attempts, 2)
 

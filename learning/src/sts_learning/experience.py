@@ -11,7 +11,7 @@ from types import MappingProxyType
 
 import numpy as np
 
-from .policy import BehaviorManifestId
+from .policy import BehaviorManifestId, SelectionProbability
 from .recovery import (
     RecoverySlotSnapshot,
     RecoverySlotStatus,
@@ -154,6 +154,7 @@ class DecisionExperienceBatch:
     payload: Mapping[str, object]
     lineages: tuple[DecisionLineage, ...]
     selected_ordinals: tuple[int, ...]
+    selection_probabilities: tuple[SelectionProbability, ...]
     behavior_manifest_id: BehaviorManifestId
     decision_count: int
     payload_bytes: int
@@ -163,11 +164,18 @@ class DecisionExperienceBatch:
         cls,
         prepared: PreparedDecisionBatch,
         selected_ordinals: Sequence[int],
+        selection_probabilities: Sequence[SelectionProbability],
         behavior_manifest_id: BehaviorManifestId,
     ) -> DecisionExperienceBatch:
         if not isinstance(prepared, PreparedDecisionBatch):
             raise ExperienceError("experience input must be a PreparedDecisionBatch")
         ordinals = _integer_sequence(selected_ordinals, "selected ordinals")
+        try:
+            probabilities = tuple(selection_probabilities)
+        except TypeError as error:
+            raise ExperienceError(
+                "selection probabilities must be a sequence"
+            ) from error
         if not isinstance(behavior_manifest_id, BehaviorManifestId):
             raise ExperienceError(
                 "decision experience requires a BehaviorManifestId"
@@ -176,6 +184,17 @@ class DecisionExperienceBatch:
             raise ExperienceError(
                 f"received {len(ordinals)} ordinals for "
                 f"{prepared.decision_count} decision rows"
+            )
+        if len(probabilities) != prepared.decision_count:
+            raise ExperienceError(
+                "selection probabilities must contain one value per decision row"
+            )
+        if not all(
+            isinstance(probability, SelectionProbability)
+            for probability in probabilities
+        ):
+            raise ExperienceError(
+                "selection probabilities must be typed SelectionProbability values"
             )
         for row, (ordinal, count) in enumerate(
             zip(ordinals, prepared.candidate_counts, strict=True)
@@ -188,6 +207,7 @@ class DecisionExperienceBatch:
             payload=prepared.payload,
             lineages=prepared.lineages,
             selected_ordinals=ordinals,
+            selection_probabilities=probabilities,
             behavior_manifest_id=behavior_manifest_id,
             decision_count=prepared.decision_count,
             payload_bytes=prepared.payload_bytes,
@@ -208,6 +228,9 @@ class DecisionExperienceBatch:
             payload=payload,
             lineages=tuple(self.lineages[row] for row in rows),
             selected_ordinals=tuple(self.selected_ordinals[row] for row in rows),
+            selection_probabilities=tuple(
+                self.selection_probabilities[row] for row in rows
+            ),
             behavior_manifest_id=self.behavior_manifest_id,
             decision_count=len(rows),
             payload_bytes=payload_bytes,
@@ -286,11 +309,13 @@ class ExperienceSegmentBuffer:
         self,
         prepared: PreparedDecisionBatch,
         selected_ordinals: Sequence[int],
+        selection_probabilities: Sequence[SelectionProbability],
         behavior_manifest_id: BehaviorManifestId,
     ) -> tuple[ExperienceSegment, ...]:
         batch = DecisionExperienceBatch.from_prepared(
             prepared,
             selected_ordinals,
+            selection_probabilities,
             behavior_manifest_id,
         )
         emitted = self.rotate_before(batch)
@@ -325,6 +350,21 @@ class ExperienceSegmentBuffer:
             raise ExperienceError("experience input must be DecisionExperienceBatch")
         if not isinstance(batch.behavior_manifest_id, BehaviorManifestId):
             raise ExperienceError("experience batch has no behavior manifest identity")
+        if batch.decision_count != len(batch.lineages):
+            raise ExperienceError("experience batch lineage rows are misaligned")
+        if batch.decision_count != len(batch.selected_ordinals):
+            raise ExperienceError("experience batch ordinal rows are misaligned")
+        if batch.decision_count != len(batch.selection_probabilities):
+            raise ExperienceError(
+                "experience batch selection probability rows are misaligned"
+            )
+        if not all(
+            isinstance(probability, SelectionProbability)
+            for probability in batch.selection_probabilities
+        ):
+            raise ExperienceError(
+                "experience batch selection probabilities must be typed"
+            )
         if batch.decision_count > self.limits.max_decisions:
             raise ExperienceError("prepared batch exceeds the decision limit")
         if batch.payload_bytes > self.limits.max_payload_bytes:

@@ -7,10 +7,12 @@ from sts_learning import (
     BehaviorManifestId,
     BehaviorManifestTemplate,
     CompletedAttemptExperience,
+    DETERMINISTIC_SELECTION,
     DecisionExperienceBatch,
     DecisionLineage,
     ManifestArtifactId,
     ManifestArtifactKind,
+    SelectionProbability,
     TerminalAttemptOutcome,
     TerminalAttemptRecord,
     select_semantic_decision_rows,
@@ -52,6 +54,7 @@ def decision_batch_fixture(
     semantic_row: int,
     selected_ordinal: int,
     manifest_id: BehaviorManifestId,
+    selection_probability: SelectionProbability = DETERMINISTIC_SELECTION,
 ) -> DecisionExperienceBatch:
     lineage = DecisionLineage(
         key=AttemptKey(
@@ -69,6 +72,7 @@ def decision_batch_fixture(
         ),
         lineages=(lineage,),
         selected_ordinals=(selected_ordinal,),
+        selection_probabilities=(selection_probability,),
         behavior_manifest_id=manifest_id,
         decision_count=1,
         payload_bytes=1,

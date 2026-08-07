@@ -208,4 +208,4 @@ class CheckpointedGreedyTorchPolicy:
 
     def choose(self, decision_batch: Mapping[str, object]) -> BatchPolicyChoice:
         ordinals = self.score(decision_batch).greedy_ordinals()
-        return BatchPolicyChoice.create(ordinals, self.behavior_manifest_id)
+        return BatchPolicyChoice.deterministic(ordinals, self.behavior_manifest_id)

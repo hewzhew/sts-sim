@@ -43,7 +43,7 @@ class RegisteredFirstLegalPolicy:
         self.manifest_id = manifest_id
 
     def choose(self, decision_batch: Mapping[str, object]) -> BatchPolicyChoice:
-        return BatchPolicyChoice.create(
+        return BatchPolicyChoice.deterministic(
             [0] * len(decision_batch["slot_indices"]),  # type: ignore[arg-type]
             self.manifest_id,
         )
@@ -131,6 +131,16 @@ class RealBridgeOnlineTrainingTests(unittest.TestCase):
         self.assertGreater(
             trainer.snapshot.trained_decisions,
             counting_scorer.calls,
+        )
+        probabilities = trainer.snapshot.last_selection_probabilities
+        self.assertIsNotNone(probabilities)
+        assert probabilities is not None
+        self.assertTrue(
+            all(
+                probability.value == 1.0
+                for attempt in probabilities
+                for probability in attempt
+            )
         )
         self.assertGreater(trainer.snapshot.total_training_seconds, 0.0)
         self.assertFalse(trainer.snapshot.poisoned)

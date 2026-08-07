@@ -55,8 +55,12 @@ so initial seed identity cannot drift between owners. A `BatchPolicy` receives
 one ragged semantic decision batch and returns every active row's candidate
 ordinal in one typed call, including symbolic-selection rounds, together with
 the caller-owned SHA-256 identity of the exact behavior-policy manifest used
-for that inference. A naked ordinal list is rejected. The driver then performs
-one atomic environment step and copies only its compact terminal rows.
+for that inference and one typed selection probability per row. The probability
+is either known at selection time or explicitly unknown; deterministic policies
+record `1.0`. It is never reconstructed later from logits, display strings, or
+a different checkpoint. A naked ordinal list or malformed probability column
+is rejected before mutation. The driver then performs one atomic environment
+step and copies only its compact terminal rows.
 
 An explicit `BatchCurriculum` returns a `RecoveryPlan` for the whole terminal
 batch. Selected defeats restore through one opaque checkpoint subset; all other
@@ -72,9 +76,11 @@ writes JSON, defines a game policy, or turns terminal HP and gold into reward.
 decision batch is copied before policy inference into a recursively frozen,
 read-only view of the bridge-owned semantic schema; it does not define another
 feature dictionary. Every row carries its exact slot, seed, episode generation,
-attempt index, and recovery count alongside the selected candidate ordinal.
-Each batch also retains the exact behavior manifest identity returned by that
-model call, not policy scores or a reconstructed later version.
+attempt index, and recovery count alongside the selected candidate ordinal and
+typed selection probability. Each batch also retains the exact behavior
+manifest identity returned by that model call, not policy scores or a
+reconstructed later version. Row selection, segment rotation, and attempt
+assembly preserve known and unknown probabilities without reinterpretation.
 `sts_learning.manifests` gives that identity an exact bounded owner. A behavior
 manifest references externally stored model checkpoints, model definitions,
 model configurations, semantic schemas, optimizer configurations, and trainer
@@ -188,8 +194,11 @@ sparse terminal `-1/1` outcome. It never turns the behavior choice into a
 teacher label or assigns that outcome to unselected candidates. Decision errors
 are averaged inside each attempt and then across attempts, so a long attempt has
 the same total weight as a short one. The result retains the batch-aligned
-manifest-id sequence for every attempt; censored and dropped attempt types are
-rejected structurally.
+manifest-id sequence and decision-aligned selection probabilities for every
+attempt; censored and dropped attempt types are rejected structurally. The
+current objective deliberately does not importance-weight by those
+probabilities. A future off-policy objective must declare that new contract and
+handle unknown propensity explicitly.
 All validated decision payloads in one delivery are concatenated and scored in
 one model call. Per-row weights preserve the exact attempt-equal loss, while
 eliminating one small PyTorch forward per historical decision. The caller must
@@ -199,11 +208,13 @@ excuse for unbounded replay memory.
 `sts_learning.torch_training.SynchronousValueTrainer` plugs directly into the
 complete-attempt assembler as a synchronous shadow-model sink. One delivery
 causes at most one optimizer step; the trainer retains no attempt queue and no
-semantic arrays, only scalar totals and the latest bounded manifest-id
-sequence. Its required concat limits bound the one-forward replay batch.
-Unknown provenance fails before mutation, while a backward or
-optimizer exception poisons the trainer instead of inviting a retry over
-possibly partial state. Dropped-only deliveries never train. If the trained
+semantic arrays, only scalar totals and the latest bounded manifest-id and
+selection-probability sequences. Its required concat limits bound the
+one-forward replay batch.
+Explicitly unknown selection probability remains valid evidence; an unknown
+behavior manifest fails before mutation. A backward or optimizer exception
+poisons the trainer instead of inviting a retry over possibly partial state.
+Dropped-only deliveries never train. If the trained
 scorer is later promoted into behavior, the caller must publish its new exact
 checkpoint manifest first; the trainer does not silently rewrite behavior
 identity.

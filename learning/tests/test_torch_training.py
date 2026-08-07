@@ -8,7 +8,11 @@ from learning.tests.torch_outcome_fixtures import (
     completed_attempt_fixture,
     decision_batch_fixture,
 )
-from sts_learning import BehaviorManifestRegistry, SemanticBatchConcatLimits
+from sts_learning import (
+    BehaviorManifestRegistry,
+    SelectionProbability,
+    SemanticBatchConcatLimits,
+)
 
 
 _TORCH_AVAILABLE = importlib.util.find_spec("torch") is not None
@@ -53,6 +57,7 @@ class SynchronousValueTrainerTests(unittest.TestCase):
             semantic_row=0,
             selected_ordinal=0,
             manifest_id=manifest_id,
+            selection_probability=SelectionProbability.known(0.3),
         )
         delivery = AttemptAssemblyDelivery(
             completed=(
@@ -73,6 +78,10 @@ class SynchronousValueTrainerTests(unittest.TestCase):
         self.assertEqual(
             trainer.snapshot.last_behavior_manifest_ids,
             ((manifest_id,),),
+        )
+        self.assertEqual(
+            trainer.snapshot.last_selection_probabilities,
+            ((SelectionProbability.known(0.3),),),
         )
         self.assertGreater(trainer.snapshot.total_training_seconds, 0.0)
         self.assertGreater(trainer.snapshot.last_training_seconds, 0.0)

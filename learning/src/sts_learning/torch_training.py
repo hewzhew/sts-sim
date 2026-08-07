@@ -10,7 +10,7 @@ import torch
 
 from .attempts import AttemptAssemblyDelivery, DroppedAttemptExperience
 from .manifests import BehaviorManifestRegistry
-from .policy import BehaviorManifestId
+from .policy import BehaviorManifestId, SelectionProbability
 from .semantic_concat import SemanticBatchConcatLimits
 from .torch_outcomes import CandidateValueScorer, realized_outcome_value_loss
 
@@ -28,6 +28,9 @@ class SynchronousValueTrainerSnapshot:
     trained_decisions: int
     last_loss: float | None
     last_behavior_manifest_ids: tuple[tuple[BehaviorManifestId, ...], ...] | None
+    last_selection_probabilities: (
+        tuple[tuple[SelectionProbability, ...], ...] | None
+    )
     total_training_seconds: float
     last_training_seconds: float | None
     poisoned: bool
@@ -64,6 +67,9 @@ class SynchronousValueTrainer:
         self._last_behavior_manifest_ids: (
             tuple[tuple[BehaviorManifestId, ...], ...] | None
         ) = None
+        self._last_selection_probabilities: (
+            tuple[tuple[SelectionProbability, ...], ...] | None
+        ) = None
         self._total_training_seconds = 0.0
         self._last_training_seconds: float | None = None
         self._poisoned = False
@@ -78,6 +84,7 @@ class SynchronousValueTrainer:
             trained_decisions=self._trained_decisions,
             last_loss=self._last_loss,
             last_behavior_manifest_ids=self._last_behavior_manifest_ids,
+            last_selection_probabilities=self._last_selection_probabilities,
             total_training_seconds=self._total_training_seconds,
             last_training_seconds=self._last_training_seconds,
             poisoned=self._poisoned,
@@ -142,6 +149,7 @@ class SynchronousValueTrainer:
         self._trained_decisions += objective.decision_count
         self._last_loss = loss
         self._last_behavior_manifest_ids = objective.behavior_manifest_ids
+        self._last_selection_probabilities = objective.selection_probabilities
         elapsed = time.perf_counter() - training_started
         self._total_training_seconds += elapsed
         self._last_training_seconds = elapsed

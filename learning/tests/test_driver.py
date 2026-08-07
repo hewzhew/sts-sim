@@ -7,11 +7,13 @@ from learning.tests.driver_fixtures import (
     FakeBatchEnv,
     FirstAttemptRecovery,
     InvalidPolicy,
+    MisalignedProbabilityPolicy,
     NoRecovery,
     NumpyFakeBatchEnv,
     OneRejectedChoiceEnv,
     RecordingPolicy,
     UntypedPolicy,
+    UntypedProbabilityPolicy,
 )
 from sts_learning import (
     BatchDriverError,
@@ -141,6 +143,30 @@ class BatchDriverTests(unittest.TestCase):
         with self.assertRaisesRegex(BatchDriverError, "BatchPolicyChoice"):
             driver.advance()
         self.assertEqual(driver.env.choose_calls, [])  # type: ignore[attr-defined]
+
+    def test_invalid_probability_evidence_is_rejected_before_environment_mutation(
+        self,
+    ) -> None:
+        for policy, message in (
+            (MisalignedProbabilityPolicy(), "one value per row"),
+            (UntypedProbabilityPolicy(), "must be typed"),
+        ):
+            with self.subTest(policy=type(policy).__name__):
+                population = initialize_population(
+                    FakeBatchEnv,
+                    slot_count=2,
+                    schedule=SeedSchedule(SeedPartition.HELD_OUT),
+                    max_recoveries_per_episode=0,
+                )
+                driver = OnlineBatchDriver(
+                    population,
+                    policy=policy,
+                    curriculum=NoRecovery(),
+                )
+
+                with self.assertRaisesRegex(BatchDriverError, message):
+                    driver.advance()
+                self.assertEqual(driver.env.choose_calls, [])  # type: ignore[attr-defined]
 
     def test_population_rejects_environment_slot_mismatch(self) -> None:
         with self.assertRaisesRegex(BatchDriverError, "created 1 slots"):

@@ -30,7 +30,7 @@ except ImportError:
 
 class FirstLegalPolicy:
     def choose(self, decision_batch: Mapping[str, object]) -> BatchPolicyChoice:
-        return BatchPolicyChoice.create(
+        return BatchPolicyChoice.deterministic(
             [0] * len(decision_batch["slot_indices"]),  # type: ignore[arg-type]
             BEHAVIOR_MANIFEST_ID,
         )
