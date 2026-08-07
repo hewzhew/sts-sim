@@ -625,6 +625,12 @@ batch and applies atomically after all target slots and restored observations
 validate; it does not degrade into one Python call or a partial mutation per
 environment slot.
 
+Online curriculum and evaluation accounting live in the separate Python
+caller package. Its two-phase tickets change ledger attempt/generation state
+only after an atomic restore or reset succeeds. It keeps no automatic
+checkpoint or trajectory history, and the held-out constructor cannot allocate
+a nonzero recovery budget.
+
 ## Relationship To Existing Code
 
 The new core may reuse:

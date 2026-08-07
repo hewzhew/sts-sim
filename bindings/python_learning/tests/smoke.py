@@ -209,6 +209,16 @@ def _assert_explicit_checkpoint_replays_exactly() -> None:
     restored_batch_root = batch_env.decision_batch(dense_mask=True, semantic=True)
     _assert_decision_batch_equal(batch_root, restored_batch_root)
     try:
+        batch_env.restore_slots([1, 0], checkpoint_batch)
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("cross-slot checkpoint restore was accepted")
+    _assert_decision_batch_equal(
+        restored_batch_root,
+        batch_env.decision_batch(dense_mask=True, semantic=True),
+    )
+    try:
         batch_env.restore_slots([0, 0], checkpoint_batch)
     except ValueError:
         pass
@@ -350,11 +360,21 @@ def main() -> None:
         f"elapsed_ms={elapsed * 1000:.1f} "
         f"steps_per_second={total_steps / elapsed:.0f}"
     )
-    env.reset_slot(0, 99)
-    assert env.terminal_count == env.slot_count - 1
-    assert np.array_equal(env.decision_batch()["slot_indices"], np.array([0], dtype=np.uint64))
+    env.reset_slots([0, 1], [99, 100])
+    assert env.terminal_count == env.slot_count - 2
+    reset_batch = env.decision_batch(dense_mask=True, semantic=True)
+    assert np.array_equal(reset_batch["slot_indices"], np.array([0, 1], dtype=np.uint64))
     try:
-        env.reset_slot(0, 100)
+        env.reset_slots([2, 2], [101, 102])
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("duplicate-target reset batch was accepted")
+    _assert_decision_batch_equal(
+        reset_batch, env.decision_batch(dense_mask=True, semantic=True)
+    )
+    try:
+        env.reset_slot(0, 103)
     except ValueError:
         pass
     else:

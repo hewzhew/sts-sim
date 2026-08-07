@@ -97,6 +97,7 @@ archaeology.
 | `crates/sts_oracle_eval` | Optimized Cargo owner for combat evaluation, exact-search orchestration, and run-control |
 | `crates/sts_oracle_runtime` | Cheaply rebuildable Cargo owner for branch execution, persistence, and service orchestration |
 | `crates/sts_oracle_tools` | Library-free Cargo host for maintained oracle command adapters and integration contracts |
+| `learning` | online-training callers, curricula, seed schedules, models, and evaluation accounting; never simulator mechanics |
 | `tools` | offline scripts, datasets, panels, and generated artifacts |
 | `docs` | maintained architecture, runbook, testing notes, and current drafts |
 

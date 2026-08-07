@@ -185,6 +185,20 @@ keeps no automatic history, and owns no retry or resurrection policy.
 Vectorized callers use opaque checkpoint batches. Every target and replacement
 boundary is validated before the first mutation, so a failed recovery batch
 cannot partly restore the environment pool.
+Each recovery checkpoint is bound to its source slot; ordinary recovery cannot
+clone it into another slot and thereby detach accounting from environment
+lineage. Any future cross-slot curriculum primitive must model that lineage
+explicitly instead of weakening restore.
+
+The separate `learning/` Python package is the online-training caller owner. It
+may own seed scheduling, policy inference, optimizer state, curricula, and
+evaluation accounting, but it may not reproduce simulator mechanics, inspect
+opaque checkpoints, or define a second semantic feature dictionary. Recovery
+and episode-reset accounting use caller-prepared tickets and commit only after
+the bridge's atomic batch operation succeeds. The ledger retains only current
+slot generations; trajectory history belongs in an explicit training artifact,
+not an unbounded in-memory side channel. Held-out ledgers have a structurally
+zero recovery budget.
 
 On an ordinary reward screen, the reward owner claims typed low-agency public
 resources before opening a nested card-reward choice. This lets the card owner

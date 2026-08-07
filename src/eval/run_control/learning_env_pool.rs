@@ -153,7 +153,18 @@ impl LearningEnvPoolV1 {
         slot_index: usize,
         config: RunControlConfig,
     ) -> Result<(), LearningEnvPoolError> {
-        self.replace_slot(slot_index, LearningEnvV1::new(config))
+        self.reset_slots([(slot_index, config)])
+    }
+
+    pub fn reset_slots(
+        &mut self,
+        resets: impl IntoIterator<Item = (usize, RunControlConfig)>,
+    ) -> Result<(), LearningEnvPoolError> {
+        self.replace_slots(
+            resets
+                .into_iter()
+                .map(|(slot_index, config)| (slot_index, LearningEnvV1::new(config))),
+        )
     }
 
     pub fn active_model_batch(

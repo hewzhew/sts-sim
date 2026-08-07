@@ -23,6 +23,9 @@ Tests are deliberately split across real Cargo packages:
   package plus evaluation, run-control, branch runtime, tools, and their shared
   contracts;
 - `cargo architecture <filter>` runs dependency-free source-boundary checks.
+- `bindings/python_learning/verify.ps1` builds the standalone wheel and runs
+  its Rust/Python contracts together with the separate online `learning/`
+  caller tests.
 
 Bare `cargo test --lib` addresses only the default core package and is not a
 complete repository check. Keep local unit tests beside their owning module;

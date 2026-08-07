@@ -52,6 +52,11 @@ For vectorized curricula, `checkpoint_slots(slot_indices)` and
 the whole selected subset. Restore validates every target, reconstructs every
 environment, and observes every replacement before changing the first slot;
 an invalid batch therefore cannot leave a partially restored pool.
+`reset_slots(slot_indices, seeds)` applies the same all-or-nothing rule when a
+caller starts new episodes in terminal slots.
+Every recovery checkpoint is bound to the slot that created it. The ordinary
+restore API rejects cross-slot cloning so recovery counts cannot be attached to
+the wrong environment lineage.
 
 The bridge still contains no policy, optimizer, automatic reset, or PyTorch
 dependency. Its semantic arrays are an input contract, not evidence that a
@@ -65,7 +70,8 @@ Run the maintained end-to-end verification with:
 
 The script builds a wheel, runs the Rust semantic contract tests, installs the
 wheel without dependency mutation into a fresh isolated environment that can
-see the target Python's existing NumPy, and runs `tests/smoke.py`. It keeps the
-wheel, environment, and complete logs below one fresh ignored
+see the target Python's existing NumPy, and runs `tests/smoke.py` plus the
+separate online caller contracts under `learning/tests`. It keeps the wheel,
+environment, and complete logs below one fresh ignored
 `.oracle-lab/python-learning-bridge/` directory and prints only a compact
 summary plus that artifact location.

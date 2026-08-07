@@ -43,6 +43,7 @@ enum BridgeSlotState {
 #[pyclass(skip_from_py_object)]
 #[derive(Clone)]
 struct LearningSlotCheckpoint {
+    source_slot_index: usize,
     session: RunControlSessionCheckpointV1,
     bridge_state: BridgeSlotState,
 }
@@ -235,21 +236,53 @@ impl LearningBatchEnv {
     }
 
     fn reset_slot(&mut self, slot_index: usize, seed: u64) -> PyResult<()> {
-        if !matches!(self.states.get(slot_index), Some(BridgeSlotState::Terminal)) {
+        self.reset_slots(vec![slot_index], vec![seed])
+    }
+
+    fn reset_slots(&mut self, slot_indices: Vec<usize>, seeds: Vec<u64>) -> PyResult<()> {
+        if slot_indices.len() != seeds.len() {
             return Err(PyValueError::new_err(format!(
-                "slot {slot_index} is not terminal"
+                "expected {} reset seeds, received {}",
+                slot_indices.len(),
+                seeds.len()
             )));
         }
+        let mut seen = BTreeSet::new();
+        for slot_index in &slot_indices {
+            if !seen.insert(*slot_index) {
+                return Err(PyValueError::new_err(format!(
+                    "slot {slot_index} appears more than once in reset batch"
+                )));
+            }
+            if !matches!(
+                self.states.get(*slot_index),
+                Some(BridgeSlotState::Terminal)
+            ) {
+                return Err(PyValueError::new_err(format!(
+                    "slot {slot_index} is not terminal"
+                )));
+            }
+        }
         self.pool
-            .reset_slot(
-                slot_index,
-                RunControlConfig {
-                    seed,
-                    ..RunControlConfig::default()
-                },
+            .reset_slots(
+                slot_indices
+                    .iter()
+                    .copied()
+                    .zip(seeds)
+                    .map(|(slot_index, seed)| {
+                        (
+                            slot_index,
+                            RunControlConfig {
+                                seed,
+                                ..RunControlConfig::default()
+                            },
+                        )
+                    }),
             )
             .map_err(runtime_error)?;
-        self.states[slot_index] = BridgeSlotState::Root;
+        for slot_index in slot_indices {
+            self.states[slot_index] = BridgeSlotState::Root;
+        }
         Ok(())
     }
 
@@ -265,6 +298,7 @@ impl LearningBatchEnv {
             .checkpoint_slot(slot_index)
             .map_err(runtime_error)?;
         Ok(LearningSlotCheckpoint {
+            source_slot_index: slot_index,
             session,
             bridge_state,
         })
@@ -293,6 +327,12 @@ impl LearningBatchEnv {
             return Err(PyValueError::new_err(format!(
                 "slot {slot_index} is outside 0..{}",
                 self.states.len()
+            )));
+        }
+        if checkpoint.source_slot_index != slot_index {
+            return Err(PyValueError::new_err(format!(
+                "checkpoint belongs to slot {}, not slot {slot_index}",
+                checkpoint.source_slot_index
             )));
         }
         self.restore_slot_checkpoint(slot_index, &checkpoint)
@@ -325,6 +365,12 @@ impl LearningBatchEnv {
                     "slot {slot_index} appears more than once in restore batch"
                 )));
             }
+            if checkpoint.source_slot_index != slot_index {
+                return Err(PyValueError::new_err(format!(
+                    "checkpoint belongs to slot {}, not slot {slot_index}",
+                    checkpoint.source_slot_index
+                )));
+            }
             let env =
                 LearningEnvV1::from_checkpoint(checkpoint.session.clone()).map_err(value_error)?;
             replacements.push((slot_index, env));
@@ -349,6 +395,12 @@ impl LearningBatchEnv {
             return Err(format!(
                 "slot {slot_index} is outside 0..{}",
                 self.states.len()
+            ));
+        }
+        if checkpoint.source_slot_index != slot_index {
+            return Err(format!(
+                "checkpoint belongs to slot {}, not slot {slot_index}",
+                checkpoint.source_slot_index
             ));
         }
         let env = LearningEnvV1::from_checkpoint(checkpoint.session.clone())?;
@@ -695,6 +747,7 @@ mod checkpoint_tests {
             LearningSelectionStepV1::Continue
         ));
         let checkpoint = LearningSlotCheckpoint {
+            source_slot_index: 0,
             session: env.pool.checkpoint_slot(0).expect("checkpoint prefix"),
             bridge_state: BridgeSlotState::Selection(draft.clone()),
         };

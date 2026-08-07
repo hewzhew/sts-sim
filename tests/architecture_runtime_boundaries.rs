@@ -2583,6 +2583,7 @@ fn python_learning_bridge_stays_outside_the_root_workspace_and_policy_layer() {
         "checkpoint_slots",
         "restore_slot",
         "restore_slots",
+        "reset_slots",
         "candidate_row_splits",
         "dense_action_mask",
         "LearningSelectionStepV1",
@@ -2652,5 +2653,42 @@ fn python_learning_bridge_stays_outside_the_root_workspace_and_policy_layer() {
     assert!(
         !model_input.contains("pub monsters: &'a [CombatLearningMonsterStateV1]"),
         "combat model observations must expose sanitized monster views, not raw entity ids"
+    );
+
+    let learning_manifest =
+        std::fs::read_to_string("learning/pyproject.toml").expect("read learning manifest");
+    assert!(learning_manifest.contains("name = \"sts-learning\""));
+    let recovery = std::fs::read_to_string("learning/src/sts_learning/recovery.py")
+        .expect("read caller-owned recovery accounting");
+    for required in [
+        "class RecoveryLedger",
+        "def prepare_recovery",
+        "def commit_recovery",
+        "def prepare_reset",
+        "def commit_reset",
+        "def restore_with_accounting",
+        "def reset_with_accounting",
+        "HELD_OUT_ZERO_RECOVERY",
+    ] {
+        assert!(
+            recovery.contains(required),
+            "online learning caller must retain recovery contract '{required}'"
+        );
+    }
+    for forbidden in [
+        "serde_json",
+        "torch",
+        "sts_oracle_eval",
+        "RunControlSessionCheckpointV1",
+        "semantic_schema",
+    ] {
+        assert!(
+            !recovery.contains(forbidden),
+            "online learning caller must not reproduce bridge or simulator authority through '{forbidden}'"
+        );
+    }
+    assert!(
+        !source.contains("sts_learning"),
+        "the bridge must not import its online training caller"
     );
 }

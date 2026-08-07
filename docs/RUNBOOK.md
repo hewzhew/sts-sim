@@ -614,6 +614,13 @@ cargo build -p sts_oracle_tools --release --bin combat_search_v2_driver
 git diff --check
 ```
 
+Changes to the standalone Python bridge or online `learning/` caller use one
+isolated wheel-and-caller verification entrypoint:
+
+```powershell
+.\bindings\python_learning\verify.ps1 -Python <python-3.12-executable>
+```
+
 The root package is the sole default member and disables automatic bins and
 integration tests. Bare `cargo test --lib` therefore checks only the core
 package. Use `cargo test-core <filter>` and `cargo test-control <filter>`

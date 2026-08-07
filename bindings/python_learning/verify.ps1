@@ -14,6 +14,7 @@ $venvRoot = Join-Path $runRoot "venv"
 $buildLog = Join-Path $runRoot "build.log"
 $rustTestLog = Join-Path $runRoot "rust-tests.log"
 $smokeLog = Join-Path $runRoot "smoke.log"
+$learningTestLog = Join-Path $runRoot "learning-tests.log"
 
 New-Item -ItemType Directory -Path $wheelRoot -Force | Out-Null
 
@@ -81,6 +82,20 @@ if ($smokeExit -ne 0) {
     throw "Python learning bridge smoke failed; full log: $smokeLog"
 }
 
+$savedPythonPath = [Environment]::GetEnvironmentVariable("PYTHONPATH", "Process")
+$env:PYTHONPATH = (Resolve-Path -LiteralPath (Join-Path $repositoryRoot "learning\src")).Path
+$ErrorActionPreference = "Continue"
+& $venvPython -m unittest discover `
+    -s (Join-Path $repositoryRoot "learning\tests") `
+    -v *> $learningTestLog
+$learningTestExit = $LASTEXITCODE
+$ErrorActionPreference = $savedErrorPreference
+[Environment]::SetEnvironmentVariable("PYTHONPATH", $savedPythonPath, "Process")
+if ($learningTestExit -ne 0) {
+    Get-Content -LiteralPath $learningTestLog -Tail 80
+    throw "Python learning caller tests failed; full log: $learningTestLog"
+}
+
 $summary = Get-Content -LiteralPath $smokeLog |
     Where-Object { $_ -match "^python_learning_bridge_smoke " } |
     Select-Object -Last 1
@@ -92,4 +107,5 @@ Write-Output $summary
 Write-Output ("python=" + $pythonPath)
 Write-Output ("wheel=" + $wheel.Name)
 Write-Output "rust_tests=passed"
+Write-Output "learning_tests=passed"
 Write-Output ("artifact_root=" + $runRoot)
