@@ -634,6 +634,11 @@ caller package. Its two-phase tickets change ledger attempt/generation state
 only after an atomic restore or reset succeeds. It keeps no automatic
 checkpoint or trajectory history, and the held-out constructor cannot allocate
 a nonzero recovery budget.
+One caller-side typed terminal-step batch copies only aligned public outcome
+integers from the bridge and is bounded by the environment slot count. The
+ledger holds at most one pending defeat row per slot, clears it only after a
+successful restore, and attaches the final row to the completed episode. It
+does not retain observation tensors or become a second trajectory journal.
 Training and held-out seeds are partitioned by one stable seed-only hash before
 derived attempts exist. Immutable schedule plans advance only after atomic
 environment reset and ledger accounting succeed, so a failed batch does not

@@ -11,6 +11,8 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Protocol, Sequence
 
+from .outcomes import TerminalAttemptOutcome, TerminalStepBatch
+
 
 class RecoveryProtocolError(ValueError):
     """The requested accounting transition is not legal."""
@@ -35,6 +37,7 @@ class RecoverySlotSnapshot:
     attempt_index: int
     recoveries_used: int
     status: RecoverySlotStatus
+    pending_terminal: TerminalAttemptOutcome | None
 
 
 @dataclass(frozen=True)
@@ -62,11 +65,18 @@ class RecoveryEvent:
 
 @dataclass(frozen=True)
 class EpisodeOutcome:
-    slot_index: int
     episode_generation: int
-    terminal_reward: int
     attempts: int
     recoveries_used: int
+    terminal: TerminalAttemptOutcome
+
+    @property
+    def slot_index(self) -> int:
+        return self.terminal.slot_index
+
+    @property
+    def terminal_reward(self) -> int:
+        return self.terminal.terminal_reward
 
     @property
     def zero_recovery(self) -> bool:
@@ -109,6 +119,7 @@ class RecoveryLedger:
         self._attempt_index = [1] * slot_count
         self._recoveries_used = [0] * slot_count
         self._status = [RecoverySlotStatus.ACTIVE] * slot_count
+        self._pending_terminal: list[TerminalAttemptOutcome | None] = [None] * slot_count
 
     @classmethod
     def training(
@@ -140,35 +151,31 @@ class RecoveryLedger:
             attempt_index=self._attempt_index[slot],
             recoveries_used=self._recoveries_used[slot],
             status=self._status[slot],
+            pending_terminal=self._pending_terminal[slot],
         )
 
     def snapshots(self) -> tuple[RecoverySlotSnapshot, ...]:
         return tuple(self.snapshot(slot) for slot in range(self.slot_count))
 
-    def record_terminal(
-        self, slot_indices: Sequence[int], rewards: Sequence[int]
-    ) -> tuple[EpisodeOutcome, ...]:
-        slots = self._validate_slots(slot_indices)
-        if len(slots) != len(rewards):
-            raise RecoveryProtocolError(
-                f"expected {len(slots)} terminal rewards, received {len(rewards)}"
-            )
-        terminal_rewards = tuple(operator.index(reward) for reward in rewards)
-        for slot, reward in zip(slots, terminal_rewards, strict=True):
+    def record_terminal(self, batch: TerminalStepBatch) -> tuple[EpisodeOutcome, ...]:
+        if not isinstance(batch, TerminalStepBatch):
+            raise RecoveryProtocolError("terminal input must be a TerminalStepBatch")
+        slots = self._validate_slots(batch.slot_indices)
+        for slot in slots:
             if self._status[slot] is not RecoverySlotStatus.ACTIVE:
                 raise RecoveryProtocolError(f"slot {slot} is not active")
-            if reward not in (-1, 1):
-                raise RecoveryProtocolError(
-                    f"slot {slot} terminal reward must be -1 or 1, received {reward}"
-                )
+            if self._pending_terminal[slot] is not None:
+                raise RecoveryProtocolError(f"slot {slot} already has a pending terminal")
 
         outcomes = []
-        for slot, reward in zip(slots, terminal_rewards, strict=True):
-            if reward == 1:
+        for terminal in batch.attempts:
+            slot = terminal.slot_index
+            if terminal.terminal_reward == 1:
                 self._status[slot] = RecoverySlotStatus.VICTORY_COMPLETE
-                outcomes.append(self._outcome(slot, reward))
+                outcomes.append(self._outcome(slot, terminal))
             else:
                 self._status[slot] = RecoverySlotStatus.DEFEAT_PENDING
+                self._pending_terminal[slot] = terminal
         return tuple(outcomes)
 
     def prepare_recovery(self, slot_indices: Sequence[int]) -> RecoveryTicket:
@@ -178,6 +185,8 @@ class RecoveryLedger:
         for slot in slots:
             if self._status[slot] is not RecoverySlotStatus.DEFEAT_PENDING:
                 raise RecoveryProtocolError(f"slot {slot} has no pending defeat")
+            if self._pending_terminal[slot] is None:
+                raise RecoveryProtocolError(f"slot {slot} is missing its pending terminal")
             if self._recoveries_used[slot] >= self.max_recoveries_per_episode:
                 raise RecoveryProtocolError(f"slot {slot} exhausted its recovery budget")
         return RecoveryTicket(
@@ -217,6 +226,7 @@ class RecoveryLedger:
             self._recoveries_used[slot] += 1
             self._attempt_index[slot] += 1
             self._status[slot] = RecoverySlotStatus.ACTIVE
+            self._pending_terminal[slot] = None
             events.append(
                 RecoveryEvent(
                     slot_index=slot,
@@ -231,14 +241,22 @@ class RecoveryLedger:
         self, slot_indices: Sequence[int]
     ) -> tuple[EpisodeOutcome, ...]:
         slots = self._validate_slots(slot_indices)
+        terminals = []
         for slot in slots:
             if self._status[slot] is not RecoverySlotStatus.DEFEAT_PENDING:
                 raise RecoveryProtocolError(f"slot {slot} has no pending defeat")
-        outcomes = []
+            terminal = self._pending_terminal[slot]
+            if terminal is None:
+                raise RecoveryProtocolError(f"slot {slot} is missing its pending terminal")
+            terminals.append(terminal)
+        outcomes = tuple(
+            self._outcome(slot, terminal)
+            for slot, terminal in zip(slots, terminals, strict=True)
+        )
         for slot in slots:
             self._status[slot] = RecoverySlotStatus.DEFEAT_COMPLETE
-            outcomes.append(self._outcome(slot, -1))
-        return tuple(outcomes)
+            self._pending_terminal[slot] = None
+        return outcomes
 
     def prepare_reset(self, slot_indices: Sequence[int]) -> EpisodeResetTicket:
         slots = self._validate_slots(slot_indices)
@@ -277,6 +295,7 @@ class RecoveryLedger:
             self._attempt_index[slot] = 1
             self._recoveries_used[slot] = 0
             self._status[slot] = RecoverySlotStatus.ACTIVE
+            self._pending_terminal[slot] = None
 
     def _validate_slots(self, slot_indices: Sequence[int]) -> tuple[int, ...]:
         slots = tuple(operator.index(slot) for slot in slot_indices)
@@ -289,13 +308,16 @@ class RecoveryLedger:
                 )
         return slots
 
-    def _outcome(self, slot: int, reward: int) -> EpisodeOutcome:
+    def _outcome(
+        self, slot: int, terminal: TerminalAttemptOutcome
+    ) -> EpisodeOutcome:
+        if terminal.slot_index != slot:
+            raise RecoveryProtocolError("terminal outcome belongs to another slot")
         return EpisodeOutcome(
-            slot_index=slot,
             episode_generation=self._episode_generation[slot],
-            terminal_reward=reward,
             attempts=self._attempt_index[slot],
             recoveries_used=self._recoveries_used[slot],
+            terminal=terminal,
         )
 
 

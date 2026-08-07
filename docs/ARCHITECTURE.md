@@ -201,9 +201,17 @@ evaluation accounting, but it may not reproduce simulator mechanics, inspect
 opaque checkpoints, or define a second semantic feature dictionary. Recovery
 and episode-reset accounting use caller-prepared tickets and commit only after
 the bridge's atomic batch operation succeeds. The ledger retains only current
-slot generations; trajectory history belongs in an explicit training artifact,
-not an unbounded in-memory side channel. Held-out ledgers have a structurally
-zero recovery budget.
+slot generations and at most one compact pending terminal outcome per slot;
+trajectory history belongs in an explicit training artifact, not an unbounded
+in-memory side channel. Held-out ledgers have a structurally zero recovery
+budget.
+
+The caller copies terminal bridge output into one typed step batch containing
+only aligned slot, reward, act, floor, HP, max-HP, and gold integers. It rejects
+missing, misaligned, duplicate, or out-of-pool rows before ledger mutation and
+does not retain the bridge dictionary or observation tensors. A completed
+episode attaches its final exact terminal row and recovery count; intermediate
+attempt rows remain immediate caller evidence, not an implicit trajectory log.
 
 Training and held-out seed partitions use one stable seed-only hash before any
 recovery attempt or derived trajectory is created. The caller's seed schedule

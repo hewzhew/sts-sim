@@ -31,6 +31,15 @@ the environment reset and ledger commit succeed. Failed resets therefore
 consume neither an episode generation nor a seed. A held-out ledger accepts
 only held-out seeds and retains its structural zero-recovery budget.
 
+`sts_learning.outcomes.TerminalStepBatch.from_bridge_step` copies only the
+seven compact terminal integer columns from one vector step. It validates row
+alignment, slot bounds, uniqueness, and public outcome ranges without retaining
+the bridge dictionary or any observation tensor. `RecoveryLedger` accepts only
+this typed batch. It holds at most one pending defeat outcome per slot, clears
+that row only after successful recovery, and attaches the final exact terminal
+facts to `EpisodeOutcome` when the episode completes. It is not a trajectory
+buffer or a second mutation journal.
+
 The bridge verification command installs a fresh wheel and runs both bridge
 smoke tests and these caller contracts:
 

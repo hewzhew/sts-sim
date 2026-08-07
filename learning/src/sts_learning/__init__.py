@@ -1,5 +1,10 @@
 """Online learning callers for sts_simulator."""
 
+from .outcomes import (
+    TerminalAttemptOutcome,
+    TerminalBatchError,
+    TerminalStepBatch,
+)
 from .recovery import (
     EpisodeResetTicket,
     EpisodeOutcome,
@@ -37,6 +42,9 @@ __all__ = [
     "SeedResetBatch",
     "SeedSchedule",
     "SeedScheduleError",
+    "TerminalAttemptOutcome",
+    "TerminalBatchError",
+    "TerminalStepBatch",
     "reset_with_accounting",
     "reset_scheduled_with_accounting",
     "restore_with_accounting",

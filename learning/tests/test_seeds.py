@@ -8,8 +8,27 @@ from sts_learning import (
     SeedPartitionSpec,
     SeedSchedule,
     SeedScheduleError,
+    TerminalAttemptOutcome,
+    TerminalStepBatch,
     reset_scheduled_with_accounting,
 )
+
+
+def terminal_batch(*rows: tuple[int, int]) -> TerminalStepBatch:
+    return TerminalStepBatch(
+        tuple(
+            TerminalAttemptOutcome(
+                slot_index=slot,
+                terminal_reward=reward,
+                terminal_act=3,
+                terminal_floor=40,
+                terminal_hp=10 if reward == 1 else 0,
+                terminal_max_hp=80,
+                terminal_gold=50,
+            )
+            for slot, reward in rows
+        )
+    )
 
 
 class FakeResetEnv:
@@ -66,7 +85,7 @@ class SeedScheduleTests(unittest.TestCase):
         spec = SeedPartitionSpec(held_out_numerator=1, denominator=3)
         schedule = SeedSchedule(SeedPartition.HELD_OUT, spec)
         ledger = RecoveryLedger.held_out(2)
-        ledger.record_terminal([0, 1], [1, -1])
+        ledger.record_terminal(terminal_batch((0, 1), (1, -1)))
         ledger.complete_defeats([1])
         failing = FakeResetEnv(fail=True)
 
@@ -86,7 +105,7 @@ class SeedScheduleTests(unittest.TestCase):
 
     def test_ledger_mode_must_match_seed_partition(self) -> None:
         ledger = RecoveryLedger.held_out(1)
-        ledger.record_terminal([0], [1])
+        ledger.record_terminal(terminal_batch((0, 1)))
         env = FakeResetEnv()
 
         with self.assertRaisesRegex(SeedScheduleError, "requires held_out seeds"):
