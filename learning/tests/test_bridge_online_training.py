@@ -165,7 +165,7 @@ class RealBridgeOnlineTrainingTests(unittest.TestCase):
         self.assertGreater(trainer.snapshot.total_training_seconds, 0.0)
         self.assertFalse(trainer.snapshot.poisoned)
 
-    def test_categorical_behavior_promotes_one_bounded_online_generation(self) -> None:
+    def test_categorical_behavior_promotes_consecutive_bounded_generations(self) -> None:
         assert LearningBatchEnv is not None
         assert semantic_schema is not None
         # This is deliberately end-to-end: publication, bridge decoding,
@@ -179,22 +179,22 @@ class RealBridgeOnlineTrainingTests(unittest.TestCase):
 
         torch.manual_seed(43)
         shadow = scorer_factory()
-        registry = BehaviorManifestRegistry(capacity=2)
+        registry = BehaviorManifestRegistry(capacity=3)
         with tempfile.TemporaryDirectory() as root:
             store = BoundedTorchCheckpointStore(
                 Path(root, "checkpoints"),
                 TorchCheckpointLimits(
-                    max_checkpoints=2,
+                    max_checkpoints=3,
                     max_bytes_per_checkpoint=2 * 1024 * 1024,
-                    max_total_bytes=4 * 1024 * 1024,
+                    max_total_bytes=6 * 1024 * 1024,
                 ),
             )
             catalog = BoundedBehaviorManifestCatalog(
                 Path(root, "manifests"),
                 BehaviorManifestCatalogLimits(
-                    max_manifests=2,
+                    max_manifests=3,
                     max_bytes_per_manifest=1024,
-                    max_total_bytes=2 * 1024,
+                    max_total_bytes=3 * 1024,
                 ),
             )
             publisher = TorchBehaviorPublisher(
@@ -313,29 +313,43 @@ class RealBridgeOnlineTrainingTests(unittest.TestCase):
                     )
                 )
 
-                second_run = driver.run_until_terminal_attempts(
-                    terminal_attempts=1,
+                second_generation = generation_runner.advance(
                     max_batch_steps=(
                         160
                         - partial_generation.batch_steps
                         - promoted_generation.batch_steps
                     ),
                 )
-                self.assertTrue(second_run.target_reached)
-                self.assertEqual(second_run.summary.terminal_attempts, 1)
+                self.assertTrue(second_generation.promoted)
+                self.assertEqual(
+                    second_generation.active_manifest_id_before,
+                    generation_one.manifest_id,
+                )
+                self.assertEqual(second_generation.active_training_step_before, 1)
+                self.assertEqual(second_generation.optimizer_steps_before, 1)
+                self.assertEqual(second_generation.optimizer_steps_after, 2)
+                self.assertEqual(
+                    second_generation.promotion_target_training_step,
+                    2,
+                )
+                self.assertEqual(second_generation.terminal_attempts, 1)
+                self.assertEqual(second_generation.terminal_flushes, 1)
+                generation_two = second_generation.publication
+                assert generation_two is not None
                 self.assertLessEqual(
                     partial_generation.batch_steps
                     + promoted_generation.batch_steps
-                    + second_run.summary.batch_steps,
+                    + second_generation.batch_steps,
                     160,
                 )
-                driver.flush_experience()
 
             second_training = trainer.snapshot
             second_manifest_evidence = second_training.last_behavior_manifest_ids
             second_probability_evidence = second_training.last_selection_probabilities
 
             self.assertNotEqual(generation_zero.manifest_id, generation_one.manifest_id)
+            self.assertNotEqual(generation_one.manifest_id, generation_two.manifest_id)
+            self.assertEqual(generation_two.manifest.training_step, 2)
             self.assertEqual(
                 driver.ledger.snapshot(0).episode_generation,
                 generation_after_first + 1,
@@ -365,13 +379,13 @@ class RealBridgeOnlineTrainingTests(unittest.TestCase):
             )
             self.assertEqual(
                 controller.snapshot.active_manifest_id,
-                generation_one.manifest_id,
+                generation_two.manifest_id,
             )
-            self.assertEqual(controller.snapshot.active_training_step, 1)
-            self.assertEqual(controller.snapshot.successful_promotions, 2)
-            self.assertEqual(store.snapshot.checkpoints, 2)
-            self.assertEqual(catalog.snapshot.manifests, 2)
-            self.assertEqual(registry.snapshot.registered_manifests, 2)
+            self.assertEqual(controller.snapshot.active_training_step, 2)
+            self.assertEqual(controller.snapshot.successful_promotions, 3)
+            self.assertEqual(store.snapshot.checkpoints, 3)
+            self.assertEqual(catalog.snapshot.manifests, 3)
+            self.assertEqual(registry.snapshot.registered_manifests, 3)
 
             recovered_generator = torch.Generator()
             recovered_generator.set_state(behavior_generator.get_state())
@@ -390,11 +404,11 @@ class RealBridgeOnlineTrainingTests(unittest.TestCase):
                 recovered_generator,
             )
             recovered_publication = recovered.recover_and_promote(
-                generation_one.manifest_id
+                generation_two.manifest_id
             )
             next_decision = driver.env.decision_batch(semantic=True)
 
-            self.assertEqual(recovered_publication, generation_one)
+            self.assertEqual(recovered_publication, generation_two)
             self.assertEqual(
                 controller.choose(next_decision),
                 recovered.choose(next_decision),
