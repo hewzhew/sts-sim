@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import unittest
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 
 from sts_learning import (
+    AttemptAssemblyDelivery,
+    AttemptAssemblyLimits,
+    BoundedAttemptAssembler,
     ExperienceLimits,
     ExperienceSegment,
     ExperienceSegmentBuffer,
@@ -38,8 +41,13 @@ class NoRecoveryCurriculum:
 
 
 class CountingSegmentSink:
-    def __init__(self, limits: ExperienceLimits) -> None:
+    def __init__(
+        self,
+        limits: ExperienceLimits,
+        downstream: Callable[[ExperienceSegment], None] | None = None,
+    ) -> None:
         self.limits = limits
+        self.downstream = downstream
         self.segments = 0
         self.decisions = 0
         self.payload_bytes = 0
@@ -59,6 +67,18 @@ class CountingSegmentSink:
         self.terminal_attempts += sum(
             fragment.terminal is not None for fragment in segment.attempts
         )
+        if self.downstream is not None:
+            self.downstream(segment)
+
+
+class CountingAttemptSink:
+    def __init__(self) -> None:
+        self.completed = 0
+        self.dropped = 0
+
+    def __call__(self, delivery: AttemptAssemblyDelivery) -> None:
+        self.completed += len(delivery.completed)
+        self.dropped += len(delivery.dropped)
 
 
 @unittest.skipIf(LearningBatchEnv is None, "standalone bridge wheel is not installed")
@@ -75,7 +95,16 @@ class BridgeDriverIntegrationTests(unittest.TestCase):
             max_decisions=48,
             max_payload_bytes=16 * 1024 * 1024,
         )
-        sink = CountingSegmentSink(limits)
+        attempt_sink = CountingAttemptSink()
+        assembler = BoundedAttemptAssembler(
+            AttemptAssemblyLimits(
+                max_open_attempts=3,
+                max_decisions_per_attempt=1_024,
+                max_payload_bytes_per_attempt=64 * 1024 * 1024,
+            ),
+            attempt_sink,
+        )
+        sink = CountingSegmentSink(limits, assembler)
         driver = OnlineBatchDriver(
             population,
             policy=FirstLegalPolicy(),
@@ -106,6 +135,18 @@ class BridgeDriverIntegrationTests(unittest.TestCase):
         self.assertEqual(sink.segments, summary.emitted_experience_segments + 1)
         self.assertGreater(sink.decisions, summary.emitted_experience_decisions)
         self.assertGreater(sink.terminal_attempts, 0)
+        self.assertEqual(attempt_sink.completed, summary.terminal_attempts)
+        self.assertEqual(attempt_sink.dropped, 0)
+        self.assertEqual(assembler.snapshot.completed_attempts, summary.terminal_attempts)
+        self.assertLessEqual(assembler.snapshot.open_attempts, 3)
+        self.assertLessEqual(
+            assembler.snapshot.retained_decisions,
+            assembler.limits.maximum_retained_decisions,
+        )
+        self.assertLessEqual(
+            assembler.snapshot.retained_payload_bytes,
+            assembler.limits.maximum_retained_payload_bytes,
+        )
 
 
 if __name__ == "__main__":

@@ -97,6 +97,16 @@ id. Unknown bridge fields and cross-row graph edges fail closed instead of
 being silently discarded. Scoring a selected row is contract-tested to equal
 scoring that same row in its original batch.
 
+`sts_learning.attempts.BoundedAttemptAssembler` consumes those ordered sealed
+segments as a synchronous sink. It owns independently sliced, read-only rows
+for each exact attempt lineage across segment boundaries and delivers one
+complete attempt only after its matching terminal record arrives. Open-attempt,
+per-attempt decision, and per-attempt payload-byte limits form a hard retained
+memory bound. An over-limit attempt releases all retained arrays immediately,
+remains a compact dropped marker until terminal, and is reported as dropped
+rather than relabeled as complete. One delivery contains every terminal from a
+segment; sink failure commits neither assembler state nor segment sequence.
+
 `sts_learning.torch_policy` is an optional, device-agnostic PyTorch baseline
 over that same bridge-owned semantic graph. It is intentionally absent from
 the package root, so ordinary caller imports still require only NumPy. The

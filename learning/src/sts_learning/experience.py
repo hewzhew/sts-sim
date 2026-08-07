@@ -16,6 +16,7 @@ from .recovery import (
     RecoverySlotStatus,
     TerminalAttemptRecord,
 )
+from .semantic_batch import SemanticBatchError, select_semantic_decision_rows
 
 
 class ExperienceError(ValueError):
@@ -182,6 +183,25 @@ class DecisionExperienceBatch:
             selected_ordinals=ordinals,
             decision_count=prepared.decision_count,
             payload_bytes=prepared.payload_bytes,
+        )
+
+    def select_rows(self, row_indices: Sequence[int]) -> DecisionExperienceBatch:
+        """Own and freeze an exact row subset for attempt-local retention."""
+
+        rows = _integer_sequence(row_indices, "row indices")
+        try:
+            selected = select_semantic_decision_rows(self.payload, rows)
+        except SemanticBatchError as error:
+            raise ExperienceError("cannot select semantic decision rows") from error
+        payload, payload_bytes = _freeze_payload(selected, "selected_decision_batch")
+        if not isinstance(payload, Mapping):
+            raise ExperienceError("selected decision payload is not a mapping")
+        return DecisionExperienceBatch(
+            payload=payload,
+            lineages=tuple(self.lineages[row] for row in rows),
+            selected_ordinals=tuple(self.selected_ordinals[row] for row in rows),
+            decision_count=len(rows),
+            payload_bytes=payload_bytes,
         )
 
 

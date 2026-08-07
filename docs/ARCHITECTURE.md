@@ -273,6 +273,17 @@ scores for a selected row must equal its scores in the original batch; this is
 the boundary that permits later per-attempt memory accounting without a second
 semantic dictionary or whole-batch retention.
 
+Complete attempt assembly remains a caller-owned synchronous segment sink. It
+retains independently selected read-only decision rows under explicit maximum
+open-attempt, decision-per-attempt, and payload-byte-per-attempt limits. A
+terminal record closes only its exact seed/generation/attempt lineage. If an
+attempt crosses either content limit, its arrays are released immediately and
+the compact open marker is delivered as dropped at terminal; censored or
+dropped fragments never become complete training samples. A segment may
+contain both a terminal generation and its reset replacement, so the open
+attempt limit applies after terminal closure. Downstream sink failure commits
+neither sequence progress nor tentative assembler state.
+
 An optional PyTorch candidate scorer lives only in the Python `learning/`
 owner and is not imported by the ordinary package root. Construction consumes
 one bridge `semantic_schema()` result and derives numeric embedding dimensions

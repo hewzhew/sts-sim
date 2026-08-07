@@ -1,5 +1,16 @@
 """Online learning callers for sts_simulator."""
 
+from .attempts import (
+    AttemptAssemblerSnapshot,
+    AttemptAssemblyDelivery,
+    AttemptAssemblyError,
+    AttemptAssemblyLimits,
+    AttemptDropReason,
+    BoundedAttemptAssembler,
+    CompletedAttemptExperience,
+    CompletedAttemptSink,
+    DroppedAttemptExperience,
+)
 from .driver import (
     BatchCurriculum,
     BatchDriverError,
@@ -60,18 +71,27 @@ from .seeds import (
 from .semantic_batch import SemanticBatchError, select_semantic_decision_rows
 
 __all__ = [
+    "AttemptAssemblerSnapshot",
+    "AttemptAssemblyDelivery",
+    "AttemptAssemblyError",
+    "AttemptAssemblyLimits",
+    "AttemptDropReason",
     "BatchCurriculum",
     "BatchDriverError",
     "BatchEnvironment",
     "BatchPolicy",
     "BatchRunSummary",
     "BatchStepResult",
+    "BoundedAttemptAssembler",
     "CheckpointBatch",
     "CheckpointedEpisodeResetTarget",
+    "CompletedAttemptExperience",
+    "CompletedAttemptSink",
     "AttemptFragment",
     "AttemptKey",
     "DecisionExperienceBatch",
     "DecisionLineage",
+    "DroppedAttemptExperience",
     "EpisodeResetTicket",
     "EpisodeOutcome",
     "ExperienceError",
