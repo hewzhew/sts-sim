@@ -2,17 +2,19 @@
 
 from __future__ import annotations
 
-import hashlib
 import operator
 import os
-import re
-import tempfile
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from pathlib import Path
 
 from torch import nn
 
+from ._content_store import (
+    BoundedContentStore,
+    ContentStoreError,
+    ContentStoreLimits,
+    PreparedContent,
+)
 from ._torch_checkpoint_codec import (
     TorchCheckpointError,
     decode_state_dict,
@@ -52,12 +54,19 @@ class TorchCheckpointLimits:
                 "max_bytes_per_checkpoint cannot exceed max_total_bytes"
             )
 
+    def _content_limits(self) -> ContentStoreLimits:
+        return ContentStoreLimits(
+            max_artifacts=self.max_checkpoints,
+            max_bytes_per_artifact=self.max_bytes_per_checkpoint,
+            max_total_bytes=self.max_total_bytes,
+        )
+
 
 @dataclass(frozen=True)
 class PreparedTorchCheckpoint:
     artifact_id: ManifestArtifactId
     payload_bytes: int
-    _payload: bytes = field(repr=False, compare=False)
+    _content: PreparedContent = field(repr=False, compare=False)
 
     def __post_init__(self) -> None:
         if (
@@ -67,11 +76,11 @@ class PreparedTorchCheckpoint:
             raise TorchCheckpointError(
                 "prepared checkpoint requires a MODEL_CHECKPOINT artifact id"
             )
-        if not isinstance(self._payload, bytes):
-            raise TorchCheckpointError("prepared checkpoint payload must be immutable")
-        if self.payload_bytes != len(self._payload):
+        if not isinstance(self._content, PreparedContent):
+            raise TorchCheckpointError("prepared checkpoint content must be typed")
+        if self.payload_bytes != self._content.payload_bytes:
             raise TorchCheckpointError("prepared checkpoint byte count is incorrect")
-        if hashlib.sha256(self._payload).digest() != self.artifact_id.digest:
+        if self.artifact_id.digest != self._content.digest:
             raise TorchCheckpointError("prepared checkpoint digest is incorrect")
 
 
@@ -90,20 +99,25 @@ class BoundedTorchCheckpointStore:
         if not isinstance(limits, TorchCheckpointLimits):
             raise TorchCheckpointError("checkpoint store limits must be typed")
         self.limits = limits
-        self.root = Path(root).resolve()
-        if self.root.exists() and not self.root.is_dir():
-            raise TorchCheckpointError("checkpoint store root is not a directory")
-        self.root.mkdir(exist_ok=True)
-        self._entries: dict[ManifestArtifactId, tuple[Path, int]] = {}
-        self._load_existing()
+        try:
+            self._store = BoundedContentStore(
+                root,
+                suffix=".ststorch",
+                limits=limits._content_limits(),
+                validate_payload=decode_state_dict,
+            )
+        except ContentStoreError as error:
+            raise TorchCheckpointError(str(error)) from error
+        self.root = self._store.root
 
     @property
     def snapshot(self) -> TorchCheckpointStoreSnapshot:
+        snapshot = self._store.snapshot
         return TorchCheckpointStoreSnapshot(
-            checkpoints=len(self._entries),
-            total_bytes=sum(size for _, size in self._entries.values()),
-            max_checkpoints=self.limits.max_checkpoints,
-            max_total_bytes=self.limits.max_total_bytes,
+            checkpoints=snapshot.artifacts,
+            total_bytes=snapshot.total_bytes,
+            max_checkpoints=snapshot.max_artifacts,
+            max_total_bytes=snapshot.max_total_bytes,
         )
 
     def prepare(self, model: nn.Module) -> PreparedTorchCheckpoint:
@@ -113,63 +127,38 @@ class BoundedTorchCheckpointStore:
             model.state_dict(),
             max_bytes=self.limits.max_bytes_per_checkpoint,
         )
+        try:
+            content = self._store.prepare(payload)
+        except ContentStoreError as error:
+            raise TorchCheckpointError(str(error)) from error
         artifact_id = ManifestArtifactId(
             ManifestArtifactKind.MODEL_CHECKPOINT,
-            hashlib.sha256(payload).digest(),
+            content.digest,
         )
-        return PreparedTorchCheckpoint(artifact_id, len(payload), payload)
+        return PreparedTorchCheckpoint(artifact_id, content.payload_bytes, content)
 
-    def commit(self, prepared: PreparedTorchCheckpoint) -> ManifestArtifactId:
+    def preview_commit(
+        self,
+        prepared: PreparedTorchCheckpoint,
+    ) -> ManifestArtifactId:
         if not isinstance(prepared, PreparedTorchCheckpoint):
             raise TorchCheckpointError("checkpoint commit must be prepared")
-        if prepared.payload_bytes > self.limits.max_bytes_per_checkpoint:
-            raise TorchCheckpointError("checkpoint exceeds its per-checkpoint byte limit")
-        existing = self._entries.get(prepared.artifact_id)
-        if existing is not None:
-            if self._read_verified(prepared.artifact_id) != prepared._payload:
-                raise TorchCheckpointError(
-                    "checkpoint digest conflicts with stored checkpoint content"
-                )
-            return prepared.artifact_id
-        if len(self._entries) >= self.limits.max_checkpoints:
-            raise TorchCheckpointError("checkpoint store capacity exceeded")
-        if self.snapshot.total_bytes + prepared.payload_bytes > self.limits.max_total_bytes:
-            raise TorchCheckpointError("checkpoint store total byte limit exceeded")
-
-        target = self._path(prepared.artifact_id)
-        temporary: Path | None = None
-        published = False
         try:
-            with tempfile.NamedTemporaryFile(
-                mode="wb",
-                prefix=".pending-",
-                suffix=".tmp",
-                dir=self.root,
-                delete=False,
-            ) as output:
-                temporary = Path(output.name)
-                output.write(prepared._payload)
-                output.flush()
-                os.fsync(output.fileno())
-            try:
-                os.link(temporary, target)
-                published = True
-            except FileExistsError:
-                if (
-                    target.stat().st_size != prepared.payload_bytes
-                    or target.read_bytes() != prepared._payload
-                ):
-                    raise TorchCheckpointError(
-                        "checkpoint target conflicts with prepared content"
-                    )
-        finally:
-            if temporary is not None and temporary.exists():
-                temporary.unlink()
+            digest = self._store.preview_commit(prepared._content)
+        except ContentStoreError as error:
+            raise TorchCheckpointError(str(error)) from error
+        if digest != prepared.artifact_id.digest:
+            raise TorchCheckpointError("checkpoint preview returned a different identity")
+        return prepared.artifact_id
 
-        if published:
-            self._entries[prepared.artifact_id] = (target, prepared.payload_bytes)
-        elif prepared.artifact_id not in self._entries:
-            self._entries[prepared.artifact_id] = (target, prepared.payload_bytes)
+    def commit(self, prepared: PreparedTorchCheckpoint) -> ManifestArtifactId:
+        self.preview_commit(prepared)
+        try:
+            digest = self._store.commit(prepared._content)
+        except ContentStoreError as error:
+            raise TorchCheckpointError(str(error)) from error
+        if digest != prepared.artifact_id.digest:
+            raise TorchCheckpointError("checkpoint store committed a different identity")
         return prepared.artifact_id
 
     def materialize(
@@ -193,49 +182,6 @@ class BoundedTorchCheckpointStore:
             raise TorchCheckpointError("restored model does not reproduce checkpoint digest")
         return model
 
-    def _load_existing(self) -> None:
-        total_bytes = 0
-        entries: dict[ManifestArtifactId, tuple[Path, int]] = {}
-        with os.scandir(self.root) as directory:
-            for entry in directory:
-                if not entry.is_file(follow_symlinks=False):
-                    raise TorchCheckpointError(
-                        f"checkpoint store contains unexpected entry {entry.name!r}"
-                    )
-                match = _CHECKPOINT_NAME.fullmatch(entry.name)
-                if match is None:
-                    raise TorchCheckpointError(
-                        f"checkpoint store contains unexpected file {entry.name!r}"
-                    )
-                size = entry.stat(follow_symlinks=False).st_size
-                if size > self.limits.max_bytes_per_checkpoint:
-                    raise TorchCheckpointError(
-                        "existing checkpoint exceeds its byte limit"
-                    )
-                total_bytes += size
-                if total_bytes > self.limits.max_total_bytes:
-                    raise TorchCheckpointError(
-                        "existing checkpoints exceed total byte limit"
-                    )
-                if len(entries) >= self.limits.max_checkpoints:
-                    raise TorchCheckpointError(
-                        "existing checkpoints exceed store capacity"
-                    )
-                artifact_id = ManifestArtifactId(
-                    ManifestArtifactKind.MODEL_CHECKPOINT,
-                    bytes.fromhex(match.group(1)),
-                )
-                path = Path(entry.path)
-                payload = path.read_bytes()
-                if (
-                    len(payload) != size
-                    or hashlib.sha256(payload).digest() != artifact_id.digest
-                ):
-                    raise TorchCheckpointError("existing checkpoint digest is corrupt")
-                decode_state_dict(payload)
-                entries[artifact_id] = (path, size)
-        self._entries = entries
-
     def _read_verified(self, artifact_id: ManifestArtifactId) -> bytes:
         if (
             not isinstance(artifact_id, ManifestArtifactId)
@@ -243,21 +189,11 @@ class BoundedTorchCheckpointStore:
         ):
             raise TorchCheckpointError("checkpoint lookup id must be typed")
         try:
-            path, expected_size = self._entries[artifact_id]
-        except KeyError as error:
-            raise TorchCheckpointError("unknown model checkpoint identity") from error
-        payload = path.read_bytes()
-        if len(payload) != expected_size:
-            raise TorchCheckpointError("stored checkpoint size changed")
-        if hashlib.sha256(payload).digest() != artifact_id.digest:
-            raise TorchCheckpointError("stored checkpoint digest changed")
-        return payload
-
-    def _path(self, artifact_id: ManifestArtifactId) -> Path:
-        return self.root / f"{artifact_id.digest.hex()}.ststorch"
-
-
-_CHECKPOINT_NAME = re.compile(r"([0-9a-f]{64})\.ststorch")
+            return self._store.read(artifact_id.digest)
+        except ContentStoreError as error:
+            if "unknown content identity" in str(error):
+                raise TorchCheckpointError("unknown model checkpoint identity") from error
+            raise TorchCheckpointError(str(error)) from error
 
 
 def _positive_integer(value: object, name: str) -> int:
