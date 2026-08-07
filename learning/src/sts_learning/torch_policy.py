@@ -136,6 +136,8 @@ class RaggedCandidateLogits:
             raise TorchPolicyError("candidate logits must be one-dimensional")
         if self.row_splits.ndim != 1 or self.row_splits.numel() == 0:
             raise TorchPolicyError("candidate row_splits must be a non-empty vector")
+        if self.row_splits.dtype is not torch.long:
+            raise TorchPolicyError("candidate row_splits must use torch.long")
         if int(self.row_splits[0].item()) != 0:
             raise TorchPolicyError("candidate row_splits must start at zero")
         if int(self.row_splits[-1].item()) != self.values.numel():

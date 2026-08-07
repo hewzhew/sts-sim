@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from learning.tests.semantic_fixtures import semantic_batch_fixture
 from sts_learning import (
     AttemptKey,
     BehaviorManifest,
@@ -12,6 +13,7 @@ from sts_learning import (
     ManifestArtifactKind,
     TerminalAttemptOutcome,
     TerminalAttemptRecord,
+    select_semantic_decision_rows,
 )
 
 
@@ -47,28 +49,28 @@ def behavior_manifest_fixture() -> BehaviorManifest:
 def decision_batch_fixture(
     *,
     slot: int,
-    value_indices: tuple[int, ...],
-    selected_ordinals: tuple[int, ...],
+    semantic_row: int,
+    selected_ordinal: int,
     manifest_id: BehaviorManifestId,
 ) -> DecisionExperienceBatch:
-    lineages = tuple(
-        DecisionLineage(
-            key=AttemptKey(
-                slot_index=slot,
-                episode_seed=100 + slot,
-                episode_generation=0,
-                attempt_index=1,
-            ),
-            recoveries_used=0,
-        )
-        for _ in selected_ordinals
+    lineage = DecisionLineage(
+        key=AttemptKey(
+            slot_index=slot,
+            episode_seed=100 + slot,
+            episode_generation=0,
+            attempt_index=1,
+        ),
+        recoveries_used=0,
     )
     return DecisionExperienceBatch(
-        payload={"value_indices": value_indices},
-        lineages=lineages,
-        selected_ordinals=selected_ordinals,
+        payload=select_semantic_decision_rows(
+            semantic_batch_fixture(),
+            [semantic_row],
+        ),
+        lineages=(lineage,),
+        selected_ordinals=(selected_ordinal,),
         behavior_manifest_id=manifest_id,
-        decision_count=len(selected_ordinals),
+        decision_count=1,
         payload_bytes=1,
     )
 

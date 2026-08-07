@@ -10,6 +10,7 @@ from learning.tests.torch_outcome_fixtures import (
 )
 from sts_learning import (
     BehaviorManifestRegistry,
+    SemanticBatchConcatLimits,
 )
 
 
@@ -22,31 +23,37 @@ if _TORCH_AVAILABLE:
         realized_outcome_value_loss,
     )
     from sts_learning.torch_policy import RaggedCandidateLogits
+    from sts_learning.torch_policy import RaggedCandidateScorer, RaggedScorerConfig
+    from learning.tests.semantic_fixtures import semantic_schema_fixture
+
+
+CONCAT_LIMITS = SemanticBatchConcatLimits(
+    max_rows=16,
+    max_input_array_bytes=1024 * 1024,
+)
 
 @unittest.skipUnless(_TORCH_AVAILABLE, "optional PyTorch dependency is not installed")
 class RealizedOutcomeValueLossTests(unittest.TestCase):
-    def test_only_selected_candidates_are_targeted_and_attempts_are_equal_weight(self) -> None:
-        manifest = behavior_manifest_fixture()
-        registry = BehaviorManifestRegistry(capacity=1)
-        manifest_id = registry.register(manifest)
-        values = torch.nn.Parameter(
-            torch.tensor([-1.0, 90.0, 0.0, 80.0, 0.0, 70.0, 0.0, 60.0])
+    def test_single_forward_loss_and_gradients_equal_per_batch_reference(self) -> None:
+        torch.manual_seed(42)
+        reference = RaggedCandidateScorer.from_bridge_schema(
+            semantic_schema_fixture(),
+            RaggedScorerConfig(hidden_dim=10, relation_layers=1),
         )
-
-        def scorer(payload):
-            indices = torch.as_tensor(payload["value_indices"], dtype=torch.long)
-            return RaggedCandidateLogits(
-                values=values[indices],
-                row_splits=torch.arange(0, len(indices) + 1, 2),
-            )
-
+        vectorized = RaggedCandidateScorer.from_bridge_schema(
+            semantic_schema_fixture(),
+            RaggedScorerConfig(hidden_dim=10, relation_layers=1),
+        )
+        vectorized.load_state_dict(reference.state_dict())
+        registry = BehaviorManifestRegistry(capacity=1)
+        manifest_id = registry.register(behavior_manifest_fixture())
         short = completed_attempt_fixture(
             slot=1,
             batches=(
                 decision_batch_fixture(
                     slot=1,
-                    value_indices=(0, 1),
-                    selected_ordinals=(0,),
+                    semantic_row=0,
+                    selected_ordinal=1,
                     manifest_id=manifest_id,
                 ),
             ),
@@ -57,32 +64,129 @@ class RealizedOutcomeValueLossTests(unittest.TestCase):
             batches=(
                 decision_batch_fixture(
                     slot=2,
-                    value_indices=(2, 3),
-                    selected_ordinals=(0,),
+                    semantic_row=1,
+                    selected_ordinal=2,
                     manifest_id=manifest_id,
                 ),
                 decision_batch_fixture(
                     slot=2,
-                    value_indices=(4, 5),
-                    selected_ordinals=(0,),
-                    manifest_id=manifest_id,
-                ),
-                decision_batch_fixture(
-                    slot=2,
-                    value_indices=(6, 7),
-                    selected_ordinals=(0,),
+                    semantic_row=0,
+                    selected_ordinal=0,
                     manifest_id=manifest_id,
                 ),
             ),
             reward=-1,
         )
 
-        result = realized_outcome_value_loss(scorer, (short, long), registry)
+        reference_attempt_losses = []
+        for attempt in (short, long):
+            errors = []
+            for batch in attempt.batches:
+                logits = reference(batch.payload)
+                ordinal = torch.tensor(batch.selected_ordinals, dtype=torch.long)
+                selected = logits.values[logits.row_splits[:-1] + ordinal]
+                errors.append(
+                    (selected - float(attempt.terminal.terminal_reward)).square()
+                )
+            reference_attempt_losses.append(torch.cat(errors).mean())
+        reference_loss = torch.stack(reference_attempt_losses).mean()
+        reference_loss.backward()
+
+        calls = 0
+
+        def counted_scorer(payload):
+            nonlocal calls
+            calls += 1
+            return vectorized(payload)
+
+        result = realized_outcome_value_loss(
+            counted_scorer,
+            (short, long),
+            registry,
+            CONCAT_LIMITS,
+        )
         result.value.backward()
 
-        self.assertEqual(float(result.value.detach()), 2.5)
+        self.assertEqual(calls, 1)
+        torch.testing.assert_close(result.value, reference_loss)
+        for actual, expected in zip(
+            vectorized.parameters(),
+            reference.parameters(),
+            strict=True,
+        ):
+            self.assertIsNotNone(actual.grad)
+            self.assertIsNotNone(expected.grad)
+            torch.testing.assert_close(actual.grad, expected.grad)
+
+    def test_only_selected_candidates_are_targeted_and_attempts_are_equal_weight(self) -> None:
+        manifest = behavior_manifest_fixture()
+        registry = BehaviorManifestRegistry(capacity=1)
+        manifest_id = registry.register(manifest)
+        values = torch.nn.Parameter(
+            torch.tensor([-1.0, 90.0, 0.0, 80.0, 0.0, 70.0, 0.0, 60.0])
+        )
+        scorer_calls = 0
+
+        def scorer(payload):
+            nonlocal scorer_calls
+            scorer_calls += 1
+            return RaggedCandidateLogits(
+                values=values,
+                row_splits=torch.as_tensor(
+                    payload["candidate_row_splits"],
+                    dtype=torch.long,
+                ),
+            )
+
+        short = completed_attempt_fixture(
+            slot=1,
+            batches=(
+                decision_batch_fixture(
+                    slot=1,
+                    semantic_row=0,
+                    selected_ordinal=0,
+                    manifest_id=manifest_id,
+                ),
+            ),
+            reward=1,
+        )
+        long = completed_attempt_fixture(
+            slot=2,
+            batches=(
+                decision_batch_fixture(
+                    slot=2,
+                    semantic_row=0,
+                    selected_ordinal=0,
+                    manifest_id=manifest_id,
+                ),
+                decision_batch_fixture(
+                    slot=2,
+                    semantic_row=0,
+                    selected_ordinal=0,
+                    manifest_id=manifest_id,
+                ),
+                decision_batch_fixture(
+                    slot=2,
+                    semantic_row=0,
+                    selected_ordinal=0,
+                    manifest_id=manifest_id,
+                ),
+            ),
+            reward=-1,
+        )
+
+        result = realized_outcome_value_loss(
+            scorer,
+            (short, long),
+            registry,
+            CONCAT_LIMITS,
+        )
+        result.value.backward()
+
+        self.assertAlmostEqual(float(result.value.detach()), 2.5, places=6)
         self.assertEqual(result.attempt_count, 2)
         self.assertEqual(result.decision_count, 4)
+        self.assertEqual(scorer_calls, 1)
         self.assertEqual(
             result.behavior_manifest_ids,
             ((manifest_id,), (manifest_id, manifest_id, manifest_id)),
@@ -99,8 +203,8 @@ class RealizedOutcomeValueLossTests(unittest.TestCase):
         registry = BehaviorManifestRegistry(capacity=1)
         batch = decision_batch_fixture(
             slot=1,
-            value_indices=(0, 1),
-            selected_ordinals=(0,),
+            semantic_row=0,
+            selected_ordinal=0,
             manifest_id=unregistered_id,
         )
 
@@ -112,18 +216,25 @@ class RealizedOutcomeValueLossTests(unittest.TestCase):
                 ),
                 (completed_attempt_fixture(slot=1, batches=(batch,), reward=1),),
                 registry,
+                CONCAT_LIMITS,
             )
 
     def test_empty_or_non_complete_input_cannot_create_a_loss(self) -> None:
         registry = BehaviorManifestRegistry(capacity=1)
 
         with self.assertRaisesRegex(TorchOutcomeError, "at least one"):
-            realized_outcome_value_loss(lambda payload: None, (), registry)
+            realized_outcome_value_loss(
+                lambda payload: None,
+                (),
+                registry,
+                CONCAT_LIMITS,
+            )
         with self.assertRaisesRegex(TorchOutcomeError, "only complete"):
             realized_outcome_value_loss(
                 lambda payload: None,
                 (object(),),  # type: ignore[arg-type]
                 registry,
+                CONCAT_LIMITS,
             )
 
 

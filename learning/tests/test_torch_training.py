@@ -8,7 +8,7 @@ from learning.tests.torch_outcome_fixtures import (
     completed_attempt_fixture,
     decision_batch_fixture,
 )
-from sts_learning import BehaviorManifestRegistry
+from sts_learning import BehaviorManifestRegistry, SemanticBatchConcatLimits
 
 
 _TORCH_AVAILABLE = importlib.util.find_spec("torch") is not None
@@ -21,6 +21,12 @@ if _TORCH_AVAILABLE:
         SynchronousValueTrainer,
         TorchTrainingError,
     )
+
+
+CONCAT_LIMITS = SemanticBatchConcatLimits(
+    max_rows=16,
+    max_input_array_bytes=1024 * 1024,
+)
 
 
 @unittest.skipUnless(_TORCH_AVAILABLE, "optional PyTorch dependency is not installed")
@@ -40,11 +46,12 @@ class SynchronousValueTrainerTests(unittest.TestCase):
             scorer,
             torch.optim.SGD([parameter], lr=0.1),
             registry,
+            CONCAT_LIMITS,
         )
         batch = decision_batch_fixture(
             slot=1,
-            value_indices=(0, 1),
-            selected_ordinals=(0,),
+            semantic_row=0,
+            selected_ordinal=0,
             manifest_id=manifest_id,
         )
         delivery = AttemptAssemblyDelivery(
@@ -83,11 +90,12 @@ class SynchronousValueTrainerTests(unittest.TestCase):
             scorer,
             torch.optim.SGD([parameter], lr=0.1),
             registry,
+            CONCAT_LIMITS,
         )
         batch = decision_batch_fixture(
             slot=1,
-            value_indices=(0, 1),
-            selected_ordinals=(0,),
+            semantic_row=0,
+            selected_ordinal=0,
             manifest_id=manifest.identity,
         )
         delivery = AttemptAssemblyDelivery(
@@ -126,11 +134,12 @@ class SynchronousValueTrainerTests(unittest.TestCase):
             scorer,
             FailingSgd([parameter], lr=0.1),
             registry,
+            CONCAT_LIMITS,
         )
         batch = decision_batch_fixture(
             slot=1,
-            value_indices=(0, 1),
-            selected_ordinals=(0,),
+            semantic_row=0,
+            selected_ordinal=0,
             manifest_id=manifest_id,
         )
         delivery = AttemptAssemblyDelivery(

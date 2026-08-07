@@ -13,6 +13,10 @@ from .attempts import CompletedAttemptExperience
 from .experience import DecisionExperienceBatch
 from .manifests import BehaviorManifestRegistry
 from .policy import BehaviorManifestId
+from .semantic_concat import (
+    SemanticBatchConcatLimits,
+    concatenate_semantic_decision_batches,
+)
 from .torch_policy import RaggedCandidateLogits
 
 
@@ -38,6 +42,7 @@ def realized_outcome_value_loss(
     scorer: CandidateValueScorer,
     attempts: Sequence[CompletedAttemptExperience],
     registry: BehaviorManifestRegistry,
+    concat_limits: SemanticBatchConcatLimits,
 ) -> RealizedOutcomeValueLoss:
     """Regress selected candidate values to sparse terminal outcomes.
 
@@ -49,12 +54,17 @@ def realized_outcome_value_loss(
         raise TorchOutcomeError("candidate value scorer must be callable")
     if not isinstance(registry, BehaviorManifestRegistry):
         raise TorchOutcomeError("value objective requires a behavior manifest registry")
+    if not isinstance(concat_limits, SemanticBatchConcatLimits):
+        raise TorchOutcomeError("value objective requires semantic concat limits")
     normalized = tuple(attempts)
     if not normalized:
         raise TorchOutcomeError("value objective requires at least one complete attempt")
 
-    attempt_losses: list[Tensor] = []
     behavior_ids: list[tuple[BehaviorManifestId, ...]] = []
+    payloads: list[Mapping[str, object]] = []
+    selected_ordinals: list[int] = []
+    targets: list[int] = []
+    weights: list[float] = []
     total_decisions = 0
     for attempt in normalized:
         if not isinstance(attempt, CompletedAttemptExperience):
@@ -65,7 +75,6 @@ def realized_outcome_value_loss(
                 "complete attempt decision count disagrees with retained batches"
             )
 
-        decision_errors: list[Tensor] = []
         attempt_behavior_ids: list[BehaviorManifestId] = []
         for batch in attempt.batches:
             _validate_batch(batch)
@@ -76,28 +85,39 @@ def realized_outcome_value_loss(
                     "complete attempt references an unknown behavior manifest"
                 ) from error
             attempt_behavior_ids.append(batch.behavior_manifest_id)
-
-            logits = scorer(batch.payload)
-            if not isinstance(logits, RaggedCandidateLogits):
-                raise TorchOutcomeError(
-                    "candidate value scorer must return RaggedCandidateLogits"
-                )
-            selected = _selected_values(logits, batch.selected_ordinals)
-            target = torch.as_tensor(
-                attempt.terminal.terminal_reward,
-                dtype=selected.dtype,
-                device=selected.device,
+            payloads.append(batch.payload)
+            selected_ordinals.extend(batch.selected_ordinals)
+            targets.extend(
+                [attempt.terminal.terminal_reward] * batch.decision_count
             )
-            decision_errors.append((selected - target).square())
-
-        all_errors = torch.cat(decision_errors)
-        if not bool(torch.all(torch.isfinite(all_errors))):
-            raise TorchOutcomeError("realized outcome value errors must be finite")
-        attempt_losses.append(all_errors.mean())
+            weights.extend(
+                [1.0 / (len(normalized) * expected_decisions)]
+                * batch.decision_count
+            )
         behavior_ids.append(tuple(attempt_behavior_ids))
         total_decisions += expected_decisions
 
-    value = torch.stack(attempt_losses).mean()
+    combined = concatenate_semantic_decision_batches(payloads, concat_limits)
+    logits = scorer(combined)
+    if not isinstance(logits, RaggedCandidateLogits):
+        raise TorchOutcomeError(
+            "candidate value scorer must return RaggedCandidateLogits"
+        )
+    selected = _selected_values(logits, selected_ordinals)
+    target_tensor = torch.as_tensor(
+        targets,
+        dtype=selected.dtype,
+        device=selected.device,
+    )
+    weight_tensor = torch.as_tensor(
+        weights,
+        dtype=selected.dtype,
+        device=selected.device,
+    )
+    errors = (selected - target_tensor).square()
+    if not bool(torch.all(torch.isfinite(errors))):
+        raise TorchOutcomeError("realized outcome value errors must be finite")
+    value = torch.sum(errors * weight_tensor)
     return RealizedOutcomeValueLoss(
         value=value,
         attempt_count=len(normalized),

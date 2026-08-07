@@ -17,6 +17,7 @@ from sts_learning import (
     ExperienceLimits,
     ExperienceSegmentBuffer,
     OnlineBatchDriver,
+    SemanticBatchConcatLimits,
     SeedPartition,
     SeedSchedule,
     initialize_population,
@@ -71,6 +72,10 @@ class RealBridgeOnlineTrainingTests(unittest.TestCase):
             scorer,
             torch.optim.SGD(scorer.parameters(), lr=0.001),
             registry,
+            SemanticBatchConcatLimits(
+                max_rows=1_024,
+                max_input_array_bytes=32 * 1024 * 1024,
+            ),
         )
         assembler = BoundedAttemptAssembler(
             AttemptAssemblyLimits(

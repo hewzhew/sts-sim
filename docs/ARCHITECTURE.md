@@ -348,6 +348,12 @@ attempts are averaged, so longer attempts do not gain more weight merely by
 containing more decisions. Censored and dropped attempts cannot enter this
 objective through its input type, and the aligned per-attempt sequence of
 behavior manifest identities remains attached to the loss result.
+After validation, all retained decision payloads in one delivery are combined
+into one semantic ragged batch and scored by exactly one model call. Flat row
+weights are `1 / (attempt_count * decisions_in_that_attempt)`, which is
+mathematically the same attempt-equal objective without one tiny forward per
+historical decision. The trainer must provide explicit semantic concat row and
+array-byte limits; vectorization does not weaken the existing memory bound.
 A synchronous optional trainer can serve directly as the complete-attempt
 assembler sink. It performs at most one optimizer step for one delivery, keeps
 only aggregate counters plus the most recent bounded manifest-id sequence, and

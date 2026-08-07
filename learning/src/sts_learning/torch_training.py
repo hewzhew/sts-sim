@@ -10,6 +10,7 @@ import torch
 from .attempts import AttemptAssemblyDelivery, DroppedAttemptExperience
 from .manifests import BehaviorManifestRegistry
 from .policy import BehaviorManifestId
+from .semantic_concat import SemanticBatchConcatLimits
 from .torch_outcomes import CandidateValueScorer, realized_outcome_value_loss
 
 
@@ -37,6 +38,7 @@ class SynchronousValueTrainer:
         scorer: CandidateValueScorer,
         optimizer: torch.optim.Optimizer,
         registry: BehaviorManifestRegistry,
+        concat_limits: SemanticBatchConcatLimits,
     ) -> None:
         if not callable(scorer):
             raise TorchTrainingError("candidate value scorer must be callable")
@@ -44,9 +46,12 @@ class SynchronousValueTrainer:
             raise TorchTrainingError("optimizer must be a torch Optimizer")
         if not isinstance(registry, BehaviorManifestRegistry):
             raise TorchTrainingError("trainer requires a behavior manifest registry")
+        if not isinstance(concat_limits, SemanticBatchConcatLimits):
+            raise TorchTrainingError("trainer requires semantic concat limits")
         self.scorer = scorer
         self.optimizer = optimizer
         self.registry = registry
+        self.concat_limits = concat_limits
         self._deliveries = 0
         self._optimizer_steps = 0
         self._completed_attempts = 0
@@ -93,6 +98,7 @@ class SynchronousValueTrainer:
             self.scorer,
             delivery.completed,
             self.registry,
+            self.concat_limits,
         )
         if objective.value.ndim != 0 or not objective.value.requires_grad:
             raise TorchTrainingError(
