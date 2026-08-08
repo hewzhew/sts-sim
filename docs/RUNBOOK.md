@@ -748,6 +748,16 @@ writes the same opaque root-batch format. The compact receipt reports the
 actual root count, which can be smaller than `--max-roots` for a short line.
 The action sequence is verification evidence only; it is not included in the
 artifact and must not be used as a supervised policy label.
+Rare contract-selected roots may instead be collected as separate canonical
+single-root artifacts and combined without decoding them:
+
+```powershell
+cargo oracle-lab learning-root merge --input <first.bin> --input <second.bin> --output <fresh.combat-roots.bin> --max-bytes 16777216
+```
+
+Every input must contain exactly one distinct root. Rust validates artifact
+versions, identities, the combined byte bound, and the fresh output before
+publishing; duplicate roots or any malformed input leave the output absent.
 For a bounded fixed-behavior coverage check over every root, use
 `CombatWinSignalCensusRunner` with the same `expected_roots`, one shared model
 seed, one explicit behavior seed per root, and `max_roots` equal to the intended

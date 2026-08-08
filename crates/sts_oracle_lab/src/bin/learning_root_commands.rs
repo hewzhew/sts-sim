@@ -26,6 +26,8 @@ const COLLECTION_SUMMARY_SCHEMA_NAME: &str = "CombatLearningRootCollectionSummar
 const COLLECTION_SUMMARY_SCHEMA_VERSION: u32 = 2;
 const RECOVERY_SUMMARY_SCHEMA_NAME: &str = "CombatLearningRecoveryRootSummary";
 const RECOVERY_SUMMARY_SCHEMA_VERSION: u32 = 1;
+const MERGE_SUMMARY_SCHEMA_NAME: &str = "CombatLearningRootMergeSummary";
+const MERGE_SUMMARY_SCHEMA_VERSION: u32 = 1;
 const MAX_COLLECTED_ROOTS: usize = 64;
 const MAX_RECOVERY_ACTIONS: usize = 4_096;
 const MAX_RECOVERY_ACTION_BYTES: u64 = 16 * 1024 * 1024;
@@ -69,6 +71,15 @@ pub(super) enum LearningRootCommand {
         output: PathBuf,
         #[arg(long, default_value_t = 8)]
         max_roots: usize,
+        #[arg(long, default_value_t = 16 * 1024 * 1024)]
+        max_bytes: usize,
+    },
+    /// Merge canonical single-root artifacts into one bounded opaque batch.
+    Merge {
+        #[arg(long, required = true)]
+        input: Vec<PathBuf>,
+        #[arg(long)]
+        output: PathBuf,
         #[arg(long, default_value_t = 16 * 1024 * 1024)]
         max_bytes: usize,
     },
@@ -135,6 +146,17 @@ struct CombatLearningRecoveredRootV1 {
     context: CombatLearningRootContextV1,
 }
 
+#[derive(Debug, Serialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct CombatLearningRootMergeSummaryV1 {
+    schema_name: &'static str,
+    schema_version: u32,
+    inputs: Vec<PathBuf>,
+    output: PathBuf,
+    payload_bytes: usize,
+    roots: Vec<CombatLearningRootExportedRootV1>,
+}
+
 enum CombatLearningRootCollectionStop {
     CombatBoundary,
     AutomationGap(String),
@@ -169,7 +191,73 @@ pub(super) fn run(command: LearningRootCommand) -> Result<(), String> {
             max_roots,
             max_bytes,
         } => super::print_json(&recover(&case, &actions, &output, max_roots, max_bytes)?),
+        LearningRootCommand::Merge {
+            input,
+            output,
+            max_bytes,
+        } => super::print_json(&merge(&input, &output, max_bytes)?),
     }
+}
+
+pub(super) fn merge(
+    input_paths: &[PathBuf],
+    output: &Path,
+    max_bytes: usize,
+) -> Result<CombatLearningRootMergeSummaryV1, String> {
+    if input_paths.len() < 2 {
+        return Err("learning root merge requires at least two inputs".to_owned());
+    }
+    require_fresh_output(output)?;
+    let mut payloads = Vec::with_capacity(input_paths.len());
+    for path in input_paths {
+        let file = File::open(path)
+            .map_err(|error| format!("failed to open {}: {error}", path.display()))?;
+        let byte_count = usize::try_from(
+            file.metadata()
+                .map_err(|error| format!("failed to inspect {}: {error}", path.display()))?
+                .len(),
+        )
+        .map_err(|_| format!("learning root input is too large: {}", path.display()))?;
+        if byte_count == 0 || byte_count > max_bytes {
+            return Err(format!(
+                "learning root input violates its byte bound: {}",
+                path.display()
+            ));
+        }
+        let mut payload = Vec::with_capacity(byte_count);
+        file.take(max_bytes as u64 + 1)
+            .read_to_end(&mut payload)
+            .map_err(|error| format!("failed to read {}: {error}", path.display()))?;
+        if payload.len() != byte_count {
+            return Err(format!(
+                "learning root input changed while reading: {}",
+                path.display()
+            ));
+        }
+        payloads.push(payload);
+    }
+    let artifact = CombatLearningRootBatchArtifactV1::merge_single_root_payloads(
+        payloads.iter().map(Vec::as_slice),
+        max_bytes,
+    )?;
+    let roots = artifact
+        .roots()
+        .iter()
+        .map(|root| CombatLearningRootExportedRootV1 {
+            identity: root.identity().clone(),
+            context: *root.context(),
+        })
+        .collect();
+    let payload = artifact.encode(max_bytes)?;
+    write_new_payload(output, &payload)?;
+    Ok(CombatLearningRootMergeSummaryV1 {
+        schema_name: MERGE_SUMMARY_SCHEMA_NAME,
+        schema_version: MERGE_SUMMARY_SCHEMA_VERSION,
+        inputs: input_paths.to_vec(),
+        output: output.to_path_buf(),
+        payload_bytes: payload.len(),
+        roots,
+    })
 }
 
 pub(super) fn export(
@@ -562,6 +650,48 @@ mod tests {
         )
         .is_err());
 
+        fs::remove_dir_all(&root).expect("remove test root");
+    }
+
+    #[test]
+    fn canonical_single_root_artifacts_merge_atomically() {
+        let root = unique_temp_dir("merge");
+        fs::create_dir(&root).expect("create test root");
+        let first_path = root.join("first.bin");
+        let second_path = root.join("second.bin");
+        let output_path = root.join("merged.bin");
+        let duplicate_output = root.join("duplicate.bin");
+        for (path, monster_hp) in [(&first_path, 20), (&second_path, 21)] {
+            let payload = CombatLearningRootBatchArtifactV1::from_checkpoints([
+                RunControlSessionCheckpointV1::from_session(&combat_root_session(monster_hp)),
+            ])
+            .expect("capture one root")
+            .encode(1024 * 1024)
+            .expect("encode one root");
+            fs::write(path, payload).expect("write one root");
+        }
+
+        let summary = merge(
+            &[first_path.clone(), second_path.clone()],
+            &output_path,
+            1024 * 1024,
+        )
+        .expect("merge distinct single roots");
+        let payload = fs::read(&output_path).expect("read merged roots");
+        let artifact = CombatLearningRootBatchArtifactV1::decode(&payload, 2, 1024 * 1024)
+            .expect("decode merged roots");
+
+        assert_eq!(summary.schema_name, MERGE_SUMMARY_SCHEMA_NAME);
+        assert_eq!(summary.roots.len(), 2);
+        assert_eq!(summary.payload_bytes, payload.len());
+        assert_eq!(artifact.roots().len(), 2);
+        assert!(merge(
+            &[first_path.clone(), first_path],
+            &duplicate_output,
+            1024 * 1024,
+        )
+        .is_err());
+        assert!(!duplicate_output.exists());
         fs::remove_dir_all(&root).expect("remove test root");
     }
 

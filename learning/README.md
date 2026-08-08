@@ -178,6 +178,10 @@ emits their first combats as one batch; `learning-root export` converts public
 continuations already at useful later combat boundaries. The caller reads those
 opaque bytes and constructs a fresh bridge batch with the exact expected root
 count; Rust revalidates every combat boundary and root identity first.
+`learning-root merge` combines two or more canonical single-root artifacts
+under the same validation and fresh-output boundary. This lets rare selectors
+publish honest one-root shards without adding an ad-hoc binary concatenation or
+weakening the multi-root trainer contract.
 `sts_learning.collect_run_combat_roots` supplies the bounded corpus path when
 useful later continuations do not yet exist. It advances one published frozen
 behavior over training-partition runs, aligns compact public run facts with
