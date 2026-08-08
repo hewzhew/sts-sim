@@ -872,31 +872,43 @@ fn planner_site_and_context(
 }
 
 fn planner_public_map(session: &RunControlSession) -> PlannerPublicMap {
+    let mut nodes = session
+        .run_state
+        .map
+        .graph
+        .iter()
+        .flat_map(|row| row.iter())
+        .map(|node| PlannerPublicMapNode {
+            x: node.x,
+            y: node.y,
+            room: node.class,
+            has_emerald_key: node.has_emerald_key,
+            edges: node
+                .edges
+                .iter()
+                .map(|edge| PlannerPublicMapEdge {
+                    destination_x: edge.dst_x,
+                    destination_y: edge.dst_y,
+                })
+                .collect(),
+        })
+        .collect::<Vec<_>>();
+    if session.run_state.map.can_travel_to(0, 15, false)
+        && !nodes.iter().any(|node| node.x == 0 && node.y == 15)
+    {
+        nodes.push(PlannerPublicMapNode {
+            x: 0,
+            y: 15,
+            room: Some(crate::state::map::node::RoomType::MonsterRoomBoss),
+            has_emerald_key: false,
+            edges: Vec::new(),
+        });
+    }
     PlannerPublicMap {
         current_x: session.run_state.map.current_x,
         current_y: session.run_state.map.current_y,
         boss: session.run_state.boss_key,
-        nodes: session
-            .run_state
-            .map
-            .graph
-            .iter()
-            .flat_map(|row| row.iter())
-            .map(|node| PlannerPublicMapNode {
-                x: node.x,
-                y: node.y,
-                room: node.class,
-                has_emerald_key: node.has_emerald_key,
-                edges: node
-                    .edges
-                    .iter()
-                    .map(|edge| PlannerPublicMapEdge {
-                        destination_x: edge.dst_x,
-                        destination_y: edge.dst_y,
-                    })
-                    .collect(),
-            })
-            .collect(),
+        nodes,
     }
 }
 
@@ -969,6 +981,7 @@ mod tests {
     use crate::runtime::combat::CombatCard;
     use crate::state::core::{RunPendingChoiceReason, RunPendingChoiceState};
     use crate::state::events::{EventId, EventState};
+    use crate::state::map::node::{MapRoomNode, RoomType};
     use crate::state::selection::{DomainEventSource, SelectionReason, SelectionScope};
 
     #[test]
@@ -1013,6 +1026,38 @@ mod tests {
         };
 
         assert!(represented == visible || gap_count > 0);
+    }
+
+    #[test]
+    fn boss_route_candidate_targets_a_published_synthetic_map_node() {
+        let mut session = RunControlSession::new(Default::default());
+        session.engine_state = EngineState::MapNavigation;
+        session.run_state.map.graph = vec![Vec::new(); 14];
+        let mut final_campfire = MapRoomNode::new(0, 14);
+        final_campfire.class = Some(RoomType::RestRoom);
+        session.run_state.map.graph.push(vec![final_campfire]);
+        session.run_state.map.current_x = 0;
+        session.run_state.map.current_y = 14;
+
+        let pending = capture_planner_boundary_v1(&session)
+            .expect("capture")
+            .expect("boss route boundary");
+
+        assert!(pending.observation.public_map.nodes.iter().any(|node| {
+            node.x == 0 && node.y == 15 && node.room == Some(RoomType::MonsterRoomBoss)
+        }));
+        assert!(pending
+            .legal_candidate_set
+            .candidates
+            .iter()
+            .any(|candidate| {
+                candidate.action
+                    == (PlannerAction::ChooseRouteNode {
+                        x: 0,
+                        y: 15,
+                        flight: false,
+                    })
+            }));
     }
 
     #[test]

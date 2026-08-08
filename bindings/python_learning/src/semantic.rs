@@ -1653,6 +1653,7 @@ mod tests {
     use sts_oracle_eval::state::core::{
         EngineState, RunPendingChoiceReason, RunPendingChoiceState,
     };
+    use sts_oracle_eval::state::map::node::{MapRoomNode, RoomType};
     use sts_oracle_eval::state::selection::{DomainEventSource, SelectionReason};
 
     use super::*;
@@ -1726,5 +1727,37 @@ mod tests {
                 .count(),
             3
         );
+    }
+
+    #[test]
+    fn synthetic_boss_route_has_a_semantic_map_target() {
+        let mut session = RunControlSession::new(RunControlConfig::default());
+        session.engine_state = EngineState::MapNavigation;
+        session.run_state.map.graph = vec![Vec::new(); 14];
+        let mut final_campfire = MapRoomNode::new(0, 14);
+        final_campfire.class = Some(RoomType::RestRoom);
+        session.run_state.map.graph.push(vec![final_campfire]);
+        session.run_state.map.current_x = 0;
+        session.run_state.map.current_y = 14;
+        let boundary = LearningEnvV1::from_session(session)
+            .observe()
+            .expect("boss route boundary");
+        let decision =
+            LearningModelDecisionV1::from_boundary(&boundary).expect("boss route decision");
+
+        let mut builder = SemanticBatchBuilder::new();
+        builder
+            .push_decision(&decision)
+            .expect("encode synthetic boss route");
+        let batch = builder.finish();
+
+        assert_eq!(batch.candidate_token_indices.len(), 1);
+        assert!(batch
+            .token_kinds
+            .contains(&(TokenKind::MapNode as u16)));
+        assert!(batch
+            .relation
+            .relations
+            .contains(&(RelationKind::CandidateTargets as u16)));
     }
 }
