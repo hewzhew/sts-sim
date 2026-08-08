@@ -489,13 +489,12 @@ Partial
 optimizer progress leaves the prior frozen behavior active and counts toward
 the same absolute target on the next call; reaching the target publishes the
 current shadow checkpoint and promotes exactly once. The result retains only
-aggregate progress and the optional publication. This is an in-process
-boundary: exact restart still requires future durable ownership of optimizer
-state and the categorical generator state, and cannot be inferred from the
-model checkpoint alone.
-The first process-resume admission boundary is deliberately stricter than the
-eventual format. It accepts only a between-decisions environment with no
-terminal accounting in flight, a full episode-root bank, an empty experience
+aggregate progress and the optional publication. The runner itself remains an
+in-process composition; exact restart is owned by the separate six-component
+resume boundary and can never be inferred from a model checkpoint alone.
+The process-resume admission boundary is deliberately strict. It accepts only
+an environment between decisions with no terminal accounting in flight, a full
+episode-root bank, an empty experience
 buffer, no open attempt-assembly state, matching segment sequence indices, a
 healthy trainer, and an active behavior generation no newer than the shadow
 optimizer. Any violation is a typed rejection; no owner silently drops state to
@@ -506,8 +505,8 @@ aggregate counters, trainer counters and bounded last-evidence fields,
 controller manifest/promotion state, and optimizer-step generation target.
 Fresh owners accept only the corresponding typed snapshots. This metadata has
 no simulator session, model tensor, optimizer tensor, generator tensor, or
-experience payload; those remain distinct components and must all be bound by
-the future final resume manifest.
+experience payload; those remain distinct components bound by the final resume
+manifest.
 The resume store owns exactly six immutable component kinds: current
 environment, episode-root bank, shadow model, optimizer, categorical generator,
 and generation metadata. One publication batch-previews aggregate distinct
@@ -518,6 +517,16 @@ and resolve revalidate every envelope, kind, digest, and size; component files
 without a manifest are inert, while a manifest with any unavailable component
 is not resumable. The live categorical publisher captures all six from one
 admitted runner boundary rather than accepting caller-assembled identities.
+The categorical restorer resolves that manifest before constructing owners,
+materializes a fresh environment and episode-root bank through the bridge,
+hydrates a fresh shadow scorer, exact optimizer topology, and categorical
+generator, then recovers the frozen active behavior through the durable
+behavior catalog. It rebuilds the ledger, schedule, empty experience buffer,
+attempt assembler, trainer, controller, driver, and generation runner from the
+typed metadata. The complete fresh runner is exposed only after its own strict
+resume boundary exactly reproduces the saved boundary; a missing component,
+incompatible runtime factory, foreign slot identity, or partial owner graph
+therefore fails closed.
 
 On an ordinary reward screen, the reward owner claims typed low-agency public
 resources before opening a nested card-reward choice. This lets the card owner

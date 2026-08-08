@@ -46,6 +46,34 @@ class FakeCheckpointBatch:
             raise ValueError("fake checkpoint bank exceeds byte limit")
         return payload
 
+    @classmethod
+    def from_checkpoint_bytes(
+        cls,
+        payload: bytes,
+        *,
+        expected_slot_indices: list[int],
+        max_bytes: int,
+    ) -> FakeCheckpointBatch:
+        if not isinstance(payload, bytes) or len(payload) > max_bytes:
+            raise ValueError("fake checkpoint bank exceeds byte limit")
+        header = b"FAKE-BANK\x00"
+        if not payload.startswith(header):
+            raise ValueError("fake checkpoint bank header is invalid")
+        body = payload[len(header) :]
+        if len(body) != 24 * len(expected_slot_indices):
+            raise ValueError("fake checkpoint bank slot count differs")
+        checkpoints: dict[int, tuple[int, int]] = {}
+        for offset, expected_slot in enumerate(expected_slot_indices):
+            row = body[offset * 24 : (offset + 1) * 24]
+            slot = int.from_bytes(row[0:8], "big")
+            if slot != expected_slot:
+                raise ValueError("fake checkpoint bank slot identity differs")
+            checkpoints[slot] = (
+                int.from_bytes(row[8:16], "big"),
+                int.from_bytes(row[16:24], "big"),
+            )
+        return cls(checkpoints)
+
 
 class FakeBatchEnv:
     def __init__(
@@ -130,6 +158,34 @@ class FakeBatchEnv:
             raise ValueError("fake environment checkpoint exceeds byte limit")
         return payload
 
+    @classmethod
+    def from_checkpoint_bytes(
+        cls,
+        payload: bytes,
+        *,
+        expected_slots: int,
+        max_bytes: int,
+    ) -> FakeBatchEnv:
+        if not isinstance(payload, bytes) or len(payload) > max_bytes:
+            raise ValueError("fake environment checkpoint exceeds byte limit")
+        header = b"FAKE-ENV\x00"
+        if not payload.startswith(header):
+            raise ValueError("fake environment checkpoint header is invalid")
+        body = payload[len(header) :]
+        if len(body) != 16 * expected_slots:
+            raise ValueError("fake environment checkpoint slot count differs")
+        seeds = [
+            int.from_bytes(body[offset * 16 : offset * 16 + 8], "big")
+            for offset in range(expected_slots)
+        ]
+        generations = [
+            int.from_bytes(body[offset * 16 + 8 : (offset + 1) * 16], "big")
+            for offset in range(expected_slots)
+        ]
+        restored = cls(seeds)
+        restored.generations = generations
+        return restored
+
     def restore_slots(
         self,
         slot_indices: list[int],
@@ -193,6 +249,42 @@ class NumpyFakeBatchEnv(FakeBatchEnv):
                 ),
             },
         }
+
+
+class NumpyWinningBatchEnv(NumpyFakeBatchEnv):
+    """Deterministic terminal fixture with no hidden future plan to serialize."""
+
+    def decision_batch(self, *, semantic: bool = False) -> dict[str, object]:
+        batch = super().decision_batch(semantic=semantic)
+        candidate_splits = batch["candidate_row_splits"]
+        assert isinstance(candidate_splits, np.ndarray)
+        semantic_batch = batch["semantic"]
+        assert isinstance(semantic_batch, dict)
+        semantic_batch["token"] = {
+            "row_splits": candidate_splits.copy(),
+            "kind": np.zeros(int(candidate_splits[-1]), dtype=np.uint16),
+        }
+        semantic_batch["categorical"] = {
+            "token_indices": np.array([], dtype=np.uint64),
+            "field": np.array([], dtype=np.uint16),
+            "value": np.array([], dtype=np.int64),
+        }
+        semantic_batch["scalar"] = {
+            "token_indices": np.array([], dtype=np.uint64),
+            "field": np.array([], dtype=np.uint16),
+            "value": np.array([], dtype=np.float32),
+        }
+        semantic_batch["relation"] = {
+            "source_token_indices": np.array([], dtype=np.uint64),
+            "relation": np.array([], dtype=np.uint16),
+            "target_token_indices": np.array([], dtype=np.uint64),
+        }
+        return batch
+
+    def step(self) -> dict[str, object]:
+        active = [slot for slot, terminal in enumerate(self.terminal) if not terminal]
+        self._terminal_plans.insert(0, {slot: 1 for slot in active})
+        return super().step()
 
 
 class OneRejectedChoiceEnv(NumpyFakeBatchEnv):

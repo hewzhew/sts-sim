@@ -302,10 +302,10 @@ target and exact-previews an already reached target, so a durable failed
 promotion remains retryable even when every owner is full. An exhausted call
 leaves the old frozen behavior live while
 preserving partial shadow progress for the next bounded call. Its result is
-aggregate-only and never retains step results or attempts. This runner is not
-yet durable: restarting exact training still needs separately persisted
-optimizer and categorical-generator state. Its first resume admission boundary
-is already fail-closed: the environment must be between decisions with no
+aggregate-only and never retains step results or attempts. The runner does not
+own persistence: restarting exact training goes through the
+separate six-component resume store and typed restorer. Its resume admission
+boundary is fail-closed: the environment must be between decisions with no
 terminal half-state, the episode-root bank must cover every slot, the experience
 buffer must be flushed, the assembler must have no open attempt, segment
 sequence ids must agree, the trainer must be healthy, and an active behavior
@@ -316,8 +316,9 @@ and bounded last-evidence fields, controller identity, promotion count, and
 generation target as one canonical scalar component. Fresh ledger, empty
 buffer, empty assembler, trainer, and controller owners have explicit restore
 constructors; terminal half-states, open attempts, poisoned trainers, and
-inconsistent sequence or parameter lineage remain unrepresentable. This is
-still a component, not yet the final durable resume manifest.
+inconsistent sequence or parameter lineage remain unrepresentable. This
+metadata is the scalar member of the final durable resume manifest, not an
+independent resume authority.
 
 `sts_learning.resume_store` is the bounded durable owner for the six immutable
 resume components: current environment, episode-root bank, shadow model,
@@ -328,6 +329,13 @@ canonical manifest last. Reopen verifies filenames, digests, envelopes, kinds,
 sizes, and the complete six-way binding. The optional
 `CategoricalGenerationResumePublisher` captures all six from one admitted live
 runner boundary, so callers do not assemble manifests by hand.
+`CategoricalGenerationResumeRestorer` resolves all six, creates fresh bridge
+and PyTorch owners through typed factories, recovers the frozen active behavior,
+and reconstructs the ledger-to-runner chain. It returns nothing until the
+fresh runner reproduces the saved strict boundary exactly. Runtime policy,
+optimizer, bridge decoder, curriculum, and memory-limit configuration remain
+explicit caller inputs after restart rather than executable data hidden in a
+checkpoint.
 
 The bridge verification command installs a fresh wheel and runs both bridge
 smoke tests and these caller contracts:
