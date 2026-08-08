@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import operator
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -130,6 +131,34 @@ class CombatDecisionExperienceBatch:
 
 
 @dataclass(frozen=True)
+class CombatDecisionAdvantageBatch:
+    """Three independent advantage columns aligned to one retained model call."""
+
+    sequence_index: int
+    replicate_indices: tuple[int, ...]
+    win: tuple[float, ...]
+    terminal_hp: tuple[float, ...]
+    potion_retention: tuple[float, ...]
+
+    def __post_init__(self) -> None:
+        sequence_index = _nonnegative_integer(self.sequence_index, "sequence_index")
+        replicates = tuple(
+            _nonnegative_integer(value, "replicate_index")
+            for value in self.replicate_indices
+        )
+        axes = (tuple(self.win), tuple(self.terminal_hp), tuple(self.potion_retention))
+        if not replicates or any(len(axis) != len(replicates) for axis in axes):
+            raise CombatExperienceError("combat decision advantage rows are misaligned")
+        if not all(math.isfinite(value) for axis in axes for value in axis):
+            raise CombatExperienceError("combat decision advantages must be finite")
+        object.__setattr__(self, "sequence_index", sequence_index)
+        object.__setattr__(self, "replicate_indices", replicates)
+        object.__setattr__(self, "win", axes[0])
+        object.__setattr__(self, "terminal_hp", axes[1])
+        object.__setattr__(self, "potion_retention", axes[2])
+
+
+@dataclass(frozen=True)
 class CompletedCombatGroupExperience:
     """Bounded chosen rows plus exact outcomes for every same-root replicate."""
 
@@ -196,6 +225,26 @@ class CompletedCombatGroupExperience:
 
     def grouped_advantages(self) -> CombatGroupedAdvantages:
         return self.outcomes.grouped_advantages()
+
+    def decision_advantages(self) -> tuple[CombatDecisionAdvantageBatch, ...]:
+        """Project replicate outcomes onto rows without combining reward axes."""
+
+        grouped = self.grouped_advantages()
+        return tuple(
+            CombatDecisionAdvantageBatch(
+                sequence_index=batch.sequence_index,
+                replicate_indices=batch.replicate_indices,
+                win=tuple(grouped.win[index] for index in batch.replicate_indices),
+                terminal_hp=tuple(
+                    grouped.terminal_hp[index] for index in batch.replicate_indices
+                ),
+                potion_retention=tuple(
+                    grouped.potion_retention[index]
+                    for index in batch.replicate_indices
+                ),
+            )
+            for batch in self.batches
+        )
 
 
 @dataclass(frozen=True)

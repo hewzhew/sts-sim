@@ -18,6 +18,7 @@ from .attempt_batching import (
 )
 from .combat_experience import (
     BoundedCombatGroupExperience,
+    CombatDecisionAdvantageBatch,
     CombatDecisionExperienceBatch,
     CombatExperienceError,
     CombatExperienceLimits,
@@ -185,6 +186,7 @@ __all__ = [
     "BoundedResumeStore",
     "CheckpointBatch",
     "CombatGroupedAdvantages",
+    "CombatDecisionAdvantageBatch",
     "CombatDecisionExperienceBatch",
     "CombatExperienceError",
     "CombatExperienceLimits",

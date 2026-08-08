@@ -101,6 +101,12 @@ def test_driver_returns_complete_aligned_group_experience() -> None:
     assert result.experience.batches[0].replicate_indices == (0, 1)
     assert result.experience.batches[0].selected_ordinals == (0, 1)
     assert result.experience.grouped_advantages().win == (1.0, -1.0)
+    projected = result.experience.decision_advantages()
+    assert len(projected) == 1
+    assert projected[0].replicate_indices == (0, 1)
+    assert projected[0].win == (1.0, -1.0)
+    assert projected[0].terminal_hp == (0.875, -0.875)
+    assert projected[0].potion_retention == (1.0, -1.0)
 
 
 def test_payload_limit_rejects_before_environment_mutation() -> None:

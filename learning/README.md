@@ -124,6 +124,8 @@ model-round, and transition limits. A memory overflow is detected before the
 corresponding bridge choice; a partial group is an error, not a fabricated
 terminal sample. Completed groups expose win, terminal-HP-ratio, and potion
 retention leave-one-out axes separately and define no HP/potion exchange rate.
+Their row projection attaches all three columns to each retained replicate
+decision without choosing a training axis or scalar weighting.
 `sts_learning.manifests` gives that identity an exact bounded owner. A behavior
 manifest references externally stored model checkpoints, model definitions,
 model configurations, behavior-rule implementations and configurations,
