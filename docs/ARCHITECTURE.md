@@ -254,10 +254,14 @@ for the complete terminal batch; the driver restores that opaque checkpoint
 subset together, completes the remaining defeats, and resets completed slots
 from one next seed plan. Reset and creation of its replacement root checkpoints
 are one bridge operation; ledger and schedule commit only after both succeed.
-The checkpoint bank supports only slot-keyed subset selection and replacement,
-not session inspection or serialization. The driver retains one bounded step
-result or compact aggregate statistics and is not a trajectory, replay, model,
-optimizer, or shaped-reward owner.
+The checkpoint bank supports slot-keyed subset selection and replacement plus
+an explicit versioned, caller-byte-bounded opaque serialization boundary for
+process resume. Fresh restore requires the exact ordered source-slot identities
+and reconstructs every private bridge state before exposing the bank. Its
+format is distinct from the current-environment snapshot, and Python never
+inspects a session. The driver retains one bounded step result or compact
+aggregate statistics and is not a trajectory, replay, model, optimizer, or
+shaped-reward owner.
 Its terminal-target run executes only whole vector transitions and stops after
 the first transition that reaches the requested attempt count or at its
 explicit batch-step limit. One transition may therefore honestly exceed the

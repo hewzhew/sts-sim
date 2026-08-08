@@ -6,6 +6,7 @@ import numpy as np
 
 from sts_learning_bridge import (
     LearningBatchEnv,
+    LearningCheckpointBatch,
     PHASE_COMBAT_ROOT,
     PHASE_SELECTION,
     PHASE_STRATEGIC_ROOT,
@@ -321,6 +322,40 @@ def _assert_cross_process_checkpoint_replays_exactly() -> None:
     )
 
 
+def _assert_cross_process_checkpoint_bank_replays_episode_roots() -> None:
+    max_bytes = 32 * 1024 * 1024
+    source_env = LearningBatchEnv([37, 38])
+    source_root = source_env.decision_batch(dense_mask=True, semantic=True)
+    bank = source_env.checkpoint_slots([0, 1])
+    payload = bytes(bank.checkpoint_bytes(max_bytes=max_bytes))
+    assert payload == bytes(bank.checkpoint_bytes(max_bytes=max_bytes))
+
+    restored_bank = LearningCheckpointBatch.from_checkpoint_bytes(
+        payload,
+        expected_slot_indices=[0, 1],
+        max_bytes=max_bytes,
+    )
+    assert len(restored_bank) == 2
+    target_env = LearningBatchEnv([99, 100])
+    target_env.restore_slots([0, 1], restored_bank)
+    _assert_decision_batch_equal(
+        source_root,
+        target_env.decision_batch(dense_mask=True, semantic=True),
+    )
+
+    for expected_slot_indices in ([1, 0], [0], [0, 0]):
+        try:
+            LearningCheckpointBatch.from_checkpoint_bytes(
+                payload,
+                expected_slot_indices=expected_slot_indices,
+                max_bytes=max_bytes,
+            )
+        except ValueError:
+            pass
+        else:
+            raise AssertionError("checkpoint bank accepted mismatched slot identity")
+
+
 def main() -> None:
     schema = _SCHEMA
     assert schema["version"] == SEMANTIC_SCHEMA_VERSION
@@ -362,6 +397,7 @@ def main() -> None:
     assert schema["domain_vocabulary_size"]["power_id"] == 135
     _assert_explicit_checkpoint_replays_exactly()
     _assert_cross_process_checkpoint_replays_exactly()
+    _assert_cross_process_checkpoint_bank_replays_episode_roots()
 
     seeds = list(range(1, 6))
     random_states = [seed ^ _SEED_XOR for seed in seeds]

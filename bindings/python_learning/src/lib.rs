@@ -31,6 +31,8 @@ const PHASE_COMBAT_ROOT: u8 = 1;
 const PHASE_SELECTION: u8 = 2;
 const BATCH_CHECKPOINT_MAGIC: &[u8] = b"STS-LEARNING-BATCH\0";
 const BATCH_CHECKPOINT_VERSION: u32 = 1;
+const CHECKPOINT_BANK_MAGIC: &[u8] = b"STS-LEARNING-BANK\0";
+const CHECKPOINT_BANK_VERSION: u32 = 1;
 
 #[derive(Clone, Debug)]
 enum BridgeSlotState {
@@ -80,14 +82,14 @@ struct BoundedCheckpointWriter {
 }
 
 impl BoundedCheckpointWriter {
-    fn new(max_bytes: usize) -> Result<Self, String> {
-        let header_bytes = BATCH_CHECKPOINT_MAGIC.len() + std::mem::size_of::<u32>();
+    fn new(magic: &[u8], version: u32, max_bytes: usize) -> Result<Self, String> {
+        let header_bytes = magic.len() + std::mem::size_of::<u32>();
         if max_bytes < header_bytes {
-            return Err("batch checkpoint byte limit is smaller than its header".to_owned());
+            return Err("checkpoint byte limit is smaller than its header".to_owned());
         }
         let mut bytes = Vec::with_capacity(max_bytes.min(64 * 1024));
-        bytes.extend_from_slice(BATCH_CHECKPOINT_MAGIC);
-        bytes.extend_from_slice(&BATCH_CHECKPOINT_VERSION.to_be_bytes());
+        bytes.extend_from_slice(magic);
+        bytes.extend_from_slice(&version.to_be_bytes());
         Ok(Self { bytes, max_bytes })
     }
 
@@ -183,6 +185,102 @@ impl LearningCheckpointBatch {
         Ok(Self {
             checkpoints: updated,
         })
+    }
+
+    #[pyo3(signature = (*, max_bytes))]
+    fn checkpoint_bytes<'py>(
+        &self,
+        py: Python<'py>,
+        max_bytes: usize,
+    ) -> PyResult<Bound<'py, PyBytes>> {
+        let payload = self
+            .encode_cross_process_checkpoint(max_bytes)
+            .map_err(value_error)?;
+        Ok(PyBytes::new(py, &payload))
+    }
+
+    #[staticmethod]
+    #[pyo3(signature = (payload, *, expected_slot_indices, max_bytes))]
+    fn from_checkpoint_bytes(
+        payload: &[u8],
+        expected_slot_indices: Vec<usize>,
+        max_bytes: usize,
+    ) -> PyResult<Self> {
+        Self::decode_cross_process_checkpoint(payload, &expected_slot_indices, max_bytes)
+            .map_err(value_error)
+    }
+}
+
+impl LearningCheckpointBatch {
+    fn encode_cross_process_checkpoint(&self, max_bytes: usize) -> Result<Vec<u8>, String> {
+        let slots = self
+            .checkpoints
+            .iter()
+            .map(|checkpoint| SerializedLearningSlotCheckpointV1 {
+                source_slot_index: checkpoint.source_slot_index,
+                session: checkpoint.session.clone(),
+                decision_ordinals: checkpoint.bridge_state.decision_ordinals().to_vec(),
+            })
+            .collect();
+        encode_serialized_checkpoint(
+            &SerializedLearningBatchCheckpointV1 { slots },
+            CHECKPOINT_BANK_MAGIC,
+            CHECKPOINT_BANK_VERSION,
+            max_bytes,
+        )
+    }
+
+    fn decode_cross_process_checkpoint(
+        payload: &[u8],
+        expected_slot_indices: &[usize],
+        max_bytes: usize,
+    ) -> Result<Self, String> {
+        let mut seen = BTreeSet::new();
+        for slot_index in expected_slot_indices {
+            if !seen.insert(*slot_index) {
+                return Err(format!(
+                    "slot {slot_index} appears more than once in expected checkpoint bank"
+                ));
+            }
+        }
+        let serialized = decode_serialized_checkpoint(
+            payload,
+            CHECKPOINT_BANK_MAGIC,
+            CHECKPOINT_BANK_VERSION,
+            max_bytes,
+        )?;
+        if serialized.slots.len() != expected_slot_indices.len() {
+            return Err(format!(
+                "checkpoint bank contains {} slots, expected {}",
+                serialized.slots.len(),
+                expected_slot_indices.len()
+            ));
+        }
+        for (expected_slot, slot) in expected_slot_indices.iter().zip(&serialized.slots) {
+            if slot.source_slot_index != *expected_slot {
+                return Err(format!(
+                    "checkpoint bank contains slot {} where slot {expected_slot} was expected",
+                    slot.source_slot_index
+                ));
+            }
+        }
+
+        let checkpoints = serialized
+            .slots
+            .into_iter()
+            .map(|slot| {
+                let env = LearningEnvV1::from_checkpoint(slot.session.clone())?;
+                let pool =
+                    LearningEnvPoolV1::from_envs([env]).map_err(|error| error.to_string())?;
+                let bridge_state = replay_bridge_state(&pool, 0, &slot.decision_ordinals)?;
+                Ok(LearningSlotCheckpoint {
+                    source_slot_index: slot.source_slot_index,
+                    session: slot.session,
+                    bridge_state,
+                })
+            })
+            .collect::<Result<Vec<_>, String>>()?;
+        Ok(Self { checkpoints })
     }
 }
 
@@ -639,7 +737,12 @@ impl LearningBatchEnv {
             })
             .collect::<Result<Vec<_>, String>>()?;
         let checkpoint = SerializedLearningBatchCheckpointV1 { slots };
-        encode_serialized_batch_checkpoint(&checkpoint, max_bytes)
+        encode_serialized_checkpoint(
+            &checkpoint,
+            BATCH_CHECKPOINT_MAGIC,
+            BATCH_CHECKPOINT_VERSION,
+            max_bytes,
+        )
     }
 
     fn decode_cross_process_checkpoint(
@@ -650,34 +753,12 @@ impl LearningBatchEnv {
         if expected_slots == 0 {
             return Err("batch checkpoint expected slot count must be positive".to_owned());
         }
-        if payload.len() > max_bytes {
-            return Err("batch checkpoint exceeds its caller-provided byte limit".to_owned());
-        }
-        let header_bytes = BATCH_CHECKPOINT_MAGIC.len() + std::mem::size_of::<u32>();
-        if payload.len() < header_bytes {
-            return Err("batch checkpoint ended before its header".to_owned());
-        }
-        if &payload[..BATCH_CHECKPOINT_MAGIC.len()] != BATCH_CHECKPOINT_MAGIC {
-            return Err("batch checkpoint magic is invalid".to_owned());
-        }
-        let version_start = BATCH_CHECKPOINT_MAGIC.len();
-        let version = u32::from_be_bytes(
-            payload[version_start..header_bytes]
-                .try_into()
-                .map_err(|_| "batch checkpoint version is truncated")?,
-        );
-        if version != BATCH_CHECKPOINT_VERSION {
-            return Err("batch checkpoint format version is unsupported".to_owned());
-        }
-        let mut decoder = rmp_serde::Deserializer::new(Cursor::new(&payload[header_bytes..]));
-        let checkpoint = SerializedLearningBatchCheckpointV1::deserialize(&mut decoder)
-            .map_err(|error| format!("cannot decode batch checkpoint: {error}"))?;
-        if usize::try_from(decoder.position()).ok() != Some(payload.len() - header_bytes) {
-            return Err("batch checkpoint contains trailing bytes".to_owned());
-        }
-        if encode_serialized_batch_checkpoint(&checkpoint, max_bytes)? != payload {
-            return Err("batch checkpoint encoding is not canonical".to_owned());
-        }
+        let checkpoint = decode_serialized_checkpoint(
+            payload,
+            BATCH_CHECKPOINT_MAGIC,
+            BATCH_CHECKPOINT_VERSION,
+            max_bytes,
+        )?;
         if checkpoint.slots.len() != expected_slots {
             return Err(format!(
                 "batch checkpoint contains {} slots, expected {expected_slots}",
@@ -786,14 +867,53 @@ impl LearningBatchEnv {
     }
 }
 
-fn encode_serialized_batch_checkpoint(
+fn encode_serialized_checkpoint(
     checkpoint: &SerializedLearningBatchCheckpointV1,
+    magic: &[u8],
+    version: u32,
     max_bytes: usize,
 ) -> Result<Vec<u8>, String> {
-    let mut writer = BoundedCheckpointWriter::new(max_bytes)?;
+    let mut writer = BoundedCheckpointWriter::new(magic, version, max_bytes)?;
     rmp_serde::encode::write_named(&mut writer, checkpoint)
-        .map_err(|error| format!("cannot encode batch checkpoint: {error}"))?;
+        .map_err(|error| format!("cannot encode checkpoint: {error}"))?;
     Ok(writer.finish())
+}
+
+fn decode_serialized_checkpoint(
+    payload: &[u8],
+    magic: &[u8],
+    version: u32,
+    max_bytes: usize,
+) -> Result<SerializedLearningBatchCheckpointV1, String> {
+    if payload.len() > max_bytes {
+        return Err("checkpoint exceeds its caller-provided byte limit".to_owned());
+    }
+    let header_bytes = magic.len() + std::mem::size_of::<u32>();
+    if payload.len() < header_bytes {
+        return Err("checkpoint ended before its header".to_owned());
+    }
+    if &payload[..magic.len()] != magic {
+        return Err("checkpoint magic is invalid".to_owned());
+    }
+    let version_start = magic.len();
+    let encoded_version = u32::from_be_bytes(
+        payload[version_start..header_bytes]
+            .try_into()
+            .map_err(|_| "checkpoint version is truncated")?,
+    );
+    if encoded_version != version {
+        return Err("checkpoint format version is unsupported".to_owned());
+    }
+    let mut decoder = rmp_serde::Deserializer::new(Cursor::new(&payload[header_bytes..]));
+    let checkpoint = SerializedLearningBatchCheckpointV1::deserialize(&mut decoder)
+        .map_err(|error| format!("cannot decode checkpoint: {error}"))?;
+    if usize::try_from(decoder.position()).ok() != Some(payload.len() - header_bytes) {
+        return Err("checkpoint contains trailing bytes".to_owned());
+    }
+    if encode_serialized_checkpoint(&checkpoint, magic, version, max_bytes)? != payload {
+        return Err("checkpoint encoding is not canonical".to_owned());
+    }
+    Ok(checkpoint)
 }
 
 fn apply_bridge_ordinal(
@@ -1186,8 +1306,13 @@ mod checkpoint_tests {
         let mut malformed: SerializedLearningBatchCheckpointV1 =
             rmp_serde::from_slice(&payload[header_bytes..]).expect("decode owned payload");
         malformed.slots[0].decision_ordinals.push(usize::MAX);
-        let malformed = encode_serialized_batch_checkpoint(&malformed, 1024 * 1024)
-            .expect("encode malformed prefix fixture");
+        let malformed = encode_serialized_checkpoint(
+            &malformed,
+            BATCH_CHECKPOINT_MAGIC,
+            BATCH_CHECKPOINT_VERSION,
+            1024 * 1024,
+        )
+        .expect("encode malformed prefix fixture");
         assert!(
             LearningBatchEnv::decode_cross_process_checkpoint(&malformed, 1, 1024 * 1024,).is_err()
         );
@@ -1208,5 +1333,50 @@ mod checkpoint_tests {
         };
         assert_eq!(draft.selected_domain_indices(), &[0]);
         assert_eq!(draft.decision().candidates.len(), 2);
+    }
+
+    #[test]
+    fn checkpoint_bank_round_trips_episode_root_by_exact_slot_identity() {
+        let env = LearningEnvV1::new(RunControlConfig {
+            seed: 37,
+            ..RunControlConfig::default()
+        });
+        let bank = LearningCheckpointBatch {
+            checkpoints: vec![LearningSlotCheckpoint {
+                source_slot_index: 3,
+                session: env.checkpoint(),
+                bridge_state: BridgeSlotState::Root,
+            }],
+        };
+        let payload = bank
+            .encode_cross_process_checkpoint(1024 * 1024)
+            .expect("encode episode-root bank");
+        let restored =
+            LearningCheckpointBatch::decode_cross_process_checkpoint(&payload, &[3], 1024 * 1024)
+                .expect("restore episode-root bank in a fresh owner");
+        assert_eq!(restored.checkpoints.len(), 1);
+        assert_eq!(restored.checkpoints[0].source_slot_index, 3);
+        assert!(matches!(
+            restored.checkpoints[0].bridge_state,
+            BridgeSlotState::Root
+        ));
+        assert_eq!(
+            restored
+                .encode_cross_process_checkpoint(1024 * 1024)
+                .expect("re-encode episode-root bank"),
+            payload
+        );
+        assert!(LearningCheckpointBatch::decode_cross_process_checkpoint(
+            &payload,
+            &[2],
+            1024 * 1024,
+        )
+        .is_err());
+        assert!(LearningCheckpointBatch::decode_cross_process_checkpoint(
+            &payload,
+            &[3, 3],
+            1024 * 1024,
+        )
+        .is_err());
     }
 }

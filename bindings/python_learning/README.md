@@ -72,6 +72,13 @@ continuous caller retain one bounded episode-root bank across asynchronous
 slot resets without inspecting sessions or falling back to per-slot bridge
 calls. Selection rejects duplicate or missing slots, and update never adds a
 new slot implicitly.
+An explicit process-resume owner may serialize that bank with
+`checkpoint_bytes(max_bytes=...)` and recover it through
+`LearningCheckpointBatch.from_checkpoint_bytes(payload,
+expected_slot_indices=..., max_bytes=...)`. Restore validates the exact ordered
+slot identities and reconstructs every private bridge state before returning
+the bank. The bank format has its own magic and version, so a current-environment
+snapshot cannot be mistaken for an episode-root bank.
 `reset_slots(slot_indices, seeds)` applies the same all-or-nothing rule when a
 caller starts new episodes in terminal slots. Continuous callers use
 `reset_slots_checkpointed(slot_indices, seeds)` to receive the exact new root

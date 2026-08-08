@@ -67,7 +67,9 @@ batch. Selected defeats restore through one opaque checkpoint subset; all other
 defeats complete, and completed slots reset together from the next immutable
 seed plan. The atomic reset returns each replacement episode-root checkpoint
 before the ledger and schedule commit, then updates the same opaque bank without
-exposing or serializing simulator sessions. `run(batch_steps=N)` keeps only
+exposing simulator sessions to Python. A separate process-resume owner may
+persist the bridge's versioned, bounded opaque bank bytes and must supply the
+exact ordered slot identities when restoring them. `run(batch_steps=N)` keeps only
 aggregate counts and timing; `advance()` returns at most one bounded step's
 attempts, completions, and recovery events.
 `run_until_terminal_attempts(terminal_attempts=T, max_batch_steps=N)` removes
