@@ -9,11 +9,9 @@ pytest.importorskip("torch")
 
 from learning.tests.semantic_fixtures import semantic_schema_fixture
 from learning.tests.torch_combat_fixtures import OneRoundCombatGroup
-from sts_learning.combat_evaluation import (
-    CombatEvaluationPotionLane,
-    combat_observed_resource_frontier,
-)
+from sts_learning.combat_evaluation import combat_observed_resource_frontier
 from sts_learning.combat_outcomes import CombatTerminalOutcome
+from sts_learning.combat_potion_lane import CombatPotionLane
 from sts_learning.evaluate_combat import (
     CombatEvaluationCommandConfig,
     run_combat_evaluation,
@@ -184,7 +182,7 @@ def test_evaluation_recovers_published_behavior_without_training_or_experience(
             root_count=2,
             replicate_count=2,
             behavior_seed_base=1_000,
-            potion_lane=CombatEvaluationPotionLane.NEVER,
+            potion_lane=CombatPotionLane.NEVER,
         ),
         bridge=bridge,
     )

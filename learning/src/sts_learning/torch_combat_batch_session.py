@@ -13,6 +13,7 @@ from .combat_root_artifacts import (
     read_combat_root_artifact,
 )
 from .policy import BehaviorManifestId
+from .combat_potion_lane import CombatPotionLaneRootSource
 from .torch_behavior import TorchBehaviorPublication
 from .torch_combat_batch_generation import (
     BoundedCombatWinBatchGenerationRunner,
@@ -141,6 +142,7 @@ class CombatWinBatchSessionFactory:
             expected_roots=self.config.expected_roots,
             max_bytes=self.config.limits.max_artifact_bytes,
         )
+        source = CombatPotionLaneRootSource(source, self.config.potion_lane)
         return self._new_from_combat_root_source(
             source,
             artifact_byte_count=len(artifact),

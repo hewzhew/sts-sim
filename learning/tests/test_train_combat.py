@@ -9,6 +9,7 @@ pytest.importorskip("torch")
 
 from learning.tests.semantic_fixtures import semantic_schema_fixture
 from learning.tests.torch_combat_fixtures import OneRoundCombatGroup
+from sts_learning.combat_potion_lane import CombatPotionLane
 from sts_learning.torch_combat_session_config import CombatSessionBridge
 from sts_learning.train_combat import (
     CombatTrainingCommandConfig,
@@ -24,17 +25,23 @@ _ROOTS = (
 
 class _RootSource:
     def __init__(self) -> None:
-        self.calls: list[int] = []
+        self.calls: list[tuple[int, bool]] = []
 
-    def combat_group(self, slot_index: int, replicate_count: int):
+    def combat_group(
+        self,
+        slot_index: int,
+        replicate_count: int,
+        allow_potions: bool = True,
+    ):
         assert replicate_count == 2
-        self.calls.append(slot_index)
+        self.calls.append((slot_index, allow_potions))
         root_id, state_hash, wins, final_hps = _ROOTS[slot_index]
         return OneRoundCombatGroup(
             root_id,
             state_hash,
             wins,
             final_hps=final_hps,
+            allow_potions=allow_potions,
         )
 
 
@@ -60,11 +67,17 @@ def test_training_command_runs_updates_journals_and_publishes(
             updates=2,
             model_seed=41,
             behavior_seed_base=92,
+            potion_lane=CombatPotionLane.NEVER,
         ),
         bridge=bridge,
     )
 
-    assert source.calls == [0, 1, 0, 1]
+    assert source.calls == [
+        (0, False),
+        (1, False),
+        (0, False),
+        (1, False),
+    ]
     assert summary["optimizer_steps"] == 2
     records = tuple(
         json.loads(line)
@@ -78,6 +91,8 @@ def test_training_command_runs_updates_journals_and_publishes(
         "generation",
         "completed",
     )
+    assert records[0]["schema"] == "sts-learning-combat-training-v2"
+    assert records[0]["potion_lane"] == "never"
     assert records[1]["roots"][1]["slot_index"] == 1
     assert records[1]["roots"][1]["selected_objective"] == "hp"
     assert records[1]["active_manifest_id_before"] != records[1][

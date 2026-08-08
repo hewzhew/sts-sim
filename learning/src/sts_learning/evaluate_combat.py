@@ -12,12 +12,12 @@ from pathlib import Path
 
 from .combat_evaluation import (
     CombatEvaluationLimits,
-    CombatEvaluationPotionLane,
     CombatEvaluationRootResult,
     CombatHeldOutEvaluationResult,
     CombatHeldOutEvaluator,
     combat_observed_resource_frontier,
 )
+from .combat_potion_lane import CombatPotionLane
 from .combat_root_artifacts import (
     load_combat_root_source,
     read_combat_root_artifact,
@@ -47,7 +47,7 @@ class CombatEvaluationCommandConfig:
     root_count: int
     replicate_count: int
     behavior_seed_base: int
-    potion_lane: CombatEvaluationPotionLane = CombatEvaluationPotionLane.ALL
+    potion_lane: CombatPotionLane = CombatPotionLane.ALL
 
     def __post_init__(self) -> None:
         artifact = Path(self.artifact).resolve()
@@ -77,7 +77,7 @@ class CombatEvaluationCommandConfig:
             self.behavior_seed_base,
             "behavior_seed_base",
         )
-        if not isinstance(self.potion_lane, CombatEvaluationPotionLane):
+        if not isinstance(self.potion_lane, CombatPotionLane):
             raise CombatEvaluationCommandError(
                 "combat evaluation potion_lane must be typed"
             )
@@ -499,8 +499,8 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--behavior-seed-base", type=int, default=10_000)
     parser.add_argument(
         "--potion-lane",
-        choices=tuple(lane.value for lane in CombatEvaluationPotionLane),
-        default=CombatEvaluationPotionLane.ALL.value,
+        choices=tuple(lane.value for lane in CombatPotionLane),
+        default=CombatPotionLane.ALL.value,
     )
     return parser
 
@@ -515,7 +515,7 @@ def main() -> int:
             root_count=arguments.roots,
             replicate_count=arguments.replicates,
             behavior_seed_base=arguments.behavior_seed_base,
-            potion_lane=CombatEvaluationPotionLane(arguments.potion_lane),
+            potion_lane=CombatPotionLane(arguments.potion_lane),
         )
     )
     return 0

@@ -191,7 +191,8 @@ the configured Python runtime:
   -Replicates 8 `
   -Updates <bounded-update-count> `
   -ModelSeed 0 `
-  -BehaviorSeedBase 1000
+  -BehaviorSeedBase 1000 `
+  -PotionLane never
 ```
 
 Every update collects all declared roots under one frozen behavior, applies at
@@ -199,6 +200,11 @@ most one shared optimizer step, and immediately promotes only a real update.
 The command appends compact generation and per-root signal facts to
 `training.jsonl`, then explicitly publishes the final behavior checkpoint.
 The output directory must be absent or empty; optimizer resume is not implied.
+`-PotionLane never` removes potion use/discard candidates for every generated
+group while preserving the simulator legality surface. Use it for roots with
+observed no-potion wins so terminal-HP refinement cannot spend inventory. A
+no-potion all-loss root remains no-signal and belongs in a separately bounded
+concrete-potion rescue lane; this command does not assign potion values.
 
 Evaluate the published frozen behavior on a distinct held-out root batch with:
 

@@ -332,6 +332,12 @@ replicates have equal total weight inside a group regardless of combat length,
 and each replicate divides its weight across its own retained decisions. The
 objective rechecks exact behavior manifests and recorded selection propensities
 against the scorer in one concatenated model call.
+The training root source also binds one explicit model-facing potion lane.
+`Never` is the primary resource-preserving lane for roots that can already win
+without potion actions; it makes terminal-HP refinement honest by removing
+potion use/discard candidates rather than pricing their outcomes. An all-loss
+no-potion group remains no-signal and requires a separate bounded rescue lane;
+training does not silently reopen unrestricted potion actions.
 The synchronous combat-win trainer has its own objective configuration and
 trainer provenance; it cannot reuse a terminal floor-return behavior manifest.
 Each delivery contains exactly the declared number of complete groups. No

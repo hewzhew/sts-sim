@@ -207,7 +207,8 @@ switch ($Command) {
                 --replicates $Replicates `
                 --updates $Updates `
                 --model-seed $ModelSeed `
-                --behavior-seed-base $BehaviorSeedBase
+                --behavior-seed-base $BehaviorSeedBase `
+                --potion-lane $PotionLane
             if ($LASTEXITCODE -ne 0) {
                 throw "combat training command failed"
             }

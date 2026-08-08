@@ -9,6 +9,7 @@ from dataclasses import dataclass, field
 
 from .combat_experience import CombatExperienceLimits
 from .combat_objective import CombatWinObjectiveConfig
+from .combat_potion_lane import CombatPotionLane
 from .manifest_catalog import BehaviorManifestCatalogLimits
 from .semantic_concat import SemanticBatchConcatLimits
 from .torch_checkpoints import TorchCheckpointLimits
@@ -204,6 +205,7 @@ class CombatWinBatchSessionConfig:
     limits: CombatWinSessionLimits = field(
         default_factory=CombatWinSessionLimits
     )
+    potion_lane: CombatPotionLane = CombatPotionLane.ALL
 
     def __post_init__(self) -> None:
         expected = _positive_integer(self.expected_roots, "expected_roots")
@@ -232,6 +234,10 @@ class CombatWinBatchSessionConfig:
         if not isinstance(self.limits, CombatWinSessionLimits):
             raise TorchCombatSessionError(
                 "combat batch session limits must be typed"
+            )
+        if not isinstance(self.potion_lane, CombatPotionLane):
+            raise TorchCombatSessionError(
+                "combat batch session potion_lane must be typed"
             )
         object.__setattr__(self, "expected_roots", expected)
         object.__setattr__(self, "max_roots", root_bound)

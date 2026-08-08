@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import TextIO
 
 from .combat_objective import CombatWinObjectiveConfig
+from .combat_potion_lane import CombatPotionLane
 from .torch_combat_batch_generation import (
     CombatWinBatchGenerationResult,
     CombatWinRootGenerationResult,
@@ -24,7 +25,7 @@ from .torch_combat_session_config import (
 )
 
 
-COMBAT_TRAINING_SCHEMA = "sts-learning-combat-training-v1"
+COMBAT_TRAINING_SCHEMA = "sts-learning-combat-training-v2"
 
 
 class CombatTrainingCommandError(RuntimeError):
@@ -40,6 +41,7 @@ class CombatTrainingCommandConfig:
     updates: int
     model_seed: int
     behavior_seed_base: int
+    potion_lane: CombatPotionLane = CombatPotionLane.ALL
 
     def __post_init__(self) -> None:
         artifact = Path(self.artifact).resolve()
@@ -60,6 +62,10 @@ class CombatTrainingCommandConfig:
             self.behavior_seed_base,
             "behavior_seed_base",
         )
+        if not isinstance(self.potion_lane, CombatPotionLane):
+            raise CombatTrainingCommandError(
+                "combat training potion_lane must be typed"
+            )
         if root_count < 2:
             raise CombatTrainingCommandError(
                 "multi-root training requires at least two roots"
@@ -115,6 +121,7 @@ def run_combat_training(
             replicate_count=config.replicate_count,
             profile=profile,
             limits=limits,
+            potion_lane=config.potion_lane,
         ),
     ).new_from_artifact_file(
         config.artifact,
@@ -144,6 +151,7 @@ def run_combat_training(
                 "model_seed": config.model_seed,
                 "behavior_seeds": config.behavior_seeds,
                 "all_win_axis": profile.objective.all_win_axis.name,
+                "potion_lane": config.potion_lane.value,
             },
         )
         for generation in range(config.updates):
@@ -293,6 +301,11 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--updates", type=int, required=True)
     parser.add_argument("--model-seed", type=int, default=0)
     parser.add_argument("--behavior-seed-base", type=int, default=1_000)
+    parser.add_argument(
+        "--potion-lane",
+        choices=tuple(lane.value for lane in CombatPotionLane),
+        default=CombatPotionLane.ALL.value,
+    )
     return parser
 
 
@@ -307,11 +320,13 @@ def main() -> int:
             updates=arguments.updates,
             model_seed=arguments.model_seed,
             behavior_seed_base=arguments.behavior_seed_base,
+            potion_lane=CombatPotionLane(arguments.potion_lane),
         )
     )
     print(
         "training_complete=true "
         f"optimizer_steps={summary['optimizer_steps']} "
+        f"potion_lane={arguments.potion_lane} "
         f"wins={summary['total_wins']} losses={summary['total_losses']} "
         f"seconds={summary['elapsed_seconds']:.3f} "
         f"output={arguments.output.resolve()}",

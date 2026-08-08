@@ -624,7 +624,7 @@ Configure one stable Python 3.12 training runtime once, then use the small
 .\learning\dev.ps1 refresh-bridge
 .\learning\dev.ps1 test
 .\learning\dev.ps1 verify -MaturinPython <python-with-maturin>
-.\learning\dev.ps1 train-combat -Artifact <roots.bin> -Output <fresh-dir> -Roots <count> -Updates <count>
+.\learning\dev.ps1 train-combat -Artifact <roots.bin> -Output <fresh-dir> -Roots <count> -Updates <count> -PotionLane never
 .\learning\dev.ps1 evaluate-combat -Artifact <held-out-roots.bin> -Behavior <training-dir> -Output <fresh-dir> -Roots <count> -Replicates <count>
 ```
 
@@ -709,6 +709,12 @@ update, and promotes at most once. It writes nothing;
 `publish_active_behavior()` is the only durable publication boundary. Treat the
 returned loss and promotion as training accounting, not held-out evidence of
 improvement.
+
+The batch session binds `PotionLane all|never` into its root source. Prefer
+`never` when the selected roots already have no-potion winning coverage, so the
+all-win terminal-HP axis cannot learn to burn inventory for local HP. An
+all-loss `never` group stays no-signal; move it to an explicit concrete-potion
+rescue investigation instead of rerunning unrestricted `all` by default.
 
 Use `evaluate-combat` on a distinct opaque root artifact after publication. The
 behavior directory must be an exact completed `train-combat` output containing
