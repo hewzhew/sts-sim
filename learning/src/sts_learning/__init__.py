@@ -46,6 +46,13 @@ from .combat_objective import (
     CombatObjectiveError,
     CombatWinObjectiveConfig,
 )
+from .combat_recovery import (
+    CombatRecoveryError,
+    CombatRecoveryPlan,
+    CombatRecoveryRoot,
+    CombatRecoveryRootSource,
+    replay_winning_recovery_roots,
+)
 from .combat_signals import (
     CombatAxisSignalCensus,
     CombatAxisSignalSummary,
@@ -226,6 +233,10 @@ __all__ = [
     "CombatOutcomeError",
     "CombatAllWinAxis",
     "CombatObjectiveError",
+    "CombatRecoveryError",
+    "CombatRecoveryPlan",
+    "CombatRecoveryRoot",
+    "CombatRecoveryRootSource",
     "CombatTerminalOutcome",
     "CombatTerminalStepBatch",
     "CombatWinObjectiveConfig",
@@ -296,6 +307,7 @@ __all__ = [
     "TerminalTargetRunResult",
     "TerminalProgressAggregate",
     "build_combat_frontier_plan",
+    "replay_winning_recovery_roots",
     "build_combat_signal_census",
     "initialize_population",
     "concatenate_semantic_decision_batches",

@@ -211,6 +211,29 @@ class InstalledCombatSessionBridgeTests(unittest.TestCase):
             self.assertGreater(result.transitions, 0)
             self.assertIn(0, dict(source.combat_root_contexts()))
 
+    def test_real_bridge_rebases_one_explicit_combat_replicate(self) -> None:
+        source = _first_real_combat_root()
+        group = source.combat_group(0, 1)
+        original = (group.root_id, group.exact_combat_state_hash)
+        while not group.ready:
+            decision = group.decision_batch(semantic=False)
+            group.choose([0] * len(decision["slot_indices"]))
+        group.step()
+
+        recovery = group.capture_recovery_root(0)
+        self.assertEqual(
+            (recovery.source_root_id, recovery.source_exact_combat_state_hash),
+            original,
+        )
+        self.assertEqual(recovery.source_replicate_index, 0)
+        self.assertNotEqual(
+            (recovery.root_id, recovery.exact_combat_state_hash),
+            original,
+        )
+        recovered_group = recovery.spawn_group(2)
+        self.assertEqual(recovered_group.replicate_count, 2)
+        self.assertEqual(recovered_group.root_id, recovery.root_id)
+
 
 if _TORCH_AVAILABLE:
 

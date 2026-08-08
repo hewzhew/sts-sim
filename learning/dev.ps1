@@ -56,7 +56,7 @@ import numpy
 import torch
 import sts_learning
 import sts_learning_bridge
-from sts_learning_bridge import LearningBatchEnv
+from sts_learning_bridge import CombatLearningBatchEnv, LearningBatchEnv
 
 source_root = pathlib.Path(sys.argv[1]).resolve()
 package_root = pathlib.Path(sts_learning.__file__).resolve()
@@ -76,6 +76,19 @@ missing = [
 if missing:
     raise SystemExit(
         "installed bridge is stale; missing LearningBatchEnv methods: "
+        + ", ".join(missing)
+        + "; run: .\\learning\\dev.ps1 refresh-bridge [-Python <python.exe>]"
+    )
+
+required_combat_group_methods = ("capture_recovery_root",)
+missing = [
+    name
+    for name in required_combat_group_methods
+    if not callable(getattr(CombatLearningBatchEnv, name, None))
+]
+if missing:
+    raise SystemExit(
+        "installed bridge is stale; missing CombatLearningBatchEnv methods: "
         + ", ".join(missing)
         + "; run: .\\learning\\dev.ps1 refresh-bridge [-Python <python.exe>]"
     )

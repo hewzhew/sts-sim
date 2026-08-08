@@ -117,6 +117,32 @@ impl CombatLearningEnvPoolV1 {
         Ok(slot.env.checkpoint())
     }
 
+    /// Capture one active replicate's current exact state as a new combat root.
+    ///
+    /// The returned root owns a fresh identity for the current state. The pool
+    /// remains unchanged; caller-facing adapters must retain the source pool
+    /// identity and replicate index as explicit recovery lineage.
+    pub fn current_root(
+        &self,
+        replicate_index: u32,
+    ) -> Result<CombatLearningRootV1, CombatLearningEnvPoolError> {
+        if self.poisoned {
+            return Err(CombatLearningEnvPoolError::PoolPoisoned);
+        }
+        let slot = self.slots.get(replicate_index as usize).ok_or(
+            CombatLearningEnvPoolError::ReplicateIndexOutOfRange {
+                replicate_index,
+                replicate_count: self.replicate_count(),
+            },
+        )?;
+        slot.env
+            .current_root()
+            .map_err(|message| CombatLearningEnvPoolError::CurrentRoot {
+                replicate_index,
+                message,
+            })
+    }
+
     pub fn active_model_batch(
         &self,
     ) -> Result<CombatLearningEnvPoolModelBatchV1<'_>, CombatLearningEnvPoolError> {
@@ -249,6 +275,10 @@ pub enum CombatLearningEnvPoolError {
         replicate_index: u32,
         message: String,
     },
+    CurrentRoot {
+        replicate_index: u32,
+        message: String,
+    },
     EngineStep {
         replicate_index: u32,
         message: String,
@@ -359,6 +389,40 @@ mod tests {
         assert!(batch.active_replicate_indices.is_empty());
         assert!(batch.model_batch.decisions.is_empty());
         assert_eq!(batch.model_batch.candidate_row_splits, vec![0]);
+    }
+
+    #[test]
+    fn current_replicate_state_becomes_a_new_same_state_root() {
+        let root = CombatLearningRootV1::from_session(combat_root_session(20))
+            .expect("construct source root");
+        let mut pool = CombatLearningEnvPoolV1::from_root(&root, 1).expect("construct pool");
+        pool.step_active(vec![LearningActionV1::CombatInput {
+            input: ClientInput::PlayCard {
+                card_index: 0,
+                target: Some(7),
+            },
+        }])
+        .expect("advance source episode");
+
+        let recovered = pool.current_root(0).expect("capture current root");
+        assert_ne!(recovered.identity(), root.identity());
+        let recovered_pool =
+            CombatLearningEnvPoolV1::from_root(&recovered, 2).expect("spawn recovered group");
+        assert_eq!(recovered_pool.root_identity(), recovered.identity());
+        assert_eq!(recovered_pool.active_count(), 2);
+        let CombatLearningBoundaryV1::Decision {
+            boundary: first, ..
+        } = recovered_pool.boundary(0).unwrap()
+        else {
+            panic!("recovered slot zero must be active");
+        };
+        let CombatLearningBoundaryV1::Decision {
+            boundary: second, ..
+        } = recovered_pool.boundary(1).unwrap()
+        else {
+            panic!("recovered slot one must be active");
+        };
+        assert_eq!(first, second);
     }
 
     #[test]

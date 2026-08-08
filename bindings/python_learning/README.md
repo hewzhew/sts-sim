@@ -97,6 +97,14 @@ replicate_count)` creates a `CombatLearningBatchEnv` without exposing or
 reconstructing the run-control checkpoint in Python. Every replicate shares
 the exact root id and combat-state hash, keeps its own numbered episode
 lineage, and uses the same `decision_batch`, `choose`, and atomic `step` rhythm.
+At any later undecoded active decision,
+`group.capture_recovery_root(replicate_index)` may explicitly retain that one
+replicate as an opaque in-process `CombatLearningRecoveryRoot`. The object
+binds its fresh current-state root identity to the source group identity and
+replicate index, and `spawn_group(replicate_count)` derives a new same-root
+group without exposing the session. Partially decoded actions and terminal
+replicates are rejected. The group records no automatic history; bounded
+retention and replay verification remain caller-owned curriculum work.
 `group.root_context` is a frozen native `CombatLearningRootContextV1` generated
 once by Rust. It exposes only compact public root facts for corpus selection and
 stratification; Python does not reconstruct them from semantic feature ids, and

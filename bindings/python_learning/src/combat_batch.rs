@@ -8,7 +8,8 @@ use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
 use sts_oracle_eval::eval::run_control::{
-    CombatLearningEnvPoolV1, CombatLearningRootContextV1, CombatLearningRootV1,
+    CombatLearningEnvPoolV1, CombatLearningRootContextV1, CombatLearningRootIdentityV1,
+    CombatLearningRootV1,
 };
 use sts_oracle_eval::sim::combat::CombatTerminal;
 
@@ -31,6 +32,55 @@ pub(super) struct PyCombatLearningRootContextV1 {
 impl PyCombatLearningRootContextV1 {
     pub(super) fn from_context(inner: CombatLearningRootContextV1) -> Self {
         Self { inner }
+    }
+}
+
+/// Opaque in-process recovery root with explicit parent episode lineage.
+///
+/// Capturing this object clones exactly one caller-selected current session.
+/// The bridge keeps no automatic history and exposes no raw session payload.
+#[pyclass(skip_from_py_object)]
+#[derive(Clone)]
+pub(super) struct CombatLearningRecoveryRoot {
+    root: CombatLearningRootV1,
+    source_root: CombatLearningRootIdentityV1,
+    source_replicate_index: u32,
+}
+
+#[pymethods]
+impl CombatLearningRecoveryRoot {
+    #[getter]
+    fn root_id(&self) -> String {
+        self.root.identity().root_id.clone()
+    }
+
+    #[getter]
+    fn exact_combat_state_hash(&self) -> String {
+        self.root.identity().exact_combat_state_hash.clone()
+    }
+
+    #[getter]
+    fn source_root_id(&self) -> String {
+        self.source_root.root_id.clone()
+    }
+
+    #[getter]
+    fn source_exact_combat_state_hash(&self) -> String {
+        self.source_root.exact_combat_state_hash.clone()
+    }
+
+    #[getter]
+    fn source_replicate_index(&self) -> u32 {
+        self.source_replicate_index
+    }
+
+    #[getter]
+    fn root_context(&self) -> PyCombatLearningRootContextV1 {
+        PyCombatLearningRootContextV1::from_context(*self.root.context())
+    }
+
+    fn spawn_group(&self, replicate_count: usize) -> PyResult<CombatLearningBatchEnv> {
+        CombatLearningBatchEnv::from_root(&self.root, replicate_count).map_err(value_error)
     }
 }
 
@@ -177,6 +227,35 @@ impl CombatLearningBatchEnv {
 
     fn choose(&mut self, ordinals: Vec<usize>) -> PyResult<()> {
         choose_bridge_ordinals(&self.pool, &mut self.states, ordinals).map_err(value_error)
+    }
+
+    /// Capture one undecoded active replicate as an opaque recovery root.
+    ///
+    /// A partially decoded symbolic action is intentionally rejected: recovery
+    /// roots are simulator boundaries, not bridge-local ordinal prefixes.
+    fn capture_recovery_root(
+        &self,
+        replicate_index: usize,
+    ) -> PyResult<CombatLearningRecoveryRoot> {
+        if !matches!(
+            self.states.get(replicate_index),
+            Some(BridgeSlotState::Root)
+        ) {
+            return Err(PyValueError::new_err(format!(
+                "combat replicate {replicate_index} must be at an undecoded active decision"
+            )));
+        }
+        let replicate_index = u32::try_from(replicate_index)
+            .map_err(|_| PyValueError::new_err("combat replicate index exceeds u32"))?;
+        let root = self
+            .pool
+            .current_root(replicate_index)
+            .map_err(runtime_error)?;
+        Ok(CombatLearningRecoveryRoot {
+            root,
+            source_root: self.pool.root_identity().clone(),
+            source_replicate_index: replicate_index,
+        })
     }
 
     fn step<'py>(&mut self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
@@ -326,5 +405,71 @@ fn combat_terminal_code(terminal: CombatTerminal) -> u8 {
         CombatTerminal::Win => COMBAT_TERMINAL_WIN,
         CombatTerminal::Loss => COMBAT_TERMINAL_LOSS,
         CombatTerminal::Unresolved => COMBAT_TERMINAL_UNRESOLVED,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sts_oracle_eval::content::cards::CardId;
+    use sts_oracle_eval::content::monsters::exordium::jaw_worm::JawWorm;
+    use sts_oracle_eval::content::monsters::{EnemyId, MonsterBehavior};
+    use sts_oracle_eval::eval::run_control::{LearningActionV1, RunControlSession};
+    use sts_oracle_eval::runtime::combat::CombatCard;
+    use sts_oracle_eval::state::core::{
+        ActiveCombat, ClientInput, CombatContext, EngineState, RoomCombatContext,
+    };
+    use sts_oracle_eval::state::map::node::RoomType;
+
+    #[test]
+    fn recovery_root_retains_parent_lineage_and_spawns_from_current_state() {
+        let root =
+            CombatLearningRootV1::from_session(combat_root_session()).expect("construct root");
+        let mut group = CombatLearningBatchEnv::from_root(&root, 1).expect("construct group");
+        group
+            .pool
+            .step_active(vec![LearningActionV1::CombatInput {
+                input: ClientInput::PlayCard {
+                    card_index: 0,
+                    target: Some(7),
+                },
+            }])
+            .expect("advance source replicate");
+        group.states = states_from_source(&group.pool).expect("refresh bridge state");
+
+        let recovery = group
+            .capture_recovery_root(0)
+            .expect("capture recovery root");
+        assert_eq!(recovery.source_root, *root.identity());
+        assert_eq!(recovery.source_replicate_index, 0);
+        assert_ne!(recovery.root.identity(), root.identity());
+        let recovered =
+            CombatLearningBatchEnv::from_root(&recovery.root, 2).expect("spawn recovered group");
+        assert_eq!(recovered.replicate_count(), 2);
+        assert_eq!(recovered.root_id(), recovery.root.identity().root_id);
+    }
+
+    fn combat_root_session() -> RunControlSession {
+        let mut session = RunControlSession::new(Default::default());
+        let mut combat = sts_oracle_eval::test_support::blank_test_combat();
+        combat.zones.hand = vec![CombatCard::new(CardId::Strike, 51)];
+        let mut monster = sts_oracle_eval::test_support::test_monster(EnemyId::JawWorm);
+        monster.id = 7;
+        monster.current_hp = 20;
+        monster.max_hp = 20;
+        monster.set_planned_move_id(1);
+        let plan = JawWorm::turn_plan(&combat, &monster);
+        monster.set_planned_steps(plan.steps);
+        monster.set_planned_visible_spec(plan.visible_spec);
+        combat.entities.monsters.push(monster);
+        session.engine_state = EngineState::CombatPlayerTurn;
+        session.active_combat = Some(ActiveCombat::new(
+            EngineState::CombatPlayerTurn,
+            combat,
+            CombatContext::Room(RoomCombatContext {
+                room_type: RoomType::MonsterRoom,
+            }),
+        ));
+        session
     }
 }

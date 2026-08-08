@@ -9,6 +9,7 @@ from sts_learning_bridge import (
     COMBAT_TERMINAL_UNRESOLVED,
     COMBAT_TERMINAL_WIN,
     CombatLearningBatchEnv,
+    CombatLearningRecoveryRoot,
     CombatLearningRootContextV1,
     LearningBatchEnv,
     LearningCheckpointBatch,
@@ -228,6 +229,7 @@ def _assert_same_root_combat_group(env: LearningBatchEnv, slot: int) -> None:
 
     random_states = [slot ^ _SEED_XOR, slot ^ _SEED_XOR ^ 0xA5A5_A5A5]
     terminal_seen: set[int] = set()
+    recovery_checked = False
     rounds = 0
     while group.terminal_count < group.replicate_count:
         while not group.ready:
@@ -283,10 +285,36 @@ def _assert_same_root_combat_group(env: LearningBatchEnv, slot: int) -> None:
             assert step[key].dtype == np.uint32
             assert step[key].shape == (terminal_count,)
         terminal_seen.update(int(value) for value in step["terminal_slot_indices"])
+        if not recovery_checked:
+            active = [
+                int(replicate)
+                for replicate, terminated in zip(
+                    step["slot_indices"], step["terminated"], strict=True
+                )
+                if not bool(terminated)
+            ]
+            if active:
+                recovery = group.capture_recovery_root(active[0])
+                assert isinstance(recovery, CombatLearningRecoveryRoot)
+                assert recovery.source_root_id == group.root_id
+                assert (
+                    recovery.source_exact_combat_state_hash
+                    == group.exact_combat_state_hash
+                )
+                assert recovery.source_replicate_index == active[0]
+                recovered_group = recovery.spawn_group(2)
+                assert recovered_group.root_id == recovery.root_id
+                assert (
+                    recovered_group.exact_combat_state_hash
+                    == recovery.exact_combat_state_hash
+                )
+                assert recovered_group.replicate_count == 2
+                recovery_checked = True
         rounds += 1
         assert rounds < 1_000
 
     assert terminal_seen == {0, 1}
+    assert recovery_checked
     _assert_decision_batch_equal(
         before, env.decision_batch(dense_mask=True, semantic=True)
     )

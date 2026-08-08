@@ -184,6 +184,16 @@ not an estimator or teacher label. Grouped baselines, combat policy gradients,
 or search-improved targets must be separate caller-owned objectives and may not
 substitute unrelated run seeds for same-root replicates.
 
+An active replicate may explicitly rebase its current exact session as a new
+immutable combat root. The Python bridge exposes that operation only at an
+undecoded simulator decision and returns an opaque in-process recovery root
+that binds the new root identity to its source root identity and replicate
+index. Partially decoded symbolic actions and terminal replicates cannot be
+captured. No pool records automatic history, and no raw session payload crosses
+the bridge. Spawning a group from the recovery root therefore preserves both
+exact current-state identity and the otherwise-cross-slot parent lineage
+without weakening ordinary slot-bound checkpoint restore.
+
 The Python bridge may derive one `CombatLearningBatchEnv` only from an
 undecoded combat-root slot in an existing typed batch. Python receives the
 shared root identities, one frozen native view of the compact root context,
@@ -194,6 +204,15 @@ owns neither reward shaping nor durable combat-group checkpoint publication.
 The source batch can enumerate all current undecoded combat roots and their
 frozen contexts in one call without creating replicate groups or cloning their
 sessions; only caller-selected roots pay group construction cost.
+
+A caller may reconstruct a bounded reverse curriculum from an already completed
+winning same-root episode by replaying that replicate's recorded ordinals from
+the unchanged exact root. Replay must reproduce every typed terminal fact
+before any derived root is admitted, and retains only a caller-bounded
+terminal-nearest window. The ordinals prove replay identity; they are not
+supervised action labels and do not enter the on-policy loss. This mechanism
+cannot manufacture a teacher for an all-loss root: such a root remains in the
+rescue backlog until a separately verified winning trajectory exists.
 
 Production runs hand combat boundaries to this bridge only through the
 versioned `CombatLearningRootBatchArtifactV1` envelope owned by run control.

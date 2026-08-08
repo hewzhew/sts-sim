@@ -297,6 +297,17 @@ impl CombatLearningEnvV1 {
         }
     }
 
+    /// Rebase the current active combat boundary as a new immutable root.
+    ///
+    /// This deliberately creates a new root identity from the current exact
+    /// session instead of reusing the episode's original lineage. Callers that
+    /// expose the derived root must retain that parent lineage separately.
+    pub fn current_root(&self) -> Result<CombatLearningRootV1, String> {
+        CombatLearningRootV1::from_checkpoint(RunControlSessionCheckpointV1::from_session(
+            &self.session,
+        ))
+    }
+
     pub fn restore(&mut self, checkpoint: CombatLearningEnvCheckpointV1) -> Result<(), String> {
         let restored = Self::from_checkpoint(checkpoint)?;
         if restored.episode != self.episode {
