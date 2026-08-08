@@ -18,6 +18,7 @@ from .torch_combat_session_config import (
     CombatSessionBridge,
     CombatWinSessionLimits,
     CombatWinSessionProfile,
+    TorchCombatSessionError,
 )
 from .torch_combat_training import SynchronousCombatWinTrainer
 from .torch_policy import RaggedCandidateScorer
@@ -39,8 +40,17 @@ def create_combat_win_owner_graph(
     *,
     model_seed: int,
     controller_seed: int,
+    initial_scorer: RaggedCandidateScorer | None = None,
 ) -> CombatWinOwnerGraph:
     """Create one exact mutable shadow and one independent frozen behavior."""
+
+    if initial_scorer is not None and not isinstance(
+        initial_scorer,
+        RaggedCandidateScorer,
+    ):
+        raise TorchCombatSessionError(
+            "combat owner initial_scorer must be a RaggedCandidateScorer"
+        )
 
     def scorer_factory() -> RaggedCandidateScorer:
         return RaggedCandidateScorer.from_bridge_schema(
@@ -51,6 +61,13 @@ def create_combat_win_owner_graph(
     with torch.random.fork_rng(devices=[]):
         torch.manual_seed(model_seed)
         shadow = scorer_factory()
+    if initial_scorer is not None:
+        try:
+            shadow.load_state_dict(initial_scorer.state_dict(), strict=True)
+        except RuntimeError as error:
+            raise TorchCombatSessionError(
+                "combat owner initial scorer is incompatible with the maintained profile"
+            ) from error
     checkpoint_store = BoundedTorchCheckpointStore(
         root / "behavior-checkpoints",
         limits.checkpoint_store,

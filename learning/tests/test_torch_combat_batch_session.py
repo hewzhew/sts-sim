@@ -16,6 +16,8 @@ from sts_learning import (
 
 _TORCH_AVAILABLE = importlib.util.find_spec("torch") is not None
 if _TORCH_AVAILABLE:
+    import torch
+
     from sts_learning.torch_combat_batch_session import (
         CombatWinBatchSessionFactory,
     )
@@ -29,6 +31,7 @@ if _TORCH_AVAILABLE:
     from sts_learning.torch_combat_training import CombatWinTrainingStatus
     from sts_learning.torch_policy import (
         RaggedCategoricalPolicyConfig,
+        RaggedCandidateScorer,
         RaggedScorerConfig,
     )
 
@@ -63,6 +66,36 @@ class _ArtifactLoader:
 
 @unittest.skipUnless(_TORCH_AVAILABLE, "optional PyTorch dependency is not installed")
 class CombatWinBatchSessionTests(unittest.TestCase):
+    def test_initial_scorer_is_copied_into_an_independent_trainable_shadow(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as root:
+            source = _IndexedCombatRootSource()
+            factory, _ = _factory(Path(root) / "session", source)
+            initial = RaggedCandidateScorer.from_bridge_schema(
+                semantic_schema_fixture(),
+                factory.config.profile.scorer,
+            )
+            with torch.no_grad():
+                for parameter in initial.parameters():
+                    parameter.fill_(0.125)
+
+            session = factory.new_from_artifact_bytes(
+                ARTIFACT,
+                model_seed=41,
+                behavior_seeds=(92, 93),
+                initial_scorer=initial,
+            )
+
+            shadow = session.runner.shadow_scorer
+            for initial_value, shadow_value in zip(
+                initial.state_dict().values(),
+                shadow.state_dict().values(),
+                strict=True,
+            ):
+                self.assertTrue(torch.equal(initial_value, shadow_value))
+                self.assertNotEqual(initial_value.data_ptr(), shadow_value.data_ptr())
+
     def test_artifact_loads_once_and_one_batch_update_publishes_explicitly(self) -> None:
         with tempfile.TemporaryDirectory() as root:
             root_path = Path(root)

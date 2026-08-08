@@ -624,7 +624,7 @@ Configure one stable Python 3.12 training runtime once, then use the small
 .\learning\dev.ps1 refresh-bridge
 .\learning\dev.ps1 test
 .\learning\dev.ps1 verify -MaturinPython <python-with-maturin>
-.\learning\dev.ps1 train-combat -Artifact <roots.bin> -Output <fresh-dir> -Roots <count> -Updates <count> -PotionLane never
+.\learning\dev.ps1 train-combat -Artifact <roots.bin> -Behavior <optional-warm-start-dir> -Output <fresh-dir> -Roots <count> -Updates <count> -PotionLane never
 .\learning\dev.ps1 evaluate-combat -Artifact <held-out-roots.bin> -Behavior <training-dir> -Output <fresh-dir> -Roots <count> -Replicates <count>
 .\learning\dev.ps1 evaluate-combat-potions -Artifact <held-out-roots.bin> -Behavior <training-dir> -Output <fresh-dir> -Roots <count> -Replicates <count>
 .\learning\dev.ps1 evaluate-run -Behavior <training-dir> -Output <fresh-dir> -Attempts 8 -MaxBatchSteps 4096 -BehaviorSeed 10000 -HeldOutSeedStart 0 -RunPotionLane trained

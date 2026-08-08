@@ -47,6 +47,7 @@ class CombatTrainingCommandConfig:
     behavior_seed_base: int
     potion_lane: CombatPotionLane = CombatPotionLane.ALL
     potion_slots: tuple[int, ...] = ()
+    warm_start_behavior: Path | None = None
 
     def __post_init__(self) -> None:
         artifact = Path(self.artifact).resolve()
@@ -59,6 +60,17 @@ class CombatTrainingCommandConfig:
             raise CombatTrainingCommandError(
                 "combat training output must be absent or empty"
             )
+        warm_start_behavior = self.warm_start_behavior
+        if warm_start_behavior is not None:
+            warm_start_behavior = Path(warm_start_behavior).resolve()
+            if not warm_start_behavior.is_dir():
+                raise CombatTrainingCommandError(
+                    "combat warm-start behavior is not a directory"
+                )
+            if output == warm_start_behavior or warm_start_behavior in output.parents:
+                raise CombatTrainingCommandError(
+                    "combat training output must stay outside the warm-start behavior"
+                )
         root_count = _positive(self.root_count, "root_count")
         replicate_count = _positive(self.replicate_count, "replicate_count")
         updates = _positive(self.updates, "updates")
@@ -96,6 +108,7 @@ class CombatTrainingCommandConfig:
         object.__setattr__(self, "model_seed", model_seed)
         object.__setattr__(self, "behavior_seed_base", behavior_seed_base)
         object.__setattr__(self, "potion_slots", potion_slots)
+        object.__setattr__(self, "warm_start_behavior", warm_start_behavior)
 
     @property
     def behavior_seeds(self) -> tuple[int, ...]:
@@ -125,6 +138,16 @@ def run_combat_training(
         CombatWinSessionLimits(),
         owner_capacity=max(16, config.updates + 1),
     )
+    warm_start = None
+    if config.warm_start_behavior is not None:
+        from .published_combat_behavior import recover_published_combat_behavior
+
+        warm_start = recover_published_combat_behavior(
+            config.warm_start_behavior,
+            active_bridge,
+            CombatWinSessionLimits(),
+            (config.behavior_seed_base,),
+        )
     session = CombatWinBatchSessionFactory(
         config.output,
         active_bridge,
@@ -141,6 +164,9 @@ def run_combat_training(
         config.artifact,
         model_seed=config.model_seed,
         behavior_seeds=config.behavior_seeds,
+        initial_scorer=(
+            None if warm_start is None else warm_start.policies[0].frozen_scorer
+        ),
     )
 
     total_wins = 0
@@ -167,6 +193,27 @@ def run_combat_training(
                 "all_win_axis": profile.objective.all_win_axis.name,
                 "potion_lane": config.potion_lane.value,
                 "potion_slots": config.potion_slots,
+                "initialization": (
+                    "random" if warm_start is None else "published-behavior"
+                ),
+                "warm_start_behavior": (
+                    None
+                    if config.warm_start_behavior is None
+                    else str(config.warm_start_behavior)
+                ),
+                "warm_start_manifest_id": (
+                    None
+                    if warm_start is None
+                    else warm_start.manifest_id.digest.hex()
+                ),
+                "warm_start_checkpoint_id": (
+                    None
+                    if warm_start is None
+                    else warm_start.checkpoint_id.digest.hex()
+                ),
+                "warm_start_training_step": (
+                    None if warm_start is None else warm_start.training_step
+                ),
             },
         )
         for generation in range(config.updates):
@@ -325,6 +372,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--updates", type=int, required=True)
     parser.add_argument("--model-seed", type=int, default=0)
     parser.add_argument("--behavior-seed-base", type=int, default=1_000)
+    parser.add_argument("--warm-start-behavior", type=Path)
     parser.add_argument(
         "--potion-lane",
         choices=tuple(lane.value for lane in CombatPotionLane),
@@ -347,6 +395,7 @@ def main() -> int:
             behavior_seed_base=arguments.behavior_seed_base,
             potion_lane=CombatPotionLane(arguments.potion_lane),
             potion_slots=tuple(arguments.potion_slot),
+            warm_start_behavior=arguments.warm_start_behavior,
         )
     )
     print(

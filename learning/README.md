@@ -233,6 +233,7 @@ the configured Python runtime:
 ```powershell
 .\learning\dev.ps1 train-combat `
   -Artifact <combat-roots.bin> `
+  -Behavior <optional-published-combat-behavior> `
   -Output <fresh-experiment-directory> `
   -Roots <artifact-root-count> `
   -Replicates 8 `
@@ -247,6 +248,11 @@ most one shared optimizer step, and immediately promotes only a real update.
 The command appends compact generation and per-root signal facts to
 `training.jsonl`, then explicitly publishes the final behavior checkpoint.
 The output directory must be absent or empty; optimizer resume is not implied.
+When `-Behavior` is supplied, the command first verifies that publication and
+copies its frozen scorer parameters into the fresh destination shadow. The
+destination still starts a new optimizer, step-zero manifest, root-set
+objective, potion lane, and journal; source manifest/checkpoint ids are retained
+as initialization provenance. Omitting `-Behavior` keeps random initialization.
 `-PotionLane never` removes potion use/discard candidates for every generated
 group while preserving the simulator legality surface. Use it for roots with
 observed no-potion wins so terminal-HP refinement cannot spend inventory. A

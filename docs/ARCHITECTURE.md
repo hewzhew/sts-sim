@@ -445,9 +445,17 @@ promotion without collecting or training again. The compact batch session
 imports the opaque artifact once and owns this complete graph. It is not a
 held-out evaluator, curriculum, durable training-resume protocol, or evidence
 that an update improved play.
+Generation zero may optionally copy parameters from one fully verified
+published combat behavior into a fresh trainable shadow before the new
+controller is bound. This is warm-start initialization under the destination
+root set, potion lane, objective, and fresh optimizer—not optimizer resume or
+continuation of the source training step. The new journal retains the source
+manifest/checkpoint identity while the new behavior manifest starts its own
+training provenance.
 
 The maintained `train-combat` command repeats a caller-bounded number of those
-shared-model updates over one fixed opaque artifact. It journals only compact
+shared-model updates over one fixed opaque artifact. It may start randomly or
+from that verified parameter copy. It journals only compact
 configuration, generation, per-root outcome/signal, and completion facts, then
 explicitly publishes the final active behavior. Its experiment directory must
 be fresh; the journal and published scorer do not contain optimizer state and

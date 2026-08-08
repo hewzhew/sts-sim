@@ -228,6 +228,10 @@ switch ($Command) {
     }
     "train-combat" {
         $pythonPath = Get-ConfiguredPython
+        $warmStartArguments = @()
+        if ($Behavior) {
+            $warmStartArguments = @("--warm-start-behavior", $Behavior)
+        }
         Invoke-Doctor $pythonPath
         Invoke-WithLearningPath {
             & $pythonPath -m sts_learning.train_combat `
@@ -238,6 +242,7 @@ switch ($Command) {
                 --updates $Updates `
                 --model-seed $ModelSeed `
                 --behavior-seed-base $BehaviorSeedBase `
+                @warmStartArguments `
                 @potionArguments
             if ($LASTEXITCODE -ne 0) {
                 throw "combat training command failed"

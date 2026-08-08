@@ -26,6 +26,7 @@ from .torch_combat_session_config import (
     CombatWinBatchSessionConfig,
     TorchCombatSessionError,
 )
+from .torch_policy import RaggedCandidateScorer
 
 
 class CombatWinBatchSession:
@@ -99,6 +100,7 @@ class CombatWinBatchSessionFactory:
         *,
         model_seed: int,
         behavior_seeds: Sequence[int],
+        initial_scorer: RaggedCandidateScorer | None = None,
     ) -> CombatWinBatchSession:
         payload = read_combat_root_artifact(
             artifact,
@@ -108,6 +110,7 @@ class CombatWinBatchSessionFactory:
             payload,
             model_seed=model_seed,
             behavior_seeds=behavior_seeds,
+            initial_scorer=initial_scorer,
         )
 
     def new_from_artifact_bytes(
@@ -116,6 +119,7 @@ class CombatWinBatchSessionFactory:
         *,
         model_seed: int,
         behavior_seeds: Sequence[int],
+        initial_scorer: RaggedCandidateScorer | None = None,
     ) -> CombatWinBatchSession:
         self._require_unused_root()
         artifact = normalize_combat_root_artifact(
@@ -152,6 +156,7 @@ class CombatWinBatchSessionFactory:
             artifact_byte_count=len(artifact),
             model_seed=normalized_model_seed,
             behavior_seeds=normalized_seeds,
+            initial_scorer=initial_scorer,
         )
 
     def _new_from_combat_root_source(
@@ -161,6 +166,7 @@ class CombatWinBatchSessionFactory:
         artifact_byte_count: int,
         model_seed: int,
         behavior_seeds: tuple[int, ...],
+        initial_scorer: RaggedCandidateScorer | None,
     ) -> CombatWinBatchSession:
         if not callable(getattr(source, "combat_group", None)):
             raise TorchCombatSessionError(
@@ -173,6 +179,7 @@ class CombatWinBatchSessionFactory:
             self.config.limits,
             model_seed=model_seed,
             controller_seed=behavior_seeds[0],
+            initial_scorer=initial_scorer,
         )
         generators = tuple(
             torch.Generator(device="cpu").manual_seed(seed)
