@@ -441,6 +441,15 @@ aggregates. It does not claim that combat-only training taught route, reward,
 shop, or other strategic decisions; those candidates remain part of the tested
 policy surface and their weakness is part of the whole-run result.
 
+A fresh whole-run on-policy session may also copy that compatible frozen scorer
+as generation zero. The copy shares no mutable parameters; the new run trainer
+immediately binds its own objective and behavior manifest. The command records
+the source combat manifest/checkpoint as provenance, trains only on the stable
+training seed partition, publishes the final frozen behavior without claiming
+an optimizer-resume boundary, and evaluates it on the disjoint held-out
+partition with zero recovery. Full session resume remains stricter and rejects
+open attempts at asynchronous slot boundaries.
+
 Python recovery curricula may hold explicit opaque single-slot checkpoints.
 Saving one clones that exact in-memory run-control state only when requested;
 restoring it also restores any unfinished symbolic decoder or already selected

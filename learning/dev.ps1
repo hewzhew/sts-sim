@@ -1,6 +1,6 @@
 param(
     [Parameter(Mandatory = $true, Position = 0)]
-    [ValidateSet("configure", "doctor", "test", "verify", "check-bridge", "refresh-bridge", "train-combat", "evaluate-combat", "evaluate-combat-potions", "evaluate-run")]
+    [ValidateSet("configure", "doctor", "test", "verify", "check-bridge", "refresh-bridge", "train-combat", "evaluate-combat", "evaluate-combat-potions", "evaluate-run", "train-run")]
     [string]$Command,
     [string]$Python,
     [string]$MaturinPython = "python",
@@ -16,7 +16,13 @@ param(
     [int]$Attempts = 8,
     [int]$MaxBatchSteps = 4096,
     [long]$BehaviorSeed = 10000,
-    [long]$HeldOutSeedStart = 0,
+    [long]$HeldOutSeedStart = 1000000,
+    [int]$Generations = 1,
+    [int]$AttemptsPerUpdate = 8,
+    [long]$TrainingSeedStart = 0,
+    [int]$EvaluationAttempts = 16,
+    [int]$EvaluationMaxBatchSteps = 4096,
+    [long]$EvaluationBehaviorSeed = 100000,
     [ValidateSet("all", "never", "root-slots")]
     [string]$PotionLane = "all",
     [int[]]$PotionSlots = @(),
@@ -271,6 +277,29 @@ switch ($Command) {
                 --held-out-seed-start $HeldOutSeedStart
             if ($LASTEXITCODE -ne 0) {
                 throw "run evaluation command failed"
+            }
+        }
+    }
+    "train-run" {
+        $pythonPath = Get-ConfiguredPython
+        Invoke-Doctor $pythonPath
+        Invoke-WithLearningPath {
+            & $pythonPath -m sts_learning.train_run `
+                --warm-start-behavior $Behavior `
+                --output $Output `
+                --slots $Slots `
+                --generations $Generations `
+                --attempts-per-update $AttemptsPerUpdate `
+                --max-batch-steps $MaxBatchSteps `
+                --model-seed $ModelSeed `
+                --behavior-seed $BehaviorSeed `
+                --training-seed-start $TrainingSeedStart `
+                --evaluation-attempts $EvaluationAttempts `
+                --evaluation-max-batch-steps $EvaluationMaxBatchSteps `
+                --evaluation-behavior-seed $EvaluationBehaviorSeed `
+                --held-out-seed-start $HeldOutSeedStart
+            if ($LASTEXITCODE -ne 0) {
+                throw "run training command failed"
             }
         }
     }

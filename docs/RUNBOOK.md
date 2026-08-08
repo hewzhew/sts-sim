@@ -628,6 +628,7 @@ Configure one stable Python 3.12 training runtime once, then use the small
 .\learning\dev.ps1 evaluate-combat -Artifact <held-out-roots.bin> -Behavior <training-dir> -Output <fresh-dir> -Roots <count> -Replicates <count>
 .\learning\dev.ps1 evaluate-combat-potions -Artifact <held-out-roots.bin> -Behavior <training-dir> -Output <fresh-dir> -Roots <count> -Replicates <count>
 .\learning\dev.ps1 evaluate-run -Behavior <training-dir> -Output <fresh-dir> -Slots 4 -Attempts 8 -MaxBatchSteps 4096 -BehaviorSeed 10000 -HeldOutSeedStart 0
+.\learning\dev.ps1 train-run -Behavior <combat-training-dir> -Output <fresh-dir> -Slots 4 -Generations 1 -AttemptsPerUpdate 8 -MaxBatchSteps 4096 -EvaluationAttempts 16 -HeldOutSeedStart 1000000
 ```
 
 `configure` installs the tool requirements declared by the local
@@ -777,6 +778,19 @@ defeat, terminal floor sum/range/histogram, act counts, and execution bounds. A 
 trained scorer has not thereby learned non-combat strategy; the command is a
 bounded end-to-end diagnostic of that complete policy surface, not a claim that
 all decisions were trained.
+
+Use `train-run` for the first whole-run on-policy handoff. `-Behavior` is a
+verified completed `train-combat` directory whose scorer becomes an independent
+generation-zero parameter copy. Training uses the `TRAINING` seed partition,
+zero recovery, the terminal floor-progress return, and exactly
+`-AttemptsPerUpdate` complete runs per generation. Each generation reports its
+own terminal-floor histogram. The command publishes only after every requested
+generation completes, but publishes only the frozen behavior checkpoint and
+manifest—not optimizer or environment resume state. It then evaluates the
+result on the disjoint `HELD_OUT` partition and writes a compact `summary.json`.
+A generation that
+hits `-MaxBatchSteps` before an optimizer step fails without publishing its
+partial live update.
 
 `test` requires PyTorch and the installed bridge and runs the complete learning
 suite; missing training dependencies are failures, not skips. `verify` runs

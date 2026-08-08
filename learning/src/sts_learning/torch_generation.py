@@ -7,7 +7,12 @@ from dataclasses import dataclass
 
 from .attempts import AttemptAssemblerSnapshot, BoundedAttemptAssembler
 from .attempt_batching import AttemptUpdateBatchError, BoundedAttemptUpdateBatcher
-from .driver import BatchDriverError, BatchDriverResumeBoundary, OnlineBatchDriver
+from .driver import (
+    BatchDriverError,
+    BatchDriverResumeBoundary,
+    OnlineBatchDriver,
+    TerminalProgressAggregate,
+)
 from .policy import BehaviorManifestId
 from .torch_behavior import (
     CategoricalTorchBehaviorController,
@@ -36,6 +41,9 @@ class CategoricalGenerationAdvanceResult:
     batch_step_limit: int
     batch_steps: int
     terminal_attempts: int
+    terminal_victories: int
+    terminal_defeats: int
+    terminal_progress: TerminalProgressAggregate
     terminal_flushes: int
     optimizer_steps_before: int
     optimizer_steps_after: int
@@ -183,6 +191,13 @@ class BoundedCategoricalGenerationRunner:
         target_step = active_step + self.optimizer_steps_per_generation
         batch_steps = 0
         terminal_attempts = 0
+        terminal_victories = 0
+        terminal_defeats = 0
+        terminal_floor_sum = 0
+        min_terminal_floor: int | None = None
+        max_terminal_floor: int | None = None
+        terminal_floor_counts: dict[int, int] = {}
+        terminal_act_counts: dict[int, int] = {}
         terminal_flushes = 0
         while (
             self.trainer.snapshot.optimizer_steps < target_step
@@ -191,6 +206,30 @@ class BoundedCategoricalGenerationRunner:
             result = self.driver.advance()
             batch_steps += 1
             terminal_attempts += len(result.attempts)
+            terminal_victories += sum(
+                attempt.terminal_reward == 1 for attempt in result.attempts
+            )
+            terminal_defeats += sum(
+                attempt.terminal_reward == -1 for attempt in result.attempts
+            )
+            for attempt in result.attempts:
+                floor = attempt.terminal.terminal_floor
+                terminal_floor_sum += floor
+                min_terminal_floor = (
+                    floor
+                    if min_terminal_floor is None
+                    else min(min_terminal_floor, floor)
+                )
+                max_terminal_floor = (
+                    floor
+                    if max_terminal_floor is None
+                    else max(max_terminal_floor, floor)
+                )
+                terminal_floor_counts[floor] = (
+                    terminal_floor_counts.get(floor, 0) + 1
+                )
+                act = attempt.terminal.terminal_act
+                terminal_act_counts[act] = terminal_act_counts.get(act, 0) + 1
             if result.attempts:
                 self.driver.flush_experience()
                 terminal_flushes += 1
@@ -211,6 +250,16 @@ class BoundedCategoricalGenerationRunner:
             batch_step_limit=step_limit,
             batch_steps=batch_steps,
             terminal_attempts=terminal_attempts,
+            terminal_victories=terminal_victories,
+            terminal_defeats=terminal_defeats,
+            terminal_progress=TerminalProgressAggregate(
+                attempts=terminal_attempts,
+                floor_sum=terminal_floor_sum,
+                min_floor=min_terminal_floor,
+                max_floor=max_terminal_floor,
+                floor_counts=tuple(sorted(terminal_floor_counts.items())),
+                act_counts=tuple(sorted(terminal_act_counts.items())),
+            ),
             terminal_flushes=terminal_flushes,
             optimizer_steps_before=trainer_before.optimizer_steps,
             optimizer_steps_after=trainer_after.optimizer_steps,

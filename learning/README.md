@@ -122,6 +122,26 @@ progress aggregates. Combat and run decisions share the bridge semantic schema,
 but combat-only training does not imply that route, reward, shop, or event
 choices are competent; their behavior remains part of this end-to-end result.
 
+Warm-start bounded whole-run on-policy training with:
+
+```powershell
+.\learning\dev.ps1 train-run `
+  -Behavior <completed-combat-training-directory> `
+  -Output <fresh-run-training-directory> `
+  -Slots 4 -Generations 1 -AttemptsPerUpdate 8 `
+  -MaxBatchSteps 4096 -EvaluationAttempts 16 `
+  -HeldOutSeedStart 1000000
+```
+
+The session copies, rather than aliases, the combat scorer; generation zero
+then belongs to the whole-run terminal-floor objective and a new behavior
+manifest. Training and evaluation use the stable disjoint seed partitions,
+both with zero recovery. Every generation records its bounded terminal-floor
+histogram, and only a complete requested generation set is published before the
+final held-out evaluation. The publication is the frozen behavior only; the
+command deliberately does not claim resumable optimizer/environment state when
+other asynchronous slots still contain open attempts.
+
 `sts_learning.experience` provides the optional bounded training handoff. Each
 decision batch is copied before policy inference into a recursively frozen,
 read-only view of the bridge-owned semantic schema; it does not define another

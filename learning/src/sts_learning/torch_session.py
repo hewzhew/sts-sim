@@ -223,6 +223,7 @@ class CategoricalOnlineSessionFactory:
         *,
         model_seed: int,
         behavior_seed: int,
+        initial_scorer: RaggedCandidateScorer | None = None,
     ) -> CategoricalOnlineSession:
         """Create generation zero only in an unused experiment root."""
 
@@ -230,6 +231,13 @@ class CategoricalOnlineSessionFactory:
         behavior_seed = _torch_seed(behavior_seed, "behavior_seed")
         if any(self.root.iterdir()):
             raise TorchSessionError("new session requires an unused experiment root")
+        if initial_scorer is not None and not isinstance(
+            initial_scorer,
+            RaggedCandidateScorer,
+        ):
+            raise TorchSessionError(
+                "session initial_scorer must be a RaggedCandidateScorer"
+            )
         checkpoint_store, catalog = self._behavior_stores()
         resume_store = self._resume_store()
         if (
@@ -240,6 +248,16 @@ class CategoricalOnlineSessionFactory:
         ):
             raise TorchSessionError("new session requires an unused experiment root")
 
+        with torch.random.fork_rng(devices=[]):
+            torch.manual_seed(model_seed)
+            shadow = self._scorer()
+        if initial_scorer is not None:
+            try:
+                shadow.load_state_dict(initial_scorer.state_dict(), strict=True)
+            except RuntimeError as error:
+                raise TorchSessionError(
+                    "session initial scorer is incompatible with the maintained profile"
+                ) from error
         population = initialize_population(
             self.bridge.environment,
             slot_count=self.config.slot_count,
@@ -248,9 +266,6 @@ class CategoricalOnlineSessionFactory:
                 self.config.max_recoveries_per_episode
             ),
         )
-        with torch.random.fork_rng(devices=[]):
-            torch.manual_seed(model_seed)
-            shadow = self._scorer()
         registry = BehaviorManifestRegistry(
             capacity=self.config.limits.owner_capacity
         )
