@@ -76,6 +76,19 @@ impl CombatLearningEnvPoolV1 {
         })
     }
 
+    pub fn from_root_with_potion_slots(
+        root: &CombatLearningRootV1,
+        replicate_count: usize,
+        potion_slots: Option<Vec<usize>>,
+    ) -> Result<Self, CombatLearningEnvPoolError> {
+        let potion_policy = match potion_slots {
+            None => CombatLearningPotionPolicyV1::All,
+            Some(slots) => CombatLearningPotionPolicyV1::from_root_slots(root, slots)
+                .map_err(CombatLearningEnvPoolError::PotionPolicy)?,
+        };
+        Self::from_root_with_potion_policy(root, replicate_count, potion_policy)
+    }
+
     pub fn root_identity(&self) -> &CombatLearningRootIdentityV1 {
         &self.root
     }
@@ -88,8 +101,8 @@ impl CombatLearningEnvPoolV1 {
         &self.root_resources
     }
 
-    pub fn potion_policy(&self) -> CombatLearningPotionPolicyV1 {
-        self.potion_policy
+    pub fn potion_policy(&self) -> &CombatLearningPotionPolicyV1 {
+        &self.potion_policy
     }
 
     pub fn replicate_count(&self) -> usize {
@@ -179,7 +192,7 @@ impl CombatLearningEnvPoolV1 {
         }
         let model_batch = LearningModelBatchV1::from_combat_boundary_refs_with_potion_policy(
             boundaries,
-            self.potion_policy,
+            &self.potion_policy,
         )
         .map_err(CombatLearningEnvPoolError::ModelInput)?;
         Ok(CombatLearningEnvPoolModelBatchV1 {
@@ -278,6 +291,7 @@ pub struct CombatLearningEnvPoolStepV1 {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CombatLearningEnvPoolError {
     EmptyReplicateGroup,
+    PotionPolicy(String),
     ReplicateCountOverflow {
         replicate_count: usize,
     },

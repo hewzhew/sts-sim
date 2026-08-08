@@ -17,7 +17,11 @@ from .combat_evaluation import (
     CombatHeldOutEvaluator,
     combat_observed_resource_frontier,
 )
-from .combat_potion_lane import CombatPotionLane
+from .combat_potion_lane import (
+    CombatPotionLane,
+    CombatPotionLaneError,
+    normalize_combat_potion_slots,
+)
 from .combat_root_artifacts import (
     load_combat_root_source,
     read_combat_root_artifact,
@@ -32,7 +36,7 @@ from .torch_combat_session_config import (
 )
 
 
-COMBAT_EVALUATION_SCHEMA = "sts-learning-combat-held-out-evaluation-v4"
+COMBAT_EVALUATION_SCHEMA = "sts-learning-combat-held-out-evaluation-v5"
 
 
 class CombatEvaluationCommandError(RuntimeError):
@@ -48,6 +52,7 @@ class CombatEvaluationCommandConfig:
     replicate_count: int
     behavior_seed_base: int
     potion_lane: CombatPotionLane = CombatPotionLane.ALL
+    potion_slots: tuple[int, ...] = ()
 
     def __post_init__(self) -> None:
         artifact = Path(self.artifact).resolve()
@@ -81,6 +86,13 @@ class CombatEvaluationCommandConfig:
             raise CombatEvaluationCommandError(
                 "combat evaluation potion_lane must be typed"
             )
+        try:
+            potion_slots = normalize_combat_potion_slots(
+                self.potion_lane,
+                self.potion_slots,
+            )
+        except CombatPotionLaneError as error:
+            raise CombatEvaluationCommandError(str(error)) from error
         if replicate_count < 2:
             raise CombatEvaluationCommandError(
                 "combat evaluation requires at least two replicates"
@@ -95,6 +107,7 @@ class CombatEvaluationCommandConfig:
         object.__setattr__(self, "root_count", root_count)
         object.__setattr__(self, "replicate_count", replicate_count)
         object.__setattr__(self, "behavior_seed_base", behavior_seed_base)
+        object.__setattr__(self, "potion_slots", potion_slots)
 
     @property
     def behavior_seeds(self) -> tuple[int, ...]:
@@ -148,6 +161,7 @@ def run_combat_evaluation(
             max_transitions=session_limits.experience.max_transitions,
         ),
         potion_lane=config.potion_lane,
+        potion_slots=config.potion_slots,
     )
 
     started = time.perf_counter()
@@ -243,6 +257,7 @@ def run_combat_evaluation(
     print(
         f"evaluation_complete=true wins={result.wins} losses={result.losses} "
         f"potion_lane={result.potion_lane.value} "
+        f"potion_slots={_potion_slots_text(result)} "
         f"root_wins={root_wins} root_final_hp_sums={root_final_hp} "
         f"root_potions_used={root_potions_used} "
         f"root_potions_discarded={root_potions_discarded} "
@@ -254,6 +269,14 @@ def run_combat_evaluation(
         flush=True,
     )
     return summary
+
+
+def _potion_slots_text(result: CombatHeldOutEvaluationResult) -> str:
+    if result.potion_lane is CombatPotionLane.ALL:
+        return "all"
+    if result.potion_lane is CombatPotionLane.NEVER:
+        return "none"
+    return "+".join(str(slot) for slot in result.potion_slots)
 
 
 def _summary(
@@ -300,6 +323,7 @@ def _summary(
         "schema": COMBAT_EVALUATION_SCHEMA,
         "kind": "completed",
         "potion_lane": result.potion_lane.value,
+        "potion_slots": result.potion_slots,
         "artifact": str(config.artifact),
         "artifact_sha256": artifact_sha256,
         "artifact_bytes": artifact_bytes,
@@ -502,6 +526,7 @@ def _parser() -> argparse.ArgumentParser:
         choices=tuple(lane.value for lane in CombatPotionLane),
         default=CombatPotionLane.ALL.value,
     )
+    parser.add_argument("--potion-slot", action="append", type=int, default=[])
     return parser
 
 
@@ -516,6 +541,7 @@ def main() -> int:
             replicate_count=arguments.replicates,
             behavior_seed_base=arguments.behavior_seed_base,
             potion_lane=CombatPotionLane(arguments.potion_lane),
+            potion_slots=tuple(arguments.potion_slot),
         )
     )
     return 0

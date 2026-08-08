@@ -299,10 +299,12 @@ claim about whether spending it was strategically correct. Cross-combat value
 requires an exact run continuation and remains outside the combat evaluator.
 Each evaluation also declares one model-facing potion lane. `All` exposes the
 ordinary learning candidate surface; `Never` removes every potion use and
-discard candidate while leaving the engine's legal action surface unchanged.
-Running both on the same exact roots and behavior RNG streams is a bounded
-counterfactual coverage check, not a potion-value judgment, reward, or training
-policy.
+discard candidate; `RootSlots` admits only the exact starting potion identities
+occupying caller-declared root slots. Rust binds those identities by UUID, so
+using one does not authorize a generated replacement in the same slot. None of
+the lanes changes the engine's legal action surface. Running them on the same
+exact roots and behavior RNG streams is a bounded counterfactual coverage check,
+not a potion-value judgment, reward, or training policy.
 Among winning replicates, the evaluator may additionally report an
 `observed-resource` Pareto frontier over final HP, max HP, gold, and exact
 potion-identity multisets. One result orders another only when every observed
@@ -336,8 +338,9 @@ The training root source also binds one explicit model-facing potion lane.
 `Never` is the primary resource-preserving lane for roots that can already win
 without potion actions; it makes terminal-HP refinement honest by removing
 potion use/discard candidates rather than pricing their outcomes. An all-loss
-no-potion group remains no-signal and requires a separate bounded rescue lane;
-training does not silently reopen unrestricted potion actions.
+no-potion group remains no-signal and requires a bounded `RootSlots` rescue
+lane for one concrete starting identity at a time; training does not silently
+reopen unrestricted potion actions.
 The synchronous combat-win trainer has its own objective configuration and
 trainer provenance; it cannot reuse a terminal floor-return behavior manifest.
 Each delivery contains exactly the declared number of complete groups. No

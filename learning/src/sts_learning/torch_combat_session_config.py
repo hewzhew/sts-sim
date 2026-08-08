@@ -9,7 +9,11 @@ from dataclasses import dataclass, field
 
 from .combat_experience import CombatExperienceLimits
 from .combat_objective import CombatWinObjectiveConfig
-from .combat_potion_lane import CombatPotionLane
+from .combat_potion_lane import (
+    CombatPotionLane,
+    CombatPotionLaneError,
+    normalize_combat_potion_slots,
+)
 from .manifest_catalog import BehaviorManifestCatalogLimits
 from .semantic_concat import SemanticBatchConcatLimits
 from .torch_checkpoints import TorchCheckpointLimits
@@ -206,6 +210,7 @@ class CombatWinBatchSessionConfig:
         default_factory=CombatWinSessionLimits
     )
     potion_lane: CombatPotionLane = CombatPotionLane.ALL
+    potion_slots: tuple[int, ...] = ()
 
     def __post_init__(self) -> None:
         expected = _positive_integer(self.expected_roots, "expected_roots")
@@ -239,9 +244,17 @@ class CombatWinBatchSessionConfig:
             raise TorchCombatSessionError(
                 "combat batch session potion_lane must be typed"
             )
+        try:
+            potion_slots = normalize_combat_potion_slots(
+                self.potion_lane,
+                self.potion_slots,
+            )
+        except CombatPotionLaneError as error:
+            raise TorchCombatSessionError(str(error)) from error
         object.__setattr__(self, "expected_roots", expected)
         object.__setattr__(self, "max_roots", root_bound)
         object.__setattr__(self, "replicate_count", replicates)
+        object.__setattr__(self, "potion_slots", potion_slots)
 
 
 def _positive_integer(value: object, name: str) -> int:

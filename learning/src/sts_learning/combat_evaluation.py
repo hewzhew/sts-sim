@@ -14,7 +14,11 @@ from .combat_outcomes import (
     CombatTerminalStepBatch,
     CompletedCombatGroup,
 )
-from .combat_potion_lane import CombatPotionLane, CombatPotionLaneRootSource
+from .combat_potion_lane import (
+    CombatPotionLane,
+    CombatPotionLaneRootSource,
+    normalize_combat_potion_slots,
+)
 from .policy import BehaviorManifestId
 from .torch_behavior import FrozenCategoricalTorchPolicy
 
@@ -358,6 +362,7 @@ class CombatHeldOutEvaluationResult:
 
     behavior_manifest_id: BehaviorManifestId
     potion_lane: CombatPotionLane
+    potion_slots: tuple[int, ...]
     roots: tuple[CombatEvaluationRootResult, ...]
 
     def __post_init__(self) -> None:
@@ -369,6 +374,10 @@ class CombatHeldOutEvaluationResult:
             raise CombatEvaluationError(
                 "combat evaluation requires a typed potion lane"
             )
+        potion_slots = normalize_combat_potion_slots(
+            self.potion_lane,
+            self.potion_slots,
+        )
         roots = tuple(self.roots)
         if not roots or not all(
             isinstance(root, CombatEvaluationRootResult) for root in roots
@@ -385,6 +394,7 @@ class CombatHeldOutEvaluationResult:
                 "combat evaluation repeated an exact root"
             )
         object.__setattr__(self, "roots", roots)
+        object.__setattr__(self, "potion_slots", potion_slots)
 
     @property
     def wins(self) -> int:
@@ -408,6 +418,7 @@ class CombatHeldOutEvaluator:
         max_roots: int,
         limits: CombatEvaluationLimits | None = None,
         potion_lane: CombatPotionLane = CombatPotionLane.ALL,
+        potion_slots: Sequence[int] = (),
     ) -> None:
         if not callable(getattr(source, "combat_group", None)):
             raise CombatEvaluationError(
@@ -461,13 +472,22 @@ class CombatHeldOutEvaluator:
             raise CombatEvaluationError(
                 "combat evaluation limits must be typed"
             )
-        self.source = CombatPotionLaneRootSource(source, potion_lane)
+        normalized_potion_slots = normalize_combat_potion_slots(
+            potion_lane,
+            potion_slots,
+        )
+        self.source = CombatPotionLaneRootSource(
+            source,
+            potion_lane,
+            normalized_potion_slots,
+        )
         self.slot_indices = slots
         self.replicate_count = replicates
         self.policies = frozen_policies
         self.max_roots = root_bound
         self.limits = active_limits
         self.potion_lane = potion_lane
+        self.potion_slots = normalized_potion_slots
         self.behavior_manifest_id = next(iter(manifest_ids))
         self._started = False
 
@@ -531,6 +551,7 @@ class CombatHeldOutEvaluator:
         return CombatHeldOutEvaluationResult(
             self.behavior_manifest_id,
             self.potion_lane,
+            self.potion_slots,
             tuple(roots),
         )
 

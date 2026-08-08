@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Sequence
 from pathlib import Path
 
 import pytest
@@ -25,23 +26,26 @@ _ROOTS = (
 
 class _RootSource:
     def __init__(self) -> None:
-        self.calls: list[tuple[int, bool]] = []
+        self.calls: list[tuple[int, tuple[int, ...] | None]] = []
 
     def combat_group(
         self,
         slot_index: int,
         replicate_count: int,
-        allow_potions: bool = True,
+        potion_slots: Sequence[int] | None = None,
     ):
         assert replicate_count == 2
-        self.calls.append((slot_index, allow_potions))
+        normalized_slots = (
+            None if potion_slots is None else tuple(potion_slots)
+        )
+        self.calls.append((slot_index, normalized_slots))
         root_id, state_hash, wins, final_hps = _ROOTS[slot_index]
         return OneRoundCombatGroup(
             root_id,
             state_hash,
             wins,
             final_hps=final_hps,
-            allow_potions=allow_potions,
+            potion_slots=normalized_slots,
         )
 
 
@@ -73,10 +77,10 @@ def test_training_command_runs_updates_journals_and_publishes(
     )
 
     assert source.calls == [
-        (0, False),
-        (1, False),
-        (0, False),
-        (1, False),
+        (0, ()),
+        (1, ()),
+        (0, ()),
+        (1, ()),
     ]
     assert summary["optimizer_steps"] == 2
     records = tuple(
@@ -91,8 +95,9 @@ def test_training_command_runs_updates_journals_and_publishes(
         "generation",
         "completed",
     )
-    assert records[0]["schema"] == "sts-learning-combat-training-v2"
+    assert records[0]["schema"] == "sts-learning-combat-training-v3"
     assert records[0]["potion_lane"] == "never"
+    assert records[0]["potion_slots"] == []
     assert records[1]["roots"][1]["slot_index"] == 1
     assert records[1]["roots"][1]["selected_objective"] == "hp"
     assert records[1]["active_manifest_id_before"] != records[1][

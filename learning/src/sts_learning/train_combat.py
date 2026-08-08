@@ -11,7 +11,11 @@ from pathlib import Path
 from typing import TextIO
 
 from .combat_objective import CombatWinObjectiveConfig
-from .combat_potion_lane import CombatPotionLane
+from .combat_potion_lane import (
+    CombatPotionLane,
+    CombatPotionLaneError,
+    normalize_combat_potion_slots,
+)
 from .torch_combat_batch_generation import (
     CombatWinBatchGenerationResult,
     CombatWinRootGenerationResult,
@@ -25,7 +29,7 @@ from .torch_combat_session_config import (
 )
 
 
-COMBAT_TRAINING_SCHEMA = "sts-learning-combat-training-v2"
+COMBAT_TRAINING_SCHEMA = "sts-learning-combat-training-v3"
 
 
 class CombatTrainingCommandError(RuntimeError):
@@ -42,6 +46,7 @@ class CombatTrainingCommandConfig:
     model_seed: int
     behavior_seed_base: int
     potion_lane: CombatPotionLane = CombatPotionLane.ALL
+    potion_slots: tuple[int, ...] = ()
 
     def __post_init__(self) -> None:
         artifact = Path(self.artifact).resolve()
@@ -66,6 +71,13 @@ class CombatTrainingCommandConfig:
             raise CombatTrainingCommandError(
                 "combat training potion_lane must be typed"
             )
+        try:
+            potion_slots = normalize_combat_potion_slots(
+                self.potion_lane,
+                self.potion_slots,
+            )
+        except CombatPotionLaneError as error:
+            raise CombatTrainingCommandError(str(error)) from error
         if root_count < 2:
             raise CombatTrainingCommandError(
                 "multi-root training requires at least two roots"
@@ -83,6 +95,7 @@ class CombatTrainingCommandConfig:
         object.__setattr__(self, "updates", updates)
         object.__setattr__(self, "model_seed", model_seed)
         object.__setattr__(self, "behavior_seed_base", behavior_seed_base)
+        object.__setattr__(self, "potion_slots", potion_slots)
 
     @property
     def behavior_seeds(self) -> tuple[int, ...]:
@@ -122,6 +135,7 @@ def run_combat_training(
             profile=profile,
             limits=limits,
             potion_lane=config.potion_lane,
+            potion_slots=config.potion_slots,
         ),
     ).new_from_artifact_file(
         config.artifact,
@@ -152,6 +166,7 @@ def run_combat_training(
                 "behavior_seeds": config.behavior_seeds,
                 "all_win_axis": profile.objective.all_win_axis.name,
                 "potion_lane": config.potion_lane.value,
+                "potion_slots": config.potion_slots,
             },
         )
         for generation in range(config.updates):
@@ -290,6 +305,15 @@ def _seed(value: int, name: str) -> int:
     return value
 
 
+def _potion_slots_text(arguments: argparse.Namespace) -> str:
+    lane = CombatPotionLane(arguments.potion_lane)
+    if lane is CombatPotionLane.ALL:
+        return "all"
+    if lane is CombatPotionLane.NEVER:
+        return "none"
+    return "+".join(str(slot) for slot in arguments.potion_slot)
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Train one shared behavior from an opaque combat-root batch.",
@@ -306,6 +330,7 @@ def _parser() -> argparse.ArgumentParser:
         choices=tuple(lane.value for lane in CombatPotionLane),
         default=CombatPotionLane.ALL.value,
     )
+    parser.add_argument("--potion-slot", action="append", type=int, default=[])
     return parser
 
 
@@ -321,12 +346,14 @@ def main() -> int:
             model_seed=arguments.model_seed,
             behavior_seed_base=arguments.behavior_seed_base,
             potion_lane=CombatPotionLane(arguments.potion_lane),
+            potion_slots=tuple(arguments.potion_slot),
         )
     )
     print(
         "training_complete=true "
         f"optimizer_steps={summary['optimizer_steps']} "
         f"potion_lane={arguments.potion_lane} "
+        f"potion_slots={_potion_slots_text(arguments)} "
         f"wins={summary['total_wins']} losses={summary['total_losses']} "
         f"seconds={summary['elapsed_seconds']:.3f} "
         f"output={arguments.output.resolve()}",

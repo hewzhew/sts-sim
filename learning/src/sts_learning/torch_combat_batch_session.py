@@ -142,7 +142,11 @@ class CombatWinBatchSessionFactory:
             expected_roots=self.config.expected_roots,
             max_bytes=self.config.limits.max_artifact_bytes,
         )
-        source = CombatPotionLaneRootSource(source, self.config.potion_lane)
+        source = CombatPotionLaneRootSource(
+            source,
+            self.config.potion_lane,
+            self.config.potion_slots,
+        )
         return self._new_from_combat_root_source(
             source,
             artifact_byte_count=len(artifact),

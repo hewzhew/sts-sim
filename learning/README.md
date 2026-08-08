@@ -204,7 +204,9 @@ The output directory must be absent or empty; optimizer resume is not implied.
 group while preserving the simulator legality surface. Use it for roots with
 observed no-potion wins so terminal-HP refinement cannot spend inventory. A
 no-potion all-loss root remains no-signal and belongs in a separately bounded
-concrete-potion rescue lane; this command does not assign potion values.
+concrete-potion rescue lane; `-PotionLane root-slots -PotionSlots 0` admits only
+the exact starting potion UUID in root slot 0. A replacement later generated in
+that slot is not admitted. This command does not assign potion values.
 
 Evaluate the published frozen behavior on a distinct held-out root batch with:
 
@@ -237,6 +239,10 @@ use/discard candidate removed from the model-facing action surface. The engine
 legality surface remains complete. Matching `all` and `never` runs with the
 same behavior seeds are a bounded no-potion coverage comparison, not a reward,
 a static potion ranking, or a change to training.
+`-PotionLane root-slots -PotionSlots <zero-based-slot>` provides the next
+bounded rescue comparison for one exact starting potion identity per root.
+Run separate fresh outputs for separate slots; use a multi-slot array only when
+the experiment explicitly asks about a combined fallback.
 For local classification only, each root includes an observed-resource Pareto
 frontier over winning replicates using final HP, max HP, gold, and exact potion
 multisets. A result with more HP but a different or smaller potion inventory is

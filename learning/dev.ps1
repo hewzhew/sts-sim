@@ -12,8 +12,9 @@ param(
     [int]$Updates,
     [long]$ModelSeed = 0,
     [long]$BehaviorSeedBase = 1000,
-    [ValidateSet("all", "never")]
+    [ValidateSet("all", "never", "root-slots")]
     [string]$PotionLane = "all",
+    [int[]]$PotionSlots = @(),
     [ValidateSet("dev", "release")]
     [string]$BridgeProfile = "release"
 )
@@ -27,6 +28,10 @@ $testRoot = Join-Path $learningRoot "tests"
 $hostRoot = Join-Path $repositoryRoot ".oracle-lab\hosts"
 $pythonFile = Join-Path $hostRoot "learning-python.txt"
 $reportRoot = Join-Path $repositoryRoot ".oracle-lab\reports"
+$potionArguments = @("--potion-lane", $PotionLane)
+foreach ($potionSlot in $PotionSlots) {
+    $potionArguments += @("--potion-slot", $potionSlot)
+}
 
 function Resolve-PythonExecutable([string]$Candidate) {
     if (-not $Candidate) {
@@ -208,7 +213,7 @@ switch ($Command) {
                 --updates $Updates `
                 --model-seed $ModelSeed `
                 --behavior-seed-base $BehaviorSeedBase `
-                --potion-lane $PotionLane
+                @potionArguments
             if ($LASTEXITCODE -ne 0) {
                 throw "combat training command failed"
             }
@@ -225,7 +230,7 @@ switch ($Command) {
                 --roots $Roots `
                 --replicates $Replicates `
                 --behavior-seed-base $BehaviorSeedBase `
-                --potion-lane $PotionLane
+                @potionArguments
             if ($LASTEXITCODE -ne 0) {
                 throw "combat evaluation command failed"
             }

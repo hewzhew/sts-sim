@@ -210,8 +210,11 @@ impl CombatLearningBatchEnv {
     }
 
     #[getter]
-    fn allows_potions(&self) -> bool {
-        self.pool.potion_policy() == CombatLearningPotionPolicyV1::All
+    fn potion_slots(&self) -> Option<Vec<usize>> {
+        self.pool
+            .potion_policy()
+            .root_slots()
+            .map(<[usize]>::to_vec)
     }
 
     #[getter]
@@ -460,6 +463,21 @@ impl CombatLearningBatchEnv {
             potion_policy,
         )
             .map_err(|error| error.to_string())?;
+        let states = states_from_source(&pool)?;
+        Ok(Self { pool, states })
+    }
+
+    pub(super) fn from_root_with_potion_slots(
+        root: &CombatLearningRootV1,
+        replicate_count: usize,
+        potion_slots: Option<Vec<usize>>,
+    ) -> Result<Self, String> {
+        let pool = CombatLearningEnvPoolV1::from_root_with_potion_slots(
+            root,
+            replicate_count,
+            potion_slots,
+        )
+        .map_err(|error| error.to_string())?;
         let states = states_from_source(&pool)?;
         Ok(Self { pool, states })
     }

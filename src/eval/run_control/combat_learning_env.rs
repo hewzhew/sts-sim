@@ -116,6 +116,7 @@ pub struct CombatLearningRootV1 {
     identity: CombatLearningRootIdentityV1,
     context: CombatLearningRootContextV1,
     resources: CombatLearningResourceSnapshotV1,
+    potion_uuids: Vec<Option<u32>>,
     session: RunControlSessionCheckpointV1,
     previous_outcome: Option<CombatBaselineOutcomeV1>,
 }
@@ -129,11 +130,19 @@ impl CombatLearningRootV1 {
         };
         let context = combat_learning_root_context_v1(&session, &position.combat)?;
         let resources = combat_learning_resources_from_combat_v1(&position.combat);
+        let potion_uuids = position
+            .combat
+            .entities
+            .potions
+            .iter()
+            .map(|slot| slot.as_ref().map(|potion| potion.uuid))
+            .collect();
         let previous_outcome = session.last_combat_baseline().cloned();
         Ok(Self {
             identity,
             context,
             resources,
+            potion_uuids,
             session: RunControlSessionCheckpointV1::from_session(&session),
             previous_outcome,
         })
@@ -153,6 +162,10 @@ impl CombatLearningRootV1 {
 
     pub fn resources(&self) -> &CombatLearningResourceSnapshotV1 {
         &self.resources
+    }
+
+    pub fn potion_uuids(&self) -> &[Option<u32>] {
+        &self.potion_uuids
     }
 
     pub fn spawn(&self, replicate_index: u32) -> Result<CombatLearningEnvV1, String> {

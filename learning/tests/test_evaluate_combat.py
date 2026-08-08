@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Sequence
 from pathlib import Path
 
 import pytest
@@ -32,23 +33,26 @@ class _RootSource:
         ],
     ) -> None:
         self.roots = roots
-        self.calls: list[tuple[int, bool]] = []
+        self.calls: list[tuple[int, tuple[int, ...] | None]] = []
 
     def combat_group(
         self,
         slot_index: int,
         replicate_count: int,
-        allow_potions: bool = True,
+        potion_slots: Sequence[int] | None = None,
     ):
         assert replicate_count == 2
-        self.calls.append((slot_index, allow_potions))
+        normalized_slots = (
+            None if potion_slots is None else tuple(potion_slots)
+        )
+        self.calls.append((slot_index, normalized_slots))
         root_id, state_hash, wins, final_hps = self.roots[slot_index]
         return OneRoundCombatGroup(
             root_id,
             state_hash,
             wins,
             final_hps=final_hps,
-            allow_potions=allow_potions,
+            potion_slots=normalized_slots,
         )
 
 
@@ -114,10 +118,11 @@ def test_evaluation_recovers_published_behavior_without_training_or_experience(
         bridge=bridge,
     )
 
-    assert summary["schema"] == "sts-learning-combat-held-out-evaluation-v4"
+    assert summary["schema"] == "sts-learning-combat-held-out-evaluation-v5"
     assert summary["potion_lane"] == "all"
-    assert training_source.calls == [(0, True), (1, True)]
-    assert evaluation_source.calls == [(0, True), (1, True)]
+    assert summary["potion_slots"] == ()
+    assert training_source.calls == [(0, None), (1, None)]
+    assert evaluation_source.calls == [(0, None), (1, None)]
     assert summary["wins"] == 3
     assert summary["losses"] == 1
     assert summary["behavior_training_step"] == 1
@@ -162,6 +167,7 @@ def test_evaluation_recovers_published_behavior_without_training_or_experience(
     all_stdout = capsys.readouterr().out
     assert (
         "evaluation_complete=true wins=3 losses=1 potion_lane=all "
+        "potion_slots=all "
         "root_wins=1,2"
     ) in all_stdout
     assert "root_sites=A1F4,A1F4" in all_stdout
@@ -193,10 +199,10 @@ def test_evaluation_recovers_published_behavior_without_training_or_experience(
     assert no_potion_summary["lost_potion_ids"] == {}
     assert no_potion_summary["gained_potion_ids"] == {}
     assert evaluation_source.calls == [
-        (0, True),
-        (1, True),
-        (0, False),
-        (1, False),
+        (0, None),
+        (1, None),
+        (0, ()),
+        (1, ()),
     ]
     assert all(
         outcome["final_potion_ids"]
@@ -208,8 +214,33 @@ def test_evaluation_recovers_published_behavior_without_training_or_experience(
     no_potion_stdout = capsys.readouterr().out
     assert (
         "evaluation_complete=true wins=3 losses=1 potion_lane=never "
+        "potion_slots=none "
         "root_wins=1,2"
     ) in no_potion_stdout
+
+    selected_output = tmp_path / "held-out-root-slot-one"
+    selected_summary = run_combat_evaluation(
+        CombatEvaluationCommandConfig(
+            artifact=evaluation_artifact,
+            behavior=behavior,
+            output=selected_output,
+            root_count=2,
+            replicate_count=2,
+            behavior_seed_base=1_000,
+            potion_lane=CombatPotionLane.ROOT_SLOTS,
+            potion_slots=(1,),
+        ),
+        bridge=bridge,
+    )
+
+    assert selected_summary["potion_lane"] == "root-slots"
+    assert selected_summary["potion_slots"] == (1,)
+    assert selected_summary["potions_used"] == 2
+    assert selected_summary["lost_potion_ids"] == {"GamblersBrew": 2}
+    assert selected_summary["gained_potion_ids"] == {"BlockPotion": 2}
+    assert evaluation_source.calls[-2:] == [(0, (1,)), (1, (1,))]
+    selected_stdout = capsys.readouterr().out
+    assert "potion_lane=root-slots potion_slots=1" in selected_stdout
 
 
 def test_observed_resource_frontier_keeps_hp_potion_tradeoffs_incomparable() -> None:

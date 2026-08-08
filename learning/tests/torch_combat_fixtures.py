@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from types import SimpleNamespace
 
 import numpy as np
@@ -32,13 +33,15 @@ class OneRoundCombatGroup:
         wins: tuple[bool, bool],
         *,
         final_hps: tuple[int, int] | None = None,
-        allow_potions: bool = True,
+        potion_slots: Sequence[int] | None = None,
     ) -> None:
         self.root_id = root_id
         self.exact_combat_state_hash = exact_combat_state_hash
         self.wins = wins
         self.final_hps = final_hps
-        self.allows_potions = allow_potions
+        self.potion_slots = (
+            None if potion_slots is None else tuple(potion_slots)
+        )
         self.root_context = SimpleNamespace(
             act=1,
             floor=4,
@@ -86,18 +89,27 @@ class OneRoundCombatGroup:
             else [70 if won else 0 for won in self.wins],
             dtype=np.int32,
         )
-        potion_use = (0, 1) if self.allows_potions else (0, 0)
-        final_potion_ids = (
-            (
+        used_slot = (
+            0
+            if self.potion_slots is None or 0 in self.potion_slots
+            else (1 if 1 in self.potion_slots else None)
+        )
+        potion_use = (0, int(used_slot is not None))
+        if used_slot == 0:
+            final_potion_ids = (
                 ("EntropicBrew", "GamblersBrew"),
                 ("BlockPotion", "GamblersBrew"),
             )
-            if self.allows_potions
-            else (
+        elif used_slot == 1:
+            final_potion_ids = (
+                ("EntropicBrew", "GamblersBrew"),
+                ("EntropicBrew", "BlockPotion"),
+            )
+        else:
+            final_potion_ids = (
                 ("EntropicBrew", "GamblersBrew"),
                 ("EntropicBrew", "GamblersBrew"),
             )
-        )
         return {
             "root_id": self.root_id,
             "exact_combat_state_hash": self.exact_combat_state_hash,
@@ -135,7 +147,7 @@ class ExactCombatRootSource:
         self,
         slot_index: int,
         replicate_count: int,
-        allow_potions: bool = True,
+        potion_slots: Sequence[int] | None = None,
     ) -> OneRoundCombatGroup:
         if slot_index != 0 or replicate_count != 2:
             raise AssertionError("combat source received different generation bounds")
@@ -144,7 +156,7 @@ class ExactCombatRootSource:
         except IndexError as error:
             raise AssertionError("combat source was run too many times") from error
         self.call_count += 1
-        group = OneRoundCombatGroup(*specification, allow_potions=allow_potions)
+        group = OneRoundCombatGroup(*specification, potion_slots=potion_slots)
         self.groups.append(group)
         return group
 

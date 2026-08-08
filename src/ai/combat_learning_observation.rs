@@ -97,6 +97,9 @@ pub struct CombatLearningPlayerStateV1 {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct CombatLearningPotionV1 {
+    /// Internal exact identity used only to keep root-scoped action contracts
+    /// from authorizing a replacement potion in the same slot.
+    pub potion_uuid: u32,
     pub potion_id: PotionId,
     pub can_use: bool,
     pub can_discard: bool,
@@ -297,6 +300,7 @@ pub fn combat_learning_observation_v1(combat: &CombatState) -> CombatLearningObs
             .iter()
             .map(|slot| {
                 slot.as_ref().map(|potion| CombatLearningPotionV1 {
+                    potion_uuid: potion.uuid,
                     potion_id: potion.id,
                     can_use: potion.can_use,
                     can_discard: potion.can_discard,

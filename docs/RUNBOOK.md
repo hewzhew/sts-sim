@@ -710,11 +710,13 @@ update, and promotes at most once. It writes nothing;
 returned loss and promotion as training accounting, not held-out evidence of
 improvement.
 
-The batch session binds `PotionLane all|never` into its root source. Prefer
-`never` when the selected roots already have no-potion winning coverage, so the
-all-win terminal-HP axis cannot learn to burn inventory for local HP. An
-all-loss `never` group stays no-signal; move it to an explicit concrete-potion
-rescue investigation instead of rerunning unrestricted `all` by default.
+The batch session binds `PotionLane all|never|root-slots` into its root source.
+Prefer `never` when the selected roots already have no-potion winning coverage,
+so the all-win terminal-HP axis cannot learn to burn inventory for local HP. An
+all-loss `never` group stays no-signal; move it to `root-slots` with one
+`-PotionSlots <zero-based-slot>` at a time instead of rerunning unrestricted
+`all` by default. The selected slot binds its exact root potion UUID; a later
+replacement in that slot remains unavailable.
 
 Use `evaluate-combat` on a distinct opaque root artifact after publication. The
 behavior directory must be an exact completed `train-combat` output containing
@@ -732,13 +734,19 @@ manifest on that bounded sample; it does not establish improvement without a
 comparable baseline using the same roots and RNG streams.
 
 Select the model-facing potion action surface explicitly with
-`-PotionLane all|never` (default `all`). `never` removes potion use and discard
-from the model candidates without changing simulator legality. Run an `all`
-and a `never` evaluation into separate fresh output directories with the same
-artifact, behavior seed base, and replicate count to ask whether the frozen
-behavior can win while preserving the starting inventory. This is an
+`-PotionLane all|never|root-slots` (default `all`). `never` removes potion use
+and discard from the model candidates without changing simulator legality. Run
+an `all` and a `never` evaluation into separate fresh output directories with
+the same artifact, behavior seed base, and replicate count to ask whether the
+frozen behavior can win while preserving the starting inventory. This is an
 evaluation ablation only: it does not price a potion, change training, or
 establish continuation value.
+If the no-potion result lacks acceptable survival coverage, run one bounded
+identity lane at a time, for example
+`-PotionLane root-slots -PotionSlots 0`. The output records both the slot
+contract and every root's starting potion identities; empty selected slots
+admit nothing. Multiple slots are accepted as a PowerShell array only for an
+explicit combined fallback, not as the default rescue probe.
 
 Each root also reports an observed-resource Pareto frontier among its winning
 replicates. The order compares final HP, max HP, gold, and exact potion
