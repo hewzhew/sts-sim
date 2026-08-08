@@ -8,8 +8,9 @@ use std::fmt;
 
 use super::{
     CombatLearningBoundaryV1, CombatLearningEnvCheckpointV1, CombatLearningEnvV1,
-    CombatLearningRootIdentityV1, CombatLearningRootV1, CombatLearningTerminalOutcomeV1,
-    LearningActionV1, LearningModelBatchV1, LearningModelInputError,
+    CombatLearningRootContextV1, CombatLearningRootIdentityV1, CombatLearningRootV1,
+    CombatLearningTerminalOutcomeV1, LearningActionV1, LearningModelBatchV1,
+    LearningModelInputError,
 };
 
 #[derive(Clone, Debug)]
@@ -21,6 +22,7 @@ struct CombatLearningEnvPoolSlotV1 {
 #[derive(Clone, Debug)]
 pub struct CombatLearningEnvPoolV1 {
     root: CombatLearningRootIdentityV1,
+    root_context: CombatLearningRootContextV1,
     slots: Vec<CombatLearningEnvPoolSlotV1>,
     poisoned: bool,
 }
@@ -56,6 +58,7 @@ impl CombatLearningEnvPoolV1 {
         }
         Ok(Self {
             root: root.identity().clone(),
+            root_context: *root.context(),
             slots,
             poisoned: false,
         })
@@ -63,6 +66,10 @@ impl CombatLearningEnvPoolV1 {
 
     pub fn root_identity(&self) -> &CombatLearningRootIdentityV1 {
         &self.root
+    }
+
+    pub fn root_context(&self) -> &CombatLearningRootContextV1 {
+        &self.root_context
     }
 
     pub fn replicate_count(&self) -> usize {
@@ -279,6 +286,7 @@ mod tests {
         let batch = pool.active_model_batch().expect("build model batch");
 
         assert_eq!(pool.root_identity(), root.identity());
+        assert_eq!(pool.root_context(), root.context());
         assert_eq!(batch.root, root.identity());
         assert_eq!(batch.active_replicate_indices, vec![0, 1, 2]);
         assert_eq!(batch.model_batch.decisions.len(), 3);

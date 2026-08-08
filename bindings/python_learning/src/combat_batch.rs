@@ -7,7 +7,9 @@ use numpy::PyArray1;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
-use sts_oracle_eval::eval::run_control::{CombatLearningEnvPoolV1, CombatLearningRootV1};
+use sts_oracle_eval::eval::run_control::{
+    CombatLearningEnvPoolV1, CombatLearningRootContextV1, CombatLearningRootV1,
+};
 use sts_oracle_eval::sim::combat::CombatTerminal;
 
 use super::{
@@ -19,6 +21,95 @@ use super::{
 pub(super) const COMBAT_TERMINAL_WIN: u8 = 0;
 pub(super) const COMBAT_TERMINAL_LOSS: u8 = 1;
 pub(super) const COMBAT_TERMINAL_UNRESOLVED: u8 = 2;
+
+/// Read-only Python view of the compact public context captured with one exact root.
+#[pyclass(frozen, name = "CombatLearningRootContextV1")]
+pub(super) struct PyCombatLearningRootContextV1 {
+    inner: CombatLearningRootContextV1,
+}
+
+#[pymethods]
+impl PyCombatLearningRootContextV1 {
+    #[getter]
+    fn act(&self) -> u8 {
+        self.inner.act
+    }
+
+    #[getter]
+    fn floor(&self) -> i32 {
+        self.inner.floor
+    }
+
+    #[getter]
+    fn ascension_level(&self) -> u8 {
+        self.inner.ascension_level
+    }
+
+    #[getter]
+    fn turn(&self) -> u32 {
+        self.inner.turn
+    }
+
+    #[getter]
+    fn is_boss_fight(&self) -> bool {
+        self.inner.is_boss_fight
+    }
+
+    #[getter]
+    fn is_elite_fight(&self) -> bool {
+        self.inner.is_elite_fight
+    }
+
+    #[getter]
+    fn monster_count(&self) -> u32 {
+        self.inner.monster_count
+    }
+
+    #[getter]
+    fn living_monster_count(&self) -> u32 {
+        self.inner.living_monster_count
+    }
+
+    #[getter]
+    fn potion_slot_count(&self) -> u32 {
+        self.inner.potion_slot_count
+    }
+
+    #[getter]
+    fn filled_potion_count(&self) -> u32 {
+        self.inner.filled_potion_count
+    }
+
+    #[getter]
+    fn usable_potion_count(&self) -> u32 {
+        self.inner.usable_potion_count
+    }
+
+    #[getter]
+    fn master_deck_card_count(&self) -> u32 {
+        self.inner.master_deck_card_count
+    }
+
+    #[getter]
+    fn relic_count(&self) -> u32 {
+        self.inner.relic_count
+    }
+
+    #[getter]
+    fn hand_card_count(&self) -> u32 {
+        self.inner.hand_card_count
+    }
+
+    #[getter]
+    fn hp(&self) -> i32 {
+        self.inner.hp
+    }
+
+    #[getter]
+    fn max_hp(&self) -> i32 {
+        self.inner.max_hp
+    }
+}
 
 /// Same-root combat replicates created from one exact live run-control slot.
 ///
@@ -40,6 +131,13 @@ impl CombatLearningBatchEnv {
     #[getter]
     fn exact_combat_state_hash(&self) -> String {
         self.pool.root_identity().exact_combat_state_hash.clone()
+    }
+
+    #[getter]
+    fn root_context(&self) -> PyCombatLearningRootContextV1 {
+        PyCombatLearningRootContextV1 {
+            inner: *self.pool.root_context(),
+        }
     }
 
     #[getter]

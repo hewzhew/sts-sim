@@ -121,8 +121,8 @@ pub use combat_case_candidate_census::{
 };
 pub use combat_learning_env::{
     CombatLearningBoundaryV1, CombatLearningEnvCheckpointV1, CombatLearningEnvV1,
-    CombatLearningEpisodeIdentityV1, CombatLearningRootIdentityV1, CombatLearningRootV1,
-    CombatLearningStepV1, CombatLearningTerminalOutcomeV1,
+    CombatLearningEpisodeIdentityV1, CombatLearningRootContextV1, CombatLearningRootIdentityV1,
+    CombatLearningRootV1, CombatLearningStepV1, CombatLearningTerminalOutcomeV1,
 };
 pub use combat_learning_env_pool::{
     CombatLearningEnvPoolError, CombatLearningEnvPoolModelBatchV1, CombatLearningEnvPoolSlotStepV1,

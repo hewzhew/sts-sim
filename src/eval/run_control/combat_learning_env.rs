@@ -19,6 +19,31 @@ pub struct CombatLearningRootIdentityV1 {
     pub exact_combat_state_hash: String,
 }
 
+/// Small public-state summary captured once beside an exact combat root.
+///
+/// This is collection metadata, not a second combat observation or a policy feature schema.
+/// Counts describe the exact root boundary and are intentionally independent from display text.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct CombatLearningRootContextV1 {
+    pub act: u8,
+    pub floor: i32,
+    pub ascension_level: u8,
+    pub turn: u32,
+    pub is_boss_fight: bool,
+    pub is_elite_fight: bool,
+    pub monster_count: u32,
+    pub living_monster_count: u32,
+    pub potion_slot_count: u32,
+    pub filled_potion_count: u32,
+    pub usable_potion_count: u32,
+    pub master_deck_card_count: u32,
+    pub relic_count: u32,
+    pub hand_card_count: u32,
+    pub hp: i32,
+    pub max_hp: i32,
+}
+
 /// One stochastic replicate from an exact combat root.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -74,6 +99,7 @@ pub struct CombatLearningEnvCheckpointV1 {
 #[derive(Clone, Debug, PartialEq)]
 pub struct CombatLearningRootV1 {
     identity: CombatLearningRootIdentityV1,
+    context: CombatLearningRootContextV1,
     session: RunControlSessionCheckpointV1,
     previous_outcome: Option<CombatBaselineOutcomeV1>,
 }
@@ -85,9 +111,11 @@ impl CombatLearningRootV1 {
             root_id: run_control_session_fingerprint_v2(&session),
             exact_combat_state_hash: combat_exact_state_hash_v2(&position.engine, &position.combat),
         };
+        let context = combat_learning_root_context_v1(&session, &position.combat)?;
         let previous_outcome = session.last_combat_baseline().cloned();
         Ok(Self {
             identity,
+            context,
             session: RunControlSessionCheckpointV1::from_session(&session),
             previous_outcome,
         })
@@ -99,6 +127,10 @@ impl CombatLearningRootV1 {
 
     pub fn identity(&self) -> &CombatLearningRootIdentityV1 {
         &self.identity
+    }
+
+    pub fn context(&self) -> &CombatLearningRootContextV1 {
+        &self.context
     }
 
     pub fn spawn(&self, replicate_index: u32) -> Result<CombatLearningEnvV1, String> {
@@ -113,6 +145,58 @@ impl CombatLearningRootV1 {
         env.observe()?;
         Ok(env)
     }
+}
+
+fn combat_learning_root_context_v1(
+    session: &RunControlSession,
+    combat: &crate::runtime::combat::CombatState,
+) -> Result<CombatLearningRootContextV1, String> {
+    let potions = &combat.entities.potions;
+    Ok(CombatLearningRootContextV1 {
+        act: session.run_state.act_num,
+        floor: session.run_state.floor_num,
+        ascension_level: combat.meta.ascension_level,
+        turn: combat.turn.turn_count,
+        is_boss_fight: combat.meta.is_boss_fight,
+        is_elite_fight: combat.meta.is_elite_fight,
+        monster_count: combat_root_count_v1("monster", combat.entities.monsters.len())?,
+        living_monster_count: combat_root_count_v1(
+            "living monster",
+            combat
+                .entities
+                .monsters
+                .iter()
+                .filter(|monster| monster.is_alive_for_action())
+                .count(),
+        )?,
+        potion_slot_count: combat_root_count_v1("potion slot", potions.len())?,
+        filled_potion_count: combat_root_count_v1(
+            "filled potion",
+            potions.iter().filter(|slot| slot.is_some()).count(),
+        )?,
+        usable_potion_count: combat_root_count_v1(
+            "usable potion",
+            potions
+                .iter()
+                .filter_map(Option::as_ref)
+                .filter(|potion| {
+                    crate::content::potions::potion_can_use_in_combat_like_java(potion, combat)
+                })
+                .count(),
+        )?,
+        master_deck_card_count: combat_root_count_v1(
+            "master deck card",
+            combat.meta.master_deck_snapshot.len(),
+        )?,
+        relic_count: combat_root_count_v1("relic", combat.entities.player.relics.len())?,
+        hand_card_count: combat_root_count_v1("hand card", combat.zones.hand.len())?,
+        hp: combat.entities.player.current_hp,
+        max_hp: combat.entities.player.max_hp,
+    })
+}
+
+fn combat_root_count_v1(kind: &str, count: usize) -> Result<u32, String> {
+    u32::try_from(count).map_err(|_| format!("combat learning root {kind} count exceeds u32"))
 }
 
 #[derive(Clone, Debug)]
@@ -244,6 +328,8 @@ mod tests {
     use crate::content::monsters::exordium::jaw_worm::JawWorm;
     use crate::content::monsters::EnemyId;
     use crate::content::monsters::MonsterBehavior;
+    use crate::content::potions::{Potion, PotionId};
+    use crate::content::relics::{RelicId, RelicState};
     use crate::runtime::combat::CombatCard;
     use crate::sim::combat::CombatTerminal;
     use crate::state::core::{ActiveCombat, CombatContext, EngineState, RoomCombatContext};
@@ -278,6 +364,53 @@ mod tests {
             second.episode.root.exact_combat_state_hash
         );
         assert_ne!(first.episode.root.root_id, second.episode.root.root_id);
+    }
+
+    #[test]
+    fn root_context_captures_compact_public_facts_once() {
+        let mut session = combat_root_session(20);
+        session.run_state.act_num = 2;
+        session.run_state.floor_num = 23;
+        let combat = &mut session.active_combat.as_mut().unwrap().combat_state;
+        combat.meta.ascension_level = 7;
+        combat.meta.is_elite_fight = true;
+        combat.meta.master_deck_snapshot = vec![
+            CombatCard::new(CardId::Strike, 1),
+            CombatCard::new(CardId::Defend, 2),
+        ]
+        .into();
+        combat.entities.player.current_hp = 61;
+        combat.entities.player.max_hp = 85;
+        combat.entities.player.relics = vec![RelicState::new(RelicId::BurningBlood)];
+        combat.entities.potions = vec![
+            Some(Potion::new(PotionId::FirePotion, 1)),
+            Some(Potion::new(PotionId::FairyPotion, 2)),
+            None,
+        ];
+
+        let root = CombatLearningRootV1::from_session(session).expect("construct root");
+
+        assert_eq!(
+            *root.context(),
+            CombatLearningRootContextV1 {
+                act: 2,
+                floor: 23,
+                ascension_level: 7,
+                turn: 1,
+                is_boss_fight: false,
+                is_elite_fight: true,
+                monster_count: 1,
+                living_monster_count: 1,
+                potion_slot_count: 3,
+                filled_potion_count: 2,
+                usable_potion_count: 1,
+                master_deck_card_count: 2,
+                relic_count: 1,
+                hand_card_count: 1,
+                hp: 61,
+                max_hp: 85,
+            }
+        );
     }
 
     #[test]

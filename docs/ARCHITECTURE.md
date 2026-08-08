@@ -162,8 +162,13 @@ per-step JSON or one foreign-language call per slot.
 `CombatLearningEnvV1` is a separate combat-episode boundary; it does not
 reinterpret leaving combat as a run victory, defeat, or strategic decision. An
 immutable `CombatLearningRootV1` binds the exact normalized run-session
-fingerprint and exact combat-state hash to one combat-root checkpoint. Every
-spawned episode carries that root identity plus an explicit replicate index,
+fingerprint and exact combat-state hash to one combat-root checkpoint. It also
+captures one compact typed `CombatLearningRootContextV1` from public root facts:
+act, floor, ascension, turn, encounter flags, entity and inventory counts, deck,
+relic and hand counts, and root HP. The context is collection metadata rather
+than a second observation, feature dictionary, reward, or teacher label; it is
+not repeated in decision rows. Every spawned episode carries the root identity
+plus an explicit replicate index,
 accepts only `LearningActionV1::CombatInput`, reuses the complete combat
 observation and legal-action surface above, and terminates with the existing
 typed `CombatBaselineOutcomeV1`. Its in-memory checkpoint retains current
@@ -181,11 +186,11 @@ substitute unrelated run seeds for same-root replicates.
 
 The Python bridge may derive one `CombatLearningBatchEnv` only from an
 undecoded combat-root slot in an existing typed batch. Python receives the
-shared root identities, replicate indices, ordinary sparse semantic action
-rows, and typed combat terminal columns; it does not receive or reconstruct the
-root session. Deriving or running the group does not advance the source run
-slot. This bridge surface owns neither reward shaping nor durable combat-group
-checkpoint publication.
+shared root identities, one frozen native view of the compact root context,
+replicate indices, ordinary sparse semantic action rows, and typed combat
+terminal columns; it does not receive or reconstruct the root session. Deriving
+or running the group does not advance the source run slot. This bridge surface
+owns neither reward shaping nor durable combat-group checkpoint publication.
 
 Terminal learning steps retain the typed run result plus public terminal act,
 floor, HP, max HP, and gold. The Python bridge returns those facts as compact

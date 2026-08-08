@@ -97,6 +97,10 @@ replicate_count)` creates a `CombatLearningBatchEnv` without exposing or
 reconstructing the run-control checkpoint in Python. Every replicate shares
 the exact root id and combat-state hash, keeps its own numbered episode
 lineage, and uses the same `decision_batch`, `choose`, and atomic `step` rhythm.
+`group.root_context` is a frozen native `CombatLearningRootContextV1` generated
+once by Rust. It exposes only compact public root facts for corpus selection and
+stratification; Python does not reconstruct them from semantic feature ids, and
+the context is not copied into every decision row.
 Every combat step repeats the exact root id and combat-state hash. Its newly
 terminal rows have no run reward fields: they return aligned terminal kind,
 bridge-owned win, HP, turn, potion, and card-play columns from

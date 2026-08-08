@@ -9,6 +9,7 @@ from sts_learning_bridge import (
     COMBAT_TERMINAL_UNRESOLVED,
     COMBAT_TERMINAL_WIN,
     CombatLearningBatchEnv,
+    CombatLearningRootContextV1,
     LearningBatchEnv,
     LearningCheckpointBatch,
     PHASE_COMBAT_ROOT,
@@ -183,6 +184,21 @@ def _assert_same_root_combat_group(env: LearningBatchEnv, slot: int) -> None:
     assert group.terminal_count == 0
     assert len(group.root_id) == 64
     assert len(group.exact_combat_state_hash) == 64
+    context = group.root_context
+    assert isinstance(context, CombatLearningRootContextV1)
+    assert context.act >= 1
+    assert context.floor >= 0
+    assert context.ascension_level >= 0
+    assert context.turn >= 0
+    assert isinstance(context.is_boss_fight, bool)
+    assert isinstance(context.is_elite_fight, bool)
+    assert 0 <= context.living_monster_count <= context.monster_count
+    assert 0 <= context.usable_potion_count <= context.filled_potion_count
+    assert context.filled_potion_count <= context.potion_slot_count
+    assert context.master_deck_card_count > 0
+    assert context.relic_count >= 0
+    assert context.hand_card_count >= 0
+    assert 0 < context.hp <= context.max_hp
 
     random_states = [slot ^ _SEED_XOR, slot ^ _SEED_XOR ^ 0xA5A5_A5A5]
     terminal_seen: set[int] = set()

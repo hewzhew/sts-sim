@@ -23,7 +23,8 @@ use bridge_decision::{
     states_from_source,
 };
 use combat_batch::{
-    CombatLearningBatchEnv, COMBAT_TERMINAL_LOSS, COMBAT_TERMINAL_UNRESOLVED, COMBAT_TERMINAL_WIN,
+    CombatLearningBatchEnv, PyCombatLearningRootContextV1, COMBAT_TERMINAL_LOSS,
+    COMBAT_TERMINAL_UNRESOLVED, COMBAT_TERMINAL_WIN,
 };
 
 use semantic::{
@@ -1004,6 +1005,7 @@ fn runtime_error(error: impl ToString) -> PyErr {
 #[pymodule]
 fn _native(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_class::<CombatLearningBatchEnv>()?;
+    module.add_class::<PyCombatLearningRootContextV1>()?;
     module.add_class::<LearningBatchEnv>()?;
     module.add_class::<LearningCheckpointBatch>()?;
     module.add_class::<LearningSlotCheckpoint>()?;
