@@ -399,9 +399,10 @@ fn start_active_combat(
         request.encounter_id,
         request.room_type,
     )?;
-    Ok(ActiveCombat::new(
+    Ok(ActiveCombat::new_for_encounter(
         engine_state,
         combat_state,
+        request.encounter_id,
         request.context,
     ))
 }

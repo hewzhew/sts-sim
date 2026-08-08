@@ -269,9 +269,13 @@ batch alive and the captured episode later advances.
 The minimum usable-potion selector may be zero for an unconditioned run-derived
 combat corpus; concrete potion rescue corpora still bind an exact identity and
 slot.
-An optional distinct-encounter contract deduplicates the unordered canonical
-enemy multiset inside one batch. It is explicit rather than a silent default,
+An optional distinct-encounter contract deduplicates canonical `EncounterId`
+inside one batch. It is explicit rather than a silent default,
 because repeated exact roots can still be useful for distributional training.
+An exact encounter selector binds one canonical `EncounterId`; the bridge
+normalizes it through the simulator's typed parser so an unknown name fails
+before any run advances. Variable members of encounters such as `GremlinGang`
+do not change that identity.
 
 Terminal learning steps retain the typed run result plus public terminal act,
 floor, HP, max HP, and gold. The Python bridge returns those facts as compact
@@ -280,7 +284,8 @@ and lower-tail targets, not a shaped reward or a context-free resource score.
 An explicit `public_run_contexts()` snapshot separately exposes every current
 slot's seed, typed boundary kind, act/floor, HP/max HP, gold, and concrete
 potion-slot identities. Active combat contexts additionally expose ordered
-canonical enemy identities; non-combat contexts expose an empty enemy set. It
+canonical enemy identities and their canonical encounter identity; non-combat
+contexts expose neither. It
 clones no session and retains no history.
 At a combat boundary, resource fields come from the active combat after
 pre-battle triggers rather than the persistent run snapshot, which is not

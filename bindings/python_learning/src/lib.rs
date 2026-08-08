@@ -379,6 +379,13 @@ impl PyLearningPublicRunContextV1 {
     }
 
     #[getter]
+    fn encounter_id(&self) -> Option<String> {
+        self.inner
+            .encounter_id
+            .map(|encounter| format!("{encounter:?}"))
+    }
+
+    #[getter]
     fn monster_ids(&self) -> Vec<String> {
         self.inner
             .monster_ids
@@ -488,6 +495,14 @@ impl LearningBatchEnv {
             .iter()
             .map(|potion| format!("{potion:?}"))
             .collect()
+    }
+
+    /// Normalize one typed encounter identity accepted by root selectors.
+    #[staticmethod]
+    fn canonical_encounter_id(raw: &str) -> PyResult<String> {
+        sts_oracle_eval::sim::combat_start::encounter_id_from_input(raw)
+            .map(|encounter| format!("{encounter:?}"))
+            .map_err(value_error)
     }
 
     /// Export selected current undecoded combat slots as one opaque root artifact.

@@ -27,6 +27,12 @@ class _RootCapturingWinningEnv(NumpyWinningBatchEnv):
     def supported_potion_ids() -> list[str]:
         return ["FearPotion", "FirePotion"]
 
+    @staticmethod
+    def canonical_encounter_id(raw: str) -> str:
+        if raw not in {"JawWorm", "Cultist"}:
+            raise ValueError("unsupported encounter")
+        return raw
+
     def public_run_contexts(self) -> list[tuple[int, SimpleNamespace]]:
         return [
             (
@@ -43,6 +49,7 @@ class _RootCapturingWinningEnv(NumpyWinningBatchEnv):
                     max_hp=80,
                     gold=50,
                     potion_ids=list(self.potion_ids),
+                    encounter_id=None if terminal else "JawWorm",
                     monster_ids=[] if terminal else ["JawWorm"],
                 ),
             )
@@ -91,6 +98,9 @@ class _AlternatingEncounterRootEnv(_PotionlessRootCapturingWinningEnv):
         rows = super().public_run_contexts()
         for slot, context in rows:
             if not self.terminal[slot]:
+                context.encounter_id = (
+                    "JawWorm" if self.seeds[slot] % 2 == 0 else "Cultist"
+                )
                 context.monster_ids = [
                     "JawWorm" if self.seeds[slot] % 2 == 0 else "Cultist"
                 ]
@@ -224,10 +234,80 @@ def test_collection_can_require_distinct_encounters(tmp_path: Path) -> None:
     )
 
     assert summary["distinct_encounters"] is True
-    assert {tuple(root["monster_ids"]) for root in summary["roots"]} == {
-        ("Cultist",),
-        ("JawWorm",),
+    assert {root["encounter_id"] for root in summary["roots"]} == {
+        "Cultist",
+        "JawWorm",
     }
+
+
+def test_collection_can_require_one_exact_encounter(tmp_path: Path) -> None:
+    behavior, combat_bridge, run_bridge = published_behavior(tmp_path)
+    run_bridge = replace(
+        run_bridge,
+        environment=_RootCapturingWinningEnv,
+        environment_without_combat_potions=_RootCapturingWinningEnv,
+        environment_from_checkpoint=_RootCapturingWinningEnv.from_checkpoint_bytes,
+    )
+    output = tmp_path / "jaw-worm-root.bin"
+
+    summary = run_run_combat_root_collection(
+        RunCombatRootCollectionConfig(
+            behavior=behavior,
+            output=output,
+            root_count=1,
+            max_batch_steps=1,
+            wall_ms=10_000,
+            behavior_seed=94,
+            training_seed_start=100,
+            min_floor=2,
+            min_usable_potions=0,
+            max_artifact_bytes=1024,
+            required_encounter_id="JawWorm",
+        ),
+        combat_bridge=combat_bridge,
+        run_bridge=run_bridge,
+        artifact_merger=lambda payloads, *, max_bytes: payloads[0],
+    )
+
+    assert summary["required_encounter_id"] == "JawWorm"
+    assert summary["roots"][0]["encounter_id"] == "JawWorm"
+
+
+def test_required_encounter_rejects_unsupported_identity_before_collection(
+    tmp_path: Path,
+) -> None:
+    behavior, combat_bridge, run_bridge = published_behavior(tmp_path)
+    run_bridge = replace(
+        run_bridge,
+        environment=_RootCapturingWinningEnv,
+        environment_without_combat_potions=_RootCapturingWinningEnv,
+        environment_from_checkpoint=_RootCapturingWinningEnv.from_checkpoint_bytes,
+    )
+    output = tmp_path / "unsupported-monster.bin"
+
+    with pytest.raises(
+        RunCombatRootCollectionError,
+        match="unsupported by the installed bridge",
+    ):
+        run_run_combat_root_collection(
+            RunCombatRootCollectionConfig(
+                behavior=behavior,
+                output=output,
+                root_count=1,
+                max_batch_steps=1,
+                wall_ms=10_000,
+                behavior_seed=94,
+                training_seed_start=100,
+                min_floor=2,
+                min_usable_potions=0,
+                max_artifact_bytes=1024,
+                required_encounter_id="NotAMonster",
+            ),
+            combat_bridge=combat_bridge,
+            run_bridge=run_bridge,
+        )
+
+    assert not output.exists()
 
 
 def test_bounded_unmatched_potion_collection_publishes_no_artifact(

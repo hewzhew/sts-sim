@@ -303,6 +303,7 @@ class NumpyWinningBatchEnv(NumpyFakeBatchEnv):
                     max_hp=80,
                     gold=50,
                     potion_ids=[],
+                    encounter_id=None if terminal else "JawWorm",
                     monster_ids=[] if terminal else ["JawWorm"],
                 ),
             )

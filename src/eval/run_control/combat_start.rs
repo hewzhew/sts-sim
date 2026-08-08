@@ -42,9 +42,10 @@ fn build_active_combat(
 ) -> Result<ActiveCombat, String> {
     let (engine_state, combat_state) =
         build_natural_combat_start(run_state, request.encounter_id, request.room_type)?;
-    Ok(ActiveCombat::new(
+    Ok(ActiveCombat::new_for_encounter(
         engine_state,
         combat_state,
+        request.encounter_id,
         request.context,
     ))
 }

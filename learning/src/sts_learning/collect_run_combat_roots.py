@@ -88,6 +88,7 @@ class RunCombatRootCollectionConfig:
     potion_lane: RunPotionLane = RunPotionLane.TRAINED
     max_artifact_bytes: int = 16 * 1024 * 1024
     required_potion: RequiredPotionSlot | None = None
+    required_encounter_id: str | None = None
     distinct_encounters: bool = False
 
     def __post_init__(self) -> None:
@@ -124,11 +125,27 @@ class RunCombatRootCollectionConfig:
             raise RunCombatRootCollectionError(
                 "distinct encounter selector must be boolean"
             )
+        if self.required_encounter_id is not None and (
+            not isinstance(self.required_encounter_id, str)
+            or not self.required_encounter_id
+        ):
+            raise RunCombatRootCollectionError(
+                "required encounter id must be non-empty text"
+            )
         object.__setattr__(self, "behavior", behavior)
         object.__setattr__(self, "output", output)
         root_count = _positive(self.root_count, "root_count")
         if root_count > 64:
             raise RunCombatRootCollectionError("root_count must be at most 64")
+        if (
+            self.distinct_encounters
+            and self.required_encounter_id is not None
+            and root_count > 1
+        ):
+            raise RunCombatRootCollectionError(
+                "distinct encounter collection cannot request multiple roots "
+                "for one exact required encounter"
+            )
         object.__setattr__(self, "root_count", root_count)
         for name in ("max_batch_steps", "wall_ms", "max_artifact_bytes"):
             object.__setattr__(self, name, _positive(getattr(self, name), name))
@@ -158,18 +175,24 @@ class CapturedRunCombatRoot:
     hp: int
     max_hp: int
     potion_ids: tuple[str | None, ...]
+    encounter_id: str
     monster_ids: tuple[str, ...]
     filled_potion_count: int
     usable_potion_count: int
 
 
 class _RootCaptureSink:
-    def __init__(self, config: RunCombatRootCollectionConfig) -> None:
+    def __init__(
+        self,
+        config: RunCombatRootCollectionConfig,
+        required_encounter_id: str | None,
+    ) -> None:
         self.config = config
+        self.required_encounter_id = required_encounter_id
         self.payloads: list[bytes] = []
         self.roots: list[CapturedRunCombatRoot] = []
         self._captured_seeds: set[int] = set()
-        self._captured_encounters: set[tuple[str, ...]] = set()
+        self._captured_encounters: set[str] = set()
 
     @property
     def complete(self) -> bool:
@@ -237,7 +260,15 @@ class _RootCaptureSink:
                 or context.potion_ids[required.slot_index] != required.potion_id
             ):
                 continue
-            encounter = tuple(sorted(context.monster_ids))
+            encounter = context.encounter_id
+            if encounter is None:
+                raise RunCombatRootCollectionError(
+                    "combat root is missing its typed encounter identity"
+                )
+            if self.required_encounter_id is not None and (
+                encounter != self.required_encounter_id
+            ):
+                continue
             if (
                 self.config.distinct_encounters
                 and encounter in self._captured_encounters
@@ -262,6 +293,7 @@ class _RootCaptureSink:
                     hp=hp,
                     max_hp=max_hp,
                     potion_ids=context.potion_ids,
+                    encounter_id=encounter,
                     monster_ids=context.monster_ids,
                     filled_potion_count=filled,
                     usable_potion_count=usable,
@@ -382,6 +414,29 @@ def run_run_combat_root_collection(
                 "required potion id is not supported by the installed bridge: "
                 f"{config.required_potion.potion_id}"
             )
+    required_encounter_id = config.required_encounter_id
+    if required_encounter_id is not None:
+        canonical_source = getattr(
+            active_run_bridge.environment,
+            "canonical_encounter_id",
+            None,
+        )
+        if not callable(canonical_source):
+            raise RunCombatRootCollectionError(
+                "run bridge does not expose canonical encounter identity validation"
+            )
+        try:
+            canonical = canonical_source(required_encounter_id)
+        except (TypeError, ValueError) as error:
+            raise RunCombatRootCollectionError(
+                "required encounter id is unsupported by the installed bridge: "
+                f"{required_encounter_id}"
+            ) from error
+        if not isinstance(canonical, str) or not canonical:
+            raise RunCombatRootCollectionError(
+                "run bridge returned a malformed canonical encounter identity"
+            )
+        required_encounter_id = canonical
 
     recovered: PublishedCombatBehavior | PublishedRunBehavior
     if is_run_training_publication(config.behavior):
@@ -415,7 +470,7 @@ def run_run_combat_root_collection(
             "run bridge does not provide opaque combat-root merging"
         )
 
-    sink = _RootCaptureSink(config)
+    sink = _RootCaptureSink(config, required_encounter_id)
     tracing_factory = ResourceTracingEnvironmentFactory(environment_factory)
 
     def capturing_factory(seeds: list[int]) -> _CapturingEnvironment:
@@ -496,6 +551,7 @@ def run_run_combat_root_collection(
             if config.required_potion is None
             else config.required_potion.slot_index
         ),
+        "required_encounter_id": required_encounter_id,
         "root_count": len(sink.roots),
         "terminal_attempts": terminal_attempts,
         "batch_steps": batch_steps,
@@ -511,6 +567,7 @@ def run_run_combat_root_collection(
                 "hp": root.hp,
                 "max_hp": root.max_hp,
                 "potion_ids": root.potion_ids,
+                "encounter_id": root.encounter_id,
                 "monster_ids": root.monster_ids,
                 "filled_potion_count": root.filled_potion_count,
                 "usable_potion_count": root.usable_potion_count,
@@ -542,6 +599,7 @@ def _prior_combat_rows(
             "end_gold": transition.end.gold,
             "start_potion_ids": transition.start.potion_ids,
             "end_potion_ids": transition.end.potion_ids,
+            "encounter_id": transition.start.encounter_id,
             "monster_ids": transition.start.monster_ids,
             "terminal_reward": transition.terminal_reward,
         }
@@ -620,6 +678,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--min-usable-potions", type=int, default=1)
     parser.add_argument("--required-potion-id")
     parser.add_argument("--required-potion-slot", type=int)
+    parser.add_argument("--required-encounter-id")
     parser.add_argument("--distinct-encounters", action="store_true")
     parser.add_argument(
         "--potion-lane",
@@ -661,6 +720,7 @@ def main() -> int:
             potion_lane=RunPotionLane(arguments.potion_lane),
             max_artifact_bytes=arguments.max_artifact_bytes,
             required_potion=required_potion,
+            required_encounter_id=arguments.required_encounter_id,
             distinct_encounters=arguments.distinct_encounters,
         )
     )

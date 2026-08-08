@@ -99,6 +99,7 @@ pub struct LearningPublicRunContextV1 {
     pub max_hp: i32,
     pub gold: i32,
     pub potion_ids: Vec<Option<PotionId>>,
+    pub encounter_id: Option<crate::content::monsters::factory::EncounterId>,
     pub monster_ids: Vec<crate::content::monsters::EnemyId>,
 }
 
@@ -217,10 +218,13 @@ impl LearningEnvV1 {
         &self,
         boundary: &LearningBoundaryV1,
     ) -> Result<LearningPublicRunContextV1, String> {
-        let (hp, max_hp, gold, potion_ids, monster_ids) =
+        let (hp, max_hp, gold, potion_ids, encounter_id, monster_ids) =
             if matches!(boundary, LearningBoundaryV1::Combat { .. }) {
                 let active = self.session.active_combat.as_ref().ok_or_else(|| {
                     "combat public run context requires an active combat".to_owned()
+                })?;
+                let encounter_id = active.encounter_id.ok_or_else(|| {
+                    "combat public run context requires a typed encounter identity".to_owned()
                 })?;
                 let combat = &active.combat_state;
                 let monster_ids = combat
@@ -248,6 +252,7 @@ impl LearningEnvV1 {
                         .iter()
                         .map(|potion| potion.as_ref().map(|potion| potion.id))
                         .collect(),
+                    Some(encounter_id),
                     monster_ids,
                 )
             } else {
@@ -261,6 +266,7 @@ impl LearningEnvV1 {
                         .iter()
                         .map(|potion| potion.as_ref().map(|potion| potion.id))
                         .collect(),
+                    None,
                     Vec::new(),
                 )
             };
@@ -274,6 +280,7 @@ impl LearningEnvV1 {
             max_hp,
             gold,
             potion_ids,
+            encounter_id,
             monster_ids,
         })
     }
@@ -587,9 +594,10 @@ mod tests {
         monster.id = 7;
         combat.entities.monsters.push(monster);
         session.engine_state = EngineState::CombatPlayerTurn;
-        session.active_combat = Some(ActiveCombat::new(
+        session.active_combat = Some(ActiveCombat::new_for_encounter(
             EngineState::CombatPlayerTurn,
             combat,
+            crate::content::monsters::factory::EncounterId::JawWorm,
             CombatContext::Room(RoomCombatContext {
                 room_type: RoomType::MonsterRoom,
             }),
@@ -651,9 +659,10 @@ mod tests {
             .monsters
             .push(crate::test_support::test_monster(EnemyId::JawWorm));
         session.engine_state = EngineState::CombatPlayerTurn;
-        session.active_combat = Some(ActiveCombat::new(
+        session.active_combat = Some(ActiveCombat::new_for_encounter(
             EngineState::CombatPlayerTurn,
             combat,
+            crate::content::monsters::factory::EncounterId::JawWorm,
             CombatContext::Room(RoomCombatContext {
                 room_type: RoomType::MonsterRoom,
             }),
@@ -669,6 +678,10 @@ mod tests {
         assert_eq!(
             context.potion_ids,
             vec![Some(PotionId::FearPotion), None, None]
+        );
+        assert_eq!(
+            context.encounter_id,
+            Some(crate::content::monsters::factory::EncounterId::JawWorm)
         );
         assert_eq!(context.monster_ids, vec![EnemyId::JawWorm]);
     }

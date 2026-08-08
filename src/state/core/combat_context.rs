@@ -81,6 +81,8 @@ pub struct EventCombatContext {
 pub struct ActiveCombat {
     pub engine_state: EngineState,
     pub combat_state: CombatState,
+    #[serde(default)]
+    pub encounter_id: Option<EncounterId>,
     pub context: CombatContext,
 }
 
@@ -93,6 +95,21 @@ impl ActiveCombat {
         Self {
             engine_state,
             combat_state,
+            encounter_id: None,
+            context,
+        }
+    }
+
+    pub fn new_for_encounter(
+        engine_state: EngineState,
+        combat_state: CombatState,
+        encounter_id: EncounterId,
+        context: CombatContext,
+    ) -> Self {
+        Self {
+            engine_state,
+            combat_state,
+            encounter_id: Some(encounter_id),
             context,
         }
     }

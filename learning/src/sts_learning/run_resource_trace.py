@@ -28,6 +28,7 @@ class RunPublicContext:
     max_hp: int
     gold: int
     potion_ids: tuple[str | None, ...]
+    encounter_id: str | None
     monster_ids: tuple[str, ...]
 
     @classmethod
@@ -45,7 +46,12 @@ class RunPublicContext:
                 "public run context cannot be combat and terminal together"
             )
         potion_ids = _potion_ids(_attribute(view, "potion_ids"))
+        encounter_id = _optional_identity(_attribute(view, "encounter_id"))
         monster_ids = _monster_ids(_attribute(view, "monster_ids"))
+        if is_combat != (encounter_id is not None):
+            raise RunResourceTraceError(
+                "public run context encounter identity disagrees with combat state"
+            )
         if is_combat != bool(monster_ids):
             raise RunResourceTraceError(
                 "public run context monster identities disagree with combat state"
@@ -70,6 +76,7 @@ class RunPublicContext:
             max_hp=max_hp,
             gold=_integer(_attribute(view, "gold"), "gold", minimum=0),
             potion_ids=potion_ids,
+            encounter_id=encounter_id,
             monster_ids=monster_ids,
         )
 
@@ -451,6 +458,14 @@ def _monster_ids(value: object) -> tuple[str, ...]:
     if any(not isinstance(monster, str) or not monster for monster in normalized):
         raise RunResourceTraceError("monster identity must be non-empty text")
     return normalized
+
+
+def _optional_identity(value: object) -> str | None:
+    if value is None:
+        return None
+    if not isinstance(value, str) or not value:
+        raise RunResourceTraceError("encounter identity must be non-empty text")
+    return value
 
 
 def _integer_sequence(source: Mapping[str, object], name: str) -> tuple[int, ...]:

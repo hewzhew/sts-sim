@@ -542,9 +542,11 @@ def main() -> None:
     assert callable(LearningBatchEnv.from_combat_root_artifact_bytes)
     assert callable(LearningBatchEnv.merge_combat_root_artifact_bytes)
     assert callable(LearningBatchEnv.supported_potion_ids)
+    assert callable(LearningBatchEnv.canonical_encounter_id)
     assert callable(LearningBatchEnv.combat_root_artifact_bytes)
     potion_ids = LearningBatchEnv.supported_potion_ids()
     assert len(potion_ids) == len(set(potion_ids))
+    assert LearningBatchEnv.canonical_encounter_id("GremlinGang") == "GremlinGang"
     assert "FirePotion" in potion_ids
     schema = _SCHEMA
     assert schema["version"] == SEMANTIC_SCHEMA_VERSION
@@ -614,6 +616,7 @@ def main() -> None:
         for _, context in initial_contexts
     )
     assert all(context.monster_ids == [] for _, context in initial_contexts)
+    assert all(context.encounter_id is None for _, context in initial_contexts)
     assert all(
         context.act == 1 and context.floor == 0
         for _, context in initial_contexts

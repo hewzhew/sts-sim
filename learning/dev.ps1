@@ -41,6 +41,7 @@ param(
     [ValidateSet("trained", "all", "never")]
     [string]$RunPotionLane = "trained",
     [int[]]$PotionSlots = @(),
+    [string]$RequiredEncounterId,
     [switch]$DistinctEncounters,
     [ValidateSet("dev", "release")]
     [string]$BridgeProfile = "release"
@@ -322,18 +323,23 @@ switch ($Command) {
     }
     "collect-run-roots" {
         $pythonPath = Get-ConfiguredPython
-        $requiredPotionArguments = @()
+        $selectorArguments = @()
         if ($RequiredPotionId -or $null -ne $RequiredPotionSlot) {
             if (-not $RequiredPotionId -or $null -eq $RequiredPotionSlot) {
                 throw "collect-run-roots requires both -RequiredPotionId and -RequiredPotionSlot"
             }
-            $requiredPotionArguments = @(
+            $selectorArguments = @(
                 "--required-potion-id", $RequiredPotionId,
                 "--required-potion-slot", $RequiredPotionSlot
             )
         }
         if ($DistinctEncounters) {
-            $requiredPotionArguments += @("--distinct-encounters")
+            $selectorArguments += @("--distinct-encounters")
+        }
+        if ($RequiredEncounterId) {
+            $selectorArguments += @(
+                "--required-encounter-id", $RequiredEncounterId
+            )
         }
         Invoke-Doctor $pythonPath
         Invoke-WithLearningPath {
@@ -349,7 +355,7 @@ switch ($Command) {
                 --min-usable-potions $MinUsablePotions `
                 --max-artifact-bytes $MaxArtifactBytes `
                 --potion-lane $RunPotionLane `
-                @requiredPotionArguments
+                @selectorArguments
             if ($LASTEXITCODE -ne 0) {
                 throw "run combat-root collection failed"
             }

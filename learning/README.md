@@ -190,9 +190,13 @@ collected seed/site/resource facts but assigns no potion value and supplies no
 teacher labels.
 The minimum usable-potion filter accepts zero, allowing an ordinary
 run-derived combat corpus that is not biased toward potion-bearing paths.
-An explicit distinct-encounter mode admits at most one root for each unordered
-canonical enemy multiset within a batch; repeated encounters remain the normal
+An explicit distinct-encounter mode admits at most one root for each canonical
+encounter identity within a batch; repeated encounters remain the normal
 default when distributional frequency is the intended evidence.
+An optional exact encounter selector is normalized by the installed bridge
+before advancing a run. Variable members such as a `GremlinGang` roll retain
+one stable encounter identity while their exact monster identities remain in
+the root receipt.
 It keeps the requested run potion lane separate from the resolved combat
 potion lane, including when `trained` inherits `all` or `never`.
 Its receipt composes the existing typed run-resource trace and includes prior

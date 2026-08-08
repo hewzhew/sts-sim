@@ -707,8 +707,12 @@ Set `-MinUsablePotions 0` to collect ordinary run-derived combat roots without
 conditioning the corpus on potion ownership. An exact potion rescue corpus
 still supplies both `-RequiredPotionId` and `-RequiredPotionSlot`.
 Add `-DistinctEncounters` for a small diversity census or training batch; the
-collector then admits at most one root for each unordered canonical enemy
-multiset and reports the active contract in its receipt.
+collector then admits at most one root for each canonical `EncounterId` and
+reports the active contract in its receipt.
+For a concrete encounter corpus, pass `-RequiredEncounterId GremlinGang` (or
+another canonical ID). The installed bridge normalizes the ID before any run
+advances, and the receipt records the normalized contract. Variable member
+composition remains part of the exact root rather than the selector identity.
 It reports both the requested run potion lane and the resolved combat potion
 lane, so `trained` inheritance never has to be inferred from a lone `never` or
 `all` value.
