@@ -204,6 +204,11 @@ owns neither reward shaping nor durable combat-group checkpoint publication.
 The source batch can enumerate all current undecoded combat roots and their
 frozen contexts in one call without creating replicate groups or cloning their
 sessions; only caller-selected roots pay group construction cost.
+It may also export an explicit non-empty selection of those current roots as
+the existing opaque `CombatLearningRootBatchArtifactV1` bytes. Rust rejects
+duplicate, non-combat, decoded, terminal, and oversized selections before
+serialization; Python may persist or forward the payload but never inspects a
+session checkpoint.
 
 A caller may reconstruct a bounded reverse curriculum from an already completed
 winning same-root episode by replaying that replicate's recorded ordinals from

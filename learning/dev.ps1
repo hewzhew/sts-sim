@@ -65,6 +65,7 @@ if source_root not in package_root.parents:
 
 required_bridge_methods = (
     "from_combat_root_artifact_bytes",
+    "combat_root_artifact_bytes",
     "combat_group",
     "combat_root_contexts",
 )

@@ -204,6 +204,16 @@ def _assert_same_root_combat_group(env: LearningBatchEnv, slot: int) -> None:
     assert slot in available
     preview_context = available[slot]
     assert isinstance(preview_context, CombatLearningRootContextV1)
+    payload = env.combat_root_artifact_bytes([slot], max_bytes=16 * 1024 * 1024)
+    restored = LearningBatchEnv.from_combat_root_artifact_bytes(
+        payload,
+        expected_roots=1,
+        max_bytes=16 * 1024 * 1024,
+    )
+    restored_context = dict(restored.combat_root_contexts())[0]
+    assert _combat_root_context_values(preview_context) == _combat_root_context_values(
+        restored_context
+    )
     group = env.combat_group(slot, 2)
     assert isinstance(group, CombatLearningBatchEnv)
     assert group.replicate_count == 2
@@ -507,6 +517,7 @@ def _assert_cross_process_checkpoint_bank_replays_episode_roots() -> None:
 
 def main() -> None:
     assert callable(LearningBatchEnv.from_combat_root_artifact_bytes)
+    assert callable(LearningBatchEnv.combat_root_artifact_bytes)
     schema = _SCHEMA
     assert schema["version"] == SEMANTIC_SCHEMA_VERSION
     assert schema["completeness"]["Complete"] == SEMANTIC_COMPLETE

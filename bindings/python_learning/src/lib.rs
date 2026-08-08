@@ -45,6 +45,7 @@ const BATCH_CHECKPOINT_MAGIC: &[u8] = b"STS-LEARNING-BATCH\0";
 const BATCH_CHECKPOINT_VERSION: u32 = 1;
 const CHECKPOINT_BANK_MAGIC: &[u8] = b"STS-LEARNING-BANK\0";
 const CHECKPOINT_BANK_VERSION: u32 = 1;
+const MAX_EXPORTED_COMBAT_ROOTS: usize = 64;
 
 #[derive(Clone, Debug)]
 enum BridgeSlotState {
@@ -376,6 +377,23 @@ impl LearningBatchEnv {
         Self::decode_combat_root_artifact(payload, expected_roots, max_bytes).map_err(value_error)
     }
 
+    /// Export selected current undecoded combat slots as one opaque root artifact.
+    ///
+    /// Python may persist or forward the bytes but never receives simulator
+    /// checkpoint fields.
+    #[pyo3(signature = (slot_indices, *, max_bytes))]
+    fn combat_root_artifact_bytes<'py>(
+        &self,
+        py: Python<'py>,
+        slot_indices: Vec<usize>,
+        max_bytes: usize,
+    ) -> PyResult<Bound<'py, PyBytes>> {
+        let payload = self
+            .encode_combat_root_artifact(&slot_indices, max_bytes)
+            .map_err(value_error)?;
+        Ok(PyBytes::new(py, &payload))
+    }
+
     #[pyo3(signature = (dense_mask=false, semantic=false))]
     fn decision_batch<'py>(
         &self,
@@ -689,6 +707,43 @@ impl LearningBatchEnv {
 }
 
 impl LearningBatchEnv {
+    fn encode_combat_root_artifact(
+        &self,
+        slot_indices: &[usize],
+        max_bytes: usize,
+    ) -> Result<Vec<u8>, String> {
+        if slot_indices.is_empty() || slot_indices.len() > MAX_EXPORTED_COMBAT_ROOTS {
+            return Err(format!(
+                "combat root export count must be in 1..={MAX_EXPORTED_COMBAT_ROOTS}"
+            ));
+        }
+        let mut seen = BTreeSet::new();
+        let mut checkpoints = Vec::with_capacity(slot_indices.len());
+        for &slot_index in slot_indices {
+            if !seen.insert(slot_index) {
+                return Err(format!(
+                    "combat root export slot {slot_index} appears more than once"
+                ));
+            }
+            if !matches!(self.states.get(slot_index), Some(BridgeSlotState::Root))
+                || !matches!(
+                    self.pool.boundary(slot_index),
+                    Some(LearningBoundaryV1::Combat { .. })
+                )
+            {
+                return Err(format!(
+                    "combat root export slot {slot_index} must be at an undecoded combat root"
+                ));
+            }
+            checkpoints.push(
+                self.pool
+                    .checkpoint_slot(slot_index)
+                    .map_err(|error| error.to_string())?,
+            );
+        }
+        CombatLearningRootBatchArtifactV1::from_checkpoints(checkpoints)?.encode(max_bytes)
+    }
+
     fn decode_combat_root_artifact(
         payload: &[u8],
         expected_roots: usize,
@@ -1341,6 +1396,18 @@ mod checkpoint_tests {
             restored.pool.boundary(0),
             Some(LearningBoundaryV1::Combat { .. })
         ));
+        assert_eq!(
+            restored
+                .encode_combat_root_artifact(&[0], 1024 * 1024)
+                .expect("re-export selected exact combat root"),
+            payload
+        );
+        assert!(restored
+            .encode_combat_root_artifact(&[], 1024 * 1024)
+            .is_err());
+        assert!(restored
+            .encode_combat_root_artifact(&[0, 0], 1024 * 1024)
+            .is_err());
         assert!(LearningBatchEnv::decode_combat_root_artifact(&payload, 2, 1024 * 1024).is_err());
     }
 }
