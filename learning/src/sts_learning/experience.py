@@ -3,14 +3,17 @@
 from __future__ import annotations
 
 import operator
-import sys
-from collections.abc import Iterable, Iterator, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from enum import Enum
-from types import MappingProxyType
 
-import numpy as np
-
+from .decision_rows import (
+    DecisionRowError,
+    PreparedDecisionRows,
+    iter_payload_arrays,
+    normalize_decision_choice,
+    normalize_integer_sequence,
+)
 from .policy import BehaviorManifestId, SelectionProbability
 from .recovery import (
     RecoverySlotSnapshot,
@@ -110,42 +113,32 @@ class PreparedDecisionBatch:
         decision_batch: Mapping[str, object],
         snapshots: Sequence[RecoverySlotSnapshot],
     ) -> PreparedDecisionBatch:
-        if not isinstance(decision_batch, Mapping):
-            raise ExperienceError("decision batch must be a mapping")
-        slots = _integer_column(decision_batch, "slot_indices")
-        counts = _integer_column(decision_batch, "candidate_counts")
-        if not slots:
-            raise ExperienceError("experience batch must contain a decision row")
-        if len(slots) != len(counts):
-            raise ExperienceError("decision slot and candidate columns are misaligned")
-        if len(set(slots)) != len(slots):
-            raise ExperienceError("decision batch contains duplicate slots")
-        if any(count <= 0 for count in counts):
-            raise ExperienceError("every decision row must have a legal candidate")
+        try:
+            rows = PreparedDecisionRows.capture(decision_batch)
+        except DecisionRowError as error:
+            raise ExperienceError(str(error)) from error
         normalized_snapshots = tuple(snapshots)
-        if len(normalized_snapshots) != len(slots):
+        if len(normalized_snapshots) != rows.decision_count:
             raise ExperienceError(
-                f"received {len(normalized_snapshots)} snapshots for {len(slots)} rows"
+                f"received {len(normalized_snapshots)} snapshots for "
+                f"{rows.decision_count} rows"
             )
         lineages = tuple(
             DecisionLineage.from_snapshot(snapshot)
             for snapshot in normalized_snapshots
         )
-        for slot, lineage in zip(slots, lineages, strict=True):
+        for slot, lineage in zip(rows.slot_indices, lineages, strict=True):
             if lineage.key.slot_index != slot:
                 raise ExperienceError(
                     f"decision slot {slot} is aligned to snapshot slot "
                     f"{lineage.key.slot_index}"
                 )
-        payload, payload_bytes = _freeze_payload(decision_batch, "decision_batch")
-        if not isinstance(payload, Mapping):
-            raise ExperienceError("frozen decision batch is not a mapping")
         return cls(
-            payload=payload,
+            payload=rows.payload,
             lineages=lineages,
-            candidate_counts=counts,
-            decision_count=len(slots),
-            payload_bytes=payload_bytes,
+            candidate_counts=rows.candidate_counts,
+            decision_count=rows.decision_count,
+            payload_bytes=rows.payload_bytes,
         )
 
 
@@ -169,40 +162,24 @@ class DecisionExperienceBatch:
     ) -> DecisionExperienceBatch:
         if not isinstance(prepared, PreparedDecisionBatch):
             raise ExperienceError("experience input must be a PreparedDecisionBatch")
-        ordinals = _integer_sequence(selected_ordinals, "selected ordinals")
         try:
-            probabilities = tuple(selection_probabilities)
-        except TypeError as error:
-            raise ExperienceError(
-                "selection probabilities must be a sequence"
-            ) from error
-        if not isinstance(behavior_manifest_id, BehaviorManifestId):
-            raise ExperienceError(
-                "decision experience requires a BehaviorManifestId"
+            rows = PreparedDecisionRows(
+                payload=prepared.payload,
+                slot_indices=tuple(
+                    lineage.key.slot_index for lineage in prepared.lineages
+                ),
+                candidate_counts=prepared.candidate_counts,
+                decision_count=prepared.decision_count,
+                payload_bytes=prepared.payload_bytes,
             )
-        if len(ordinals) != prepared.decision_count:
-            raise ExperienceError(
-                f"received {len(ordinals)} ordinals for "
-                f"{prepared.decision_count} decision rows"
+            ordinals, probabilities = normalize_decision_choice(
+                rows,
+                selected_ordinals,
+                selection_probabilities,
+                behavior_manifest_id,
             )
-        if len(probabilities) != prepared.decision_count:
-            raise ExperienceError(
-                "selection probabilities must contain one value per decision row"
-            )
-        if not all(
-            isinstance(probability, SelectionProbability)
-            for probability in probabilities
-        ):
-            raise ExperienceError(
-                "selection probabilities must be typed SelectionProbability values"
-            )
-        for row, (ordinal, count) in enumerate(
-            zip(ordinals, prepared.candidate_counts, strict=True)
-        ):
-            if not 0 <= ordinal < count:
-                raise ExperienceError(
-                    f"row {row} candidate ordinal {ordinal} is outside 0..{count}"
-                )
+        except DecisionRowError as error:
+            raise ExperienceError(str(error)) from error
         return cls(
             payload=prepared.payload,
             lineages=prepared.lineages,
@@ -216,16 +193,17 @@ class DecisionExperienceBatch:
     def select_rows(self, row_indices: Sequence[int]) -> DecisionExperienceBatch:
         """Own and freeze an exact row subset for attempt-local retention."""
 
-        rows = _integer_sequence(row_indices, "row indices")
+        rows = normalize_integer_sequence(row_indices, "row indices")
         try:
             selected = select_semantic_decision_rows(self.payload, rows)
         except SemanticBatchError as error:
             raise ExperienceError("cannot select semantic decision rows") from error
-        payload, payload_bytes = _freeze_payload(selected, "selected_decision_batch")
-        if not isinstance(payload, Mapping):
-            raise ExperienceError("selected decision payload is not a mapping")
+        try:
+            selected_rows = PreparedDecisionRows.capture(selected)
+        except DecisionRowError as error:
+            raise ExperienceError("cannot freeze selected decision rows") from error
         return DecisionExperienceBatch(
-            payload=payload,
+            payload=selected_rows.payload,
             lineages=tuple(self.lineages[row] for row in rows),
             selected_ordinals=tuple(self.selected_ordinals[row] for row in rows),
             selection_probabilities=tuple(
@@ -233,7 +211,7 @@ class DecisionExperienceBatch:
             ),
             behavior_manifest_id=self.behavior_manifest_id,
             decision_count=len(rows),
-            payload_bytes=payload_bytes,
+            payload_bytes=selected_rows.payload_bytes,
         )
 
 
@@ -466,68 +444,6 @@ class ExperienceSegmentBuffer:
         self._lineages = {}
         self._terminals = {}
         return segment
-
-
-def iter_payload_arrays(value: object) -> Iterator[np.ndarray]:
-    """Yield every NumPy buffer retained by a frozen experience payload."""
-
-    if isinstance(value, np.ndarray):
-        yield value
-    elif isinstance(value, Mapping):
-        for child in value.values():
-            yield from iter_payload_arrays(child)
-
-
-def _freeze_payload(value: object, path: str) -> tuple[object, int]:
-    if isinstance(value, np.ndarray):
-        if value.dtype.hasobject:
-            raise ExperienceError(f"{path} contains an object array")
-        copied = np.array(value, copy=True, order="C", subok=False)
-        copied.setflags(write=False)
-        return copied, sys.getsizeof(copied)
-    if isinstance(value, Mapping):
-        frozen: dict[str, object] = {}
-        payload_bytes = 0
-        for key, child in value.items():
-            if not isinstance(key, str):
-                raise ExperienceError(f"{path} contains a non-string mapping key")
-            frozen_child, child_bytes = _freeze_payload(child, f"{path}.{key}")
-            frozen[key] = frozen_child
-            payload_bytes += sys.getsizeof(key) + child_bytes
-        proxy = MappingProxyType(frozen)
-        payload_bytes += sys.getsizeof(frozen) + sys.getsizeof(proxy)
-        return proxy, payload_bytes
-    if isinstance(value, bool):
-        return value, sys.getsizeof(value)
-    try:
-        normalized = operator.index(value)
-        return normalized, sys.getsizeof(normalized)
-    except TypeError as error:
-        raise ExperienceError(
-            f"{path} contains unsupported value {type(value).__name__}"
-        ) from error
-
-
-def _integer_column(mapping: Mapping[str, object], name: str) -> tuple[int, ...]:
-    try:
-        raw = mapping[name]
-    except KeyError as error:
-        raise ExperienceError(f"decision batch is missing {name}") from error
-    return _integer_sequence(raw, name)
-
-
-def _integer_sequence(raw: object, name: str) -> tuple[int, ...]:
-    if isinstance(raw, (str, bytes)) or not isinstance(raw, Iterable):
-        raise ExperienceError(f"{name} must be an iterable of integers")
-    normalized = []
-    for value in raw:
-        if isinstance(value, bool):
-            raise ExperienceError(f"{name} must not contain bool")
-        try:
-            normalized.append(operator.index(value))
-        except TypeError as error:
-            raise ExperienceError(f"{name} must contain only integers") from error
-    return tuple(normalized)
 
 
 def _terminal_key(record: TerminalAttemptRecord) -> AttemptKey:
