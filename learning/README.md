@@ -126,6 +126,10 @@ terminal sample. Completed groups expose win, terminal-HP-ratio, and potion
 retention leave-one-out axes separately and define no HP/potion exchange rate.
 Their row projection attaches all three columns to each retained replicate
 decision without choosing a training axis or scalar weighting.
+`sts_learning.combat_signals` reduces a completed group to nonzero replicate
+and decision support per axis. Its cross-root census requires an explicit group
+bound, rejects duplicate exact roots, and retains no semantic payload. Signal
+coverage is diagnostic evidence, not an optimizer target.
 `sts_learning.manifests` gives that identity an exact bounded owner. A behavior
 manifest references externally stored model checkpoints, model definitions,
 model configurations, behavior-rule implementations and configurations,

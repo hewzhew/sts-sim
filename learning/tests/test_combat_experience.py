@@ -107,6 +107,13 @@ def test_driver_returns_complete_aligned_group_experience() -> None:
     assert projected[0].win == (1.0, -1.0)
     assert projected[0].terminal_hp == (0.875, -0.875)
     assert projected[0].potion_retention == (1.0, -1.0)
+    summary = result.experience.signal_summary()
+    assert summary.replicate_count == 2
+    assert summary.decision_count == 2
+    assert summary.win.replicate_count == 2
+    assert summary.win.decision_count == 2
+    assert summary.terminal_hp.replicate_count == 2
+    assert summary.potion_retention.replicate_count == 2
 
 
 def test_payload_limit_rejects_before_environment_mutation() -> None:

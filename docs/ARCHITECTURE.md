@@ -233,6 +233,10 @@ Decision count, retained payload bytes, model rounds, and environment
 transitions all have mandatory hard limits; a batch that would exceed memory
 fails before environment mutation. Partial groups are never delivered as
 completed training experience.
+Completed groups may be reduced to compact per-axis signal summaries and then
+to a caller-bounded census over distinct exact roots. That census retains only
+group, replicate, and decision counts; it neither keeps semantic payloads nor
+turns signal coverage into a policy target.
 
 Python recovery curricula may hold explicit opaque single-slot checkpoints.
 Saving one clones that exact in-memory run-control state only when requested;

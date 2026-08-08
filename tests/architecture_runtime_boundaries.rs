@@ -2678,6 +2678,11 @@ fn python_learning_bridge_stays_outside_the_root_workspace_and_policy_layer() {
     let combat_experience =
         std::fs::read_to_string("learning/src/sts_learning/combat_experience.py")
             .expect("read caller-owned same-root combat experience");
+    let combat_driver = std::fs::read_to_string("learning/src/sts_learning/combat_driver.py")
+        .expect("read caller-owned same-root combat driver");
+    let combat_signals =
+        std::fs::read_to_string("learning/src/sts_learning/combat_signals.py")
+            .expect("read caller-owned same-root signal census");
     for required in [
         "class RecoveryLedger",
         "def prepare_recovery",
@@ -2751,8 +2756,6 @@ fn python_learning_bridge_stays_outside_the_root_workspace_and_policy_layer() {
     for required in [
         "class CombatExperienceLimits",
         "class BoundedCombatGroupExperience",
-        "class CombatGroupDriver",
-        "CombatGroupOutcomeAccumulator",
         "PreparedDecisionRows.capture",
         "normalize_decision_choice",
         "combat group cannot mix behavior manifest identities",
@@ -2762,10 +2765,35 @@ fn python_learning_bridge_stays_outside_the_root_workspace_and_policy_layer() {
             "same-root combat experience must preserve caller contract '{required}'"
         );
     }
+    for required in [
+        "class CombatGroupDriver",
+        "CombatGroupOutcomeAccumulator",
+        "CombatTerminalStepBatch.from_bridge_step",
+        "collector.prepare",
+        "collector.commit",
+    ] {
+        assert!(
+            combat_driver.contains(required),
+            "same-root combat driver must preserve execution contract '{required}'"
+        );
+    }
+    for required in [
+        "class CombatGroupSignalSummary",
+        "class CombatSignalCensus",
+        "def build_combat_signal_census",
+        "combat signal census repeats an exact root",
+    ] {
+        assert!(
+            combat_signals.contains(required),
+            "same-root signal census must preserve compact contract '{required}'"
+        );
+    }
     for forbidden in ["sts_learning_bridge", "torch", "serde_json"] {
         assert!(
-            !combat_experience.contains(forbidden),
-            "same-root combat experience must remain backend-neutral through '{forbidden}'"
+            !combat_experience.contains(forbidden)
+                && !combat_driver.contains(forbidden)
+                && !combat_signals.contains(forbidden),
+            "same-root combat learning must remain backend-neutral through '{forbidden}'"
         );
     }
     for required in [

@@ -160,15 +160,19 @@ class CombatGroupedAdvantages:
 
     @property
     def win_has_signal(self) -> bool:
-        return any(value != 0.0 for value in self.win)
+        return any(combat_advantage_has_signal(value) for value in self.win)
 
     @property
     def terminal_hp_has_signal(self) -> bool:
-        return any(value != 0.0 for value in self.terminal_hp)
+        return any(
+            combat_advantage_has_signal(value) for value in self.terminal_hp
+        )
 
     @property
     def potion_retention_has_signal(self) -> bool:
-        return any(value != 0.0 for value in self.potion_retention)
+        return any(
+            combat_advantage_has_signal(value) for value in self.potion_retention
+        )
 
 
 @dataclass(frozen=True)
@@ -278,6 +282,14 @@ def _leave_one_out(values: tuple[float, ...]) -> tuple[float, ...]:
     total = sum(values)
     denominator = len(values) - 1
     return tuple(value - ((total - value) / denominator) for value in values)
+
+
+def combat_advantage_has_signal(value: float) -> bool:
+    """Ignore floating residue far below the smallest mechanical outcome step."""
+
+    if not math.isfinite(value):
+        raise CombatOutcomeError("combat advantage must be finite")
+    return not math.isclose(value, 0.0, rel_tol=1.0e-12, abs_tol=1.0e-12)
 
 
 def _integer_column(step: Mapping[str, object], name: str) -> tuple[int, ...]:

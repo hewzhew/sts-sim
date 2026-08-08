@@ -16,14 +16,13 @@ from .attempt_batching import (
     AttemptUpdateBatchLimits,
     BoundedAttemptUpdateBatcher,
 )
+from .combat_driver import CombatGroupDriver, CombatGroupRunResult
 from .combat_experience import (
     BoundedCombatGroupExperience,
     CombatDecisionAdvantageBatch,
     CombatDecisionExperienceBatch,
     CombatExperienceError,
     CombatExperienceLimits,
-    CombatGroupDriver,
-    CombatGroupRunResult,
     CompletedCombatGroupExperience,
 )
 from .combat_outcomes import (
@@ -33,6 +32,14 @@ from .combat_outcomes import (
     CombatTerminalOutcome,
     CombatTerminalStepBatch,
     CompletedCombatGroup,
+)
+from .combat_signals import (
+    CombatAxisSignalCensus,
+    CombatAxisSignalSummary,
+    CombatGroupSignalSummary,
+    CombatSignalCensus,
+    CombatSignalError,
+    build_combat_signal_census,
 )
 from .driver import (
     BatchCurriculum,
@@ -186,6 +193,8 @@ __all__ = [
     "BoundedResumeStore",
     "CheckpointBatch",
     "CombatGroupedAdvantages",
+    "CombatAxisSignalCensus",
+    "CombatAxisSignalSummary",
     "CombatDecisionAdvantageBatch",
     "CombatDecisionExperienceBatch",
     "CombatExperienceError",
@@ -193,6 +202,9 @@ __all__ = [
     "CombatGroupDriver",
     "CombatGroupOutcomeAccumulator",
     "CombatGroupRunResult",
+    "CombatGroupSignalSummary",
+    "CombatSignalCensus",
+    "CombatSignalError",
     "CombatOutcomeError",
     "CombatTerminalOutcome",
     "CombatTerminalStepBatch",
@@ -262,6 +274,7 @@ __all__ = [
     "TerminalStepBatch",
     "TerminalTargetRunResult",
     "TerminalProgressAggregate",
+    "build_combat_signal_census",
     "initialize_population",
     "concatenate_semantic_decision_batches",
     "evaluate_held_out_behavior",

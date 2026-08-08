@@ -5,6 +5,7 @@ import unittest
 import numpy as np
 
 from sts_learning import (
+    CombatGroupedAdvantages,
     CombatGroupOutcomeAccumulator,
     CombatOutcomeError,
     CombatTerminalOutcome,
@@ -185,6 +186,16 @@ def test_same_root_group_rejects_mismatched_start_hp() -> None:
         raise AssertionError("same-root start HP mismatch was accepted")
 
 
+def test_grouped_signal_ignores_floating_point_residue() -> None:
+    advantages = CombatGroupedAdvantages(
+        win=(1.0e-16, -1.0e-16),
+        terminal_hp=(0.0, 0.0),
+        potion_retention=(0.0, 0.0),
+    )
+
+    assert not advantages.win_has_signal
+
+
 class CombatOutcomeTests(unittest.TestCase):
     def test_bridge_terminal_columns_copy_into_typed_rows(self) -> None:
         test_bridge_terminal_columns_copy_into_typed_rows()
@@ -203,6 +214,9 @@ class CombatOutcomeTests(unittest.TestCase):
 
     def test_same_root_group_rejects_mismatched_start_hp(self) -> None:
         test_same_root_group_rejects_mismatched_start_hp()
+
+    def test_grouped_signal_ignores_floating_point_residue(self) -> None:
+        test_grouped_signal_ignores_floating_point_residue()
 
 
 if __name__ == "__main__":
