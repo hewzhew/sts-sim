@@ -10,6 +10,10 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import TextIO
 
+from .credit_assignment import (
+    CreditAssignmentComparison,
+    DecisionCreditDistribution,
+)
 from .evaluation import (
     HeldOutEvaluationResult,
     HeldOutEvaluationSpec,
@@ -201,6 +205,7 @@ def run_run_training(
             elapsed = time.perf_counter() - started
             _write(journal, _generation(generation, result, session, elapsed))
             progress = result.terminal_progress
+            credit = session.runner.trainer.last_credit_assignment
             print(
                 f"run_generation={generation} promoted={str(result.promoted).lower()} "
                 f"attempts={result.terminal_attempts} "
@@ -211,6 +216,8 @@ def run_run_training(
                 f"batch_steps={result.batch_steps}/"
                 f"{config.max_batch_steps_per_generation} "
                 f"loss={_optional_float(session.runner.trainer.snapshot.last_loss)} "
+                f"credit={_credit_line(credit)} "
+                f"credit_floors={_credit_floor_line(credit)} "
                 f"seconds={elapsed:.3f}",
                 flush=True,
             )
@@ -331,6 +338,9 @@ def _generation(
         "terminal_act_counts": progress.act_counts,
         "loss": trainer.last_loss,
         "trained_decisions": trainer.trained_decisions,
+        "credit_assignment": _credit_assignment(
+            session.runner.trainer.last_credit_assignment
+        ),
         "elapsed_seconds": elapsed,
     }
 
@@ -433,6 +443,82 @@ def _counts(values: tuple[tuple[int, int], ...]) -> str:
 
 def _optional_float(value: float | None) -> str:
     return "none" if value is None else f"{value:.9g}"
+
+
+def _credit_line(comparison: CreditAssignmentComparison | None) -> str:
+    if comparison is None:
+        return "unavailable"
+    terminal = comparison.terminal_broadcast
+    local = comparison.remaining_progress
+    matched = comparison.matched_floor_advantage
+    return (
+        f"broadcast:{terminal.negative}/{terminal.zero}/{terminal.positive}"
+        f"@{terminal.mean:.4f};"
+        f"local:{local.negative}/{local.zero}/{local.positive}@{local.mean:.4f};"
+        f"matched:{matched.negative}/{matched.zero}/{matched.positive}"
+        f"@{matched.mean:.4f}"
+    )
+
+
+def _credit_floor_line(comparison: CreditAssignmentComparison | None) -> str:
+    if comparison is None:
+        return "unavailable"
+    return ",".join(
+        f"{row.floor}:{row.remaining_progress.decision_count}"
+        f"@{row.terminal_broadcast.mean:.4f}>{row.remaining_progress.mean:.4f}"
+        f"#{row.matched_floor_advantage.negative}/"
+        f"{row.matched_floor_advantage.zero}/"
+        f"{row.matched_floor_advantage.positive}"
+        for row in comparison.by_decision_floor
+    )
+
+
+def _credit_assignment(
+    comparison: CreditAssignmentComparison | None,
+) -> dict[str, object] | None:
+    if comparison is None:
+        return None
+    return {
+        "attempt_count": comparison.attempt_count,
+        "terminal_broadcast": _credit_distribution(
+            comparison.terminal_broadcast
+        ),
+        "remaining_progress": _credit_distribution(
+            comparison.remaining_progress
+        ),
+        "matched_floor_advantage": _credit_distribution(
+            comparison.matched_floor_advantage
+        ),
+        "by_decision_floor": [
+            {
+                "floor": row.floor,
+                "terminal_broadcast": _credit_distribution(
+                    row.terminal_broadcast
+                ),
+                "remaining_progress": _credit_distribution(
+                    row.remaining_progress
+                ),
+                "matched_floor_advantage": _credit_distribution(
+                    row.matched_floor_advantage
+                ),
+            }
+            for row in comparison.by_decision_floor
+        ],
+    }
+
+
+def _credit_distribution(
+    distribution: DecisionCreditDistribution,
+) -> dict[str, int | float]:
+    return {
+        "decision_count": distribution.decision_count,
+        "negative": distribution.negative,
+        "zero": distribution.zero,
+        "positive": distribution.positive,
+        "minimum": distribution.minimum,
+        "maximum": distribution.maximum,
+        "mean": distribution.mean,
+    }
 
 
 def _parser() -> argparse.ArgumentParser:

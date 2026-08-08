@@ -8,6 +8,7 @@ from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Protocol
 
+from .decision_progress import DecisionProgressProvider
 from .experience import (
     DecisionExperienceBatch,
     ExperienceSegment,
@@ -363,10 +364,17 @@ class OnlineBatchDriver:
         max_decision_rounds_per_step: int = 256,
         experience_buffer: ExperienceSegmentBuffer | None = None,
         experience_sink: ExperienceSegmentSink | None = None,
+        decision_progress_provider: DecisionProgressProvider | None = None,
     ) -> None:
         if (experience_buffer is None) != (experience_sink is None):
             raise BatchDriverError(
                 "experience_buffer and experience_sink must be configured together"
+            )
+        if decision_progress_provider is not None and not callable(
+            getattr(decision_progress_provider, "capture", None)
+        ):
+            raise BatchDriverError(
+                "decision_progress_provider must expose capture()"
             )
         self.env = population.env
         self.ledger = population.ledger
@@ -377,6 +385,7 @@ class OnlineBatchDriver:
         self._experience_buffer = experience_buffer
         self._experience_sink = experience_sink
         self._experience_sink_failed = False
+        self._decision_progress_provider = decision_progress_provider
         self.max_decision_rounds_per_step = _normalize_count(
             max_decision_rounds_per_step,
             "max_decision_rounds_per_step",
@@ -472,9 +481,15 @@ class OnlineBatchDriver:
                 raise BatchDriverError("decision slot and candidate columns are misaligned")
             prepared_experience: PreparedDecisionBatch | None = None
             if self._experience_buffer is not None:
+                run_progress = (
+                    None
+                    if self._decision_progress_provider is None
+                    else self._decision_progress_provider.capture(slots)
+                )
                 prepared_experience = self._experience_buffer.prepare(
                     decision_batch,
                     tuple(self.ledger.snapshot(slot) for slot in slots),
+                    run_progress,
                 )
             choice = self.policy.choose(decision_batch)
             if not isinstance(choice, BatchPolicyChoice):

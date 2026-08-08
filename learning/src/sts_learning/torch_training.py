@@ -9,6 +9,11 @@ from dataclasses import dataclass
 import torch
 
 from .attempts import AttemptAssemblyDelivery, DroppedAttemptExperience
+from .credit_assignment import (
+    CreditAssignmentComparison,
+    CreditAssignmentError,
+    compare_credit_assignment,
+)
 from .manifests import BehaviorManifestRegistry
 from .policy import BehaviorManifestId, SelectionProbability
 from .semantic_concat import SemanticBatchConcatLimits
@@ -81,6 +86,7 @@ class SynchronousPolicyTrainer:
         self._last_selection_probabilities = restored.last_selection_probabilities
         self._total_training_seconds = restored.total_training_seconds
         self._last_training_seconds = restored.last_training_seconds
+        self._last_credit_assignment: CreditAssignmentComparison | None = None
         self._poisoned = False
 
     @property
@@ -98,6 +104,12 @@ class SynchronousPolicyTrainer:
             last_training_seconds=self._last_training_seconds,
             poisoned=self._poisoned,
         )
+
+    @property
+    def last_credit_assignment(self) -> CreditAssignmentComparison | None:
+        """Return the latest non-authoritative target comparison, if available."""
+
+        return self._last_credit_assignment
 
     def __call__(self, delivery: AttemptAssemblyDelivery) -> None:
         if self._poisoned:
@@ -121,6 +133,25 @@ class SynchronousPolicyTrainer:
                 "training delivery must contain exactly attempts_per_update "
                 "completed attempts"
             )
+
+        progress_presence = {
+            batch.run_progress is not None
+            for attempt in delivery.completed
+            for batch in attempt.batches
+        }
+        if len(progress_presence) > 1:
+            raise TorchTrainingError(
+                "training delivery mixes present and missing decision progress"
+            )
+        credit_assignment = None
+        if progress_presence == {True}:
+            try:
+                credit_assignment = compare_credit_assignment(
+                    delivery.completed,
+                    self.objective_config.terminal_return,
+                )
+            except CreditAssignmentError as error:
+                raise TorchTrainingError(str(error)) from error
 
         training_started = time.perf_counter()
         objective = on_policy_terminal_loss(
@@ -167,6 +198,7 @@ class SynchronousPolicyTrainer:
         self._last_loss = loss
         self._last_behavior_manifest_ids = objective.behavior_manifest_ids
         self._last_selection_probabilities = objective.selection_probabilities
+        self._last_credit_assignment = credit_assignment
         elapsed = time.perf_counter() - training_started
         self._total_training_seconds += elapsed
         self._last_training_seconds = elapsed

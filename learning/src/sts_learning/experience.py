@@ -14,6 +14,7 @@ from .decision_rows import (
     normalize_decision_choice,
     normalize_integer_sequence,
 )
+from .decision_progress import DecisionRunProgress
 from .policy import BehaviorManifestId, SelectionProbability
 from .recovery import (
     RecoverySlotSnapshot,
@@ -106,12 +107,14 @@ class PreparedDecisionBatch:
     candidate_counts: tuple[int, ...]
     decision_count: int
     payload_bytes: int
+    run_progress: tuple[DecisionRunProgress, ...] | None = None
 
     @classmethod
     def capture(
         cls,
         decision_batch: Mapping[str, object],
         snapshots: Sequence[RecoverySlotSnapshot],
+        run_progress: Sequence[DecisionRunProgress] | None = None,
     ) -> PreparedDecisionBatch:
         try:
             rows = PreparedDecisionRows.capture(decision_batch)
@@ -133,12 +136,37 @@ class PreparedDecisionBatch:
                     f"decision slot {slot} is aligned to snapshot slot "
                     f"{lineage.key.slot_index}"
                 )
+        normalized_progress = None
+        if run_progress is not None:
+            normalized_progress = tuple(run_progress)
+            if len(normalized_progress) != rows.decision_count:
+                raise ExperienceError(
+                    f"received {len(normalized_progress)} progress rows for "
+                    f"{rows.decision_count} decisions"
+                )
+            if not all(
+                isinstance(progress, DecisionRunProgress)
+                for progress in normalized_progress
+            ):
+                raise ExperienceError(
+                    "decision progress rows must be DecisionRunProgress values"
+                )
+            for progress, lineage in zip(
+                normalized_progress,
+                lineages,
+                strict=True,
+            ):
+                if progress.episode_seed != lineage.key.episode_seed:
+                    raise ExperienceError(
+                        "decision progress seed does not match attempt lineage"
+                    )
         return cls(
             payload=rows.payload,
             lineages=lineages,
             candidate_counts=rows.candidate_counts,
             decision_count=rows.decision_count,
             payload_bytes=rows.payload_bytes,
+            run_progress=normalized_progress,
         )
 
 
@@ -151,6 +179,7 @@ class DecisionExperienceBatch:
     behavior_manifest_id: BehaviorManifestId
     decision_count: int
     payload_bytes: int
+    run_progress: tuple[DecisionRunProgress, ...] | None = None
 
     @classmethod
     def from_prepared(
@@ -188,6 +217,7 @@ class DecisionExperienceBatch:
             behavior_manifest_id=behavior_manifest_id,
             decision_count=prepared.decision_count,
             payload_bytes=prepared.payload_bytes,
+            run_progress=prepared.run_progress,
         )
 
     def select_rows(self, row_indices: Sequence[int]) -> DecisionExperienceBatch:
@@ -212,6 +242,11 @@ class DecisionExperienceBatch:
             behavior_manifest_id=self.behavior_manifest_id,
             decision_count=len(rows),
             payload_bytes=selected_rows.payload_bytes,
+            run_progress=(
+                None
+                if self.run_progress is None
+                else tuple(self.run_progress[row] for row in rows)
+            ),
         )
 
 
@@ -283,8 +318,13 @@ class ExperienceSegmentBuffer:
         self,
         decision_batch: Mapping[str, object],
         snapshots: Sequence[RecoverySlotSnapshot],
+        run_progress: Sequence[DecisionRunProgress] | None = None,
     ) -> PreparedDecisionBatch:
-        prepared = PreparedDecisionBatch.capture(decision_batch, snapshots)
+        prepared = PreparedDecisionBatch.capture(
+            decision_batch,
+            snapshots,
+            run_progress,
+        )
         if prepared.decision_count > self.limits.max_decisions:
             raise ExperienceError(
                 f"one batch has {prepared.decision_count} decisions, exceeding "
@@ -349,6 +389,18 @@ class ExperienceSegmentBuffer:
         if batch.decision_count != len(batch.selection_probabilities):
             raise ExperienceError(
                 "experience batch selection probability rows are misaligned"
+            )
+        if (
+            batch.run_progress is not None
+            and batch.decision_count != len(batch.run_progress)
+        ):
+            raise ExperienceError("experience batch progress rows are misaligned")
+        if batch.run_progress is not None and not all(
+            isinstance(progress, DecisionRunProgress)
+            for progress in batch.run_progress
+        ):
+            raise ExperienceError(
+                "experience batch progress rows must be DecisionRunProgress values"
             )
         if not all(
             isinstance(probability, SelectionProbability)

@@ -586,11 +586,14 @@ driver history. Before policy inference, the caller recursively copies and
 freezes the bridge's existing semantic decision batch without re-declaring its
 feature schema. Rows are aligned to exact slot, seed, episode generation,
 attempt index, recovery count, the subsequently selected candidate ordinal, and
-its typed selection probability. Every retained decision batch also carries
-that exact behavior manifest identity. They are provenance for the continuation
-policy and never semantic features, teacher labels, or stored policy-score
-vectors. Explicit unknown remains unknown through row selection, segment
-rotation, and complete-attempt assembly.
+its typed selection probability. Whole-run training additionally captures the
+bridge's compact public seed, act, and floor at that same pre-inference
+boundary through an explicit optional provider. It does not recover those facts
+from semantic feature arrays or inspect an opaque session. Every retained
+decision batch also carries that exact behavior manifest identity. Lineage and
+public progress are provenance for credit diagnostics, not semantic features,
+teacher labels, or stored policy-score vectors. Explicit unknown remains
+unknown through row selection, segment rotation, and complete-attempt assembly.
 Behavior manifests are caller-owned, content-addressed records over typed
 SHA-256 identities for the external model checkpoint, model definition, model
 configuration, behavior-rule implementation, behavior-rule configuration,
@@ -772,6 +775,19 @@ categorical rule to match its typed configuration and recomputes every recorded
 selection propensity from the current shadow scorer before mutation. Unknown
 or mismatched propensity is explicitly off-policy and rejected. Any future
 off-policy correction requires a separate objective with declared assumptions.
+For whole-run batches that carry decision-time progress, the trainer also emits
+a bounded non-authoritative comparison against a remaining-horizon target. A
+defeat observed from decision floor `d` maps its later terminal floor `f` to
+`-1 + 2 * (min(f, target_floor - 1) - min(d, target_floor - 1)) /
+(target_floor - min(d, target_floor - 1))`; victory remains `+1`. The comparison
+reports only counts, signs, ranges, means, and decision-floor groups. It does
+not change the maintained terminal-broadcast loss, add HP or potion prices, or
+survive as experience payload. The same diagnostic also reports a matched-floor
+leave-one-out advantage: each attempt's remaining-progress target is centered
+only against other independent attempts that reached that decision floor. A
+floor reached by only one attempt has zero comparison signal. This avoids
+calling an unmatched state better or worse merely because it occurred later in
+the run, but remains an ablation candidate rather than the maintained loss.
 One typed objective configuration owns terminal-return semantics, advantage
 mode, and the number of attempts per update. The trainer implementation
 artifact binds the return kind, target floor, advantage mode, and attempts per

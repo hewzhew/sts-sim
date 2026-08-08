@@ -16,6 +16,7 @@ from .driver import (
     RecoveryPlan,
     initialize_population,
 )
+from .decision_progress import BridgeDecisionProgressProvider
 from .experience import ExperienceSegmentBuffer
 from .manifest_catalog import (
     BoundedBehaviorManifestCatalog,
@@ -305,6 +306,9 @@ class CategoricalOnlineSessionFactory:
                 self.config.limits.experience
             ),
             experience_sink=assembler,
+            decision_progress_provider=BridgeDecisionProgressProvider(
+                population.env
+            ),
         )
         runner = BoundedCategoricalGenerationRunner(
             driver,

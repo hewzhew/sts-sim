@@ -21,6 +21,7 @@ from .driver import (
     InitialPopulation,
     OnlineBatchDriver,
 )
+from .decision_progress import BridgeDecisionProgressProvider
 from .experience import ExperienceLimits, ExperienceSegmentBuffer
 from .recovery import RecoveryLedger
 from .resume_store import (
@@ -315,6 +316,9 @@ class CategoricalGenerationResumeRestorer:
             ),
             experience_buffer=experience_buffer,
             experience_sink=assembler,
+            decision_progress_provider=BridgeDecisionProgressProvider(
+                population.env
+            ),
         )
         runner = BoundedCategoricalGenerationRunner(
             driver,

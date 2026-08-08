@@ -809,6 +809,12 @@ own terminal-floor histogram. The command publishes only after every requested
 generation completes, but publishes only the frozen behavior checkpoint and
 manifest—not optimizer or environment resume state. It then evaluates the
 result on the disjoint `HELD_OUT` partition and writes a compact `summary.json`.
+Each generation journal row also records a bounded credit diagnostic: current
+terminal-broadcast decision targets beside decision-local remaining-floor
+targets and their matched-floor leave-one-out advantages, including sign counts
+and per-decision-floor aggregates. This is a target-distribution comparison
+only; training still uses the configured terminal objective and the diagnostic
+does not price HP, gold, or potions.
 A generation that
 hits `-MaxBatchSteps` before an optimizer step fails without publishing its
 partial live update.

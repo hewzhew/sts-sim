@@ -9,6 +9,7 @@ from learning.tests.policy_fixtures import BEHAVIOR_MANIFEST_ID
 from learning.tests.semantic_fixtures import semantic_batch_fixture
 from sts_learning import (
     DETERMINISTIC_SELECTION,
+    DecisionRunProgress,
     DecisionExperienceBatch,
     ExperienceError,
     ExperienceLimits,
@@ -128,6 +129,35 @@ class ExperienceSegmentTests(unittest.TestCase):
         self.assertTrue(all(not array.flags.writeable for array in frozen_arrays))
         with self.assertRaises(ValueError):
             prepared.payload["slot_indices"][0] = 7  # type: ignore[index]
+
+    def test_capture_aligns_typed_run_progress_without_parsing_semantics(self) -> None:
+        prepared = PreparedDecisionBatch.capture(
+            semantic_batch_fixture(),
+            [snapshot(4), snapshot(9)],
+            [
+                DecisionRunProgress(episode_seed=104, act=1, floor=3),
+                DecisionRunProgress(episode_seed=109, act=2, floor=19),
+            ],
+        )
+        batch = DecisionExperienceBatch.from_prepared(
+            prepared,
+            [0, 1],
+            deterministic(2),
+            BEHAVIOR_MANIFEST_ID,
+        )
+
+        assert batch.run_progress == prepared.run_progress
+        selected = batch.select_rows([1])
+        assert selected.run_progress == (
+            DecisionRunProgress(episode_seed=109, act=2, floor=19),
+        )
+
+        with self.assertRaisesRegex(ExperienceError, "progress seed"):
+            PreparedDecisionBatch.capture(
+                decision_batch((0,), (1,)),
+                [snapshot(0)],
+                [DecisionRunProgress(episode_seed=999, act=1, floor=3)],
+            )
 
     def test_capture_rejects_misaligned_lineage_and_object_arrays(self) -> None:
         with self.assertRaisesRegex(ExperienceError, "snapshots"):
