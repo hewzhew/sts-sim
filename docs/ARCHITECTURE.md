@@ -485,6 +485,13 @@ aggregate progress and the optional publication. This is an in-process
 boundary: exact restart still requires future durable ownership of optimizer
 state and the categorical generator state, and cannot be inferred from the
 model checkpoint alone.
+The first process-resume admission boundary is deliberately stricter than the
+eventual format. It accepts only a between-decisions environment with no
+terminal accounting in flight, a full episode-root bank, an empty experience
+buffer, no open attempt-assembly state, matching segment sequence indices, a
+healthy trainer, and an active behavior generation no newer than the shadow
+optimizer. Any violation is a typed rejection; no owner silently drops state to
+manufacture a resumable checkpoint.
 
 On an ordinary reward screen, the reward owner claims typed low-agency public
 resources before opening a nested card-reward choice. This lets the card owner

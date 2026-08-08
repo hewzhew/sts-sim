@@ -287,6 +287,12 @@ class ExperienceSegmentBuffer:
     def empty(self) -> bool:
         return not self._batches
 
+    @property
+    def next_sequence_index(self) -> int:
+        """Return the next durable segment identity without exposing payloads."""
+
+        return self._next_sequence_index
+
     def prepare(
         self,
         decision_batch: Mapping[str, object],

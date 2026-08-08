@@ -21,6 +21,7 @@ from .recovery import (
     RecoveryEvent,
     RecoveryLedger,
     RecoveryMode,
+    RecoverySlotStatus,
     RecoverySlotSnapshot,
     TerminalAccountingBatch,
     TerminalAttemptRecord,
@@ -127,6 +128,17 @@ class InitialPopulation:
     ledger: RecoveryLedger
     schedule: SeedSchedule
     checkpoint_bank: CheckpointBatch
+
+
+@dataclass(frozen=True)
+class BatchDriverResumeBoundary:
+    """Exact caller facts admitted at a quiescent driver boundary."""
+
+    slot_count: int
+    schedule: SeedSchedule
+    ledger_snapshots: tuple[RecoverySlotSnapshot, ...]
+    checkpoint_slots: int
+    experience_next_sequence_index: int | None
 
 
 @dataclass(frozen=True)
@@ -281,6 +293,51 @@ class OnlineBatchDriver:
         """Return the configured synchronous sink owner without exposing a queue."""
 
         return self._experience_sink
+
+    def require_resume_boundary(self) -> BatchDriverResumeBoundary:
+        """Reject mutable half-states before any process-resume publication."""
+
+        if self._experience_sink_failed:
+            raise BatchDriverError("experience sink previously failed")
+        slot_count = self.ledger.slot_count
+        if operator.index(self.env.slot_count) != slot_count:
+            raise BatchDriverError("environment and recovery ledger slot counts differ")
+        if operator.index(self.env.terminal_count) != 0:
+            raise BatchDriverError("resume boundary contains terminal environment slots")
+        if bool(self.env.ready):
+            raise BatchDriverError("resume boundary contains prepared environment actions")
+        snapshots = self.ledger.snapshots()
+        for snapshot in snapshots:
+            if (
+                snapshot.status is not RecoverySlotStatus.ACTIVE
+                or snapshot.pending_terminal is not None
+            ):
+                raise BatchDriverError(
+                    f"resume boundary slot {snapshot.slot_index} has unfinished terminal accounting"
+                )
+        if len(self._checkpoint_bank) != slot_count:
+            raise BatchDriverError(
+                "episode-root checkpoint bank does not cover every environment slot"
+            )
+        if self.schedule.partition is SeedPartition.TRAINING:
+            expected_mode = RecoveryMode.TRAINING
+        else:
+            expected_mode = RecoveryMode.HELD_OUT_ZERO_RECOVERY
+        if self.ledger.mode is not expected_mode:
+            raise BatchDriverError("seed schedule and recovery ledger modes differ")
+
+        experience_sequence = None
+        if self._experience_buffer is not None:
+            if not self._experience_buffer.empty:
+                raise BatchDriverError("resume boundary requires a flushed experience buffer")
+            experience_sequence = self._experience_buffer.next_sequence_index
+        return BatchDriverResumeBoundary(
+            slot_count=slot_count,
+            schedule=self.schedule,
+            ledger_snapshots=snapshots,
+            checkpoint_slots=len(self._checkpoint_bank),
+            experience_next_sequence_index=experience_sequence,
+        )
 
     def advance(self) -> BatchStepResult:
         """Resolve decisions, step once, and immediately refill completed slots."""

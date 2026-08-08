@@ -149,6 +149,44 @@ class BoundedCategoricalGenerationRunnerTests(unittest.TestCase):
             self.assertEqual(trainer.snapshot.optimizer_steps, 0)
             self.assertEqual(controller.snapshot.active_training_step, 0)
 
+    def test_resume_boundary_requires_flushed_and_closed_experience(self) -> None:
+        with tempfile.TemporaryDirectory() as root:
+            driver, assembler, trainer, controller, shadow = _components(Path(root))
+            runner = BoundedCategoricalGenerationRunner(
+                driver,
+                assembler,
+                trainer,
+                controller,
+                shadow,
+                optimizer_steps_per_generation=1,
+            )
+
+            boundary = runner.require_resume_boundary()
+            self.assertEqual(boundary.driver.slot_count, 1)
+            self.assertEqual(boundary.driver.checkpoint_slots, 1)
+            self.assertEqual(boundary.assembler.open_attempts, 0)
+            self.assertEqual(boundary.trainer.optimizer_steps, 0)
+            self.assertEqual(boundary.controller.active_training_step, 0)
+
+            manifest_id = controller.snapshot.active_manifest_id
+            assert manifest_id is not None
+            buffer = driver._experience_buffer
+            assert buffer is not None
+            buffer.commit(
+                decision_batch_fixture(
+                    slot=0,
+                    semantic_row=0,
+                    selected_ordinal=0,
+                    manifest_id=manifest_id,
+                )
+            )
+            with self.assertRaisesRegex(TorchGenerationError, "flushed"):
+                runner.require_resume_boundary()
+
+            driver.flush_experience()
+            with self.assertRaisesRegex(TorchGenerationError, "open attempt"):
+                runner.require_resume_boundary()
+
     def test_partial_optimizer_progress_promotes_without_replaying_environment(self) -> None:
         with tempfile.TemporaryDirectory() as root:
             driver, assembler, trainer, controller, shadow = _components(Path(root))

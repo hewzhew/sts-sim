@@ -14,6 +14,7 @@ from .attempts import (
 from .driver import (
     BatchCurriculum,
     BatchDriverError,
+    BatchDriverResumeBoundary,
     BatchEnvironment,
     BatchPolicy,
     BatchRunSummary,
@@ -118,6 +119,7 @@ __all__ = [
     "AttemptDropReason",
     "BatchCurriculum",
     "BatchDriverError",
+    "BatchDriverResumeBoundary",
     "BatchEnvironment",
     "BatchPolicy",
     "BatchPolicyChoice",

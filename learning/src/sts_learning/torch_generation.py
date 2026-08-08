@@ -7,15 +7,16 @@ from dataclasses import dataclass
 
 import torch
 
-from .attempts import BoundedAttemptAssembler
-from .driver import OnlineBatchDriver
+from .attempts import AttemptAssemblerSnapshot, BoundedAttemptAssembler
+from .driver import BatchDriverError, BatchDriverResumeBoundary, OnlineBatchDriver
 from .policy import BehaviorManifestId
 from .torch_behavior import (
     CategoricalTorchBehaviorController,
+    CategoricalTorchBehaviorControllerSnapshot,
     TorchBehaviorPublication,
 )
 from .torch_policy import RaggedCandidateScorer
-from .torch_training import SynchronousValueTrainer
+from .torch_training import SynchronousValueTrainer, SynchronousValueTrainerSnapshot
 
 
 class TorchGenerationError(RuntimeError):
@@ -44,6 +45,16 @@ class CategoricalGenerationAdvanceResult:
     @property
     def step_limit_reached(self) -> bool:
         return not self.promoted and self.batch_steps == self.batch_step_limit
+
+
+@dataclass(frozen=True)
+class CategoricalGenerationResumeBoundary:
+    """Typed quiescent state admitted for a future exact resume publication."""
+
+    driver: BatchDriverResumeBoundary
+    assembler: AttemptAssemblerSnapshot
+    trainer: SynchronousValueTrainerSnapshot
+    controller: CategoricalTorchBehaviorControllerSnapshot
 
 
 class BoundedCategoricalGenerationRunner:
@@ -84,6 +95,53 @@ class BoundedCategoricalGenerationRunner:
     @property
     def optimizer_steps_per_generation(self) -> int:
         return self._optimizer_steps_per_generation
+
+    def require_resume_boundary(self) -> CategoricalGenerationResumeBoundary:
+        """Fail closed unless every synchronous owner is safely checkpointable."""
+
+        self._validate_wiring()
+        try:
+            driver = self.driver.require_resume_boundary()
+        except BatchDriverError as error:
+            raise TorchGenerationError(str(error)) from error
+        assembler = self.assembler.snapshot
+        if (
+            assembler.open_attempts != 0
+            or assembler.dropped_open_attempts != 0
+            or assembler.retained_decisions != 0
+            or assembler.retained_payload_bytes != 0
+        ):
+            raise TorchGenerationError(
+                "resume boundary requires no open attempt-assembly state"
+            )
+        if driver.experience_next_sequence_index is None:
+            raise TorchGenerationError(
+                "generation resume requires an experience segment buffer"
+            )
+        if assembler.next_sequence_index != driver.experience_next_sequence_index:
+            raise TorchGenerationError(
+                "experience buffer and attempt assembler sequence indices differ"
+            )
+
+        trainer = self.trainer.snapshot
+        if trainer.poisoned:
+            raise TorchGenerationError("generation trainer is poisoned")
+        controller = self.controller.snapshot
+        if (
+            controller.active_manifest_id is None
+            or controller.active_training_step is None
+        ):
+            raise TorchGenerationError("generation controller has no active behavior")
+        if trainer.optimizer_steps < controller.active_training_step:
+            raise TorchGenerationError(
+                "trainer optimizer step is behind the active behavior generation"
+            )
+        return CategoricalGenerationResumeBoundary(
+            driver=driver,
+            assembler=assembler,
+            trainer=trainer,
+            controller=controller,
+        )
 
     def advance(self, *, max_batch_steps: int) -> CategoricalGenerationAdvanceResult:
         """Continue the current target, promoting only after enough real updates."""

@@ -295,7 +295,12 @@ leaves the old frozen behavior live while
 preserving partial shadow progress for the next bounded call. Its result is
 aggregate-only and never retains step results or attempts. This runner is not
 yet durable: restarting exact training still needs separately persisted
-optimizer and categorical-generator state.
+optimizer and categorical-generator state. Its first resume admission boundary
+is already fail-closed: the environment must be between decisions with no
+terminal half-state, the episode-root bank must cover every slot, the experience
+buffer must be flushed, the assembler must have no open attempt, segment
+sequence ids must agree, the trainer must be healthy, and an active behavior
+manifest must not be ahead of the shadow optimizer.
 
 The bridge verification command installs a fresh wheel and runs both bridge
 smoke tests and these caller contracts:
