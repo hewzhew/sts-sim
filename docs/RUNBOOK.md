@@ -658,6 +658,19 @@ Pass the file bytes unchanged to
 expected_roots=2, max_bytes=16777216)`. Rust validates the exact root count,
 canonical envelope, recomputed root identity/context, and current combat
 boundary before constructing the batch. Python must not inspect the payload.
+When a combat case has validated exact production context and a typed action
+file already replays to a win, derive a bounded reverse-curriculum batch with:
+
+```powershell
+cargo oracle-lab learning-root recover --case <case.json> --actions <win.actions.json> --output <fresh.combat-roots.bin> --max-roots 8 --max-bytes 16777216
+```
+
+Rust restores the production session, replays every input, requires a new typed
+combat win, retains at most the terminal-nearest requested roots in memory, and
+writes the same opaque root-batch format. The compact receipt reports the
+actual root count, which can be smaller than `--max-roots` for a short line.
+The action sequence is verification evidence only; it is not included in the
+artifact and must not be used as a supervised policy label.
 For a bounded fixed-behavior coverage check over every root, use
 `CombatWinSignalCensusRunner` with the same `expected_roots`, one shared model
 seed, one explicit behavior seed per root, and `max_roots` equal to the intended

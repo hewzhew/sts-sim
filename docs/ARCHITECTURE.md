@@ -213,6 +213,12 @@ terminal-nearest window. The ordinals prove replay identity; they are not
 supervised action labels and do not enter the on-policy loss. This mechanism
 cannot manufacture a teacher for an all-loss root: such a root remains in the
 rescue backlog until a separately verified winning trajectory exists.
+For a production-context `CombatCase`, the offline learning-root producer may
+replay a typed winning action file through the restored run-control session and
+export only a bounded terminal-nearest window as an ordinary opaque root batch.
+The producer must observe a new typed win before writing anything. Search
+actions remain replay evidence outside the artifact; they neither cross the
+Python bridge nor become policy labels.
 
 Production runs hand combat boundaries to this bridge only through the
 versioned `CombatLearningRootBatchArtifactV1` envelope owned by run control.

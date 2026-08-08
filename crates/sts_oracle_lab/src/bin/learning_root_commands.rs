@@ -1,26 +1,34 @@
-use std::collections::BTreeSet;
-use std::fs::OpenOptions;
-use std::io::Write;
+use std::collections::{BTreeSet, VecDeque};
+use std::fs::{File, OpenOptions};
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 
 use clap::Subcommand;
 use serde::Serialize;
+use sts_oracle_runtime::eval::combat_case::load_combat_case;
+use sts_oracle_runtime::eval::combat_case_context::restore_combat_case_production_session_v1;
 use sts_oracle_runtime::eval::run_control::{
     BoundedRunDriveStopV1, BoundedRunDriver, BoundedRunStepControlV1,
     CombatLearningRootBatchArtifactV1, CombatLearningRootContextV1, CombatLearningRootIdentityV1,
-    RunControlConfig, RunControlSession, RunControlSessionCheckpointV1,
+    RunControlConfig, RunControlSession, RunControlSessionCheckpointV1, RunDecisionAction,
 };
 use sts_oracle_runtime::runtime::branch::{
     apply_oracle_production_noncombat_step_v1, load_oracle_run_continuation_v1,
     OracleProductionNoncombatStepV1, ORACLE_RUN_CONTINUATION_SCHEMA_NAME,
     ORACLE_RUN_CONTINUATION_SCHEMA_VERSION,
 };
+use sts_oracle_runtime::sim::combat::CombatTerminal;
+use sts_oracle_runtime::state::core::ClientInput;
 
 const SUMMARY_SCHEMA_NAME: &str = "CombatLearningRootExportSummary";
 const SUMMARY_SCHEMA_VERSION: u32 = 1;
 const COLLECTION_SUMMARY_SCHEMA_NAME: &str = "CombatLearningRootCollectionSummary";
 const COLLECTION_SUMMARY_SCHEMA_VERSION: u32 = 2;
+const RECOVERY_SUMMARY_SCHEMA_NAME: &str = "CombatLearningRecoveryRootSummary";
+const RECOVERY_SUMMARY_SCHEMA_VERSION: u32 = 1;
 const MAX_COLLECTED_ROOTS: usize = 64;
+const MAX_RECOVERY_ACTIONS: usize = 4_096;
+const MAX_RECOVERY_ACTION_BYTES: u64 = 16 * 1024 * 1024;
 
 #[derive(Debug, Subcommand)]
 pub(super) enum LearningRootCommand {
@@ -47,6 +55,20 @@ pub(super) enum LearningRootCommand {
         max_progress_steps: usize,
         #[arg(long, default_value_t = 10_000)]
         wall_ms: u64,
+        #[arg(long, default_value_t = 16 * 1024 * 1024)]
+        max_bytes: usize,
+    },
+    /// Replay one exact production combat win and export a bounded
+    /// terminal-nearest recovery-root batch without action labels.
+    Recover {
+        #[arg(long)]
+        case: PathBuf,
+        #[arg(long)]
+        actions: PathBuf,
+        #[arg(long)]
+        output: PathBuf,
+        #[arg(long, default_value_t = 8)]
+        max_roots: usize,
         #[arg(long, default_value_t = 16 * 1024 * 1024)]
         max_bytes: usize,
     },
@@ -90,6 +112,29 @@ struct CombatLearningRootCollectedRootV2 {
     context: CombatLearningRootContextV1,
 }
 
+#[derive(Debug, Serialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct CombatLearningRecoveryRootSummaryV1 {
+    schema_name: &'static str,
+    schema_version: u32,
+    case: PathBuf,
+    actions: PathBuf,
+    output: PathBuf,
+    payload_bytes: usize,
+    supplied_action_count: usize,
+    max_roots: usize,
+    final_hp: i32,
+    roots: Vec<CombatLearningRecoveredRootV1>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(deny_unknown_fields)]
+struct CombatLearningRecoveredRootV1 {
+    actions_to_terminal: usize,
+    identity: CombatLearningRootIdentityV1,
+    context: CombatLearningRootContextV1,
+}
+
 enum CombatLearningRootCollectionStop {
     CombatBoundary,
     AutomationGap(String),
@@ -117,6 +162,13 @@ pub(super) fn run(command: LearningRootCommand) -> Result<(), String> {
             wall_ms,
             max_bytes,
         )?),
+        LearningRootCommand::Recover {
+            case,
+            actions,
+            output,
+            max_roots,
+            max_bytes,
+        } => super::print_json(&recover(&case, &actions, &output, max_roots, max_bytes)?),
     }
 }
 
@@ -228,6 +280,107 @@ pub(super) fn collect(
     })
 }
 
+pub(super) fn recover(
+    case_path: &Path,
+    actions_path: &Path,
+    output: &Path,
+    max_roots: usize,
+    max_bytes: usize,
+) -> Result<CombatLearningRecoveryRootSummaryV1, String> {
+    require_fresh_output(output)?;
+    if max_roots == 0 || max_roots > MAX_COLLECTED_ROOTS {
+        return Err(format!(
+            "learning recovery max_roots must be in 1..={MAX_COLLECTED_ROOTS}"
+        ));
+    }
+    let case = load_combat_case(case_path)?;
+    let session = restore_combat_case_production_session_v1(&case)?;
+    let mut action_payload = Vec::new();
+    File::open(actions_path)
+        .map_err(|error| format!("failed to open {}: {error}", actions_path.display()))?
+        .take(MAX_RECOVERY_ACTION_BYTES + 1)
+        .read_to_end(&mut action_payload)
+        .map_err(|error| format!("failed to read {}: {error}", actions_path.display()))?;
+    if action_payload.is_empty() || action_payload.len() as u64 > MAX_RECOVERY_ACTION_BYTES {
+        return Err(format!(
+            "learning recovery action bytes must be in 1..={MAX_RECOVERY_ACTION_BYTES}"
+        ));
+    }
+    let actions = serde_json::from_slice::<Vec<ClientInput>>(&action_payload)
+        .map_err(|error| format!("failed to decode {}: {error}", actions_path.display()))?;
+    if actions.is_empty() || actions.len() > MAX_RECOVERY_ACTIONS {
+        return Err(format!(
+            "learning recovery action count must be in 1..={MAX_RECOVERY_ACTIONS}"
+        ));
+    }
+
+    let (checkpoints, final_hp) = replay_recovery_roots(session, &actions, max_roots)?;
+    let artifact = CombatLearningRootBatchArtifactV1::from_checkpoints(checkpoints)?;
+    let roots = artifact
+        .roots()
+        .iter()
+        .enumerate()
+        .map(|(index, root)| CombatLearningRecoveredRootV1 {
+            actions_to_terminal: index + 1,
+            identity: root.identity().clone(),
+            context: *root.context(),
+        })
+        .collect();
+    let payload = artifact.encode(max_bytes)?;
+    write_new_payload(output, &payload)?;
+    Ok(CombatLearningRecoveryRootSummaryV1 {
+        schema_name: RECOVERY_SUMMARY_SCHEMA_NAME,
+        schema_version: RECOVERY_SUMMARY_SCHEMA_VERSION,
+        case: case_path.to_path_buf(),
+        actions: actions_path.to_path_buf(),
+        output: output.to_path_buf(),
+        payload_bytes: payload.len(),
+        supplied_action_count: actions.len(),
+        max_roots,
+        final_hp,
+        roots,
+    })
+}
+
+fn replay_recovery_roots(
+    mut session: RunControlSession,
+    actions: &[ClientInput],
+    root_count: usize,
+) -> Result<(Vec<RunControlSessionCheckpointV1>, i32), String> {
+    let previous_outcome_id = session
+        .last_combat_baseline()
+        .map(|outcome| outcome.case_id.clone());
+    let mut retained = VecDeque::with_capacity(root_count);
+    for (index, action) in actions.iter().enumerate() {
+        if session.active_combat.is_none() {
+            return Err(format!(
+                "learning recovery combat terminated before action {index}"
+            ));
+        }
+        if retained.len() == root_count {
+            retained.pop_front();
+        }
+        retained.push_back(RunControlSessionCheckpointV1::from_session(&session));
+        session
+            .apply_decision_action(RunDecisionAction::Input(action.clone()))
+            .map_err(|error| format!("learning recovery action {index} failed: {error}"))?;
+    }
+    if session.active_combat.is_some() {
+        return Err("learning recovery actions did not terminate combat".to_owned());
+    }
+    let outcome = session
+        .last_combat_baseline()
+        .filter(|outcome| Some(&outcome.case_id) != previous_outcome_id.as_ref())
+        .ok_or_else(|| "learning recovery combat produced no new typed outcome".to_owned())?;
+    if outcome.terminal != CombatTerminal::Win {
+        return Err(format!(
+            "learning recovery actions terminated with {:?}, expected win",
+            outcome.terminal
+        ));
+    }
+    Ok((retained.into_iter().rev().collect(), outcome.final_hp))
+}
+
 fn collect_one(
     seed: u64,
     ascension: u8,
@@ -330,12 +483,20 @@ mod tests {
     use std::time::{SystemTime, UNIX_EPOCH};
 
     use sts_oracle_runtime::content::cards::CardId;
+    use sts_oracle_runtime::content::monsters::exordium::jaw_worm::JawWorm;
+    use sts_oracle_runtime::content::monsters::{EnemyId, MonsterBehavior};
+    use sts_oracle_runtime::eval::combat_case::{
+        save_combat_case, CombatCase, CombatCaseGap, CombatCaseRngSummary, CombatCaseRunSummary,
+        CombatCaseSource,
+    };
+    use sts_oracle_runtime::eval::combat_case_context::capture_combat_case_production_context_v1;
     use sts_oracle_runtime::eval::run_control::{
         RunControlSession, RunControlSessionCheckpointV1, RunProgressJournalV1,
     };
     use sts_oracle_runtime::runtime::branch::{
         save_oracle_run_continuation_v1, OracleRunContinuationV1,
     };
+    use sts_oracle_runtime::runtime::combat::CombatCard;
     use sts_oracle_runtime::state::core::{
         ActiveCombat, CombatContext, DiscoveryChoiceState, EngineState, PendingChoice,
         RoomCombatContext,
@@ -439,6 +600,112 @@ mod tests {
     }
 
     #[test]
+    fn verified_win_replay_caps_and_orders_terminal_nearest_roots() {
+        let actions = vec![
+            ClientInput::PlayCard {
+                card_index: 0,
+                target: Some(7),
+            },
+            ClientInput::PlayCard {
+                card_index: 0,
+                target: Some(7),
+            },
+            ClientInput::PlayCard {
+                card_index: 0,
+                target: Some(7),
+            },
+        ];
+
+        let (checkpoints, final_hp) =
+            replay_recovery_roots(combat_root_session(18), &actions, 2).expect("replay exact win");
+        let remaining_hp = checkpoints
+            .iter()
+            .cloned()
+            .map(|checkpoint| {
+                checkpoint
+                    .into_session()
+                    .expect("restore retained root")
+                    .active_combat
+                    .expect("retained root remains in combat")
+                    .combat_state
+                    .entities
+                    .monsters[0]
+                    .current_hp
+            })
+            .collect::<Vec<_>>();
+        let artifact = CombatLearningRootBatchArtifactV1::from_checkpoints(checkpoints)
+            .expect("build terminal-nearest root batch");
+
+        assert_eq!(final_hp, 80);
+        assert_eq!(artifact.roots().len(), 2);
+        assert_eq!(remaining_hp, vec![6, 12]);
+        assert_ne!(
+            artifact.roots()[0].identity(),
+            artifact.roots()[1].identity()
+        );
+        assert!(
+            replay_recovery_roots(combat_root_session(18), &actions[..2], 2)
+                .expect_err("incomplete line must fail")
+                .contains("did not terminate")
+        );
+    }
+
+    #[test]
+    fn production_case_and_win_actions_export_bridge_decodable_recovery_roots() {
+        let root = unique_temp_dir("recover");
+        fs::create_dir(&root).expect("create test root");
+        let case_path = root.join("source.case.json");
+        let actions_path = root.join("win.actions.json");
+        let output_path = root.join("recovery.bin");
+        let rejected_output = root.join("rejected.bin");
+        let session = combat_root_session(12);
+        let mut case = combat_case(&session);
+        case.production_context = Some(
+            capture_combat_case_production_context_v1(&case, &session)
+                .expect("capture production context"),
+        );
+        save_combat_case(&case_path, &case).expect("save production case");
+        let actions = vec![
+            ClientInput::PlayCard {
+                card_index: 0,
+                target: Some(7),
+            },
+            ClientInput::PlayCard {
+                card_index: 0,
+                target: Some(7),
+            },
+        ];
+        fs::write(
+            &actions_path,
+            serde_json::to_vec(&actions).expect("encode actions"),
+        )
+        .expect("save actions");
+
+        let summary = recover(&case_path, &actions_path, &output_path, 8, 1024 * 1024)
+            .expect("export recovery roots");
+        let payload = fs::read(&output_path).expect("read recovery roots");
+        let artifact = CombatLearningRootBatchArtifactV1::decode(&payload, 2, 1024 * 1024)
+            .expect("decode recovery roots");
+
+        assert_eq!(summary.supplied_action_count, 2);
+        assert_eq!(summary.max_roots, 8);
+        assert_eq!(summary.final_hp, 80);
+        assert_eq!(summary.roots.len(), 2);
+        assert_eq!(summary.roots[0].actions_to_terminal, 1);
+        assert_eq!(summary.roots[1].actions_to_terminal, 2);
+        assert_eq!(artifact.roots().len(), 2);
+
+        fs::write(
+            &actions_path,
+            serde_json::to_vec(&actions[..1]).expect("encode incomplete actions"),
+        )
+        .expect("replace actions");
+        assert!(recover(&case_path, &actions_path, &rejected_output, 8, 1024 * 1024,).is_err());
+        assert!(!rejected_output.exists());
+        fs::remove_dir_all(&root).expect("remove test root");
+    }
+
+    #[test]
     fn collection_budget_exhaustion_writes_no_artifact() {
         let root = unique_temp_dir("bounded");
         fs::create_dir(&root).expect("create test root");
@@ -480,6 +747,71 @@ mod tests {
         assert!(!duplicate_output.exists());
         assert!(!excessive_output.exists());
         fs::remove_dir_all(&root).expect("remove test root");
+    }
+
+    fn combat_root_session(monster_hp: i32) -> RunControlSession {
+        let mut session = RunControlSession::new(Default::default());
+        let mut combat = sts_oracle_runtime::test_support::blank_test_combat();
+        combat.zones.hand = vec![
+            CombatCard::new(CardId::Strike, 51),
+            CombatCard::new(CardId::Strike, 52),
+            CombatCard::new(CardId::Strike, 53),
+        ];
+        let mut monster = sts_oracle_runtime::test_support::test_monster(EnemyId::JawWorm);
+        monster.id = 7;
+        monster.current_hp = monster_hp;
+        monster.max_hp = monster_hp;
+        monster.set_planned_move_id(1);
+        let plan = JawWorm::turn_plan(&combat, &monster);
+        monster.set_planned_steps(plan.steps);
+        monster.set_planned_visible_spec(plan.visible_spec);
+        combat.entities.monsters.push(monster);
+        session.engine_state = EngineState::CombatPlayerTurn;
+        session.active_combat = Some(ActiveCombat::new(
+            EngineState::CombatPlayerTurn,
+            combat,
+            CombatContext::Room(RoomCombatContext {
+                room_type: RoomType::MonsterRoom,
+            }),
+        ));
+        session
+    }
+
+    fn combat_case(session: &RunControlSession) -> CombatCase {
+        CombatCase::new(
+            CombatCaseSource {
+                seed: session.run_state.seed,
+                ascension: session.run_state.ascension_level,
+                generation: 0,
+                branch_id: 0,
+                parent_id: None,
+            },
+            CombatCaseGap {
+                boundary: "learning recovery fixture".to_owned(),
+                reason: "contract".to_owned(),
+                search_nodes: 0,
+                search_ms: 0,
+                rescue_search_nodes: 0,
+                rescue_search_ms: 0,
+            },
+            CombatCaseRunSummary {
+                act: session.run_state.act_num,
+                floor: session.run_state.floor_num,
+                hp: session.run_state.current_hp,
+                max_hp: session.run_state.max_hp,
+                gold: session.run_state.gold,
+                deck_size: session.run_state.master_deck.len(),
+                relic_count: session.run_state.relics.len(),
+                potion_slots: session.run_state.potions.len(),
+            },
+            Vec::new(),
+            None,
+            Vec::new(),
+            CombatCaseRngSummary::from_pool(&session.run_state.rng_pool),
+            session
+                .current_active_combat_position()
+                .expect("active combat position"),
+        )
     }
 
     fn unique_temp_dir(label: &str) -> PathBuf {
