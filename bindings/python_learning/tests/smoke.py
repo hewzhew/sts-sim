@@ -541,7 +541,11 @@ def _assert_cross_process_checkpoint_bank_replays_episode_roots() -> None:
 def main() -> None:
     assert callable(LearningBatchEnv.from_combat_root_artifact_bytes)
     assert callable(LearningBatchEnv.merge_combat_root_artifact_bytes)
+    assert callable(LearningBatchEnv.supported_potion_ids)
     assert callable(LearningBatchEnv.combat_root_artifact_bytes)
+    potion_ids = LearningBatchEnv.supported_potion_ids()
+    assert len(potion_ids) == len(set(potion_ids))
+    assert "FirePotion" in potion_ids
     schema = _SCHEMA
     assert schema["version"] == SEMANTIC_SCHEMA_VERSION
     assert schema["completeness"]["Complete"] == SEMANTIC_COMPLETE

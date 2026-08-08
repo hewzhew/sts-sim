@@ -254,7 +254,8 @@ branch cutpoint schemas.
 The bounded later-combat sampler advances one frozen published behavior over
 training-partition runs and inspects only the bridge's aligned public run
 context and undecoded combat-root context. It captures at most one qualifying
-root per seed, filters by typed floor and usable-potion count, and asks Rust to
+root per seed, filters by typed floor and usable-potion count, and may require
+one bridge-validated canonical potion identity in one exact slot. It then asks Rust to
 merge canonical single-root payloads without exposing checkpoint fields. The
 sampler writes one fresh batch only after the requested root count is complete;
 a deadline, step bound, duplicate root, context mismatch, or byte overflow

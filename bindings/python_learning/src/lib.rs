@@ -472,6 +472,15 @@ impl LearningBatchEnv {
         Ok(PyBytes::new(py, &payload))
     }
 
+    /// Return canonical potion identities accepted by typed root selectors.
+    #[staticmethod]
+    fn supported_potion_ids() -> Vec<String> {
+        sts_oracle_eval::content::potions::ALL_POTIONS
+            .iter()
+            .map(|potion| format!("{potion:?}"))
+            .collect()
+    }
+
     /// Export selected current undecoded combat slots as one opaque root artifact.
     ///
     /// Python may persist or forward the bytes but never receives simulator

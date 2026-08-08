@@ -54,6 +54,23 @@ class _RootExportEnvironment(BatchEnvironment, Protocol):
 
 
 @dataclass(frozen=True)
+class RequiredPotionSlot:
+    slot_index: int
+    potion_id: str
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "slot_index",
+            _nonnegative(self.slot_index, "required potion slot"),
+        )
+        if not isinstance(self.potion_id, str) or not self.potion_id:
+            raise RunCombatRootCollectionError(
+                "required potion id must be a non-empty string"
+            )
+
+
+@dataclass(frozen=True)
 class RunCombatRootCollectionConfig:
     behavior: Path
     output: Path
@@ -66,6 +83,7 @@ class RunCombatRootCollectionConfig:
     min_usable_potions: int = 1
     potion_lane: RunPotionLane = RunPotionLane.TRAINED
     max_artifact_bytes: int = 16 * 1024 * 1024
+    required_potion: RequiredPotionSlot | None = None
 
     def __post_init__(self) -> None:
         behavior = Path(self.behavior).resolve()
@@ -89,6 +107,13 @@ class RunCombatRootCollectionConfig:
         if not isinstance(self.potion_lane, RunPotionLane):
             raise RunCombatRootCollectionError(
                 "root collection potion lane must be typed"
+            )
+        if self.required_potion is not None and not isinstance(
+            self.required_potion,
+            RequiredPotionSlot,
+        ):
+            raise RunCombatRootCollectionError(
+                "required potion selector must be typed"
             )
         object.__setattr__(self, "behavior", behavior)
         object.__setattr__(self, "output", output)
@@ -194,6 +219,12 @@ class _RootCaptureSink:
             if floor < self.config.min_floor:
                 continue
             if usable < self.config.min_usable_potions:
+                continue
+            required = self.config.required_potion
+            if required is not None and (
+                required.slot_index >= len(context.potion_ids)
+                or context.potion_ids[required.slot_index] != required.potion_id
+            ):
                 continue
             payload = bytes(
                 env.combat_root_artifact_bytes(
@@ -306,6 +337,32 @@ def run_run_combat_root_collection(
         raise RunCombatRootCollectionError(
             "combat behavior and run environment semantic schemas differ"
         )
+    if config.required_potion is not None:
+        supported_source = getattr(
+            active_run_bridge.environment,
+            "supported_potion_ids",
+            None,
+        )
+        if not callable(supported_source):
+            raise RunCombatRootCollectionError(
+                "run bridge does not expose supported potion identities"
+            )
+        supported = supported_source()
+        if (
+            not isinstance(supported, Sequence)
+            or isinstance(supported, (str, bytes))
+            or not supported
+            or any(not isinstance(potion, str) or not potion for potion in supported)
+            or len(set(supported)) != len(supported)
+        ):
+            raise RunCombatRootCollectionError(
+                "run bridge returned malformed supported potion identities"
+            )
+        if config.required_potion.potion_id not in supported:
+            raise RunCombatRootCollectionError(
+                "required potion id is not supported by the installed bridge: "
+                f"{config.required_potion.potion_id}"
+            )
 
     recovered: PublishedCombatBehavior | PublishedRunBehavior
     if is_run_training_publication(config.behavior):
@@ -406,6 +463,16 @@ def run_run_combat_root_collection(
         "training_seed_end": driver.schedule.next_candidate,
         "min_floor": config.min_floor,
         "min_usable_potions": config.min_usable_potions,
+        "required_potion_id": (
+            None
+            if config.required_potion is None
+            else config.required_potion.potion_id
+        ),
+        "required_potion_slot": (
+            None
+            if config.required_potion is None
+            else config.required_potion.slot_index
+        ),
         "root_count": len(sink.roots),
         "terminal_attempts": terminal_attempts,
         "batch_steps": batch_steps,
@@ -496,6 +563,8 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--training-seed-start", type=int, default=10_000_000)
     parser.add_argument("--min-floor", type=int, default=2)
     parser.add_argument("--min-usable-potions", type=int, default=1)
+    parser.add_argument("--required-potion-id")
+    parser.add_argument("--required-potion-slot", type=int)
     parser.add_argument(
         "--potion-lane",
         choices=tuple(lane.value for lane in RunPotionLane),
@@ -506,7 +575,22 @@ def _parser() -> argparse.ArgumentParser:
 
 
 def main() -> int:
-    arguments = _parser().parse_args()
+    parser = _parser()
+    arguments = parser.parse_args()
+    if (arguments.required_potion_id is None) != (
+        arguments.required_potion_slot is None
+    ):
+        parser.error(
+            "--required-potion-id and --required-potion-slot must be supplied together"
+        )
+    required_potion = (
+        None
+        if arguments.required_potion_id is None
+        else RequiredPotionSlot(
+            arguments.required_potion_slot,
+            arguments.required_potion_id,
+        )
+    )
     run_run_combat_root_collection(
         RunCombatRootCollectionConfig(
             behavior=arguments.behavior,
@@ -520,6 +604,7 @@ def main() -> int:
             min_usable_potions=arguments.min_usable_potions,
             potion_lane=RunPotionLane(arguments.potion_lane),
             max_artifact_bytes=arguments.max_artifact_bytes,
+            required_potion=required_potion,
         )
     )
     return 0

@@ -27,6 +27,8 @@ param(
     [int]$MinFloor = 2,
     [int]$MinUsablePotions = 1,
     [int]$MaxArtifactBytes = 16777216,
+    [string]$RequiredPotionId,
+    [Nullable[int]]$RequiredPotionSlot,
     [ValidateSet("raw-return", "leave-one-out", "matched-floor", "matched-floor-context", "matched-episode-floor-context")]
     [string]$AdvantageMode = "raw-return",
     [ValidateSet("independent-cohorts", "episode-root-retries")]
@@ -138,8 +140,9 @@ if source_root not in package_root.parents:
 
 required_bridge_methods = (
     "from_combat_root_artifact_bytes",
-    "merge_combat_root_artifact_bytes",
-    "combat_root_artifact_bytes",
+        "merge_combat_root_artifact_bytes",
+        "supported_potion_ids",
+        "combat_root_artifact_bytes",
     "combat_group",
     "combat_root_contexts",
 )
@@ -318,6 +321,16 @@ switch ($Command) {
     }
     "collect-run-roots" {
         $pythonPath = Get-ConfiguredPython
+        $requiredPotionArguments = @()
+        if ($RequiredPotionId -or $null -ne $RequiredPotionSlot) {
+            if (-not $RequiredPotionId -or $null -eq $RequiredPotionSlot) {
+                throw "collect-run-roots requires both -RequiredPotionId and -RequiredPotionSlot"
+            }
+            $requiredPotionArguments = @(
+                "--required-potion-id", $RequiredPotionId,
+                "--required-potion-slot", $RequiredPotionSlot
+            )
+        }
         Invoke-Doctor $pythonPath
         Invoke-WithLearningPath {
             & $pythonPath -m sts_learning.collect_run_combat_roots `
@@ -331,7 +344,8 @@ switch ($Command) {
                 --min-floor $MinFloor `
                 --min-usable-potions $MinUsablePotions `
                 --max-artifact-bytes $MaxArtifactBytes `
-                --potion-lane $RunPotionLane
+                --potion-lane $RunPotionLane `
+                @requiredPotionArguments
             if ($LASTEXITCODE -ne 0) {
                 throw "run combat-root collection failed"
             }

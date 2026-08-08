@@ -705,6 +705,13 @@ roots have been collected; an incomplete bound leaves the output absent. The
 single-line receipt reports seed/site/resource facts and artifact identity.
 Use a fresh path and a small root count first. This is a corpus sampler, not a
 trainer or evidence that the collected combats are representative.
+For a concrete rescue lane, add both `-RequiredPotionId FirePotion` and
+`-RequiredPotionSlot 0`. The installed Rust bridge validates the canonical
+potion id before any run advances; each captured root must contain that exact
+identity in that exact zero-based slot. Supplying only one selector field is an
+error. This aligns the resulting artifact with `train-combat -PotionLane
+root-slots -PotionSlots 0` without treating other potion identities as the same
+training intervention.
 When a combat case has validated exact production context and a typed action
 file already replays to a win, derive a bounded reverse-curriculum batch with:
 

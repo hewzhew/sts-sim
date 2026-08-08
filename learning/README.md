@@ -188,6 +188,10 @@ opaque batch only after reaching its declared root target; a step/deadline,
 identity, alignment, or byte failure leaves no output. Its receipt records the
 collected seed/site/resource facts but assigns no potion value and supplies no
 teacher labels.
+An optional typed selector binds one bridge-validated canonical potion identity
+to one exact inventory slot before capture. This is the corpus boundary for a
+concrete `root-slots` rescue lane; it does not group different potion identities
+under rarity or role heuristics.
 Their row projection attaches all three columns to each retained replicate
 decision without choosing a training axis or scalar weighting.
 `sts_learning.torch_outcomes.on_policy_combat_win_loss` is the first narrow

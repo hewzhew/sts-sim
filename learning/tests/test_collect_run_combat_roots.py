@@ -11,6 +11,7 @@ pytest.importorskip("torch")
 from learning.tests.driver_fixtures import NumpyWinningBatchEnv  # noqa: E402
 from learning.tests.run_training_fixtures import published_behavior  # noqa: E402
 from sts_learning.collect_run_combat_roots import (  # noqa: E402
+    RequiredPotionSlot,
     RunCombatRootCollectionError,
     RunCombatRootCollectionConfig,
     run_run_combat_root_collection,
@@ -19,6 +20,10 @@ from sts_learning.evaluate_run import RunPotionLane  # noqa: E402
 
 
 class _RootCapturingWinningEnv(NumpyWinningBatchEnv):
+    @staticmethod
+    def supported_potion_ids() -> list[str]:
+        return ["FearPotion", "FirePotion"]
+
     def public_run_contexts(self) -> list[tuple[int, SimpleNamespace]]:
         return [
             (
@@ -102,6 +107,7 @@ def test_collection_captures_one_potion_root_per_seed_and_merges_once(
             min_usable_potions=1,
             potion_lane=RunPotionLane.NEVER,
             max_artifact_bytes=1024,
+            required_potion=RequiredPotionSlot(0, "FearPotion"),
         ),
         combat_bridge=combat_bridge,
         run_bridge=run_bridge,
@@ -114,13 +120,15 @@ def test_collection_captures_one_potion_root_per_seed_and_merges_once(
     assert merge_calls[0][0] != merge_calls[0][1]
     assert summary["root_count"] == 2
     assert summary["terminal_attempts"] == 2
+    assert summary["required_potion_id"] == "FearPotion"
+    assert summary["required_potion_slot"] == 0
     roots = summary["roots"]
     assert isinstance(roots, tuple)
     assert len({root["seed"] for root in roots}) == 2
     assert all(root["potion_ids"] == ("FearPotion", None, None) for root in roots)
 
 
-def test_bounded_incomplete_collection_publishes_no_artifact(
+def test_bounded_unmatched_potion_collection_publishes_no_artifact(
     tmp_path: Path,
 ) -> None:
     behavior, combat_bridge, run_bridge = published_behavior(tmp_path)
@@ -144,10 +152,11 @@ def test_bounded_incomplete_collection_publishes_no_artifact(
                 wall_ms=10_000,
                 behavior_seed=95,
                 training_seed_start=200,
-                min_floor=4,
+                min_floor=2,
                 min_usable_potions=1,
                 potion_lane=RunPotionLane.NEVER,
                 max_artifact_bytes=1024,
+                required_potion=RequiredPotionSlot(0, "FirePotion"),
             ),
             combat_bridge=combat_bridge,
             run_bridge=run_bridge,
