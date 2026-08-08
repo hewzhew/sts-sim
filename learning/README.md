@@ -175,6 +175,14 @@ is imported once and every slot selects from that shared typed source; slot-loca
 trainers and stores live only in temporary directories, their updates are
 discarded, and nothing is published. The runner measures whether diverse roots
 provide win, HP, or potion signal—it does not train one behavior across roots.
+The same result includes a typed competence plan over exact source slots.
+All-loss roots enter a rescue backlog, mixed win/loss roots form the survival
+frontier, and all-win roots either form the configured terminal-HP resource
+frontier or remain solved. CombatFrontierRootSource exposes only the two
+trainable frontiers and rechecks root identity whenever it creates a group;
+rescue and solved slots cannot enter through its selected index surface. The
+plan is bounded selection evidence, not a rescue algorithm or permission to
+drop hard roots from evaluation accounting.
 `sts_learning.torch_combat_batch_session.CombatWinBatchSessionFactory` owns the
 first bounded shared update. Its config requires the artifact root count to
 equal the win-first objective's exact group delivery width without exceeding a

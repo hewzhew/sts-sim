@@ -314,6 +314,14 @@ shared typed source instead of decoding the complete batch once per slot. Each
 root owns an isolated temporary trainer; any local update is discarded after
 its compact generation result is captured, and no behavior is published. This
 measures signal coverage and is not a shared cross-root training scheduler.
+The census also derives one bounded exact-slot competence plan. Mixed
+win/loss roots are the survival frontier. All-win roots are either a
+terminal-HP resource frontier when that configured axis has signal or solved.
+All-loss roots remain an explicit rescue backlog. An identity-checking selected
+root source exposes only the trainable frontiers to an ordinary batch trainer;
+it cannot silently route rescue or solved slots, and the rescue backlog remains
+part of evaluation accounting. This partition is curriculum selection
+evidence, not itself a rescue algorithm or teacher target.
 
 The bounded combat batch generation runner is the first shared cross-root
 training owner. Every update forks the same active frozen scorer and manifest

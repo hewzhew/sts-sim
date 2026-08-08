@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 import unittest
+from dataclasses import replace
 
 from learning.tests.semantic_fixtures import semantic_schema_fixture
 from learning.tests.torch_combat_fixtures import OneRoundCombatGroup
@@ -9,7 +10,9 @@ from learning.tests.torch_combat_fixtures import OneRoundCombatGroup
 
 _TORCH_AVAILABLE = importlib.util.find_spec("torch") is not None
 if _TORCH_AVAILABLE:
+    from sts_learning import CombatWinObjectiveConfig
     from sts_learning.torch_combat_census import CombatWinSignalCensusRunner
+    from sts_learning.torch_combat_census import CombatWinSignalCensusResult
     from sts_learning.torch_combat_session_config import (
         CombatSessionBridge,
         CombatWinSessionConfig,
@@ -71,6 +74,11 @@ class CombatWinSignalCensusRunnerTests(unittest.TestCase):
         self.assertEqual(result.census.group_count, 2)
         self.assertEqual(result.census.replicate_count, 4)
         self.assertEqual(result.census.win.signal_group_count, 1)
+        self.assertEqual(result.frontier.survival_frontier_slots, (0,))
+        self.assertEqual(result.frontier.resource_frontier_slots, ())
+        self.assertEqual(result.frontier.training_slots, (0,))
+        self.assertEqual(result.frontier.rescue_slots, ())
+        self.assertEqual(result.frontier.solved_slots, (1,))
         self.assertEqual(
             tuple(generation.root_id for generation in result.generations),
             ("12" * 32, "34" * 32),
@@ -79,6 +87,17 @@ class CombatWinSignalCensusRunnerTests(unittest.TestCase):
             result.generations[0].active_manifest_id_before,
             result.generations[1].active_manifest_id_before,
         )
+        with self.assertRaisesRegex(TorchCombatSessionError, "one-group"):
+            CombatWinSignalCensusResult(
+                result.generations,
+                result.census,
+                replace(
+                    result.frontier,
+                    objective_config=CombatWinObjectiveConfig(
+                        groups_per_update=2,
+                    ),
+                ),
+            )
 
     def test_root_and_behavior_seed_bounds_fail_before_loading(self) -> None:
         loader_calls = 0

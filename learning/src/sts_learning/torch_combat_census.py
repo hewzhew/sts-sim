@@ -8,6 +8,11 @@ from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
 
+from .combat_curriculum import (
+    CombatFrontierPlan,
+    CombatRootCompetenceEvidence,
+    build_combat_frontier_plan,
+)
 from .combat_signals import CombatSignalCensus, build_combat_signal_census
 from .torch_combat_generation import CombatWinGenerationResult
 from .torch_combat_session import (
@@ -30,6 +35,7 @@ class CombatWinSignalCensusResult:
 
     generations: tuple[CombatWinGenerationResult, ...]
     census: CombatSignalCensus
+    frontier: CombatFrontierPlan
 
     def __post_init__(self) -> None:
         generations = tuple(self.generations)
@@ -44,6 +50,14 @@ class CombatWinSignalCensusResult:
             raise TorchCombatSessionError(
                 "combat signal census requires a typed census"
             )
+        if not isinstance(self.frontier, CombatFrontierPlan):
+            raise TorchCombatSessionError(
+                "combat signal census requires a typed frontier plan"
+            )
+        if self.frontier.objective_config.groups_per_update != 1:
+            raise TorchCombatSessionError(
+                "combat signal census frontier requires one-group objective provenance"
+            )
         if len(generations) != self.census.group_count:
             raise TorchCombatSessionError(
                 "combat signal census generation count is misaligned"
@@ -55,6 +69,18 @@ class CombatWinSignalCensusResult:
         if self.census != expected:
             raise TorchCombatSessionError(
                 "combat signal census does not match its generations"
+            )
+        expected_frontier = build_combat_frontier_plan(
+            tuple(
+                _competence_evidence(index, result)
+                for index, result in enumerate(generations)
+            ),
+            self.frontier.objective_config,
+            max_roots=len(generations),
+        )
+        if self.frontier != expected_frontier:
+            raise TorchCombatSessionError(
+                "combat signal census frontier does not match its generations"
             )
         object.__setattr__(self, "generations", generations)
 
@@ -167,7 +193,30 @@ class CombatWinSignalCensusRunner:
             tuple(result.signals for result in generation_tuple),
             max_groups=self.max_roots,
         )
-        return CombatWinSignalCensusResult(generation_tuple, census)
+        frontier = build_combat_frontier_plan(
+            tuple(
+                _competence_evidence(index, result)
+                for index, result in enumerate(generation_tuple)
+            ),
+            self.config.profile.objective,
+            max_roots=self.max_roots,
+        )
+        return CombatWinSignalCensusResult(generation_tuple, census, frontier)
+
+
+def _competence_evidence(
+    source_slot: int,
+    result: CombatWinGenerationResult,
+) -> CombatRootCompetenceEvidence:
+    return CombatRootCompetenceEvidence(
+        source_slot=source_slot,
+        root_id=result.root_id,
+        exact_combat_state_hash=result.exact_combat_state_hash,
+        replicate_count=result.replicate_count,
+        wins=result.wins,
+        losses=result.losses,
+        signals=result.signals,
+    )
 
 
 def _positive_integer(value: object, name: str) -> int:
