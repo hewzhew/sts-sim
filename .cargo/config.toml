@@ -14,7 +14,16 @@ test-planner = ["test", "-p", "sts_combat_planner", "--lib"]
 combat-contract = ["run", "--quiet", "--release", "-p", "sts_combat_contract", "--bin", "combat_contract", "--"]
 # Keep the retained combat-search capability package explicit: Cargo does not
 # run a dependency's private unit tests merely because control crates link it.
-test-control = ["test", "-p", "sts_combat_legacy", "-p", "sts_oracle_eval", "-p", "sts_oracle_runtime", "-p", "sts_oracle_tools", "--no-default-features", "--features", "sts_oracle_eval/control-full,sts_oracle_runtime/control-full"]
+test-control = [
+    "test",
+    "-p", "sts_combat_legacy",
+    "-p", "sts_oracle_eval",
+    "-p", "sts_oracle_runtime",
+    "-p", "sts_oracle_tools",
+    "-p", "sts_oracle_lab",
+    "--no-default-features",
+    "--features", "sts_oracle_eval/control-full,sts_oracle_runtime/control-full,sts_oracle_lab/canonical-oracle-artifacts",
+]
 test-runtime = ["test", "-p", "sts_oracle_eval", "-p", "sts_oracle_runtime", "--no-default-features", "--features", "sts_oracle_eval/control-full,sts_oracle_runtime/control-full", "--lib"]
 check-runtime = ["check", "-p", "sts_oracle_eval", "-p", "sts_oracle_runtime", "--no-default-features", "--features", "sts_oracle_eval/control-full,sts_oracle_runtime/control-full", "--lib"]
 check-workspace = ["check", "--workspace", "--all-targets", "--all-features"]
