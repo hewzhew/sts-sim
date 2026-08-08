@@ -620,17 +620,22 @@ Configure one stable Python 3.12 training runtime once, then use the small
 ```powershell
 .\learning\dev.ps1 configure -Python <python-3.12-with-numpy-torch-and-bridge>
 .\learning\dev.ps1 doctor
+.\learning\dev.ps1 check-bridge
 .\learning\dev.ps1 refresh-bridge
 .\learning\dev.ps1 test
 .\learning\dev.ps1 verify -MaturinPython <python-with-maturin>
 ```
 
-Use `refresh-bridge` after bridge source changes or when `doctor` reports a
-stale installed surface. It builds and verifies a fresh wheel in isolation
-before replacing the configured environment's bridge with `--no-deps`; it does
-not mutate NumPy or PyTorch. Ordinary Python-only edits still use `test`.
-For first setup, pass `-Python <python.exe>` to refresh and record that runtime
-only after the guarded installation and final doctor both succeed.
+Use `check-bridge` for the routine bridge edit loop. It builds a dev-profile
+wheel and verifies it through the isolated Python smoke and caller suite in
+seconds without changing the configured training runtime. Use
+`refresh-bridge` when a real experiment needs the new bridge: it verifies and
+installs a release-profile wheel with `--no-deps`, but defers the second Rust
+test-binary link. Neither command mutates NumPy or PyTorch. `verify` is the
+release-profile milestone gate and additionally runs the Rust bridge contract
+tests. Ordinary Python-only edits still use `test`. For first setup, pass
+`-Python <python.exe>` to refresh and record that runtime only after the guarded
+installation and final doctor both succeed.
 
 To collect the first production-owned combat from a fresh seed without an
 intermediate workspace or continuation JSON, write one fresh opaque root:

@@ -1,6 +1,6 @@
 param(
     [Parameter(Mandatory = $true, Position = 0)]
-    [ValidateSet("configure", "doctor", "test", "verify", "refresh-bridge")]
+    [ValidateSet("configure", "doctor", "test", "verify", "check-bridge", "refresh-bridge")]
     [string]$Command,
     [string]$Python,
     [string]$MaturinPython = "python"
@@ -163,6 +163,21 @@ switch ($Command) {
             throw "isolated bridge verification failed"
         }
     }
+    "check-bridge" {
+        $pythonPath = if ($Python) {
+            Resolve-PythonExecutable $Python
+        }
+        else {
+            Get-ConfiguredPython
+        }
+        & (Join-Path $repositoryRoot "bindings\python_learning\verify.ps1") `
+            -Python $pythonPath `
+            -MaturinPython $MaturinPython `
+            -Fast
+        if ($LASTEXITCODE -ne 0) {
+            throw "isolated dev-profile bridge check failed"
+        }
+    }
     "refresh-bridge" {
         $pythonPath = if ($Python) {
             Resolve-PythonExecutable $Python
@@ -173,7 +188,8 @@ switch ($Command) {
         & (Join-Path $repositoryRoot "bindings\python_learning\verify.ps1") `
             -Python $pythonPath `
             -MaturinPython $MaturinPython `
-            -InstallTarget
+            -InstallTarget `
+            -SkipRustTests
         if ($LASTEXITCODE -ne 0) {
             throw "learning bridge refresh failed"
         }
