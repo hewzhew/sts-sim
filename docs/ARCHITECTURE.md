@@ -319,6 +319,10 @@ registry resolves those identities without retaining model objects, checkpoint
 payloads, file paths, or display strings. Unknown identities, conflicting
 claimed identities, capacity overflow, and any expected checkpoint/config/schema
 mismatch fail closed; the registry never evicts an older binding implicitly.
+The online controller may explicitly replace its exact active row only after
+the synchronous update chain has consumed all experience from that behavior.
+This atomic live rotation retains no behavior history and therefore does not
+make optimizer-step count consume durable-owner capacity.
 The maintained categorical baseline derives those non-checkpoint identities
 from one canonical machine encoding of the complete bridge-provided semantic
 schema, typed scorer and Adam configuration, explicit device type, maintained
@@ -352,20 +356,19 @@ parameter-group and parameter-id topology on a disposable fresh owner before
 requiring canonical byte reproduction. Generator hydration validates its
 device and uint8 state tensor and returns a fresh owner with the same next
 sample. These payloads are resume components, never behavior manifests.
-A PyTorch behavior publication prepares all records, previews checkpoint-store,
-catalog, and registry capacity/conflicts without mutation, then commits in the
-order checkpoint, durable manifest, and in-memory registry. The returned typed
-publication is the sole same-process promotion input; a checkpoint file by
-itself is not executable authority. Promotion re-resolves the durable and
-registered manifest, verifies the exact behavior rule expected by the concrete
-policy adapter, materializes a fresh scorer from the verified checkpoint,
-checks its schema version, switches it to evaluation mode, and disables
-gradients before exposing a batched policy. After restart, recovery begins from
-only a manifest id and fresh store/catalog/registry owners; it verifies and
-materializes the checkpoint before hydrating the registry. A missing checkpoint
-therefore cannot leave a partially executable registry row. The optimizer-owned
-shadow model is never reused as live behavior, so later training cannot silently
-change a published policy. Any owner failure produces no policy switch.
+A live PyTorch behavior binding clones the optimizer-owned shadow scorer into a
+fresh in-process model, freezes it, computes its canonical checkpoint and
+manifest identities, and atomically rotates the active registry row without
+writing files. The shadow model is never reused as live behavior, so later
+training cannot silently change the policy. Durable publication is separate and
+explicit: it re-encodes the active frozen scorer, requires the exact same
+binding, previews checkpoint-store, catalog, and registry conflicts, then
+commits checkpoint followed by manifest. A checkpoint file by itself is not
+executable authority. After restart, recovery begins from only a manifest id
+and fresh store/catalog/registry owners; it verifies and materializes the
+checkpoint before hydrating the registry. A missing checkpoint therefore
+cannot leave a partially executable registry row. Any live-promotion failure
+leaves the incumbent policy and registry row unchanged.
 Publication exposes two non-mutating previews with deliberately different
 capacity semantics. Exact preview accepts an already stored identical
 checkpoint/manifest/registry binding and is therefore suitable for retry.
@@ -377,14 +380,14 @@ typed preview summary is not accepted as publication or promotion authority.
 
 A long-lived categorical behavior controller is the stable policy object held
 by the online driver across generations. It accepts only strictly increasing
-training steps, completes publication and verified frozen-scorer promotion,
-and only then replaces its internal live policy. A failed promotion may leave
-an already committed durable publication available for an idempotent retry,
-but it leaves the incumbent live policy, successful-promotion counter, and
-injected selection-generator state unchanged. The controller retains only the
-active manifest identity, its training step, and a compact promotion count;
-restart recovery begins from an inactive controller and one durable manifest
-identity rather than a serialized live model.
+training steps, completes an exact in-memory frozen-scorer promotion, and only
+then replaces its internal live policy. It does not publish merely because an
+optimizer step completed. A failed promotion leaves the incumbent live policy,
+active registry row, successful-promotion counter, and injected
+selection-generator state unchanged. The controller retains only the active
+binding, its training step, and a compact promotion count; explicit resume
+publication first makes that binding durable, while restart recovery begins
+from an inactive controller and the saved durable manifest identity.
 
 Every buffer has mandatory decision-row and retained-payload-byte limits. The
 byte accounting includes owned NumPy storage and Python payload metadata; the
@@ -502,8 +505,8 @@ propensity that does not match the shadow scorer fails before optimizer
 mutation; an exception during backward or optimizer mutation poisons the
 trainer so partially mutable state cannot be retried as if it were clean.
 Dropped-only deliveries update accounting but never the model. The trainer owns
-a shadow policy model; publication binds its new exact checkpoint before that
-model can become live behavior.
+a shadow policy model; an exact frozen live binding is created before that
+model can become behavior, while durable publication remains explicit.
 
 The optional bounded categorical generation runner composes one exact
 driver-to-assembler-to-update-batcher-to-trainer-to-controller chain without
@@ -515,14 +518,12 @@ active behavior's training step, not a terminal count or wall-clock guess;
 larger step counts are rejected because a second update against experience from
 the unchanged frozen behavior would be off-policy. A call advances at most its
 declared batch-step limit and explicitly flushes experience only after a
-terminal batch. Before advancing it novel-previews the next publication; when
-the shadow has already reached the target it exact-previews the current identity
-so a previously durable publication can be retried at full capacity. Reaching
-the one-step target publishes the current shadow checkpoint and promotes
-exactly once. The result retains only
-aggregate progress and the optional publication. The runner itself remains an
-in-process composition; exact restart is owned by the separate six-component
-resume boundary and can never be inferred from a model checkpoint alone.
+terminal batch. Reaching the one-step target freezes and promotes the current
+shadow scorer exactly once without durable I/O. The result retains only
+aggregate progress and the optional live binding. The runner itself remains an
+in-process composition; exact restart is owned by the separate explicit
+six-component resume boundary and can never be inferred from a model checkpoint
+alone.
 The process-resume admission boundary is deliberately strict. It accepts only
 an environment between decisions with no terminal accounting in flight, a full
 episode-root bank, an empty experience buffer, no open attempt-assembly state,
@@ -548,7 +549,8 @@ content-store kernel, and publishes one small canonical manifest last. A
 manifest binds every kind exactly once by digest and stored byte count. Reopen
 and resolve revalidate every envelope, kind, digest, and size; component files
 without a manifest are inert, while a manifest with any unavailable component
-is not resumable. The live categorical publisher captures all six from one
+is not resumable. The live categorical publisher first makes the exact active
+behavior binding durable, then captures all six resume components from one
 admitted runner boundary rather than accepting caller-assembled identities.
 The categorical restorer resolves that manifest before constructing owners,
 materializes a fresh environment and episode-root bank through the bridge,
@@ -564,9 +566,9 @@ therefore fails closed.
 The compact categorical session factory is the sole maintained assembly path
 for this baseline. One typed bridge binding, training-partition configuration,
 algorithm profile, resource limits, curriculum, and experiment root create
-either generation zero or a restored runner. A promoted generation can publish
-its resume manifest in the same operation; bounded progress with a pending
-update batch or without promotion remains explicitly live-only. Restore
+either generation zero or a restored runner. `advance_generation` performs no
+durable I/O; callers choose checkpoint cadence explicitly through `publish`.
+Pending update batches remain live-only and fail resume admission. Restore
 additionally requires the saved
 slot count, seed-partition rule, and recovery budget to match the session
 configuration. The first maintained profile is CPU-only, collects eight

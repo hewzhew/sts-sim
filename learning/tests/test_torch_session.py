@@ -64,15 +64,13 @@ class CategoricalOnlineSessionTests(unittest.TestCase):
 
             generation_zero = factory.restore(initial_resume.manifest_id)
             generation_one = generation_zero.advance_generation(max_batch_steps=1)
-            self.assertTrue(generation_one.generation.promoted)
-            self.assertIsNotNone(generation_one.resume)
-            assert generation_one.resume is not None
+            self.assertTrue(generation_one.promoted)
+            generation_one_resume = generation_zero.publish()
 
-            restored = factory.restore(generation_one.resume.manifest_id)
+            restored = factory.restore(generation_one_resume.manifest_id)
             generation_two = restored.advance_generation(max_batch_steps=1)
 
-            self.assertTrue(generation_two.generation.promoted)
-            self.assertIsNotNone(generation_two.resume)
+            self.assertTrue(generation_two.promoted)
             self.assertEqual(
                 restored.runner.controller.snapshot.active_training_step,
                 2,
@@ -89,6 +87,39 @@ class CategoricalOnlineSessionTests(unittest.TestCase):
             with self.assertRaisesRegex(TorchSessionError, "slot_count"):
                 mismatched.restore(initial_resume.manifest_id)
 
+    def test_live_training_writes_only_at_explicit_publish(self) -> None:
+        with tempfile.TemporaryDirectory() as root:
+            root_path = Path(root)
+            session = _factory(root_path).new(model_seed=43, behavior_seed=94)
+            initial_files = tuple(path for path in root_path.rglob("*") if path.is_file())
+
+            for expected_step in range(1, 7):
+                result = session.advance_generation(max_batch_steps=1)
+                self.assertTrue(result.promoted)
+                self.assertEqual(
+                    session.runner.controller.snapshot.active_training_step,
+                    expected_step,
+                )
+
+            live_files = tuple(path for path in root_path.rglob("*") if path.is_file())
+            self.assertEqual(live_files, initial_files)
+            self.assertEqual(
+                session.runner.controller.publisher.registry.snapshot.registered_manifests,
+                1,
+            )
+            self.assertEqual(
+                session.runner.controller.publisher.store.snapshot.checkpoints,
+                0,
+            )
+            self.assertEqual(
+                session.runner.controller.publisher.catalog.snapshot.manifests,
+                0,
+            )
+
+            session.publish()
+            durable_files = tuple(path for path in root_path.rglob("*") if path.is_file())
+            self.assertGreater(len(durable_files), len(live_files))
+
     def test_partial_attempt_update_batch_stays_live_only_until_full(self) -> None:
         with tempfile.TemporaryDirectory() as root:
             session = _factory(Path(root), attempts_per_update=2).new(
@@ -98,7 +129,7 @@ class CategoricalOnlineSessionTests(unittest.TestCase):
 
             partial = session.advance_generation(max_batch_steps=1)
 
-            self.assertFalse(partial.generation.promoted)
+            self.assertFalse(partial.promoted)
             self.assertEqual(session.runner.trainer.snapshot.optimizer_steps, 0)
             self.assertEqual(
                 session.runner.update_batcher.pending_attempts,
@@ -108,7 +139,7 @@ class CategoricalOnlineSessionTests(unittest.TestCase):
                 session.publish()
 
             completed = session.advance_generation(max_batch_steps=1)
-            self.assertTrue(completed.generation.promoted)
+            self.assertTrue(completed.promoted)
             self.assertEqual(session.runner.trainer.snapshot.optimizer_steps, 1)
             self.assertEqual(
                 session.runner.update_batcher.pending_attempts,

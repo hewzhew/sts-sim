@@ -138,7 +138,7 @@ class RealBridgeCategoricalResumeRestorerTests(unittest.TestCase):
             torch.manual_seed(57)
             shadow = scorer_factory()
             controller = controller_factory(torch.Generator().manual_seed(94))
-            controller.publish_and_promote(shadow, training_step=0)
+            controller.promote_live(shadow, training_step=0)
             concat_limits = SemanticBatchConcatLimits(
                 max_rows=64,
                 max_input_array_bytes=4 * 1024 * 1024,

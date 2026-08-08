@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import operator
-from dataclasses import dataclass
 from pathlib import Path
 
 import torch
@@ -59,16 +58,8 @@ class NoRecoveryCurriculum:
         return RecoveryPlan()
 
 
-@dataclass(frozen=True)
-class CategoricalSessionAdvance:
-    """One bounded generation attempt and its optional durable resume point."""
-
-    generation: CategoricalGenerationAdvanceResult
-    resume: CategoricalResumePublication | None
-
-
 class CategoricalOnlineSession:
-    """One live runner with a compact generation-and-publish operation."""
+    """One live runner with explicit progress and durable publication."""
 
     def __init__(
         self,
@@ -92,10 +83,14 @@ class CategoricalOnlineSession:
     def publish(self) -> CategoricalResumePublication:
         return self.resume_publisher.publish(self.runner)
 
-    def advance_generation(self, *, max_batch_steps: int) -> CategoricalSessionAdvance:
-        generation = self.runner.advance(max_batch_steps=max_batch_steps)
-        resume = self.publish() if generation.promoted else None
-        return CategoricalSessionAdvance(generation=generation, resume=resume)
+    def advance_generation(
+        self,
+        *,
+        max_batch_steps: int,
+    ) -> CategoricalGenerationAdvanceResult:
+        """Advance live training without implicitly writing a checkpoint."""
+
+        return self.runner.advance(max_batch_steps=max_batch_steps)
 
 
 class CategoricalOnlineSessionFactory:
@@ -198,7 +193,7 @@ class CategoricalOnlineSessionFactory:
             self.config.limits.attempts,
             update_batcher,
         )
-        controller.publish_and_promote(shadow, training_step=0)
+        controller.promote_live(shadow, training_step=0)
         driver = OnlineBatchDriver(
             population,
             policy=controller,

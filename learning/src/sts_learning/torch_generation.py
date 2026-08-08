@@ -14,7 +14,7 @@ from .policy import BehaviorManifestId
 from .torch_behavior import (
     CategoricalTorchBehaviorController,
     CategoricalTorchBehaviorControllerSnapshot,
-    TorchBehaviorPublication,
+    TorchBehaviorBinding,
 )
 from .torch_policy import RaggedCandidateScorer
 from .torch_provenance import categorical_trainer_implementation
@@ -38,11 +38,11 @@ class CategoricalGenerationAdvanceResult:
     optimizer_steps_before: int
     optimizer_steps_after: int
     promotion_target_training_step: int
-    publication: TorchBehaviorPublication | None
+    promotion: TorchBehaviorBinding | None
 
     @property
     def promoted(self) -> bool:
-        return self.publication is not None
+        return self.promotion is not None
 
     @property
     def step_limit_reached(self) -> bool:
@@ -179,16 +179,6 @@ class BoundedCategoricalGenerationRunner:
             )
 
         target_step = active_step + self.optimizer_steps_per_generation
-        if trainer_before.optimizer_steps < target_step:
-            self.controller.publisher.preview_novel(
-                self.shadow_scorer,
-                training_step=target_step,
-            )
-        else:
-            self.controller.publisher.preview(
-                self.shadow_scorer,
-                training_step=trainer_before.optimizer_steps,
-            )
         batch_steps = 0
         terminal_attempts = 0
         terminal_flushes = 0
@@ -206,9 +196,9 @@ class BoundedCategoricalGenerationRunner:
         trainer_after = self.trainer.snapshot
         if trainer_after.poisoned:
             raise TorchGenerationError("generation trainer became poisoned")
-        publication = None
+        promotion = None
         if trainer_after.optimizer_steps >= target_step:
-            publication = self.controller.publish_and_promote(
+            promotion = self.controller.promote_live(
                 self.shadow_scorer,
                 training_step=trainer_after.optimizer_steps,
             )
@@ -223,7 +213,7 @@ class BoundedCategoricalGenerationRunner:
             optimizer_steps_before=trainer_before.optimizer_steps,
             optimizer_steps_after=trainer_after.optimizer_steps,
             promotion_target_training_step=target_step,
-            publication=publication,
+            promotion=promotion,
         )
 
     def _validate_wiring(self) -> None:

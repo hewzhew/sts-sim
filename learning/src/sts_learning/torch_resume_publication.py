@@ -15,6 +15,7 @@ from .torch_generation import (
     BoundedCategoricalGenerationRunner,
     CategoricalGenerationResumeBoundary,
 )
+from .torch_behavior import TorchBehaviorError
 from .torch_resume import (
     TorchResumeStateError,
     encode_generator_state,
@@ -78,6 +79,9 @@ class CategoricalGenerationResumePublisher:
             raise TorchResumePublicationError("resume publication requires a generation runner")
         boundary = runner.require_resume_boundary()
         try:
+            # Resume metadata names the active behavior manifest, so make that
+            # exact frozen policy durable only at this explicit checkpoint.
+            runner.controller.publish_active()
             environment = bytes(
                 runner.driver.env.checkpoint_bytes(
                     max_bytes=self.limits.max_environment_bytes
@@ -115,7 +119,14 @@ class CategoricalGenerationResumePublisher:
             }
             prepared = self.store.prepare(payloads)
             manifest_id = self.store.commit(prepared)
-        except (AttributeError, TypeError, ValueError, ResumeStoreError, TorchResumeStateError) as error:
+        except (
+            AttributeError,
+            TypeError,
+            ValueError,
+            ResumeStoreError,
+            TorchBehaviorError,
+            TorchResumeStateError,
+        ) as error:
             raise TorchResumePublicationError(str(error)) from error
         return CategoricalResumePublication(
             manifest_id=manifest_id,

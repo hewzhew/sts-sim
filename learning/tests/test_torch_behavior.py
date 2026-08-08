@@ -340,7 +340,7 @@ class TorchBehaviorPublicationTests(unittest.TestCase):
                 publication.manifest,
             )
 
-    def test_categorical_controller_promotes_generations_without_consuming_rng(self) -> None:
+    def test_categorical_controller_rotates_live_behavior_then_publishes_explicitly(self) -> None:
         config = RaggedCategoricalPolicyConfig(temperature=0.75)
         registry = BehaviorManifestRegistry(capacity=3)
         generator = torch.Generator().manual_seed(71)
@@ -363,25 +363,29 @@ class TorchBehaviorPublicationTests(unittest.TestCase):
                 config,
                 generator,
             )
-            first = controller.publish_and_promote(shadow, training_step=0)
+            first = controller.promote_live(shadow, training_step=0)
             with self.assertRaisesRegex(TorchBehaviorError, "must increase"):
-                controller.publish_and_promote(shadow, training_step=0)
-            self.assertEqual(store.snapshot.checkpoints, 1)
-            self.assertEqual(catalog.snapshot.manifests, 1)
+                controller.promote_live(shadow, training_step=0)
+            self.assertEqual(store.snapshot.checkpoints, 0)
+            self.assertEqual(catalog.snapshot.manifests, 0)
             self.assertEqual(registry.snapshot.registered_manifests, 1)
             with torch.no_grad():
                 shadow.scorer[-1].bias.add_(1.0)
             state_before = generator.get_state().clone()
-            second = controller.publish_and_promote(shadow, training_step=1)
+            second = controller.promote_live(shadow, training_step=1)
 
             self.assertNotEqual(first.manifest_id, second.manifest_id)
             self.assertTrue(torch.equal(generator.get_state(), state_before))
             self.assertEqual(controller.snapshot.active_manifest_id, second.manifest_id)
             self.assertEqual(controller.snapshot.active_training_step, 1)
             self.assertEqual(controller.snapshot.successful_promotions, 2)
-            self.assertEqual(store.snapshot.checkpoints, 2)
-            self.assertEqual(catalog.snapshot.manifests, 2)
-            self.assertEqual(registry.snapshot.registered_manifests, 2)
+            self.assertEqual(store.snapshot.checkpoints, 0)
+            self.assertEqual(catalog.snapshot.manifests, 0)
+            self.assertEqual(registry.snapshot.registered_manifests, 1)
+            durable_second = controller.publish_active()
+            self.assertEqual(durable_second.manifest_id, second.manifest_id)
+            self.assertEqual(store.snapshot.checkpoints, 1)
+            self.assertEqual(catalog.snapshot.manifests, 1)
 
             recovered_registry = BehaviorManifestRegistry(capacity=1)
             recovered = CategoricalTorchBehaviorController(
@@ -402,7 +406,7 @@ class TorchBehaviorPublicationTests(unittest.TestCase):
                 successful_promotions=controller.snapshot.successful_promotions,
             )
 
-            self.assertEqual(recovered_publication, second)
+            self.assertEqual(recovered_publication, durable_second)
             self.assertEqual(recovered.snapshot, controller.snapshot)
             self.assertEqual(controller.choose(batch), recovered.choose(batch))
 
@@ -440,23 +444,23 @@ class TorchBehaviorPublicationTests(unittest.TestCase):
                 config,
                 generator,
             )
-            first = controller.publish_and_promote(shadow, training_step=0)
+            first = controller.promote_live(shadow, training_step=0)
             with torch.no_grad():
                 shadow.scorer[-1].bias.add_(1.0)
             generator_state = generator.get_state().clone()
 
             with self.assertRaisesRegex(TorchBehaviorError, "schema version"):
-                controller.publish_and_promote(shadow, training_step=1)
+                controller.promote_live(shadow, training_step=1)
 
             self.assertEqual(controller.snapshot.active_manifest_id, first.manifest_id)
             self.assertEqual(controller.snapshot.successful_promotions, 1)
             self.assertTrue(torch.equal(generator.get_state(), generator_state))
-            second = controller.publish_and_promote(shadow, training_step=1)
+            second = controller.promote_live(shadow, training_step=1)
             self.assertEqual(controller.snapshot.active_manifest_id, second.manifest_id)
             self.assertEqual(controller.snapshot.successful_promotions, 2)
-            self.assertEqual(store.snapshot.checkpoints, 2)
-            self.assertEqual(catalog.snapshot.manifests, 2)
-            self.assertEqual(registry.snapshot.registered_manifests, 2)
+            self.assertEqual(store.snapshot.checkpoints, 0)
+            self.assertEqual(catalog.snapshot.manifests, 0)
+            self.assertEqual(registry.snapshot.registered_manifests, 1)
 
     def test_categorical_rule_mismatch_fails_before_rng_or_registry_mutation(
         self,

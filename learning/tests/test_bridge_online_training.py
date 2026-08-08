@@ -123,10 +123,11 @@ class RealBridgeOnlineTrainingTests(unittest.TestCase):
                 behavior_config,
                 behavior_generator,
             )
-            generation_zero = controller.publish_and_promote(
+            controller.promote_live(
                 shadow,
                 training_step=0,
             )
+            generation_zero = controller.publish_active()
             trainer = SynchronousPolicyTrainer(
                 shadow,
                 torch.optim.SGD(shadow.parameters(), lr=0.001),
@@ -207,7 +208,7 @@ class RealBridgeOnlineTrainingTests(unittest.TestCase):
                 )
                 self.assertEqual(promoted_generation.terminal_attempts, 1)
                 self.assertEqual(promoted_generation.terminal_flushes, 1)
-                generation_one = promoted_generation.publication
+                generation_one = promoted_generation.promotion
                 assert generation_one is not None
                 generation_after_first = driver.ledger.snapshot(0).episode_generation
                 first_training = trainer.snapshot
@@ -255,7 +256,7 @@ class RealBridgeOnlineTrainingTests(unittest.TestCase):
                 )
                 self.assertEqual(second_generation.terminal_attempts, 1)
                 self.assertEqual(second_generation.terminal_flushes, 1)
-                generation_two = second_generation.publication
+                generation_two = second_generation.promotion
                 assert generation_two is not None
                 self.assertLessEqual(
                     partial_generation.batch_steps
@@ -304,9 +305,10 @@ class RealBridgeOnlineTrainingTests(unittest.TestCase):
             )
             self.assertEqual(controller.snapshot.active_training_step, 2)
             self.assertEqual(controller.snapshot.successful_promotions, 3)
-            self.assertEqual(store.snapshot.checkpoints, 3)
-            self.assertEqual(catalog.snapshot.manifests, 3)
-            self.assertEqual(registry.snapshot.registered_manifests, 3)
+            generation_two_publication = controller.publish_active()
+            self.assertEqual(store.snapshot.checkpoints, 2)
+            self.assertEqual(catalog.snapshot.manifests, 2)
+            self.assertEqual(registry.snapshot.registered_manifests, 1)
 
             recovered_generator = torch.Generator()
             recovered_generator.set_state(behavior_generator.get_state())
@@ -332,7 +334,7 @@ class RealBridgeOnlineTrainingTests(unittest.TestCase):
             )
             next_decision = driver.env.decision_batch(semantic=True)
 
-            self.assertEqual(recovered_publication, generation_two)
+            self.assertEqual(recovered_publication, generation_two_publication)
             self.assertEqual(
                 controller.choose(next_decision),
                 recovered.choose(next_decision),

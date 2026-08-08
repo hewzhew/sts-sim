@@ -155,32 +155,26 @@ requires the hydrated state to reproduce the exact bytes. Generator restore
 validates its device and uint8 state tensor, returns a fresh generator, and
 likewise requires canonical byte equality.
 
-`sts_learning.torch_behavior` makes publication and promotion separate typed
-operations. Publication prepares the checkpoint and manifest, previews all
-three owners, then commits checkpoint, durable catalog row, and in-memory
-registry in that order before returning an executable candidate. Same-process
-promotion refuses a bare checkpoint, a missing catalog row, or an unregistered
-manifest. Restart recovery needs only the manifest id and newly opened owners;
-it verifies/materializes a fresh scorer before atomically hydrating the fresh
-registry. Both paths validate schema version, enter evaluation mode, and freeze
-gradients. A concrete policy adapter also verifies that the manifest carries
-its exact behavior-rule binding before it can execute. They never hand the
-optimizer's live shadow scorer directly to behavior, so subsequent shadow
-updates cannot drift a published manifest. The
-live policy emits the recovered registered manifest id on every batched choice.
-The publisher's exact preview permits a fully existing identity at capacity,
-while its novel preview requires count and byte room for one additional
-same-shape checkpoint, manifest, and registry row even when the current digest
-already exists. This lets bounded training fail before mutation when its next
-updated model cannot be published without blocking idempotent promotion retry.
-Both return non-authoritative typed summaries; only `publish()` can return the
-authority accepted by promotion.
+`sts_learning.torch_behavior` separates live promotion from durable
+publication. Live promotion copies the optimizer-owned shadow scorer into a
+fresh model, freezes it, computes the same canonical checkpoint/manifest
+identity used by persistence, and atomically replaces the exact active registry
+row without writing files. The registry therefore retains one live binding
+rather than one row per optimizer step. Durable publication later re-encodes
+that frozen scorer and refuses to write unless its exact binding is unchanged;
+it commits checkpoint and catalog row only at an explicit checkpoint boundary.
+Restart recovery needs only the durable manifest id and newly opened owners; it
+verifies/materializes a fresh scorer before hydrating the fresh registry. Every
+path validates schema and behavior-rule identity, enters evaluation mode, and
+freezes gradients. The live policy emits its exact registered manifest id on
+every batched choice.
 `CategoricalTorchBehaviorController` is the stable policy object retained by a
 long-running driver. It accepts only increasing training steps and swaps its
-internal frozen categorical policy only after publication and promotion both
-succeed; a failed promotion leaves the prior live policy and injected selection
-RNG unchanged. A fresh inactive controller can recover the active generation
-from its durable manifest identity after restart.
+internal frozen categorical policy only after live binding and registry rotation
+succeed; a failed promotion leaves the prior live policy, registry row, and
+injected selection RNG unchanged. `publish_active()` makes the current binding
+durable without switching policy. A fresh inactive controller can recover the
+active generation from its durable manifest identity after restart.
 
 An `ExperienceSegmentBuffer` requires both a maximum decision count and a
 maximum retained-payload byte count. The byte count conservatively includes
@@ -305,8 +299,9 @@ concat limits bound the one-forward replay batch.
 Unknown behavior, unknown propensity, behavior-rule mismatch, and recomputed
 probability mismatch all fail before mutation. A backward or optimizer
 exception poisons the trainer instead of inviting a retry over possibly partial
-state. Dropped-only deliveries never train. Promotion still publishes a new
-exact checkpoint manifest; the trainer never silently rewrites behavior
+state. Dropped-only deliveries never train. Promotion creates a new
+exact in-memory behavior binding; durable checkpoints are explicit rather than
+an optimizer side effect. The trainer never silently rewrites behavior
 identity. The trainer implementation artifact binds the floor-return target and
 attempts per update; restore and runner wiring reject either mismatch.
 
@@ -321,10 +316,9 @@ because the second update would already be off-policy against the still-live
 frozen behavior. Each call has a caller-supplied batch-step limit and flushes
 the experience segment only after a terminal batch. The behavior stays frozen
 while the update batch fills, then promotes immediately after that one update.
-It novel-previews capacity before training and exact-previews
-an already reached target, so a durable failed promotion remains retryable even
-when every owner is full. An exhausted call with no terminal update leaves the
-old frozen behavior live. Its result is
+Promotion freezes a fresh in-process scorer and rotates one active registry row;
+it neither consumes durable capacity nor writes a resume point. An exhausted
+call with no terminal update leaves the old frozen behavior live. Its result is
 aggregate-only and never retains step results or attempts. The runner does not
 own persistence: restarting exact training goes through the
 separate six-component resume store and typed restorer. Its resume admission
@@ -354,7 +348,8 @@ through the shared flushed atomic content store, and publishes one small
 canonical manifest last. Reopen verifies filenames, digests, envelopes, kinds,
 sizes, and the complete six-way binding. The optional
 `CategoricalGenerationResumePublisher` captures all six from one admitted live
-runner boundary, so callers do not assemble manifests by hand.
+runner boundary after first making the active behavior binding durable, so
+callers do not assemble manifests by hand.
 `CategoricalGenerationResumeRestorer` resolves all six, creates fresh bridge
 and PyTorch owners through typed factories, recovers the frozen active behavior,
 and reconstructs the ledger-to-runner chain. It returns nothing until the
@@ -373,10 +368,11 @@ runtime facts. Unsupported or oversized schema trees fail closed.
 owner wiring into one bounded experiment-root factory. `new(...)` creates
 generation zero only in an unused root; `publish()` emits an exact initial
 resume point; `restore(id)` rebuilds fresh owners; and
-`advance_generation(max_batch_steps=...)` publishes automatically only after a
-real optimizer-step promotion. An unfinished bounded call returns no fake
-durable resume point. Restore verifies the saved slot count, training seed
-partition, and recovery budget against the supplied session configuration. The
+`advance_generation(max_batch_steps=...)` advances only live state. Callers set
+checkpoint cadence explicitly by invoking `publish()`; neither completed nor
+unfinished generation calls write files. Restore verifies the saved slot count,
+training seed partition, and recovery budget against the supplied session
+configuration. The
 first maintained profile is deliberately CPU-only and defaults to eight
 same-behavior complete attempts per optimizer update. Maintained online
 sessions require at least one relation layer: a relation-blind bag of tokens

@@ -5,7 +5,11 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from learning.tests.driver_fixtures import NoRecovery, NumpyFakeBatchEnv
+from learning.tests.driver_fixtures import (
+    NoRecovery,
+    NumpyFakeBatchEnv,
+    NumpyWinningBatchEnv,
+)
 from learning.tests.torch_outcome_fixtures import (
     behavior_manifest_template_fixture,
     decision_batch_fixture,
@@ -184,11 +188,12 @@ class BoundedCategoricalGenerationRunnerTests(unittest.TestCase):
 
             self.assertEqual(driver.env.choose_calls, [])  # type: ignore[attr-defined]
 
-    def test_novel_publication_capacity_fails_before_training_or_environment(self) -> None:
+    def test_live_generations_do_not_consume_durable_owner_capacity(self) -> None:
         with tempfile.TemporaryDirectory() as root:
             driver, assembler, batcher, trainer, controller, shadow = _components(
                 Path(root),
                 owner_capacity=1,
+                environment=NumpyWinningBatchEnv,
             )
             runner = BoundedCategoricalGenerationRunner(
                 driver,
@@ -200,12 +205,19 @@ class BoundedCategoricalGenerationRunnerTests(unittest.TestCase):
                 optimizer_steps_per_generation=1,
             )
 
-            with self.assertRaisesRegex(RuntimeError, "capacity"):
-                runner.advance(max_batch_steps=1)
+            first = runner.advance(max_batch_steps=1)
+            second = runner.advance(max_batch_steps=1)
 
-            self.assertEqual(driver.env.choose_calls, [])  # type: ignore[attr-defined]
-            self.assertEqual(trainer.snapshot.optimizer_steps, 0)
-            self.assertEqual(controller.snapshot.active_training_step, 0)
+            self.assertTrue(first.promoted)
+            self.assertTrue(second.promoted)
+            self.assertEqual(trainer.snapshot.optimizer_steps, 2)
+            self.assertEqual(controller.snapshot.active_training_step, 2)
+            self.assertEqual(
+                controller.publisher.registry.snapshot.registered_manifests,
+                1,
+            )
+            self.assertEqual(controller.publisher.store.snapshot.checkpoints, 0)
+            self.assertEqual(controller.publisher.catalog.snapshot.manifests, 0)
 
     def test_resume_boundary_requires_flushed_and_closed_experience(self) -> None:
         with tempfile.TemporaryDirectory() as root:
@@ -318,6 +330,7 @@ def _components(
     *,
     optimizer_model=None,
     owner_capacity: int = 2,
+    environment=NumpyFakeBatchEnv,
 ):
     shadow = _scorer()
     behavior_config = RaggedCategoricalPolicyConfig(temperature=0.8)
@@ -363,7 +376,7 @@ def _components(
         behavior_config,
         torch.Generator().manual_seed(94),
     )
-    controller.publish_and_promote(shadow, training_step=0)
+    controller.promote_live(shadow, training_step=0)
     optimizer_owner = shadow if optimizer_model is None else optimizer_model
     trainer = SynchronousPolicyTrainer(
         shadow,
@@ -386,7 +399,7 @@ def _components(
     )
     assembler = BoundedAttemptAssembler(_attempt_limits(), batcher)
     population = initialize_population(
-        NumpyFakeBatchEnv,
+        environment,
         slot_count=1,
         schedule=SeedSchedule(SeedPartition.HELD_OUT),
         max_recoveries_per_episode=0,

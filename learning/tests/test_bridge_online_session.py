@@ -69,25 +69,23 @@ class RealBridgeCategoricalOnlineSessionTests(unittest.TestCase):
             generation_one = generation_zero.advance_generation(
                 max_batch_steps=256
             )
-            self.assertTrue(generation_one.generation.promoted)
-            self.assertIsNotNone(generation_one.resume)
-            assert generation_one.resume is not None
+            self.assertTrue(generation_one.promoted)
+            generation_one_resume = generation_zero.publish()
 
-            restored = factory.restore(generation_one.resume.manifest_id)
+            restored = factory.restore(generation_one_resume.manifest_id)
             generation_two = restored.advance_generation(max_batch_steps=256)
 
-            self.assertTrue(generation_two.generation.promoted)
-            self.assertIsNotNone(generation_two.resume)
+            self.assertTrue(generation_two.promoted)
             self.assertEqual(
-                generation_one.generation.optimizer_steps_after,
+                generation_one.optimizer_steps_after,
                 1,
             )
             self.assertEqual(
-                generation_two.generation.optimizer_steps_before,
+                generation_two.optimizer_steps_before,
                 1,
             )
             self.assertEqual(
-                generation_two.generation.optimizer_steps_after,
+                generation_two.optimizer_steps_after,
                 2,
             )
             self.assertEqual(

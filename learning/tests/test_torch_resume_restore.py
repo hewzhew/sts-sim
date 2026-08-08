@@ -97,11 +97,11 @@ class CategoricalGenerationResumeRestorerTests(unittest.TestCase):
 
             self.assertTrue(baseline_result.promoted)
             self.assertTrue(resumed_result.promoted)
-            assert baseline_result.publication is not None
-            assert resumed_result.publication is not None
+            assert baseline_result.promotion is not None
+            assert resumed_result.promotion is not None
             self.assertEqual(
-                resumed_result.publication.manifest_id,
-                baseline_result.publication.manifest_id,
+                resumed_result.promotion.manifest_id,
+                baseline_result.promotion.manifest_id,
             )
 
             baseline_env = baseline.driver.env
@@ -382,7 +382,7 @@ class _ResumeFixture:
         torch.manual_seed(1203)
         shadow = self.scorer()
         controller = self.controller(torch.Generator().manual_seed(94))
-        controller.publish_and_promote(shadow, training_step=0)
+        controller.promote_live(shadow, training_step=0)
         trainer = SynchronousPolicyTrainer(
             shadow,
             self.optimizer(shadow),

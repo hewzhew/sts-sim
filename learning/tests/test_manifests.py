@@ -161,6 +161,25 @@ class BehaviorManifestTests(unittest.TestCase):
         self.assertEqual(registry.snapshot.registered_manifests, 0)
         self.assertEqual(registry.register(manifest), manifest.identity)
 
+    def test_explicit_active_replacement_is_atomic_at_capacity_one(self) -> None:
+        registry = BehaviorManifestRegistry(capacity=1)
+        first = _manifest(checkpoint_marker=1)
+        second = _manifest(checkpoint_marker=2)
+
+        first_id = registry.replace_active(None, first)
+        second_id = registry.replace_active(first_id, second)
+
+        self.assertEqual(registry.resolve(second_id), second)
+        self.assertEqual(registry.snapshot.registered_manifests, 1)
+        with self.assertRaisesRegex(BehaviorManifestError, "unknown"):
+            registry.resolve(first_id)
+        with self.assertRaisesRegex(BehaviorManifestError, "previous active"):
+            registry.replace_active(first_id, first)
+        self.assertEqual(registry.resolve(second_id), second)
+        with self.assertRaisesRegex(BehaviorManifestError, "empty registry"):
+            registry.replace_active(None, first)
+        self.assertEqual(registry.resolve(second_id), second)
+
     def test_template_binds_one_checkpoint_and_training_step(self) -> None:
         manifest = _manifest()
         template = BehaviorManifestTemplate(

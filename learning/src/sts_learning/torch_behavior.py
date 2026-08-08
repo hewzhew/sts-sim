@@ -1,4 +1,4 @@
-"""Explicit publication and promotion of checkpointed PyTorch behavior."""
+"""Exact in-process PyTorch behavior binding and explicit persistence."""
 
 from __future__ import annotations
 
@@ -34,26 +34,33 @@ from .torch_policy import (
 
 
 class TorchBehaviorError(RuntimeError):
-    """A shadow model cannot be safely published or promoted."""
+    """A shadow model cannot be safely bound, promoted, or published."""
 
 
 @dataclass(frozen=True)
-class TorchBehaviorPublication:
+class TorchBehaviorBinding:
+    """Exact model/provenance identity, independent of durable publication."""
+
     manifest_id: BehaviorManifestId
     manifest: BehaviorManifest
     checkpoint_id: ManifestArtifactId
 
     def __post_init__(self) -> None:
         if not isinstance(self.manifest_id, BehaviorManifestId):
-            raise TorchBehaviorError("publication manifest id must be typed")
+            raise TorchBehaviorError("behavior manifest id must be typed")
         if not isinstance(self.manifest, BehaviorManifest):
-            raise TorchBehaviorError("publication manifest must be typed")
+            raise TorchBehaviorError("behavior manifest must be typed")
         if not isinstance(self.checkpoint_id, ManifestArtifactId):
-            raise TorchBehaviorError("publication checkpoint id must be typed")
+            raise TorchBehaviorError("behavior checkpoint id must be typed")
         if self.manifest_id != self.manifest.identity:
-            raise TorchBehaviorError("publication manifest id conflicts with content")
+            raise TorchBehaviorError("behavior manifest id conflicts with content")
         if self.manifest.model_checkpoint != self.checkpoint_id:
-            raise TorchBehaviorError("publication checkpoint conflicts with manifest")
+            raise TorchBehaviorError("behavior checkpoint conflicts with manifest")
+
+
+@dataclass(frozen=True)
+class TorchBehaviorPublication(TorchBehaviorBinding):
+    """A behavior binding committed to checkpoint and manifest stores."""
 
 
 @dataclass(frozen=True)
@@ -72,7 +79,7 @@ class TorchBehaviorPublicationPreview:
 class _PreparedTorchBehaviorPublication:
     checkpoint: PreparedTorchCheckpoint
     durable_manifest: PreparedBehaviorManifest
-    publication: TorchBehaviorPublication
+    binding: TorchBehaviorBinding
 
 
 class TorchBehaviorPublisher:
@@ -105,18 +112,65 @@ class TorchBehaviorPublisher:
         training_step: int,
     ) -> TorchBehaviorPublication:
         prepared = self._prepare(scorer, training_step=training_step)
+        return self._commit(prepared)
+
+    def publish_exact(
+        self,
+        scorer: RaggedCandidateScorer,
+        binding: TorchBehaviorBinding,
+    ) -> TorchBehaviorPublication:
+        """Durably publish one already-active exact in-memory binding."""
+
+        if not isinstance(binding, TorchBehaviorBinding):
+            raise TorchBehaviorError("exact publication requires a behavior binding")
+        prepared = self._prepare(
+            scorer,
+            training_step=binding.manifest.training_step,
+        )
+        if (
+            prepared.binding.manifest_id != binding.manifest_id
+            or prepared.binding.manifest != binding.manifest
+            or prepared.binding.checkpoint_id != binding.checkpoint_id
+        ):
+            raise TorchBehaviorError(
+                "active scorer no longer matches its behavior binding"
+            )
+        return self._commit(prepared)
+
+    def bind_live(
+        self,
+        scorer: RaggedCandidateScorer,
+        *,
+        training_step: int,
+    ) -> TorchBehaviorBinding:
+        """Compute an exact behavior identity without writing durable state."""
+
+        checkpoint, binding = self._bind(scorer, training_step=training_step)
+        if checkpoint.artifact_id != binding.checkpoint_id:
+            raise TorchBehaviorError("live behavior checkpoint identity changed")
+        return binding
+
+    def _commit(
+        self,
+        prepared: _PreparedTorchBehaviorPublication,
+    ) -> TorchBehaviorPublication:
         self._preview(prepared, novel=False)
-        manifest = prepared.publication.manifest
+        binding = prepared.binding
+        manifest = binding.manifest
         checkpoint_id = self.store.commit(prepared.checkpoint)
         if checkpoint_id != manifest.model_checkpoint:
             raise TorchBehaviorError("checkpoint store committed a different identity")
         durable_id = self.catalog.commit(prepared.durable_manifest)
-        if durable_id != prepared.publication.manifest_id:
+        if durable_id != binding.manifest_id:
             raise TorchBehaviorError("manifest catalog committed a different identity")
         registered_id = self.registry.register(manifest, claimed_id=durable_id)
-        if registered_id != prepared.publication.manifest_id:
+        if registered_id != binding.manifest_id:
             raise TorchBehaviorError("manifest registry committed a different identity")
-        return prepared.publication
+        return TorchBehaviorPublication(
+            binding.manifest_id,
+            binding.manifest,
+            binding.checkpoint_id,
+        )
 
     def preview(
         self,
@@ -148,6 +202,20 @@ class TorchBehaviorPublisher:
         *,
         training_step: int,
     ) -> _PreparedTorchBehaviorPublication:
+        checkpoint, binding = self._bind(scorer, training_step=training_step)
+        durable_manifest = self.catalog.prepare(binding.manifest)
+        return _PreparedTorchBehaviorPublication(
+            checkpoint=checkpoint,
+            durable_manifest=durable_manifest,
+            binding=binding,
+        )
+
+    def _bind(
+        self,
+        scorer: RaggedCandidateScorer,
+        *,
+        training_step: int,
+    ) -> tuple[PreparedTorchCheckpoint, TorchBehaviorBinding]:
         if not isinstance(scorer, RaggedCandidateScorer):
             raise TorchBehaviorError("publisher requires a RaggedCandidateScorer")
         if scorer.schema.version != self.template.semantic_schema_version:
@@ -159,17 +227,12 @@ class TorchBehaviorPublisher:
             checkpoint.artifact_id,
             training_step=training_step,
         )
-        durable_manifest = self.catalog.prepare(manifest)
-        publication = TorchBehaviorPublication(
+        binding = TorchBehaviorBinding(
             manifest.identity,
             manifest,
             checkpoint.artifact_id,
         )
-        return _PreparedTorchBehaviorPublication(
-            checkpoint=checkpoint,
-            durable_manifest=durable_manifest,
-            publication=publication,
-        )
+        return checkpoint, binding
 
     def _preview(
         self,
@@ -182,12 +245,12 @@ class TorchBehaviorPublisher:
             self.catalog.preview_novel_commit(prepared.durable_manifest)
             self.registry.preview_novel_registration()
             return
-        publication = prepared.publication
+        binding = prepared.binding
         self.store.preview_commit(prepared.checkpoint)
         self.catalog.preview_commit(prepared.durable_manifest)
         self.registry.preview_registration(
-            publication.manifest,
-            claimed_id=publication.manifest_id,
+            binding.manifest,
+            claimed_id=binding.manifest_id,
         )
 
 
@@ -196,11 +259,11 @@ def _publication_preview(
     *,
     novel: bool,
 ) -> TorchBehaviorPublicationPreview:
-    publication = prepared.publication
+    binding = prepared.binding
     return TorchBehaviorPublicationPreview(
-        manifest_id=publication.manifest_id,
-        checkpoint_id=publication.checkpoint_id,
-        training_step=publication.manifest.training_step,
+        manifest_id=binding.manifest_id,
+        checkpoint_id=binding.checkpoint_id,
+        training_step=binding.manifest.training_step,
         checkpoint_payload_bytes=prepared.checkpoint.payload_bytes,
         manifest_payload_bytes=prepared.durable_manifest.payload_bytes,
         requires_novel_capacity=novel,
@@ -216,14 +279,16 @@ class CheckpointedGreedyTorchPolicy:
     def __init__(
         self,
         scorer: RaggedCandidateScorer,
-        publication: TorchBehaviorPublication,
+        binding: TorchBehaviorBinding,
         *,
         _token: object,
     ) -> None:
         if _token is not _PROMOTION_TOKEN:
             raise TorchBehaviorError("behavior policy must be created through promote")
+        if not isinstance(binding, TorchBehaviorBinding):
+            raise TorchBehaviorError("behavior policy requires an exact binding")
         self._scorer = scorer
-        self.publication = publication
+        self.binding = binding
 
     @classmethod
     def promote(
@@ -269,7 +334,7 @@ class CheckpointedGreedyTorchPolicy:
 
     @property
     def behavior_manifest_id(self) -> BehaviorManifestId:
-        return self.publication.manifest_id
+        return self.binding.manifest_id
 
     def score(self, decision_batch: Mapping[str, object]) -> RaggedCandidateLogits:
         with torch.inference_mode():
@@ -280,13 +345,13 @@ class CheckpointedGreedyTorchPolicy:
         return BatchPolicyChoice.deterministic(ordinals, self.behavior_manifest_id)
 
 
-class CheckpointedCategoricalTorchPolicy:
-    """Frozen checkpoint behavior sampled through one injected random stream."""
+class FrozenCategoricalTorchPolicy:
+    """Frozen exact behavior sampled through one injected random stream."""
 
     def __init__(
         self,
         scorer: RaggedCandidateScorer,
-        publication: TorchBehaviorPublication,
+        binding: TorchBehaviorBinding,
         config: RaggedCategoricalPolicyConfig,
         generator: torch.Generator,
         *,
@@ -294,10 +359,12 @@ class CheckpointedCategoricalTorchPolicy:
     ) -> None:
         if _token is not _PROMOTION_TOKEN:
             raise TorchBehaviorError("behavior policy must be created through promote")
+        if not isinstance(binding, TorchBehaviorBinding):
+            raise TorchBehaviorError("behavior policy requires an exact binding")
         _validate_categorical_inputs(config, generator)
         _require_generator_device(scorer, generator)
         self._scorer = scorer
-        self.publication = publication
+        self.binding = binding
         self.config = config
         self.generator = generator
 
@@ -311,7 +378,7 @@ class CheckpointedCategoricalTorchPolicy:
         scorer_factory: Callable[[], RaggedCandidateScorer],
         config: RaggedCategoricalPolicyConfig,
         generator: torch.Generator,
-    ) -> CheckpointedCategoricalTorchPolicy:
+    ) -> FrozenCategoricalTorchPolicy:
         _validate_categorical_inputs(config, generator)
         model = _promote_frozen_scorer(
             publication,
@@ -344,7 +411,7 @@ class CheckpointedCategoricalTorchPolicy:
         scorer_factory: Callable[[], RaggedCandidateScorer],
         config: RaggedCategoricalPolicyConfig,
         generator: torch.Generator,
-    ) -> CheckpointedCategoricalTorchPolicy:
+    ) -> FrozenCategoricalTorchPolicy:
         _validate_categorical_inputs(config, generator)
         model, publication = _recover_frozen_scorer(
             manifest_id,
@@ -369,7 +436,11 @@ class CheckpointedCategoricalTorchPolicy:
 
     @property
     def behavior_manifest_id(self) -> BehaviorManifestId:
-        return self.publication.manifest_id
+        return self.binding.manifest_id
+
+    @property
+    def frozen_scorer(self) -> RaggedCandidateScorer:
+        return self._scorer
 
     def score(self, decision_batch: Mapping[str, object]) -> RaggedCandidateLogits:
         with torch.inference_mode():
@@ -386,6 +457,10 @@ class CheckpointedCategoricalTorchPolicy:
             self.behavior_manifest_id,
             sample.selection_probabilities,
         )
+
+
+class CheckpointedCategoricalTorchPolicy(FrozenCategoricalTorchPolicy):
+    """Frozen behavior whose binding was verified through durable stores."""
 
 
 @dataclass(frozen=True)
@@ -414,47 +489,71 @@ class CategoricalTorchBehaviorController:
         self.scorer_factory = scorer_factory
         self.config = config
         self.generator = generator
-        self._policy: CheckpointedCategoricalTorchPolicy | None = None
+        self._policy: FrozenCategoricalTorchPolicy | None = None
         self._successful_promotions = 0
 
     @property
     def snapshot(self) -> CategoricalTorchBehaviorControllerSnapshot:
-        publication = self._policy.publication if self._policy is not None else None
+        binding = self._policy.binding if self._policy is not None else None
         return CategoricalTorchBehaviorControllerSnapshot(
             active_manifest_id=(
-                publication.manifest_id if publication is not None else None
+                binding.manifest_id if binding is not None else None
             ),
             active_training_step=(
-                publication.manifest.training_step if publication is not None else None
+                binding.manifest.training_step if binding is not None else None
             ),
             successful_promotions=self._successful_promotions,
         )
 
-    def publish_and_promote(
+    def promote_live(
         self,
         scorer: RaggedCandidateScorer,
         *,
         training_step: int,
-    ) -> TorchBehaviorPublication:
+    ) -> TorchBehaviorBinding:
+        """Freeze and activate a model without writing durable artifacts."""
+
         step = _training_step(training_step)
         current = self.snapshot.active_training_step
         if current is not None and step <= current:
             raise TorchBehaviorError(
                 "controller training step must increase across promotions"
             )
-        publication = self.publisher.publish(scorer, training_step=step)
-        policy = CheckpointedCategoricalTorchPolicy.promote(
-            publication,
-            self.publisher.store,
-            self.publisher.catalog,
-            self.publisher.registry,
-            self.scorer_factory,
+        frozen = _clone_frozen_scorer(scorer, self.scorer_factory)
+        binding = self.publisher.bind_live(frozen, training_step=step)
+        _require_behavior_rule(
+            binding.manifest,
+            self.config.behavior_rule,
+            "categorical candidate rule",
+        )
+        policy = FrozenCategoricalTorchPolicy(
+            frozen,
+            binding,
             self.config,
             self.generator,
+            _token=_PROMOTION_TOKEN,
         )
+        registered_id = self.publisher.registry.replace_active(
+            self.snapshot.active_manifest_id,
+            binding.manifest,
+        )
+        if registered_id != binding.manifest_id:
+            raise TorchBehaviorError(
+                "live registry committed a different behavior identity"
+            )
         self._policy = policy
         self._successful_promotions += 1
-        return publication
+        return binding
+
+    def publish_active(self) -> TorchBehaviorPublication:
+        """Durably publish the current frozen behavior without switching it."""
+
+        if self._policy is None:
+            raise TorchBehaviorError("categorical behavior controller is inactive")
+        return self.publisher.publish_exact(
+            self._policy.frozen_scorer,
+            self._policy.binding,
+        )
 
     def recover_and_promote(
         self,
@@ -485,12 +584,42 @@ class CategoricalTorchBehaviorController:
         )
         self._policy = policy
         self._successful_promotions = promotion_count
-        return policy.publication
+        if not isinstance(policy.binding, TorchBehaviorPublication):
+            raise TorchBehaviorError("recovered behavior is not durably published")
+        return policy.binding
 
     def choose(self, decision_batch: Mapping[str, object]) -> BatchPolicyChoice:
         if self._policy is None:
             raise TorchBehaviorError("categorical behavior controller is inactive")
         return self._policy.choose(decision_batch)
+
+
+def _clone_frozen_scorer(
+    scorer: RaggedCandidateScorer,
+    scorer_factory: Callable[[], RaggedCandidateScorer],
+) -> RaggedCandidateScorer:
+    """Copy a shadow scorer into an independent in-process behavior model."""
+
+    if not isinstance(scorer, RaggedCandidateScorer):
+        raise TorchBehaviorError("live promotion requires a RaggedCandidateScorer")
+    model = scorer_factory()
+    if not isinstance(model, RaggedCandidateScorer):
+        raise TorchBehaviorError(
+            "behavior scorer factory did not create a RaggedCandidateScorer"
+        )
+    if model.schema.version != scorer.schema.version:
+        raise TorchBehaviorError(
+            "behavior scorer factory returned a different schema version"
+        )
+    try:
+        model.load_state_dict(scorer.state_dict(), strict=True)
+    except RuntimeError as error:
+        raise TorchBehaviorError(
+            "behavior scorer factory is incompatible with the shadow model"
+        ) from error
+    model.eval()
+    model.requires_grad_(False)
+    return model
 
 
 def _promote_frozen_scorer(

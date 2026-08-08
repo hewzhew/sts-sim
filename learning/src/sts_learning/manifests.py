@@ -416,6 +416,61 @@ class BehaviorManifestRegistry:
         self._entries = tentative
         return tuple(identities)
 
+    def replace_active(
+        self,
+        previous_identity: BehaviorManifestId | None,
+        manifest: BehaviorManifest,
+    ) -> BehaviorManifestId:
+        """Atomically rotate the one live behavior binding.
+
+        Durable catalogs retain history.  The live training registry does not:
+        once the caller has consumed every sample from the previous behavior,
+        it may replace that exact row without growing registry capacity.
+        """
+
+        if not isinstance(manifest, BehaviorManifest):
+            raise BehaviorManifestError(
+                "active registry replacement requires a BehaviorManifest"
+            )
+        if previous_identity is None:
+            if self._entries:
+                raise BehaviorManifestError(
+                    "initial active registry replacement requires an empty registry"
+                )
+            tentative: dict[BehaviorManifestId, BehaviorManifest] = {}
+        else:
+            if not isinstance(previous_identity, BehaviorManifestId):
+                raise BehaviorManifestError(
+                    "previous active manifest id must be typed"
+                )
+            try:
+                previous = self._entries[previous_identity]
+            except KeyError as error:
+                raise BehaviorManifestError(
+                    "previous active behavior is not registered"
+                ) from error
+            if previous.identity != previous_identity:
+                raise BehaviorManifestError(
+                    "previous active behavior identity conflicts with content"
+                )
+            tentative = dict(self._entries)
+            del tentative[previous_identity]
+
+        identity = manifest.identity
+        existing = tentative.get(identity)
+        if existing is not None and existing != manifest:
+            raise BehaviorManifestError(
+                "replacement behavior identity conflicts with registered content"
+            )
+        if existing is None:
+            if len(tentative) >= self.capacity:
+                raise BehaviorManifestError(
+                    "behavior manifest registry capacity exceeded"
+                )
+            tentative[identity] = manifest
+        self._entries = tentative
+        return identity
+
     def require_exact(
         self,
         identity: BehaviorManifestId,
