@@ -7,6 +7,11 @@ from pathlib import Path
 
 import torch
 
+from .combat_root_artifacts import (
+    load_combat_root_source,
+    normalize_combat_root_artifact,
+    read_combat_root_artifact,
+)
 from .policy import BehaviorManifestId
 from .torch_behavior import TorchBehaviorPublication
 from .torch_combat_batch_generation import (
@@ -14,13 +19,7 @@ from .torch_combat_batch_generation import (
     CombatWinBatchGenerationResult,
 )
 from .torch_combat_owners import create_combat_win_owner_graph
-from .torch_combat_session import (
-    _artifact_bytes,
-    _artifact_file_bytes,
-    _combat_root_source,
-    _positive_integer,
-    _torch_seed,
-)
+from .torch_combat_session import _positive_integer, _torch_seed
 from .torch_combat_session_config import (
     CombatSessionBridge,
     CombatWinBatchSessionConfig,
@@ -100,7 +99,7 @@ class CombatWinBatchSessionFactory:
         model_seed: int,
         behavior_seeds: Sequence[int],
     ) -> CombatWinBatchSession:
-        payload = _artifact_file_bytes(
+        payload = read_combat_root_artifact(
             artifact,
             max_bytes=self.config.limits.max_artifact_bytes,
         )
@@ -118,7 +117,7 @@ class CombatWinBatchSessionFactory:
         behavior_seeds: Sequence[int],
     ) -> CombatWinBatchSession:
         self._require_unused_root()
-        artifact = _artifact_bytes(
+        artifact = normalize_combat_root_artifact(
             payload,
             max_bytes=self.config.limits.max_artifact_bytes,
         )
@@ -136,7 +135,7 @@ class CombatWinBatchSessionFactory:
             raise TorchCombatSessionError(
                 "combat batch session requires distinct behavior seeds"
             )
-        source = _combat_root_source(
+        source = load_combat_root_source(
             self.bridge,
             artifact,
             expected_roots=self.config.expected_roots,

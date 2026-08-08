@@ -373,6 +373,17 @@ explicitly publishes the final active behavior. Its experiment directory must
 be fresh; the journal and published scorer do not contain optimizer state and
 cannot resume training or substitute for held-out evaluation.
 
+The separate combat held-out evaluator recovers exactly one published frozen
+behavior from its durable manifest and tensor-only checkpoint, verifies the
+complete maintained scorer, categorical rule, optimizer, trainer, schema, and
+training-step provenance against the originating training journal, then runs a
+distinct opaque root artifact with independent caller-seeded policy RNG streams.
+It constructs no optimizer, trainer, controller, promotion owner, or experience
+collector. Semantic decision batches are discarded after each choice; only
+compact per-replicate terminal facts survive. Its fresh single-file result is
+competence evidence for that exact manifest and evaluation sample, not an
+improvement claim without a comparable frozen baseline.
+
 Python recovery curricula may hold explicit opaque single-slot checkpoints.
 Saving one clones that exact in-memory run-control state only when requested;
 restoring it also restores any unfinished symbolic decoder or already selected

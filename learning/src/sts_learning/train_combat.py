@@ -24,7 +24,7 @@ from .torch_combat_session_config import (
 )
 
 
-_SCHEMA = "sts-learning-combat-training-v1"
+COMBAT_TRAINING_SCHEMA = "sts-learning-combat-training-v1"
 
 
 class CombatTrainingCommandError(RuntimeError):
@@ -133,7 +133,7 @@ def run_combat_training(
         _write(
             journal,
             {
-                "schema": _SCHEMA,
+                "schema": COMBAT_TRAINING_SCHEMA,
                 "kind": "configuration",
                 "artifact": str(config.artifact),
                 "artifact_sha256": _sha256(config.artifact),
@@ -176,7 +176,7 @@ def run_combat_training(
         publication = session.publish_active_behavior()
         snapshot = session.runner.trainer.snapshot
         summary: dict[str, object] = {
-            "schema": _SCHEMA,
+            "schema": COMBAT_TRAINING_SCHEMA,
             "kind": "completed",
             "updates": config.updates,
             "optimizer_steps": snapshot.optimizer_steps,
@@ -198,7 +198,7 @@ def _generation(
     elapsed: float,
 ) -> dict[str, object]:
     return {
-        "schema": _SCHEMA,
+        "schema": COMBAT_TRAINING_SCHEMA,
         "kind": "generation",
         "generation": index,
         "active_training_step_before": result.active_training_step_before,

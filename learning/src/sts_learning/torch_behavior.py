@@ -442,6 +442,19 @@ class FrozenCategoricalTorchPolicy:
     def frozen_scorer(self) -> RaggedCandidateScorer:
         return self._scorer
 
+    def fork(self, generator: torch.Generator) -> FrozenCategoricalTorchPolicy:
+        """Share immutable behavior while giving one caller an independent RNG."""
+
+        _validate_categorical_inputs(self.config, generator)
+        _require_generator_device(self._scorer, generator)
+        return FrozenCategoricalTorchPolicy(
+            self._scorer,
+            self.binding,
+            self.config,
+            generator,
+            _token=_PROMOTION_TOKEN,
+        )
+
     def score(self, decision_batch: Mapping[str, object]) -> RaggedCandidateLogits:
         with torch.inference_mode():
             return self._scorer(decision_batch)

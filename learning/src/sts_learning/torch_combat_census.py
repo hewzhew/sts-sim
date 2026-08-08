@@ -13,13 +13,15 @@ from .combat_curriculum import (
     CombatRootCompetenceEvidence,
     build_combat_frontier_plan,
 )
+from .combat_root_artifacts import (
+    load_combat_root_source,
+    normalize_combat_root_artifact,
+    read_combat_root_artifact,
+)
 from .combat_signals import CombatSignalCensus, build_combat_signal_census
 from .torch_combat_generation import CombatWinGenerationResult
 from .torch_combat_session import (
     CombatWinSessionFactory,
-    _artifact_bytes,
-    _artifact_file_bytes,
-    _combat_root_source,
     _torch_seed,
 )
 from .torch_combat_session_config import (
@@ -125,7 +127,7 @@ class CombatWinSignalCensusRunner:
         model_seed: int,
         behavior_seeds: Sequence[int],
     ) -> CombatWinSignalCensusResult:
-        payload = _artifact_file_bytes(
+        payload = read_combat_root_artifact(
             artifact,
             max_bytes=self.config.limits.max_artifact_bytes,
         )
@@ -142,7 +144,7 @@ class CombatWinSignalCensusRunner:
         model_seed: int,
         behavior_seeds: Sequence[int],
     ) -> CombatWinSignalCensusResult:
-        artifact = _artifact_bytes(
+        artifact = normalize_combat_root_artifact(
             payload,
             max_bytes=self.config.limits.max_artifact_bytes,
         )
@@ -160,7 +162,7 @@ class CombatWinSignalCensusRunner:
             raise TorchCombatSessionError(
                 "combat signal census requires distinct behavior seeds"
             )
-        source = _combat_root_source(
+        source = load_combat_root_source(
             self.bridge,
             artifact,
             expected_roots=self.config.expected_roots,

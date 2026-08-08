@@ -1,0 +1,322 @@
+"""Evaluate one published combat behavior on an independent root artifact."""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import time
+from dataclasses import dataclass
+from pathlib import Path
+
+from .combat_evaluation import (
+    CombatEvaluationLimits,
+    CombatEvaluationRootResult,
+    CombatHeldOutEvaluationResult,
+    CombatHeldOutEvaluator,
+)
+from .combat_root_artifacts import (
+    load_combat_root_source,
+    read_combat_root_artifact,
+)
+from .published_combat_behavior import (
+    PublishedCombatBehavior,
+    recover_published_combat_behavior,
+)
+from .torch_combat_session_config import (
+    CombatSessionBridge,
+    CombatWinSessionLimits,
+)
+
+
+COMBAT_EVALUATION_SCHEMA = "sts-learning-combat-held-out-evaluation-v1"
+
+
+class CombatEvaluationCommandError(RuntimeError):
+    """A held-out combat evaluation command is malformed."""
+
+
+@dataclass(frozen=True)
+class CombatEvaluationCommandConfig:
+    artifact: Path
+    behavior: Path
+    output: Path
+    root_count: int
+    replicate_count: int
+    behavior_seed_base: int
+
+    def __post_init__(self) -> None:
+        artifact = Path(self.artifact).resolve()
+        behavior = Path(self.behavior).resolve()
+        output = Path(self.output).resolve()
+        if not artifact.is_file():
+            raise CombatEvaluationCommandError(
+                "combat evaluation artifact is not a file"
+            )
+        if not behavior.is_dir():
+            raise CombatEvaluationCommandError(
+                "published combat behavior is not a directory"
+            )
+        if output.exists() and (
+            not output.is_dir() or any(output.iterdir())
+        ):
+            raise CombatEvaluationCommandError(
+                "combat evaluation output must be absent or empty"
+            )
+        if output == behavior or behavior in output.parents:
+            raise CombatEvaluationCommandError(
+                "combat evaluation output must stay outside the behavior directory"
+            )
+        root_count = _positive(self.root_count, "root_count")
+        replicate_count = _positive(self.replicate_count, "replicate_count")
+        behavior_seed_base = _seed(
+            self.behavior_seed_base,
+            "behavior_seed_base",
+        )
+        if replicate_count < 2:
+            raise CombatEvaluationCommandError(
+                "combat evaluation requires at least two replicates"
+            )
+        if behavior_seed_base + root_count > 1 << 63:
+            raise CombatEvaluationCommandError(
+                "behavior seeds must stay below 2^63"
+            )
+        object.__setattr__(self, "artifact", artifact)
+        object.__setattr__(self, "behavior", behavior)
+        object.__setattr__(self, "output", output)
+        object.__setattr__(self, "root_count", root_count)
+        object.__setattr__(self, "replicate_count", replicate_count)
+        object.__setattr__(self, "behavior_seed_base", behavior_seed_base)
+
+    @property
+    def behavior_seeds(self) -> tuple[int, ...]:
+        return tuple(
+            self.behavior_seed_base + index
+            for index in range(self.root_count)
+        )
+
+
+def run_combat_evaluation(
+    config: CombatEvaluationCommandConfig,
+    *,
+    bridge: CombatSessionBridge | None = None,
+) -> dict[str, object]:
+    """Recover exact frozen behavior and evaluate it without training owners."""
+
+    if not isinstance(config, CombatEvaluationCommandConfig):
+        raise CombatEvaluationCommandError(
+            "combat evaluation config must be typed"
+        )
+    active_bridge = bridge if bridge is not None else CombatSessionBridge.installed()
+    if not isinstance(active_bridge, CombatSessionBridge):
+        raise CombatEvaluationCommandError(
+            "combat evaluation bridge must be typed"
+        )
+    session_limits = CombatWinSessionLimits()
+    artifact = read_combat_root_artifact(
+        config.artifact,
+        max_bytes=session_limits.max_artifact_bytes,
+    )
+    source = load_combat_root_source(
+        active_bridge,
+        artifact,
+        expected_roots=config.root_count,
+        max_bytes=session_limits.max_artifact_bytes,
+    )
+    recovered = recover_published_combat_behavior(
+        config.behavior,
+        active_bridge,
+        session_limits,
+        config.behavior_seeds,
+    )
+    evaluator = CombatHeldOutEvaluator(
+        source,
+        slot_indices=tuple(range(config.root_count)),
+        replicate_count=config.replicate_count,
+        policies=recovered.policies,
+        max_roots=config.root_count,
+        limits=CombatEvaluationLimits(
+            max_model_rounds=session_limits.experience.max_model_rounds,
+            max_transitions=session_limits.experience.max_transitions,
+        ),
+    )
+
+    started = time.perf_counter()
+    result = evaluator.evaluate()
+    elapsed = time.perf_counter() - started
+    summary = _summary(
+        config,
+        recovered,
+        result,
+        artifact_bytes=len(artifact),
+        artifact_sha256=hashlib.sha256(artifact).hexdigest(),
+        elapsed=elapsed,
+    )
+    config.output.mkdir(parents=True, exist_ok=True)
+    with (config.output / "evaluation.json").open(
+        "x",
+        encoding="utf-8",
+        newline="\n",
+    ) as destination:
+        json.dump(summary, destination, separators=(",", ":"), sort_keys=True)
+        destination.write("\n")
+
+    root_wins = ",".join(str(root.wins) for root in result.roots)
+    root_final_hp = ",".join(
+        str(sum(outcome.final_hp for outcome in root.group.outcomes))
+        for root in result.roots
+    )
+    root_potions_used = ",".join(
+        str(sum(outcome.potions_used for outcome in root.group.outcomes))
+        for root in result.roots
+    )
+    print(
+        f"evaluation_complete=true wins={result.wins} losses={result.losses} "
+        f"root_wins={root_wins} root_final_hp_sums={root_final_hp} "
+        f"root_potions_used={root_potions_used} "
+        f"seconds={elapsed:.3f} output={config.output}",
+        flush=True,
+    )
+    return summary
+
+
+def _summary(
+    config: CombatEvaluationCommandConfig,
+    recovered: PublishedCombatBehavior,
+    result: CombatHeldOutEvaluationResult,
+    *,
+    artifact_bytes: int,
+    artifact_sha256: str,
+    elapsed: float,
+) -> dict[str, object]:
+    roots = tuple(
+        _root_summary(slot_index, root)
+        for slot_index, root in enumerate(result.roots)
+    )
+    outcomes = tuple(
+        outcome
+        for root in result.roots
+        for outcome in root.group.outcomes
+    )
+    return {
+        "schema": COMBAT_EVALUATION_SCHEMA,
+        "kind": "completed",
+        "artifact": str(config.artifact),
+        "artifact_sha256": artifact_sha256,
+        "artifact_bytes": artifact_bytes,
+        "behavior": str(config.behavior),
+        "behavior_manifest_id": recovered.manifest_id.digest.hex(),
+        "behavior_checkpoint_id": recovered.checkpoint_id.digest.hex(),
+        "behavior_training_step": recovered.training_step,
+        "behavior_training_root_count": recovered.training_root_count,
+        "root_count": config.root_count,
+        "replicate_count": config.replicate_count,
+        "behavior_seeds": config.behavior_seeds,
+        "wins": result.wins,
+        "losses": result.losses,
+        "final_hp_sum": sum(outcome.final_hp for outcome in outcomes),
+        "hp_loss_sum": sum(outcome.hp_loss for outcome in outcomes),
+        "potions_used": sum(outcome.potions_used for outcome in outcomes),
+        "potions_discarded": sum(
+            outcome.potions_discarded for outcome in outcomes
+        ),
+        "turns_sum": sum(outcome.turns for outcome in outcomes),
+        "cards_played_sum": sum(outcome.cards_played for outcome in outcomes),
+        "roots": roots,
+        "elapsed_seconds": elapsed,
+    }
+
+
+def _root_summary(
+    slot_index: int,
+    root: CombatEvaluationRootResult,
+) -> dict[str, object]:
+    outcomes = root.group.outcomes
+    return {
+        "slot_index": slot_index,
+        "root_id": root.group.root_id,
+        "exact_combat_state_hash": root.group.exact_combat_state_hash,
+        "wins": root.wins,
+        "losses": root.losses,
+        "model_rounds": root.model_rounds,
+        "transitions": root.transitions,
+        "start_hp": outcomes[0].start_hp,
+        "final_hp_sum": sum(outcome.final_hp for outcome in outcomes),
+        "hp_loss_sum": sum(outcome.hp_loss for outcome in outcomes),
+        "potions_used": sum(outcome.potions_used for outcome in outcomes),
+        "potions_discarded": sum(
+            outcome.potions_discarded for outcome in outcomes
+        ),
+        "outcomes": tuple(
+            {
+                "replicate_index": outcome.replicate_index,
+                "terminal_kind": outcome.terminal_kind,
+                "won": outcome.won,
+                "final_hp": outcome.final_hp,
+                "hp_loss": outcome.hp_loss,
+                "turns": outcome.turns,
+                "potions_used": outcome.potions_used,
+                "potions_discarded": outcome.potions_discarded,
+                "cards_played": outcome.cards_played,
+            }
+            for outcome in outcomes
+        ),
+    }
+
+
+def _positive(value: object, name: str) -> int:
+    normalized = _nonnegative(value, name)
+    if normalized == 0:
+        raise CombatEvaluationCommandError(f"{name} must be a positive integer")
+    return normalized
+
+
+def _nonnegative(value: object, name: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        raise CombatEvaluationCommandError(
+            f"{name} must be a non-negative integer"
+        )
+    return value
+
+
+def _seed(value: object, name: str) -> int:
+    normalized = _nonnegative(value, name)
+    if normalized >= 1 << 63:
+        raise CombatEvaluationCommandError(
+            f"{name} must be an integer in [0, 2^63)"
+        )
+    return normalized
+
+
+def _parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        description=(
+            "Evaluate one published frozen behavior on an opaque combat-root batch."
+        ),
+    )
+    parser.add_argument("--artifact", type=Path, required=True)
+    parser.add_argument("--behavior", type=Path, required=True)
+    parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--roots", type=int, required=True)
+    parser.add_argument("--replicates", type=int, default=8)
+    parser.add_argument("--behavior-seed-base", type=int, default=10_000)
+    return parser
+
+
+def main() -> int:
+    arguments = _parser().parse_args()
+    run_combat_evaluation(
+        CombatEvaluationCommandConfig(
+            artifact=arguments.artifact,
+            behavior=arguments.behavior,
+            output=arguments.output,
+            root_count=arguments.roots,
+            replicate_count=arguments.replicates,
+            behavior_seed_base=arguments.behavior_seed_base,
+        )
+    )
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

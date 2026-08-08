@@ -625,6 +625,7 @@ Configure one stable Python 3.12 training runtime once, then use the small
 .\learning\dev.ps1 test
 .\learning\dev.ps1 verify -MaturinPython <python-with-maturin>
 .\learning\dev.ps1 train-combat -Artifact <roots.bin> -Output <fresh-dir> -Roots <count> -Updates <count>
+.\learning\dev.ps1 evaluate-combat -Artifact <held-out-roots.bin> -Behavior <training-dir> -Output <fresh-dir> -Roots <count> -Replicates <count>
 ```
 
 `configure` installs the tool requirements declared by the local
@@ -705,6 +706,16 @@ update, and promotes at most once. It writes nothing;
 `publish_active_behavior()` is the only durable publication boundary. Treat the
 returned loss and promotion as training accounting, not held-out evidence of
 improvement.
+
+Use `evaluate-combat` on a distinct opaque root artifact after publication. The
+behavior directory must be an exact completed `train-combat` output containing
+one durable checkpoint and manifest. The evaluator verifies their complete
+provenance, gives every root an independent explicit behavior RNG stream, and
+writes only `evaluation.json` with per-replicate win, HP, turn, potion, and card
+facts plus compact aggregates. It creates no optimizer, trainer, experience
+buffer, or behavior promotion. A result measures the exact frozen manifest on
+that bounded sample; it does not establish improvement without a comparable
+baseline using the same roots and RNG streams.
 
 `test` requires PyTorch and the installed bridge and runs the complete learning
 suite; missing training dependencies are failures, not skips. `verify` runs

@@ -5,6 +5,11 @@ from __future__ import annotations
 import operator
 from pathlib import Path
 
+from .combat_root_artifacts import (
+    load_combat_root_source,
+    normalize_combat_root_artifact,
+    read_combat_root_artifact,
+)
 from .policy import BehaviorManifestId
 from .torch_behavior import (
     TorchBehaviorPublication,
@@ -89,7 +94,7 @@ class CombatWinSessionFactory:
     ) -> CombatWinSession:
         """Read one bounded opaque artifact and create generation zero."""
 
-        payload = _artifact_file_bytes(
+        payload = read_combat_root_artifact(
             artifact,
             max_bytes=self.config.limits.max_artifact_bytes,
         )
@@ -109,13 +114,13 @@ class CombatWinSessionFactory:
         """Import exact roots and create one fully wired in-process session."""
 
         self._require_unused_root()
-        artifact = _artifact_bytes(
+        artifact = normalize_combat_root_artifact(
             payload,
             max_bytes=self.config.limits.max_artifact_bytes,
         )
         model_seed = _torch_seed(model_seed, "model_seed")
         behavior_seed = _torch_seed(behavior_seed, "behavior_seed")
-        source = _combat_root_source(
+        source = load_combat_root_source(
             self.bridge,
             artifact,
             expected_roots=self.config.expected_roots,
@@ -168,70 +173,6 @@ class CombatWinSessionFactory:
             raise TorchCombatSessionError(
                 "new combat session requires an unused experiment root"
             )
-
-def _artifact_bytes(
-    payload: bytes | bytearray | memoryview,
-    *,
-    max_bytes: int,
-) -> bytes:
-    if not isinstance(payload, (bytes, bytearray, memoryview)):
-        raise TorchCombatSessionError("combat-root artifact must be bytes-like")
-    normalized = bytes(payload)
-    if not normalized:
-        raise TorchCombatSessionError("combat-root artifact is empty")
-    if len(normalized) > max_bytes:
-        raise TorchCombatSessionError(
-            "combat-root artifact exceeds its byte limit"
-        )
-    return normalized
-
-
-def _artifact_file_bytes(
-    artifact: str | Path,
-    *,
-    max_bytes: int,
-) -> bytes:
-    path = Path(artifact).resolve()
-    if not path.is_file():
-        raise TorchCombatSessionError("combat-root artifact is not a file")
-    size = path.stat().st_size
-    if size <= 0:
-        raise TorchCombatSessionError("combat-root artifact is empty")
-    if size > max_bytes:
-        raise TorchCombatSessionError(
-            "combat-root artifact exceeds its byte limit"
-        )
-    try:
-        return path.read_bytes()
-    except OSError as error:
-        raise TorchCombatSessionError(
-            "combat-root artifact could not be read"
-        ) from error
-
-
-def _combat_root_source(
-    bridge: CombatSessionBridge,
-    artifact: bytes,
-    *,
-    expected_roots: int,
-    max_bytes: int,
-) -> object:
-    try:
-        source = bridge.combat_roots_from_artifact(
-            artifact,
-            expected_roots=expected_roots,
-            max_bytes=max_bytes,
-        )
-    except Exception as error:
-        raise TorchCombatSessionError(
-            "combat-root artifact import failed"
-        ) from error
-    if not callable(getattr(source, "combat_group", None)):
-        raise TorchCombatSessionError(
-            "combat-root artifact loader returned an invalid source"
-        )
-    return source
-
 
 def _torch_seed(value: object, name: str) -> int:
     normalized = _nonnegative_integer(value, name)

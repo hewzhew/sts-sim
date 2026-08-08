@@ -196,6 +196,26 @@ The command appends compact generation and per-root signal facts to
 `training.jsonl`, then explicitly publishes the final behavior checkpoint.
 The output directory must be absent or empty; optimizer resume is not implied.
 
+Evaluate the published frozen behavior on a distinct held-out root batch with:
+
+```powershell
+.\learning\dev.ps1 evaluate-combat `
+  -Artifact <held-out-combat-roots.bin> `
+  -Behavior <completed-training-directory> `
+  -Output <fresh-evaluation-directory> `
+  -Roots <artifact-root-count> `
+  -Replicates 8 `
+  -BehaviorSeedBase 10000
+```
+
+This command verifies the exact durable manifest, checkpoint, maintained model
+profile, schema, trainer provenance, and training step before evaluation. It
+uses independent explicit RNG streams per root and writes one compact
+`evaluation.json`; it creates no optimizer, trainer, experience collector, or
+promotion owner. The terminal win, HP, turn, potion, and card facts measure that
+exact manifest on the bounded held-out sample and are not an improvement claim
+without a same-input frozen baseline.
+
 The same result includes a typed competence plan over exact source slots.
 All-loss roots enter a rescue backlog, mixed win/loss roots form the survival
 frontier, and all-win roots either form the configured terminal-HP resource
