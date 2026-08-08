@@ -336,6 +336,14 @@ created model before that model can replace a live scorer; it does not load
 pickle or partially overwrite the incumbent. A manifest template binds this
 checkpoint to fixed model/config/schema/optimizer/trainer provenance and an
 explicit training step.
+Optimizer and explicitly injected categorical-generator state use a distinct
+versioned, caller-byte-bounded tensor/scalar tree. It admits only finite scalar
+values, strings, bytes, bounded containers, and supported dense tensor dtypes;
+it admits no pickle or executable object. Optimizer hydration validates exact
+parameter-group and parameter-id topology on a disposable fresh owner before
+requiring canonical byte reproduction. Generator hydration validates its
+device and uint8 state tensor and returns a fresh owner with the same next
+sample. These payloads are resume components, never behavior manifests.
 A PyTorch behavior publication prepares all records, previews checkpoint-store,
 catalog, and registry capacity/conflicts without mutation, then commits in the
 order checkpoint, durable manifest, and in-memory registry. The returned typed

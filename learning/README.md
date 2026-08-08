@@ -143,6 +143,15 @@ dtypes, and shapes, so an incumbent scorer is not partially overwritten. A
 model/config/behavior-rule/schema/optimizer/trainer identities and exact
 training step.
 
+`sts_learning.torch_resume` covers the two mutable PyTorch owners that a model
+checkpoint does not: the optimizer and the injected categorical generator. It
+uses a separate canonical, caller-byte-bounded tensor/scalar tree with no
+pickle or executable values. Optimizer restore validates parameter-group and
+parameter-id topology before hydrating a disposable fresh optimizer, then
+requires the hydrated state to reproduce the exact bytes. Generator restore
+validates its device and uint8 state tensor, returns a fresh generator, and
+likewise requires canonical byte equality.
+
 `sts_learning.torch_behavior` makes publication and promotion separate typed
 operations. Publication prepares the checkpoint and manifest, previews all
 three owners, then commits checkpoint, durable catalog row, and in-memory
