@@ -246,6 +246,16 @@ def matched_floor_leave_one_out_advantages(
     return _matched_floor_advantages(aligned)
 
 
+def matched_floor_context_leave_one_out_advantages(
+    attempts: Sequence[CompletedAttemptExperience],
+    config: FloorProgressReturnConfig,
+) -> tuple[tuple[tuple[float, ...], ...], ...]:
+    """Return aligned advantages matched by floor and typed decision context."""
+
+    _, aligned = _aligned_credit_rows(attempts, config)
+    return _matched_floor_context_advantages(aligned)
+
+
 def _aligned_credit_rows(
     attempts: Sequence[CompletedAttemptExperience],
     config: FloorProgressReturnConfig,

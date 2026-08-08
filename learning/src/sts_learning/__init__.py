@@ -69,6 +69,7 @@ from .credit_assignment import (
     DecisionScopeCreditComparison,
     DecisionStrategicContextCreditComparison,
     compare_credit_assignment,
+    matched_floor_context_leave_one_out_advantages,
     matched_floor_leave_one_out_advantages,
     remaining_floor_progress_return,
 )
@@ -349,6 +350,7 @@ __all__ = [
     "evaluate_paired_held_out_behaviors",
     "floor_progress_terminal_return",
     "iter_payload_arrays",
+    "matched_floor_context_leave_one_out_advantages",
     "matched_floor_leave_one_out_advantages",
     "remaining_floor_progress_return",
     "reset_with_accounting",

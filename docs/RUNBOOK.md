@@ -844,6 +844,11 @@ centers each remaining-progress target only against other attempts that reached
 that floor. A floor reached by one attempt contributes zero advantage. It also
 requires at least two attempts, is bound into trainer provenance, and must be
 evaluated as a separate fresh behavior.
+`matched-floor-context` tightens the same comparison to decision floor plus the
+typed combat/strategic context. It therefore gives zero advantage to a context
+observed in only one attempt instead of borrowing signal from a different site
+on the same floor. It is separately bound into trainer provenance and remains
+an ablation, not the maintained default.
 `-DecisionScope all` is the maintained default. The explicit `strategic`
 ablation removes combat-boundary rows from the whole-run loss and renormalizes
 each attempt over its remaining strategic decisions; it does not change the

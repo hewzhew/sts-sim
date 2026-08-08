@@ -765,9 +765,9 @@ imitation or raw-logit value regression. It accepts only bounded
 complete-attempt deliveries, resolves every batch's exact behavior manifest,
 and applies `-advantage * log P(selected | state)` to each sampled decision.
 The typed advantage mode either uses the raw terminal return, subtracts the
-mean terminal return of every other attempt, or uses the explicit matched-floor
-ablation described below. Both baseline modes require at least two independent
-attempts. Global leave-one-out preserves the on-policy expectation while
+mean terminal return of every other attempt, or uses one of the explicit
+matched ablations described below. Every centered mode requires at least two
+independent attempts. Global leave-one-out preserves the on-policy expectation while
 removing the batch's common return level; it does not add a learned value model
 or shaped reward. The maintained floor-progress return reserves `+1` for
 victory and maps defeat floor
@@ -807,9 +807,11 @@ strategic-only is an interference ablation, not an assumed improvement.
 Decision-time progress also carries the bridge's typed strategic context kind
 for Map, CardReward, Event, Shop, Reward, Campfire, BossRelic, RunChoice, or
 Treasure boundaries. Diagnostics report strategic-scope attempt-equal weight and a
-second leave-one-out comparison matched by both floor and context. That tighter
-comparison does not change training; it exposes floor-only contrasts between
-unlike strategic sites and leaves unsupported groups explicitly at zero.
+second leave-one-out comparison matched by both floor and context. The explicit
+provenance-bound floor-plus-context mode can apply that tighter comparison to
+the loss as a separate ablation. It removes floor-only contrasts between unlike
+combat/strategic sites and leaves unsupported groups explicitly at zero; it is
+not an assumed improvement.
 One typed objective configuration owns terminal-return semantics, advantage
 mode, and the number of attempts per update. The trainer implementation
 artifact binds the return kind, target floor, advantage mode, decision scope, and attempts per

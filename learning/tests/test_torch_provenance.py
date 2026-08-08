@@ -196,6 +196,19 @@ class TorchProvenanceTests(unittest.TestCase):
             ),
             device_type="cpu",
         )
+        changed_context_advantage = categorical_training_manifest_template(
+            schema,
+            scorer,
+            behavior,
+            optimizer,
+            replace(
+                objective,
+                advantage_mode=(
+                    TerminalAdvantageMode.MATCHED_FLOOR_CONTEXT_LEAVE_ONE_OUT
+                ),
+            ),
+            device_type="cpu",
+        )
         changed_scope = categorical_training_manifest_template(
             schema,
             scorer,
@@ -225,6 +238,10 @@ class TorchProvenanceTests(unittest.TestCase):
         self.assertNotEqual(
             changed_advantage.trainer_implementation,
             template.trainer_implementation,
+        )
+        self.assertNotEqual(
+            changed_context_advantage.trainer_implementation,
+            changed_advantage.trainer_implementation,
         )
         self.assertNotEqual(
             changed_scope.trainer_implementation,

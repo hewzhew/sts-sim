@@ -14,6 +14,7 @@ from sts_learning import (
     DecisionRunProgress,
     FloorProgressReturnConfig,
     compare_credit_assignment,
+    matched_floor_context_leave_one_out_advantages,
     matched_floor_leave_one_out_advantages,
     remaining_floor_progress_return,
 )
@@ -114,6 +115,17 @@ def test_credit_comparison_keeps_victory_reserved_and_groups_decision_floors() -
     assert aligned[0][0] == (0.0,)
     assert aligned[0][1][0] < 0.0
     assert aligned[1][0][0] > 0.0
+
+    context_aligned = matched_floor_context_leave_one_out_advantages(
+        (defeat, victory),
+        FloorProgressReturnConfig(target_floor=52),
+    )
+    assert all(
+        advantage == 0.0
+        for attempt in context_aligned
+        for batch in attempt
+        for advantage in batch
+    )
 
 
 def test_credit_comparison_rejects_missing_or_impossible_progress() -> None:

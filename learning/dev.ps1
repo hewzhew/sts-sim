@@ -23,7 +23,7 @@ param(
     [int]$EvaluationAttempts = 16,
     [int]$EvaluationMaxBatchSteps = 4096,
     [long]$EvaluationBehaviorSeed = 100000,
-    [ValidateSet("raw-return", "leave-one-out", "matched-floor")]
+    [ValidateSet("raw-return", "leave-one-out", "matched-floor", "matched-floor-context")]
     [string]$AdvantageMode = "raw-return",
     [ValidateSet("all", "strategic")]
     [string]$DecisionScope = "all",

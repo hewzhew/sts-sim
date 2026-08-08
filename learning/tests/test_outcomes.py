@@ -141,6 +141,16 @@ class OnPolicyObjectiveConfigTests(unittest.TestCase):
                 attempts_per_update=1,
                 advantage_mode=TerminalAdvantageMode.LEAVE_ONE_OUT,
             )
+        for matched_mode in (
+            TerminalAdvantageMode.MATCHED_FLOOR_LEAVE_ONE_OUT,
+            TerminalAdvantageMode.MATCHED_FLOOR_CONTEXT_LEAVE_ONE_OUT,
+        ):
+            with self.subTest(matched_mode=matched_mode):
+                with self.assertRaisesRegex(TerminalReturnError, "at least two"):
+                    OnPolicyObjectiveConfig(
+                        attempts_per_update=1,
+                        advantage_mode=matched_mode,
+                    )
 
 
 if __name__ == "__main__":

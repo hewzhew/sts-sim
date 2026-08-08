@@ -13,6 +13,7 @@ from torch import Tensor
 from .attempts import CompletedAttemptExperience
 from .credit_assignment import (
     CreditAssignmentError,
+    matched_floor_context_leave_one_out_advantages,
     matched_floor_leave_one_out_advantages,
 )
 from .combat_experience import (
@@ -115,11 +116,19 @@ def on_policy_terminal_loss(
         raise TorchOutcomeError("policy objective accepts only complete attempts")
     matched_advantages = None
     advantages = None
-    if advantage_mode is TerminalAdvantageMode.MATCHED_FLOOR_LEAVE_ONE_OUT:
+    if advantage_mode in (
+        TerminalAdvantageMode.MATCHED_FLOOR_LEAVE_ONE_OUT,
+        TerminalAdvantageMode.MATCHED_FLOOR_CONTEXT_LEAVE_ONE_OUT,
+    ):
         try:
-            matched_advantages = matched_floor_leave_one_out_advantages(
-                normalized,
-                return_config,
+            matched_advantages = (
+                matched_floor_leave_one_out_advantages(normalized, return_config)
+                if advantage_mode
+                is TerminalAdvantageMode.MATCHED_FLOOR_LEAVE_ONE_OUT
+                else matched_floor_context_leave_one_out_advantages(
+                    normalized,
+                    return_config,
+                )
             )
         except CreditAssignmentError as error:
             raise TorchOutcomeError(str(error)) from error
@@ -195,7 +204,7 @@ def on_policy_terminal_loss(
                 batch_targets = tuple(original_targets[row] for row in row_indices)
                 if len(batch_targets) != batch.decision_count:
                     raise TorchOutcomeError(
-                        "matched-floor targets are misaligned with decision rows"
+                        "matched targets are misaligned with decision rows"
                     )
             targets.extend(batch_targets)
             weights.extend(

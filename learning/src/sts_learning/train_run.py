@@ -54,6 +54,16 @@ class RunTrainingCommandError(RuntimeError):
     """A bounded whole-run training command is malformed or incomplete."""
 
 
+_ADVANTAGE_MODE_ARGUMENTS = {
+    "raw-return": TerminalAdvantageMode.RAW_RETURN,
+    "leave-one-out": TerminalAdvantageMode.LEAVE_ONE_OUT,
+    "matched-floor": TerminalAdvantageMode.MATCHED_FLOOR_LEAVE_ONE_OUT,
+    "matched-floor-context": (
+        TerminalAdvantageMode.MATCHED_FLOOR_CONTEXT_LEAVE_ONE_OUT
+    ),
+}
+
+
 @dataclass(frozen=True)
 class RunTrainingCommandConfig:
     warm_start_behavior: Path
@@ -635,7 +645,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--held-out-seed-start", type=int, default=1_000_000)
     parser.add_argument(
         "--advantage-mode",
-        choices=("raw-return", "leave-one-out", "matched-floor"),
+        choices=tuple(_ADVANTAGE_MODE_ARGUMENTS),
         default="raw-return",
     )
     parser.add_argument(
@@ -668,15 +678,7 @@ def main() -> int:
             evaluation_max_batch_steps=arguments.evaluation_max_batch_steps,
             evaluation_behavior_seed=arguments.evaluation_behavior_seed,
             held_out_seed_start=arguments.held_out_seed_start,
-            advantage_mode=(
-                TerminalAdvantageMode.RAW_RETURN
-                if arguments.advantage_mode == "raw-return"
-                else (
-                    TerminalAdvantageMode.LEAVE_ONE_OUT
-                    if arguments.advantage_mode == "leave-one-out"
-                    else TerminalAdvantageMode.MATCHED_FLOOR_LEAVE_ONE_OUT
-                )
-            ),
+            advantage_mode=_ADVANTAGE_MODE_ARGUMENTS[arguments.advantage_mode],
             decision_scope=(
                 RunDecisionScope.ALL
                 if arguments.decision_scope == "all"
