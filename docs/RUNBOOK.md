@@ -627,7 +627,7 @@ Configure one stable Python 3.12 training runtime once, then use the small
 .\learning\dev.ps1 train-combat -Artifact <roots.bin> -Output <fresh-dir> -Roots <count> -Updates <count> -PotionLane never
 .\learning\dev.ps1 evaluate-combat -Artifact <held-out-roots.bin> -Behavior <training-dir> -Output <fresh-dir> -Roots <count> -Replicates <count>
 .\learning\dev.ps1 evaluate-combat-potions -Artifact <held-out-roots.bin> -Behavior <training-dir> -Output <fresh-dir> -Roots <count> -Replicates <count>
-.\learning\dev.ps1 evaluate-run -Behavior <training-dir> -Output <fresh-dir> -Slots 4 -Attempts 8 -MaxBatchSteps 4096 -BehaviorSeed 10000 -HeldOutSeedStart 0
+.\learning\dev.ps1 evaluate-run -Behavior <training-dir> -Output <fresh-dir> -Slots 4 -Attempts 8 -MaxBatchSteps 4096 -BehaviorSeed 10000 -HeldOutSeedStart 0 -PotionLane all
 .\learning\dev.ps1 train-run -Behavior <combat-training-dir> -Output <fresh-dir> -Slots 4 -Generations 1 -AttemptsPerUpdate 8 -MaxBatchSteps 4096 -EvaluationAttempts 16 -HeldOutSeedStart 1000000 -AdvantageMode raw-return
 ```
 
@@ -774,7 +774,18 @@ Use `evaluate-run` for the separate whole-run question. It recovers the exact
 published combat scorer, creates a fresh held-out seed population, disables
 recovery and training, and runs until the terminal-attempt target or explicit
 batch-step bound. The one completion line and `evaluation.json` report victory,
-defeat, terminal floor sum/range/histogram, act counts, and execution bounds. A combat-
+defeat, terminal floor sum/range/histogram, act counts, and execution bounds.
+The same evaluation records each completed combat's start/end HP, max HP, gold,
+and concrete potion-slot identities, plus one compact summary line per observed
+seed. A combat still open at the stopping boundary remains explicitly open;
+HP, gold, and potion identities remain separate facts rather than a combined
+resource score. Use the same behavior, held-out seed range, behavior RNG, and
+bounds with `-PotionLane all` and `-PotionLane never` for a bounded
+counterfactual: `never` removes combat potion use and discard from the model
+surface without changing simulator legality or non-combat potion decisions.
+It measures how much observed progress depends on combat potion access; it
+does not establish the value of a consumed identity. Root-slot lanes are not
+defined for complete runs. A combat-
 trained scorer has not thereby learned non-combat strategy; the command is a
 bounded end-to-end diagnostic of that complete policy surface, not a claim that
 all decisions were trained.

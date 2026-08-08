@@ -4,6 +4,7 @@ use crate::ai::combat_learning_observation::{
     combat_learning_observation_v1, CombatLearningObservationV1,
 };
 use crate::ai::planner_core::{LegalCandidateSet, PlannerObservation};
+use crate::content::potions::PotionId;
 use crate::sim::combat_action_surface::{
     combat_legal_action_surface_v2, pending_choice_input_is_legal, CombatLegalActionSurfaceV2,
 };
@@ -62,7 +63,38 @@ pub enum LearningBoundaryV1 {
     Unsupported,
 }
 
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum LearningBoundaryKindV1 {
+    Strategic,
+    Combat,
+    Terminal,
+    Unsupported,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct LearningPublicRunContextV1 {
+    pub boundary_kind: LearningBoundaryKindV1,
+    pub seed: u64,
+    pub act: u8,
+    pub floor: i32,
+    pub hp: i32,
+    pub max_hp: i32,
+    pub gold: i32,
+    pub potion_ids: Vec<Option<PotionId>>,
+}
+
 impl LearningBoundaryV1 {
+    pub fn kind(&self) -> LearningBoundaryKindV1 {
+        match self {
+            Self::Strategic { .. } => LearningBoundaryKindV1::Strategic,
+            Self::Combat { .. } => LearningBoundaryKindV1::Combat,
+            Self::Terminal { .. } => LearningBoundaryKindV1::Terminal,
+            Self::Unsupported => LearningBoundaryKindV1::Unsupported,
+        }
+    }
+
     pub fn terminal_reward(&self) -> i8 {
         match self {
             Self::Terminal { outcome } => match &outcome.result {
@@ -145,6 +177,28 @@ impl LearningEnvV1 {
             &self.session,
             &active.combat_state,
         )
+    }
+
+    pub(super) fn public_run_context(
+        &self,
+        boundary: &LearningBoundaryV1,
+    ) -> LearningPublicRunContextV1 {
+        LearningPublicRunContextV1 {
+            boundary_kind: boundary.kind(),
+            seed: self.session.run_state.seed,
+            act: self.session.run_state.act_num,
+            floor: self.session.run_state.floor_num,
+            hp: self.session.run_state.current_hp,
+            max_hp: self.session.run_state.max_hp,
+            gold: self.session.run_state.gold,
+            potion_ids: self
+                .session
+                .run_state
+                .potions
+                .iter()
+                .map(|potion| potion.as_ref().map(|potion| potion.id))
+                .collect(),
+        }
     }
 
     pub fn restore(&mut self, checkpoint: RunControlSessionCheckpointV1) -> Result<(), String> {

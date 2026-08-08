@@ -256,6 +256,17 @@ Terminal learning steps retain the typed run result plus public terminal act,
 floor, HP, max HP, and gold. The Python bridge returns those facts as compact
 columns aligned only to terminal slots. They are outcome evidence for progress
 and lower-tail targets, not a shaped reward or a context-free resource score.
+An explicit `public_run_contexts()` snapshot separately exposes every current
+slot's seed, typed boundary kind, act/floor, HP/max HP, gold, and concrete
+potion-slot identities. It clones no session and retains no history.
+Evaluation callers may use successive snapshots to identify cross-combat
+resource transitions, but the bridge does not assign potion value, aggregate
+the facts, or feed them into the terminal reward.
+Whole-run evaluation may bind either the ordinary `All` combat potion surface
+or a `Never` counterfactual that removes combat potion use and discard from
+model candidates. It does not support root-slot lanes because a complete run
+has no single immutable combat-root inventory. The lane is evaluation
+provenance, not a resource price or a training reward.
 
 The standalone `bindings/python_learning` Maturin crate is excluded from the
 root Cargo workspace. Python supplies observation-local candidate ordinals,

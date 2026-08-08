@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Sequence
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -18,6 +19,7 @@ from sts_learning.evaluate_run import (
     RunEvaluationCommandConfig,
     run_run_evaluation,
 )
+from sts_learning.combat_potion_lane import CombatPotionLane
 from sts_learning.torch_combat_session_config import CombatSessionBridge
 from sts_learning.torch_session_config import (
     CategoricalSessionBridge,
@@ -70,7 +72,8 @@ def test_run_evaluation_uses_frozen_combat_behavior_without_recovery(
         run_bridge=run_bridge,
     )
 
-    assert summary["schema"] == "sts-learning-run-held-out-evaluation-v1"
+    assert summary["schema"] == "sts-learning-run-held-out-evaluation-v2"
+    assert summary["combat_potion_lane"] == "all"
     assert summary["kind"] == "completed"
     assert summary["target_reached"] is True
     assert summary["step_limit_reached"] is False
@@ -82,14 +85,55 @@ def test_run_evaluation_uses_frozen_combat_behavior_without_recovery(
     assert summary["max_terminal_floor"] == 40
     assert summary["terminal_floor_counts"] == ((40, 2),)
     assert summary["terminal_act_counts"] == ((3, 2),)
+    assert summary["combat_transition_count"] == 2
+    assert summary["combat_hp_loss_sum"] == 120
+    assert summary["combat_potion_identity_losses"] == ()
+    assert summary["combat_potion_identity_gains"] == ()
+    assert summary["open_combat_count"] == 0
+    assert len(summary["combat_seed_summaries"]) == 2
     assert summary["recoveries"] == 0
     assert (output / "evaluation.json").is_file()
     stdout = capsys.readouterr().out
     assert (
-        "run_evaluation_complete=true target_reached=true attempts=2/2 "
+        "run_evaluation_complete=true potion_lane=all "
+        "target_reached=true attempts=2/2 "
         "victories=2 defeats=0 floor_sum=80 floor_min=40 floor_max=40 "
         "floor_counts=40:2 act_counts=3:2"
     ) in stdout
+
+
+def test_run_evaluation_selects_the_no_combat_potion_environment(
+    tmp_path: Path,
+) -> None:
+    behavior, combat_bridge, run_bridge = _published_behavior(tmp_path)
+    created: list[tuple[int, ...]] = []
+
+    def without_combat_potions(seeds: list[int]) -> NumpyWinningBatchEnv:
+        created.append(tuple(seeds))
+        return NumpyWinningBatchEnv(seeds)
+
+    run_bridge = replace(
+        run_bridge,
+        environment_without_combat_potions=without_combat_potions,
+    )
+    summary = run_run_evaluation(
+        RunEvaluationCommandConfig(
+            behavior=behavior,
+            output=tmp_path / "run-evaluation-never",
+            slot_count=2,
+            terminal_attempts=2,
+            max_batch_steps=1,
+            behavior_seed=501,
+            potion_lane=CombatPotionLane.NEVER,
+        ),
+        combat_bridge=combat_bridge,
+        run_bridge=run_bridge,
+    )
+
+    assert len(created) == 1
+    assert len(created[0]) == 2
+    assert summary["combat_potion_lane"] == "never"
+    assert summary["combat_potion_identity_losses"] == ()
 
 
 def test_run_training_warm_starts_publishes_and_evaluates(
@@ -178,6 +222,7 @@ def _published_behavior(
     )
     run_bridge = CategoricalSessionBridge(
         environment=NumpyWinningBatchEnv,
+        environment_without_combat_potions=NumpyWinningBatchEnv,
         environment_from_checkpoint=NumpyWinningBatchEnv.from_checkpoint_bytes,
         checkpoint_bank_from_checkpoint=(
             FakeCheckpointBatch.from_checkpoint_bytes

@@ -9,7 +9,8 @@ use pyo3::types::{PyBytes, PyDict, PyList};
 use serde::{Deserialize, Serialize};
 use sts_oracle_eval::eval::run_control::{
     CombatLearningRootBatchArtifactV1, CombatLearningRootV1, LearningActionV1,
-    LearningBoundaryV1, LearningEnvPoolV1, LearningEnvV1, LearningSelectionDraftV1,
+    CombatLearningPotionPolicyV1, LearningBoundaryKindV1, LearningBoundaryV1,
+    LearningEnvPoolV1, LearningEnvV1, LearningPublicRunContextV1, LearningSelectionDraftV1,
     RunControlConfig, RunControlSessionCheckpointV1,
 };
 
@@ -20,10 +21,11 @@ mod semantic;
 use bridge_decision::{
     bridge_states_ready, choose_bridge_ordinals, collect_ready_actions,
     decision_snapshot_from_source, replay_bridge_state, semantic_snapshot_from_source,
-    states_from_source,
+    states_from_source, LearningBatchDecisionSource,
 };
 use combat_batch::{
-    CombatLearningBatchEnv, CombatLearningRecoveryRoot, PyCombatLearningRootContextV1,
+    potion_id_names, CombatLearningBatchEnv, CombatLearningRecoveryRoot,
+    PyCombatLearningRootContextV1,
     COMBAT_TERMINAL_LOSS, COMBAT_TERMINAL_UNRESOLVED, COMBAT_TERMINAL_WIN,
 };
 
@@ -41,6 +43,10 @@ use semantic::{
 const PHASE_STRATEGIC_ROOT: u8 = 0;
 const PHASE_COMBAT_ROOT: u8 = 1;
 const PHASE_SELECTION: u8 = 2;
+const RUN_BOUNDARY_STRATEGIC: u8 = 0;
+const RUN_BOUNDARY_COMBAT: u8 = 1;
+const RUN_BOUNDARY_TERMINAL: u8 = 2;
+const RUN_BOUNDARY_UNSUPPORTED: u8 = 3;
 const BATCH_CHECKPOINT_MAGIC: &[u8] = b"STS-LEARNING-BATCH\0";
 const BATCH_CHECKPOINT_VERSION: u32 = 1;
 const CHECKPOINT_BANK_MAGIC: &[u8] = b"STS-LEARNING-BANK\0";
@@ -305,24 +311,86 @@ struct DecisionSnapshot {
     candidate_row_splits: Vec<usize>,
 }
 
+#[pyclass(frozen, name = "LearningPublicRunContextV1")]
+struct PyLearningPublicRunContextV1 {
+    inner: LearningPublicRunContextV1,
+}
+
+#[pymethods]
+impl PyLearningPublicRunContextV1 {
+    #[getter]
+    fn boundary_kind(&self) -> u8 {
+        match self.inner.boundary_kind {
+            LearningBoundaryKindV1::Strategic => RUN_BOUNDARY_STRATEGIC,
+            LearningBoundaryKindV1::Combat => RUN_BOUNDARY_COMBAT,
+            LearningBoundaryKindV1::Terminal => RUN_BOUNDARY_TERMINAL,
+            LearningBoundaryKindV1::Unsupported => RUN_BOUNDARY_UNSUPPORTED,
+        }
+    }
+
+    #[getter]
+    fn is_combat(&self) -> bool {
+        self.inner.boundary_kind == LearningBoundaryKindV1::Combat
+    }
+
+    #[getter]
+    fn is_terminal(&self) -> bool {
+        self.inner.boundary_kind == LearningBoundaryKindV1::Terminal
+    }
+
+    #[getter]
+    fn seed(&self) -> u64 {
+        self.inner.seed
+    }
+
+    #[getter]
+    fn act(&self) -> u8 {
+        self.inner.act
+    }
+
+    #[getter]
+    fn floor(&self) -> i32 {
+        self.inner.floor
+    }
+
+    #[getter]
+    fn hp(&self) -> i32 {
+        self.inner.hp
+    }
+
+    #[getter]
+    fn max_hp(&self) -> i32 {
+        self.inner.max_hp
+    }
+
+    #[getter]
+    fn gold(&self) -> i32 {
+        self.inner.gold
+    }
+
+    #[getter]
+    fn potion_ids(&self) -> Vec<Option<String>> {
+        potion_id_names(&self.inner.potion_ids)
+    }
+}
+
 #[pyclass]
 struct LearningBatchEnv {
     pool: LearningEnvPoolV1,
     states: Vec<BridgeSlotState>,
+    potion_policy: CombatLearningPotionPolicyV1,
 }
 
 #[pymethods]
 impl LearningBatchEnv {
     #[new]
     fn new(seeds: Vec<u64>) -> PyResult<Self> {
-        let pool =
-            LearningEnvPoolV1::from_configs(seeds.into_iter().map(|seed| RunControlConfig {
-                seed,
-                ..RunControlConfig::default()
-            }))
-            .map_err(runtime_error)?;
-        let states = states_from_source(&pool).map_err(runtime_error)?;
-        Ok(Self { pool, states })
+        Self::from_seeds_with_potion_policy(seeds, CombatLearningPotionPolicyV1::All)
+    }
+
+    #[staticmethod]
+    fn without_combat_potions(seeds: Vec<u64>) -> PyResult<Self> {
+        Self::from_seeds_with_potion_policy(seeds, CombatLearningPotionPolicyV1::never())
     }
 
     #[getter]
@@ -407,7 +475,8 @@ impl LearningBatchEnv {
     }
 
     fn choose(&mut self, ordinals: Vec<usize>) -> PyResult<()> {
-        choose_bridge_ordinals(&self.pool, &mut self.states, ordinals).map_err(value_error)
+        let source = LearningBatchDecisionSource::new(&self.pool, &self.potion_policy);
+        choose_bridge_ordinals(&source, &mut self.states, ordinals).map_err(value_error)
     }
 
     fn step<'py>(&mut self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
@@ -549,6 +618,20 @@ impl LearningBatchEnv {
                 .combat_root_context(slot_index)
                 .map_err(runtime_error)?;
             let view = Py::new(py, PyCombatLearningRootContextV1::from_context(context))?;
+            contexts.append((slot_index, view))?;
+        }
+        Ok(contexts)
+    }
+
+    /// Return compact public run facts for every slot without cloning sessions.
+    fn public_run_contexts<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyList>> {
+        let contexts = PyList::empty(py);
+        for slot_index in 0..self.pool.slot_count() {
+            let context = self
+                .pool
+                .public_run_context(slot_index)
+                .map_err(runtime_error)?;
+            let view = Py::new(py, PyLearningPublicRunContextV1 { inner: context })?;
             contexts.append((slot_index, view))?;
         }
         Ok(contexts)
@@ -714,6 +797,24 @@ impl LearningBatchEnv {
 }
 
 impl LearningBatchEnv {
+    fn from_seeds_with_potion_policy(
+        seeds: Vec<u64>,
+        potion_policy: CombatLearningPotionPolicyV1,
+    ) -> PyResult<Self> {
+        let pool =
+            LearningEnvPoolV1::from_configs(seeds.into_iter().map(|seed| RunControlConfig {
+                seed,
+                ..RunControlConfig::default()
+            }))
+            .map_err(runtime_error)?;
+        let states = states_from_source(&pool).map_err(runtime_error)?;
+        Ok(Self {
+            pool,
+            states,
+            potion_policy,
+        })
+    }
+
     fn encode_combat_root_artifact(
         &self,
         slot_indices: &[usize],
@@ -783,7 +884,11 @@ impl LearningBatchEnv {
                 "combat learning root artifact slot {slot_index} is not at an undecoded root"
             ));
         }
-        Ok(Self { pool, states })
+        Ok(Self {
+            pool,
+            states,
+            potion_policy: CombatLearningPotionPolicyV1::All,
+        })
     }
 
     fn restore_slot_checkpoint(
@@ -814,6 +919,11 @@ impl LearningBatchEnv {
 
 impl LearningBatchEnv {
     fn encode_cross_process_checkpoint(&self, max_bytes: usize) -> Result<Vec<u8>, String> {
+        if self.potion_policy.root_slots().is_some() {
+            return Err(
+                "cross-process batch checkpoints require the all-potions surface".to_owned(),
+            );
+        }
         let slots = self
             .states
             .iter()
@@ -879,15 +989,21 @@ impl LearningBatchEnv {
             .iter()
             .map(|slot| replay_bridge_state(&pool, slot.source_slot_index, &slot.decision_ordinals))
             .collect::<Result<Vec<_>, _>>()?;
-        Ok(Self { pool, states })
+        Ok(Self {
+            pool,
+            states,
+            potion_policy: CombatLearningPotionPolicyV1::All,
+        })
     }
 
     fn decision_snapshot(&self) -> PyResult<DecisionSnapshot> {
-        decision_snapshot_from_source(&self.pool, &self.states).map_err(runtime_error)
+        let source = LearningBatchDecisionSource::new(&self.pool, &self.potion_policy);
+        decision_snapshot_from_source(&source, &self.states).map_err(runtime_error)
     }
 
     fn semantic_snapshot(&self) -> PyResult<SemanticBatch> {
-        semantic_snapshot_from_source(&self.pool, &self.states).map_err(runtime_error)
+        let source = LearningBatchDecisionSource::new(&self.pool, &self.potion_policy);
+        semantic_snapshot_from_source(&source, &self.states).map_err(runtime_error)
     }
 }
 
@@ -1143,6 +1259,7 @@ fn _native(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_class::<CombatLearningBatchEnv>()?;
     module.add_class::<CombatLearningRecoveryRoot>()?;
     module.add_class::<PyCombatLearningRootContextV1>()?;
+    module.add_class::<PyLearningPublicRunContextV1>()?;
     module.add_class::<LearningBatchEnv>()?;
     module.add_class::<LearningCheckpointBatch>()?;
     module.add_class::<LearningSlotCheckpoint>()?;
@@ -1150,6 +1267,10 @@ fn _native(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add("PHASE_STRATEGIC_ROOT", PHASE_STRATEGIC_ROOT)?;
     module.add("PHASE_COMBAT_ROOT", PHASE_COMBAT_ROOT)?;
     module.add("PHASE_SELECTION", PHASE_SELECTION)?;
+    module.add("RUN_BOUNDARY_STRATEGIC", RUN_BOUNDARY_STRATEGIC)?;
+    module.add("RUN_BOUNDARY_COMBAT", RUN_BOUNDARY_COMBAT)?;
+    module.add("RUN_BOUNDARY_TERMINAL", RUN_BOUNDARY_TERMINAL)?;
+    module.add("RUN_BOUNDARY_UNSUPPORTED", RUN_BOUNDARY_UNSUPPORTED)?;
     module.add("COMBAT_TERMINAL_WIN", COMBAT_TERMINAL_WIN)?;
     module.add("COMBAT_TERMINAL_LOSS", COMBAT_TERMINAL_LOSS)?;
     module.add("COMBAT_TERMINAL_UNRESOLVED", COMBAT_TERMINAL_UNRESOLVED)?;
@@ -1175,6 +1296,8 @@ fn _native(module: &Bound<'_, PyModule>) -> PyResult<()> {
 #[cfg(test)]
 mod checkpoint_tests {
     use sts_oracle_eval::content::cards::CardId;
+    use sts_oracle_eval::content::monsters::EnemyId;
+    use sts_oracle_eval::content::potions::{Potion, PotionId};
     use sts_oracle_eval::eval::run_control::{
         CombatLearningRootBatchArtifactV1, LearningEnvV1, LearningModelChoiceV1,
         LearningModelDecisionV1, LearningSelectionStepV1, RunControlSession,
@@ -1186,6 +1309,46 @@ mod checkpoint_tests {
     use sts_oracle_eval::state::map::node::RoomType;
 
     use super::*;
+
+    #[test]
+    fn no_potion_batch_changes_the_native_combat_candidate_surface() {
+        let mut session = RunControlSession::new(RunControlConfig::default());
+        let mut combat = sts_oracle_eval::test_support::blank_test_combat();
+        combat
+            .entities
+            .monsters
+            .push(sts_oracle_eval::test_support::test_monster(EnemyId::JawWorm));
+        combat.entities.potions = vec![Some(Potion::new(PotionId::BlockPotion, 17))];
+        session.engine_state = EngineState::CombatPlayerTurn;
+        session.active_combat = Some(ActiveCombat::new(
+            EngineState::CombatPlayerTurn,
+            combat,
+            CombatContext::Room(RoomCombatContext {
+                room_type: RoomType::MonsterRoom,
+            }),
+        ));
+        let pool = LearningEnvPoolV1::from_envs([LearningEnvV1::from_session(session)])
+            .expect("create combat pool");
+        let states = states_from_source(&pool).expect("derive bridge states");
+        let mut env = LearningBatchEnv {
+            pool,
+            states,
+            potion_policy: CombatLearningPotionPolicyV1::All,
+        };
+
+        let all_candidates = env
+            .decision_snapshot()
+            .expect("all-potion decision")
+            .candidate_counts[0];
+        env.potion_policy = CombatLearningPotionPolicyV1::never();
+        let never_candidates = env
+            .decision_snapshot()
+            .expect("no-potion decision")
+            .candidate_counts[0];
+
+        assert!(never_candidates < all_candidates);
+        assert!(env.encode_cross_process_checkpoint(1024 * 1024).is_err());
+    }
 
     #[test]
     fn opaque_checkpoint_restores_unfinished_symbolic_prefix() {
@@ -1215,6 +1378,7 @@ mod checkpoint_tests {
         let mut env = LearningBatchEnv {
             states: states_from_source(&pool).expect("derive bridge states"),
             pool,
+            potion_policy: CombatLearningPotionPolicyV1::All,
         };
 
         let boundary = env.pool.boundary(0).expect("selection boundary");

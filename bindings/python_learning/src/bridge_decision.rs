@@ -4,9 +4,9 @@
 //! prefixes, and prepares complete action batches. It owns no environment mutation or policy.
 
 use sts_oracle_eval::eval::run_control::{
-    CombatLearningBoundaryV1, CombatLearningEnvPoolV1, LearningActionV1, LearningBoundaryV1,
-    LearningEnvPoolV1, LearningModelChoiceV1, LearningModelDecisionV1, LearningModelObservationV1,
-    LearningSelectionStepV1,
+    CombatLearningBoundaryV1, CombatLearningEnvPoolV1, CombatLearningPotionPolicyV1,
+    LearningActionV1, LearningBoundaryV1, LearningEnvPoolV1, LearningModelChoiceV1,
+    LearningModelDecisionV1, LearningModelObservationV1, LearningSelectionStepV1,
 };
 
 use super::semantic::{SemanticBatch, SemanticBatchBuilder};
@@ -21,6 +21,51 @@ pub(super) trait BridgeDecisionSource {
         &self,
         slot_index: usize,
     ) -> Result<LearningModelDecisionV1<'_>, String>;
+}
+
+pub(super) struct LearningBatchDecisionSource<'a> {
+    pool: &'a LearningEnvPoolV1,
+    potion_policy: &'a CombatLearningPotionPolicyV1,
+}
+
+impl<'a> LearningBatchDecisionSource<'a> {
+    pub(super) fn new(
+        pool: &'a LearningEnvPoolV1,
+        potion_policy: &'a CombatLearningPotionPolicyV1,
+    ) -> Self {
+        Self {
+            pool,
+            potion_policy,
+        }
+    }
+}
+
+impl BridgeDecisionSource for LearningBatchDecisionSource<'_> {
+    fn bridge_slot_count(&self) -> usize {
+        self.pool.slot_count()
+    }
+
+    fn bridge_is_terminal(&self, slot_index: usize) -> Result<bool, String> {
+        self.pool
+            .boundary(slot_index)
+            .map(LearningBoundaryV1::is_terminal)
+            .ok_or_else(|| format!("missing pool slot {slot_index}"))
+    }
+
+    fn bridge_root_decision(
+        &self,
+        slot_index: usize,
+    ) -> Result<LearningModelDecisionV1<'_>, String> {
+        let boundary = self
+            .pool
+            .boundary(slot_index)
+            .ok_or_else(|| format!("missing pool slot {slot_index}"))?;
+        LearningModelDecisionV1::from_boundary_with_potion_policy(
+            boundary,
+            self.potion_policy,
+        )
+        .map_err(|error| error.to_string())
+    }
 }
 
 impl BridgeDecisionSource for LearningEnvPoolV1 {

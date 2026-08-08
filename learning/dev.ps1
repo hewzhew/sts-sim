@@ -266,6 +266,9 @@ switch ($Command) {
         }
     }
     "evaluate-run" {
+        if ($PotionLane -eq "root-slots") {
+            throw "evaluate-run supports only -PotionLane all|never"
+        }
         $pythonPath = Get-ConfiguredPython
         Invoke-Doctor $pythonPath
         Invoke-WithLearningPath {
@@ -276,7 +279,8 @@ switch ($Command) {
                 --attempts $Attempts `
                 --max-batch-steps $MaxBatchSteps `
                 --behavior-seed $BehaviorSeed `
-                --held-out-seed-start $HeldOutSeedStart
+                --held-out-seed-start $HeldOutSeedStart `
+                --potion-lane $PotionLane
             if ($LASTEXITCODE -ne 0) {
                 throw "run evaluation command failed"
             }

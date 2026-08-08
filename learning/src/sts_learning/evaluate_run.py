@@ -8,6 +8,7 @@ import operator
 from dataclasses import dataclass
 from pathlib import Path
 
+from .combat_potion_lane import CombatPotionLane
 from .evaluation import (
     HeldOutEvaluationResult,
     HeldOutEvaluationSpec,
@@ -17,6 +18,12 @@ from .published_combat_behavior import (
     PublishedCombatBehavior,
     recover_published_combat_behavior,
 )
+from .run_resource_trace import (
+    ResourceTracingEnvironmentFactory,
+    RunCombatResourceTransition,
+    RunResourceTrace,
+    RunSeedResourceSummary,
+)
 from .seeds import SeedPartition, SeedSchedule
 from .torch_combat_session_config import (
     CombatSessionBridge,
@@ -25,7 +32,7 @@ from .torch_combat_session_config import (
 from .torch_session_config import CategoricalSessionBridge
 
 
-RUN_EVALUATION_SCHEMA = "sts-learning-run-held-out-evaluation-v1"
+RUN_EVALUATION_SCHEMA = "sts-learning-run-held-out-evaluation-v2"
 
 
 class RunEvaluationCommandError(RuntimeError):
@@ -41,6 +48,7 @@ class RunEvaluationCommandConfig:
     max_batch_steps: int
     behavior_seed: int
     held_out_seed_start: int = 0
+    potion_lane: CombatPotionLane = CombatPotionLane.ALL
 
     def __post_init__(self) -> None:
         behavior = Path(self.behavior).resolve()
@@ -86,6 +94,14 @@ class RunEvaluationCommandConfig:
             "held_out_seed_start",
             _seed(self.held_out_seed_start, "held_out_seed_start"),
         )
+        if not isinstance(self.potion_lane, CombatPotionLane):
+            raise RunEvaluationCommandError(
+                "run evaluation potion lane must be typed"
+            )
+        if self.potion_lane is CombatPotionLane.ROOT_SLOTS:
+            raise RunEvaluationCommandError(
+                "whole-run evaluation supports only all or never potion lanes"
+            )
 
 
 def run_run_evaluation(
@@ -133,8 +149,14 @@ def run_run_evaluation(
         SeedPartition.HELD_OUT,
         next_candidate=config.held_out_seed_start,
     )
+    environment = (
+        active_run_bridge.environment
+        if config.potion_lane is CombatPotionLane.ALL
+        else active_run_bridge.environment_without_combat_potions
+    )
+    resource_factory = ResourceTracingEnvironmentFactory(environment)
     result = evaluate_held_out_behavior(
-        active_run_bridge.environment,
+        resource_factory,
         recovered.policies[0],
         schedule=schedule,
         spec=HeldOutEvaluationSpec(
@@ -143,7 +165,8 @@ def run_run_evaluation(
             max_batch_steps=config.max_batch_steps,
         ),
     )
-    summary = _summary(config, recovered, result)
+    resource_trace = resource_factory.trace
+    summary = _summary(config, recovered, result, resource_trace)
     config.output.mkdir(parents=True, exist_ok=True)
     with (config.output / "evaluation.json").open(
         "x",
@@ -155,6 +178,7 @@ def run_run_evaluation(
     run = result.run.summary
     print(
         "run_evaluation_complete=true "
+        f"potion_lane={config.potion_lane.value} "
         f"target_reached={str(result.complete).lower()} "
         f"attempts={run.terminal_attempts}/{config.terminal_attempts} "
         f"victories={run.victories} defeats={run.defeats} "
@@ -163,11 +187,28 @@ def run_run_evaluation(
         f"floor_max={_optional(run.terminal_progress.max_floor)} "
         f"floor_counts={_counts(run.terminal_progress.floor_counts)} "
         f"act_counts={_counts(run.terminal_progress.act_counts)} "
+        f"combats={len(resource_trace.combat_transitions)} "
+        f"combat_hp_loss={resource_trace.hp_loss_sum} "
+        f"open_combats={resource_trace.open_combat_count} "
         f"batch_steps={run.batch_steps}/{config.max_batch_steps} "
         f"slot_steps={run.slot_steps} seconds={run.elapsed_seconds:.3f} "
         f"output={config.output}",
         flush=True,
     )
+    for seed in resource_trace.seed_summaries:
+        print(
+            "run_resource_seed="
+            f"{seed.seed} combats={seed.combat_count} "
+            f"hp_loss={seed.hp_loss_sum} "
+            f"last=A{seed.last_act}F{seed.last_floor} "
+            f"hp={seed.last_hp}/{seed.last_max_hp} gold={seed.last_gold} "
+            f"terminal={_optional(seed.terminal_reward)} "
+            f"open_combat={str(seed.open_combat).lower()} "
+            f"potions={_potions(seed.last_potion_ids)} "
+            f"lost={_identity_counts(seed.potion_identity_losses)} "
+            f"gained={_identity_counts(seed.potion_identity_gains)}",
+            flush=True,
+        )
     return summary
 
 
@@ -175,6 +216,7 @@ def _summary(
     config: RunEvaluationCommandConfig,
     recovered: PublishedCombatBehavior,
     result: HeldOutEvaluationResult,
+    resource_trace: RunResourceTrace,
 ) -> dict[str, object]:
     run = result.run.summary
     progress = run.terminal_progress
@@ -193,6 +235,7 @@ def _summary(
         "behavior_training_potion_slots": recovered.training_potion_slots,
         "behavior_seed": config.behavior_seed,
         "held_out_seed_start": config.held_out_seed_start,
+        "combat_potion_lane": config.potion_lane.value,
         "held_out_seed_end": result.schedule_end.next_candidate,
         "slot_count": config.slot_count,
         "terminal_attempt_target": config.terminal_attempts,
@@ -207,12 +250,68 @@ def _summary(
         "max_terminal_floor": progress.max_floor,
         "terminal_floor_counts": progress.floor_counts,
         "terminal_act_counts": progress.act_counts,
+        "combat_transitions": tuple(
+            _combat_transition(transition)
+            for transition in resource_trace.combat_transitions
+        ),
+        "combat_transition_count": len(resource_trace.combat_transitions),
+        "combat_hp_loss_sum": resource_trace.hp_loss_sum,
+        "combat_potion_identity_losses": resource_trace.potion_identity_losses,
+        "combat_potion_identity_gains": resource_trace.potion_identity_gains,
+        "open_combat_count": resource_trace.open_combat_count,
+        "combat_seed_summaries": tuple(
+            _seed_resource_summary(seed)
+            for seed in resource_trace.seed_summaries
+        ),
         "batch_steps": run.batch_steps,
         "slot_steps": run.slot_steps,
         "decision_rounds": run.decision_rounds,
         "completed_episodes": run.completed_episodes,
         "recoveries": run.recoveries,
         "elapsed_seconds": run.elapsed_seconds,
+    }
+
+
+def _combat_transition(
+    transition: RunCombatResourceTransition,
+) -> dict[str, object]:
+    return {
+        "slot_index": transition.start.slot_index,
+        "seed": transition.start.seed,
+        "start_act": transition.start.act,
+        "start_floor": transition.start.floor,
+        "end_act": transition.end.act,
+        "end_floor": transition.end.floor,
+        "start_hp": transition.start.hp,
+        "end_hp": transition.end.hp,
+        "hp_loss": transition.hp_loss,
+        "start_max_hp": transition.start.max_hp,
+        "end_max_hp": transition.end.max_hp,
+        "start_gold": transition.start.gold,
+        "end_gold": transition.end.gold,
+        "start_potion_ids": transition.start.potion_ids,
+        "end_potion_ids": transition.end.potion_ids,
+        "end_boundary_kind": transition.end.boundary_kind,
+        "terminal_reward": transition.terminal_reward,
+    }
+
+
+def _seed_resource_summary(seed: RunSeedResourceSummary) -> dict[str, object]:
+    return {
+        "seed": seed.seed,
+        "slot_index": seed.slot_index,
+        "combat_count": seed.combat_count,
+        "hp_loss_sum": seed.hp_loss_sum,
+        "last_act": seed.last_act,
+        "last_floor": seed.last_floor,
+        "last_hp": seed.last_hp,
+        "last_max_hp": seed.last_max_hp,
+        "last_gold": seed.last_gold,
+        "last_potion_ids": seed.last_potion_ids,
+        "terminal_reward": seed.terminal_reward,
+        "open_combat": seed.open_combat,
+        "potion_identity_losses": seed.potion_identity_losses,
+        "potion_identity_gains": seed.potion_identity_gains,
     }
 
 
@@ -248,6 +347,14 @@ def _counts(values: tuple[tuple[int, int], ...]) -> str:
     return ",".join(f"{key}:{count}" for key, count in values) or "none"
 
 
+def _identity_counts(values: tuple[tuple[str, int], ...]) -> str:
+    return ",".join(f"{key}:{count}" for key, count in values) or "none"
+
+
+def _potions(values: tuple[str | None, ...]) -> str:
+    return ",".join(value or "empty" for value in values) or "none"
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
@@ -262,6 +369,11 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--max-batch-steps", type=int, default=4096)
     parser.add_argument("--behavior-seed", type=int, default=10_000)
     parser.add_argument("--held-out-seed-start", type=int, default=0)
+    parser.add_argument(
+        "--potion-lane",
+        choices=(CombatPotionLane.ALL.value, CombatPotionLane.NEVER.value),
+        default=CombatPotionLane.ALL.value,
+    )
     return parser
 
 
@@ -276,6 +388,7 @@ def main() -> int:
             max_batch_steps=arguments.max_batch_steps,
             behavior_seed=arguments.behavior_seed,
             held_out_seed_start=arguments.held_out_seed_start,
+            potion_lane=CombatPotionLane(arguments.potion_lane),
         )
     )
     return 0

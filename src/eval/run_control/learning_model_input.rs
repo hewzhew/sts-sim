@@ -161,6 +161,13 @@ pub enum CombatLearningPotionPolicyV1 {
 }
 
 impl CombatLearningPotionPolicyV1 {
+    pub fn never() -> Self {
+        Self::RootSlots {
+            requested_slots: Vec::new(),
+            potion_uuids: BTreeSet::new(),
+        }
+    }
+
     pub fn from_root_slots(
         root: &super::CombatLearningRootV1,
         requested_slots: impl IntoIterator<Item = usize>,
@@ -552,11 +559,16 @@ impl<'a> LearningModelDecisionV1<'a> {
     pub fn from_boundary(
         boundary: &'a LearningBoundaryV1,
     ) -> Result<Self, LearningModelInputError> {
+        Self::from_boundary_with_potion_policy(boundary, &CombatLearningPotionPolicyV1::All)
+    }
+
+    pub fn from_boundary_with_potion_policy(
+        boundary: &'a LearningBoundaryV1,
+        potion_policy: &CombatLearningPotionPolicyV1,
+    ) -> Result<Self, LearningModelInputError> {
         match boundary {
             LearningBoundaryV1::Strategic { boundary } => Self::from_strategic(boundary),
-            LearningBoundaryV1::Combat { boundary } => {
-                Self::from_combat(boundary, &CombatLearningPotionPolicyV1::All)
-            }
+            LearningBoundaryV1::Combat { boundary } => Self::from_combat(boundary, potion_policy),
             LearningBoundaryV1::Terminal { .. } => Err(LearningModelInputError::TerminalBoundary),
             LearningBoundaryV1::Unsupported => Err(LearningModelInputError::UnsupportedBoundary),
         }

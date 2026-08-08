@@ -9,8 +9,8 @@ use std::fmt;
 
 use super::{
     CombatLearningRootContextV1, LearningActionV1, LearningBoundaryV1, LearningEnvV1,
-    LearningModelBatchV1, LearningModelInputError, LearningTerminalOutcomeV1, RunControlConfig,
-    RunControlSessionCheckpointV1,
+    LearningModelBatchV1, LearningModelInputError, LearningPublicRunContextV1,
+    LearningTerminalOutcomeV1, RunControlConfig, RunControlSessionCheckpointV1,
 };
 
 #[derive(Clone, Debug)]
@@ -121,6 +121,24 @@ impl LearningEnvPoolV1 {
                 slot_index,
                 message,
             })
+    }
+
+    /// Returns compact public run facts for one current slot without cloning its session.
+    pub fn public_run_context(
+        &self,
+        slot_index: usize,
+    ) -> Result<LearningPublicRunContextV1, LearningEnvPoolError> {
+        if self.poisoned {
+            return Err(LearningEnvPoolError::PoolPoisoned);
+        }
+        let slot = self
+            .slots
+            .get(slot_index)
+            .ok_or(LearningEnvPoolError::SlotIndexOutOfRange {
+                slot_index,
+                slot_count: self.slots.len(),
+            })?;
+        Ok(slot.env.public_run_context(&slot.boundary))
     }
 
     /// Explicitly replaces one slot after a caller has chosen its reset or
@@ -349,8 +367,30 @@ impl std::error::Error for LearningEnvPoolError {}
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::eval::run_control::RunControlSession;
+    use crate::content::potions::{Potion, PotionId};
+    use crate::eval::run_control::{LearningBoundaryKindV1, RunControlSession};
     use crate::state::core::RunResult;
+
+    #[test]
+    fn public_run_context_exposes_typed_resources_without_a_checkpoint_clone() {
+        let mut session = RunControlSession::new(RunControlConfig::default());
+        session.run_state.act_num = 2;
+        session.run_state.floor_num = 19;
+        session.run_state.current_hp = 41;
+        session.run_state.max_hp = 85;
+        session.run_state.gold = 123;
+        session.run_state.potions = vec![Some(Potion::new(PotionId::GamblersBrew, 0)), None];
+        let pool = LearningEnvPoolV1::from_envs([LearningEnvV1::from_session(session)])
+            .expect("create pool");
+
+        let context = pool.public_run_context(0).expect("public run context");
+
+        assert_eq!(context.boundary_kind, LearningBoundaryKindV1::Strategic);
+        assert_eq!(context.seed, 0);
+        assert_eq!((context.act, context.floor), (2, 19));
+        assert_eq!((context.hp, context.max_hp, context.gold), (41, 85, 123));
+        assert_eq!(context.potion_ids, vec![Some(PotionId::GamblersBrew), None]);
+    }
 
     #[test]
     fn empty_pool_is_a_valid_empty_batch() {

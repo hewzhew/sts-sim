@@ -202,6 +202,7 @@ def _factory(root: Path, *, attempts_per_update: int = 1):
         root,
         CategoricalSessionBridge(
             environment=NumpyWinningBatchEnv,
+            environment_without_combat_potions=NumpyWinningBatchEnv,
             environment_from_checkpoint=(
                 NumpyWinningBatchEnv.from_checkpoint_bytes
             ),

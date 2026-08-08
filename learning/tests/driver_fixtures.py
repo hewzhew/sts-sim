@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from types import SimpleNamespace
 
 import numpy as np
 
@@ -285,6 +286,26 @@ class NumpyWinningBatchEnv(NumpyFakeBatchEnv):
         active = [slot for slot, terminal in enumerate(self.terminal) if not terminal]
         self._terminal_plans.insert(0, {slot: 1 for slot in active})
         return super().step()
+
+    def public_run_contexts(self) -> list[tuple[int, SimpleNamespace]]:
+        return [
+            (
+                slot,
+                SimpleNamespace(
+                    boundary_kind=2 if terminal else 1,
+                    is_combat=not terminal,
+                    is_terminal=terminal,
+                    seed=self.seeds[slot],
+                    act=3,
+                    floor=40,
+                    hp=20 if terminal else 80,
+                    max_hp=80,
+                    gold=50,
+                    potion_ids=[],
+                ),
+            )
+            for slot, terminal in enumerate(self.terminal)
+        ]
 
 
 class OneRejectedChoiceEnv(NumpyFakeBatchEnv):

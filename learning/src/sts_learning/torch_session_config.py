@@ -29,9 +29,10 @@ class TorchSessionError(RuntimeError):
 
 @dataclass(frozen=True)
 class CategoricalSessionBridge:
-    """The three bridge callables and exact semantic schema used by a session."""
+    """The bridge callables and exact semantic schema used by a session."""
 
     environment: Callable[[list[int]], BatchEnvironment]
+    environment_without_combat_potions: Callable[[list[int]], BatchEnvironment]
     environment_from_checkpoint: EnvironmentCheckpointDecoder
     checkpoint_bank_from_checkpoint: CheckpointBankDecoder
     semantic_schema: Mapping[str, object]
@@ -39,6 +40,7 @@ class CategoricalSessionBridge:
     def __post_init__(self) -> None:
         for name in (
             "environment",
+            "environment_without_combat_potions",
             "environment_from_checkpoint",
             "checkpoint_bank_from_checkpoint",
         ):
@@ -68,6 +70,9 @@ class CategoricalSessionBridge:
             ) from error
         return cls(
             environment=LearningBatchEnv,
+            environment_without_combat_potions=(
+                LearningBatchEnv.without_combat_potions
+            ),
             environment_from_checkpoint=(
                 LearningBatchEnv.from_checkpoint_bytes
             ),

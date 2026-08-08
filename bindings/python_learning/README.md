@@ -113,6 +113,17 @@ the context is not copied into every decision row.
 combat root as `(slot_index, context)` pairs in one call without constructing a
 replicate group. Callers can therefore select a small corpus before paying the
 session-clone cost of `combat_group`.
+`LearningBatchEnv.public_run_contexts()` returns one compact read-only public
+context per slot: seed, typed boundary kind, act/floor, HP/max HP, gold, and
+concrete potion-slot identities. It copies no checkpoint and retains no
+history. This is an opt-in measurement boundary for evaluation and auxiliary
+targets; the bridge does not turn resource facts into a score or reward.
+`LearningBatchEnv.without_combat_potions(seeds)` creates the same whole-run
+environment while removing combat potion use and discard only from the model
+candidate surface. The lane changes neither simulator legality nor non-combat
+potion choices. Because the batch checkpoint schema does not yet bind that
+policy, this lane rejects cross-process checkpoint serialization instead of
+silently restoring as the ordinary `all` surface.
 A fresh batch may instead start from exact later-run combat boundaries via
 `LearningBatchEnv.from_combat_root_artifact_bytes(payload,
 expected_roots=..., max_bytes=...)`. The payload is the versioned opaque batch

@@ -431,7 +431,7 @@ impl CombatLearningBatchEnv {
     }
 }
 
-fn potion_id_names(
+pub(super) fn potion_id_names(
     potion_ids: &[Option<sts_oracle_eval::content::potions::PotionId>],
 ) -> Vec<Option<String>> {
     potion_ids

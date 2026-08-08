@@ -13,9 +13,12 @@ from sts_learning_bridge import (
     CombatLearningRootContextV1,
     LearningBatchEnv,
     LearningCheckpointBatch,
+    LearningPublicRunContextV1,
     PHASE_COMBAT_ROOT,
     PHASE_SELECTION,
     PHASE_STRATEGIC_ROOT,
+    RUN_BOUNDARY_STRATEGIC,
+    RUN_BOUNDARY_TERMINAL,
     SEMANTIC_COMPLETE,
     SEMANTIC_NO_CANDIDATE_TOKEN,
     SEMANTIC_RELATION_CANDIDATE_TARGETS,
@@ -583,6 +586,29 @@ def main() -> None:
     terminal_slots_seen: set[int] = set()
     started = time.perf_counter()
 
+    initial_contexts = env.public_run_contexts()
+    assert [slot for slot, _ in initial_contexts] == list(range(env.slot_count))
+    assert all(
+        isinstance(context, LearningPublicRunContextV1)
+        for _, context in initial_contexts
+    )
+    assert all(
+        context.boundary_kind == RUN_BOUNDARY_STRATEGIC
+        for _, context in initial_contexts
+    )
+    assert not any(
+        context.is_combat or context.is_terminal
+        for _, context in initial_contexts
+    )
+    assert all(
+        context.act == 1 and context.floor == 0
+        for _, context in initial_contexts
+    )
+    assert [context.seed for _, context in initial_contexts] == seeds
+    assert all(context.hp == context.max_hp for _, context in initial_contexts)
+    assert all(context.gold >= 0 for _, context in initial_contexts)
+    assert all(isinstance(context.potion_ids, list) for _, context in initial_contexts)
+
     initial = env.decision_batch(dense_mask=True, semantic=True)
     initial_combat, initial_selection, _, initial_combat_target = _assert_semantic(
         initial
@@ -692,6 +718,15 @@ def main() -> None:
     # bridge contracts; a new candidate prior must not require a new magic
     # step-count golden.
     assert terminal_slots_seen == set(range(env.slot_count))
+    terminal_contexts = env.public_run_contexts()
+    assert all(
+        context.boundary_kind == RUN_BOUNDARY_TERMINAL
+        for _, context in terminal_contexts
+    )
+    assert all(
+        context.is_terminal and not context.is_combat
+        for _, context in terminal_contexts
+    )
     assert saw_combat
     assert saw_candidate_target
     assert saw_combat_candidate_target
