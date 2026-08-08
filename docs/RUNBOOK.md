@@ -710,7 +710,8 @@ Each captured root also lists its earlier completed same-seed combat resource
 transitions from the existing typed `RunResourceTrace`: start/end HP and gold,
 ordered canonical enemy identities, concrete potion inventories, and terminal
 status. The captured combat itself is
-excluded even if the final collector step resolves it. This is enough to locate
+excluded even if the final collector step resolves it; later same-seed combats
+are also excluded when another slot keeps a multi-root collection alive. This is enough to locate
 upstream attrition without retaining action history or decoding the artifact.
 Use a fresh path and a small root count first. This is a corpus sampler, not a
 trainer or evidence that the collected combats are representative.

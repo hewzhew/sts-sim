@@ -133,6 +133,26 @@ class RunResourceTrace:
     def hp_loss_sum(self) -> int:
         return sum(transition.hp_loss for transition in self.combat_transitions)
 
+    def completed_combats_before(
+        self,
+        *,
+        seed: int,
+        act: int,
+        floor: int,
+    ) -> tuple[RunCombatResourceTransition, ...]:
+        """Return one episode's strictly earlier completed combat transitions."""
+        boundary = (
+            _integer(act, "history boundary act", minimum=0),
+            _integer(floor, "history boundary floor", minimum=0),
+        )
+        episode_seed = _integer(seed, "history episode seed", minimum=0)
+        return tuple(
+            transition
+            for transition in self.combat_transitions
+            if transition.start.seed == episode_seed
+            and (transition.start.act, transition.start.floor) < boundary
+        )
+
     @property
     def potion_identity_losses(self) -> tuple[tuple[str, int], ...]:
         lost, _ = _potion_identity_changes(self.combat_transitions)

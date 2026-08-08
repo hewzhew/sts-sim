@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 from sts_learning.run_resource_trace import (
+    RunCombatResourceTransition,
     RunPublicContext,
+    RunResourceTrace,
     RunResourceTraceAccumulator,
 )
 
@@ -70,21 +72,42 @@ def test_unfinished_combat_stays_explicitly_censored() -> None:
     assert trace.seed_summaries[0].open_combat is True
 
 
+def test_completed_combat_history_excludes_current_future_and_other_seed() -> None:
+    before = _transition(seed=123, floor=2)
+    current = _transition(seed=123, floor=3)
+    future = _transition(seed=123, floor=5)
+    other_episode = _transition(seed=124, floor=1)
+    trace = RunResourceTrace(
+        combat_transitions=(future, other_episode, before, current),
+        episode_endpoints=(),
+    )
+
+    assert trace.completed_combats_before(seed=123, act=1, floor=3) == (before,)
+
+
+def _transition(*, seed: int, floor: int) -> RunCombatResourceTransition:
+    start = _context(combat=True, seed=seed, floor=floor)
+    end = _context(combat=False, seed=seed, floor=floor)
+    return RunCombatResourceTransition(start=start, end=end, terminal_reward=None)
+
+
 def _context(
     *,
     combat: bool,
     hp: int = 70,
     gold: int = 50,
     potions: tuple[str | None, ...] = (),
+    seed: int = 123,
+    floor: int = 4,
 ) -> RunPublicContext:
     return RunPublicContext(
         slot_index=0,
         boundary_kind=1 if combat else 0,
         is_combat=combat,
         is_terminal=False,
-        seed=123,
+        seed=seed,
         act=1,
-        floor=4,
+        floor=floor,
         hp=hp,
         max_hp=80,
         gold=gold,

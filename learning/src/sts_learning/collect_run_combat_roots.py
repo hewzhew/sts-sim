@@ -33,7 +33,7 @@ from .recovery import RecoverySlotSnapshot, TerminalAccountingBatch
 from .run_resource_trace import RunPublicContext
 from .run_resource_trace import (
     ResourceTracingEnvironmentFactory,
-    RunCombatResourceTransition,
+    RunResourceTrace,
 )
 from .seeds import SeedPartition, SeedSchedule
 from .torch_combat_session_config import CombatSessionBridge, CombatWinSessionLimits
@@ -502,7 +502,7 @@ def run_run_combat_root_collection(
                 "usable_potion_count": root.usable_potion_count,
                 "prior_combats": _prior_combat_rows(
                     root,
-                    resource_trace.combat_transitions,
+                    resource_trace,
                 ),
             }
             for root in sink.roots
@@ -514,7 +514,7 @@ def run_run_combat_root_collection(
 
 def _prior_combat_rows(
     root: CapturedRunCombatRoot,
-    transitions: Sequence[RunCombatResourceTransition],
+    resource_trace: RunResourceTrace,
 ) -> tuple[dict[str, object], ...]:
     return tuple(
         {
@@ -531,9 +531,11 @@ def _prior_combat_rows(
             "monster_ids": transition.start.monster_ids,
             "terminal_reward": transition.terminal_reward,
         }
-        for transition in transitions
-        if transition.start.seed == root.seed
-        and (transition.start.act, transition.start.floor) != (root.act, root.floor)
+        for transition in resource_trace.completed_combats_before(
+            seed=root.seed,
+            act=root.act,
+            floor=root.floor,
+        )
     )
 
 

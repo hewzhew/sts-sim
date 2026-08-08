@@ -263,7 +263,9 @@ publishes nothing. Its compact receipt is corpus provenance, not a policy
 label or a potion-value judgment. The receipt reuses the held-out resource
 trace owner to attach earlier same-seed combat HP, gold, and concrete potion
 transitions plus ordered canonical enemy identities; it does not retain
-decisions, sessions, or a second trajectory format.
+decisions, sessions, or a second trajectory format. History is sliced strictly
+before the captured `(act, floor)` boundary, even when another slot keeps the
+batch alive and the captured episode later advances.
 
 Terminal learning steps retain the typed run result plus public terminal act,
 floor, HP, max HP, and gold. The Python bridge returns those facts as compact
