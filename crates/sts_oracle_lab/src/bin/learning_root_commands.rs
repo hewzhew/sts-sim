@@ -1,3 +1,4 @@
+use std::collections::BTreeSet;
 use std::fs::OpenOptions;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -18,7 +19,8 @@ use sts_oracle_runtime::runtime::branch::{
 const SUMMARY_SCHEMA_NAME: &str = "CombatLearningRootExportSummary";
 const SUMMARY_SCHEMA_VERSION: u32 = 1;
 const COLLECTION_SUMMARY_SCHEMA_NAME: &str = "CombatLearningRootCollectionSummary";
-const COLLECTION_SUMMARY_SCHEMA_VERSION: u32 = 1;
+const COLLECTION_SUMMARY_SCHEMA_VERSION: u32 = 2;
+const MAX_COLLECTED_ROOTS: usize = 64;
 
 #[derive(Debug, Subcommand)]
 pub(super) enum LearningRootCommand {
@@ -33,10 +35,10 @@ pub(super) enum LearningRootCommand {
         max_bytes: usize,
     },
     /// Run current production owners to the first combat boundary and emit one
-    /// opaque root without intermediate continuation JSON.
+    /// opaque batch without intermediate continuation JSON.
     Collect {
-        #[arg(long)]
-        seed: u64,
+        #[arg(long, required = true)]
+        seed: Vec<u64>,
         #[arg(long, default_value_t = 0)]
         ascension: u8,
         #[arg(long)]
@@ -69,15 +71,23 @@ struct CombatLearningRootExportedRootV1 {
 
 #[derive(Debug, Serialize)]
 #[serde(deny_unknown_fields)]
-pub(super) struct CombatLearningRootCollectionSummaryV1 {
+pub(super) struct CombatLearningRootCollectionSummaryV2 {
     schema_name: &'static str,
     schema_version: u32,
-    seed: u64,
     ascension: u8,
-    applied_progress_steps: usize,
+    total_applied_progress_steps: usize,
     output: PathBuf,
     payload_bytes: usize,
-    root: CombatLearningRootExportedRootV1,
+    roots: Vec<CombatLearningRootCollectedRootV2>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(deny_unknown_fields)]
+struct CombatLearningRootCollectedRootV2 {
+    seed: u64,
+    applied_progress_steps: usize,
+    identity: CombatLearningRootIdentityV1,
+    context: CombatLearningRootContextV1,
 }
 
 enum CombatLearningRootCollectionStop {
@@ -100,7 +110,7 @@ pub(super) fn run(command: LearningRootCommand) -> Result<(), String> {
             wall_ms,
             max_bytes,
         } => super::print_json(&collect(
-            seed,
+            &seed,
             ascension,
             &output,
             max_progress_steps,
@@ -156,17 +166,74 @@ pub(super) fn export(
 }
 
 pub(super) fn collect(
-    seed: u64,
+    seeds: &[u64],
     ascension: u8,
     output: &Path,
     max_progress_steps: usize,
     wall_ms: u64,
     max_bytes: usize,
-) -> Result<CombatLearningRootCollectionSummaryV1, String> {
+) -> Result<CombatLearningRootCollectionSummaryV2, String> {
     require_fresh_output(output)?;
     if ascension > 20 {
         return Err("learning root collection ascension must be at most 20".to_owned());
     }
+    if seeds.is_empty() {
+        return Err("learning root collection requires at least one seed".to_owned());
+    }
+    if seeds.len() > MAX_COLLECTED_ROOTS {
+        return Err(format!(
+            "learning root collection accepts at most {MAX_COLLECTED_ROOTS} seeds"
+        ));
+    }
+    let distinct = seeds.iter().copied().collect::<BTreeSet<_>>();
+    if distinct.len() != seeds.len() {
+        return Err("learning root collection requires distinct seeds".to_owned());
+    }
+
+    let mut checkpoints = Vec::with_capacity(seeds.len());
+    let mut collected = Vec::with_capacity(seeds.len());
+    for &seed in seeds {
+        let (checkpoint, applied_progress_steps) =
+            collect_one(seed, ascension, max_progress_steps, wall_ms)
+                .map_err(|error| format!("seed {seed}: {error}"))?;
+        checkpoints.push(checkpoint);
+        collected.push((seed, applied_progress_steps));
+    }
+    let artifact = CombatLearningRootBatchArtifactV1::from_checkpoints(checkpoints)?;
+    let roots = artifact
+        .roots()
+        .iter()
+        .zip(collected)
+        .map(
+            |(root, (seed, applied_progress_steps))| CombatLearningRootCollectedRootV2 {
+                seed,
+                applied_progress_steps,
+                identity: root.identity().clone(),
+                context: *root.context(),
+            },
+        )
+        .collect::<Vec<_>>();
+    let total_applied_progress_steps = roots.iter().map(|root| root.applied_progress_steps).sum();
+    let payload = artifact.encode(max_bytes)?;
+    write_new_payload(output, &payload)?;
+
+    Ok(CombatLearningRootCollectionSummaryV2 {
+        schema_name: COLLECTION_SUMMARY_SCHEMA_NAME,
+        schema_version: COLLECTION_SUMMARY_SCHEMA_VERSION,
+        ascension,
+        total_applied_progress_steps,
+        output: output.to_path_buf(),
+        payload_bytes: payload.len(),
+        roots,
+    })
+}
+
+fn collect_one(
+    seed: u64,
+    ascension: u8,
+    max_progress_steps: usize,
+    wall_ms: u64,
+) -> Result<(RunControlSessionCheckpointV1, usize), String> {
     let mut session = RunControlSession::new(RunControlConfig {
         seed,
         ascension_level: ascension,
@@ -219,30 +286,10 @@ pub(super) fn collect(
             ));
         }
     }
-    let artifact = CombatLearningRootBatchArtifactV1::from_checkpoints([
+    Ok((
         RunControlSessionCheckpointV1::from_session(&session),
-    ])?;
-    let root = artifact
-        .roots()
-        .first()
-        .ok_or_else(|| "learning root collection produced no root".to_owned())?;
-    let summary_root = CombatLearningRootExportedRootV1 {
-        identity: root.identity().clone(),
-        context: *root.context(),
-    };
-    let payload = artifact.encode(max_bytes)?;
-    write_new_payload(output, &payload)?;
-
-    Ok(CombatLearningRootCollectionSummaryV1 {
-        schema_name: COLLECTION_SUMMARY_SCHEMA_NAME,
-        schema_version: COLLECTION_SUMMARY_SCHEMA_VERSION,
-        seed,
-        ascension,
         applied_progress_steps,
-        output: output.to_path_buf(),
-        payload_bytes: payload.len(),
-        root: summary_root,
-    })
+    ))
 }
 
 fn require_fresh_output(output: &Path) -> Result<(), String> {
@@ -363,20 +410,30 @@ mod tests {
         fs::create_dir(&root).expect("create test root");
         let output_path = root.join("root.bin");
 
-        let summary = collect(11, 0, &output_path, 32, 10_000, 16 * 1024 * 1024)
+        let summary = collect(&[11, 12], 0, &output_path, 32, 10_000, 16 * 1024 * 1024)
             .expect("collect first production combat root");
         let payload = fs::read(&output_path).expect("read collected root artifact");
-        let artifact = CombatLearningRootBatchArtifactV1::decode(&payload, 1, 16 * 1024 * 1024)
+        let artifact = CombatLearningRootBatchArtifactV1::decode(&payload, 2, 16 * 1024 * 1024)
             .expect("decode collected root");
 
         assert_eq!(summary.schema_name, COLLECTION_SUMMARY_SCHEMA_NAME);
-        assert_eq!(summary.seed, 11);
         assert_eq!(summary.ascension, 0);
-        assert!(summary.applied_progress_steps > 0);
+        assert!(summary.total_applied_progress_steps > 0);
         assert_eq!(summary.payload_bytes, payload.len());
-        assert_eq!(artifact.roots().len(), 1);
-        assert_eq!(artifact.roots()[0].identity(), &summary.root.identity);
-        assert_eq!(artifact.roots()[0].context(), &summary.root.context);
+        assert_eq!(artifact.roots().len(), 2);
+        assert_eq!(
+            summary
+                .roots
+                .iter()
+                .map(|root| root.seed)
+                .collect::<Vec<_>>(),
+            vec![11, 12]
+        );
+        for (artifact_root, summary_root) in artifact.roots().iter().zip(&summary.roots) {
+            assert!(summary_root.applied_progress_steps > 0);
+            assert_eq!(artifact_root.identity(), &summary_root.identity);
+            assert_eq!(artifact_root.context(), &summary_root.context);
+        }
 
         fs::remove_dir_all(&root).expect("remove test root");
     }
@@ -387,11 +444,41 @@ mod tests {
         fs::create_dir(&root).expect("create test root");
         let output_path = root.join("root.bin");
 
-        let error = collect(11, 0, &output_path, 1, 10_000, 16 * 1024 * 1024)
+        let error = collect(&[11], 0, &output_path, 1, 10_000, 16 * 1024 * 1024)
             .expect_err("one progress step must not reach combat");
 
         assert!(error.contains("did not reach a combat boundary"));
         assert!(!output_path.exists());
+        fs::remove_dir_all(&root).expect("remove test root");
+    }
+
+    #[test]
+    fn collection_rejects_duplicate_or_excessive_seed_batches_before_writing() {
+        let root = unique_temp_dir("seed-bounds");
+        fs::create_dir(&root).expect("create test root");
+        let duplicate_output = root.join("duplicate.bin");
+        let excessive_output = root.join("excessive.bin");
+
+        assert!(collect(
+            &[11, 11],
+            0,
+            &duplicate_output,
+            32,
+            10_000,
+            16 * 1024 * 1024,
+        )
+        .is_err());
+        assert!(collect(
+            &(0..=MAX_COLLECTED_ROOTS as u64).collect::<Vec<_>>(),
+            0,
+            &excessive_output,
+            32,
+            10_000,
+            16 * 1024 * 1024,
+        )
+        .is_err());
+        assert!(!duplicate_output.exists());
+        assert!(!excessive_output.exists());
         fs::remove_dir_all(&root).expect("remove test root");
     }
 

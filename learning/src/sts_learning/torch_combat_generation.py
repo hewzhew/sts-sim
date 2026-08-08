@@ -6,6 +6,7 @@ import operator
 from dataclasses import dataclass
 from typing import Protocol
 
+from .combat_signals import CombatGroupSignalSummary
 from .combat_driver import CombatGroupDriver
 from .combat_experience import CombatExperienceLimits
 from .policy import BehaviorManifestId
@@ -44,6 +45,7 @@ class CombatWinGenerationResult:
     losses: int
     model_rounds: int
     transitions: int
+    signals: CombatGroupSignalSummary
     training: CombatWinTrainingResult
     promotion: TorchBehaviorBinding | None
 
@@ -63,6 +65,7 @@ class _PendingCombatPromotion:
     losses: int
     model_rounds: int
     transitions: int
+    signals: CombatGroupSignalSummary
     training: CombatWinTrainingResult
 
 
@@ -178,6 +181,7 @@ class BoundedCombatWinGenerationRunner:
             losses=len(experience.outcomes.outcomes) - wins,
             model_rounds=run.model_rounds,
             transitions=run.transitions,
+            signals=experience.signal_summary(),
             training=training,
         )
         if not training.updated:
@@ -273,6 +277,7 @@ def _generation_result(
         losses=pending.losses,
         model_rounds=pending.model_rounds,
         transitions=pending.transitions,
+        signals=pending.signals,
         training=pending.training,
         promotion=promotion,
     )

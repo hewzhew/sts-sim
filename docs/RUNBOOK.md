@@ -636,15 +636,18 @@ To collect the first production-owned combat from a fresh seed without an
 intermediate workspace or continuation JSON, write one fresh opaque root:
 
 ```powershell
-cargo oracle-lab learning-root collect --seed <seed> --ascension 0 --output <fresh.combat-root.bin> --max-progress-steps 64 --wall-ms 10000 --max-bytes 16777216
+cargo oracle-lab learning-root collect --seed <first-seed> --seed <second-seed> --ascension 0 --output <fresh.combat-roots.bin> --max-progress-steps 64 --wall-ms 10000 --max-bytes 16777216
 ```
 
-The collector uses current production non-combat owners, stops before combat
-search, and writes nothing when its progress/wall bound or an automation gap
-prevents reaching combat. To seed a bounded corpus from production-owned later
-combat boundaries, convert one or more public continuations into a fresh opaque
-root batch. Every continuation must already be at an active combat input
-boundary; private capsule/cutpoint schemas are not accepted:
+The collector accepts one to 64 distinct explicit seeds, uses current
+production non-combat owners, and stops each seed before combat search. The
+step and wall bounds apply independently to each seed. It writes no artifact
+when any seed hits a bound or automation gap, and its compact receipt preserves
+the input seed associated with each root. To seed a bounded corpus from
+production-owned later combat boundaries, convert one or more public
+continuations into a fresh opaque root batch. Every continuation must already
+be at an active combat input boundary; private capsule/cutpoint schemas are not
+accepted:
 
 ```powershell
 cargo oracle-lab learning-root export --continuation <first.continuation.json> --continuation <second.continuation.json> --output <fresh.combat-roots.bin> --max-bytes 16777216
@@ -655,6 +658,12 @@ Pass the file bytes unchanged to
 expected_roots=2, max_bytes=16777216)`. Rust validates the exact root count,
 canonical envelope, recomputed root identity/context, and current combat
 boundary before constructing the batch. Python must not inspect the payload.
+For a bounded fixed-behavior coverage check over every root, use
+`CombatWinSignalCensusRunner` with the same `expected_roots`, one shared model
+seed, one explicit behavior seed per root, and `max_roots` equal to the intended
+census bound. It returns compact per-root generations and a signal census,
+imports the opaque batch only once, publishes nothing, and is not a cross-root
+training scheduler.
 
 `test` requires PyTorch and the installed bridge and runs the complete learning
 suite; missing training dependencies are failures, not skips. `verify` runs

@@ -1,6 +1,38 @@
 use super::*;
 use crate::state::DomainCardSnapshot;
 
+mod sorted_combat_entity_map {
+    use serde::ser::SerializeMap;
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    use super::CombatEntityMap;
+
+    pub(super) fn serialize<S, V>(
+        map: &CombatEntityMap<V>,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+        V: Serialize,
+    {
+        let mut entries = map.iter().collect::<Vec<_>>();
+        entries.sort_unstable_by_key(|(entity_id, _)| **entity_id);
+        let mut encoded = serializer.serialize_map(Some(entries.len()))?;
+        for (entity_id, value) in entries {
+            encoded.serialize_entry(entity_id, value)?;
+        }
+        encoded.end()
+    }
+
+    pub(super) fn deserialize<'de, D, V>(deserializer: D) -> Result<CombatEntityMap<V>, D::Error>
+    where
+        D: Deserializer<'de>,
+        V: Deserialize<'de>,
+    {
+        CombatEntityMap::<V>::deserialize(deserializer)
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub enum MetaChange {
     AddCardToMasterDeck(CardId),
@@ -173,6 +205,7 @@ pub struct EntityState {
     pub player: PlayerEntity,
     pub monsters: Vec<MonsterEntity>,
     pub potions: Vec<Option<crate::content::potions::Potion>>,
+    #[serde(with = "sorted_combat_entity_map")]
     pub power_db: CombatEntityMap<Vec<Power>>,
 }
 
@@ -223,6 +256,7 @@ pub struct CombatRuntimeHints {
     /// It is updated only by draw actions that explicitly opt into draw
     /// history because only Java follow-up actions should observe it.
     pub last_drawn_cards: Vec<DrawnCardRecord>,
+    #[serde(with = "sorted_combat_entity_map")]
     pub monster_protocol: CombatEntityMap<MonsterProtocolState>,
     /// Java `AbstractRoom.mugged` equivalent at combat scope.
     ///
@@ -674,6 +708,27 @@ impl EngineRuntime {
 mod tests {
     use super::*;
     use crate::state::{DomainCardSnapshot, DomainEventSource};
+
+    #[test]
+    fn sorted_entity_maps_preserve_json_checkpoint_round_trips() {
+        let mut combat = crate::test_support::blank_test_combat();
+        combat.entities.power_db.insert(11, Vec::new());
+        combat.entities.power_db.insert(7, Vec::new());
+        combat
+            .runtime
+            .monster_protocol
+            .insert(11, Default::default());
+        combat
+            .runtime
+            .monster_protocol
+            .insert(7, Default::default());
+
+        let encoded = serde_json::to_vec(&combat).expect("encode combat checkpoint as JSON");
+        let restored: CombatState =
+            serde_json::from_slice(&encoded).expect("restore combat checkpoint from JSON");
+
+        assert_eq!(restored, combat);
+    }
 
     #[test]
     fn runtime_hints_accept_but_do_not_reemit_the_removed_legacy_card_queue() {

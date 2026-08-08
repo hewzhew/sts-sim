@@ -87,6 +87,10 @@ class BoundedCombatWinGenerationRunnerTests(unittest.TestCase):
                 CombatWinTrainingStatus.OPTIMIZER_STEP,
             )
             self.assertEqual(result.training.optimizer_steps_after, 1)
+            self.assertEqual(result.signals.root_id, ROOT_ID)
+            self.assertEqual(result.signals.exact_combat_state_hash, COMBAT_HASH)
+            self.assertTrue(result.signals.win.has_signal)
+            self.assertEqual(result.signals.replicate_count, 2)
             self.assertEqual(source.call_count, 1)
             self.assertEqual(owners.controller.snapshot.active_training_step, 1)
             self.assertEqual(owners.controller.snapshot.successful_promotions, 2)
@@ -115,6 +119,7 @@ class BoundedCombatWinGenerationRunnerTests(unittest.TestCase):
                 result.training.status,
                 CombatWinTrainingStatus.NO_WIN_SIGNAL,
             )
+            self.assertFalse(result.signals.win.has_signal)
             self.assertEqual(owners.trainer.snapshot.optimizer_steps, 0)
             self.assertEqual(
                 owners.controller.snapshot.active_manifest_id,

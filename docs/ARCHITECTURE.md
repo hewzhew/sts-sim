@@ -296,10 +296,19 @@ trainer. Live advancement writes no files. Explicit behavior publication stores
 only the active frozen scorer and manifest, not optimizer state or a claim of
 durable combat-training resume.
 
-Completed groups may be reduced to compact per-axis signal summaries and then
-to a caller-bounded census over distinct exact roots. That census retains only
-group, replicate, and decision counts; it neither keeps semantic payloads nor
-turns signal coverage into a policy target.
+Every combat generation result reduces its completed group to one compact
+per-axis signal summary before dropping the experience payload. Those summaries
+may then form a caller-bounded census over distinct exact roots. The summary
+and census retain only root identity plus group, replicate, and decision
+counts; they neither keep semantic payloads nor turn signal coverage into a
+policy target.
+The diagnostic combat census runner visits every declared artifact root from
+identical initial model weights and caller-supplied independent behavior RNG
+seeds. It imports the opaque root batch once, then selects each root from that
+shared typed source instead of decoding the complete batch once per slot. Each
+root owns an isolated temporary trainer; any local update is discarded after
+its compact generation result is captured, and no behavior is published. This
+measures signal coverage and is not a shared cross-root training scheduler.
 
 Python recovery curricula may hold explicit opaque single-slot checkpoints.
 Saving one clones that exact in-memory run-control state only when requested;

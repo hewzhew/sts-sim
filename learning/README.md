@@ -132,11 +132,11 @@ selection does not create throwaway replicate groups or require per-slot probes.
 The maintained production handoff is one byte-bounded
 `CombatLearningRootBatchArtifactV1`, not a Python continuation parser or a
 guessed branch-capsule path. `cargo oracle-lab learning-root collect` advances
-a fresh seed through current production non-combat owners and emits its first
-combat directly; `learning-root export` converts public continuations already
-at useful later combat boundaries. The caller reads those opaque bytes and
-constructs a fresh bridge batch with the exact expected root count; Rust
-revalidates every combat boundary and root identity first.
+one to 64 explicit fresh seeds through current production non-combat owners and
+emits their first combats as one batch; `learning-root export` converts public
+continuations already at useful later combat boundaries. The caller reads those
+opaque bytes and constructs a fresh bridge batch with the exact expected root
+count; Rust revalidates every combat boundary and root identity first.
 Their row projection attaches all three columns to each retained replicate
 decision without choosing a training axis or scalar weighting.
 `sts_learning.torch_outcomes.on_policy_combat_win_loss` is the first narrow
@@ -160,6 +160,18 @@ promoted. A temporary promotion failure retains one compact pending result and
 retries it before requesting another group, while root drift fails before any
 new policy or environment mutation. The runner does not yet own cross-root
 scheduling, durable combat-training resume, or an HP/potion objective.
+Each generation result carries the completed group's compact three-axis signal
+summary after its bounded experience has been consumed. Cross-root diagnostics
+can therefore build the existing bounded census without retaining or reopening
+semantic decision payloads.
+`sts_learning.torch_combat_census.CombatWinSignalCensusRunner` owns that routine
+diagnostic composition. It reads one bounded opaque batch, starts every root
+from identical model weights, requires one explicit behavior RNG seed per root,
+and returns compact generation results plus the aggregate census. The artifact
+is imported once and every slot selects from that shared typed source; slot-local
+trainers and stores live only in temporary directories, their updates are
+discarded, and nothing is published. The runner measures whether diverse roots
+provide win, HP, or potion signal—it does not train one behavior across roots.
 `sts_learning.torch_combat_session.CombatWinSessionFactory` removes the manual
 owner wiring around that runner. It accepts only a byte-bounded opaque
 production root artifact (or its file), an exact root count and selected slot,

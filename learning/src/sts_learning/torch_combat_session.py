@@ -107,24 +107,10 @@ class CombatWinSessionFactory:
     ) -> CombatWinSession:
         """Read one bounded opaque artifact and create generation zero."""
 
-        path = Path(artifact).resolve()
-        if not path.is_file():
-            raise TorchCombatSessionError(
-                "combat-root artifact is not a file"
-            )
-        size = path.stat().st_size
-        if size <= 0:
-            raise TorchCombatSessionError("combat-root artifact is empty")
-        if size > self.config.limits.max_artifact_bytes:
-            raise TorchCombatSessionError(
-                "combat-root artifact exceeds its byte limit"
-            )
-        try:
-            payload = path.read_bytes()
-        except OSError as error:
-            raise TorchCombatSessionError(
-                "combat-root artifact could not be read"
-            ) from error
+        payload = _artifact_file_bytes(
+            artifact,
+            max_bytes=self.config.limits.max_artifact_bytes,
+        )
         return self.new_from_artifact_bytes(
             payload,
             model_seed=model_seed,
@@ -147,16 +133,22 @@ class CombatWinSessionFactory:
         )
         model_seed = _torch_seed(model_seed, "model_seed")
         behavior_seed = _torch_seed(behavior_seed, "behavior_seed")
-        try:
-            source = self.bridge.combat_roots_from_artifact(
-                artifact,
-                expected_roots=self.config.expected_roots,
-                max_bytes=self.config.limits.max_artifact_bytes,
-            )
-        except Exception as error:
-            raise TorchCombatSessionError(
-                "combat-root artifact import failed"
-            ) from error
+        source = _combat_root_source(self.bridge, self.config, artifact)
+        return self._new_from_combat_root_source(
+            source,
+            artifact_byte_count=len(artifact),
+            model_seed=model_seed,
+            behavior_seed=behavior_seed,
+        )
+
+    def _new_from_combat_root_source(
+        self,
+        source: object,
+        *,
+        artifact_byte_count: int,
+        model_seed: int,
+        behavior_seed: int,
+    ) -> CombatWinSession:
         if not callable(getattr(source, "combat_group", None)):
             raise TorchCombatSessionError(
                 "combat-root artifact loader returned an invalid source"
@@ -201,7 +193,7 @@ class CombatWinSessionFactory:
         )
         return CombatWinSession(
             runner,
-            artifact_byte_count=len(artifact),
+            artifact_byte_count=artifact_byte_count,
         )
 
     def _require_unused_root(self) -> None:
@@ -247,6 +239,51 @@ def _artifact_bytes(
             "combat-root artifact exceeds its byte limit"
         )
     return normalized
+
+
+def _artifact_file_bytes(
+    artifact: str | Path,
+    *,
+    max_bytes: int,
+) -> bytes:
+    path = Path(artifact).resolve()
+    if not path.is_file():
+        raise TorchCombatSessionError("combat-root artifact is not a file")
+    size = path.stat().st_size
+    if size <= 0:
+        raise TorchCombatSessionError("combat-root artifact is empty")
+    if size > max_bytes:
+        raise TorchCombatSessionError(
+            "combat-root artifact exceeds its byte limit"
+        )
+    try:
+        return path.read_bytes()
+    except OSError as error:
+        raise TorchCombatSessionError(
+            "combat-root artifact could not be read"
+        ) from error
+
+
+def _combat_root_source(
+    bridge: CombatSessionBridge,
+    config: CombatWinSessionConfig,
+    artifact: bytes,
+) -> object:
+    try:
+        source = bridge.combat_roots_from_artifact(
+            artifact,
+            expected_roots=config.expected_roots,
+            max_bytes=config.limits.max_artifact_bytes,
+        )
+    except Exception as error:
+        raise TorchCombatSessionError(
+            "combat-root artifact import failed"
+        ) from error
+    if not callable(getattr(source, "combat_group", None)):
+        raise TorchCombatSessionError(
+            "combat-root artifact loader returned an invalid source"
+        )
+    return source
 
 
 def _torch_seed(value: object, name: str) -> int:
