@@ -275,6 +275,11 @@ def _summary(
             if combat_trained
             else recovered.training_sampling_mode.value
         ),
+        "behavior_run_episode_root_attempts": (
+            None
+            if combat_trained
+            else recovered.training_episode_root_attempts
+        ),
         "behavior_run_objective": (
             None
             if combat_trained

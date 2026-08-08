@@ -27,6 +27,7 @@ param(
     [string]$AdvantageMode = "raw-return",
     [ValidateSet("independent-cohorts", "episode-root-retries")]
     [string]$SamplingMode = "independent-cohorts",
+    [Nullable[int]]$EpisodeRootAttempts,
     [ValidateSet("all", "strategic")]
     [string]$DecisionScope = "all",
     [ValidateSet("all", "never", "root-slots")]
@@ -307,6 +308,13 @@ switch ($Command) {
     }
     "train-run" {
         $pythonPath = Get-ConfiguredPython
+        $episodeRootArguments = @()
+        if ($null -ne $EpisodeRootAttempts) {
+            $episodeRootArguments = @(
+                "--episode-root-attempts",
+                $EpisodeRootAttempts
+            )
+        }
         Invoke-Doctor $pythonPath
         Invoke-WithLearningPath {
             & $pythonPath -m sts_learning.train_run `
@@ -326,6 +334,7 @@ switch ($Command) {
                 --advantage-mode $AdvantageMode `
                 --decision-scope $DecisionScope `
                 --sampling-mode $SamplingMode `
+                @episodeRootArguments `
                 --potion-lane $RunPotionLane
             if ($LASTEXITCODE -ne 0) {
                 throw "run training command failed"

@@ -852,14 +852,15 @@ observed in only one attempt instead of borrowing signal from a different site
 on the same floor. It is separately bound into trainer provenance and remains
 an ablation, not the maintained default.
 `-SamplingMode episode-root-retries` is a single-slot training ablation. It
-restores the exact episode root after each defeat until the fixed attempt-update
-boundary; victories finish normally, and the boundary defeat is completed so
-no live episode crosses promotion. It requires
+restores the exact episode root after each defeat up to the explicit
+`-EpisodeRootAttempts` cap; this allows one update to cover multiple roots.
+Victories finish normally, and the boundary defeat is completed so no live
+episode crosses promotion. It requires
 `-AdvantageMode matched-episode-floor-context`, which compares only retries from
 the same episode seed and generation at the same floor and typed context. The
-training recovery budget is derived as `AttemptsPerUpdate - 1`; held-out
-evaluation still uses zero recovery. Treat recovery count as sampling evidence,
-not reward or a competence metric.
+training recovery budget is derived as `EpisodeRootAttempts - 1`; held-out
+evaluation still uses zero recovery. Treat the cap and recovery count as
+sampling provenance, not reward or a competence metric.
 `-DecisionScope all` is the maintained default. The explicit `strategic`
 ablation removes combat-boundary rows from the whole-run loss and renormalizes
 each attempt over its remaining strategic decisions; it does not change the

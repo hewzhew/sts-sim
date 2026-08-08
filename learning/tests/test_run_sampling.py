@@ -61,30 +61,67 @@ def _terminal(
     )
 
 
-def test_retry_curriculum_closes_the_update_even_after_an_early_victory() -> None:
-    curriculum = EpisodeRootRetryCurriculum(attempts_per_update=3)
+def test_retry_curriculum_caps_each_root_before_closing_the_update() -> None:
+    curriculum = EpisodeRootRetryCurriculum(
+        attempts_per_update=4,
+        attempts_per_episode=2,
+    )
 
     first = curriculum.plan_recovery(
         *_terminal(seed=10, attempt_index=1, reward=-1)
     )
-    victory = curriculum.plan_recovery(
-        *_terminal(seed=10, attempt_index=2, reward=1)
+    second = curriculum.plan_recovery(
+        *_terminal(seed=10, attempt_index=2, reward=-1)
+    )
+    third = curriculum.plan_recovery(
+        *_terminal(seed=20, attempt_index=1, reward=-1)
     )
     boundary = curriculum.plan_recovery(
-        *_terminal(seed=20, attempt_index=1, reward=-1)
+        *_terminal(seed=20, attempt_index=2, reward=-1)
     )
 
     assert first.slot_indices == (0,)
-    assert victory.slot_indices == ()
+    assert second.slot_indices == ()
+    assert third.slot_indices == (0,)
     assert boundary.slot_indices == ()
     assert curriculum.attempts_in_update == 0
+    assert curriculum.attempts_in_episode == 0
+
+
+def test_retry_curriculum_starts_a_new_root_after_an_early_victory() -> None:
+    curriculum = EpisodeRootRetryCurriculum(
+        attempts_per_update=3,
+        attempts_per_episode=2,
+    )
+
+    first = curriculum.plan_recovery(
+        *_terminal(seed=10, attempt_index=1, reward=1)
+    )
+    second = curriculum.plan_recovery(
+        *_terminal(seed=20, attempt_index=1, reward=-1)
+    )
+    boundary = curriculum.plan_recovery(
+        *_terminal(seed=20, attempt_index=2, reward=-1)
+    )
+
+    assert first.slot_indices == ()
+    assert second.slot_indices == (0,)
+    assert boundary.slot_indices == ()
+    assert curriculum.attempts_in_update == 0
+    assert curriculum.attempts_in_episode == 0
 
 
 def test_retry_curriculum_rejects_unaligned_or_degenerate_batches() -> None:
     with pytest.raises(RunSamplingError, match="at least two"):
-        EpisodeRootRetryCurriculum(attempts_per_update=1)
+        EpisodeRootRetryCurriculum(
+            attempts_per_update=1,
+            attempts_per_episode=1,
+        )
 
-    curriculum = EpisodeRootRetryCurriculum(attempts_per_update=2)
+    curriculum = EpisodeRootRetryCurriculum(
+        attempts_per_update=2,
+        attempts_per_episode=2,
+    )
     accounting, snapshots = _terminal(seed=10, attempt_index=1, reward=-1)
     with pytest.raises(RunSamplingError, match="seed disagree"):
         curriculum.plan_recovery(

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Sequence
 from dataclasses import replace
 from pathlib import Path
 
@@ -9,12 +8,8 @@ import pytest
 
 pytest.importorskip("torch")
 
-from learning.tests.driver_fixtures import (
-    FakeCheckpointBatch,
-    NumpyWinningBatchEnv,
-)
-from learning.tests.semantic_fixtures import semantic_schema_fixture
-from learning.tests.torch_combat_fixtures import OneRoundCombatGroup
+from learning.tests.driver_fixtures import NumpyWinningBatchEnv
+from learning.tests.run_training_fixtures import published_behavior
 from sts_learning.evaluate_run import (
     RunEvaluationCommandConfig,
     RunPotionLane,
@@ -29,45 +24,17 @@ from sts_learning.published_run_behavior import (
     PublishedRunBehaviorError,
     recover_published_run_behavior,
 )
-from sts_learning.run_sampling import RunSamplingMode
-from sts_learning.terminal_returns import TerminalAdvantageMode
-from sts_learning.torch_combat_session_config import CombatSessionBridge
-from sts_learning.torch_session_config import (
-    CategoricalSessionBridge,
-)
 from sts_learning.train_run import (
-    RunTrainingCommandError,
     RunTrainingCommandConfig,
     run_run_training,
 )
-from sts_learning.train_combat import (
-    CombatTrainingCommandConfig,
-    run_combat_training,
-)
-
-
-class _CombatRootSource:
-    def combat_group(
-        self,
-        slot_index: int,
-        replicate_count: int,
-        potion_slots: Sequence[int] | None = None,
-    ) -> OneRoundCombatGroup:
-        assert replicate_count == 2
-        assert potion_slots in (None, ())
-        return OneRoundCombatGroup(
-            f"{slot_index + 1:02x}" * 32,
-            f"{slot_index + 17:02x}" * 32,
-            (True, False) if slot_index == 0 else (True, True),
-            potion_slots=None if potion_slots is None else tuple(potion_slots),
-        )
 
 
 def test_run_evaluation_uses_frozen_combat_behavior_without_recovery(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    behavior, combat_bridge, run_bridge = _published_behavior(tmp_path)
+    behavior, combat_bridge, run_bridge = published_behavior(tmp_path)
     capsys.readouterr()
 
     output = tmp_path / "run-evaluation"
@@ -87,6 +54,7 @@ def test_run_evaluation_uses_frozen_combat_behavior_without_recovery(
     assert summary["schema"] == "sts-learning-run-held-out-evaluation-v3"
     assert summary["behavior_training_kind"] == "combat"
     assert summary["behavior_run_sampling_mode"] is None
+    assert summary["behavior_run_episode_root_attempts"] is None
     assert summary["combat_potion_lane"] == "all"
     assert summary["requested_combat_potion_lane"] == "trained"
     assert summary["kind"] == "completed"
@@ -121,7 +89,7 @@ def test_run_evaluation_uses_frozen_combat_behavior_without_recovery(
 def test_run_evaluation_selects_the_no_combat_potion_environment(
     tmp_path: Path,
 ) -> None:
-    behavior, combat_bridge, run_bridge = _published_behavior(tmp_path)
+    behavior, combat_bridge, run_bridge = published_behavior(tmp_path)
     created: list[tuple[int, ...]] = []
 
     def without_combat_potions(seeds: list[int]) -> NumpyWinningBatchEnv:
@@ -155,7 +123,7 @@ def test_run_evaluation_selects_the_no_combat_potion_environment(
 def test_run_potion_comparison_pairs_terminal_seeds(
     tmp_path: Path,
 ) -> None:
-    behavior, combat_bridge, run_bridge = _published_behavior(tmp_path)
+    behavior, combat_bridge, run_bridge = published_behavior(tmp_path)
 
     summary = run_run_potion_comparison(
         RunPotionComparisonCommandConfig(
@@ -188,7 +156,7 @@ def test_run_training_warm_starts_publishes_and_evaluates(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    behavior, combat_bridge, run_bridge = _published_behavior(tmp_path)
+    behavior, combat_bridge, run_bridge = published_behavior(tmp_path)
     capsys.readouterr()
 
     output = tmp_path / "run-training"
@@ -215,6 +183,7 @@ def test_run_training_warm_starts_publishes_and_evaluates(
     assert summary["kind"] == "completed"
     assert summary["generations"] == 1
     assert summary["optimizer_steps"] == 1
+    assert summary["episode_root_attempts"] is None
     assert summary["held_out_target_reached"] is True
     assert summary["held_out_attempts"] == 2
     assert summary["held_out_victories"] == 2
@@ -235,6 +204,7 @@ def test_run_training_warm_starts_publishes_and_evaluates(
     assert records[0]["advantage_mode"] == "raw_return"
     assert records[0]["decision_scope"] == "all"
     assert records[0]["sampling_mode"] == "independent-cohorts"
+    assert records[0]["episode_root_attempts"] is None
     assert records[0]["requested_run_potion_lane"] == "trained"
     assert records[0]["run_potion_lane"] == "all"
     stdout = capsys.readouterr().out
@@ -245,6 +215,7 @@ def test_run_training_warm_starts_publishes_and_evaluates(
     assert (
         "run_training_complete=true potion_lane=all "
         "potion_lane_request=trained sampling_mode=independent-cohorts "
+        "episode_root_attempts=none "
         "generations=1 optimizer_steps=1 "
         "held_out_attempts=2/2 held_out_victories=2 "
         "held_out_floor_sum=80 held_out_floor_counts=40:2"
@@ -265,6 +236,7 @@ def test_run_training_warm_starts_publishes_and_evaluates(
     )
     assert reevaluation["behavior_training_kind"] == "run"
     assert reevaluation["behavior_run_sampling_mode"] == "independent-cohorts"
+    assert reevaluation["behavior_run_episode_root_attempts"] is None
     assert reevaluation["behavior_run_objective"] == {
         "attempts_per_update": 2,
         "advantage_mode": "raw_return",
@@ -285,53 +257,10 @@ def test_run_training_warm_starts_publishes_and_evaluates(
         recover_published_run_behavior(output, run_bridge, (777,))
 
 
-def test_run_training_binds_episode_matched_credit_to_root_retries(
-    tmp_path: Path,
-) -> None:
-    behavior = tmp_path / "behavior"
-    behavior.mkdir()
-    common = dict(
-        warm_start_behavior=behavior,
-        output=tmp_path / "output",
-        slot_count=1,
-        generations=1,
-        attempts_per_update=2,
-        max_batch_steps_per_generation=10,
-        model_seed=1,
-        behavior_seed=2,
-        training_seed_start=3,
-        evaluation_attempts=1,
-        evaluation_max_batch_steps=10,
-        evaluation_behavior_seed=4,
-        held_out_seed_start=5,
-    )
-
-    with pytest.raises(RunTrainingCommandError, match="requires episode-root"):
-        RunTrainingCommandConfig(
-            **common,
-            advantage_mode=(
-                TerminalAdvantageMode.MATCHED_EPISODE_FLOOR_CONTEXT_LEAVE_ONE_OUT
-            ),
-        )
-    with pytest.raises(RunTrainingCommandError, match="require episode-matched"):
-        RunTrainingCommandConfig(
-            **common,
-            sampling_mode=RunSamplingMode.EPISODE_ROOT_RETRIES,
-        )
-    with pytest.raises(RunTrainingCommandError, match="slot_count=1"):
-        RunTrainingCommandConfig(
-            **{**common, "slot_count": 2, "attempts_per_update": 2},
-            advantage_mode=(
-                TerminalAdvantageMode.MATCHED_EPISODE_FLOOR_CONTEXT_LEAVE_ONE_OUT
-            ),
-            sampling_mode=RunSamplingMode.EPISODE_ROOT_RETRIES,
-        )
-
-
 def test_run_training_inherits_the_warm_start_potion_lane(
     tmp_path: Path,
 ) -> None:
-    behavior, combat_bridge, run_bridge = _published_behavior(
+    behavior, combat_bridge, run_bridge = published_behavior(
         tmp_path,
         potion_lane=CombatPotionLane.NEVER,
     )
@@ -368,41 +297,3 @@ def test_run_training_inherits_the_warm_start_potion_lane(
     assert len(no_potion_populations) == 2
     assert summary["requested_run_potion_lane"] == "trained"
     assert summary["run_potion_lane"] == "never"
-
-
-def _published_behavior(
-    root: Path,
-    *,
-    potion_lane: CombatPotionLane = CombatPotionLane.ALL,
-) -> tuple[Path, CombatSessionBridge, CategoricalSessionBridge]:
-    artifact = root / "combat-roots.bin"
-    artifact.write_bytes(b"opaque-combat-roots")
-    schema = semantic_schema_fixture()
-    combat_bridge = CombatSessionBridge(
-        combat_roots_from_artifact=lambda payload, **_: _CombatRootSource(),
-        semantic_schema=schema,
-    )
-    behavior = root / "behavior"
-    run_combat_training(
-        CombatTrainingCommandConfig(
-            artifact=artifact,
-            output=behavior,
-            root_count=2,
-            replicate_count=2,
-            updates=1,
-            model_seed=41,
-            behavior_seed_base=92,
-            potion_lane=potion_lane,
-        ),
-        bridge=combat_bridge,
-    )
-    run_bridge = CategoricalSessionBridge(
-        environment=NumpyWinningBatchEnv,
-        environment_without_combat_potions=NumpyWinningBatchEnv,
-        environment_from_checkpoint=NumpyWinningBatchEnv.from_checkpoint_bytes,
-        checkpoint_bank_from_checkpoint=(
-            FakeCheckpointBatch.from_checkpoint_bytes
-        ),
-        semantic_schema=schema,
-    )
-    return behavior, combat_bridge, run_bridge

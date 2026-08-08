@@ -25,36 +25,59 @@ class RunSamplingMode(Enum):
 
 
 class EpisodeRootRetryCurriculum:
-    """Retry one exact root until the next fixed attempt-update boundary.
+    """Sample bounded retries from exact roots within one fixed update.
 
     This first paired-root curriculum is deliberately single-slot. Victories
-    complete their episode immediately; later attempts may come from the next
-    scheduled root, so the objective must retain episode identity when
-    matching baselines. The final defeat at an update boundary is completed
-    instead of restored, ensuring no live episode crosses behavior promotion.
+    and the configured per-episode attempt cap complete an episode; later
+    attempts may come from the next scheduled root, so the objective must
+    retain episode identity when matching baselines. The final defeat at an
+    update boundary is also completed instead of restored, ensuring no live
+    episode crosses behavior promotion.
     """
 
-    def __init__(self, attempts_per_update: int) -> None:
-        if isinstance(attempts_per_update, bool):
+    def __init__(
+        self,
+        attempts_per_update: int,
+        attempts_per_episode: int,
+    ) -> None:
+        if isinstance(attempts_per_update, bool) or isinstance(
+            attempts_per_episode,
+            bool,
+        ):
             raise RunSamplingError(
-                "attempts_per_update must be an integer, not bool"
+                "retry attempt counts must be integers, not bool"
             )
         try:
-            attempts = operator.index(attempts_per_update)
+            update_attempts = operator.index(attempts_per_update)
+            episode_attempts = operator.index(attempts_per_episode)
         except TypeError as error:
             raise RunSamplingError(
-                "attempts_per_update must be an integer"
+                "retry attempt counts must be integers"
             ) from error
-        if attempts < 2:
+        if update_attempts < 2:
             raise RunSamplingError(
-                "episode-root retries require at least two attempts per update"
+                "episode-root retries require at least two update attempts"
             )
-        self.attempts_per_update = attempts
+        if episode_attempts < 2:
+            raise RunSamplingError(
+                "episode-root retries require at least two attempts per episode"
+            )
+        if episode_attempts > update_attempts:
+            raise RunSamplingError(
+                "episode-root attempts cannot exceed the update batch"
+            )
+        self.attempts_per_update = update_attempts
+        self.attempts_per_episode = episode_attempts
         self._attempts_in_update = 0
+        self._attempts_in_episode = 0
 
     @property
     def attempts_in_update(self) -> int:
         return self._attempts_in_update
+
+    @property
+    def attempts_in_episode(self) -> int:
+        return self._attempts_in_episode
 
     def plan_recovery(
         self,
@@ -88,9 +111,21 @@ class EpisodeRootRetryCurriculum:
         next_count = self._attempts_in_update + 1
         if next_count > self.attempts_per_update:
             raise RunSamplingError("retry curriculum crossed its update boundary")
+        next_episode_count = self._attempts_in_episode + 1
+        if next_episode_count > self.attempts_per_episode:
+            raise RunSamplingError("retry curriculum crossed its episode boundary")
         at_update_boundary = next_count == self.attempts_per_update
+        at_episode_boundary = next_episode_count == self.attempts_per_episode
+        episode_complete = (
+            attempt.terminal_reward == 1
+            or at_episode_boundary
+            or at_update_boundary
+        )
         self._attempts_in_update = 0 if at_update_boundary else next_count
+        self._attempts_in_episode = (
+            0 if episode_complete else next_episode_count
+        )
 
-        if attempt.terminal_reward == 1 or at_update_boundary:
+        if episode_complete:
             return RecoveryPlan()
         return RecoveryPlan((snapshot.slot_index,))

@@ -277,11 +277,14 @@ class BoundedCategoricalGenerationRunnerTests(unittest.TestCase):
 
     def test_single_slot_retry_generation_closes_after_an_early_victory(self) -> None:
         with tempfile.TemporaryDirectory() as root:
-            curriculum = EpisodeRootRetryCurriculum(attempts_per_update=3)
+            curriculum = EpisodeRootRetryCurriculum(
+                attempts_per_update=3,
+                attempts_per_episode=2,
+            )
             driver, assembler, batcher, trainer, controller, shadow = _components(
                 Path(root),
                 attempts_per_update=3,
-                max_recoveries_per_episode=2,
+                max_recoveries_per_episode=1,
                 curriculum=curriculum,
                 environment=lambda seeds: _NumpyScheduledBatchEnv(
                     seeds,

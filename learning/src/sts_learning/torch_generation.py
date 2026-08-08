@@ -143,9 +143,9 @@ class BoundedCategoricalGenerationRunner:
                 raise TorchGenerationError(
                     "retry curriculum and update batch disagree on attempt count"
                 )
-            if recovery_budget != self.update_batcher.attempts_per_update - 1:
+            if recovery_budget != retry_curriculum.attempts_per_episode - 1:
                 raise TorchGenerationError(
-                    "retry recovery budget must close one complete attempt update"
+                    "retry recovery budget and episode attempt cap disagree"
                 )
         self._validate_wiring()
 
@@ -302,6 +302,16 @@ class BoundedCategoricalGenerationRunner:
             ):
                 raise TorchGenerationError(
                     "retry curriculum did not close its optimizer boundary"
+                )
+            if (
+                isinstance(
+                    self.driver.curriculum,
+                    EpisodeRootRetryCurriculum,
+                )
+                and self.driver.curriculum.attempts_in_episode != 0
+            ):
+                raise TorchGenerationError(
+                    "retry curriculum left an episode open at promotion"
                 )
             if completed_episodes != len(sampled_episode_keys):
                 raise TorchGenerationError(

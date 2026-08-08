@@ -44,6 +44,7 @@ class PublishedRunBehavior:
     training_step: int
     training_potion_lane: CombatPotionLane
     training_sampling_mode: RunSamplingMode
+    training_episode_root_attempts: int | None
     objective: OnPolicyObjectiveConfig
     policies: tuple[CheckpointedCategoricalTorchPolicy, ...]
 
@@ -63,6 +64,19 @@ class PublishedRunBehavior:
             raise PublishedRunBehaviorError("run behavior sampling mode must be typed")
         if not isinstance(self.objective, OnPolicyObjectiveConfig):
             raise PublishedRunBehaviorError("run behavior objective must be typed")
+        expected_attempts = _episode_root_attempts(
+            self.training_episode_root_attempts,
+            self.training_sampling_mode,
+        )
+        if expected_attempts != self.training_episode_root_attempts:
+            raise AssertionError("normalized episode-root attempt count changed")
+        if (
+            expected_attempts is not None
+            and expected_attempts > self.objective.attempts_per_update
+        ):
+            raise PublishedRunBehaviorError(
+                "episode-root attempts exceed the training update"
+            )
         if not self.policies or not all(
             isinstance(policy, CheckpointedCategoricalTorchPolicy)
             for policy in self.policies
@@ -147,6 +161,18 @@ def recover_published_run_behavior(
         raise PublishedRunBehaviorError(
             "run sampling mode changed across publication"
         )
+    configuration_episode_root_attempts = _episode_root_attempts(
+        configuration.get("episode_root_attempts"),
+        configuration_sampling_mode,
+    )
+    completed_episode_root_attempts = _episode_root_attempts(
+        completed.get("episode_root_attempts"),
+        completed_sampling_mode,
+    )
+    if completed_episode_root_attempts != configuration_episode_root_attempts:
+        raise PublishedRunBehaviorError(
+            "episode-root attempt cap changed across publication"
+        )
 
     profile = replace(CategoricalOnlineProfile(), objective=objective)
     limits = replace(
@@ -191,6 +217,9 @@ def recover_published_run_behavior(
         training_step=training_step,
         training_potion_lane=potion_lane,
         training_sampling_mode=configuration_sampling_mode,
+        training_episode_root_attempts=(
+            configuration_episode_root_attempts
+        ),
         objective=objective,
         policies=policies,
     )
@@ -295,6 +324,24 @@ def _sampling_mode(value: object) -> RunSamplingMode:
         raise PublishedRunBehaviorError(
             "run sampling mode is unsupported"
         ) from error
+
+
+def _episode_root_attempts(
+    value: object,
+    mode: RunSamplingMode,
+) -> int | None:
+    if mode is RunSamplingMode.INDEPENDENT_COHORTS:
+        if value is not None:
+            raise PublishedRunBehaviorError(
+                "independent sampling cannot carry episode-root attempts"
+            )
+        return None
+    attempts = _positive(value, "episode_root_attempts")
+    if attempts < 2:
+        raise PublishedRunBehaviorError(
+            "episode_root_attempts must be at least two"
+        )
+    return attempts
 
 
 def _digest(value: object, name: str) -> bytes:

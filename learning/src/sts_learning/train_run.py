@@ -89,6 +89,7 @@ class RunTrainingCommandConfig:
     advantage_mode: TerminalAdvantageMode = TerminalAdvantageMode.RAW_RETURN
     decision_scope: RunDecisionScope = RunDecisionScope.ALL
     sampling_mode: RunSamplingMode = RunSamplingMode.INDEPENDENT_COHORTS
+    episode_root_attempts: int | None = None
     potion_lane: RunPotionLane = RunPotionLane.TRAINED
 
     def __post_init__(self) -> None:
@@ -142,6 +143,27 @@ class RunTrainingCommandConfig:
             TerminalAdvantageMode.MATCHED_EPISODE_FLOOR_CONTEXT_LEAVE_ONE_OUT
         )
         if self.sampling_mode is RunSamplingMode.EPISODE_ROOT_RETRIES:
+            if self.episode_root_attempts is None:
+                raise RunTrainingCommandError(
+                    "episode-root retries require episode_root_attempts"
+                )
+            episode_root_attempts = _positive(
+                self.episode_root_attempts,
+                "episode_root_attempts",
+            )
+            if episode_root_attempts < 2:
+                raise RunTrainingCommandError(
+                    "episode_root_attempts must be at least two"
+                )
+            if episode_root_attempts > self.attempts_per_update:
+                raise RunTrainingCommandError(
+                    "episode_root_attempts cannot exceed attempts_per_update"
+                )
+            object.__setattr__(
+                self,
+                "episode_root_attempts",
+                episode_root_attempts,
+            )
             if self.slot_count != 1:
                 raise RunTrainingCommandError(
                     "episode-root retry sampling requires slot_count=1"
@@ -150,10 +172,15 @@ class RunTrainingCommandConfig:
                 raise RunTrainingCommandError(
                     "episode-root retries require episode-matched credit"
                 )
-        elif self.advantage_mode is paired_mode:
-            raise RunTrainingCommandError(
-                "episode-matched credit requires episode-root retries"
-            )
+        else:
+            if self.episode_root_attempts is not None:
+                raise RunTrainingCommandError(
+                    "episode_root_attempts require episode-root retries"
+                )
+            if self.advantage_mode is paired_mode:
+                raise RunTrainingCommandError(
+                    "episode-matched credit requires episode-root retries"
+                )
         object.__setattr__(
             self,
             "generations",
@@ -225,15 +252,25 @@ def run_run_training(
     retry_sampling = (
         config.sampling_mode is RunSamplingMode.EPISODE_ROOT_RETRIES
     )
+    if retry_sampling:
+        episode_root_attempts = config.episode_root_attempts
+        if episode_root_attempts is None:
+            raise AssertionError("validated retry sampling lost its attempt cap")
+        recovery_budget = episode_root_attempts - 1
+        curriculum = EpisodeRootRetryCurriculum(
+            config.attempts_per_update,
+            episode_root_attempts,
+        )
+    else:
+        recovery_budget = 0
+        curriculum = NoRecoveryCurriculum()
     session_config = CategoricalOnlineSessionConfig(
         schedule=SeedSchedule(
             SeedPartition.TRAINING,
             next_candidate=config.training_seed_start,
         ),
         slot_count=config.slot_count,
-        max_recoveries_per_episode=(
-            config.attempts_per_update - 1 if retry_sampling else 0
-        ),
+        max_recoveries_per_episode=recovery_budget,
         profile=profile,
         limits=limits,
     )
@@ -241,11 +278,7 @@ def run_run_training(
         config.output,
         training_run_bridge,
         session_config,
-        (
-            EpisodeRootRetryCurriculum(config.attempts_per_update)
-            if retry_sampling
-            else NoRecoveryCurriculum()
-        ),
+        curriculum,
     )
     session = factory.new(
         model_seed=config.model_seed,
@@ -332,6 +365,7 @@ def run_run_training(
         f"potion_lane={potion_lane.value} "
         f"potion_lane_request={config.potion_lane.value} "
         f"sampling_mode={config.sampling_mode.value} "
+        f"episode_root_attempts={config.episode_root_attempts or 'none'} "
         f"generations={config.generations} "
         f"optimizer_steps={session.runner.trainer.snapshot.optimizer_steps} "
         f"held_out_attempts={run.terminal_attempts}/"
@@ -362,6 +396,7 @@ def _configuration(
         "requested_run_potion_lane": config.potion_lane.value,
         "run_potion_lane": potion_lane.value,
         "sampling_mode": config.sampling_mode.value,
+        "episode_root_attempts": config.episode_root_attempts,
         "slot_count": config.slot_count,
         "generations": config.generations,
         "attempts_per_update": config.attempts_per_update,
@@ -435,6 +470,7 @@ def _summary(
         "requested_run_potion_lane": config.potion_lane.value,
         "run_potion_lane": potion_lane.value,
         "sampling_mode": config.sampling_mode.value,
+        "episode_root_attempts": config.episode_root_attempts,
         "generations": config.generations,
         "optimizer_steps": session.runner.trainer.snapshot.optimizer_steps,
         "held_out_target_reached": evaluation.complete,
@@ -709,6 +745,7 @@ def _parser() -> argparse.ArgumentParser:
         choices=tuple(mode.value for mode in RunSamplingMode),
         default=RunSamplingMode.INDEPENDENT_COHORTS.value,
     )
+    parser.add_argument("--episode-root-attempts", type=int)
     parser.add_argument(
         "--potion-lane",
         choices=tuple(lane.value for lane in RunPotionLane),
@@ -741,6 +778,7 @@ def main() -> int:
                 else RunDecisionScope.STRATEGIC
             ),
             sampling_mode=RunSamplingMode(arguments.sampling_mode),
+            episode_root_attempts=arguments.episode_root_attempts,
             potion_lane=RunPotionLane(arguments.potion_lane),
         )
     )
