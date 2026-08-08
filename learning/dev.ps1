@@ -1,6 +1,6 @@
 param(
     [Parameter(Mandatory = $true, Position = 0)]
-    [ValidateSet("configure", "doctor", "test", "verify", "check-bridge", "refresh-bridge", "train-combat", "evaluate-combat", "evaluate-combat-potions", "evaluate-run", "train-run")]
+    [ValidateSet("configure", "doctor", "test", "verify", "check-bridge", "refresh-bridge", "train-combat", "evaluate-combat", "evaluate-combat-potions", "evaluate-run", "evaluate-run-potions", "train-run")]
     [string]$Command,
     [string]$Python,
     [string]$MaturinPython = "python",
@@ -27,6 +27,8 @@ param(
     [string]$AdvantageMode = "raw-return",
     [ValidateSet("all", "never", "root-slots")]
     [string]$PotionLane = "all",
+    [ValidateSet("trained", "all", "never")]
+    [string]$RunPotionLane = "trained",
     [int[]]$PotionSlots = @(),
     [ValidateSet("dev", "release")]
     [string]$BridgeProfile = "release"
@@ -266,9 +268,6 @@ switch ($Command) {
         }
     }
     "evaluate-run" {
-        if ($PotionLane -eq "root-slots") {
-            throw "evaluate-run supports only -PotionLane all|never"
-        }
         $pythonPath = Get-ConfiguredPython
         Invoke-Doctor $pythonPath
         Invoke-WithLearningPath {
@@ -280,9 +279,25 @@ switch ($Command) {
                 --max-batch-steps $MaxBatchSteps `
                 --behavior-seed $BehaviorSeed `
                 --held-out-seed-start $HeldOutSeedStart `
-                --potion-lane $PotionLane
+                --potion-lane $RunPotionLane
             if ($LASTEXITCODE -ne 0) {
                 throw "run evaluation command failed"
+            }
+        }
+    }
+    "evaluate-run-potions" {
+        $pythonPath = Get-ConfiguredPython
+        Invoke-Doctor $pythonPath
+        Invoke-WithLearningPath {
+            & $pythonPath -m sts_learning.evaluate_run_potions `
+                --behavior $Behavior `
+                --output $Output `
+                --attempts $Attempts `
+                --max-batch-steps $MaxBatchSteps `
+                --behavior-seed $BehaviorSeed `
+                --held-out-seed-start $HeldOutSeedStart
+            if ($LASTEXITCODE -ne 0) {
+                throw "run potion comparison command failed"
             }
         }
     }

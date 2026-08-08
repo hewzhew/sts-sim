@@ -17,9 +17,13 @@ from learning.tests.semantic_fixtures import semantic_schema_fixture
 from learning.tests.torch_combat_fixtures import OneRoundCombatGroup
 from sts_learning.evaluate_run import (
     RunEvaluationCommandConfig,
+    RunPotionLane,
     run_run_evaluation,
 )
-from sts_learning.combat_potion_lane import CombatPotionLane
+from sts_learning.evaluate_run_potions import (
+    RunPotionComparisonCommandConfig,
+    run_run_potion_comparison,
+)
 from sts_learning.torch_combat_session_config import CombatSessionBridge
 from sts_learning.torch_session_config import (
     CategoricalSessionBridge,
@@ -74,6 +78,7 @@ def test_run_evaluation_uses_frozen_combat_behavior_without_recovery(
 
     assert summary["schema"] == "sts-learning-run-held-out-evaluation-v2"
     assert summary["combat_potion_lane"] == "all"
+    assert summary["requested_combat_potion_lane"] == "trained"
     assert summary["kind"] == "completed"
     assert summary["target_reached"] is True
     assert summary["step_limit_reached"] is False
@@ -96,6 +101,7 @@ def test_run_evaluation_uses_frozen_combat_behavior_without_recovery(
     stdout = capsys.readouterr().out
     assert (
         "run_evaluation_complete=true potion_lane=all "
+        "potion_lane_request=trained "
         "target_reached=true attempts=2/2 "
         "victories=2 defeats=0 floor_sum=80 floor_min=40 floor_max=40 "
         "floor_counts=40:2 act_counts=3:2"
@@ -124,7 +130,7 @@ def test_run_evaluation_selects_the_no_combat_potion_environment(
             terminal_attempts=2,
             max_batch_steps=1,
             behavior_seed=501,
-            potion_lane=CombatPotionLane.NEVER,
+            potion_lane=RunPotionLane.NEVER,
         ),
         combat_bridge=combat_bridge,
         run_bridge=run_bridge,
@@ -134,6 +140,38 @@ def test_run_evaluation_selects_the_no_combat_potion_environment(
     assert len(created[0]) == 2
     assert summary["combat_potion_lane"] == "never"
     assert summary["combat_potion_identity_losses"] == ()
+
+
+def test_run_potion_comparison_pairs_terminal_seeds(
+    tmp_path: Path,
+) -> None:
+    behavior, combat_bridge, run_bridge = _published_behavior(tmp_path)
+
+    summary = run_run_potion_comparison(
+        RunPotionComparisonCommandConfig(
+            behavior=behavior,
+            output=tmp_path / "run-potion-comparison",
+            terminal_attempts=2,
+            max_batch_steps=2,
+            behavior_seed=501,
+        ),
+        combat_bridge=combat_bridge,
+        run_bridge=run_bridge,
+    )
+
+    assert summary["kind"] == "completed"
+    assert tuple(
+        lane["terminal_floor_sum"] for lane in summary["lanes"]
+    ) == (80, 80)
+    assert summary["comparison"] == {
+        "paired_terminal_seeds": 2,
+        "all_only_terminal_seeds": (),
+        "never_only_terminal_seeds": (),
+        "never_deeper": 0,
+        "same_floor": 2,
+        "never_shallower": 0,
+        "paired_floor_delta_never_minus_all": 0,
+    }
 
 
 def test_run_training_warm_starts_publishes_and_evaluates(

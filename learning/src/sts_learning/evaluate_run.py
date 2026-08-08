@@ -6,6 +6,7 @@ import argparse
 import json
 import operator
 from dataclasses import dataclass
+from enum import Enum
 from pathlib import Path
 
 from .combat_potion_lane import CombatPotionLane
@@ -39,6 +40,14 @@ class RunEvaluationCommandError(RuntimeError):
     """A bounded whole-run evaluation command is malformed."""
 
 
+class RunPotionLane(Enum):
+    """How a whole-run evaluation selects its combat potion surface."""
+
+    TRAINED = "trained"
+    ALL = "all"
+    NEVER = "never"
+
+
 @dataclass(frozen=True)
 class RunEvaluationCommandConfig:
     behavior: Path
@@ -48,7 +57,7 @@ class RunEvaluationCommandConfig:
     max_batch_steps: int
     behavior_seed: int
     held_out_seed_start: int = 0
-    potion_lane: CombatPotionLane = CombatPotionLane.ALL
+    potion_lane: RunPotionLane = RunPotionLane.TRAINED
 
     def __post_init__(self) -> None:
         behavior = Path(self.behavior).resolve()
@@ -94,13 +103,9 @@ class RunEvaluationCommandConfig:
             "held_out_seed_start",
             _seed(self.held_out_seed_start, "held_out_seed_start"),
         )
-        if not isinstance(self.potion_lane, CombatPotionLane):
+        if not isinstance(self.potion_lane, RunPotionLane):
             raise RunEvaluationCommandError(
                 "run evaluation potion lane must be typed"
-            )
-        if self.potion_lane is CombatPotionLane.ROOT_SLOTS:
-            raise RunEvaluationCommandError(
-                "whole-run evaluation supports only all or never potion lanes"
             )
 
 
@@ -145,13 +150,14 @@ def run_run_evaluation(
         CombatWinSessionLimits(),
         (config.behavior_seed,),
     )
+    potion_lane = _resolve_potion_lane(config.potion_lane, recovered)
     schedule = SeedSchedule(
         SeedPartition.HELD_OUT,
         next_candidate=config.held_out_seed_start,
     )
     environment = (
         active_run_bridge.environment
-        if config.potion_lane is CombatPotionLane.ALL
+        if potion_lane is CombatPotionLane.ALL
         else active_run_bridge.environment_without_combat_potions
     )
     resource_factory = ResourceTracingEnvironmentFactory(environment)
@@ -166,7 +172,13 @@ def run_run_evaluation(
         ),
     )
     resource_trace = resource_factory.trace
-    summary = _summary(config, recovered, result, resource_trace)
+    summary = _summary(
+        config,
+        recovered,
+        result,
+        resource_trace,
+        potion_lane,
+    )
     config.output.mkdir(parents=True, exist_ok=True)
     with (config.output / "evaluation.json").open(
         "x",
@@ -178,7 +190,8 @@ def run_run_evaluation(
     run = result.run.summary
     print(
         "run_evaluation_complete=true "
-        f"potion_lane={config.potion_lane.value} "
+        f"potion_lane={potion_lane.value} "
+        f"potion_lane_request={config.potion_lane.value} "
         f"target_reached={str(result.complete).lower()} "
         f"attempts={run.terminal_attempts}/{config.terminal_attempts} "
         f"victories={run.victories} defeats={run.defeats} "
@@ -217,6 +230,7 @@ def _summary(
     recovered: PublishedCombatBehavior,
     result: HeldOutEvaluationResult,
     resource_trace: RunResourceTrace,
+    potion_lane: CombatPotionLane,
 ) -> dict[str, object]:
     run = result.run.summary
     progress = run.terminal_progress
@@ -235,7 +249,8 @@ def _summary(
         "behavior_training_potion_slots": recovered.training_potion_slots,
         "behavior_seed": config.behavior_seed,
         "held_out_seed_start": config.held_out_seed_start,
-        "combat_potion_lane": config.potion_lane.value,
+        "requested_combat_potion_lane": config.potion_lane.value,
+        "combat_potion_lane": potion_lane.value,
         "held_out_seed_end": result.schedule_end.next_candidate,
         "slot_count": config.slot_count,
         "terminal_attempt_target": config.terminal_attempts,
@@ -327,6 +342,21 @@ def _positive(value: object, name: str) -> int:
     return normalized
 
 
+def _resolve_potion_lane(
+    requested: RunPotionLane,
+    recovered: PublishedCombatBehavior,
+) -> CombatPotionLane:
+    if requested is RunPotionLane.TRAINED:
+        lane = recovered.training_potion_lane
+        if lane is CombatPotionLane.ROOT_SLOTS:
+            raise RunEvaluationCommandError(
+                "a root-slots-trained behavior requires an explicit whole-run "
+                "all or never potion lane"
+            )
+        return lane
+    return CombatPotionLane(requested.value)
+
+
 def _seed(value: object, name: str) -> int:
     if isinstance(value, bool):
         raise RunEvaluationCommandError(f"{name} must be an integer, not bool")
@@ -371,8 +401,8 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--held-out-seed-start", type=int, default=0)
     parser.add_argument(
         "--potion-lane",
-        choices=(CombatPotionLane.ALL.value, CombatPotionLane.NEVER.value),
-        default=CombatPotionLane.ALL.value,
+        choices=tuple(lane.value for lane in RunPotionLane),
+        default=RunPotionLane.TRAINED.value,
     )
     return parser
 
@@ -388,7 +418,7 @@ def main() -> int:
             max_batch_steps=arguments.max_batch_steps,
             behavior_seed=arguments.behavior_seed,
             held_out_seed_start=arguments.held_out_seed_start,
-            potion_lane=CombatPotionLane(arguments.potion_lane),
+            potion_lane=RunPotionLane(arguments.potion_lane),
         )
     )
     return 0

@@ -627,7 +627,8 @@ Configure one stable Python 3.12 training runtime once, then use the small
 .\learning\dev.ps1 train-combat -Artifact <roots.bin> -Output <fresh-dir> -Roots <count> -Updates <count> -PotionLane never
 .\learning\dev.ps1 evaluate-combat -Artifact <held-out-roots.bin> -Behavior <training-dir> -Output <fresh-dir> -Roots <count> -Replicates <count>
 .\learning\dev.ps1 evaluate-combat-potions -Artifact <held-out-roots.bin> -Behavior <training-dir> -Output <fresh-dir> -Roots <count> -Replicates <count>
-.\learning\dev.ps1 evaluate-run -Behavior <training-dir> -Output <fresh-dir> -Slots 4 -Attempts 8 -MaxBatchSteps 4096 -BehaviorSeed 10000 -HeldOutSeedStart 0 -PotionLane all
+.\learning\dev.ps1 evaluate-run -Behavior <training-dir> -Output <fresh-dir> -Slots 4 -Attempts 8 -MaxBatchSteps 4096 -BehaviorSeed 10000 -HeldOutSeedStart 0 -RunPotionLane trained
+.\learning\dev.ps1 evaluate-run-potions -Behavior <training-dir> -Output <fresh-dir> -Attempts 8 -MaxBatchSteps 4096 -BehaviorSeed 10000 -HeldOutSeedStart 0
 .\learning\dev.ps1 train-run -Behavior <combat-training-dir> -Output <fresh-dir> -Slots 4 -Generations 1 -AttemptsPerUpdate 8 -MaxBatchSteps 4096 -EvaluationAttempts 16 -HeldOutSeedStart 1000000 -AdvantageMode raw-return
 ```
 
@@ -779,13 +780,19 @@ The same evaluation records each completed combat's start/end HP, max HP, gold,
 and concrete potion-slot identities, plus one compact summary line per observed
 seed. A combat still open at the stopping boundary remains explicitly open;
 HP, gold, and potion identities remain separate facts rather than a combined
-resource score. Use the same behavior, held-out seed range, behavior RNG, and
-bounds with `-PotionLane all` and `-PotionLane never` for a bounded
+resource score. The default `-RunPotionLane trained` inherits the published
+behavior's training potion surface; a root-slot-trained behavior must instead
+choose an explicit whole-run lane. Use the same behavior, held-out seed range,
+behavior RNG, and bounds with `-RunPotionLane all` and
+`-RunPotionLane never` for a bounded
 counterfactual: `never` removes combat potion use and discard from the model
 surface without changing simulator legality or non-combat potion decisions.
 It measures how much observed progress depends on combat potion access; it
 does not establish the value of a consumed identity. Root-slot lanes are not
-defined for complete runs. A combat-
+defined for complete runs. For the routine comparison, use
+`evaluate-run-potions`: it deliberately uses one environment slot so both
+lanes finish the exact same ordered episode seeds, retains both complete V2
+evaluations, and writes a compact per-seed `potion-comparison.json`. A combat-
 trained scorer has not thereby learned non-combat strategy; the command is a
 bounded end-to-end diagnostic of that complete policy surface, not a claim that
 all decisions were trained.

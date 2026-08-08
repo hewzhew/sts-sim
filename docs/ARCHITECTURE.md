@@ -266,7 +266,10 @@ Whole-run evaluation may bind either the ordinary `All` combat potion surface
 or a `Never` counterfactual that removes combat potion use and discard from
 model candidates. It does not support root-slot lanes because a complete run
 has no single immutable combat-root inventory. The lane is evaluation
-provenance, not a resource price or a training reward.
+provenance, not a resource price or a training reward. Routine evaluation
+inherits the published behavior's training lane, preventing an untrained
+potion action surface from appearing silently at deployment; explicit `All`
+and `Never` remain available for bounded counterfactuals.
 
 The standalone `bindings/python_learning` Maturin crate is excluded from the
 root Cargo workspace. Python supplies observation-local candidate ordinals,
