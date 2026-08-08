@@ -225,6 +225,15 @@ independent axes: win, terminal-HP ratio, and potion retention. There is no
 default scalar exchange rate between HP and potions, and the execution
 primitive is not itself a trainer or teacher.
 
+The combat-group caller captures each semantic decision batch before policy
+inference through the same policy-neutral frozen-row owner used by run
+experience. It records the chosen ordinal, selection probability, and one
+unchanged behavior-manifest identity only after the bridge accepts that choice.
+Decision count, retained payload bytes, model rounds, and environment
+transitions all have mandatory hard limits; a batch that would exceed memory
+fails before environment mutation. Partial groups are never delivered as
+completed training experience.
+
 Python recovery curricula may hold explicit opaque single-slot checkpoints.
 Saving one clones that exact in-memory run-control state only when requested;
 restoring it also restores any unfinished symbolic decoder or already selected

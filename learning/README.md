@@ -114,6 +114,16 @@ typed selection probability. Each batch also retains the exact behavior
 manifest identity returned by that model call, not policy scores or a
 reconstructed later version. Row selection, segment rotation, and attempt
 assembly preserve known and unknown probabilities without reinterpretation.
+The policy-neutral capture and choice-validation kernel lives separately in
+`sts_learning.decision_rows`, so same-root combat learning reuses the identical
+immutable payload and byte accounting rather than growing a second trajectory
+format. `sts_learning.combat_experience.CombatGroupDriver` binds those rows to
+the exact combat root and numbered replicate, rejects mixed behavior manifests,
+and retains one complete group under independent decision, payload-byte,
+model-round, and transition limits. A memory overflow is detected before the
+corresponding bridge choice; a partial group is an error, not a fabricated
+terminal sample. Completed groups expose win, terminal-HP-ratio, and potion
+retention leave-one-out axes separately and define no HP/potion exchange rate.
 `sts_learning.manifests` gives that identity an exact bounded owner. A behavior
 manifest references externally stored model checkpoints, model definitions,
 model configurations, behavior-rule implementations and configurations,

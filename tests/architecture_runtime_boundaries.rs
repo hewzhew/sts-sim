@@ -2672,6 +2672,12 @@ fn python_learning_bridge_stays_outside_the_root_workspace_and_policy_layer() {
         .expect("read caller-owned online batch driver");
     let experience = std::fs::read_to_string("learning/src/sts_learning/experience.py")
         .expect("read caller-owned bounded experience segments");
+    let decision_rows =
+        std::fs::read_to_string("learning/src/sts_learning/decision_rows.py")
+            .expect("read policy-neutral decision row owner");
+    let combat_experience =
+        std::fs::read_to_string("learning/src/sts_learning/combat_experience.py")
+            .expect("read caller-owned same-root combat experience");
     for required in [
         "class RecoveryLedger",
         "def prepare_recovery",
@@ -2721,14 +2727,45 @@ fn python_learning_bridge_stays_outside_the_root_workspace_and_policy_layer() {
         "class ExperienceSegmentBuffer",
         "class SegmentCloseReason",
         "class AttemptFragment",
-        "MappingProxyType",
-        "setflags(write=False)",
-        "sys.getsizeof",
+        "PreparedDecisionRows.capture",
+        "normalize_decision_choice",
         "def record_terminals",
     ] {
         assert!(
             experience.contains(required),
             "online experience retention must preserve bounded contract '{required}'"
+        );
+    }
+    for required in [
+        "class PreparedDecisionRows",
+        "MappingProxyType",
+        "setflags(write=False)",
+        "sys.getsizeof",
+        "def normalize_decision_choice",
+    ] {
+        assert!(
+            decision_rows.contains(required),
+            "policy-neutral decision rows must preserve bounded contract '{required}'"
+        );
+    }
+    for required in [
+        "class CombatExperienceLimits",
+        "class BoundedCombatGroupExperience",
+        "class CombatGroupDriver",
+        "CombatGroupOutcomeAccumulator",
+        "PreparedDecisionRows.capture",
+        "normalize_decision_choice",
+        "combat group cannot mix behavior manifest identities",
+    ] {
+        assert!(
+            combat_experience.contains(required),
+            "same-root combat experience must preserve caller contract '{required}'"
+        );
+    }
+    for forbidden in ["sts_learning_bridge", "torch", "serde_json"] {
+        assert!(
+            !combat_experience.contains(forbidden),
+            "same-root combat experience must remain backend-neutral through '{forbidden}'"
         );
     }
     for required in [

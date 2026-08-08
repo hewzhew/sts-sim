@@ -71,8 +71,11 @@ class CombatTerminalStepBatch:
     outcomes: tuple[CombatTerminalOutcome, ...]
 
     def __post_init__(self) -> None:
-        _validate_digest(self.root_id, "root_id")
-        _validate_digest(self.exact_combat_state_hash, "exact_combat_state_hash")
+        validate_combat_digest(self.root_id, "root_id")
+        validate_combat_digest(
+            self.exact_combat_state_hash,
+            "exact_combat_state_hash",
+        )
         outcomes = tuple(self.outcomes)
         if not all(isinstance(row, CombatTerminalOutcome) for row in outcomes):
             raise CombatOutcomeError(
@@ -177,8 +180,11 @@ class CompletedCombatGroup:
     outcomes: tuple[CombatTerminalOutcome, ...]
 
     def __post_init__(self) -> None:
-        _validate_digest(self.root_id, "root_id")
-        _validate_digest(self.exact_combat_state_hash, "exact_combat_state_hash")
+        validate_combat_digest(self.root_id, "root_id")
+        validate_combat_digest(
+            self.exact_combat_state_hash,
+            "exact_combat_state_hash",
+        )
         outcomes = tuple(self.outcomes)
         if len(outcomes) < 2:
             raise CombatOutcomeError("completed combat group requires two replicates")
@@ -219,8 +225,11 @@ class CombatGroupOutcomeAccumulator:
         exact_combat_state_hash: str,
         replicate_count: int,
     ) -> None:
-        _validate_digest(root_id, "root_id")
-        _validate_digest(exact_combat_state_hash, "exact_combat_state_hash")
+        validate_combat_digest(root_id, "root_id")
+        validate_combat_digest(
+            exact_combat_state_hash,
+            "exact_combat_state_hash",
+        )
         self.root_id = root_id
         self.exact_combat_state_hash = exact_combat_state_hash
         self.replicate_count = _positive_integer(replicate_count, "replicate_count")
@@ -299,7 +308,7 @@ def _string_field(step: Mapping[str, object], name: str) -> str:
         value = step[name]
     except KeyError as error:
         raise CombatOutcomeError(f"bridge combat step is missing {name}") from error
-    _validate_digest(value, name)
+    validate_combat_digest(value, name)
     return value
 
 
@@ -327,7 +336,7 @@ def _positive_integer(value: object, name: str) -> int:
     return normalized
 
 
-def _validate_digest(value: object, name: str) -> None:
+def validate_combat_digest(value: object, name: str) -> None:
     if not isinstance(value, str) or len(value) != 64:
         raise CombatOutcomeError(f"{name} must be a 64-character lowercase hex digest")
     if any(character not in "0123456789abcdef" for character in value):
