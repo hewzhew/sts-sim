@@ -11,7 +11,6 @@ $ErrorActionPreference = "Stop"
 $learningRoot = (Resolve-Path -LiteralPath $PSScriptRoot).Path
 $repositoryRoot = (Resolve-Path -LiteralPath (Join-Path $learningRoot "..")).Path
 $sourceRoot = Join-Path $learningRoot "src"
-$testRoot = Join-Path $learningRoot "tests"
 $hostRoot = Join-Path $repositoryRoot ".oracle-lab\hosts"
 $pythonFile = Join-Path $hostRoot "learning-python.txt"
 $reportRoot = Join-Path $repositoryRoot ".oracle-lab\reports"
@@ -118,7 +117,7 @@ function Invoke-LearningTests([string]$PythonPath) {
     try {
         $ErrorActionPreference = "Continue"
         Invoke-WithLearningPath {
-            & $PythonPath -m unittest discover -s $testRoot -v *> $log
+            & $PythonPath (Join-Path $learningRoot "run_tests.py") *> $log
             $script:testExit = $LASTEXITCODE
         }
     }

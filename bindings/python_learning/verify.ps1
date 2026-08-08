@@ -129,9 +129,7 @@ $savedPythonPath = [Environment]::GetEnvironmentVariable("PYTHONPATH", "Process"
 $env:PYTHONPATH = (Resolve-Path -LiteralPath (Join-Path $repositoryRoot "learning\src")).Path
 $ErrorActionPreference = "Continue"
 $phaseWatch.Restart()
-& $venvPython -m unittest discover `
-    -s (Join-Path $repositoryRoot "learning\tests") `
-    -v *> $learningTestLog
+& $venvPython (Join-Path $repositoryRoot "learning\run_tests.py") *> $learningTestLog
 $learningTestExit = $LASTEXITCODE
 $phaseWatch.Stop()
 $callerTestSeconds = $phaseWatch.Elapsed.TotalSeconds

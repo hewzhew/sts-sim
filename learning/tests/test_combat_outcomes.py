@@ -61,162 +61,118 @@ def _bridge_step(replicates: list[int]) -> dict[str, object]:
     }
 
 
-def test_bridge_terminal_columns_copy_into_typed_rows() -> None:
-    batch = CombatTerminalStepBatch.from_bridge_step(
-        _bridge_step([0, 2]),
-        replicate_count=3,
-    )
-
-    assert tuple(row.replicate_index for row in batch.outcomes) == (0, 2)
-    assert tuple(row.final_hp for row in batch.outcomes) == (80, 60)
-    assert all(row.won for row in batch.outcomes)
-
-
-def test_accumulator_rejects_duplicate_terminal_without_partial_commit() -> None:
-    accumulator = CombatGroupOutcomeAccumulator(
-        root_id=ROOT_ID,
-        exact_combat_state_hash=COMBAT_HASH,
-        replicate_count=3,
-    )
-    accumulator.record(
-        CombatTerminalStepBatch(ROOT_ID, COMBAT_HASH, (_outcome(0),))
-    )
-
-    try:
-        accumulator.record(
-            CombatTerminalStepBatch(
-                ROOT_ID,
-                COMBAT_HASH,
-                (_outcome(1), _outcome(0)),
-            )
-        )
-    except CombatOutcomeError:
-        pass
-    else:
-        raise AssertionError("duplicate terminal replicate was accepted")
-
-    assert accumulator.terminal_count == 1
-    try:
-        accumulator.finish()
-    except CombatOutcomeError:
-        pass
-    else:
-        raise AssertionError("incomplete combat group was accepted")
-
-
-def test_accumulator_rejects_foreign_root_without_partial_commit() -> None:
-    accumulator = CombatGroupOutcomeAccumulator(
-        root_id=ROOT_ID,
-        exact_combat_state_hash=COMBAT_HASH,
-        replicate_count=2,
-    )
-
-    try:
-        accumulator.record(
-            CombatTerminalStepBatch("34" * 32, COMBAT_HASH, (_outcome(0),))
-        )
-    except CombatOutcomeError:
-        pass
-    else:
-        raise AssertionError("terminal batch from a different root was accepted")
-
-    assert accumulator.terminal_count == 0
-
-
-def test_grouped_axes_do_not_invent_one_hp_potion_exchange_rate() -> None:
-    group = CompletedCombatGroup(
-        root_id=ROOT_ID,
-        exact_combat_state_hash=COMBAT_HASH,
-        outcomes=(
-            _outcome(0, final_hp=80),
-            _outcome(1, final_hp=60, potions_used=1),
-            _outcome(2, final_hp=40),
-        ),
-    )
-
-    advantages = group.grouped_advantages()
-
-    assert advantages.win == (0.0, 0.0, 0.0)
-    assert np.allclose(advantages.terminal_hp, (0.375, 0.0, -0.375))
-    assert advantages.potion_retention == (0.5, -1.0, 0.5)
-    assert not advantages.win_has_signal
-    assert advantages.terminal_hp_has_signal
-    assert advantages.potion_retention_has_signal
-
-
-def test_grouped_win_axis_uses_only_same_root_siblings() -> None:
-    group = CompletedCombatGroup(
-        root_id=ROOT_ID,
-        exact_combat_state_hash=COMBAT_HASH,
-        outcomes=(
-            _outcome(0, kind=WIN_KIND),
-            _outcome(1, kind=LOSS_KIND, final_hp=0),
-        ),
-    )
-
-    advantages = group.grouped_advantages()
-
-    assert advantages.win == (1.0, -1.0)
-    assert advantages.win_has_signal
-
-
-def test_same_root_group_rejects_mismatched_start_hp() -> None:
-    second = CombatTerminalOutcome(
-        replicate_index=1,
-        terminal_kind=WIN_KIND,
-        won=True,
-        start_hp=79,
-        final_hp=79,
-        hp_loss=0,
-        turns=3,
-        potions_used=0,
-        potions_discarded=0,
-        cards_played=8,
-    )
-
-    try:
-        CompletedCombatGroup(
-            root_id=ROOT_ID,
-            exact_combat_state_hash=COMBAT_HASH,
-            outcomes=(_outcome(0), second),
-        )
-    except CombatOutcomeError:
-        pass
-    else:
-        raise AssertionError("same-root start HP mismatch was accepted")
-
-
-def test_grouped_signal_ignores_floating_point_residue() -> None:
-    advantages = CombatGroupedAdvantages(
-        win=(1.0e-16, -1.0e-16),
-        terminal_hp=(0.0, 0.0),
-        potion_retention=(0.0, 0.0),
-    )
-
-    assert not advantages.win_has_signal
-
-
 class CombatOutcomeTests(unittest.TestCase):
     def test_bridge_terminal_columns_copy_into_typed_rows(self) -> None:
-        test_bridge_terminal_columns_copy_into_typed_rows()
+        batch = CombatTerminalStepBatch.from_bridge_step(
+            _bridge_step([0, 2]),
+            replicate_count=3,
+        )
 
-    def test_accumulator_rejects_duplicate_terminal_without_partial_commit(self) -> None:
-        test_accumulator_rejects_duplicate_terminal_without_partial_commit()
+        self.assertEqual(
+            tuple(row.replicate_index for row in batch.outcomes),
+            (0, 2),
+        )
+        self.assertEqual(tuple(row.final_hp for row in batch.outcomes), (80, 60))
+        self.assertTrue(all(row.won for row in batch.outcomes))
 
-    def test_grouped_axes_do_not_invent_one_hp_potion_exchange_rate(self) -> None:
-        test_grouped_axes_do_not_invent_one_hp_potion_exchange_rate()
+    def test_accumulator_rejects_wrong_identity_and_duplicate_atomically(self) -> None:
+        accumulator = CombatGroupOutcomeAccumulator(
+            root_id=ROOT_ID,
+            exact_combat_state_hash=COMBAT_HASH,
+            replicate_count=3,
+        )
+        accumulator.record(
+            CombatTerminalStepBatch(ROOT_ID, COMBAT_HASH, (_outcome(0),))
+        )
 
-    def test_accumulator_rejects_foreign_root_without_partial_commit(self) -> None:
-        test_accumulator_rejects_foreign_root_without_partial_commit()
+        invalid_batches = (
+            (
+                "different root id",
+                CombatTerminalStepBatch("34" * 32, COMBAT_HASH, (_outcome(1),)),
+            ),
+            (
+                "different exact state",
+                CombatTerminalStepBatch(ROOT_ID, "cd" * 32, (_outcome(1),)),
+            ),
+            (
+                "duplicate after a new row",
+                CombatTerminalStepBatch(
+                    ROOT_ID,
+                    COMBAT_HASH,
+                    (_outcome(1), _outcome(0)),
+                ),
+            ),
+        )
+        for label, batch in invalid_batches:
+            with self.subTest(label=label):
+                with self.assertRaises(CombatOutcomeError):
+                    accumulator.record(batch)
+                self.assertEqual(accumulator.terminal_count, 1)
 
-    def test_grouped_win_axis_uses_only_same_root_siblings(self) -> None:
-        test_grouped_win_axis_uses_only_same_root_siblings()
+        with self.assertRaises(CombatOutcomeError):
+            accumulator.finish()
+
+    def test_grouped_axes_remain_independent_and_sibling_relative(self) -> None:
+        all_wins = CompletedCombatGroup(
+            root_id=ROOT_ID,
+            exact_combat_state_hash=COMBAT_HASH,
+            outcomes=(
+                _outcome(0, final_hp=80),
+                _outcome(1, final_hp=60, potions_used=1),
+                _outcome(2, final_hp=40),
+            ),
+        ).grouped_advantages()
+
+        self.assertEqual(all_wins.win, (0.0, 0.0, 0.0))
+        self.assertTrue(
+            np.allclose(all_wins.terminal_hp, (0.375, 0.0, -0.375))
+        )
+        self.assertEqual(all_wins.potion_retention, (0.5, -1.0, 0.5))
+        self.assertFalse(all_wins.win_has_signal)
+        self.assertTrue(all_wins.terminal_hp_has_signal)
+        self.assertTrue(all_wins.potion_retention_has_signal)
+
+        mixed_result = CompletedCombatGroup(
+            root_id=ROOT_ID,
+            exact_combat_state_hash=COMBAT_HASH,
+            outcomes=(
+                _outcome(0, kind=WIN_KIND),
+                _outcome(1, kind=LOSS_KIND, final_hp=0),
+            ),
+        ).grouped_advantages()
+
+        self.assertEqual(mixed_result.win, (1.0, -1.0))
+        self.assertTrue(mixed_result.win_has_signal)
 
     def test_same_root_group_rejects_mismatched_start_hp(self) -> None:
-        test_same_root_group_rejects_mismatched_start_hp()
+        second = CombatTerminalOutcome(
+            replicate_index=1,
+            terminal_kind=WIN_KIND,
+            won=True,
+            start_hp=79,
+            final_hp=79,
+            hp_loss=0,
+            turns=3,
+            potions_used=0,
+            potions_discarded=0,
+            cards_played=8,
+        )
+
+        with self.assertRaises(CombatOutcomeError):
+            CompletedCombatGroup(
+                root_id=ROOT_ID,
+                exact_combat_state_hash=COMBAT_HASH,
+                outcomes=(_outcome(0), second),
+            )
 
     def test_grouped_signal_ignores_floating_point_residue(self) -> None:
-        test_grouped_signal_ignores_floating_point_residue()
+        advantages = CombatGroupedAdvantages(
+            win=(1.0e-16, -1.0e-16),
+            terminal_hp=(0.0, 0.0),
+            potion_retention=(0.0, 0.0),
+        )
+
+        self.assertFalse(advantages.win_has_signal)
 
 
 if __name__ == "__main__":
