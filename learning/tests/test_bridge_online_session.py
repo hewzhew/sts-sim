@@ -42,7 +42,7 @@ class RealBridgeCategoricalOnlineSessionTests(unittest.TestCase):
                     profile=CategoricalOnlineProfile(
                         scorer=RaggedScorerConfig(
                             hidden_dim=8,
-                            relation_layers=0,
+                            relation_layers=1,
                         ),
                         behavior=RaggedCategoricalPolicyConfig(
                             temperature=0.8

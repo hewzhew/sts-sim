@@ -92,6 +92,10 @@ class CategoricalOnlineProfile:
     def __post_init__(self) -> None:
         if not isinstance(self.scorer, RaggedScorerConfig):
             raise TorchSessionError("session scorer config must be typed")
+        if self.scorer.relation_layers == 0:
+            raise TorchSessionError(
+                "online session requires a relation-aware scorer"
+            )
         if not isinstance(self.behavior, RaggedCategoricalPolicyConfig):
             raise TorchSessionError("session behavior config must be typed")
         if not isinstance(self.optimizer, AdamTrainingConfig):

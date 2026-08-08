@@ -570,8 +570,9 @@ update batch or without promotion remains explicitly live-only. Restore
 additionally requires the saved
 slot count, seed-partition rule, and recovery budget to match the session
 configuration. The first maintained profile is CPU-only, collects eight
-same-behavior complete attempts per optimizer update, and does not silently
-select another device.
+same-behavior complete attempts per optimizer update, requires at least one
+relation layer so candidate-target edges can affect logits, and does not
+silently select another device.
 
 On an ordinary reward screen, the reward owner claims typed low-agency public
 resources before opening a nested card-reward choice. This lets the card owner

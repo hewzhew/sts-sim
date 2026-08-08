@@ -37,6 +37,12 @@ if _TORCH_AVAILABLE:
 
 @unittest.skipUnless(_TORCH_AVAILABLE, "optional PyTorch dependency is not installed")
 class CategoricalOnlineSessionTests(unittest.TestCase):
+    def test_online_profile_rejects_relation_blind_scorers(self) -> None:
+        with self.assertRaisesRegex(TorchSessionError, "relation-aware"):
+            CategoricalOnlineProfile(
+                scorer=RaggedScorerConfig(hidden_dim=8, relation_layers=0),
+            )
+
     def test_compact_session_trains_publishes_restores_and_continues(self) -> None:
         with tempfile.TemporaryDirectory() as root:
             factory = _factory(Path(root))
@@ -125,7 +131,7 @@ def _factory(root: Path, *, attempts_per_update: int = 1):
         ),
         CategoricalOnlineSessionConfig(
             profile=CategoricalOnlineProfile(
-                scorer=RaggedScorerConfig(hidden_dim=4, relation_layers=0),
+                scorer=RaggedScorerConfig(hidden_dim=4, relation_layers=1),
                 behavior=RaggedCategoricalPolicyConfig(temperature=0.8),
                 objective=OnPolicyObjectiveConfig(
                     attempts_per_update=attempts_per_update,

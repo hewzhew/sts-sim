@@ -378,7 +378,10 @@ real optimizer-step promotion. An unfinished bounded call returns no fake
 durable resume point. Restore verifies the saved slot count, training seed
 partition, and recovery budget against the supplied session configuration. The
 first maintained profile is deliberately CPU-only and defaults to eight
-same-behavior complete attempts per optimizer update. `recover_behavior(...)`
+same-behavior complete attempts per optimizer update. Maintained online
+sessions require at least one relation layer: a relation-blind bag of tokens
+cannot associate candidate actions with their card, potion, or monster targets
+and is only a lower-level scorer test configuration. `recover_behavior(...)`
 materializes a frozen manifest with an explicit fresh RNG seed for the existing
 paired held-out evaluator; evaluation never reuses the mutable shadow model.
 
