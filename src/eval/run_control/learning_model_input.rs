@@ -613,6 +613,9 @@ impl<'a> LearningModelDecisionV1<'a> {
                 + boundary.legal_actions.selection_families.len(),
         );
         for input in &boundary.legal_actions.atomic_actions {
+            if !combat_learning_policy_candidate_allowed(boundary, input) {
+                continue;
+            }
             candidates.push(LearningModelCandidateV1 {
                 semantics: LearningModelCandidateSemanticsV1::CombatAtomic {
                     action: combat_atomic_semantics(boundary, input)?,
@@ -647,6 +650,54 @@ impl<'a> LearningModelDecisionV1<'a> {
             candidates,
         })
     }
+}
+
+/// Keeps the engine's Java-faithful legal surface separate from the actions a
+/// learning policy is asked to explore.
+///
+/// Discarding a potion has no combat effect by itself. It enters the policy
+/// surface only when another action at this unchanged decision can immediately
+/// refill the opened slot. Potion quality and retained value remain unranked.
+fn combat_learning_policy_candidate_allowed(
+    boundary: &LearningCombatBoundaryV1,
+    input: &ClientInput,
+) -> bool {
+    let ClientInput::DiscardPotion(discarded_slot) = input else {
+        return true;
+    };
+    if boundary
+        .observation
+        .player
+        .relics
+        .iter()
+        .any(|relic| relic.id == crate::content::relics::RelicId::Sozu)
+    {
+        return false;
+    }
+    boundary
+        .legal_actions
+        .atomic_actions
+        .iter()
+        .any(|candidate| match candidate {
+            ClientInput::UsePotion { potion_index, .. } if potion_index != discarded_slot => {
+                boundary
+                    .observation
+                    .potions
+                    .get(*potion_index)
+                    .and_then(Option::as_ref)
+                    .is_some_and(|potion| {
+                        potion.potion_id == crate::content::potions::PotionId::EntropicBrew
+                    })
+            }
+            ClientInput::PlayCard { card_index, .. } => boundary
+                .observation
+                .cards
+                .hand
+                .cards
+                .get(*card_index)
+                .is_some_and(|card| card.card_id == crate::content::cards::CardId::Alchemize),
+            _ => false,
+        })
 }
 
 /// A ragged batch of decisions.
@@ -1372,7 +1423,9 @@ mod tests {
     use super::*;
     use crate::content::cards::CardId;
     use crate::content::monsters::EnemyId;
-    use crate::runtime::combat::CombatCard;
+    use crate::content::potions::{Potion, PotionId};
+    use crate::content::relics::{RelicId, RelicState};
+    use crate::runtime::combat::{CombatCard, CombatState};
     use crate::sim::combat_action_surface::combat_legal_action_surface_v2;
     use crate::state::core::{
         ActiveCombat, CombatContext, EngineState, HandSelectReason, RoomCombatContext,
@@ -1383,6 +1436,87 @@ mod tests {
     use crate::state::PendingChoice;
 
     use super::super::{LearningEnvV1, RunControlConfig, RunControlSession};
+
+    fn legal_and_policy_atomic_inputs(
+        mut combat: CombatState,
+    ) -> (Vec<ClientInput>, Vec<ClientInput>) {
+        combat
+            .entities
+            .monsters
+            .push(crate::test_support::test_monster(EnemyId::JawWorm));
+        let legal =
+            combat_legal_action_surface_v2(&EngineState::CombatPlayerTurn, &combat).atomic_actions;
+        let mut session = RunControlSession::new(RunControlConfig::default());
+        session.engine_state = EngineState::CombatPlayerTurn;
+        session.active_combat = Some(ActiveCombat::new(
+            EngineState::CombatPlayerTurn,
+            combat,
+            CombatContext::Room(RoomCombatContext {
+                room_type: RoomType::MonsterRoom,
+            }),
+        ));
+        let boundary = LearningEnvV1::from_session(session)
+            .observe()
+            .expect("combat boundary");
+        let decision =
+            LearningModelDecisionV1::from_boundary(&boundary).expect("combat model decision");
+        let policy = decision
+            .candidates
+            .iter()
+            .filter_map(|candidate| match &candidate.resolution {
+                LearningCandidateResolutionV1::CombatAtomic { input } => Some((*input).clone()),
+                _ => None,
+            })
+            .collect();
+        (legal, policy)
+    }
+
+    #[test]
+    fn combat_policy_withholds_potion_discard_without_an_immediate_refill() {
+        let mut ordinary = crate::test_support::blank_test_combat();
+        ordinary.entities.potions = vec![
+            Some(Potion::new(PotionId::BlockPotion, 1)),
+            Some(Potion::new(PotionId::SkillPotion, 2)),
+        ];
+        let (legal, policy) = legal_and_policy_atomic_inputs(ordinary);
+        assert!(legal.contains(&ClientInput::DiscardPotion(0)));
+        assert!(legal.contains(&ClientInput::DiscardPotion(1)));
+        assert!(!policy
+            .iter()
+            .any(|input| matches!(input, ClientInput::DiscardPotion(_))));
+
+        let mut brew = crate::test_support::blank_test_combat();
+        brew.entities.potions = vec![
+            Some(Potion::new(PotionId::EntropicBrew, 3)),
+            Some(Potion::new(PotionId::BlockPotion, 4)),
+        ];
+        let (_, policy) = legal_and_policy_atomic_inputs(brew);
+        assert!(!policy.contains(&ClientInput::DiscardPotion(0)));
+        assert!(policy.contains(&ClientInput::DiscardPotion(1)));
+
+        let mut alchemize = crate::test_support::blank_test_combat();
+        alchemize.entities.potions = vec![
+            Some(Potion::new(PotionId::BlockPotion, 5)),
+            Some(Potion::new(PotionId::SkillPotion, 6)),
+        ];
+        alchemize.zones.hand = vec![CombatCard::new(CardId::Alchemize, 7)];
+        let (_, policy) = legal_and_policy_atomic_inputs(alchemize);
+        assert!(policy.contains(&ClientInput::DiscardPotion(0)));
+        assert!(policy.contains(&ClientInput::DiscardPotion(1)));
+
+        let mut sozu = crate::test_support::blank_test_combat();
+        sozu.entities.potions = vec![
+            Some(Potion::new(PotionId::EntropicBrew, 8)),
+            Some(Potion::new(PotionId::BlockPotion, 9)),
+        ];
+        sozu.entities
+            .player
+            .add_relic(RelicState::new(RelicId::Sozu));
+        let (_, policy) = legal_and_policy_atomic_inputs(sozu);
+        assert!(!policy
+            .iter()
+            .any(|input| matches!(input, ClientInput::DiscardPotion(_))));
+    }
 
     #[test]
     fn strategic_model_view_resolves_an_ordinal_without_exposing_candidate_ids() {

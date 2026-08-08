@@ -148,6 +148,14 @@ one backend call per environment slot. The adapter does not serialize per-step
 JSON and does not define a feature dictionary, network architecture, or policy
 objective.
 
+The Java-faithful engine action surface and the learning-policy candidate
+surface are intentionally distinct. A free `DiscardPotion` UI action remains
+engine-legal, but the policy surface withholds it unless another action at the
+same unchanged decision can immediately refill the opened slot: a different
+usable `EntropicBrew` or a currently playable `Alchemize`, with potion gain not
+blocked by `Sozu`. This is a mechanical action prior, not a potion tier,
+retained-value score, or permission to spend.
+
 `LearningEnvPoolV1` owns a fixed set of independent environments and exposes
 all non-terminal slots as one aligned ragged model batch. It prepares every
 selected action against the unchanged slots before applying any of them, so an

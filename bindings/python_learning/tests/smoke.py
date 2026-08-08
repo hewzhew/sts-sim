@@ -681,7 +681,10 @@ def main() -> None:
         assert total_steps < 100_000
 
     elapsed = time.perf_counter() - started
-    assert total_steps == 330
+    # The exact seeded trajectory length is policy-dependent. Completion,
+    # boundedness, terminal alignment, and semantic coverage above are the
+    # bridge contracts; a new candidate prior must not require a new magic
+    # step-count golden.
     assert terminal_slots_seen == set(range(env.slot_count))
     assert saw_combat
     assert saw_candidate_target

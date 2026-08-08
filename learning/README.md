@@ -129,6 +129,10 @@ bridge-owned frozen root context; the caller must not decode semantic feature
 numbers or copy the full combat observation into a parallel metadata schema.
 The bridge discovers all currently eligible roots in one call, so corpus
 selection does not create throwaway replicate groups or require per-slot probes.
+The policy-facing action rows exclude a mechanically idle potion discard unless
+the same decision also exposes an immediate refill through another usable
+`EntropicBrew` or a playable `Alchemize`, and `Sozu` does not block the gain;
+the simulator's complete legal action surface remains unchanged.
 The maintained production handoff is one byte-bounded
 `CombatLearningRootBatchArtifactV1`, not a Python continuation parser or a
 guessed branch-capsule path. `cargo oracle-lab learning-root collect` advances
