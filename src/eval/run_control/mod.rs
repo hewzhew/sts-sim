@@ -176,16 +176,16 @@ pub use learning_env_pool::{
     LearningEnvPoolStepV1, LearningEnvPoolV1,
 };
 pub use learning_model_input::{
-    LearningCombatAtomicActionV1, LearningCombatIndexedChoiceV1, LearningCombatModelObservationV1,
-    LearningCombatMonsterV1, LearningCombatMonstersV1, LearningCombatSelectionDomainSemanticsV1,
-    LearningCombatSelectionDomainV1, LearningCombatSelectionFamilyV1, LearningDenseActionMaskV1,
-    LearningModelBatchV1, LearningModelCandidateSemanticsV1, LearningModelCandidateV1,
-    LearningModelChoiceV1, LearningModelDecisionV1, LearningModelInputError,
-    LearningModelObservationV1, LearningRunSelectionFamilyV1,
-    LearningSelectionCandidateSemanticsV1, LearningSelectionCandidateV1,
-    LearningSelectionDecisionV1, LearningSelectionDraftV1, LearningSelectionModelBatchV1,
-    LearningSelectionModelRowV1, LearningSelectionStepV1, LearningStrategicModelObservationV1,
-    LearningStrategicPotionSlotV1, LearningStrategicPotionV1,
+    CombatLearningPotionPolicyV1, LearningCombatAtomicActionV1, LearningCombatIndexedChoiceV1,
+    LearningCombatModelObservationV1, LearningCombatMonsterV1, LearningCombatMonstersV1,
+    LearningCombatSelectionDomainSemanticsV1, LearningCombatSelectionDomainV1,
+    LearningCombatSelectionFamilyV1, LearningDenseActionMaskV1, LearningModelBatchV1,
+    LearningModelCandidateSemanticsV1, LearningModelCandidateV1, LearningModelChoiceV1,
+    LearningModelDecisionV1, LearningModelInputError, LearningModelObservationV1,
+    LearningRunSelectionFamilyV1, LearningSelectionCandidateSemanticsV1,
+    LearningSelectionCandidateV1, LearningSelectionDecisionV1, LearningSelectionDraftV1,
+    LearningSelectionModelBatchV1, LearningSelectionModelRowV1, LearningSelectionStepV1,
+    LearningStrategicModelObservationV1, LearningStrategicPotionSlotV1, LearningStrategicPotionV1,
 };
 pub use oracle_analysis_session::{
     OracleAnalysisAdvanceReportV1, OracleAnalysisAdvanceRequestV1, OracleAnalysisAdvanceStatusV1,

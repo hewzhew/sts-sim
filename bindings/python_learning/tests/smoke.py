@@ -216,6 +216,10 @@ def _assert_same_root_combat_group(env: LearningBatchEnv, slot: int) -> None:
     )
     group = env.combat_group(slot, 2)
     assert isinstance(group, CombatLearningBatchEnv)
+    assert group.allows_potions
+    no_potion_group = env.combat_group(slot, 2, False)
+    assert not no_potion_group.allows_potions
+    assert no_potion_group.root_id == group.root_id
     assert group.replicate_count == 2
     assert group.terminal_count == 0
     assert len(group.root_id) == 64

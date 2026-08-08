@@ -644,9 +644,12 @@ run. Each bridge wheel and smoke environment remains fresh; optional training
 dependencies may stay absent from the pytest tool and their tests may skip. Use
 `refresh-bridge` when a real experiment needs the new bridge: it verifies and
 installs a release-profile wheel with `--no-deps`, but defers the second Rust
-test-binary link. Neither command mutates NumPy or PyTorch. `verify` is the
-release-profile milestone gate and additionally runs the Rust bridge contract
-tests. Ordinary Python-only edits still use `test`. For first setup, pass
+test-binary link. For a functional experiment that does not measure throughput,
+`refresh-bridge -BridgeProfile dev` installs the already verified dev-profile
+semantics without paying the optimized rebuild; use the default `release`
+profile for timing or milestone evidence. Neither command mutates NumPy or
+PyTorch. `verify` is the release-profile milestone gate and additionally runs
+the Rust bridge contract tests. Ordinary Python-only edits still use `test`. For first setup, pass
 `-Python <python.exe>` to refresh and record that runtime only after the guarded
 installation and final doctor both succeed.
 
@@ -721,6 +724,15 @@ continuation outside this evaluator. It creates no optimizer, trainer,
 experience buffer, or behavior promotion. A result measures the exact frozen
 manifest on that bounded sample; it does not establish improvement without a
 comparable baseline using the same roots and RNG streams.
+
+Select the model-facing potion action surface explicitly with
+`-PotionLane all|never` (default `all`). `never` removes potion use and discard
+from the model candidates without changing simulator legality. Run an `all`
+and a `never` evaluation into separate fresh output directories with the same
+artifact, behavior seed base, and replicate count to ask whether the frozen
+behavior can win while preserving the starting inventory. This is an
+evaluation ablation only: it does not price a potion, change training, or
+establish continuation value.
 
 Each root also reports an observed-resource Pareto frontier among its winning
 replicates. The order compares final HP, max HP, gold, and exact potion

@@ -11,7 +11,11 @@ param(
     [int]$Replicates = 8,
     [int]$Updates,
     [long]$ModelSeed = 0,
-    [long]$BehaviorSeedBase = 1000
+    [long]$BehaviorSeedBase = 1000,
+    [ValidateSet("all", "never")]
+    [string]$PotionLane = "all",
+    [ValidateSet("dev", "release")]
+    [string]$BridgeProfile = "release"
 )
 
 $ErrorActionPreference = "Stop"
@@ -219,7 +223,8 @@ switch ($Command) {
                 --output $Output `
                 --roots $Roots `
                 --replicates $Replicates `
-                --behavior-seed-base $BehaviorSeedBase
+                --behavior-seed-base $BehaviorSeedBase `
+                --potion-lane $PotionLane
             if ($LASTEXITCODE -ne 0) {
                 throw "combat evaluation command failed"
             }
@@ -264,7 +269,8 @@ switch ($Command) {
             -Python $pythonPath `
             -MaturinPython $MaturinPython `
             -InstallTarget `
-            -SkipRustTests
+            -SkipRustTests `
+            -Fast:($BridgeProfile -eq "dev")
         if ($LASTEXITCODE -ne 0) {
             throw "learning bridge refresh failed"
         }

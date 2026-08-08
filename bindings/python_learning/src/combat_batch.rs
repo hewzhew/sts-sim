@@ -8,8 +8,8 @@ use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
 use sts_oracle_eval::eval::run_control::{
-    CombatLearningEnvPoolV1, CombatLearningRootContextV1, CombatLearningRootIdentityV1,
-    CombatLearningRootV1,
+    CombatLearningEnvPoolV1, CombatLearningPotionPolicyV1, CombatLearningRootContextV1,
+    CombatLearningRootIdentityV1, CombatLearningRootV1,
 };
 use sts_oracle_eval::sim::combat::CombatTerminal;
 
@@ -207,6 +207,11 @@ impl CombatLearningBatchEnv {
     #[getter]
     fn replicate_count(&self) -> usize {
         self.pool.replicate_count()
+    }
+
+    #[getter]
+    fn allows_potions(&self) -> bool {
+        self.pool.potion_policy() == CombatLearningPotionPolicyV1::All
     }
 
     #[getter]
@@ -437,7 +442,23 @@ impl CombatLearningBatchEnv {
         root: &CombatLearningRootV1,
         replicate_count: usize,
     ) -> Result<Self, String> {
-        let pool = CombatLearningEnvPoolV1::from_root(root, replicate_count)
+        Self::from_root_with_potion_policy(
+            root,
+            replicate_count,
+            CombatLearningPotionPolicyV1::All,
+        )
+    }
+
+    pub(super) fn from_root_with_potion_policy(
+        root: &CombatLearningRootV1,
+        replicate_count: usize,
+        potion_policy: CombatLearningPotionPolicyV1,
+    ) -> Result<Self, String> {
+        let pool = CombatLearningEnvPoolV1::from_root_with_potion_policy(
+            root,
+            replicate_count,
+            potion_policy,
+        )
             .map_err(|error| error.to_string())?;
         let states = states_from_source(&pool)?;
         Ok(Self { pool, states })

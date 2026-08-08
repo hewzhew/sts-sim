@@ -297,6 +297,12 @@ concrete starting/final/lost/gained potion identities, and use/discard counts
 independently inspectable. A lost identity is a multiset inventory fact, not a
 claim about whether spending it was strategically correct. Cross-combat value
 requires an exact run continuation and remains outside the combat evaluator.
+Each evaluation also declares one model-facing potion lane. `All` exposes the
+ordinary learning candidate surface; `Never` removes every potion use and
+discard candidate while leaving the engine's legal action surface unchanged.
+Running both on the same exact roots and behavior RNG streams is a bounded
+counterfactual coverage check, not a potion-value judgment, reward, or training
+policy.
 Among winning replicates, the evaluator may additionally report an
 `observed-resource` Pareto frontier over final HP, max HP, gold, and exact
 potion-identity multisets. One result orders another only when every observed

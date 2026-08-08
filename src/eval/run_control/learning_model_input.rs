@@ -143,6 +143,18 @@ pub enum LearningModelCandidateSemanticsV1<'a> {
     },
 }
 
+/// Potion actions admitted to one model-facing combat candidate surface.
+///
+/// This policy never changes engine legality. `Never` is an explicit
+/// counterfactual lane for measuring whether the same behavior can solve a
+/// combat without spending a potion.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum CombatLearningPotionPolicyV1 {
+    #[default]
+    All,
+    Never,
+}
+
 #[derive(Clone, Copy, Debug)]
 pub struct LearningCombatIndexedChoiceV1<'a> {
     pub input_encoding: CombatIndexedChoiceInputEncodingV2,
@@ -467,7 +479,9 @@ impl<'a> LearningModelDecisionV1<'a> {
     ) -> Result<Self, LearningModelInputError> {
         match boundary {
             LearningBoundaryV1::Strategic { boundary } => Self::from_strategic(boundary),
-            LearningBoundaryV1::Combat { boundary } => Self::from_combat(boundary),
+            LearningBoundaryV1::Combat { boundary } => {
+                Self::from_combat(boundary, CombatLearningPotionPolicyV1::All)
+            }
             LearningBoundaryV1::Terminal { .. } => Err(LearningModelInputError::TerminalBoundary),
             LearningBoundaryV1::Unsupported => Err(LearningModelInputError::UnsupportedBoundary),
         }
@@ -520,7 +534,14 @@ impl<'a> LearningModelDecisionV1<'a> {
     pub fn from_combat_boundary(
         boundary: &'a LearningCombatBoundaryV1,
     ) -> Result<Self, LearningModelInputError> {
-        Self::from_combat(boundary)
+        Self::from_combat(boundary, CombatLearningPotionPolicyV1::All)
+    }
+
+    pub fn from_combat_boundary_with_potion_policy(
+        boundary: &'a LearningCombatBoundaryV1,
+        potion_policy: CombatLearningPotionPolicyV1,
+    ) -> Result<Self, LearningModelInputError> {
+        Self::from_combat(boundary, potion_policy)
     }
 
     fn from_strategic(
@@ -604,6 +625,7 @@ impl<'a> LearningModelDecisionV1<'a> {
 
     fn from_combat(
         boundary: &'a LearningCombatBoundaryV1,
+        potion_policy: CombatLearningPotionPolicyV1,
     ) -> Result<Self, LearningModelInputError> {
         validate_indexed_choice_alignment(&boundary.legal_actions)?;
 
@@ -613,6 +635,14 @@ impl<'a> LearningModelDecisionV1<'a> {
                 + boundary.legal_actions.selection_families.len(),
         );
         for input in &boundary.legal_actions.atomic_actions {
+            if potion_policy == CombatLearningPotionPolicyV1::Never
+                && matches!(
+                    input,
+                    ClientInput::UsePotion { .. } | ClientInput::DiscardPotion(_)
+                )
+            {
+                continue;
+            }
             if !combat_learning_policy_candidate_allowed(boundary, input) {
                 continue;
             }
@@ -731,11 +761,22 @@ impl<'a> LearningModelBatchV1<'a> {
     pub fn from_combat_boundary_refs(
         boundaries: impl IntoIterator<Item = &'a LearningCombatBoundaryV1>,
     ) -> Result<Self, LearningModelInputError> {
-        Self::from_decision_results(
-            boundaries
-                .into_iter()
-                .map(LearningModelDecisionV1::from_combat_boundary),
+        Self::from_combat_boundary_refs_with_potion_policy(
+            boundaries,
+            CombatLearningPotionPolicyV1::All,
         )
+    }
+
+    pub fn from_combat_boundary_refs_with_potion_policy(
+        boundaries: impl IntoIterator<Item = &'a LearningCombatBoundaryV1>,
+        potion_policy: CombatLearningPotionPolicyV1,
+    ) -> Result<Self, LearningModelInputError> {
+        Self::from_decision_results(boundaries.into_iter().map(|boundary| {
+            LearningModelDecisionV1::from_combat_boundary_with_potion_policy(
+                boundary,
+                potion_policy,
+            )
+        }))
     }
 
     fn from_decision_results(
@@ -1439,6 +1480,7 @@ mod tests {
 
     fn legal_and_policy_atomic_inputs(
         mut combat: CombatState,
+        potion_policy: CombatLearningPotionPolicyV1,
     ) -> (Vec<ClientInput>, Vec<ClientInput>) {
         combat
             .entities
@@ -1458,8 +1500,14 @@ mod tests {
         let boundary = LearningEnvV1::from_session(session)
             .observe()
             .expect("combat boundary");
-        let decision =
-            LearningModelDecisionV1::from_boundary(&boundary).expect("combat model decision");
+        let LearningBoundaryV1::Combat { boundary } = &boundary else {
+            panic!("expected combat boundary");
+        };
+        let decision = LearningModelDecisionV1::from_combat_boundary_with_potion_policy(
+            boundary,
+            potion_policy,
+        )
+        .expect("combat model decision");
         let policy = decision
             .candidates
             .iter()
@@ -1478,7 +1526,8 @@ mod tests {
             Some(Potion::new(PotionId::BlockPotion, 1)),
             Some(Potion::new(PotionId::SkillPotion, 2)),
         ];
-        let (legal, policy) = legal_and_policy_atomic_inputs(ordinary);
+        let (legal, policy) =
+            legal_and_policy_atomic_inputs(ordinary, CombatLearningPotionPolicyV1::All);
         assert!(legal.contains(&ClientInput::DiscardPotion(0)));
         assert!(legal.contains(&ClientInput::DiscardPotion(1)));
         assert!(!policy
@@ -1490,7 +1539,7 @@ mod tests {
             Some(Potion::new(PotionId::EntropicBrew, 3)),
             Some(Potion::new(PotionId::BlockPotion, 4)),
         ];
-        let (_, policy) = legal_and_policy_atomic_inputs(brew);
+        let (_, policy) = legal_and_policy_atomic_inputs(brew, CombatLearningPotionPolicyV1::All);
         assert!(!policy.contains(&ClientInput::DiscardPotion(0)));
         assert!(policy.contains(&ClientInput::DiscardPotion(1)));
 
@@ -1500,7 +1549,8 @@ mod tests {
             Some(Potion::new(PotionId::SkillPotion, 6)),
         ];
         alchemize.zones.hand = vec![CombatCard::new(CardId::Alchemize, 7)];
-        let (_, policy) = legal_and_policy_atomic_inputs(alchemize);
+        let (_, policy) =
+            legal_and_policy_atomic_inputs(alchemize, CombatLearningPotionPolicyV1::All);
         assert!(policy.contains(&ClientInput::DiscardPotion(0)));
         assert!(policy.contains(&ClientInput::DiscardPotion(1)));
 
@@ -1512,10 +1562,27 @@ mod tests {
         sozu.entities
             .player
             .add_relic(RelicState::new(RelicId::Sozu));
-        let (_, policy) = legal_and_policy_atomic_inputs(sozu);
+        let (_, policy) = legal_and_policy_atomic_inputs(sozu, CombatLearningPotionPolicyV1::All);
         assert!(!policy
             .iter()
             .any(|input| matches!(input, ClientInput::DiscardPotion(_))));
+
+        let mut no_potions = crate::test_support::blank_test_combat();
+        no_potions.entities.potions = vec![
+            Some(Potion::new(PotionId::EntropicBrew, 10)),
+            Some(Potion::new(PotionId::BlockPotion, 11)),
+        ];
+        no_potions.zones.hand = vec![CombatCard::new(CardId::Alchemize, 12)];
+        let (legal, policy) =
+            legal_and_policy_atomic_inputs(no_potions, CombatLearningPotionPolicyV1::Never);
+        assert!(legal.iter().any(|input| matches!(
+            input,
+            ClientInput::UsePotion { .. } | ClientInput::DiscardPotion(_)
+        )));
+        assert!(!policy.iter().any(|input| matches!(
+            input,
+            ClientInput::UsePotion { .. } | ClientInput::DiscardPotion(_)
+        )));
     }
 
     #[test]

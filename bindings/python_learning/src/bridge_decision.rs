@@ -70,7 +70,11 @@ impl BridgeDecisionSource for CombatLearningEnvPoolV1 {
         let CombatLearningBoundaryV1::Decision { boundary, .. } = boundary else {
             return Err(format!("combat replicate {replicate_index} is terminal"));
         };
-        LearningModelDecisionV1::from_combat_boundary(boundary).map_err(|error| error.to_string())
+        LearningModelDecisionV1::from_combat_boundary_with_potion_policy(
+            boundary,
+            self.potion_policy(),
+        )
+        .map_err(|error| error.to_string())
     }
 }
 

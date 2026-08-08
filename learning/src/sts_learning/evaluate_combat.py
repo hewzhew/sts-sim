@@ -12,6 +12,7 @@ from pathlib import Path
 
 from .combat_evaluation import (
     CombatEvaluationLimits,
+    CombatEvaluationPotionLane,
     CombatEvaluationRootResult,
     CombatHeldOutEvaluationResult,
     CombatHeldOutEvaluator,
@@ -31,7 +32,7 @@ from .torch_combat_session_config import (
 )
 
 
-COMBAT_EVALUATION_SCHEMA = "sts-learning-combat-held-out-evaluation-v3"
+COMBAT_EVALUATION_SCHEMA = "sts-learning-combat-held-out-evaluation-v4"
 
 
 class CombatEvaluationCommandError(RuntimeError):
@@ -46,6 +47,7 @@ class CombatEvaluationCommandConfig:
     root_count: int
     replicate_count: int
     behavior_seed_base: int
+    potion_lane: CombatEvaluationPotionLane = CombatEvaluationPotionLane.ALL
 
     def __post_init__(self) -> None:
         artifact = Path(self.artifact).resolve()
@@ -75,6 +77,10 @@ class CombatEvaluationCommandConfig:
             self.behavior_seed_base,
             "behavior_seed_base",
         )
+        if not isinstance(self.potion_lane, CombatEvaluationPotionLane):
+            raise CombatEvaluationCommandError(
+                "combat evaluation potion_lane must be typed"
+            )
         if replicate_count < 2:
             raise CombatEvaluationCommandError(
                 "combat evaluation requires at least two replicates"
@@ -141,6 +147,7 @@ def run_combat_evaluation(
             max_model_rounds=session_limits.experience.max_model_rounds,
             max_transitions=session_limits.experience.max_transitions,
         ),
+        potion_lane=config.potion_lane,
     )
 
     started = time.perf_counter()
@@ -235,6 +242,7 @@ def run_combat_evaluation(
     )
     print(
         f"evaluation_complete=true wins={result.wins} losses={result.losses} "
+        f"potion_lane={result.potion_lane.value} "
         f"root_wins={root_wins} root_final_hp_sums={root_final_hp} "
         f"root_potions_used={root_potions_used} "
         f"root_potions_discarded={root_potions_discarded} "
@@ -291,6 +299,7 @@ def _summary(
     return {
         "schema": COMBAT_EVALUATION_SCHEMA,
         "kind": "completed",
+        "potion_lane": result.potion_lane.value,
         "artifact": str(config.artifact),
         "artifact_sha256": artifact_sha256,
         "artifact_bytes": artifact_bytes,
@@ -488,6 +497,11 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--roots", type=int, required=True)
     parser.add_argument("--replicates", type=int, default=8)
     parser.add_argument("--behavior-seed-base", type=int, default=10_000)
+    parser.add_argument(
+        "--potion-lane",
+        choices=tuple(lane.value for lane in CombatEvaluationPotionLane),
+        default=CombatEvaluationPotionLane.ALL.value,
+    )
     return parser
 
 
@@ -501,6 +515,7 @@ def main() -> int:
             root_count=arguments.roots,
             replicate_count=arguments.replicates,
             behavior_seed_base=arguments.behavior_seed_base,
+            potion_lane=CombatEvaluationPotionLane(arguments.potion_lane),
         )
     )
     return 0

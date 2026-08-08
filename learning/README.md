@@ -209,7 +209,8 @@ Evaluate the published frozen behavior on a distinct held-out root batch with:
   -Output <fresh-evaluation-directory> `
   -Roots <artifact-root-count> `
   -Replicates 8 `
-  -BehaviorSeedBase 10000
+  -BehaviorSeedBase 10000 `
+  -PotionLane all
 ```
 
 This command verifies the exact durable manifest, checkpoint, maintained model
@@ -225,6 +226,11 @@ rate. Cross-combat resource value requires an exact continuation and remains
 outside this command. These facts measure that exact manifest on the bounded
 held-out sample and are not an improvement claim without a same-input frozen
 baseline.
+`-PotionLane never` runs the same frozen behavior and roots with every potion
+use/discard candidate removed from the model-facing action surface. The engine
+legality surface remains complete. Matching `all` and `never` runs with the
+same behavior seeds are a bounded no-potion coverage comparison, not a reward,
+a static potion ranking, or a change to training.
 For local classification only, each root includes an observed-resource Pareto
 frontier over winning replicates using final HP, max HP, gold, and exact potion
 multisets. A result with more HP but a different or smaller potion inventory is
@@ -548,6 +554,9 @@ the complete learning suite. `doctor` also rejects an installed bridge that is
 missing a maintained `LearningBatchEnv` surface. `refresh-bridge` builds a fresh
 wheel, passes its Rust/smoke/isolated-caller verification, and only then replaces
 the bridge in the configured training Python without changing dependencies.
+Its default `-BridgeProfile release` is the timing and milestone artifact;
+`-BridgeProfile dev` is the short functional-experiment loop and must not be
+used for throughput evidence.
 On first setup, `refresh-bridge -Python <python.exe>` performs the same guarded
 install and records that runtime only after `doctor` succeeds.
 `verify` runs the configured suite first, then delegates to

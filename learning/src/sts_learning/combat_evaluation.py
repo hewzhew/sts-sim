@@ -6,6 +6,7 @@ import operator
 from collections import Counter
 from collections.abc import Sequence
 from dataclasses import dataclass
+from enum import Enum
 
 from .combat_outcomes import (
     CombatGroupOutcomeAccumulator,
@@ -20,6 +21,13 @@ from .torch_behavior import FrozenCategoricalTorchPolicy
 
 class CombatEvaluationError(RuntimeError):
     """A held-out combat evaluation is malformed or incomplete."""
+
+
+class CombatEvaluationPotionLane(Enum):
+    """Model-facing potion action lane for one held-out evaluation."""
+
+    ALL = "all"
+    NEVER = "never"
 
 
 @dataclass(frozen=True)
@@ -356,12 +364,17 @@ class CombatHeldOutEvaluationResult:
     """One frozen manifest evaluated once across distinct exact roots."""
 
     behavior_manifest_id: BehaviorManifestId
+    potion_lane: CombatEvaluationPotionLane
     roots: tuple[CombatEvaluationRootResult, ...]
 
     def __post_init__(self) -> None:
         if not isinstance(self.behavior_manifest_id, BehaviorManifestId):
             raise CombatEvaluationError(
                 "combat evaluation requires a typed behavior manifest id"
+            )
+        if not isinstance(self.potion_lane, CombatEvaluationPotionLane):
+            raise CombatEvaluationError(
+                "combat evaluation requires a typed potion lane"
             )
         roots = tuple(self.roots)
         if not roots or not all(
@@ -401,10 +414,15 @@ class CombatHeldOutEvaluator:
         policies: Sequence[FrozenCategoricalTorchPolicy],
         max_roots: int,
         limits: CombatEvaluationLimits | None = None,
+        potion_lane: CombatEvaluationPotionLane = CombatEvaluationPotionLane.ALL,
     ) -> None:
         if not callable(getattr(source, "combat_group", None)):
             raise CombatEvaluationError(
                 "combat evaluation requires a combat-root source"
+            )
+        if not isinstance(potion_lane, CombatEvaluationPotionLane):
+            raise CombatEvaluationError(
+                "combat evaluation requires a typed potion lane"
             )
         slots = tuple(
             _nonnegative_integer(slot, f"slot_indices[{index}]")
@@ -456,6 +474,7 @@ class CombatHeldOutEvaluator:
         self.policies = frozen_policies
         self.max_roots = root_bound
         self.limits = active_limits
+        self.potion_lane = potion_lane
         self.behavior_manifest_id = next(iter(manifest_ids))
         self._started = False
 
@@ -478,10 +497,25 @@ class CombatHeldOutEvaluator:
                 self.policies,
                 strict=True,
             ):
-                group = self.source.combat_group(
-                    slot_index,
-                    self.replicate_count,
+                group = (
+                    self.source.combat_group(
+                        slot_index,
+                        self.replicate_count,
+                    )
+                    if self.potion_lane is CombatEvaluationPotionLane.ALL
+                    else self.source.combat_group(
+                        slot_index,
+                        self.replicate_count,
+                        False,
+                    )
                 )
+                expected_allows_potions = (
+                    self.potion_lane is CombatEvaluationPotionLane.ALL
+                )
+                if getattr(group, "allows_potions", None) != expected_allows_potions:
+                    raise CombatEvaluationError(
+                        "combat evaluation source ignored the potion lane"
+                    )
                 if getattr(group, "replicate_count", None) != self.replicate_count:
                     raise CombatEvaluationError(
                         "combat evaluation source changed the replicate count"
@@ -495,13 +529,19 @@ class CombatHeldOutEvaluator:
                         "combat evaluation source repeated an exact root"
                     )
                 observed_identities.add(identity)
-                roots.append(
-                    _evaluate_group(
-                        group,
-                        policy,
-                        self.limits,
-                    )
+                root = _evaluate_group(
+                    group,
+                    policy,
+                    self.limits,
                 )
+                if self.potion_lane is CombatEvaluationPotionLane.NEVER and any(
+                    outcome.potions_used or outcome.potions_discarded
+                    for outcome in root.group.outcomes
+                ):
+                    raise CombatEvaluationError(
+                        "no-potion evaluation observed a potion action"
+                    )
+                roots.append(root)
         except Exception:
             for policy, state in zip(
                 self.policies,
@@ -512,6 +552,7 @@ class CombatHeldOutEvaluator:
             raise
         return CombatHeldOutEvaluationResult(
             self.behavior_manifest_id,
+            self.potion_lane,
             tuple(roots),
         )
 

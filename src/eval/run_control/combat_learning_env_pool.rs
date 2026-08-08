@@ -8,9 +8,9 @@ use std::fmt;
 
 use super::{
     CombatLearningBoundaryV1, CombatLearningEnvCheckpointV1, CombatLearningEnvV1,
-    CombatLearningResourceSnapshotV1, CombatLearningRootContextV1, CombatLearningRootIdentityV1,
-    CombatLearningRootV1, CombatLearningTerminalOutcomeV1, LearningActionV1, LearningModelBatchV1,
-    LearningModelInputError,
+    CombatLearningPotionPolicyV1, CombatLearningResourceSnapshotV1, CombatLearningRootContextV1,
+    CombatLearningRootIdentityV1, CombatLearningRootV1, CombatLearningTerminalOutcomeV1,
+    LearningActionV1, LearningModelBatchV1, LearningModelInputError,
 };
 
 #[derive(Clone, Debug)]
@@ -24,6 +24,7 @@ pub struct CombatLearningEnvPoolV1 {
     root: CombatLearningRootIdentityV1,
     root_context: CombatLearningRootContextV1,
     root_resources: CombatLearningResourceSnapshotV1,
+    potion_policy: CombatLearningPotionPolicyV1,
     slots: Vec<CombatLearningEnvPoolSlotV1>,
     poisoned: bool,
 }
@@ -32,6 +33,14 @@ impl CombatLearningEnvPoolV1 {
     pub fn from_root(
         root: &CombatLearningRootV1,
         replicate_count: usize,
+    ) -> Result<Self, CombatLearningEnvPoolError> {
+        Self::from_root_with_potion_policy(root, replicate_count, CombatLearningPotionPolicyV1::All)
+    }
+
+    pub fn from_root_with_potion_policy(
+        root: &CombatLearningRootV1,
+        replicate_count: usize,
+        potion_policy: CombatLearningPotionPolicyV1,
     ) -> Result<Self, CombatLearningEnvPoolError> {
         if replicate_count == 0 {
             return Err(CombatLearningEnvPoolError::EmptyReplicateGroup);
@@ -61,6 +70,7 @@ impl CombatLearningEnvPoolV1 {
             root: root.identity().clone(),
             root_context: *root.context(),
             root_resources: root.resources().clone(),
+            potion_policy,
             slots,
             poisoned: false,
         })
@@ -76,6 +86,10 @@ impl CombatLearningEnvPoolV1 {
 
     pub fn root_resources(&self) -> &CombatLearningResourceSnapshotV1 {
         &self.root_resources
+    }
+
+    pub fn potion_policy(&self) -> CombatLearningPotionPolicyV1 {
+        self.potion_policy
     }
 
     pub fn replicate_count(&self) -> usize {
@@ -163,8 +177,11 @@ impl CombatLearningEnvPoolV1 {
                 boundaries.push(boundary);
             }
         }
-        let model_batch = LearningModelBatchV1::from_combat_boundary_refs(boundaries)
-            .map_err(CombatLearningEnvPoolError::ModelInput)?;
+        let model_batch = LearningModelBatchV1::from_combat_boundary_refs_with_potion_policy(
+            boundaries,
+            self.potion_policy,
+        )
+        .map_err(CombatLearningEnvPoolError::ModelInput)?;
         Ok(CombatLearningEnvPoolModelBatchV1 {
             root: &self.root,
             active_replicate_indices,

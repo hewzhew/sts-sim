@@ -8,9 +8,9 @@ use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyDict, PyList};
 use serde::{Deserialize, Serialize};
 use sts_oracle_eval::eval::run_control::{
-    CombatLearningRootBatchArtifactV1, CombatLearningRootV1, LearningActionV1, LearningBoundaryV1,
-    LearningEnvPoolV1, LearningEnvV1, LearningSelectionDraftV1, RunControlConfig,
-    RunControlSessionCheckpointV1,
+    CombatLearningPotionPolicyV1, CombatLearningRootBatchArtifactV1, CombatLearningRootV1,
+    LearningActionV1, LearningBoundaryV1, LearningEnvPoolV1, LearningEnvV1,
+    LearningSelectionDraftV1, RunControlConfig, RunControlSessionCheckpointV1,
 };
 
 mod bridge_decision;
@@ -504,10 +504,12 @@ impl LearningBatchEnv {
         Ok(result)
     }
 
+    #[pyo3(signature = (slot_index, replicate_count, allow_potions=true))]
     fn combat_group(
         &self,
         slot_index: usize,
         replicate_count: usize,
+        allow_potions: bool,
     ) -> PyResult<CombatLearningBatchEnv> {
         if !matches!(self.states.get(slot_index), Some(BridgeSlotState::Root)) {
             return Err(PyValueError::new_err(format!(
@@ -519,7 +521,17 @@ impl LearningBatchEnv {
             .checkpoint_slot(slot_index)
             .map_err(runtime_error)?;
         let root = CombatLearningRootV1::from_checkpoint(checkpoint).map_err(value_error)?;
-        CombatLearningBatchEnv::from_root(&root, replicate_count).map_err(value_error)
+        let potion_policy = if allow_potions {
+            CombatLearningPotionPolicyV1::All
+        } else {
+            CombatLearningPotionPolicyV1::Never
+        };
+        CombatLearningBatchEnv::from_root_with_potion_policy(
+            &root,
+            replicate_count,
+            potion_policy,
+        )
+        .map_err(value_error)
     }
 
     /// Return every current undecoded combat root without creating replicate groups.

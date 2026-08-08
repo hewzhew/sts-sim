@@ -32,11 +32,13 @@ class OneRoundCombatGroup:
         wins: tuple[bool, bool],
         *,
         final_hps: tuple[int, int] | None = None,
+        allow_potions: bool = True,
     ) -> None:
         self.root_id = root_id
         self.exact_combat_state_hash = exact_combat_state_hash
         self.wins = wins
         self.final_hps = final_hps
+        self.allows_potions = allow_potions
         self.root_context = SimpleNamespace(
             act=1,
             floor=4,
@@ -84,6 +86,18 @@ class OneRoundCombatGroup:
             else [70 if won else 0 for won in self.wins],
             dtype=np.int32,
         )
+        potion_use = (0, 1) if self.allows_potions else (0, 0)
+        final_potion_ids = (
+            (
+                ("EntropicBrew", "GamblersBrew"),
+                ("BlockPotion", "GamblersBrew"),
+            )
+            if self.allows_potions
+            else (
+                ("EntropicBrew", "GamblersBrew"),
+                ("EntropicBrew", "GamblersBrew"),
+            )
+        )
         return {
             "root_id": self.root_id,
             "exact_combat_state_hash": self.exact_combat_state_hash,
@@ -99,13 +113,10 @@ class OneRoundCombatGroup:
             "terminal_final_gold": np.asarray([99, 99], dtype=np.int32),
             "terminal_hp_loss": 80 - final_hp,
             "terminal_turns": np.asarray([3, 5], dtype=np.uint32),
-            "terminal_potions_used": np.asarray([0, 1], dtype=np.uint32),
+            "terminal_potions_used": np.asarray(potion_use, dtype=np.uint32),
             "terminal_potions_discarded": np.asarray([0, 0], dtype=np.uint32),
             "terminal_cards_played": np.asarray([8, 12], dtype=np.uint32),
-            "terminal_potion_ids": (
-                ("EntropicBrew", "GamblersBrew"),
-                ("BlockPotion", "GamblersBrew"),
-            ),
+            "terminal_potion_ids": final_potion_ids,
         }
 
 
@@ -124,6 +135,7 @@ class ExactCombatRootSource:
         self,
         slot_index: int,
         replicate_count: int,
+        allow_potions: bool = True,
     ) -> OneRoundCombatGroup:
         if slot_index != 0 or replicate_count != 2:
             raise AssertionError("combat source received different generation bounds")
@@ -132,7 +144,7 @@ class ExactCombatRootSource:
         except IndexError as error:
             raise AssertionError("combat source was run too many times") from error
         self.call_count += 1
-        group = OneRoundCombatGroup(*specification)
+        group = OneRoundCombatGroup(*specification, allow_potions=allow_potions)
         self.groups.append(group)
         return group
 

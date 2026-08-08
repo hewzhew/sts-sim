@@ -9,7 +9,10 @@ pytest.importorskip("torch")
 
 from learning.tests.semantic_fixtures import semantic_schema_fixture
 from learning.tests.torch_combat_fixtures import OneRoundCombatGroup
-from sts_learning.combat_evaluation import combat_observed_resource_frontier
+from sts_learning.combat_evaluation import (
+    CombatEvaluationPotionLane,
+    combat_observed_resource_frontier,
+)
 from sts_learning.combat_outcomes import CombatTerminalOutcome
 from sts_learning.evaluate_combat import (
     CombatEvaluationCommandConfig,
@@ -31,17 +34,23 @@ class _RootSource:
         ],
     ) -> None:
         self.roots = roots
-        self.calls: list[int] = []
+        self.calls: list[tuple[int, bool]] = []
 
-    def combat_group(self, slot_index: int, replicate_count: int):
+    def combat_group(
+        self,
+        slot_index: int,
+        replicate_count: int,
+        allow_potions: bool = True,
+    ):
         assert replicate_count == 2
-        self.calls.append(slot_index)
+        self.calls.append((slot_index, allow_potions))
         root_id, state_hash, wins, final_hps = self.roots[slot_index]
         return OneRoundCombatGroup(
             root_id,
             state_hash,
             wins,
             final_hps=final_hps,
+            allow_potions=allow_potions,
         )
 
 
@@ -107,9 +116,10 @@ def test_evaluation_recovers_published_behavior_without_training_or_experience(
         bridge=bridge,
     )
 
-    assert summary["schema"] == "sts-learning-combat-held-out-evaluation-v3"
-    assert training_source.calls == [0, 1]
-    assert evaluation_source.calls == [0, 1]
+    assert summary["schema"] == "sts-learning-combat-held-out-evaluation-v4"
+    assert summary["potion_lane"] == "all"
+    assert training_source.calls == [(0, True), (1, True)]
+    assert evaluation_source.calls == [(0, True), (1, True)]
     assert summary["wins"] == 3
     assert summary["losses"] == 1
     assert summary["behavior_training_step"] == 1
@@ -151,12 +161,57 @@ def test_evaluation_recovers_published_behavior_without_training_or_experience(
     assert json.loads((output / "evaluation.json").read_text(encoding="utf-8"))[
         "behavior_manifest_id"
     ] == summary["behavior_manifest_id"]
-    stdout = capsys.readouterr().out
-    assert "evaluation_complete=true wins=3 losses=1 root_wins=1,2" in stdout
-    assert "root_sites=A1F4,A1F4" in stdout
-    assert "root_resource_frontiers=1,2 root_resource_dominated=0,0" in stdout
-    assert "root_start_potions=EntropicBrew+GamblersBrew" in stdout
-    assert "lost_potions=EntropicBrew:2 gained_potions=BlockPotion:2" in stdout
+    all_stdout = capsys.readouterr().out
+    assert (
+        "evaluation_complete=true wins=3 losses=1 potion_lane=all "
+        "root_wins=1,2"
+    ) in all_stdout
+    assert "root_sites=A1F4,A1F4" in all_stdout
+    assert (
+        "root_resource_frontiers=1,2 root_resource_dominated=0,0" in all_stdout
+    )
+    assert "root_start_potions=EntropicBrew+GamblersBrew" in all_stdout
+    assert (
+        "lost_potions=EntropicBrew:2 gained_potions=BlockPotion:2" in all_stdout
+    )
+
+    no_potion_output = tmp_path / "held-out-no-potions"
+    no_potion_summary = run_combat_evaluation(
+        CombatEvaluationCommandConfig(
+            artifact=evaluation_artifact,
+            behavior=behavior,
+            output=no_potion_output,
+            root_count=2,
+            replicate_count=2,
+            behavior_seed_base=1_000,
+            potion_lane=CombatEvaluationPotionLane.NEVER,
+        ),
+        bridge=bridge,
+    )
+
+    assert no_potion_summary["potion_lane"] == "never"
+    assert no_potion_summary["potions_used"] == 0
+    assert no_potion_summary["potions_discarded"] == 0
+    assert no_potion_summary["lost_potion_ids"] == {}
+    assert no_potion_summary["gained_potion_ids"] == {}
+    assert evaluation_source.calls == [
+        (0, True),
+        (1, True),
+        (0, False),
+        (1, False),
+    ]
+    assert all(
+        outcome["final_potion_ids"]
+        == ("EntropicBrew", "GamblersBrew")
+        for root in no_potion_summary["roots"]
+        for outcome in root["outcomes"]
+    )
+    assert (behavior / "training.jsonl").read_bytes() == training_journal_before
+    no_potion_stdout = capsys.readouterr().out
+    assert (
+        "evaluation_complete=true wins=3 losses=1 potion_lane=never "
+        "root_wins=1,2"
+    ) in no_potion_stdout
 
 
 def test_observed_resource_frontier_keeps_hp_potion_tradeoffs_incomparable() -> None:
