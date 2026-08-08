@@ -664,13 +664,35 @@ impl<'a> LearningModelBatchV1<'a> {
     pub fn from_boundary_refs(
         boundaries: impl IntoIterator<Item = &'a LearningBoundaryV1>,
     ) -> Result<Self, LearningModelInputError> {
-        let boundaries = boundaries.into_iter();
-        let (lower_bound, _) = boundaries.size_hint();
+        Self::from_decision_results(
+            boundaries
+                .into_iter()
+                .map(LearningModelDecisionV1::from_boundary),
+        )
+    }
+
+    pub fn from_combat_boundary_refs(
+        boundaries: impl IntoIterator<Item = &'a LearningCombatBoundaryV1>,
+    ) -> Result<Self, LearningModelInputError> {
+        Self::from_decision_results(
+            boundaries
+                .into_iter()
+                .map(LearningModelDecisionV1::from_combat),
+        )
+    }
+
+    fn from_decision_results(
+        decisions: impl IntoIterator<
+            Item = Result<LearningModelDecisionV1<'a>, LearningModelInputError>,
+        >,
+    ) -> Result<Self, LearningModelInputError> {
+        let decision_results = decisions.into_iter();
+        let (lower_bound, _) = decision_results.size_hint();
         let mut decisions = Vec::with_capacity(lower_bound);
         let mut candidate_row_splits = Vec::with_capacity(lower_bound.saturating_add(1));
         candidate_row_splits.push(0);
-        for boundary in boundaries {
-            let decision = LearningModelDecisionV1::from_boundary(boundary)?;
+        for decision in decision_results {
+            let decision = decision?;
             let next = candidate_row_splits
                 .last()
                 .copied()

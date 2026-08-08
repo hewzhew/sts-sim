@@ -155,16 +155,8 @@ impl LearningEnvV1 {
                 | EngineState::CombatProcessing
                 | EngineState::PendingChoice(_)
         ) {
-            let position = self.session.current_combat_position_for_actions()?;
             return Ok(LearningBoundaryV1::Combat {
-                boundary: LearningCombatBoundaryV1 {
-                    observation: combat_learning_observation_v1(&position.combat),
-                    observation_completeness: LearningObservationCompletenessV1::Complete,
-                    legal_actions: combat_legal_action_surface_v2(
-                        &position.engine,
-                        &position.combat,
-                    ),
-                },
+                boundary: learning_combat_boundary_v1(&self.session)?,
             });
         }
 
@@ -262,19 +254,9 @@ impl LearningEnvV1 {
     }
 
     fn prepare_combat_input(&self, input: ClientInput) -> Result<LearningPreparedActionV1, String> {
-        let position = self.session.current_combat_position_for_actions()?;
-        let surface = combat_legal_action_surface_v2(&position.engine, &position.combat);
-        let legal = surface.atomic_actions.contains(&input)
-            || match &position.engine {
-                EngineState::PendingChoice(choice) => {
-                    pending_choice_input_is_legal(choice, &position.combat, &input)
-                }
-                _ => false,
-            };
-        if !legal {
-            return Err("combat learning input is not legal at the current boundary".to_string());
-        }
-        Ok(LearningPreparedActionV1::CombatInput { input })
+        Ok(LearningPreparedActionV1::CombatInput {
+            input: prepare_learning_combat_input_v1(&self.session, input)?,
+        })
     }
 
     fn prepare_run_selection(
@@ -311,6 +293,36 @@ impl LearningEnvV1 {
             resolution,
         })
     }
+}
+
+pub(super) fn learning_combat_boundary_v1(
+    session: &RunControlSession,
+) -> Result<LearningCombatBoundaryV1, String> {
+    let position = session.current_combat_position_for_actions()?;
+    Ok(LearningCombatBoundaryV1 {
+        observation: combat_learning_observation_v1(&position.combat),
+        observation_completeness: LearningObservationCompletenessV1::Complete,
+        legal_actions: combat_legal_action_surface_v2(&position.engine, &position.combat),
+    })
+}
+
+pub(super) fn prepare_learning_combat_input_v1(
+    session: &RunControlSession,
+    input: ClientInput,
+) -> Result<ClientInput, String> {
+    let position = session.current_combat_position_for_actions()?;
+    let surface = combat_legal_action_surface_v2(&position.engine, &position.combat);
+    let legal = surface.atomic_actions.contains(&input)
+        || match &position.engine {
+            EngineState::PendingChoice(choice) => {
+                pending_choice_input_is_legal(choice, &position.combat, &input)
+            }
+            _ => false,
+        };
+    if !legal {
+        return Err("combat learning input is not legal at the current boundary".to_string());
+    }
+    Ok(input)
 }
 
 #[derive(Clone, Debug)]

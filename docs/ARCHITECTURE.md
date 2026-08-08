@@ -159,6 +159,26 @@ and policy inference remain outside the pool. This is the maintained boundary
 for amortizing a future Rust or Python backend call across environments without
 per-step JSON or one foreign-language call per slot.
 
+`CombatLearningEnvV1` is a separate combat-episode boundary; it does not
+reinterpret leaving combat as a run victory, defeat, or strategic decision. An
+immutable `CombatLearningRootV1` binds the exact normalized run-session
+fingerprint and exact combat-state hash to one combat-root checkpoint. Every
+spawned episode carries that root identity plus an explicit replicate index,
+accepts only `LearningActionV1::CombatInput`, reuses the complete combat
+observation and legal-action surface above, and terminates with the existing
+typed `CombatBaselineOutcomeV1`. Its in-memory checkpoint retains current
+session state and the unchanged root/replicate lineage; it is not a second
+durable checkpoint format.
+
+`CombatLearningEnvPoolV1` creates a fixed non-empty set of numbered replicates
+from one immutable root and exposes their active decisions as one ragged model
+batch. It validates the entire action round before the first mutation, poisons
+itself after an unexpected partial engine failure, and keeps terminal outcomes
+aligned to replicate identity. This same-root grouping is execution lineage,
+not an estimator or teacher label. Grouped baselines, combat policy gradients,
+or search-improved targets must be separate caller-owned objectives and may not
+substitute unrelated run seeds for same-root replicates.
+
 Terminal learning steps retain the typed run result plus public terminal act,
 floor, HP, max HP, and gold. The Python bridge returns those facts as compact
 columns aligned only to terminal slots. They are outcome evidence for progress

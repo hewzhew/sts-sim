@@ -14,6 +14,8 @@ mod combat_complete_line_repair;
 mod combat_complete_line_scoring;
 mod combat_complete_line_search;
 mod combat_complete_line_solver;
+mod combat_learning_env;
+mod combat_learning_env_pool;
 mod combat_line_adjudication;
 mod combat_line_executor;
 mod combat_line_outcome;
@@ -116,6 +118,15 @@ pub use combat_case_candidate_census::{
     adjudicate_combat_case_candidates_v1, CombatCaseCandidateAdjudicationCensusV1,
     CombatCaseCandidateCensusConclusionV1, CombatCaseCandidateOutcomeSummaryV1,
     CombatCaseCandidateReplayFailureV1, CombatCaseGainedCurseCountV1,
+};
+pub use combat_learning_env::{
+    CombatLearningBoundaryV1, CombatLearningEnvCheckpointV1, CombatLearningEnvV1,
+    CombatLearningEpisodeIdentityV1, CombatLearningRootIdentityV1, CombatLearningRootV1,
+    CombatLearningStepV1, CombatLearningTerminalOutcomeV1,
+};
+pub use combat_learning_env_pool::{
+    CombatLearningEnvPoolError, CombatLearningEnvPoolModelBatchV1, CombatLearningEnvPoolSlotStepV1,
+    CombatLearningEnvPoolStepV1, CombatLearningEnvPoolV1,
 };
 pub use combat_line_adjudication::{
     CombatLineAdjudicationV1, CombatLineCleanlinessV1, CombatLineObservedOutcomeV1,
