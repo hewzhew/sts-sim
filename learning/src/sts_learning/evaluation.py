@@ -96,6 +96,7 @@ class HeldOutEvaluationDelta:
     terminal_attempts: int
     victories: int
     defeats: int
+    terminal_floor_sum: int
     batch_steps: int
 
 
@@ -153,6 +154,10 @@ class PairedHeldOutEvaluationResult:
                 ),
                 victories=right_summary.victories - left_summary.victories,
                 defeats=right_summary.defeats - left_summary.defeats,
+                terminal_floor_sum=(
+                    right_summary.terminal_progress.floor_sum
+                    - left_summary.terminal_progress.floor_sum
+                ),
                 batch_steps=right_summary.batch_steps - left_summary.batch_steps,
             ),
         )

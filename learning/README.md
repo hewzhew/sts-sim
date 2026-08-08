@@ -77,8 +77,10 @@ caller-written advance loops while preserving the same boundary: it stops only
 after a complete vector transition, reports whether the target or step limit
 ended the prefix, and never flushes experience or triggers training and policy
 promotion. Both run summaries aggregate typed terminal victories and defeats;
-their sum equals terminal attempts, but they are not a shaped score. Neither
-run API stores trajectories, writes JSON, defines a game
+their sum equals terminal attempts. They also stream one bounded terminal
+progress aggregate: floor sum/range and sorted act counts, with no trajectory
+retention. These are evidence, not a shaped score. Neither run API stores
+trajectories, writes JSON, defines a game
 policy, or turns terminal HP and gold into reward.
 
 `sts_learning.evaluation.evaluate_held_out_behavior` creates a fresh population
@@ -95,7 +97,8 @@ that shared schedule and evaluation bound. It rejects reused policy objects or
 manifest identities before creating an environment, then calls the same
 single-policy evaluator for each distinct frozen behavior. Its typed result
 retains both manifest-owned evaluations and a fixed `right - left` integer
-delta for terminal attempts, victories, defeats, and batch steps. The delta is
+delta for terminal attempts, victories, defeats, terminal floor sum, and batch
+steps. The delta is
 arithmetic only: it creates no ranking, improvement claim, or teacher label.
 The result is comparable only when both sides complete the same terminal
 target; budget exhaustion on either side remains explicit incomplete evidence.

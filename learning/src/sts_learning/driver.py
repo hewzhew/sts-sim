@@ -162,6 +162,63 @@ class BatchStepResult:
 
 
 @dataclass(frozen=True)
+class TerminalProgressAggregate:
+    """Bounded terminal progress facts without retaining trajectories."""
+
+    attempts: int
+    floor_sum: int
+    min_floor: int | None
+    max_floor: int | None
+    act_counts: tuple[tuple[int, int], ...]
+
+    def __post_init__(self) -> None:
+        for name in ("attempts", "floor_sum"):
+            value = getattr(self, name)
+            if type(value) is not int or value < 0:
+                raise BatchDriverError(f"terminal progress {name} must be non-negative")
+        if self.attempts == 0:
+            if (
+                self.floor_sum != 0
+                or self.min_floor is not None
+                or self.max_floor is not None
+                or self.act_counts
+            ):
+                raise BatchDriverError("empty terminal progress must contain no outcomes")
+            return
+        if (
+            type(self.min_floor) is not int
+            or type(self.max_floor) is not int
+            or self.min_floor < 0
+            or self.max_floor < self.min_floor
+        ):
+            raise BatchDriverError("terminal progress floor range is invalid")
+        if self.floor_sum < self.min_floor * self.attempts:
+            raise BatchDriverError("terminal progress floor sum is below its minimum")
+        if self.floor_sum > self.max_floor * self.attempts:
+            raise BatchDriverError("terminal progress floor sum exceeds its maximum")
+        if tuple(sorted(self.act_counts)) != self.act_counts:
+            raise BatchDriverError("terminal progress act counts must be sorted")
+        if len({act for act, _ in self.act_counts}) != len(self.act_counts):
+            raise BatchDriverError("terminal progress act counts repeat an act")
+        if any(
+            type(act) is not int
+            or act < 0
+            or type(count) is not int
+            or count <= 0
+            for act, count in self.act_counts
+        ):
+            raise BatchDriverError("terminal progress act counts are invalid")
+        if sum(count for _, count in self.act_counts) != self.attempts:
+            raise BatchDriverError("terminal progress act counts disagree with attempts")
+
+    @property
+    def mean_floor(self) -> float | None:
+        if self.attempts == 0:
+            return None
+        return self.floor_sum / self.attempts
+
+
+@dataclass(frozen=True)
 class BatchRunSummary:
     """Compact aggregate from a bounded number of vector transitions."""
 
@@ -173,6 +230,7 @@ class BatchRunSummary:
     terminal_attempts: int
     victories: int
     defeats: int
+    terminal_progress: TerminalProgressAggregate
     completed_episodes: int
     recoveries: int
     emitted_experience_segments: int
@@ -591,6 +649,10 @@ class OnlineBatchDriver:
         terminal_attempts = 0
         victories = 0
         defeats = 0
+        terminal_floor_sum = 0
+        min_terminal_floor: int | None = None
+        max_terminal_floor: int | None = None
+        terminal_act_counts: dict[int, int] = {}
         completed_episodes = 0
         recoveries = 0
         experience_segments = 0
@@ -615,6 +677,21 @@ class OnlineBatchDriver:
             defeats += sum(
                 attempt.terminal_reward == -1 for attempt in result.attempts
             )
+            for attempt in result.attempts:
+                floor = attempt.terminal.terminal_floor
+                terminal_floor_sum += floor
+                min_terminal_floor = (
+                    floor
+                    if min_terminal_floor is None
+                    else min(min_terminal_floor, floor)
+                )
+                max_terminal_floor = (
+                    floor
+                    if max_terminal_floor is None
+                    else max(max_terminal_floor, floor)
+                )
+                act = attempt.terminal.terminal_act
+                terminal_act_counts[act] = terminal_act_counts.get(act, 0) + 1
             completed_episodes += len(result.completed_episodes)
             recoveries += len(result.recoveries)
             experience_segments += result.emitted_experience_segments
@@ -640,6 +717,13 @@ class OnlineBatchDriver:
             terminal_attempts=terminal_attempts,
             victories=victories,
             defeats=defeats,
+            terminal_progress=TerminalProgressAggregate(
+                attempts=terminal_attempts,
+                floor_sum=terminal_floor_sum,
+                min_floor=min_terminal_floor,
+                max_floor=max_terminal_floor,
+                act_counts=tuple(sorted(terminal_act_counts.items())),
+            ),
             completed_episodes=completed_episodes,
             recoveries=recoveries,
             emitted_experience_segments=experience_segments,

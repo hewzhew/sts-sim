@@ -25,6 +25,7 @@ from .driver import (
     OnlineBatchDriver,
     RecoveryPlan,
     TerminalTargetRunResult,
+    TerminalProgressAggregate,
     initialize_population,
 )
 from .experience import (
@@ -211,6 +212,7 @@ __all__ = [
     "TerminalBatchError",
     "TerminalStepBatch",
     "TerminalTargetRunResult",
+    "TerminalProgressAggregate",
     "initialize_population",
     "concatenate_semantic_decision_batches",
     "evaluate_held_out_behavior",

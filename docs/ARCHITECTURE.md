@@ -270,8 +270,9 @@ target completion from limit exhaustion; it does not implicitly flush
 experience, train, or promote behavior.
 Both fixed-step and terminal-target summaries count terminal victories and
 defeats directly from typed attempt records, with their sum equal to terminal
-attempts. These are prefix outcomes, not a shaped score or an automatic claim
-about policy quality.
+attempts. Without retaining attempts, they also stream the terminal floor sum,
+minimum, maximum, and sorted act counts. These are prefix outcomes and progress
+evidence, not a shaped score or an automatic claim about policy quality.
 
 The caller-owned held-out evaluator builds a fresh population only from an
 explicit `HELD_OUT` seed schedule, uses zero recovery, installs no experience
@@ -288,8 +289,9 @@ one evaluation bound for two distinct frozen behavior manifest identities. It
 rejects a reused policy object or identity before environment creation and
 delegates each side to the same manifest-locked single-policy evaluator with a
 fresh population. The result retains both schedule endpoints, completion and
-limit state, terminal counts, victories, defeats, and batch steps. Its only
-derived values are fixed-direction `right - left` integer differences; it does
+limit state, terminal counts, victories, defeats, terminal progress, and batch
+steps. Its only derived values are fixed-direction `right - left` integer
+differences, including terminal floor sum; it does
 not emit `better`, `worse`, a win-rate improvement, or a teacher label. A pair
 is comparable only when both sides complete the same terminal target. Either
 side exhausting its batch-step bound remains explicitly incomparable. Policy
