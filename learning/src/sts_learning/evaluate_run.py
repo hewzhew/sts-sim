@@ -1,0 +1,285 @@
+"""Bounded whole-run evaluation of one published combat-trained behavior."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import operator
+from dataclasses import dataclass
+from pathlib import Path
+
+from .evaluation import (
+    HeldOutEvaluationResult,
+    HeldOutEvaluationSpec,
+    evaluate_held_out_behavior,
+)
+from .published_combat_behavior import (
+    PublishedCombatBehavior,
+    recover_published_combat_behavior,
+)
+from .seeds import SeedPartition, SeedSchedule
+from .torch_combat_session_config import (
+    CombatSessionBridge,
+    CombatWinSessionLimits,
+)
+from .torch_session_config import CategoricalSessionBridge
+
+
+RUN_EVALUATION_SCHEMA = "sts-learning-run-held-out-evaluation-v1"
+
+
+class RunEvaluationCommandError(RuntimeError):
+    """A bounded whole-run evaluation command is malformed."""
+
+
+@dataclass(frozen=True)
+class RunEvaluationCommandConfig:
+    behavior: Path
+    output: Path
+    slot_count: int
+    terminal_attempts: int
+    max_batch_steps: int
+    behavior_seed: int
+    held_out_seed_start: int = 0
+
+    def __post_init__(self) -> None:
+        behavior = Path(self.behavior).resolve()
+        output = Path(self.output).resolve()
+        if not behavior.is_dir():
+            raise RunEvaluationCommandError(
+                "published combat behavior is not a directory"
+            )
+        if output.exists() and (
+            not output.is_dir() or any(output.iterdir())
+        ):
+            raise RunEvaluationCommandError(
+                "run evaluation output must be absent or empty"
+            )
+        if output == behavior or behavior in output.parents:
+            raise RunEvaluationCommandError(
+                "run evaluation output must stay outside the behavior directory"
+            )
+        object.__setattr__(self, "behavior", behavior)
+        object.__setattr__(self, "output", output)
+        object.__setattr__(
+            self,
+            "slot_count",
+            _positive(self.slot_count, "slot_count"),
+        )
+        object.__setattr__(
+            self,
+            "terminal_attempts",
+            _positive(self.terminal_attempts, "terminal_attempts"),
+        )
+        object.__setattr__(
+            self,
+            "max_batch_steps",
+            _positive(self.max_batch_steps, "max_batch_steps"),
+        )
+        object.__setattr__(
+            self,
+            "behavior_seed",
+            _seed(self.behavior_seed, "behavior_seed"),
+        )
+        object.__setattr__(
+            self,
+            "held_out_seed_start",
+            _seed(self.held_out_seed_start, "held_out_seed_start"),
+        )
+
+
+def run_run_evaluation(
+    config: RunEvaluationCommandConfig,
+    *,
+    combat_bridge: CombatSessionBridge | None = None,
+    run_bridge: CategoricalSessionBridge | None = None,
+) -> dict[str, object]:
+    """Run a frozen behavior over complete held-out episodes without recovery."""
+
+    if not isinstance(config, RunEvaluationCommandConfig):
+        raise RunEvaluationCommandError(
+            "run evaluation config must be typed"
+        )
+    active_combat_bridge = (
+        combat_bridge
+        if combat_bridge is not None
+        else CombatSessionBridge.installed()
+    )
+    active_run_bridge = (
+        run_bridge
+        if run_bridge is not None
+        else CategoricalSessionBridge.installed()
+    )
+    if not isinstance(active_combat_bridge, CombatSessionBridge):
+        raise RunEvaluationCommandError(
+            "run evaluation combat bridge must be typed"
+        )
+    if not isinstance(active_run_bridge, CategoricalSessionBridge):
+        raise RunEvaluationCommandError(
+            "run evaluation environment bridge must be typed"
+        )
+    if active_combat_bridge.semantic_schema != active_run_bridge.semantic_schema:
+        raise RunEvaluationCommandError(
+            "combat behavior and run environment semantic schemas differ"
+        )
+
+    recovered = recover_published_combat_behavior(
+        config.behavior,
+        active_combat_bridge,
+        CombatWinSessionLimits(),
+        (config.behavior_seed,),
+    )
+    schedule = SeedSchedule(
+        SeedPartition.HELD_OUT,
+        next_candidate=config.held_out_seed_start,
+    )
+    result = evaluate_held_out_behavior(
+        active_run_bridge.environment,
+        recovered.policies[0],
+        schedule=schedule,
+        spec=HeldOutEvaluationSpec(
+            slot_count=config.slot_count,
+            terminal_attempt_target=config.terminal_attempts,
+            max_batch_steps=config.max_batch_steps,
+        ),
+    )
+    summary = _summary(config, recovered, result)
+    config.output.mkdir(parents=True, exist_ok=True)
+    with (config.output / "evaluation.json").open(
+        "x",
+        encoding="utf-8",
+        newline="\n",
+    ) as destination:
+        json.dump(summary, destination, separators=(",", ":"), sort_keys=True)
+        destination.write("\n")
+    run = result.run.summary
+    print(
+        "run_evaluation_complete=true "
+        f"target_reached={str(result.complete).lower()} "
+        f"attempts={run.terminal_attempts}/{config.terminal_attempts} "
+        f"victories={run.victories} defeats={run.defeats} "
+        f"floor_sum={run.terminal_progress.floor_sum} "
+        f"floor_min={_optional(run.terminal_progress.min_floor)} "
+        f"floor_max={_optional(run.terminal_progress.max_floor)} "
+        f"floor_counts={_counts(run.terminal_progress.floor_counts)} "
+        f"act_counts={_counts(run.terminal_progress.act_counts)} "
+        f"batch_steps={run.batch_steps}/{config.max_batch_steps} "
+        f"slot_steps={run.slot_steps} seconds={run.elapsed_seconds:.3f} "
+        f"output={config.output}",
+        flush=True,
+    )
+    return summary
+
+
+def _summary(
+    config: RunEvaluationCommandConfig,
+    recovered: PublishedCombatBehavior,
+    result: HeldOutEvaluationResult,
+) -> dict[str, object]:
+    run = result.run.summary
+    progress = run.terminal_progress
+    return {
+        "schema": RUN_EVALUATION_SCHEMA,
+        "kind": "completed" if result.complete else "step-limit",
+        "behavior": str(config.behavior),
+        "behavior_manifest_id": recovered.manifest_id.digest.hex(),
+        "behavior_checkpoint_id": recovered.checkpoint_id.digest.hex(),
+        "behavior_training_step": recovered.training_step,
+        "behavior_training_root_count": recovered.training_root_count,
+        "behavior_training_artifact_sha256": (
+            recovered.training_artifact_sha256
+        ),
+        "behavior_training_potion_lane": recovered.training_potion_lane.value,
+        "behavior_training_potion_slots": recovered.training_potion_slots,
+        "behavior_seed": config.behavior_seed,
+        "held_out_seed_start": config.held_out_seed_start,
+        "held_out_seed_end": result.schedule_end.next_candidate,
+        "slot_count": config.slot_count,
+        "terminal_attempt_target": config.terminal_attempts,
+        "max_batch_steps": config.max_batch_steps,
+        "target_reached": result.complete,
+        "step_limit_reached": result.step_limit_reached,
+        "terminal_attempts": run.terminal_attempts,
+        "victories": run.victories,
+        "defeats": run.defeats,
+        "terminal_floor_sum": progress.floor_sum,
+        "min_terminal_floor": progress.min_floor,
+        "max_terminal_floor": progress.max_floor,
+        "terminal_floor_counts": progress.floor_counts,
+        "terminal_act_counts": progress.act_counts,
+        "batch_steps": run.batch_steps,
+        "slot_steps": run.slot_steps,
+        "decision_rounds": run.decision_rounds,
+        "completed_episodes": run.completed_episodes,
+        "recoveries": run.recoveries,
+        "elapsed_seconds": run.elapsed_seconds,
+    }
+
+
+def _positive(value: object, name: str) -> int:
+    if isinstance(value, bool):
+        raise RunEvaluationCommandError(f"{name} must be an integer, not bool")
+    try:
+        normalized = operator.index(value)
+    except TypeError as error:
+        raise RunEvaluationCommandError(f"{name} must be an integer") from error
+    if normalized <= 0:
+        raise RunEvaluationCommandError(f"{name} must be positive")
+    return normalized
+
+
+def _seed(value: object, name: str) -> int:
+    if isinstance(value, bool):
+        raise RunEvaluationCommandError(f"{name} must be an integer, not bool")
+    try:
+        normalized = operator.index(value)
+    except TypeError as error:
+        raise RunEvaluationCommandError(f"{name} must be an integer") from error
+    if not 0 <= normalized < 1 << 63:
+        raise RunEvaluationCommandError(f"{name} must be in [0, 2^63)")
+    return normalized
+
+
+def _optional(value: int | None) -> str:
+    return "none" if value is None else str(value)
+
+
+def _counts(values: tuple[tuple[int, int], ...]) -> str:
+    return ",".join(f"{key}:{count}" for key, count in values) or "none"
+
+
+def _parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        description=(
+            "Evaluate one published combat-trained scorer over complete "
+            "held-out runs without recovery."
+        ),
+    )
+    parser.add_argument("--behavior", type=Path, required=True)
+    parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--slots", type=int, default=4)
+    parser.add_argument("--attempts", type=int, default=8)
+    parser.add_argument("--max-batch-steps", type=int, default=4096)
+    parser.add_argument("--behavior-seed", type=int, default=10_000)
+    parser.add_argument("--held-out-seed-start", type=int, default=0)
+    return parser
+
+
+def main() -> int:
+    arguments = _parser().parse_args()
+    run_run_evaluation(
+        RunEvaluationCommandConfig(
+            behavior=arguments.behavior,
+            output=arguments.output,
+            slot_count=arguments.slots,
+            terminal_attempts=arguments.attempts,
+            max_batch_steps=arguments.max_batch_steps,
+            behavior_seed=arguments.behavior_seed,
+            held_out_seed_start=arguments.held_out_seed_start,
+        )
+    )
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

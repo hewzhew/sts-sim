@@ -1,6 +1,6 @@
 param(
     [Parameter(Mandatory = $true, Position = 0)]
-    [ValidateSet("configure", "doctor", "test", "verify", "check-bridge", "refresh-bridge", "train-combat", "evaluate-combat", "evaluate-combat-potions")]
+    [ValidateSet("configure", "doctor", "test", "verify", "check-bridge", "refresh-bridge", "train-combat", "evaluate-combat", "evaluate-combat-potions", "evaluate-run")]
     [string]$Command,
     [string]$Python,
     [string]$MaturinPython = "python",
@@ -12,6 +12,11 @@ param(
     [int]$Updates,
     [long]$ModelSeed = 0,
     [long]$BehaviorSeedBase = 1000,
+    [int]$Slots = 4,
+    [int]$Attempts = 8,
+    [int]$MaxBatchSteps = 4096,
+    [long]$BehaviorSeed = 10000,
+    [long]$HeldOutSeedStart = 0,
     [ValidateSet("all", "never", "root-slots")]
     [string]$PotionLane = "all",
     [int[]]$PotionSlots = @(),
@@ -249,6 +254,23 @@ switch ($Command) {
                 --behavior-seed-base $BehaviorSeedBase
             if ($LASTEXITCODE -ne 0) {
                 throw "combat potion sweep command failed"
+            }
+        }
+    }
+    "evaluate-run" {
+        $pythonPath = Get-ConfiguredPython
+        Invoke-Doctor $pythonPath
+        Invoke-WithLearningPath {
+            & $pythonPath -m sts_learning.evaluate_run `
+                --behavior $Behavior `
+                --output $Output `
+                --slots $Slots `
+                --attempts $Attempts `
+                --max-batch-steps $MaxBatchSteps `
+                --behavior-seed $BehaviorSeed `
+                --held-out-seed-start $HeldOutSeedStart
+            if ($LASTEXITCODE -ne 0) {
+                throw "run evaluation command failed"
             }
         }
     }

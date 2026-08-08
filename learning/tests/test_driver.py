@@ -101,6 +101,7 @@ class BatchDriverTests(unittest.TestCase):
         self.assertEqual(summary.terminal_progress.min_floor, 40)
         self.assertEqual(summary.terminal_progress.max_floor, 40)
         self.assertEqual(summary.terminal_progress.mean_floor, 40.0)
+        self.assertEqual(summary.terminal_progress.floor_counts, ((40, 3),))
         self.assertEqual(summary.terminal_progress.act_counts, ((3, 3),))
         self.assertEqual(summary.victories + summary.defeats, summary.terminal_attempts)
         self.assertEqual(summary.completed_episodes, 2)
@@ -201,6 +202,7 @@ class BatchDriverTests(unittest.TestCase):
         self.assertIsNone(result.summary.terminal_progress.mean_floor)
         self.assertIsNone(result.summary.terminal_progress.min_floor)
         self.assertIsNone(result.summary.terminal_progress.max_floor)
+        self.assertEqual(result.summary.terminal_progress.floor_counts, ())
         self.assertEqual(result.summary.terminal_progress.act_counts, ())
         self.assertEqual(policy.batch_sizes, [])
         for arguments, message in (

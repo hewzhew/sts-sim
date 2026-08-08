@@ -169,6 +169,7 @@ class TerminalProgressAggregate:
     floor_sum: int
     min_floor: int | None
     max_floor: int | None
+    floor_counts: tuple[tuple[int, int], ...]
     act_counts: tuple[tuple[int, int], ...]
 
     def __post_init__(self) -> None:
@@ -181,6 +182,7 @@ class TerminalProgressAggregate:
                 self.floor_sum != 0
                 or self.min_floor is not None
                 or self.max_floor is not None
+                or self.floor_counts
                 or self.act_counts
             ):
                 raise BatchDriverError("empty terminal progress must contain no outcomes")
@@ -196,6 +198,35 @@ class TerminalProgressAggregate:
             raise BatchDriverError("terminal progress floor sum is below its minimum")
         if self.floor_sum > self.max_floor * self.attempts:
             raise BatchDriverError("terminal progress floor sum exceeds its maximum")
+        if tuple(sorted(self.floor_counts)) != self.floor_counts:
+            raise BatchDriverError("terminal progress floor counts must be sorted")
+        if len({floor for floor, _ in self.floor_counts}) != len(
+            self.floor_counts
+        ):
+            raise BatchDriverError("terminal progress floor counts repeat a floor")
+        if any(
+            type(floor) is not int
+            or floor < 0
+            or type(count) is not int
+            or count <= 0
+            for floor, count in self.floor_counts
+        ):
+            raise BatchDriverError("terminal progress floor counts are invalid")
+        if sum(count for _, count in self.floor_counts) != self.attempts:
+            raise BatchDriverError(
+                "terminal progress floor counts disagree with attempts"
+            )
+        if sum(floor * count for floor, count in self.floor_counts) != self.floor_sum:
+            raise BatchDriverError(
+                "terminal progress floor counts disagree with floor sum"
+            )
+        if (
+            self.floor_counts[0][0] != self.min_floor
+            or self.floor_counts[-1][0] != self.max_floor
+        ):
+            raise BatchDriverError(
+                "terminal progress floor counts disagree with floor range"
+            )
         if tuple(sorted(self.act_counts)) != self.act_counts:
             raise BatchDriverError("terminal progress act counts must be sorted")
         if len({act for act, _ in self.act_counts}) != len(self.act_counts):
@@ -652,6 +683,7 @@ class OnlineBatchDriver:
         terminal_floor_sum = 0
         min_terminal_floor: int | None = None
         max_terminal_floor: int | None = None
+        terminal_floor_counts: dict[int, int] = {}
         terminal_act_counts: dict[int, int] = {}
         completed_episodes = 0
         recoveries = 0
@@ -690,6 +722,9 @@ class OnlineBatchDriver:
                     if max_terminal_floor is None
                     else max(max_terminal_floor, floor)
                 )
+                terminal_floor_counts[floor] = (
+                    terminal_floor_counts.get(floor, 0) + 1
+                )
                 act = attempt.terminal.terminal_act
                 terminal_act_counts[act] = terminal_act_counts.get(act, 0) + 1
             completed_episodes += len(result.completed_episodes)
@@ -722,6 +757,7 @@ class OnlineBatchDriver:
                 floor_sum=terminal_floor_sum,
                 min_floor=min_terminal_floor,
                 max_floor=max_terminal_floor,
+                floor_counts=tuple(sorted(terminal_floor_counts.items())),
                 act_counts=tuple(sorted(terminal_act_counts.items())),
             ),
             completed_episodes=completed_episodes,

@@ -627,6 +627,7 @@ Configure one stable Python 3.12 training runtime once, then use the small
 .\learning\dev.ps1 train-combat -Artifact <roots.bin> -Output <fresh-dir> -Roots <count> -Updates <count> -PotionLane never
 .\learning\dev.ps1 evaluate-combat -Artifact <held-out-roots.bin> -Behavior <training-dir> -Output <fresh-dir> -Roots <count> -Replicates <count>
 .\learning\dev.ps1 evaluate-combat-potions -Artifact <held-out-roots.bin> -Behavior <training-dir> -Output <fresh-dir> -Roots <count> -Replicates <count>
+.\learning\dev.ps1 evaluate-run -Behavior <training-dir> -Output <fresh-dir> -Slots 4 -Attempts 8 -MaxBatchSteps 4096 -BehaviorSeed 10000 -HeldOutSeedStart 0
 ```
 
 `configure` installs the tool requirements declared by the local
@@ -767,6 +768,15 @@ replicates. The order compares final HP, max HP, gold, and exact potion
 multisets coordinate-wise. HP/potion tradeoffs and unlike potion identities are
 incomparable rather than silently converted. Treat this as local classification
 of the recorded facts, not proof of run-level continuation value.
+
+Use `evaluate-run` for the separate whole-run question. It recovers the exact
+published combat scorer, creates a fresh held-out seed population, disables
+recovery and training, and runs until the terminal-attempt target or explicit
+batch-step bound. The one completion line and `evaluation.json` report victory,
+defeat, terminal floor sum/range/histogram, act counts, and execution bounds. A combat-
+trained scorer has not thereby learned non-combat strategy; the command is a
+bounded end-to-end diagnostic of that complete policy surface, not a claim that
+all decisions were trained.
 
 `test` requires PyTorch and the installed bridge and runs the complete learning
 suite; missing training dependencies are failures, not skips. `verify` runs

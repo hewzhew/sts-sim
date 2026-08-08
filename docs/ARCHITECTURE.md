@@ -434,6 +434,13 @@ compact per-replicate terminal facts survive. Its fresh single-file result is
 competence evidence for that exact manifest and evaluation sample, not an
 improvement claim without a comparable frozen baseline.
 
+The same verified scorer may be evaluated over complete held-out runs because
+combat training and run execution share the one bridge-owned semantic schema.
+This zero-recovery diagnostic retains only terminal victory and floor-progress
+aggregates. It does not claim that combat-only training taught route, reward,
+shop, or other strategic decisions; those candidates remain part of the tested
+policy surface and their weakness is part of the whole-run result.
+
 Python recovery curricula may hold explicit opaque single-slot checkpoints.
 Saving one clones that exact in-memory run-control state only when requested;
 restoring it also restores any unfinished symbolic decoder or already selected

@@ -81,6 +81,10 @@ class HeldOutEvaluationTests(unittest.TestCase):
         self.assertEqual(result.run.summary.defeats, 1)
         self.assertEqual(result.run.summary.terminal_progress.floor_sum, 80)
         self.assertEqual(result.run.summary.terminal_progress.mean_floor, 40.0)
+        self.assertEqual(
+            result.run.summary.terminal_progress.floor_counts,
+            ((40, 2),),
+        )
         self.assertEqual(result.run.summary.terminal_progress.act_counts, ((3, 2),))
         self.assertEqual(result.run.summary.recoveries, 0)
         self.assertEqual(result.behavior_manifest_id, BEHAVIOR_MANIFEST_ID)

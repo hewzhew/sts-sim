@@ -88,7 +88,8 @@ from one explicit `HELD_OUT` schedule and a typed slot/terminal/step bound. It
 hard-codes zero recovery and attaches no experience buffer or trainer. The
 policy must expose one typed behavior manifest id, and every returned choice is
 checked against it before execution; the result is bound to that id. It also
-contains only the start/end schedule and terminal-target aggregates, so the
+contains only the start/end schedule and terminal-target aggregates, including
+a bounded exact terminal-floor histogram, so the
 same schedule plus the same policy RNG state repeats the same prefix. A
 step-limited result stays visibly incomplete, and its small victory/defeat
 sample is not automatically interpreted as generalized policy quality.
@@ -104,6 +105,22 @@ The result is comparable only when both sides complete the same terminal
 target; budget exhaustion on either side remains explicit incomplete evidence.
 Equivalent policy RNG initial states remain a caller-owned input because the
 generic evaluator does not inspect opaque policy state.
+
+The maintained command for applying a published combat-trained scorer to that
+complete run evaluator is:
+
+```powershell
+.\learning\dev.ps1 evaluate-run `
+  -Behavior <completed-combat-training-directory> `
+  -Output <fresh-run-evaluation-directory> `
+  -Slots 4 -Attempts 8 -MaxBatchSteps 4096 `
+  -BehaviorSeed 10000 -HeldOutSeedStart 0
+```
+
+It uses zero recovery, attaches no trainer, and writes only compact terminal
+progress aggregates. Combat and run decisions share the bridge semantic schema,
+but combat-only training does not imply that route, reward, shop, or event
+choices are competent; their behavior remains part of this end-to-end result.
 
 `sts_learning.experience` provides the optional bounded training handoff. Each
 decision batch is copied before policy inference into a recursively frozen,
