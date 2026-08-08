@@ -16,7 +16,7 @@ from .torch_behavior import (
     TorchBehaviorPublication,
 )
 from .torch_policy import RaggedCandidateScorer
-from .torch_training import SynchronousValueTrainer, SynchronousValueTrainerSnapshot
+from .torch_training import SynchronousPolicyTrainer, SynchronousPolicyTrainerSnapshot
 
 
 class TorchGenerationError(RuntimeError):
@@ -53,18 +53,18 @@ class CategoricalGenerationResumeBoundary:
 
     driver: BatchDriverResumeBoundary
     assembler: AttemptAssemblerSnapshot
-    trainer: SynchronousValueTrainerSnapshot
+    trainer: SynchronousPolicyTrainerSnapshot
     controller: CategoricalTorchBehaviorControllerSnapshot
 
 
 class BoundedCategoricalGenerationRunner:
-    """Train toward one explicit optimizer-step target, then promote exactly once."""
+    """Train for one on-policy optimizer step, then promote exactly once."""
 
     def __init__(
         self,
         driver: OnlineBatchDriver,
         assembler: BoundedAttemptAssembler,
-        trainer: SynchronousValueTrainer,
+        trainer: SynchronousPolicyTrainer,
         controller: CategoricalTorchBehaviorController,
         shadow_scorer: RaggedCandidateScorer,
         *,
@@ -74,8 +74,8 @@ class BoundedCategoricalGenerationRunner:
             raise TorchGenerationError("generation runner requires an online driver")
         if not isinstance(assembler, BoundedAttemptAssembler):
             raise TorchGenerationError("generation runner requires an attempt assembler")
-        if not isinstance(trainer, SynchronousValueTrainer):
-            raise TorchGenerationError("generation runner requires a value trainer")
+        if not isinstance(trainer, SynchronousPolicyTrainer):
+            raise TorchGenerationError("generation runner requires a policy trainer")
         if not isinstance(controller, CategoricalTorchBehaviorController):
             raise TorchGenerationError("generation runner requires a behavior controller")
         if not isinstance(shadow_scorer, RaggedCandidateScorer):
@@ -84,6 +84,10 @@ class BoundedCategoricalGenerationRunner:
             optimizer_steps_per_generation,
             "optimizer_steps_per_generation",
         )
+        if steps != 1:
+            raise TorchGenerationError(
+                "on-policy generation requires exactly one optimizer step"
+            )
         self.driver = driver
         self.assembler = assembler
         self.trainer = trainer

@@ -19,7 +19,7 @@ from .seeds import SeedPartition, SeedPartitionSpec, SeedSchedule
 from .torch_behavior import CategoricalTorchBehaviorControllerSnapshot
 from .torch_generation import CategoricalGenerationResumeBoundary
 from .torch_resume import TorchResumeStateError
-from .torch_training import SynchronousValueTrainerSnapshot
+from .torch_training import SynchronousPolicyTrainerSnapshot
 
 
 _GENERATION_COMPONENT = "categorical_generation_state"
@@ -353,7 +353,7 @@ def _decode_assembler_snapshot(value: object) -> AttemptAssemblerSnapshot:
     )
 
 
-def _decode_trainer_snapshot(value: object) -> SynchronousValueTrainerSnapshot:
+def _decode_trainer_snapshot(value: object) -> SynchronousPolicyTrainerSnapshot:
     raw = _exact_mapping(
         value,
         {
@@ -376,7 +376,7 @@ def _decode_trainer_snapshot(value: object) -> SynchronousValueTrainerSnapshot:
     poisoned = raw["poisoned"]
     if type(poisoned) is not bool:
         raise TorchResumeStateError("trainer poisoned flag must be bool")
-    return SynchronousValueTrainerSnapshot(
+    return SynchronousPolicyTrainerSnapshot(
         deliveries=_nonnegative_integer(raw["deliveries"], "trainer deliveries"),
         optimizer_steps=_nonnegative_integer(
             raw["optimizer_steps"],
@@ -533,4 +533,3 @@ def _optional_finite_float(value: object, name: str) -> float | None:
     if type(value) is not float or not math.isfinite(value):
         raise TorchResumeStateError(f"{name} must be a finite float")
     return value
-

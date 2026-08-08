@@ -38,7 +38,7 @@ _MAX_SCHEMA_ITEMS = 100_000
 
 @dataclass(frozen=True)
 class AdamTrainingConfig:
-    """Exact Adam configuration used by the first online value trainer."""
+    """Exact Adam configuration used by the online policy trainer."""
 
     learning_rate: float = 1e-3
     beta1: float = 0.9
@@ -165,7 +165,7 @@ def categorical_training_manifest_template(
     )
     trainer_implementation = ManifestArtifactId.from_content(
         ManifestArtifactKind.TRAINER_IMPLEMENTATION,
-        b"STS-SYNCHRONOUS-REALIZED-VALUE-TRAINER\x00"
+        b"STS-SYNCHRONOUS-TERMINAL-POLICY-TRAINER\x00"
         + struct.pack(">I", _TRAINER_IMPLEMENTATION_VERSION)
         + runtime,
     )

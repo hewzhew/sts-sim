@@ -93,14 +93,15 @@ class CategoricalOnlineProfile:
             raise TorchSessionError("session behavior config must be typed")
         if not isinstance(self.optimizer, AdamTrainingConfig):
             raise TorchSessionError("session optimizer config must be typed")
-        object.__setattr__(
-            self,
+        optimizer_steps = _positive_integer(
+            self.optimizer_steps_per_generation,
             "optimizer_steps_per_generation",
-            _positive_integer(
-                self.optimizer_steps_per_generation,
-                "optimizer_steps_per_generation",
-            ),
         )
+        if optimizer_steps != 1:
+            raise TorchSessionError(
+                "on-policy session requires exactly one optimizer step per generation"
+            )
+        object.__setattr__(self, "optimizer_steps_per_generation", optimizer_steps)
         if self.device_type != "cpu":
             raise TorchSessionError(
                 "the first maintained session profile supports only cpu"

@@ -42,8 +42,11 @@ def behavior_manifest_template_fixture(
     )
 
 
-def behavior_manifest_fixture() -> BehaviorManifest:
-    return behavior_manifest_template_fixture().bind(
+def behavior_manifest_fixture(
+    *,
+    behavior_rule: BehaviorRuleBinding = GREEDY_BEHAVIOR_RULE_V1,
+) -> BehaviorManifest:
+    return behavior_manifest_template_fixture(behavior_rule=behavior_rule).bind(
         ManifestArtifactId(
             ManifestArtifactKind.MODEL_CHECKPOINT,
             bytes([int(ManifestArtifactKind.MODEL_CHECKPOINT)]) * 32,

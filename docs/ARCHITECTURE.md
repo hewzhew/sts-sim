@@ -450,18 +450,19 @@ the distribution rule and canonical temperature, not mutable RNG state; a
 caller that needs exact continuation across process restart must separately own
 and restore its random-stream state before resuming decisions.
 
-The first terminal objective is realized-behavior candidate value, not
-imitation. It accepts only bounded complete-attempt deliveries, resolves every
-batch's exact behavior manifest, and applies the sparse terminal win/loss target
-only to each decision's actually selected candidate. Unselected candidates get
-no fabricated target. Squared errors are averaged within each attempt before
-attempts are averaged, so longer attempts do not gain more weight merely by
-containing more decisions. Censored and dropped attempts cannot enter this
-objective through its input type, and the aligned per-attempt sequence of
-behavior manifest identities and selection probabilities remains attached to
-the loss result. The initial selected-only objective does not use those
-probabilities as weights; any future off-policy correction requires a separate
-objective with explicit assumptions and handling for unknown propensities.
+The first terminal objective is an on-policy categorical policy loss, not
+imitation or raw-logit value regression. It accepts only bounded
+complete-attempt deliveries, resolves every batch's exact behavior manifest,
+and applies `-reward * log P(selected | state)` to each sampled decision.
+Victories increase that action's relative probability, defeats decrease it,
+and a forced single-candidate row has exactly zero gradient. Terms are averaged
+within each attempt before attempts are averaged, so longer attempts do not gain
+more weight merely by containing more decisions. Censored and dropped attempts
+cannot enter through its input type. The objective requires the manifest's
+categorical rule to match its typed configuration and recomputes every recorded
+selection propensity from the current shadow scorer before mutation. Unknown
+or mismatched propensity is explicitly off-policy and rejected. Any future
+off-policy correction requires a separate objective with declared assumptions.
 After validation, all retained decision payloads in one delivery are combined
 into one semantic ragged batch and scored by exactly one model call. Flat row
 weights are `1 / (attempt_count * decisions_in_that_attempt)`, which is
@@ -472,29 +473,28 @@ A synchronous optional trainer can serve directly as the complete-attempt
 assembler sink. It performs at most one optimizer step for one delivery, keeps
 only aggregate counters plus the most recent bounded manifest-id and selection-
 probability sequences, and never queues attempts or tensor payloads. Unknown
-selection probability is valid evidence, while unknown manifest identity fails
-before optimizer mutation; an exception during backward or optimizer mutation
-poisons the trainer so partially mutable state cannot be retried as if it were
-clean.
-Dropped-only deliveries update accounting but never the model. This trainer is
-a shadow value-model owner: using its scorer as a later behavior policy requires
-publishing and binding a new exact checkpoint manifest before inference.
+manifest identity, incompatible behavior rule, unknown propensity, or a
+propensity that does not match the shadow scorer fails before optimizer
+mutation; an exception during backward or optimizer mutation poisons the
+trainer so partially mutable state cannot be retried as if it were clean.
+Dropped-only deliveries update accounting but never the model. The trainer owns
+a shadow policy model; publication binds its new exact checkpoint before that
+model can become live behavior.
 
 The optional bounded categorical generation runner composes one exact
 driver-to-assembler-to-trainer-to-controller chain without becoming another
 experience store. It verifies object identity for that chain, the shared
 manifest registry, the shadow scorer, and every optimizer parameter before any
-environment mutation. Each generation target is an explicit positive number
-of optimizer steps beyond the active behavior's training step, not a terminal
-count or wall-clock guess. A call advances at most its declared batch-step
-limit and explicitly flushes experience only after a terminal batch. Before
-advancing toward an unfinished target it novel-previews the next publication;
-when the shadow has already reached the target it exact-previews the current
-identity so a previously durable publication can be retried at full capacity.
-Partial
-optimizer progress leaves the prior frozen behavior active and counts toward
-the same absolute target on the next call; reaching the target publishes the
-current shadow checkpoint and promotes exactly once. The result retains only
+environment mutation. Each generation is exactly one optimizer step beyond the
+active behavior's training step, not a terminal count or wall-clock guess;
+larger step counts are rejected because a second update against experience from
+the unchanged frozen behavior would be off-policy. A call advances at most its
+declared batch-step limit and explicitly flushes experience only after a
+terminal batch. Before advancing it novel-previews the next publication; when
+the shadow has already reached the target it exact-previews the current identity
+so a previously durable publication can be retried at full capacity. Reaching
+the one-step target publishes the current shadow checkpoint and promotes
+exactly once. The result retains only
 aggregate progress and the optional publication. The runner itself remains an
 in-process composition; exact restart is owned by the separate six-component
 resume boundary and can never be inferred from a model checkpoint alone.

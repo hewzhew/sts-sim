@@ -69,7 +69,7 @@ if _TORCH_AVAILABLE:
         CategoricalResumeRestoreFactories,
         TorchResumeRestoreError,
     )
-    from sts_learning.torch_training import SynchronousValueTrainer
+    from sts_learning.torch_training import SynchronousPolicyTrainer
 
 
 @unittest.skipUnless(_TORCH_AVAILABLE, "optional PyTorch dependency is not installed")
@@ -84,9 +84,7 @@ class CategoricalGenerationResumeRestorerTests(unittest.TestCase):
 
             baseline = fixture.restorer.restore(initial_resume.manifest_id).runner
             split = fixture.restorer.restore(initial_resume.manifest_id).runner
-            baseline_result = baseline.advance(max_batch_steps=2)
-            split_prefix = split.advance(max_batch_steps=1)
-            self.assertFalse(split_prefix.promoted)
+            baseline_result = baseline.advance(max_batch_steps=1)
 
             split_resume = fixture.resume_publisher.publish(split)
             resumed = fixture.restorer.restore(split_resume.manifest_id).runner
@@ -105,7 +103,7 @@ class CategoricalGenerationResumeRestorerTests(unittest.TestCase):
             resumed_env = resumed.driver.env
             assert isinstance(baseline_env, NumpyWinningBatchEnv)
             assert isinstance(resumed_env, NumpyWinningBatchEnv)
-            self.assertEqual(resumed_env.choose_calls, baseline_env.choose_calls[-2:])
+            self.assertEqual(resumed_env.choose_calls, baseline_env.choose_calls)
             self.assertEqual(
                 resumed.trainer.snapshot.last_selection_probabilities,
                 baseline.trainer.snapshot.last_selection_probabilities,
@@ -324,11 +322,12 @@ class _ResumeFixture:
         shadow = self.scorer()
         controller = self.controller(torch.Generator().manual_seed(94))
         controller.publish_and_promote(shadow, training_step=0)
-        trainer = SynchronousValueTrainer(
+        trainer = SynchronousPolicyTrainer(
             shadow,
             self.optimizer(shadow),
             controller.publisher.registry,
             self.concat_limits,
+            self.behavior_config,
         )
         assembler = BoundedAttemptAssembler(self.attempt_limits, trainer)
         population = initialize_population(
@@ -350,7 +349,7 @@ class _ResumeFixture:
             trainer,
             controller,
             shadow,
-            optimizer_steps_per_generation=2,
+            optimizer_steps_per_generation=1,
         )
 
 

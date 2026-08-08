@@ -8,7 +8,6 @@ from pathlib import Path
 from learning.tests.driver_fixtures import NoRecovery, NumpyFakeBatchEnv
 from learning.tests.torch_outcome_fixtures import (
     behavior_manifest_template_fixture,
-    completed_attempt_fixture,
     decision_batch_fixture,
 )
 from sts_learning import (
@@ -33,7 +32,6 @@ if _TORCH_AVAILABLE:
     import torch
 
     from learning.tests.semantic_fixtures import semantic_schema_fixture
-    from sts_learning import AttemptAssemblyDelivery
     from sts_learning.torch_behavior import (
         CategoricalTorchBehaviorController,
         TorchBehaviorPublisher,
@@ -64,7 +62,7 @@ if _TORCH_AVAILABLE:
         CategoricalGenerationResumePublisher,
         CategoricalResumePayloadLimits,
     )
-    from sts_learning.torch_training import SynchronousValueTrainer
+    from sts_learning.torch_training import SynchronousPolicyTrainer
 
 
 @unittest.skipUnless(_TORCH_AVAILABLE, "optional PyTorch dependency is not installed")
@@ -121,6 +119,15 @@ class BoundedCategoricalGenerationRunnerTests(unittest.TestCase):
                     controller,
                     shadow,
                     optimizer_steps_per_generation=0,
+                )
+            with self.assertRaisesRegex(TorchGenerationError, "exactly one"):
+                BoundedCategoricalGenerationRunner(
+                    driver,
+                    assembler,
+                    trainer,
+                    controller,
+                    shadow,
+                    optimizer_steps_per_generation=2,
                 )
             runner = BoundedCategoricalGenerationRunner(
                 driver,
@@ -210,41 +217,6 @@ class BoundedCategoricalGenerationRunnerTests(unittest.TestCase):
             driver.flush_experience()
             with self.assertRaisesRegex(TorchGenerationError, "open attempt"):
                 runner.require_resume_boundary()
-
-    def test_partial_optimizer_progress_promotes_without_replaying_environment(self) -> None:
-        with tempfile.TemporaryDirectory() as root:
-            driver, assembler, trainer, controller, shadow = _components(Path(root))
-            runner = BoundedCategoricalGenerationRunner(
-                driver,
-                assembler,
-                trainer,
-                controller,
-                shadow,
-                optimizer_steps_per_generation=2,
-            )
-            manifest_id = controller.snapshot.active_manifest_id
-            assert manifest_id is not None
-
-            trainer(_delivery(slot=1, manifest_id=manifest_id))
-            partial = runner.advance(max_batch_steps=0)
-
-            self.assertFalse(partial.promoted)
-            self.assertTrue(partial.step_limit_reached)
-            self.assertEqual(partial.optimizer_steps_before, 1)
-            self.assertEqual(partial.promotion_target_training_step, 2)
-            self.assertEqual(controller.snapshot.active_training_step, 0)
-
-            trainer(_delivery(slot=2, manifest_id=manifest_id))
-            durable = controller.publisher.publish(shadow, training_step=2)
-            promoted = runner.advance(max_batch_steps=0)
-
-            self.assertTrue(promoted.promoted)
-            self.assertEqual(promoted.batch_steps, 0)
-            self.assertEqual(promoted.optimizer_steps_before, 2)
-            self.assertEqual(promoted.optimizer_steps_after, 2)
-            self.assertEqual(promoted.publication, durable)
-            self.assertEqual(controller.snapshot.active_training_step, 2)
-            self.assertEqual(driver.env.choose_calls, [])  # type: ignore[attr-defined]
 
     def test_safe_generation_publishes_all_components_and_manifest_last(self) -> None:
         with tempfile.TemporaryDirectory() as root:
@@ -343,7 +315,7 @@ def _components(
     )
     controller.publish_and_promote(shadow, training_step=0)
     optimizer_owner = shadow if optimizer_model is None else optimizer_model
-    trainer = SynchronousValueTrainer(
+    trainer = SynchronousPolicyTrainer(
         shadow,
         torch.optim.SGD(optimizer_owner.parameters(), lr=0.001),
         registry,
@@ -351,6 +323,7 @@ def _components(
             max_rows=64,
             max_input_array_bytes=1024 * 1024,
         ),
+        behavior_config,
     )
     assembler = BoundedAttemptAssembler(_attempt_limits(), trainer)
     population = initialize_population(
@@ -379,25 +352,6 @@ def _attempt_limits() -> AttemptAssemblyLimits:
         max_open_attempts=1,
         max_decisions_per_attempt=64,
         max_payload_bytes_per_attempt=1024 * 1024,
-    )
-
-
-def _delivery(*, slot: int, manifest_id):
-    batch = decision_batch_fixture(
-        slot=slot,
-        semantic_row=0,
-        selected_ordinal=0,
-        manifest_id=manifest_id,
-    )
-    return AttemptAssemblyDelivery(
-        completed=(
-            completed_attempt_fixture(
-                slot=slot,
-                batches=(batch,),
-                reward=1,
-            ),
-        ),
-        dropped=(),
     )
 
 

@@ -259,49 +259,49 @@ separately if a future durable training runner resumes mid-stream.
 
 `sts_learning.torch_outcomes` supplies the first honest terminal objective.
 It consumes only `CompletedAttemptExperience`, resolves every behavior manifest
-before scoring, and regresses only the actually selected candidate value to the
-sparse terminal `-1/1` outcome. It never turns the behavior choice into a
-teacher label or assigns that outcome to unselected candidates. Decision errors
-are averaged inside each attempt and then across attempts, so a long attempt has
-the same total weight as a short one. The result retains the batch-aligned
-manifest-id sequence and decision-aligned selection probabilities for every
-attempt; censored and dropped attempt types are rejected structurally. The
-current objective deliberately does not importance-weight by those
-probabilities. A future off-policy objective must declare that new contract and
-handle unknown propensity explicitly.
+before scoring, and applies the on-policy terminal loss
+`-reward * log P(selected | state)`. Victories raise the sampled action's
+relative probability and defeats lower it; single-candidate forced decisions
+have exactly zero gradient. Terms are averaged inside each attempt and then
+across attempts, so a long attempt has the same total weight as a short one.
+The objective requires every manifest to carry the configured categorical
+rule and verifies each recorded selection probability against the current
+shadow scorer before mutation. Unknown or mismatched propensity is rejected as
+off-policy instead of silently approximated. Censored and dropped attempt types
+remain structurally excluded. A future off-policy objective must declare a new
+contract and an explicit correction.
 All validated decision payloads in one delivery are concatenated and scored in
 one model call. Per-row weights preserve the exact attempt-equal loss, while
 eliminating one small PyTorch forward per historical decision. The caller must
 inject semantic concat row and input-array-byte limits; batching is never an
 excuse for unbounded replay memory.
 
-`sts_learning.torch_training.SynchronousValueTrainer` plugs directly into the
-complete-attempt assembler as a synchronous shadow-model sink. One delivery
+`sts_learning.torch_training.SynchronousPolicyTrainer` plugs directly into the
+complete-attempt assembler as a synchronous shadow-policy sink. One delivery
 causes at most one optimizer step; the trainer retains no attempt queue and no
 semantic arrays, only scalar totals and the latest bounded manifest-id and
 selection-probability sequences. Its required concat limits bound the
 one-forward replay batch.
-Explicitly unknown selection probability remains valid evidence; an unknown
-behavior manifest fails before mutation. A backward or optimizer exception
-poisons the trainer instead of inviting a retry over possibly partial state.
-Dropped-only deliveries never train. If the trained
-scorer is later promoted into behavior, the caller must publish its new exact
-checkpoint manifest first; the trainer does not silently rewrite behavior
+Unknown behavior, unknown propensity, behavior-rule mismatch, and recomputed
+probability mismatch all fail before mutation. A backward or optimizer
+exception poisons the trainer instead of inviting a retry over possibly partial
+state. Dropped-only deliveries never train. Promotion still publishes a new
+exact checkpoint manifest; the trainer never silently rewrites behavior
 identity.
 
 `sts_learning.torch_generation.BoundedCategoricalGenerationRunner` is the
 first deliberately finite composition of these owners. Construction fails
 before environment mutation unless the driver, attempt assembler, synchronous
 trainer, categorical controller, shared registry, shadow scorer, and optimizer
-parameters form one exact chain. A generation is an explicit positive number
-of optimizer steps beyond the active behavior manifest's training step. Each
-call has a caller-supplied batch-step limit, flushes the experience segment only
-after a terminal batch, and promotes only after the shadow trainer reaches that
-absolute target. It novel-previews capacity before training toward an unfinished
-target and exact-previews an already reached target, so a durable failed
-promotion remains retryable even when every owner is full. An exhausted call
-leaves the old frozen behavior live while
-preserving partial shadow progress for the next bounded call. Its result is
+parameters form one exact chain. A generation is exactly one optimizer step
+beyond the active behavior manifest's training step; larger values are rejected
+because the second update would already be off-policy against the still-live
+frozen behavior. Each call has a caller-supplied batch-step limit, flushes the
+experience segment only after a terminal batch, and promotes immediately after
+that one update. It novel-previews capacity before training and exact-previews
+an already reached target, so a durable failed promotion remains retryable even
+when every owner is full. An exhausted call with no terminal update leaves the
+old frozen behavior live. Its result is
 aggregate-only and never retains step results or attempts. The runner does not
 own persistence: restarting exact training goes through the
 separate six-component resume store and typed restorer. Its resume admission

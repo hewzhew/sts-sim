@@ -1,4 +1,4 @@
-"""Optional synchronous optimizer sink for bounded complete-attempt delivery."""
+"""Synchronous on-policy optimizer sink for complete-attempt delivery."""
 
 from __future__ import annotations
 
@@ -12,7 +12,8 @@ from .attempts import AttemptAssemblyDelivery, DroppedAttemptExperience
 from .manifests import BehaviorManifestRegistry
 from .policy import BehaviorManifestId, SelectionProbability
 from .semantic_concat import SemanticBatchConcatLimits
-from .torch_outcomes import CandidateValueScorer, realized_outcome_value_loss
+from .torch_outcomes import CandidatePolicyScorer, on_policy_terminal_loss
+from .torch_policy import RaggedCategoricalPolicyConfig
 
 
 class TorchTrainingError(RuntimeError):
@@ -20,7 +21,7 @@ class TorchTrainingError(RuntimeError):
 
 
 @dataclass(frozen=True)
-class SynchronousValueTrainerSnapshot:
+class SynchronousPolicyTrainerSnapshot:
     deliveries: int
     optimizer_steps: int
     completed_attempts: int
@@ -36,30 +37,34 @@ class SynchronousValueTrainerSnapshot:
     poisoned: bool
 
 
-class SynchronousValueTrainer:
-    """Train once per delivery and retain no experience queue or tensor payload."""
+class SynchronousPolicyTrainer:
+    """Train once per on-policy delivery and retain no experience payload."""
 
     def __init__(
         self,
-        scorer: CandidateValueScorer,
+        scorer: CandidatePolicyScorer,
         optimizer: torch.optim.Optimizer,
         registry: BehaviorManifestRegistry,
         concat_limits: SemanticBatchConcatLimits,
+        policy_config: RaggedCategoricalPolicyConfig,
         *,
-        resume_snapshot: SynchronousValueTrainerSnapshot | None = None,
+        resume_snapshot: SynchronousPolicyTrainerSnapshot | None = None,
     ) -> None:
         if not callable(scorer):
-            raise TorchTrainingError("candidate value scorer must be callable")
+            raise TorchTrainingError("candidate policy scorer must be callable")
         if not isinstance(optimizer, torch.optim.Optimizer):
             raise TorchTrainingError("optimizer must be a torch Optimizer")
         if not isinstance(registry, BehaviorManifestRegistry):
             raise TorchTrainingError("trainer requires a behavior manifest registry")
         if not isinstance(concat_limits, SemanticBatchConcatLimits):
             raise TorchTrainingError("trainer requires semantic concat limits")
+        if not isinstance(policy_config, RaggedCategoricalPolicyConfig):
+            raise TorchTrainingError("trainer requires categorical policy config")
         self.scorer = scorer
         self.optimizer = optimizer
         self.registry = registry
         self.concat_limits = concat_limits
+        self.policy_config = policy_config
         restored = _validated_resume_snapshot(resume_snapshot)
         self._deliveries = restored.deliveries
         self._optimizer_steps = restored.optimizer_steps
@@ -74,8 +79,8 @@ class SynchronousValueTrainer:
         self._poisoned = False
 
     @property
-    def snapshot(self) -> SynchronousValueTrainerSnapshot:
-        return SynchronousValueTrainerSnapshot(
+    def snapshot(self) -> SynchronousPolicyTrainerSnapshot:
+        return SynchronousPolicyTrainerSnapshot(
             deliveries=self._deliveries,
             optimizer_steps=self._optimizer_steps,
             completed_attempts=self._completed_attempts,
@@ -108,11 +113,12 @@ class SynchronousValueTrainer:
             return
 
         training_started = time.perf_counter()
-        objective = realized_outcome_value_loss(
+        objective = on_policy_terminal_loss(
             self.scorer,
             delivery.completed,
             self.registry,
             self.concat_limits,
+            self.policy_config,
         )
         if objective.value.ndim != 0 or not objective.value.requires_grad:
             raise TorchTrainingError(
@@ -155,10 +161,10 @@ class SynchronousValueTrainer:
 
 
 def _validated_resume_snapshot(
-    snapshot: SynchronousValueTrainerSnapshot | None,
-) -> SynchronousValueTrainerSnapshot:
+    snapshot: SynchronousPolicyTrainerSnapshot | None,
+) -> SynchronousPolicyTrainerSnapshot:
     if snapshot is None:
-        return SynchronousValueTrainerSnapshot(
+        return SynchronousPolicyTrainerSnapshot(
             deliveries=0,
             optimizer_steps=0,
             completed_attempts=0,
@@ -171,7 +177,7 @@ def _validated_resume_snapshot(
             last_training_seconds=None,
             poisoned=False,
         )
-    if not isinstance(snapshot, SynchronousValueTrainerSnapshot):
+    if not isinstance(snapshot, SynchronousPolicyTrainerSnapshot):
         raise TorchTrainingError("trainer resume snapshot must be typed")
     if snapshot.poisoned:
         raise TorchTrainingError("cannot resume a poisoned trainer")

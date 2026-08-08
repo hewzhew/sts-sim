@@ -48,7 +48,7 @@ from .torch_session_config import (
     CategoricalSessionBridge,
     TorchSessionError,
 )
-from .torch_training import SynchronousValueTrainer
+from .torch_training import SynchronousPolicyTrainer
 
 
 class NoRecoveryCurriculum:
@@ -179,11 +179,12 @@ class CategoricalOnlineSessionFactory:
             registry,
         )
         optimizer = self.config.profile.optimizer.create(shadow.parameters())
-        trainer = SynchronousValueTrainer(
+        trainer = SynchronousPolicyTrainer(
             shadow,
             optimizer,
             registry,
             self.config.limits.concat,
+            self.config.profile.behavior,
         )
         assembler = BoundedAttemptAssembler(
             self.config.limits.attempts,

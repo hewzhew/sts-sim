@@ -65,7 +65,7 @@ if _TORCH_AVAILABLE:
         CategoricalResumeRestoreConfig,
         CategoricalResumeRestoreFactories,
     )
-    from sts_learning.torch_training import SynchronousValueTrainer
+    from sts_learning.torch_training import SynchronousPolicyTrainer
 
 
 @unittest.skipUnless(
@@ -134,11 +134,12 @@ class RealBridgeCategoricalResumeRestorerTests(unittest.TestCase):
             def optimizer_factory(scorer):
                 return torch.optim.Adam(scorer.parameters(), lr=0.001)
 
-            trainer = SynchronousValueTrainer(
+            trainer = SynchronousPolicyTrainer(
                 shadow,
                 optimizer_factory(shadow),
                 controller.publisher.registry,
                 concat_limits,
+                behavior_config,
             )
             attempt_limits = AttemptAssemblyLimits(
                 max_open_attempts=1,

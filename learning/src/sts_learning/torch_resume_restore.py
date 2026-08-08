@@ -41,7 +41,7 @@ from .torch_resume import (
 )
 from .torch_resume_metadata import decode_generation_resume_state
 from .torch_resume_publication import CategoricalResumePayloadLimits
-from .torch_training import SynchronousValueTrainer
+from .torch_training import SynchronousPolicyTrainer
 
 
 class TorchResumeRestoreError(RuntimeError):
@@ -248,11 +248,12 @@ class CategoricalGenerationResumeRestorer:
             )
 
         registry = controller.publisher.registry
-        trainer = SynchronousValueTrainer(
+        trainer = SynchronousPolicyTrainer(
             shadow,
             optimizer,
             registry,
             self.config.concat_limits,
+            controller.config,
             resume_snapshot=saved.boundary.trainer,
         )
         assembler = BoundedAttemptAssembler(
