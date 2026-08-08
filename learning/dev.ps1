@@ -23,6 +23,8 @@ param(
     [int]$EvaluationAttempts = 16,
     [int]$EvaluationMaxBatchSteps = 4096,
     [long]$EvaluationBehaviorSeed = 100000,
+    [ValidateSet("raw-return", "leave-one-out")]
+    [string]$AdvantageMode = "raw-return",
     [ValidateSet("all", "never", "root-slots")]
     [string]$PotionLane = "all",
     [int[]]$PotionSlots = @(),
@@ -297,7 +299,8 @@ switch ($Command) {
                 --evaluation-attempts $EvaluationAttempts `
                 --evaluation-max-batch-steps $EvaluationMaxBatchSteps `
                 --evaluation-behavior-seed $EvaluationBehaviorSeed `
-                --held-out-seed-start $HeldOutSeedStart
+                --held-out-seed-start $HeldOutSeedStart `
+                --advantage-mode $AdvantageMode
             if ($LASTEXITCODE -ne 0) {
                 throw "run training command failed"
             }

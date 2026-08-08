@@ -628,7 +628,7 @@ Configure one stable Python 3.12 training runtime once, then use the small
 .\learning\dev.ps1 evaluate-combat -Artifact <held-out-roots.bin> -Behavior <training-dir> -Output <fresh-dir> -Roots <count> -Replicates <count>
 .\learning\dev.ps1 evaluate-combat-potions -Artifact <held-out-roots.bin> -Behavior <training-dir> -Output <fresh-dir> -Roots <count> -Replicates <count>
 .\learning\dev.ps1 evaluate-run -Behavior <training-dir> -Output <fresh-dir> -Slots 4 -Attempts 8 -MaxBatchSteps 4096 -BehaviorSeed 10000 -HeldOutSeedStart 0
-.\learning\dev.ps1 train-run -Behavior <combat-training-dir> -Output <fresh-dir> -Slots 4 -Generations 1 -AttemptsPerUpdate 8 -MaxBatchSteps 4096 -EvaluationAttempts 16 -HeldOutSeedStart 1000000
+.\learning\dev.ps1 train-run -Behavior <combat-training-dir> -Output <fresh-dir> -Slots 4 -Generations 1 -AttemptsPerUpdate 8 -MaxBatchSteps 4096 -EvaluationAttempts 16 -HeldOutSeedStart 1000000 -AdvantageMode raw-return
 ```
 
 `configure` installs the tool requirements declared by the local
@@ -791,6 +791,11 @@ result on the disjoint `HELD_OUT` partition and writes a compact `summary.json`.
 A generation that
 hits `-MaxBatchSteps` before an optimizer step fails without publishing its
 partial live update.
+`-AdvantageMode raw-return` is the maintained default. The explicit
+`leave-one-out` ablation subtracts, for each attempt, the mean return of the
+other attempts in that update; it requires at least two attempts and is bound
+into trainer provenance. Compare modes on identical training and held-out seed
+blocks instead of treating the ablation as an automatic improvement.
 
 `test` requires PyTorch and the installed bridge and runs the complete learning
 suite; missing training dependencies are failures, not skips. `verify` runs

@@ -15,7 +15,9 @@ from sts_learning import (
     FloorProgressReturnConfig,
     SelectionProbability,
     SemanticBatchConcatLimits,
+    TerminalAdvantageMode,
     floor_progress_terminal_return,
+    terminal_return_advantages,
 )
 
 
@@ -80,13 +82,17 @@ class OnPolicyTerminalLossTests(unittest.TestCase):
             reward=-1,
         )
 
+        attempts = (short, long)
+        advantages = terminal_return_advantages(
+            tuple(
+                floor_progress_terminal_return(attempt.terminal, self.return_config)
+                for attempt in attempts
+            ),
+            TerminalAdvantageMode.LEAVE_ONE_OUT,
+        )
         reference_attempt_losses = []
-        for attempt in (short, long):
+        for attempt, advantage in zip(attempts, advantages, strict=True):
             terms = []
-            terminal_return = floor_progress_terminal_return(
-                attempt.terminal,
-                self.return_config,
-            )
             for batch in attempt.batches:
                 logits = reference(batch.payload)
                 selected = batch.selected_ordinals[0]
@@ -94,7 +100,7 @@ class OnPolicyTerminalLossTests(unittest.TestCase):
                     logits.values / self.config.temperature,
                     dim=0,
                 )[selected]
-                terms.append(-terminal_return * log_probability)
+                terms.append(-advantage * log_probability)
             reference_attempt_losses.append(torch.stack(terms).mean())
         reference_loss = torch.stack(reference_attempt_losses).mean()
         reference_loss.backward()
@@ -113,6 +119,7 @@ class OnPolicyTerminalLossTests(unittest.TestCase):
             CONCAT_LIMITS,
             self.config,
             self.return_config,
+            TerminalAdvantageMode.LEAVE_ONE_OUT,
         )
         result.value.backward()
 
@@ -157,6 +164,7 @@ class OnPolicyTerminalLossTests(unittest.TestCase):
             CONCAT_LIMITS,
             self.config,
             self.return_config,
+            TerminalAdvantageMode.RAW_RETURN,
         )
         result.value.backward()
 
@@ -263,6 +271,7 @@ class OnPolicyTerminalLossTests(unittest.TestCase):
                     CONCAT_LIMITS,
                     self.config,
                     self.return_config,
+                    TerminalAdvantageMode.RAW_RETURN,
                 )
 
     def test_unknown_manifest_and_non_complete_input_fail_before_training(self) -> None:
@@ -288,6 +297,7 @@ class OnPolicyTerminalLossTests(unittest.TestCase):
                 CONCAT_LIMITS,
                 self.config,
                 self.return_config,
+                TerminalAdvantageMode.RAW_RETURN,
             )
         with self.assertRaisesRegex(TorchOutcomeError, "at least one"):
             on_policy_terminal_loss(
@@ -297,6 +307,7 @@ class OnPolicyTerminalLossTests(unittest.TestCase):
                 CONCAT_LIMITS,
                 self.config,
                 self.return_config,
+                TerminalAdvantageMode.RAW_RETURN,
             )
         with self.assertRaisesRegex(TorchOutcomeError, "only complete"):
             on_policy_terminal_loss(
@@ -306,6 +317,7 @@ class OnPolicyTerminalLossTests(unittest.TestCase):
                 CONCAT_LIMITS,
                 self.config,
                 self.return_config,
+                TerminalAdvantageMode.RAW_RETURN,
             )
 
     def _on_policy_batch(self, scorer, *, slot: int, row: int, ordinal: int):

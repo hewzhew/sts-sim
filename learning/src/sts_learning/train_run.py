@@ -20,7 +20,7 @@ from .published_combat_behavior import (
     recover_published_combat_behavior,
 )
 from .seeds import SeedPartition, SeedSchedule
-from .terminal_returns import OnPolicyObjectiveConfig
+from .terminal_returns import OnPolicyObjectiveConfig, TerminalAdvantageMode
 from .torch_combat_session_config import (
     CombatSessionBridge,
     CombatWinSessionLimits,
@@ -61,6 +61,7 @@ class RunTrainingCommandConfig:
     evaluation_max_batch_steps: int
     evaluation_behavior_seed: int
     held_out_seed_start: int
+    advantage_mode: TerminalAdvantageMode = TerminalAdvantageMode.RAW_RETURN
 
     def __post_init__(self) -> None:
         behavior = Path(self.warm_start_behavior).resolve()
@@ -81,6 +82,10 @@ class RunTrainingCommandConfig:
             )
         object.__setattr__(self, "warm_start_behavior", behavior)
         object.__setattr__(self, "output", output)
+        if not isinstance(self.advantage_mode, TerminalAdvantageMode):
+            raise RunTrainingCommandError(
+                "run training advantage mode must be typed"
+            )
         for name in (
             "slot_count",
             "attempts_per_update",
@@ -143,7 +148,8 @@ def run_run_training(
     profile = replace(
         CategoricalOnlineProfile(),
         objective=OnPolicyObjectiveConfig(
-            attempts_per_update=config.attempts_per_update
+            attempts_per_update=config.attempts_per_update,
+            advantage_mode=config.advantage_mode,
         ),
     )
     limits = replace(
@@ -269,6 +275,7 @@ def _configuration(
         "slot_count": config.slot_count,
         "generations": config.generations,
         "attempts_per_update": config.attempts_per_update,
+        "advantage_mode": config.advantage_mode.name.lower(),
         "max_batch_steps_per_generation": (
             config.max_batch_steps_per_generation
         ),
@@ -403,6 +410,11 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--evaluation-max-batch-steps", type=int, default=4096)
     parser.add_argument("--evaluation-behavior-seed", type=int, default=100_000)
     parser.add_argument("--held-out-seed-start", type=int, default=1_000_000)
+    parser.add_argument(
+        "--advantage-mode",
+        choices=("raw-return", "leave-one-out"),
+        default="raw-return",
+    )
     return parser
 
 
@@ -423,6 +435,11 @@ def main() -> int:
             evaluation_max_batch_steps=arguments.evaluation_max_batch_steps,
             evaluation_behavior_seed=arguments.evaluation_behavior_seed,
             held_out_seed_start=arguments.held_out_seed_start,
+            advantage_mode=(
+                TerminalAdvantageMode.RAW_RETURN
+                if arguments.advantage_mode == "raw-return"
+                else TerminalAdvantageMode.LEAVE_ONE_OUT
+            ),
         )
     )
     return 0

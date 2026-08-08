@@ -140,6 +140,7 @@ def test_run_training_warm_starts_publishes_and_evaluates(
         "generation",
         "completed",
     )
+    assert records[0]["advantage_mode"] == "raw_return"
     stdout = capsys.readouterr().out
     assert (
         "run_generation=0 promoted=true attempts=2 victories=2 defeats=0 "

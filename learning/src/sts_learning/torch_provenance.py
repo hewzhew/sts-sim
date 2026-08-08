@@ -32,7 +32,7 @@ _MODEL_DEFINITION_VERSION = 1
 _MODEL_CONFIG_VERSION = 1
 _SEMANTIC_SCHEMA_ENCODING_VERSION = 1
 _OPTIMIZER_CONFIG_VERSION = 1
-_TRAINER_IMPLEMENTATION_VERSION = 2
+_TRAINER_IMPLEMENTATION_VERSION = 3
 _TERMINAL_RETURN_CONFIG_VERSION = 1
 _COMBAT_WIN_TRAINER_IMPLEMENTATION_VERSION = 3
 _COMBAT_WIN_OBJECTIVE_VERSION = 3
@@ -239,10 +239,11 @@ def categorical_trainer_implementation(
         + struct.pack(">I", _TRAINER_IMPLEMENTATION_VERSION)
         + b"STS-FLOOR-PROGRESS-RETURN\x00"
         + struct.pack(
-            ">IQQ",
+            ">IQQB",
             _TERMINAL_RETURN_CONFIG_VERSION,
             objective_config.terminal_return.target_floor,
             objective_config.attempts_per_update,
+            int(objective_config.advantage_mode),
         )
         + _runtime_version_bytes(),
     )

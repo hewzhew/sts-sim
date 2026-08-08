@@ -25,7 +25,9 @@ from .semantic_concat import (
 )
 from .terminal_returns import (
     FloorProgressReturnConfig,
+    TerminalAdvantageMode,
     floor_progress_terminal_return,
+    terminal_return_advantages,
 )
 from .torch_policy import RaggedCandidateLogits, RaggedCategoricalPolicyConfig
 
@@ -77,6 +79,7 @@ def on_policy_terminal_loss(
     concat_limits: SemanticBatchConcatLimits,
     policy_config: RaggedCategoricalPolicyConfig,
     return_config: FloorProgressReturnConfig,
+    advantage_mode: TerminalAdvantageMode,
 ) -> OnPolicyTerminalLoss:
     """Apply progress-return REINFORCE to exact sampled categorical behavior.
 
@@ -95,9 +98,20 @@ def on_policy_terminal_loss(
         raise TorchOutcomeError("policy objective requires categorical policy config")
     if not isinstance(return_config, FloorProgressReturnConfig):
         raise TorchOutcomeError("policy objective requires terminal return config")
+    if not isinstance(advantage_mode, TerminalAdvantageMode):
+        raise TorchOutcomeError("policy objective requires typed advantage mode")
     normalized = tuple(attempts)
     if not normalized:
         raise TorchOutcomeError("policy objective requires at least one complete attempt")
+    if not all(isinstance(attempt, CompletedAttemptExperience) for attempt in normalized):
+        raise TorchOutcomeError("policy objective accepts only complete attempts")
+    advantages = terminal_return_advantages(
+        tuple(
+            floor_progress_terminal_return(attempt.terminal, return_config)
+            for attempt in normalized
+        ),
+        advantage_mode,
+    )
 
     behavior_ids: list[tuple[BehaviorManifestId, ...]] = []
     probability_evidence: list[tuple[SelectionProbability, ...]] = []
@@ -106,9 +120,7 @@ def on_policy_terminal_loss(
     targets: list[float] = []
     weights: list[float] = []
     total_decisions = 0
-    for attempt in normalized:
-        if not isinstance(attempt, CompletedAttemptExperience):
-            raise TorchOutcomeError("policy objective accepts only complete attempts")
+    for attempt, advantage in zip(normalized, advantages, strict=True):
         expected_decisions = sum(batch.decision_count for batch in attempt.batches)
         if attempt.decision_count != expected_decisions or expected_decisions <= 0:
             raise TorchOutcomeError(
@@ -133,10 +145,7 @@ def on_policy_terminal_loss(
             payloads.append(batch.payload)
             selected_ordinals.extend(batch.selected_ordinals)
             attempt_probabilities.extend(batch.selection_probabilities)
-            targets.extend(
-                [floor_progress_terminal_return(attempt.terminal, return_config)]
-                * batch.decision_count
-            )
+            targets.extend([advantage] * batch.decision_count)
             weights.extend(
                 [1.0 / (len(normalized) * expected_decisions)]
                 * batch.decision_count

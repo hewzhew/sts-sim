@@ -175,8 +175,10 @@ from .semantic_concat import (
 from .terminal_returns import (
     FloorProgressReturnConfig,
     OnPolicyObjectiveConfig,
+    TerminalAdvantageMode,
     TerminalReturnError,
     floor_progress_terminal_return,
+    terminal_return_advantages,
 )
 
 __all__ = [
@@ -268,6 +270,7 @@ __all__ = [
     "ManifestArtifactKind",
     "OnlineBatchDriver",
     "OnPolicyObjectiveConfig",
+    "TerminalAdvantageMode",
     "PairedHeldOutEvaluationResult",
     "PairedHeldOutEvaluationSpec",
     "PreparedDecisionBatch",
@@ -306,6 +309,7 @@ __all__ = [
     "TerminalStepBatch",
     "TerminalTargetRunResult",
     "TerminalProgressAggregate",
+    "terminal_return_advantages",
     "build_combat_frontier_plan",
     "replay_winning_recovery_roots",
     "build_combat_signal_census",

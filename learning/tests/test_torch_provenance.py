@@ -10,6 +10,7 @@ from sts_learning import (
     CombatWinObjectiveConfig,
     FloorProgressReturnConfig,
     OnPolicyObjectiveConfig,
+    TerminalAdvantageMode,
 )
 
 
@@ -183,6 +184,17 @@ class TorchProvenanceTests(unittest.TestCase):
             replace(objective, attempts_per_update=4),
             device_type="cpu",
         )
+        changed_advantage = categorical_training_manifest_template(
+            schema,
+            scorer,
+            behavior,
+            optimizer,
+            replace(
+                objective,
+                advantage_mode=TerminalAdvantageMode.LEAVE_ONE_OUT,
+            ),
+            device_type="cpu",
+        )
 
         self.assertEqual(reordered, template)
         self.assertNotEqual(changed_model.model_config, template.model_config)
@@ -196,6 +208,10 @@ class TorchProvenanceTests(unittest.TestCase):
         )
         self.assertNotEqual(
             changed_attempt_batch.trainer_implementation,
+            template.trainer_implementation,
+        )
+        self.assertNotEqual(
+            changed_advantage.trainer_implementation,
             template.trainer_implementation,
         )
 

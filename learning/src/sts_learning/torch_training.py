@@ -130,6 +130,7 @@ class SynchronousPolicyTrainer:
             self.concat_limits,
             self.policy_config,
             self.objective_config.terminal_return,
+            self.objective_config.advantage_mode,
         )
         if objective.value.ndim != 0 or not objective.value.requires_grad:
             raise TorchTrainingError(

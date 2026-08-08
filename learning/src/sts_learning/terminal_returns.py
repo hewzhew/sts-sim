@@ -2,14 +2,25 @@
 
 from __future__ import annotations
 
+import math
 import operator
+from collections.abc import Sequence
 from dataclasses import dataclass
+from enum import IntEnum
+from numbers import Real
 
 from .recovery import TerminalAttemptRecord
 
 
 class TerminalReturnError(ValueError):
     """A terminal outcome or return profile is malformed."""
+
+
+class TerminalAdvantageMode(IntEnum):
+    """How one complete-attempt batch turns terminal returns into advantages."""
+
+    RAW_RETURN = 0
+    LEAVE_ONE_OUT = 1
 
 
 @dataclass(frozen=True)
@@ -36,6 +47,7 @@ class OnPolicyObjectiveConfig:
 
     terminal_return: FloorProgressReturnConfig = FloorProgressReturnConfig()
     attempts_per_update: int = 8
+    advantage_mode: TerminalAdvantageMode = TerminalAdvantageMode.RAW_RETURN
 
     def __post_init__(self) -> None:
         if not isinstance(self.terminal_return, FloorProgressReturnConfig):
@@ -52,7 +64,47 @@ class OnPolicyObjectiveConfig:
             ) from error
         if attempts <= 0:
             raise TerminalReturnError("attempts_per_update must be positive")
+        if not isinstance(self.advantage_mode, TerminalAdvantageMode):
+            raise TerminalReturnError(
+                "advantage_mode must be TerminalAdvantageMode"
+            )
+        if (
+            self.advantage_mode is TerminalAdvantageMode.LEAVE_ONE_OUT
+            and attempts < 2
+        ):
+            raise TerminalReturnError(
+                "leave-one-out advantage requires at least two attempts per update"
+            )
         object.__setattr__(self, "attempts_per_update", attempts)
+
+
+def terminal_return_advantages(
+    returns: Sequence[float],
+    mode: TerminalAdvantageMode,
+) -> tuple[float, ...]:
+    """Convert one independent attempt batch into typed policy advantages."""
+
+    if not isinstance(mode, TerminalAdvantageMode):
+        raise TerminalReturnError("advantage mode must be TerminalAdvantageMode")
+    normalized: list[float] = []
+    for value in returns:
+        if isinstance(value, bool) or not isinstance(value, Real):
+            raise TerminalReturnError("terminal returns must be real numbers")
+        number = float(value)
+        if not math.isfinite(number):
+            raise TerminalReturnError("terminal returns must be finite")
+        normalized.append(number)
+    if not normalized:
+        raise TerminalReturnError("advantage calculation requires terminal returns")
+    if mode is TerminalAdvantageMode.RAW_RETURN:
+        return tuple(normalized)
+    if len(normalized) < 2:
+        raise TerminalReturnError(
+            "leave-one-out advantage requires at least two terminal returns"
+        )
+    batch_mean = math.fsum(normalized) / len(normalized)
+    scale = len(normalized) / (len(normalized) - 1)
+    return tuple(scale * (value - batch_mean) for value in normalized)
 
 
 def floor_progress_terminal_return(

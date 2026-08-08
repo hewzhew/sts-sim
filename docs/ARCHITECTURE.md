@@ -736,8 +736,13 @@ and restore its random-stream state before resuming decisions.
 The first terminal objective is an on-policy categorical policy loss, not
 imitation or raw-logit value regression. It accepts only bounded
 complete-attempt deliveries, resolves every batch's exact behavior manifest,
-and applies `-return * log P(selected | state)` to each sampled decision. The
-maintained floor-progress return reserves `+1` for victory and maps defeat floor
+and applies `-advantage * log P(selected | state)` to each sampled decision.
+The typed advantage mode either uses the raw terminal return or, for batches of
+at least two independent attempts, subtracts the mean return of every other
+attempt. This leave-one-out baseline preserves the on-policy expectation while
+removing the batch's common return level; it does not add a learned value model
+or shaped reward. The maintained floor-progress return reserves `+1` for
+victory and maps defeat floor
 `f` to `-1 + 2 * min(f, target_floor - 1) / target_floor`. Deeper failed runs
 therefore carry ordered progress evidence but never tie a victory. Negative
 returns decrease the sampled action's relative probability, positive returns
@@ -749,9 +754,10 @@ categorical rule to match its typed configuration and recomputes every recorded
 selection propensity from the current shadow scorer before mutation. Unknown
 or mismatched propensity is explicitly off-policy and rejected. Any future
 off-policy correction requires a separate objective with declared assumptions.
-One typed objective configuration owns both terminal-return semantics and the
-number of attempts per update. The trainer implementation artifact binds the
-return kind, target floor, and attempts per update; runner construction and
+One typed objective configuration owns terminal-return semantics, advantage
+mode, and the number of attempts per update. The trainer implementation
+artifact binds the return kind, target floor, advantage mode, and attempts per
+update; runner construction and
 process restore reject any conflicting runtime config.
 After validation, all retained decision payloads in one delivery are combined
 into one semantic ragged batch and scored by exactly one model call. Flat row

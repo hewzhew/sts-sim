@@ -7,10 +7,12 @@ import numpy as np
 from sts_learning import (
     FloorProgressReturnConfig,
     OnPolicyObjectiveConfig,
+    TerminalAdvantageMode,
     TerminalAttemptOutcome,
     TerminalBatchError,
     TerminalReturnError,
     TerminalStepBatch,
+    terminal_return_advantages,
 )
 
 
@@ -105,12 +107,40 @@ class OnPolicyObjectiveConfigTests(unittest.TestCase):
 
         self.assertIs(objective.terminal_return, terminal_return)
         self.assertEqual(objective.attempts_per_update, 4)
+        self.assertIs(
+            objective.advantage_mode,
+            TerminalAdvantageMode.RAW_RETURN,
+        )
         with self.assertRaisesRegex(TerminalReturnError, "must be typed"):
             OnPolicyObjectiveConfig(terminal_return=object())
         for invalid in (True, 0, -1, 1.5):
             with self.subTest(invalid=invalid):
                 with self.assertRaises(TerminalReturnError):
                     OnPolicyObjectiveConfig(attempts_per_update=invalid)
+
+    def test_leave_one_out_uses_only_other_attempt_returns(self) -> None:
+        returns = (-0.8, -0.6, 1.0)
+
+        self.assertEqual(
+            terminal_return_advantages(
+                returns,
+                TerminalAdvantageMode.RAW_RETURN,
+            ),
+            returns,
+        )
+        advantages = terminal_return_advantages(
+            returns,
+            TerminalAdvantageMode.LEAVE_ONE_OUT,
+        )
+
+        for actual, expected in zip(advantages, (-1.0, -0.7, 1.7), strict=True):
+            self.assertAlmostEqual(actual, expected)
+        self.assertAlmostEqual(sum(advantages), 0.0)
+        with self.assertRaisesRegex(TerminalReturnError, "at least two"):
+            OnPolicyObjectiveConfig(
+                attempts_per_update=1,
+                advantage_mode=TerminalAdvantageMode.LEAVE_ONE_OUT,
+            )
 
 
 if __name__ == "__main__":
