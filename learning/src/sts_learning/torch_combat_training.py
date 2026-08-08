@@ -1,0 +1,242 @@
+"""Synchronous optimizer owner for same-root combat win learning."""
+
+from __future__ import annotations
+
+import math
+import time
+from collections.abc import Sequence
+from dataclasses import dataclass
+from enum import IntEnum
+
+import torch
+
+from .combat_experience import CompletedCombatGroupExperience
+from .combat_objective import CombatWinObjectiveConfig
+from .manifests import BehaviorManifestRegistry
+from .policy import BehaviorManifestId
+from .semantic_concat import SemanticBatchConcatLimits
+from .torch_outcomes import (
+    CandidatePolicyScorer,
+    OnPolicyCombatWinLoss,
+    on_policy_combat_win_loss,
+)
+from .torch_policy import RaggedCategoricalPolicyConfig
+
+
+class TorchCombatTrainingError(RuntimeError):
+    """A combat-win update cannot safely commit."""
+
+
+class CombatWinTrainingStatus(IntEnum):
+    NO_WIN_SIGNAL = 0
+    ZERO_POLICY_GRADIENT = 1
+    OPTIMIZER_STEP = 2
+
+
+@dataclass(frozen=True)
+class CombatWinTrainingResult:
+    status: CombatWinTrainingStatus
+    group_count: int
+    signal_group_count: int
+    replicate_count: int
+    decision_count: int
+    loss: float
+    optimizer_steps_after: int
+
+    @property
+    def updated(self) -> bool:
+        return self.status is CombatWinTrainingStatus.OPTIMIZER_STEP
+
+
+@dataclass(frozen=True)
+class SynchronousCombatWinTrainerSnapshot:
+    deliveries: int
+    optimizer_steps: int
+    completed_groups: int
+    signal_groups: int
+    no_update_deliveries: int
+    trained_replicates: int
+    trained_decisions: int
+    last_loss: float | None
+    last_status: CombatWinTrainingStatus | None
+    last_behavior_manifest_ids: tuple[BehaviorManifestId, ...] | None
+    total_training_seconds: float
+    last_training_seconds: float | None
+    poisoned: bool
+
+
+class SynchronousCombatWinTrainer:
+    """Attempt one exact on-policy update and retain no combat payload."""
+
+    def __init__(
+        self,
+        scorer: CandidatePolicyScorer,
+        optimizer: torch.optim.Optimizer,
+        registry: BehaviorManifestRegistry,
+        concat_limits: SemanticBatchConcatLimits,
+        policy_config: RaggedCategoricalPolicyConfig,
+        objective_config: CombatWinObjectiveConfig,
+    ) -> None:
+        if not callable(scorer):
+            raise TorchCombatTrainingError("candidate policy scorer must be callable")
+        if not isinstance(optimizer, torch.optim.Optimizer):
+            raise TorchCombatTrainingError("optimizer must be a torch Optimizer")
+        if not isinstance(registry, BehaviorManifestRegistry):
+            raise TorchCombatTrainingError(
+                "combat trainer requires a behavior manifest registry"
+            )
+        if not isinstance(concat_limits, SemanticBatchConcatLimits):
+            raise TorchCombatTrainingError(
+                "combat trainer requires semantic concat limits"
+            )
+        if not isinstance(policy_config, RaggedCategoricalPolicyConfig):
+            raise TorchCombatTrainingError(
+                "combat trainer requires categorical policy config"
+            )
+        if not isinstance(objective_config, CombatWinObjectiveConfig):
+            raise TorchCombatTrainingError(
+                "combat trainer requires combat objective config"
+            )
+        self.scorer = scorer
+        self.optimizer = optimizer
+        self.registry = registry
+        self.concat_limits = concat_limits
+        self.policy_config = policy_config
+        self.objective_config = objective_config
+        self._deliveries = 0
+        self._optimizer_steps = 0
+        self._completed_groups = 0
+        self._signal_groups = 0
+        self._no_update_deliveries = 0
+        self._trained_replicates = 0
+        self._trained_decisions = 0
+        self._last_loss: float | None = None
+        self._last_status: CombatWinTrainingStatus | None = None
+        self._last_behavior_manifest_ids: tuple[BehaviorManifestId, ...] | None = None
+        self._total_training_seconds = 0.0
+        self._last_training_seconds: float | None = None
+        self._poisoned = False
+
+    @property
+    def snapshot(self) -> SynchronousCombatWinTrainerSnapshot:
+        return SynchronousCombatWinTrainerSnapshot(
+            deliveries=self._deliveries,
+            optimizer_steps=self._optimizer_steps,
+            completed_groups=self._completed_groups,
+            signal_groups=self._signal_groups,
+            no_update_deliveries=self._no_update_deliveries,
+            trained_replicates=self._trained_replicates,
+            trained_decisions=self._trained_decisions,
+            last_loss=self._last_loss,
+            last_status=self._last_status,
+            last_behavior_manifest_ids=self._last_behavior_manifest_ids,
+            total_training_seconds=self._total_training_seconds,
+            last_training_seconds=self._last_training_seconds,
+            poisoned=self._poisoned,
+        )
+
+    def train(
+        self,
+        groups: Sequence[CompletedCombatGroupExperience],
+    ) -> CombatWinTrainingResult:
+        if self._poisoned:
+            raise TorchCombatTrainingError(
+                "combat trainer is poisoned after an optimizer failure"
+            )
+        normalized = tuple(groups)
+        if len(normalized) != self.objective_config.groups_per_update:
+            raise TorchCombatTrainingError(
+                "combat training delivery must contain exactly groups_per_update groups"
+            )
+
+        started = time.perf_counter()
+        objective = on_policy_combat_win_loss(
+            self.scorer,
+            normalized,
+            self.registry,
+            self.concat_limits,
+            self.policy_config,
+        )
+        if objective.value.ndim != 0 or not objective.value.requires_grad:
+            raise TorchCombatTrainingError(
+                "combat win objective must be a differentiable scalar"
+            )
+        loss = float(objective.value.detach().item())
+        if not math.isfinite(loss):
+            raise TorchCombatTrainingError("combat win loss must be finite")
+
+        if objective.signal_group_count == 0:
+            return self._finish(
+                objective,
+                loss,
+                CombatWinTrainingStatus.NO_WIN_SIGNAL,
+                started,
+            )
+
+        try:
+            self.optimizer.zero_grad(set_to_none=True)
+            objective.value.backward()
+            gradients = tuple(
+                parameter.grad
+                for group in self.optimizer.param_groups
+                for parameter in group["params"]
+                if parameter.grad is not None
+            )
+            if not gradients:
+                raise TorchCombatTrainingError("optimizer received no gradients")
+            if not all(
+                bool(torch.all(torch.isfinite(gradient)))
+                for gradient in gradients
+            ):
+                raise TorchCombatTrainingError("optimizer gradients must be finite")
+            if not any(bool(torch.any(gradient != 0)) for gradient in gradients):
+                self.optimizer.zero_grad(set_to_none=True)
+                return self._finish(
+                    objective,
+                    loss,
+                    CombatWinTrainingStatus.ZERO_POLICY_GRADIENT,
+                    started,
+                )
+            self.optimizer.step()
+        except Exception:
+            self._poisoned = True
+            raise
+
+        self._optimizer_steps += 1
+        self._trained_replicates += objective.replicate_count
+        self._trained_decisions += objective.decision_count
+        return self._finish(
+            objective,
+            loss,
+            CombatWinTrainingStatus.OPTIMIZER_STEP,
+            started,
+        )
+
+    def _finish(
+        self,
+        objective: OnPolicyCombatWinLoss,
+        loss: float,
+        status: CombatWinTrainingStatus,
+        started: float,
+    ) -> CombatWinTrainingResult:
+        elapsed = time.perf_counter() - started
+        self._deliveries += 1
+        self._completed_groups += objective.group_count
+        self._signal_groups += objective.signal_group_count
+        self._no_update_deliveries += int(
+            status is not CombatWinTrainingStatus.OPTIMIZER_STEP
+        )
+        self._last_loss = loss
+        self._last_status = status
+        self._last_behavior_manifest_ids = objective.behavior_manifest_ids
+        self._total_training_seconds += elapsed
+        self._last_training_seconds = elapsed
+        return CombatWinTrainingResult(
+            status=status,
+            group_count=objective.group_count,
+            signal_group_count=objective.signal_group_count,
+            replicate_count=objective.replicate_count,
+            decision_count=objective.decision_count,
+            loss=loss,
+            optimizer_steps_after=self._optimizer_steps,
+        )

@@ -259,6 +259,26 @@ decisions. The objective rechecks exact behavior manifests and recorded
 selection propensities against the scorer in one concatenated model call. HP
 and potion-retention axes remain typed evidence but do not enter this loss; a
 group with no win-axis variation therefore has exactly zero win gradient.
+The synchronous combat-win trainer has its own objective configuration and
+trainer provenance; it cannot reuse a terminal floor-return behavior manifest.
+Each delivery contains exactly the declared number of complete groups. No win
+signal skips backward and optimizer mutation, while a nonzero win signal whose
+policy gradient is exactly zero also cannot claim a training step. Only one
+finite, nonzero-gradient optimizer update increments the combat training step;
+the trainer retains scalar counters and bounded identity evidence rather than
+completed combat payloads.
+
+The first combat generation runner deliberately narrows that contract to one
+fixed exact root, one group per call, and `groups_per_update == 1`. Construction
+requires one exact scorer/optimizer/registry/controller/provenance chain. The
+live behavior stays frozen while the group runs. A no-signal or zero-gradient
+result leaves it unchanged; one real optimizer step must be followed by an
+immediate atomic live promotion. If promotion temporarily fails, the runner
+retains only a compact pending result and retries promotion before requesting
+another group, so it cannot train the same experience twice. A changed source
+root is rejected before policy or environment mutation. This runner owns no
+cross-root scheduler, durable checkpoint cadence, or HP/potion scalar target.
+
 Completed groups may be reduced to compact per-axis signal summaries and then
 to a caller-bounded census over distinct exact roots. That census retains only
 group, replicate, and decision counts; it neither keeps semantic payloads nor

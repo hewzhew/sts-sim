@@ -33,6 +33,10 @@ from .combat_outcomes import (
     CombatTerminalStepBatch,
     CompletedCombatGroup,
 )
+from .combat_objective import (
+    CombatObjectiveError,
+    CombatWinObjectiveConfig,
+)
 from .combat_signals import (
     CombatAxisSignalCensus,
     CombatAxisSignalSummary,
@@ -206,8 +210,10 @@ __all__ = [
     "CombatSignalCensus",
     "CombatSignalError",
     "CombatOutcomeError",
+    "CombatObjectiveError",
     "CombatTerminalOutcome",
     "CombatTerminalStepBatch",
+    "CombatWinObjectiveConfig",
     "CompletedCombatGroup",
     "CompletedCombatGroupExperience",
     "CheckpointedEpisodeResetTarget",

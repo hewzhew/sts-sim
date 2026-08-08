@@ -5,7 +5,11 @@ import unittest
 from dataclasses import replace
 
 from learning.tests.semantic_fixtures import semantic_schema_fixture
-from sts_learning import FloorProgressReturnConfig, OnPolicyObjectiveConfig
+from sts_learning import (
+    CombatWinObjectiveConfig,
+    FloorProgressReturnConfig,
+    OnPolicyObjectiveConfig,
+)
 
 
 _TORCH_AVAILABLE = importlib.util.find_spec("torch") is not None
@@ -20,12 +24,82 @@ if _TORCH_AVAILABLE:
     from sts_learning.torch_provenance import (
         AdamTrainingConfig,
         TorchProvenanceError,
+        combat_win_training_manifest_template,
+        combat_win_trainer_implementation,
         categorical_training_manifest_template,
+        categorical_trainer_implementation,
     )
 
 
 @unittest.skipUnless(_TORCH_AVAILABLE, "optional PyTorch dependency is not installed")
 class TorchProvenanceTests(unittest.TestCase):
+    def test_combat_win_trainer_has_distinct_exact_provenance(self) -> None:
+        schema = semantic_schema_fixture()
+        scorer = RaggedScorerConfig(hidden_dim=4, relation_layers=1)
+        behavior = RaggedCategoricalPolicyConfig(temperature=0.8)
+        optimizer = AdamTrainingConfig(learning_rate=0.002)
+        combat = CombatWinObjectiveConfig(groups_per_update=1)
+        terminal = OnPolicyObjectiveConfig(
+            terminal_return=FloorProgressReturnConfig(target_floor=52),
+            attempts_per_update=1,
+        )
+
+        combat_template = combat_win_training_manifest_template(
+            schema,
+            scorer,
+            behavior,
+            optimizer,
+            combat,
+            device_type="cpu",
+        )
+        wider = combat_win_training_manifest_template(
+            schema,
+            scorer,
+            behavior,
+            optimizer,
+            CombatWinObjectiveConfig(groups_per_update=2),
+            device_type="cpu",
+        )
+        terminal_template = categorical_training_manifest_template(
+            schema,
+            scorer,
+            behavior,
+            optimizer,
+            terminal,
+            device_type="cpu",
+        )
+
+        self.assertEqual(
+            combat_template.model_definition,
+            terminal_template.model_definition,
+        )
+        self.assertEqual(combat_template.model_config, terminal_template.model_config)
+        self.assertEqual(combat_template.behavior_rule, terminal_template.behavior_rule)
+        self.assertEqual(
+            combat_template.semantic_schema,
+            terminal_template.semantic_schema,
+        )
+        self.assertEqual(
+            combat_template.optimizer_config,
+            terminal_template.optimizer_config,
+        )
+        self.assertEqual(
+            combat_template.trainer_implementation,
+            combat_win_trainer_implementation(combat),
+        )
+        self.assertEqual(
+            terminal_template.trainer_implementation,
+            categorical_trainer_implementation(terminal),
+        )
+        self.assertNotEqual(
+            combat_template.trainer_implementation,
+            terminal_template.trainer_implementation,
+        )
+        self.assertNotEqual(
+            wider.trainer_implementation,
+            combat_template.trainer_implementation,
+        )
+
     def test_template_is_canonical_and_changes_with_runtime_profile(self) -> None:
         schema = semantic_schema_fixture()
         reversed_schema = {

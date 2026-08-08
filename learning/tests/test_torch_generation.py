@@ -108,7 +108,10 @@ class BoundedCategoricalGenerationRunnerTests(unittest.TestCase):
                 optimizer_model=other,
             )
 
-            with self.assertRaisesRegex(TorchGenerationError, "exactly the shadow"):
+            with self.assertRaisesRegex(
+                TorchGenerationError,
+                "exactly the model parameters",
+            ):
                 BoundedCategoricalGenerationRunner(
                     driver,
                     assembler,

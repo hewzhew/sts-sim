@@ -10,6 +10,7 @@ from dataclasses import dataclass
 
 import torch
 
+from .combat_objective import CombatWinObjectiveConfig
 from .manifests import (
     BehaviorManifestTemplate,
     ManifestArtifactId,
@@ -33,6 +34,8 @@ _SEMANTIC_SCHEMA_ENCODING_VERSION = 1
 _OPTIMIZER_CONFIG_VERSION = 1
 _TRAINER_IMPLEMENTATION_VERSION = 2
 _TERMINAL_RETURN_CONFIG_VERSION = 1
+_COMBAT_WIN_TRAINER_IMPLEMENTATION_VERSION = 1
+_COMBAT_WIN_OBJECTIVE_VERSION = 1
 _MAX_SCHEMA_BYTES = 1 << 20
 _MAX_SCHEMA_DEPTH = 16
 _MAX_SCHEMA_ITEMS = 100_000
@@ -122,14 +125,58 @@ def categorical_training_manifest_template(
 ) -> BehaviorManifestTemplate:
     """Bind the exact maintained model, schema, optimizer, and trainer profile."""
 
+    if not isinstance(objective_config, OnPolicyObjectiveConfig):
+        raise TorchProvenanceError("objective_config must be typed")
+    return _categorical_manifest_template(
+        semantic_schema,
+        scorer_config,
+        behavior_config,
+        optimizer_config,
+        categorical_trainer_implementation(objective_config),
+        device_type=device_type,
+    )
+
+
+def combat_win_training_manifest_template(
+    semantic_schema: Mapping[str, object],
+    scorer_config: RaggedScorerConfig,
+    behavior_config: RaggedCategoricalPolicyConfig,
+    optimizer_config: AdamTrainingConfig,
+    objective_config: CombatWinObjectiveConfig,
+    *,
+    device_type: str,
+) -> BehaviorManifestTemplate:
+    """Bind the same scorer stack to the distinct same-root win trainer."""
+
+    if not isinstance(objective_config, CombatWinObjectiveConfig):
+        raise TorchProvenanceError("combat objective_config must be typed")
+    return _categorical_manifest_template(
+        semantic_schema,
+        scorer_config,
+        behavior_config,
+        optimizer_config,
+        combat_win_trainer_implementation(objective_config),
+        device_type=device_type,
+    )
+
+
+def _categorical_manifest_template(
+    semantic_schema: Mapping[str, object],
+    scorer_config: RaggedScorerConfig,
+    behavior_config: RaggedCategoricalPolicyConfig,
+    optimizer_config: AdamTrainingConfig,
+    trainer_implementation: ManifestArtifactId,
+    *,
+    device_type: str,
+) -> BehaviorManifestTemplate:
     if not isinstance(scorer_config, RaggedScorerConfig):
         raise TorchProvenanceError("scorer_config must be typed")
     if not isinstance(behavior_config, RaggedCategoricalPolicyConfig):
         raise TorchProvenanceError("behavior_config must be typed")
     if not isinstance(optimizer_config, AdamTrainingConfig):
         raise TorchProvenanceError("optimizer_config must be typed")
-    if not isinstance(objective_config, OnPolicyObjectiveConfig):
-        raise TorchProvenanceError("objective_config must be typed")
+    if not isinstance(trainer_implementation, ManifestArtifactId):
+        raise TorchProvenanceError("trainer_implementation must be typed")
     if type(device_type) is not str or not device_type:
         raise TorchProvenanceError("device_type must be a non-empty string")
     try:
@@ -168,9 +215,6 @@ def categorical_training_manifest_template(
         ManifestArtifactKind.SEMANTIC_SCHEMA,
         schema_content,
     )
-    trainer_implementation = categorical_trainer_implementation(
-        objective_config,
-    )
     return BehaviorManifestTemplate(
         model_definition=model_definition,
         model_config=model_config,
@@ -199,6 +243,27 @@ def categorical_trainer_implementation(
             _TERMINAL_RETURN_CONFIG_VERSION,
             objective_config.terminal_return.target_floor,
             objective_config.attempts_per_update,
+        )
+        + _runtime_version_bytes(),
+    )
+
+
+def combat_win_trainer_implementation(
+    objective_config: CombatWinObjectiveConfig,
+) -> ManifestArtifactId:
+    """Bind same-root leave-one-out wins and the exact group update width."""
+
+    if not isinstance(objective_config, CombatWinObjectiveConfig):
+        raise TorchProvenanceError("combat objective_config must be typed")
+    return ManifestArtifactId.from_content(
+        ManifestArtifactKind.TRAINER_IMPLEMENTATION,
+        b"STS-SYNCHRONOUS-COMBAT-WIN-POLICY-TRAINER\x00"
+        + struct.pack(">I", _COMBAT_WIN_TRAINER_IMPLEMENTATION_VERSION)
+        + b"STS-SAME-ROOT-LEAVE-ONE-OUT-WIN\x00"
+        + struct.pack(
+            ">IQ",
+            _COMBAT_WIN_OBJECTIVE_VERSION,
+            objective_config.groups_per_update,
         )
         + _runtime_version_bytes(),
     )

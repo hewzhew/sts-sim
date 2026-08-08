@@ -5,8 +5,6 @@ from __future__ import annotations
 import operator
 from dataclasses import dataclass
 
-import torch
-
 from .attempts import AttemptAssemblerSnapshot, BoundedAttemptAssembler
 from .attempt_batching import AttemptUpdateBatchError, BoundedAttemptUpdateBatcher
 from .driver import BatchDriverError, BatchDriverResumeBoundary, OnlineBatchDriver
@@ -15,6 +13,10 @@ from .torch_behavior import (
     CategoricalTorchBehaviorController,
     CategoricalTorchBehaviorControllerSnapshot,
     TorchBehaviorBinding,
+)
+from .torch_optimizer_wiring import (
+    TorchOptimizerWiringError,
+    require_exact_optimizer_parameters,
 )
 from .torch_policy import RaggedCandidateScorer
 from .torch_provenance import categorical_trainer_implementation
@@ -261,30 +263,13 @@ class BoundedCategoricalGenerationRunner:
             raise TorchGenerationError(
                 "active behavior conflicts with the trainer implementation"
             )
-        _require_exact_optimizer_parameters(
-            self.trainer.optimizer,
-            self.shadow_scorer,
-        )
-
-
-def _require_exact_optimizer_parameters(
-    optimizer: torch.optim.Optimizer,
-    scorer: RaggedCandidateScorer,
-) -> None:
-    optimizer_parameters = tuple(
-        parameter
-        for group in optimizer.param_groups
-        for parameter in group["params"]
-    )
-    scorer_parameters = tuple(scorer.parameters())
-    optimizer_ids = tuple(id(parameter) for parameter in optimizer_parameters)
-    scorer_ids = tuple(id(parameter) for parameter in scorer_parameters)
-    if len(set(optimizer_ids)) != len(optimizer_ids):
-        raise TorchGenerationError("generation optimizer repeats a model parameter")
-    if set(optimizer_ids) != set(scorer_ids):
-        raise TorchGenerationError(
-            "generation optimizer does not own exactly the shadow model parameters"
-        )
+        try:
+            require_exact_optimizer_parameters(
+                self.trainer.optimizer,
+                self.shadow_scorer,
+            )
+        except TorchOptimizerWiringError as error:
+            raise TorchGenerationError(f"generation {error}") from error
 
 
 def _positive_count(value: int, name: str) -> int:

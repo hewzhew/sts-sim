@@ -143,6 +143,20 @@ uses only the same-root leave-one-out win advantage. Every replicate contributes
 equal total weight regardless of how many decisions it needed. HP and potion
 advantages remain excluded, so an all-win or all-loss group produces zero win
 gradient rather than a hidden resource tradeoff.
+`sts_learning.torch_combat_training.SynchronousCombatWinTrainer` gives this
+objective a separate provenance identity and consumes exactly the configured
+number of complete groups. No win signal and exactly zero policy gradient are
+typed no-update results; only a finite nonzero gradient performs one optimizer
+step. The trainer retains counters and bounded identity evidence, not group
+payloads.
+`sts_learning.torch_combat_generation.BoundedCombatWinGenerationRunner` is the
+first bounded live composition. It fixes one exact source root, requires one
+group per update, validates the scorer/optimizer/registry/controller chain, and
+keeps behavior frozen for the complete group. Only a real optimizer step is
+promoted. A temporary promotion failure retains one compact pending result and
+retries it before requesting another group, while root drift fails before any
+new policy or environment mutation. The runner does not yet own cross-root
+scheduling, durable combat-training resume, or an HP/potion objective.
 `sts_learning.combat_signals` reduces a completed group to nonzero replicate
 and decision support per axis. Its cross-root census requires an explicit group
 bound, rejects duplicate exact roots, and retains no semantic payload. Signal
