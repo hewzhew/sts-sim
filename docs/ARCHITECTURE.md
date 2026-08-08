@@ -279,6 +279,18 @@ another group, so it cannot train the same experience twice. A changed source
 root is rejected before policy or environment mutation. This runner owns no
 cross-root scheduler, durable checkpoint cadence, or HP/potion scalar target.
 
+The compact combat session factory is the maintained artifact-to-runner
+composition. Its bridge adapter exposes only the installed semantic schema and
+the byte-bounded opaque combat-root artifact loader. Configuration binds the
+expected root count, selected root slot, replicate count, relation-aware scorer,
+categorical behavior, Adam optimizer, one-group win objective, experience and
+concat limits, CPU device, and immutable-store capacity. Creating generation
+zero imports and validates the artifact before constructing one exact owner
+chain; callers do not manually assemble a registry, publisher, controller, or
+trainer. Live advancement writes no files. Explicit behavior publication stores
+only the active frozen scorer and manifest, not optimizer state or a claim of
+durable combat-training resume.
+
 Completed groups may be reduced to compact per-axis signal summaries and then
 to a caller-bounded census over distinct exact roots. That census retains only
 group, replicate, and decision counts; it neither keeps semantic payloads nor

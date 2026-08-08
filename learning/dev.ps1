@@ -1,6 +1,6 @@
 param(
     [Parameter(Mandatory = $true, Position = 0)]
-    [ValidateSet("configure", "doctor", "test", "verify")]
+    [ValidateSet("configure", "doctor", "test", "verify", "refresh-bridge")]
     [string]$Command,
     [string]$Python,
     [string]$MaturinPython = "python"
@@ -56,11 +56,29 @@ import numpy
 import torch
 import sts_learning
 import sts_learning_bridge
+from sts_learning_bridge import LearningBatchEnv
 
 source_root = pathlib.Path(sys.argv[1]).resolve()
 package_root = pathlib.Path(sts_learning.__file__).resolve()
 if source_root not in package_root.parents:
     raise SystemExit(f"sts_learning came from unexpected path: {package_root}")
+
+required_bridge_methods = (
+    "from_combat_root_artifact_bytes",
+    "combat_group",
+    "combat_root_contexts",
+)
+missing = [
+    name
+    for name in required_bridge_methods
+    if not callable(getattr(LearningBatchEnv, name, None))
+]
+if missing:
+    raise SystemExit(
+        "installed bridge is stale; missing LearningBatchEnv methods: "
+        + ", ".join(missing)
+        + "; run: .\\learning\\dev.ps1 refresh-bridge [-Python <python.exe>]"
+    )
 
 print(f"python={sys.executable}")
 print(f"numpy={numpy.__version__}")
@@ -130,6 +148,27 @@ switch ($Command) {
             -MaturinPython $MaturinPython
         if ($LASTEXITCODE -ne 0) {
             throw "isolated bridge verification failed"
+        }
+    }
+    "refresh-bridge" {
+        $pythonPath = if ($Python) {
+            Resolve-PythonExecutable $Python
+        }
+        else {
+            Get-ConfiguredPython
+        }
+        & (Join-Path $repositoryRoot "bindings\python_learning\verify.ps1") `
+            -Python $pythonPath `
+            -MaturinPython $MaturinPython `
+            -InstallTarget
+        if ($LASTEXITCODE -ne 0) {
+            throw "learning bridge refresh failed"
+        }
+        Invoke-Doctor $pythonPath
+        if ($Python) {
+            New-Item -ItemType Directory -Path $hostRoot -Force | Out-Null
+            Set-Content -LiteralPath $pythonFile -Value $pythonPath -NoNewline
+            Write-Output ("configured=" + $pythonPath)
         }
     }
 }

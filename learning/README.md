@@ -157,6 +157,14 @@ promoted. A temporary promotion failure retains one compact pending result and
 retries it before requesting another group, while root drift fails before any
 new policy or environment mutation. The runner does not yet own cross-root
 scheduling, durable combat-training resume, or an HP/potion objective.
+`sts_learning.torch_combat_session.CombatWinSessionFactory` removes the manual
+owner wiring around that runner. It accepts only a byte-bounded opaque
+production root artifact (or its file), an exact root count and selected slot,
+typed replicate/model/optimizer/resource configuration, and two explicit RNG
+seeds. `new_from_artifact_*()` creates generation zero; `session.advance()` runs
+at most one group; `session.publish_active_behavior()` is the only durable write.
+Publication stores the active frozen behavior, not optimizer resume state. The
+first maintained profile is relation-aware, one group per update, and CPU-only.
 `sts_learning.combat_signals` reduces a completed group to nonzero replicate
 and decision support per axis. Its cross-root census requires an explicit group
 bound, rejects duplicate exact roots, and retains no semantic payload. Signal
@@ -436,12 +444,19 @@ one Python 3.12 runtime that already contains NumPy, PyTorch, and the bridge:
 ```powershell
 .\learning\dev.ps1 configure -Python <python-3.12-with-torch-and-bridge>
 .\learning\dev.ps1 doctor
+.\learning\dev.ps1 refresh-bridge
 .\learning\dev.ps1 test
 .\learning\dev.ps1 verify -MaturinPython <python-with-maturin>
 ```
 
 `test` fails if the configured training dependencies are unavailable and runs
-the complete learning suite. `verify` runs that suite first, then delegates to
+the complete learning suite. `doctor` also rejects an installed bridge that is
+missing a maintained `LearningBatchEnv` surface. `refresh-bridge` builds a fresh
+wheel, passes its Rust/smoke/isolated-caller verification, and only then replaces
+the bridge in the configured training Python without changing dependencies.
+On first setup, `refresh-bridge -Python <python.exe>` performs the same guarded
+install and records that runtime only after `doctor` succeeds.
+`verify` runs the configured suite first, then delegates to
 the lower-level `bindings/python_learning/verify.ps1` for a fresh wheel, Rust
 bridge contracts, and isolated minimal caller coverage. The lower-level command
 allows optional PyTorch tests to skip and must not be used as evidence that the

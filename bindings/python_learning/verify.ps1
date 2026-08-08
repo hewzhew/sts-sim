@@ -1,6 +1,7 @@
 param(
     [string]$Python = "python",
-    [string]$MaturinPython = "python"
+    [string]$MaturinPython = "python",
+    [switch]$InstallTarget
 )
 
 $ErrorActionPreference = "Stop"
@@ -15,6 +16,7 @@ $buildLog = Join-Path $runRoot "build.log"
 $rustTestLog = Join-Path $runRoot "rust-tests.log"
 $smokeLog = Join-Path $runRoot "smoke.log"
 $learningTestLog = Join-Path $runRoot "learning-tests.log"
+$targetInstallLog = Join-Path $runRoot "target-install.log"
 
 New-Item -ItemType Directory -Path $wheelRoot -Force | Out-Null
 
@@ -96,6 +98,21 @@ if ($learningTestExit -ne 0) {
     throw "Python learning caller tests failed; full log: $learningTestLog"
 }
 
+if ($InstallTarget) {
+    $ErrorActionPreference = "Continue"
+    & $pythonPath -m pip install `
+        --disable-pip-version-check `
+        --force-reinstall `
+        --no-deps `
+        $wheel.FullName *> $targetInstallLog
+    $targetInstallExit = $LASTEXITCODE
+    $ErrorActionPreference = $savedErrorPreference
+    if ($targetInstallExit -ne 0) {
+        Get-Content -LiteralPath $targetInstallLog -Tail 80
+        throw "target wheel refresh failed; full log: $targetInstallLog"
+    }
+}
+
 $summary = Get-Content -LiteralPath $smokeLog |
     Where-Object { $_ -match "^python_learning_bridge_smoke " } |
     Select-Object -Last 1
@@ -108,4 +125,7 @@ Write-Output ("python=" + $pythonPath)
 Write-Output ("wheel=" + $wheel.Name)
 Write-Output "rust_tests=passed"
 Write-Output "isolated_caller_tests=passed_optional_dependencies_may_skip"
+if ($InstallTarget) {
+    Write-Output "target_install=refreshed"
+}
 Write-Output ("artifact_root=" + $runRoot)

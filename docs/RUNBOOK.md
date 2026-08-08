@@ -620,9 +620,17 @@ Configure one stable Python 3.12 training runtime once, then use the small
 ```powershell
 .\learning\dev.ps1 configure -Python <python-3.12-with-numpy-torch-and-bridge>
 .\learning\dev.ps1 doctor
+.\learning\dev.ps1 refresh-bridge
 .\learning\dev.ps1 test
 .\learning\dev.ps1 verify -MaturinPython <python-with-maturin>
 ```
+
+Use `refresh-bridge` after bridge source changes or when `doctor` reports a
+stale installed surface. It builds and verifies a fresh wheel in isolation
+before replacing the configured environment's bridge with `--no-deps`; it does
+not mutate NumPy or PyTorch. Ordinary Python-only edits still use `test`.
+For first setup, pass `-Python <python.exe>` to refresh and record that runtime
+only after the guarded installation and final doctor both succeed.
 
 To seed a bounded learning corpus from production-owned later combat
 boundaries, convert one or more public continuations into a fresh opaque root

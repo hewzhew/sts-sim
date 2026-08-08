@@ -142,3 +142,9 @@ separate online caller contracts under `learning/tests`. It keeps the wheel,
 environment, and complete logs below one fresh ignored
 `.oracle-lab/python-learning-bridge/` directory and prints only a compact
 summary plus that artifact location.
+
+Passing `-InstallTarget` explicitly installs that exact wheel into the target
+Python with `--force-reinstall --no-deps`, but only after all isolated checks
+pass. Routine learning development should use
+`.\learning\dev.ps1 refresh-bridge`, which applies this guarded refresh to the
+configured training runtime and follows it with `doctor`.
