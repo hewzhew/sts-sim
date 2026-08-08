@@ -8,8 +8,8 @@ use std::collections::BTreeSet;
 use std::fmt;
 
 use super::{
-    LearningActionV1, LearningBoundaryV1, LearningEnvV1, LearningModelBatchV1,
-    LearningModelInputError, LearningTerminalOutcomeV1, RunControlConfig,
+    CombatLearningRootContextV1, LearningActionV1, LearningBoundaryV1, LearningEnvV1,
+    LearningModelBatchV1, LearningModelInputError, LearningTerminalOutcomeV1, RunControlConfig,
     RunControlSessionCheckpointV1,
 };
 
@@ -98,6 +98,29 @@ impl LearningEnvPoolV1 {
                 slot_count: self.slots.len(),
             })?;
         Ok(slot.env.checkpoint())
+    }
+
+    /// Returns compact public metadata for one current combat root without cloning its session.
+    pub fn combat_root_context(
+        &self,
+        slot_index: usize,
+    ) -> Result<CombatLearningRootContextV1, LearningEnvPoolError> {
+        if self.poisoned {
+            return Err(LearningEnvPoolError::PoolPoisoned);
+        }
+        let slot = self
+            .slots
+            .get(slot_index)
+            .ok_or(LearningEnvPoolError::SlotIndexOutOfRange {
+                slot_index,
+                slot_count: self.slots.len(),
+            })?;
+        slot.env
+            .combat_root_context()
+            .map_err(|message| LearningEnvPoolError::CombatRootContext {
+                slot_index,
+                message,
+            })
     }
 
     /// Explicitly replaces one slot after a caller has chosen its reset or
@@ -285,6 +308,10 @@ pub enum LearningEnvPoolError {
         message: String,
     },
     ReplacementObservation {
+        slot_index: usize,
+        message: String,
+    },
+    CombatRootContext {
         slot_index: usize,
         message: String,
     },

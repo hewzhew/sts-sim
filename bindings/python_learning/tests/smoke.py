@@ -176,8 +176,33 @@ def _choose_first_until_ready(env: LearningBatchEnv) -> None:
         assert rounds < 100
 
 
+def _combat_root_context_values(context: CombatLearningRootContextV1) -> tuple[object, ...]:
+    return (
+        context.act,
+        context.floor,
+        context.ascension_level,
+        context.turn,
+        context.is_boss_fight,
+        context.is_elite_fight,
+        context.monster_count,
+        context.living_monster_count,
+        context.potion_slot_count,
+        context.filled_potion_count,
+        context.usable_potion_count,
+        context.master_deck_card_count,
+        context.relic_count,
+        context.hand_card_count,
+        context.hp,
+        context.max_hp,
+    )
+
+
 def _assert_same_root_combat_group(env: LearningBatchEnv, slot: int) -> None:
     before = env.decision_batch(dense_mask=True, semantic=True)
+    available = dict(env.combat_root_contexts())
+    assert slot in available
+    preview_context = available[slot]
+    assert isinstance(preview_context, CombatLearningRootContextV1)
     group = env.combat_group(slot, 2)
     assert isinstance(group, CombatLearningBatchEnv)
     assert group.replicate_count == 2
@@ -186,6 +211,7 @@ def _assert_same_root_combat_group(env: LearningBatchEnv, slot: int) -> None:
     assert len(group.exact_combat_state_hash) == 64
     context = group.root_context
     assert isinstance(context, CombatLearningRootContextV1)
+    assert _combat_root_context_values(preview_context) == _combat_root_context_values(context)
     assert context.act >= 1
     assert context.floor >= 0
     assert context.ascension_level >= 0

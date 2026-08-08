@@ -11,8 +11,8 @@ use crate::state::core::{ClientInput, EngineState, RunResult};
 use crate::state::selection::SelectionResolution;
 
 use super::{
-    capture_planner_boundary_yield_v1, PlannerBoundaryYieldKindV1, RunControlConfig,
-    RunControlSession, RunControlSessionCheckpointV1,
+    capture_planner_boundary_yield_v1, CombatLearningRootContextV1, PlannerBoundaryYieldKindV1,
+    RunControlConfig, RunControlSession, RunControlSessionCheckpointV1,
 };
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -125,6 +125,26 @@ impl LearningEnvV1 {
 
     pub fn checkpoint(&self) -> RunControlSessionCheckpointV1 {
         RunControlSessionCheckpointV1::from_session(&self.session)
+    }
+
+    pub fn combat_root_context(&self) -> Result<CombatLearningRootContextV1, String> {
+        let active = self
+            .session
+            .active_combat
+            .as_ref()
+            .ok_or_else(|| "learning environment is not at a combat root".to_string())?;
+        if !matches!(
+            active.engine_state,
+            EngineState::CombatPlayerTurn
+                | EngineState::CombatProcessing
+                | EngineState::PendingChoice(_)
+        ) {
+            return Err("learning environment is not at an active combat input state".to_string());
+        }
+        super::combat_learning_env::combat_learning_root_context_v1(
+            &self.session,
+            &active.combat_state,
+        )
     }
 
     pub fn restore(&mut self, checkpoint: RunControlSessionCheckpointV1) -> Result<(), String> {
@@ -444,6 +464,16 @@ mod tests {
             }),
         ));
         let env = LearningEnvV1::from_session(session);
+
+        let context = env
+            .combat_root_context()
+            .expect("capture compact combat root context");
+        assert_eq!(context.turn, 1);
+        assert_eq!(context.potion_slot_count, 3);
+        assert_eq!(context.filled_potion_count, 1);
+        assert_eq!(context.usable_potion_count, 1);
+        assert_eq!(context.hand_card_count, 1);
+        assert_eq!(context.monster_count, 1);
 
         let LearningBoundaryV1::Combat { boundary } =
             env.observe().expect("observe combat learning boundary")

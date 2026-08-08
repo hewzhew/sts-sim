@@ -191,6 +191,9 @@ replicate indices, ordinary sparse semantic action rows, and typed combat
 terminal columns; it does not receive or reconstruct the root session. Deriving
 or running the group does not advance the source run slot. This bridge surface
 owns neither reward shaping nor durable combat-group checkpoint publication.
+The source batch can enumerate all current undecoded combat roots and their
+frozen contexts in one call without creating replicate groups or cloning their
+sessions; only caller-selected roots pay group construction cost.
 
 Terminal learning steps retain the typed run result plus public terminal act,
 floor, HP, max HP, and gold. The Python bridge returns those facts as compact

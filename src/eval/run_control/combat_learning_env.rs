@@ -147,7 +147,7 @@ impl CombatLearningRootV1 {
     }
 }
 
-fn combat_learning_root_context_v1(
+pub(super) fn combat_learning_root_context_v1(
     session: &RunControlSession,
     combat: &crate::runtime::combat::CombatState,
 ) -> Result<CombatLearningRootContextV1, String> {

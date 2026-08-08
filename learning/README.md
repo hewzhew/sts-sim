@@ -127,6 +127,8 @@ retention leave-one-out axes separately and define no HP/potion exchange rate.
 Before running a group, callers may select or stratify roots through the
 bridge-owned frozen root context; the caller must not decode semantic feature
 numbers or copy the full combat observation into a parallel metadata schema.
+The bridge discovers all currently eligible roots in one call, so corpus
+selection does not create throwaway replicate groups or require per-slot probes.
 Their row projection attaches all three columns to each retained replicate
 decision without choosing a training axis or scalar weighting.
 `sts_learning.combat_signals` reduces a completed group to nonzero replicate

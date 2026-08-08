@@ -28,6 +28,12 @@ pub(super) struct PyCombatLearningRootContextV1 {
     inner: CombatLearningRootContextV1,
 }
 
+impl PyCombatLearningRootContextV1 {
+    pub(super) fn from_context(inner: CombatLearningRootContextV1) -> Self {
+        Self { inner }
+    }
+}
+
 #[pymethods]
 impl PyCombatLearningRootContextV1 {
     #[getter]
@@ -135,9 +141,7 @@ impl CombatLearningBatchEnv {
 
     #[getter]
     fn root_context(&self) -> PyCombatLearningRootContextV1 {
-        PyCombatLearningRootContextV1 {
-            inner: *self.pool.root_context(),
-        }
+        PyCombatLearningRootContextV1::from_context(*self.pool.root_context())
     }
 
     #[getter]

@@ -101,6 +101,10 @@ lineage, and uses the same `decision_batch`, `choose`, and atomic `step` rhythm.
 once by Rust. It exposes only compact public root facts for corpus selection and
 stratification; Python does not reconstruct them from semantic feature ids, and
 the context is not copied into every decision row.
+`LearningBatchEnv.combat_root_contexts()` discovers every current undecoded
+combat root as `(slot_index, context)` pairs in one call without constructing a
+replicate group. Callers can therefore select a small corpus before paying the
+session-clone cost of `combat_group`.
 Every combat step repeats the exact root id and combat-state hash. Its newly
 terminal rows have no run reward fields: they return aligned terminal kind,
 bridge-owned win, HP, turn, potion, and card-play columns from

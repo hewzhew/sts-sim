@@ -5,12 +5,11 @@ use numpy::ndarray::Array2;
 use numpy::{IntoPyArray, PyArray1};
 use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
-use pyo3::types::{PyBytes, PyDict};
+use pyo3::types::{PyBytes, PyDict, PyList};
 use serde::{Deserialize, Serialize};
 use sts_oracle_eval::eval::run_control::{
     CombatLearningRootV1, LearningActionV1, LearningEnvPoolV1, LearningEnvV1,
-    LearningModelChoiceV1, LearningModelDecisionV1, LearningSelectionDraftV1,
-    LearningSelectionStepV1, RunControlConfig, RunControlSessionCheckpointV1,
+    LearningBoundaryV1, LearningSelectionDraftV1, RunControlConfig, RunControlSessionCheckpointV1,
 };
 
 mod bridge_decision;
@@ -488,6 +487,31 @@ impl LearningBatchEnv {
             .map_err(runtime_error)?;
         let root = CombatLearningRootV1::from_checkpoint(checkpoint).map_err(value_error)?;
         CombatLearningBatchEnv::from_root(&root, replicate_count).map_err(value_error)
+    }
+
+    /// Return every current undecoded combat root without creating replicate groups.
+    fn combat_root_contexts<'py>(
+        &self,
+        py: Python<'py>,
+    ) -> PyResult<Bound<'py, PyList>> {
+        let contexts = PyList::empty(py);
+        for (slot_index, state) in self.states.iter().enumerate() {
+            if !matches!(state, BridgeSlotState::Root)
+                || !matches!(
+                    self.pool.boundary(slot_index),
+                    Some(LearningBoundaryV1::Combat { .. })
+                )
+            {
+                continue;
+            }
+            let context = self
+                .pool
+                .combat_root_context(slot_index)
+                .map_err(runtime_error)?;
+            let view = Py::new(py, PyCombatLearningRootContextV1::from_context(context))?;
+            contexts.append((slot_index, view))?;
+        }
+        Ok(contexts)
     }
 
     fn reset_slot(&mut self, slot_index: usize, seed: u64) -> PyResult<()> {
@@ -1038,7 +1062,10 @@ fn _native(module: &Bound<'_, PyModule>) -> PyResult<()> {
 #[cfg(test)]
 mod checkpoint_tests {
     use sts_oracle_eval::content::cards::CardId;
-    use sts_oracle_eval::eval::run_control::{LearningEnvV1, RunControlSession};
+    use sts_oracle_eval::eval::run_control::{
+        LearningEnvV1, LearningModelChoiceV1, LearningModelDecisionV1, LearningSelectionStepV1,
+        RunControlSession,
+    };
     use sts_oracle_eval::runtime::combat::CombatCard;
     use sts_oracle_eval::state::core::{
         ActiveCombat, CombatContext, EngineState, PendingChoice, RoomCombatContext,
