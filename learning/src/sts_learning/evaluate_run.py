@@ -1,4 +1,4 @@
-"""Bounded whole-run evaluation of one published combat-trained behavior."""
+"""Bounded whole-run evaluation of one published frozen behavior."""
 
 from __future__ import annotations
 
@@ -19,6 +19,11 @@ from .published_combat_behavior import (
     PublishedCombatBehavior,
     recover_published_combat_behavior,
 )
+from .published_run_behavior import (
+    PublishedRunBehavior,
+    is_run_training_publication,
+    recover_published_run_behavior,
+)
 from .run_resource_trace import (
     ResourceTracingEnvironmentFactory,
     RunCombatResourceTransition,
@@ -33,7 +38,7 @@ from .torch_combat_session_config import (
 from .torch_session_config import CategoricalSessionBridge
 
 
-RUN_EVALUATION_SCHEMA = "sts-learning-run-held-out-evaluation-v2"
+RUN_EVALUATION_SCHEMA = "sts-learning-run-held-out-evaluation-v3"
 
 
 class RunEvaluationCommandError(RuntimeError):
@@ -64,7 +69,7 @@ class RunEvaluationCommandConfig:
         output = Path(self.output).resolve()
         if not behavior.is_dir():
             raise RunEvaluationCommandError(
-                "published combat behavior is not a directory"
+                "published behavior is not a directory"
             )
         if output.exists() and (
             not output.is_dir() or any(output.iterdir())
@@ -148,12 +153,20 @@ def run_run_evaluation(
             "combat behavior and run environment semantic schemas differ"
         )
 
-    recovered = recover_published_combat_behavior(
-        config.behavior,
-        active_combat_bridge,
-        CombatWinSessionLimits(),
-        (config.behavior_seed,),
-    )
+    recovered: PublishedCombatBehavior | PublishedRunBehavior
+    if is_run_training_publication(config.behavior):
+        recovered = recover_published_run_behavior(
+            config.behavior,
+            active_run_bridge,
+            (config.behavior_seed,),
+        )
+    else:
+        recovered = recover_published_combat_behavior(
+            config.behavior,
+            active_combat_bridge,
+            CombatWinSessionLimits(),
+            (config.behavior_seed,),
+        )
     potion_lane = resolve_run_potion_lane(config.potion_lane, recovered)
     schedule = SeedSchedule(
         SeedPartition.HELD_OUT,
@@ -231,13 +244,14 @@ def run_run_evaluation(
 
 def _summary(
     config: RunEvaluationCommandConfig,
-    recovered: PublishedCombatBehavior,
+    recovered: PublishedCombatBehavior | PublishedRunBehavior,
     result: HeldOutEvaluationResult,
     resource_trace: RunResourceTrace,
     potion_lane: CombatPotionLane,
 ) -> dict[str, object]:
     run = result.run.summary
     progress = run.terminal_progress
+    combat_trained = isinstance(recovered, PublishedCombatBehavior)
     return {
         "schema": RUN_EVALUATION_SCHEMA,
         "kind": "completed" if result.complete else "step-limit",
@@ -245,12 +259,26 @@ def _summary(
         "behavior_manifest_id": recovered.manifest_id.digest.hex(),
         "behavior_checkpoint_id": recovered.checkpoint_id.digest.hex(),
         "behavior_training_step": recovered.training_step,
-        "behavior_training_root_count": recovered.training_root_count,
+        "behavior_training_kind": "combat" if combat_trained else "run",
+        "behavior_training_root_count": (
+            recovered.training_root_count if combat_trained else None
+        ),
         "behavior_training_artifact_sha256": (
-            recovered.training_artifact_sha256
+            recovered.training_artifact_sha256 if combat_trained else None
         ),
         "behavior_training_potion_lane": recovered.training_potion_lane.value,
-        "behavior_training_potion_slots": recovered.training_potion_slots,
+        "behavior_training_potion_slots": (
+            recovered.training_potion_slots if combat_trained else ()
+        ),
+        "behavior_run_objective": (
+            None
+            if combat_trained
+            else {
+                "attempts_per_update": recovered.objective.attempts_per_update,
+                "advantage_mode": recovered.objective.advantage_mode.name.lower(),
+                "decision_scope": recovered.objective.decision_scope.name.lower(),
+            }
+        ),
         "behavior_seed": config.behavior_seed,
         "held_out_seed_start": config.held_out_seed_start,
         "requested_combat_potion_lane": config.potion_lane.value,
@@ -348,7 +376,7 @@ def _positive(value: object, name: str) -> int:
 
 def resolve_run_potion_lane(
     requested: RunPotionLane,
-    recovered: PublishedCombatBehavior,
+    recovered: PublishedCombatBehavior | PublishedRunBehavior,
 ) -> CombatPotionLane:
     if requested is RunPotionLane.TRAINED:
         lane = recovered.training_potion_lane
@@ -392,7 +420,7 @@ def _potions(values: tuple[str | None, ...]) -> str:
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
-            "Evaluate one published combat-trained scorer over complete "
+            "Evaluate one published frozen scorer over complete "
             "held-out runs without recovery."
         ),
     )

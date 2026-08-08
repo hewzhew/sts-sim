@@ -25,6 +25,7 @@ from .published_combat_behavior import (
     PublishedCombatBehavior,
     recover_published_combat_behavior,
 )
+from .published_run_behavior import RUN_TRAINING_SCHEMA
 from .seeds import SeedPartition, SeedSchedule
 from .terminal_returns import (
     OnPolicyObjectiveConfig,
@@ -47,9 +48,6 @@ from .torch_session_config import (
     CategoricalSessionBridge,
     CategoricalSessionLimits,
 )
-
-
-RUN_TRAINING_SCHEMA = "sts-learning-run-training-v2"
 
 
 class RunTrainingCommandError(RuntimeError):

@@ -77,7 +77,8 @@ def test_run_evaluation_uses_frozen_combat_behavior_without_recovery(
         run_bridge=run_bridge,
     )
 
-    assert summary["schema"] == "sts-learning-run-held-out-evaluation-v2"
+    assert summary["schema"] == "sts-learning-run-held-out-evaluation-v3"
+    assert summary["behavior_training_kind"] == "combat"
     assert summary["combat_potion_lane"] == "all"
     assert summary["requested_combat_potion_lane"] == "trained"
     assert summary["kind"] == "completed"
@@ -224,6 +225,7 @@ def test_run_training_warm_starts_publishes_and_evaluates(
         "completed",
     )
     assert records[0]["advantage_mode"] == "raw_return"
+    assert records[0]["decision_scope"] == "all"
     assert records[0]["requested_run_potion_lane"] == "trained"
     assert records[0]["run_potion_lane"] == "all"
     stdout = capsys.readouterr().out
@@ -237,6 +239,27 @@ def test_run_training_warm_starts_publishes_and_evaluates(
         "held_out_attempts=2/2 held_out_victories=2 "
         "held_out_floor_sum=80 held_out_floor_counts=40:2"
     ) in stdout
+
+    reevaluation = run_run_evaluation(
+        RunEvaluationCommandConfig(
+            behavior=output,
+            output=tmp_path / "run-training-reevaluation",
+            slot_count=1,
+            terminal_attempts=2,
+            max_batch_steps=2,
+            behavior_seed=777,
+            held_out_seed_start=2000,
+        ),
+        combat_bridge=combat_bridge,
+        run_bridge=run_bridge,
+    )
+    assert reevaluation["behavior_training_kind"] == "run"
+    assert reevaluation["behavior_run_objective"] == {
+        "attempts_per_update": 2,
+        "advantage_mode": "raw_return",
+        "decision_scope": "all",
+    }
+    assert reevaluation["terminal_attempts"] == 2
 
 
 def test_run_training_inherits_the_warm_start_potion_lane(

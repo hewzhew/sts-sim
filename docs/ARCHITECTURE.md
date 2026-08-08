@@ -567,6 +567,12 @@ Reusing the same schedule and the same policy RNG state therefore
 repeats the same seed prefix without retaining trajectories. A budget-exhausted
 prefix remains incomplete evidence; small victory/defeat counts are not
 silently converted into a generalization or teacher-label claim.
+Whole-run evaluation accepts either a completed combat-training publication or
+a completed whole-run-training publication. The latter is classified by its
+exact journal schema, then recovered through its durable manifest and
+checkpoint stores with the recorded objective provenance. It is never
+retrained merely to change held-out seeds. Corrupt or boundary-incomplete
+journals fail closed rather than falling through to another artifact parser.
 The caller-owned paired held-out evaluator receives one immutable schedule and
 one evaluation bound for two distinct frozen behavior manifest identities. It
 rejects a reused policy object or identity before environment creation and
