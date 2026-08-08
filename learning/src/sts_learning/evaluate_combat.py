@@ -121,6 +121,7 @@ def run_combat_evaluation(
     config: CombatEvaluationCommandConfig,
     *,
     bridge: CombatSessionBridge | None = None,
+    print_completion: bool = True,
 ) -> dict[str, object]:
     """Recover exact frozen behavior and evaluate it without training owners."""
 
@@ -254,20 +255,21 @@ def run_combat_evaluation(
         )
         or "none"
     )
-    print(
-        f"evaluation_complete=true wins={result.wins} losses={result.losses} "
-        f"potion_lane={result.potion_lane.value} "
-        f"potion_slots={_potion_slots_text(result)} "
-        f"root_wins={root_wins} root_final_hp_sums={root_final_hp} "
-        f"root_potions_used={root_potions_used} "
-        f"root_potions_discarded={root_potions_discarded} "
-        f"root_resource_frontiers={root_resource_frontiers} "
-        f"root_resource_dominated={root_resource_dominated} "
-        f"root_sites={root_sites} root_start_potions={root_start_potions} "
-        f"lost_potions={lost_potions} gained_potions={gained_potions} "
-        f"seconds={elapsed:.3f} output={config.output}",
-        flush=True,
-    )
+    if print_completion:
+        print(
+            f"evaluation_complete=true wins={result.wins} losses={result.losses} "
+            f"potion_lane={result.potion_lane.value} "
+            f"potion_slots={_potion_slots_text(result)} "
+            f"root_wins={root_wins} root_final_hp_sums={root_final_hp} "
+            f"root_potions_used={root_potions_used} "
+            f"root_potions_discarded={root_potions_discarded} "
+            f"root_resource_frontiers={root_resource_frontiers} "
+            f"root_resource_dominated={root_resource_dominated} "
+            f"root_sites={root_sites} root_start_potions={root_start_potions} "
+            f"lost_potions={lost_potions} gained_potions={gained_potions} "
+            f"seconds={elapsed:.3f} output={config.output}",
+            flush=True,
+        )
     return summary
 
 

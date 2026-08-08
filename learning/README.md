@@ -243,6 +243,23 @@ a static potion ranking, or a change to training.
 bounded rescue comparison for one exact starting potion identity per root.
 Run separate fresh outputs for separate slots; use a multi-slot array only when
 the experiment explicitly asks about a combined fallback.
+The routine comparison is one command:
+
+```powershell
+.\learning\dev.ps1 evaluate-combat-potions `
+  -Artifact <held-out-combat-roots.bin> `
+  -Behavior <completed-training-directory> `
+  -Output <fresh-sweep-directory> `
+  -Roots <artifact-root-count> `
+  -Replicates 8 `
+  -BehaviorSeedBase 10000
+```
+
+It evaluates `never`, each filled root potion slot independently, and `all`
+under the same frozen behavior and RNG streams. It retains every lane's
+ordinary `evaluation.json` and writes one compact `potion-sweep.json` index.
+The sweep removes manual lane coordination; it still does not rank potions or
+reduce HP and inventory to one reward.
 For local classification only, each root includes an observed-resource Pareto
 frontier over winning replicates using final HP, max HP, gold, and exact potion
 multisets. A result with more HP but a different or smaller potion inventory is

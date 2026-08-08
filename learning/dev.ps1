@@ -1,6 +1,6 @@
 param(
     [Parameter(Mandatory = $true, Position = 0)]
-    [ValidateSet("configure", "doctor", "test", "verify", "check-bridge", "refresh-bridge", "train-combat", "evaluate-combat")]
+    [ValidateSet("configure", "doctor", "test", "verify", "check-bridge", "refresh-bridge", "train-combat", "evaluate-combat", "evaluate-combat-potions")]
     [string]$Command,
     [string]$Python,
     [string]$MaturinPython = "python",
@@ -233,6 +233,22 @@ switch ($Command) {
                 @potionArguments
             if ($LASTEXITCODE -ne 0) {
                 throw "combat evaluation command failed"
+            }
+        }
+    }
+    "evaluate-combat-potions" {
+        $pythonPath = Get-ConfiguredPython
+        Invoke-Doctor $pythonPath
+        Invoke-WithLearningPath {
+            & $pythonPath -m sts_learning.evaluate_combat_potions `
+                --artifact $Artifact `
+                --behavior $Behavior `
+                --output $Output `
+                --roots $Roots `
+                --replicates $Replicates `
+                --behavior-seed-base $BehaviorSeedBase
+            if ($LASTEXITCODE -ne 0) {
+                throw "combat potion sweep command failed"
             }
         }
     }

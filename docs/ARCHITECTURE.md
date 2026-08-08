@@ -304,7 +304,11 @@ occupying caller-declared root slots. Rust binds those identities by UUID, so
 using one does not authorize a generated replacement in the same slot. None of
 the lanes changes the engine's legal action surface. Running them on the same
 exact roots and behavior RNG streams is a bounded counterfactual coverage check,
-not a potion-value judgment, reward, or training policy.
+not a potion-value judgment, reward, or training policy. The caller-owned
+potion sweep composes `Never`, every filled root slot as its own `RootSlots`
+lane, and `All` under that unchanged identity boundary. It retains each
+ordinary evaluation artifact and writes one compact comparison index; it does
+not add a scoring rule or infer which resource tradeoff is best.
 Among winning replicates, the evaluator may additionally report an
 `observed-resource` Pareto frontier over final HP, max HP, gold, and exact
 potion-identity multisets. One result orders another only when every observed

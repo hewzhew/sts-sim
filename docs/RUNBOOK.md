@@ -626,6 +626,7 @@ Configure one stable Python 3.12 training runtime once, then use the small
 .\learning\dev.ps1 verify -MaturinPython <python-with-maturin>
 .\learning\dev.ps1 train-combat -Artifact <roots.bin> -Output <fresh-dir> -Roots <count> -Updates <count> -PotionLane never
 .\learning\dev.ps1 evaluate-combat -Artifact <held-out-roots.bin> -Behavior <training-dir> -Output <fresh-dir> -Roots <count> -Replicates <count>
+.\learning\dev.ps1 evaluate-combat-potions -Artifact <held-out-roots.bin> -Behavior <training-dir> -Output <fresh-dir> -Roots <count> -Replicates <count>
 ```
 
 `configure` installs the tool requirements declared by the local
@@ -747,6 +748,14 @@ identity lane at a time, for example
 contract and every root's starting potion identities; empty selected slots
 admit nothing. Multiple slots are accepted as a PowerShell array only for an
 explicit combined fallback, not as the default rescue probe.
+
+For the routine complete comparison, use `evaluate-combat-potions` instead of
+manually coordinating those commands. It runs `never`, one separate lane for
+every filled root potion slot discovered from the exact root contexts, and
+`all`, with the same roots, frozen checkpoint, and behavior seeds. Each lane
+keeps its own `evaluation.json`; the top-level `potion-sweep.json` is only a
+compact typed index and aggregate comparison. The output directory must be
+fresh. Slot lanes remain concrete-identity counterfactuals, not potion prices.
 
 Each root also reports an observed-resource Pareto frontier among its winning
 replicates. The order compares final HP, max HP, gold, and exact potion

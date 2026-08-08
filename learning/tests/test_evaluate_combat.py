@@ -12,10 +12,13 @@ from learning.tests.semantic_fixtures import semantic_schema_fixture
 from learning.tests.torch_combat_fixtures import OneRoundCombatGroup
 from sts_learning.combat_evaluation import combat_observed_resource_frontier
 from sts_learning.combat_outcomes import CombatTerminalOutcome
-from sts_learning.combat_potion_lane import CombatPotionLane
 from sts_learning.evaluate_combat import (
     CombatEvaluationCommandConfig,
     run_combat_evaluation,
+)
+from sts_learning.evaluate_combat_potions import (
+    CombatPotionSweepCommandConfig,
+    run_combat_potion_sweep,
 )
 from sts_learning.torch_combat_session_config import CombatSessionBridge
 from sts_learning.train_combat import (
@@ -179,68 +182,65 @@ def test_evaluation_recovers_published_behavior_without_training_or_experience(
         "lost_potions=EntropicBrew:2 gained_potions=BlockPotion:2" in all_stdout
     )
 
-    no_potion_output = tmp_path / "held-out-no-potions"
-    no_potion_summary = run_combat_evaluation(
-        CombatEvaluationCommandConfig(
+    sweep_output = tmp_path / "held-out-potion-sweep"
+    sweep = run_combat_potion_sweep(
+        CombatPotionSweepCommandConfig(
             artifact=evaluation_artifact,
             behavior=behavior,
-            output=no_potion_output,
+            output=sweep_output,
             root_count=2,
             replicate_count=2,
             behavior_seed_base=1_000,
-            potion_lane=CombatPotionLane.NEVER,
         ),
         bridge=bridge,
     )
 
-    assert no_potion_summary["potion_lane"] == "never"
-    assert no_potion_summary["potions_used"] == 0
-    assert no_potion_summary["potions_discarded"] == 0
-    assert no_potion_summary["lost_potion_ids"] == {}
-    assert no_potion_summary["gained_potion_ids"] == {}
+    assert tuple(lane["label"] for lane in sweep["lanes"]) == (
+        "never",
+        "root-slot-0",
+        "root-slot-1",
+        "all",
+    )
+    assert tuple(lane["potions_used"] for lane in sweep["lanes"]) == (
+        0,
+        2,
+        2,
+        2,
+    )
+    assert sweep["lanes"][0]["lost_potion_ids"] == {}
+    assert sweep["lanes"][1]["lost_potion_ids"] == {"EntropicBrew": 2}
+    assert sweep["lanes"][2]["lost_potion_ids"] == {"GamblersBrew": 2}
+    assert tuple(lane["label"] for lane in sweep["roots"][0]["lanes"]) == (
+        "never",
+        "root-slot-0",
+        "root-slot-1",
+        "all",
+    )
     assert evaluation_source.calls == [
         (0, None),
         (1, None),
         (0, ()),
         (1, ()),
+        (0, (0,)),
+        (1, (0,)),
+        (0, (1,)),
+        (1, (1,)),
+        (0, None),
+        (1, None),
     ]
-    assert all(
-        outcome["final_potion_ids"]
-        == ("EntropicBrew", "GamblersBrew")
-        for root in no_potion_summary["roots"]
-        for outcome in root["outcomes"]
-    )
+    assert set(path.name for path in sweep_output.iterdir()) == {
+        "no-potions",
+        "root-slot-0",
+        "root-slot-1",
+        "all-potions",
+        "potion-sweep.json",
+    }
     assert (behavior / "training.jsonl").read_bytes() == training_journal_before
-    no_potion_stdout = capsys.readouterr().out
+    sweep_stdout = capsys.readouterr().out
     assert (
-        "evaluation_complete=true wins=3 losses=1 potion_lane=never "
-        "potion_slots=none "
-        "root_wins=1,2"
-    ) in no_potion_stdout
-
-    selected_output = tmp_path / "held-out-root-slot-one"
-    selected_summary = run_combat_evaluation(
-        CombatEvaluationCommandConfig(
-            artifact=evaluation_artifact,
-            behavior=behavior,
-            output=selected_output,
-            root_count=2,
-            replicate_count=2,
-            behavior_seed_base=1_000,
-            potion_lane=CombatPotionLane.ROOT_SLOTS,
-            potion_slots=(1,),
-        ),
-        bridge=bridge,
-    )
-
-    assert selected_summary["potion_lane"] == "root-slots"
-    assert selected_summary["potion_slots"] == (1,)
-    assert selected_summary["potions_used"] == 2
-    assert selected_summary["lost_potion_ids"] == {"GamblersBrew": 2}
-    assert selected_summary["gained_potion_ids"] == {"BlockPotion": 2}
-    assert evaluation_source.calls[-2:] == [(0, (1,)), (1, (1,))]
-    selected_stdout = capsys.readouterr().out
-    assert "potion_lane=root-slots potion_slots=1" in selected_stdout
+        "combat_potion_sweep_complete=true "
+        "lanes=never,root-slot-0,root-slot-1,all"
+    ) in sweep_stdout
 
 
 def test_observed_resource_frontier_keeps_hp_potion_tradeoffs_incomparable() -> None:
