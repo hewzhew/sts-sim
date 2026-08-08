@@ -34,8 +34,8 @@ _SEMANTIC_SCHEMA_ENCODING_VERSION = 1
 _OPTIMIZER_CONFIG_VERSION = 1
 _TRAINER_IMPLEMENTATION_VERSION = 2
 _TERMINAL_RETURN_CONFIG_VERSION = 1
-_COMBAT_WIN_TRAINER_IMPLEMENTATION_VERSION = 2
-_COMBAT_WIN_OBJECTIVE_VERSION = 2
+_COMBAT_WIN_TRAINER_IMPLEMENTATION_VERSION = 3
+_COMBAT_WIN_OBJECTIVE_VERSION = 3
 _MAX_SCHEMA_BYTES = 1 << 20
 _MAX_SCHEMA_DEPTH = 16
 _MAX_SCHEMA_ITEMS = 100_000
@@ -259,11 +259,12 @@ def combat_win_trainer_implementation(
         ManifestArtifactKind.TRAINER_IMPLEMENTATION,
         b"STS-SYNCHRONOUS-COMBAT-WIN-FIRST-POLICY-TRAINER\x00"
         + struct.pack(">I", _COMBAT_WIN_TRAINER_IMPLEMENTATION_VERSION)
-        + b"STS-SAME-ROOT-WIN-THEN-TERMINAL-HP\x00"
+        + b"STS-SAME-ROOT-WIN-FIRST-OPTIONAL-ALL-WIN-AXIS\x00"
         + struct.pack(
-            ">IQ",
+            ">IQB",
             _COMBAT_WIN_OBJECTIVE_VERSION,
             objective_config.groups_per_update,
+            int(objective_config.all_win_axis),
         )
         + _runtime_version_bytes(),
     )

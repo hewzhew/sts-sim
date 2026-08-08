@@ -15,6 +15,7 @@ from .combat_experience import (
     CombatDecisionExperienceBatch,
     CompletedCombatGroupExperience,
 )
+from .combat_objective import CombatAllWinAxis, CombatWinObjectiveConfig
 from .experience import DecisionExperienceBatch
 from .manifests import BehaviorManifestRegistry
 from .policy import BehaviorManifestId, SelectionProbability
@@ -53,8 +54,9 @@ class OnPolicyCombatWinLoss:
     """One win-first combat loss without an HP/potion exchange rate.
 
     A root with mixed wins and losses uses only win advantage.  An all-win
-    root may instead use terminal-HP advantage, so solved early combats keep
-    learning resource preservation.  Potion retention remains evidence only.
+    root may use the configured all-win terminal-HP advantage, so solved early
+    combats can keep learning resource preservation. Potion retention remains
+    evidence only.
     """
 
     value: Tensor
@@ -173,15 +175,16 @@ def on_policy_combat_win_loss(
     registry: BehaviorManifestRegistry,
     concat_limits: SemanticBatchConcatLimits,
     policy_config: RaggedCategoricalPolicyConfig,
+    objective_config: CombatWinObjectiveConfig,
 ) -> OnPolicyCombatWinLoss:
-    """Apply same-root lexicographic win-then-HP advantages.
+    """Apply same-root win-first advantages with a typed all-win fallback.
 
     Every group has equal total weight. Inside a group, every replicate has
     equal total weight regardless of combat length, and its weight is split
     equally across only that replicate's retained decisions. A group with any
     win variation uses only win advantage. An all-win group uses terminal HP
-    when that axis varies. Potion retention is deliberately absent, so there
-    is no HP/potion exchange rate.
+    only when configured and that axis varies. Potion retention is deliberately
+    absent, so there is no HP/potion exchange rate.
     """
 
     if not callable(scorer):
@@ -198,6 +201,8 @@ def on_policy_combat_win_loss(
         raise TorchOutcomeError(
             "combat win objective requires categorical policy config"
         )
+    if not isinstance(objective_config, CombatWinObjectiveConfig):
+        raise TorchOutcomeError("combat win objective requires typed objective config")
     normalized = tuple(groups)
     if not normalized:
         raise TorchOutcomeError(
@@ -239,7 +244,8 @@ def on_policy_combat_win_loss(
             selected_advantages = advantages.win
             win_signal_groups += 1
         elif (
-            all(outcome.won for outcome in group.outcomes.outcomes)
+            objective_config.all_win_axis is CombatAllWinAxis.TERMINAL_HP
+            and all(outcome.won for outcome in group.outcomes.outcomes)
             and advantages.terminal_hp_has_signal
         ):
             selected_advantages = advantages.terminal_hp

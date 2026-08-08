@@ -11,7 +11,7 @@ from enum import IntEnum
 import torch
 
 from .combat_experience import CompletedCombatGroupExperience
-from .combat_objective import CombatWinObjectiveConfig
+from .combat_objective import CombatAllWinAxis, CombatWinObjectiveConfig
 from .manifests import BehaviorManifestRegistry
 from .policy import BehaviorManifestId
 from .semantic_concat import SemanticBatchConcatLimits
@@ -36,6 +36,7 @@ class CombatWinTrainingStatus(IntEnum):
 @dataclass(frozen=True)
 class CombatWinTrainingResult:
     status: CombatWinTrainingStatus
+    all_win_axis: CombatAllWinAxis
     group_count: int
     signal_group_count: int
     win_signal_group_count: int
@@ -52,6 +53,7 @@ class CombatWinTrainingResult:
 
 @dataclass(frozen=True)
 class SynchronousCombatWinTrainerSnapshot:
+    all_win_axis: CombatAllWinAxis
     deliveries: int
     optimizer_steps: int
     completed_groups: int
@@ -126,6 +128,7 @@ class SynchronousCombatWinTrainer:
     @property
     def snapshot(self) -> SynchronousCombatWinTrainerSnapshot:
         return SynchronousCombatWinTrainerSnapshot(
+            all_win_axis=self.objective_config.all_win_axis,
             deliveries=self._deliveries,
             optimizer_steps=self._optimizer_steps,
             completed_groups=self._completed_groups,
@@ -164,6 +167,7 @@ class SynchronousCombatWinTrainer:
             self.registry,
             self.concat_limits,
             self.policy_config,
+            self.objective_config,
         )
         if objective.value.ndim != 0 or not objective.value.requires_grad:
             raise TorchCombatTrainingError(
@@ -243,6 +247,7 @@ class SynchronousCombatWinTrainer:
         self._last_training_seconds = elapsed
         return CombatWinTrainingResult(
             status=status,
+            all_win_axis=self.objective_config.all_win_axis,
             group_count=objective.group_count,
             signal_group_count=objective.signal_group_count,
             win_signal_group_count=objective.win_signal_group_count,

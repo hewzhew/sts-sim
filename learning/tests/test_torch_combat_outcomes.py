@@ -9,6 +9,8 @@ from learning.tests.torch_outcome_fixtures import behavior_manifest_fixture
 from sts_learning import (
     BehaviorManifestId,
     BehaviorManifestRegistry,
+    CombatAllWinAxis,
+    CombatWinObjectiveConfig,
     SelectionProbability,
     SemanticBatchConcatLimits,
 )
@@ -38,6 +40,7 @@ CONCAT_LIMITS = SemanticBatchConcatLimits(
 class OnPolicyCombatWinLossTests(unittest.TestCase):
     def setUp(self) -> None:
         self.config = RaggedCategoricalPolicyConfig(temperature=1.0)
+        self.objective = CombatWinObjectiveConfig()
         self.registry = BehaviorManifestRegistry(capacity=1)
         self.manifest_id = self.registry.register(
             behavior_manifest_fixture(behavior_rule=self.config.behavior_rule)
@@ -64,6 +67,7 @@ class OnPolicyCombatWinLossTests(unittest.TestCase):
             self.registry,
             CONCAT_LIMITS,
             self.config,
+            self.objective,
         )
         result.value.backward()
 
@@ -102,6 +106,7 @@ class OnPolicyCombatWinLossTests(unittest.TestCase):
             self.registry,
             CONCAT_LIMITS,
             self.config,
+            self.objective,
         )
         result.value.backward()
 
@@ -113,6 +118,30 @@ class OnPolicyCombatWinLossTests(unittest.TestCase):
             0.1875 * (math.log(2.0) - math.log(3.0)),
             places=6,
         )
+
+    def test_all_win_axis_can_explicitly_disable_hp_learning(self) -> None:
+        values = torch.nn.Parameter(torch.zeros(7))
+
+        result = on_policy_combat_win_loss(
+            lambda payload: RaggedCandidateLogits(
+                values=values,
+                row_splits=torch.as_tensor(
+                    payload["candidate_row_splits"],
+                    dtype=torch.long,
+                ),
+            ),
+            (combat_group_experience_fixture(self.manifest_id, wins=(True, True)),),
+            self.registry,
+            CONCAT_LIMITS,
+            self.config,
+            CombatWinObjectiveConfig(all_win_axis=CombatAllWinAxis.NONE),
+        )
+        result.value.backward()
+
+        self.assertEqual(result.signal_group_count, 0)
+        self.assertEqual(result.win_signal_group_count, 0)
+        self.assertEqual(result.terminal_hp_signal_group_count, 0)
+        torch.testing.assert_close(values.grad, torch.zeros_like(values))
 
     def test_mixed_outcomes_use_win_only_even_when_hp_also_varies(self) -> None:
         result = on_policy_combat_win_loss(
@@ -127,6 +156,7 @@ class OnPolicyCombatWinLossTests(unittest.TestCase):
             self.registry,
             CONCAT_LIMITS,
             self.config,
+            self.objective,
         )
 
         self.assertEqual(result.win_signal_group_count, 1)
@@ -162,6 +192,7 @@ class OnPolicyCombatWinLossTests(unittest.TestCase):
                     self.registry,
                     CONCAT_LIMITS,
                     self.config,
+                    self.objective,
                 )
                 result.value.backward()
 
@@ -189,6 +220,7 @@ class OnPolicyCombatWinLossTests(unittest.TestCase):
                 self.registry,
                 CONCAT_LIMITS,
                 self.config,
+                self.objective,
             )
         with self.assertRaisesRegex(TorchOutcomeError, "off-policy"):
             on_policy_combat_win_loss(
@@ -203,6 +235,7 @@ class OnPolicyCombatWinLossTests(unittest.TestCase):
                 self.registry,
                 CONCAT_LIMITS,
                 self.config,
+                self.objective,
             )
 
 if __name__ == "__main__":

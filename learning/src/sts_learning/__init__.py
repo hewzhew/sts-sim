@@ -34,6 +34,7 @@ from .combat_outcomes import (
     CompletedCombatGroup,
 )
 from .combat_objective import (
+    CombatAllWinAxis,
     CombatObjectiveError,
     CombatWinObjectiveConfig,
 )
@@ -210,6 +211,7 @@ __all__ = [
     "CombatSignalCensus",
     "CombatSignalError",
     "CombatOutcomeError",
+    "CombatAllWinAxis",
     "CombatObjectiveError",
     "CombatTerminalOutcome",
     "CombatTerminalStepBatch",

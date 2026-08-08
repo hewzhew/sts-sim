@@ -143,11 +143,12 @@ decision without choosing a training axis or scalar weighting.
 training consumer. It batches complete distinct-root groups into one scorer
 call, verifies their exact behavior manifests and sampled propensities, and
 selects one same-root advantage axis lexicographically. Any mixed win/loss
-group uses only win advantage; an all-win group may use terminal-HP advantage
-so solved early combats continue learning resource preservation. All-loss
-groups remain no-signal, and potion retention stays excluded rather than being
-silently exchanged for HP. Every replicate contributes equal total weight
-regardless of how many decisions it needed.
+group uses only win advantage. The typed all-win axis is either `NONE` for a
+strict win-only ablation or `TERMINAL_HP` so solved early combats continue
+learning resource preservation. All-loss groups remain no-signal, and potion
+retention stays excluded rather than being silently exchanged for HP. Every
+replicate contributes equal total weight regardless of how many decisions it
+needed. The selected all-win axis is part of exact trainer provenance.
 `sts_learning.torch_combat_training.SynchronousCombatWinTrainer` gives this
 objective a separate provenance identity and consumes exactly the configured
 number of complete groups. No selected-axis signal and exactly zero policy

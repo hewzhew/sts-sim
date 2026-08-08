@@ -28,10 +28,13 @@ class OneRoundCombatGroup:
         root_id: str,
         exact_combat_state_hash: str,
         wins: tuple[bool, bool],
+        *,
+        final_hps: tuple[int, int] | None = None,
     ) -> None:
         self.root_id = root_id
         self.exact_combat_state_hash = exact_combat_state_hash
         self.wins = wins
+        self.final_hps = final_hps
         self.terminal_count = 0
         self.ready = False
         self.choose_calls = 0
@@ -54,7 +57,9 @@ class OneRoundCombatGroup:
             raise AssertionError("combat group cannot step now")
         self.terminal_count = self.replicate_count
         final_hp = np.asarray(
-            [70 if won else 0 for won in self.wins],
+            self.final_hps
+            if self.final_hps is not None
+            else [70 if won else 0 for won in self.wins],
             dtype=np.int32,
         )
         return {

@@ -258,11 +258,13 @@ fails before environment mutation. Partial groups are never delivered as
 completed training experience.
 The first maintained differentiable combat objective consumes only complete
 same-root groups and selects one leave-one-out axis per root. A group with any
-win/loss variation uses only its win axis. Once every replicate wins, the group
-may instead use terminal-HP ratio so early combats keep learning resource
-preservation after survival is solved. All-loss groups remain no-signal, and
-potion retention remains typed evidence outside the loss; HP is therefore not
-traded against either survival or potions. Groups have equal total weight,
+win/loss variation uses only its win axis. Once every replicate wins, a typed
+all-win configuration selects either no fallback axis for strict win-only
+ablation or terminal-HP ratio so early combats keep learning resource
+preservation after survival is solved. This selection is bound into trainer
+provenance. All-loss groups remain no-signal, and potion retention remains
+typed evidence outside the loss; HP is therefore not traded against either
+survival or potions. Groups have equal total weight,
 replicates have equal total weight inside a group regardless of combat length,
 and each replicate divides its weight across its own retained decisions. The
 objective rechecks exact behavior manifests and recorded selection propensities

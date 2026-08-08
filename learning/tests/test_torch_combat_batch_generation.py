@@ -12,6 +12,7 @@ from sts_learning import (
     BehaviorManifestCatalogLimits,
     BehaviorManifestRegistry,
     BoundedBehaviorManifestCatalog,
+    CombatAllWinAxis,
     CombatExperienceLimits,
     CombatWinObjectiveConfig,
     SemanticBatchConcatLimits,
@@ -71,10 +72,15 @@ class _IndexedCombatRootSource:
         self,
         wins: tuple[tuple[bool, bool], tuple[bool, bool]],
         *,
+        final_hps: tuple[tuple[int, int] | None, tuple[int, int] | None] = (
+            None,
+            None,
+        ),
         repeated_root: bool = False,
         fail_slot: int | None = None,
     ) -> None:
         self.wins = wins
+        self.final_hps = final_hps
         self.repeated_root = repeated_root
         self.fail_slot = fail_slot
         self.calls: list[int] = []
@@ -87,7 +93,11 @@ class _IndexedCombatRootSource:
         if slot_index == self.fail_slot:
             raise RuntimeError("declared source failure")
         root = ROOTS[0] if self.repeated_root else ROOTS[slot_index]
-        group = OneRoundCombatGroup(*root, self.wins[slot_index])
+        group = OneRoundCombatGroup(
+            *root,
+            self.wins[slot_index],
+            final_hps=self.final_hps[slot_index],
+        )
         self.groups.append(group)
         return group
 
@@ -152,6 +162,25 @@ class BoundedCombatWinBatchGenerationRunnerTests(unittest.TestCase):
             self.assertEqual(result.training.signal_group_count, 0)
             self.assertEqual(owners.controller.snapshot, active_before)
             self.assertEqual(owners.trainer.snapshot.optimizer_steps, 0)
+
+    def test_win_only_axis_ignores_eligible_hp_signal_consistently(self) -> None:
+        source = _IndexedCombatRootSource(
+            ((True, True), (False, False)),
+            final_hps=((70, 50), None),
+        )
+        with tempfile.TemporaryDirectory() as root:
+            owners = _owners(
+                Path(root),
+                source,
+                all_win_axis=CombatAllWinAxis.NONE,
+            )
+
+            result = owners.runner.advance()
+
+            self.assertFalse(result.promoted)
+            self.assertIs(result.training.all_win_axis, CombatAllWinAxis.NONE)
+            self.assertEqual(result.training.signal_group_count, 0)
+            self.assertEqual(result.training.terminal_hp_signal_group_count, 0)
 
     def test_collection_failure_restores_rng_and_skips_training(self) -> None:
         source = _IndexedCombatRootSource(
@@ -240,12 +269,21 @@ class BoundedCombatWinBatchGenerationRunnerTests(unittest.TestCase):
 if _TORCH_AVAILABLE:
 
     class _CombatBatchOwners:
-        def __init__(self, root: Path, source: _IndexedCombatRootSource) -> None:
+        def __init__(
+            self,
+            root: Path,
+            source: _IndexedCombatRootSource,
+            *,
+            all_win_axis: CombatAllWinAxis = CombatAllWinAxis.TERMINAL_HP,
+        ) -> None:
             schema = semantic_schema_fixture()
             scorer_config = RaggedScorerConfig(hidden_dim=4, relation_layers=0)
             behavior_config = RaggedCategoricalPolicyConfig(temperature=0.8)
             optimizer_config = AdamTrainingConfig(learning_rate=0.002)
-            objective_config = CombatWinObjectiveConfig(groups_per_update=2)
+            objective_config = CombatWinObjectiveConfig(
+                groups_per_update=2,
+                all_win_axis=all_win_axis,
+            )
             self.shadow = RaggedCandidateScorer.from_bridge_schema(
                 schema,
                 scorer_config,
@@ -320,8 +358,10 @@ if _TORCH_AVAILABLE:
     def _owners(
         root: Path,
         source: _IndexedCombatRootSource,
+        *,
+        all_win_axis: CombatAllWinAxis = CombatAllWinAxis.TERMINAL_HP,
     ) -> _CombatBatchOwners:
-        return _CombatBatchOwners(root, source)
+        return _CombatBatchOwners(root, source, all_win_axis=all_win_axis)
 
 
 if __name__ == "__main__":

@@ -10,6 +10,7 @@ import torch
 
 from .combat_driver import CombatGroupDriver
 from .combat_experience import CombatExperienceLimits
+from .combat_objective import CombatAllWinAxis
 from .combat_signals import CombatGroupSignalSummary
 from .policy import BehaviorManifestId
 from .torch_behavior import (
@@ -99,11 +100,16 @@ class CombatWinBatchGenerationResult:
                 "combat batch generation decision count is misaligned"
             )
         win_signal_groups = sum(root.signals.win.has_signal for root in roots)
-        terminal_hp_signal_groups = sum(
+        eligible_terminal_hp_signal_groups = sum(
             not root.signals.win.has_signal
             and root.wins == root.replicate_count
             and root.signals.terminal_hp.has_signal
             for root in roots
+        )
+        terminal_hp_signal_groups = (
+            eligible_terminal_hp_signal_groups
+            if self.training.all_win_axis is CombatAllWinAxis.TERMINAL_HP
+            else 0
         )
         if win_signal_groups != self.training.win_signal_group_count:
             raise TorchCombatBatchGenerationError(
