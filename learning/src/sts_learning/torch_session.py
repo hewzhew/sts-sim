@@ -133,6 +133,7 @@ class CategoricalOnlineSessionFactory:
             profile.scorer,
             profile.behavior,
             profile.optimizer,
+            profile.terminal_return,
             device_type=profile.device_type,
         )
 
@@ -185,6 +186,7 @@ class CategoricalOnlineSessionFactory:
             registry,
             self.config.limits.concat,
             self.config.profile.behavior,
+            self.config.profile.terminal_return,
         )
         assembler = BoundedAttemptAssembler(
             self.config.limits.attempts,
@@ -239,6 +241,7 @@ class CategoricalOnlineSessionFactory:
                 experience_limits=self.config.limits.experience,
                 attempt_limits=self.config.limits.attempts,
                 concat_limits=self.config.limits.concat,
+                terminal_return=self.config.profile.terminal_return,
                 payload_limits=self.config.limits.resume_payloads,
                 expected_generator_device_type=(
                     self.config.profile.device_type

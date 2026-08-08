@@ -25,6 +25,7 @@ def behavior_manifest_template_fixture(
     *,
     semantic_schema_version: int = 2,
     behavior_rule: BehaviorRuleBinding = GREEDY_BEHAVIOR_RULE_V1,
+    trainer_implementation: ManifestArtifactId | None = None,
 ) -> BehaviorManifestTemplate:
     def artifact(kind: ManifestArtifactKind) -> ManifestArtifactId:
         return ManifestArtifactId(kind, bytes([int(kind)]) * 32)
@@ -35,8 +36,10 @@ def behavior_manifest_template_fixture(
         behavior_rule=behavior_rule,
         semantic_schema=artifact(ManifestArtifactKind.SEMANTIC_SCHEMA),
         optimizer_config=artifact(ManifestArtifactKind.OPTIMIZER_CONFIG),
-        trainer_implementation=artifact(
-            ManifestArtifactKind.TRAINER_IMPLEMENTATION
+        trainer_implementation=(
+            trainer_implementation
+            if trainer_implementation is not None
+            else artifact(ManifestArtifactKind.TRAINER_IMPLEMENTATION)
         ),
         semantic_schema_version=semantic_schema_version,
     )

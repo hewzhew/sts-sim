@@ -455,9 +455,12 @@ and restore its random-stream state before resuming decisions.
 The first terminal objective is an on-policy categorical policy loss, not
 imitation or raw-logit value regression. It accepts only bounded
 complete-attempt deliveries, resolves every batch's exact behavior manifest,
-and applies `-reward * log P(selected | state)` to each sampled decision.
-Victories increase that action's relative probability, defeats decrease it,
-and a forced single-candidate row has exactly zero gradient. Terms are averaged
+and applies `-return * log P(selected | state)` to each sampled decision. The
+maintained floor-progress return reserves `+1` for victory and maps defeat floor
+`f` to `-1 + 2 * min(f, target_floor - 1) / target_floor`. Deeper failed runs
+therefore carry ordered progress evidence but never tie a victory. Negative
+returns decrease the sampled action's relative probability, positive returns
+increase it, and a forced single-candidate row has exactly zero gradient. Terms are averaged
 within each attempt before attempts are averaged, so longer attempts do not gain
 more weight merely by containing more decisions. Censored and dropped attempts
 cannot enter through its input type. The objective requires the manifest's
@@ -465,6 +468,8 @@ categorical rule to match its typed configuration and recomputes every recorded
 selection propensity from the current shadow scorer before mutation. Unknown
 or mismatched propensity is explicitly off-policy and rejected. Any future
 off-policy correction requires a separate objective with declared assumptions.
+The trainer implementation artifact binds the return kind and target floor;
+runner construction and process restore reject any conflicting runtime config.
 After validation, all retained decision payloads in one delivery are combined
 into one semantic ragged batch and scored by exactly one model call. Flat row
 weights are `1 / (attempt_count * decisions_in_that_attempt)`, which is

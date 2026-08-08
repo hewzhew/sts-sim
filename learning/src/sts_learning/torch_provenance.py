@@ -20,6 +20,7 @@ from .torch_policy import (
     RaggedScorerConfig,
     SemanticSchemaDimensions,
 )
+from .terminal_returns import FloorProgressReturnConfig
 
 
 class TorchProvenanceError(ValueError):
@@ -31,6 +32,7 @@ _MODEL_CONFIG_VERSION = 1
 _SEMANTIC_SCHEMA_ENCODING_VERSION = 1
 _OPTIMIZER_CONFIG_VERSION = 1
 _TRAINER_IMPLEMENTATION_VERSION = 1
+_TERMINAL_RETURN_CONFIG_VERSION = 1
 _MAX_SCHEMA_BYTES = 1 << 20
 _MAX_SCHEMA_DEPTH = 16
 _MAX_SCHEMA_ITEMS = 100_000
@@ -114,6 +116,7 @@ def categorical_training_manifest_template(
     scorer_config: RaggedScorerConfig,
     behavior_config: RaggedCategoricalPolicyConfig,
     optimizer_config: AdamTrainingConfig,
+    return_config: FloorProgressReturnConfig,
     *,
     device_type: str,
 ) -> BehaviorManifestTemplate:
@@ -125,6 +128,8 @@ def categorical_training_manifest_template(
         raise TorchProvenanceError("behavior_config must be typed")
     if not isinstance(optimizer_config, AdamTrainingConfig):
         raise TorchProvenanceError("optimizer_config must be typed")
+    if not isinstance(return_config, FloorProgressReturnConfig):
+        raise TorchProvenanceError("return_config must be typed")
     if type(device_type) is not str or not device_type:
         raise TorchProvenanceError("device_type must be a non-empty string")
     try:
@@ -163,12 +168,7 @@ def categorical_training_manifest_template(
         ManifestArtifactKind.SEMANTIC_SCHEMA,
         schema_content,
     )
-    trainer_implementation = ManifestArtifactId.from_content(
-        ManifestArtifactKind.TRAINER_IMPLEMENTATION,
-        b"STS-SYNCHRONOUS-TERMINAL-POLICY-TRAINER\x00"
-        + struct.pack(">I", _TRAINER_IMPLEMENTATION_VERSION)
-        + runtime,
-    )
+    trainer_implementation = categorical_trainer_implementation(return_config)
     return BehaviorManifestTemplate(
         model_definition=model_definition,
         model_config=model_config,
@@ -177,6 +177,27 @@ def categorical_training_manifest_template(
         optimizer_config=optimizer_config.artifact_id,
         trainer_implementation=trainer_implementation,
         semantic_schema_version=dimensions.version,
+    )
+
+
+def categorical_trainer_implementation(
+    return_config: FloorProgressReturnConfig,
+) -> ManifestArtifactId:
+    """Bind the exact policy objective and terminal-return configuration."""
+
+    if not isinstance(return_config, FloorProgressReturnConfig):
+        raise TorchProvenanceError("return_config must be typed")
+    return ManifestArtifactId.from_content(
+        ManifestArtifactKind.TRAINER_IMPLEMENTATION,
+        b"STS-SYNCHRONOUS-TERMINAL-POLICY-TRAINER\x00"
+        + struct.pack(">I", _TRAINER_IMPLEMENTATION_VERSION)
+        + b"STS-FLOOR-PROGRESS-RETURN\x00"
+        + struct.pack(
+            ">IQ",
+            _TERMINAL_RETURN_CONFIG_VERSION,
+            return_config.target_floor,
+        )
+        + _runtime_version_bytes(),
     )
 
 

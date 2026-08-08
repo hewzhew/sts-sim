@@ -5,6 +5,7 @@ import unittest
 from dataclasses import replace
 
 from learning.tests.semantic_fixtures import semantic_schema_fixture
+from sts_learning import FloorProgressReturnConfig
 
 
 _TORCH_AVAILABLE = importlib.util.find_spec("torch") is not None
@@ -38,12 +39,14 @@ class TorchProvenanceTests(unittest.TestCase):
         scorer = RaggedScorerConfig(hidden_dim=4, relation_layers=0)
         behavior = RaggedCategoricalPolicyConfig(temperature=0.8)
         optimizer = AdamTrainingConfig(learning_rate=0.002)
+        terminal_return = FloorProgressReturnConfig(target_floor=52)
 
         template = categorical_training_manifest_template(
             schema,
             scorer,
             behavior,
             optimizer,
+            terminal_return,
             device_type="cpu",
         )
         reordered = categorical_training_manifest_template(
@@ -51,6 +54,7 @@ class TorchProvenanceTests(unittest.TestCase):
             scorer,
             behavior,
             optimizer,
+            terminal_return,
             device_type="cpu",
         )
         changed_model = categorical_training_manifest_template(
@@ -58,6 +62,7 @@ class TorchProvenanceTests(unittest.TestCase):
             replace(scorer, hidden_dim=8),
             behavior,
             optimizer,
+            terminal_return,
             device_type="cpu",
         )
         changed_optimizer = categorical_training_manifest_template(
@@ -65,6 +70,15 @@ class TorchProvenanceTests(unittest.TestCase):
             scorer,
             behavior,
             replace(optimizer, learning_rate=0.003),
+            terminal_return,
+            device_type="cpu",
+        )
+        changed_return = categorical_training_manifest_template(
+            schema,
+            scorer,
+            behavior,
+            optimizer,
+            replace(terminal_return, target_floor=51),
             device_type="cpu",
         )
 
@@ -73,6 +87,10 @@ class TorchProvenanceTests(unittest.TestCase):
         self.assertNotEqual(
             changed_optimizer.optimizer_config,
             template.optimizer_config,
+        )
+        self.assertNotEqual(
+            changed_return.trainer_implementation,
+            template.trainer_implementation,
         )
 
     def test_adam_factory_matches_the_provenance_configuration(self) -> None:
@@ -106,6 +124,7 @@ class TorchProvenanceTests(unittest.TestCase):
                 RaggedScorerConfig(hidden_dim=4, relation_layers=0),
                 RaggedCategoricalPolicyConfig(temperature=0.8),
                 AdamTrainingConfig(),
+                FloorProgressReturnConfig(),
                 device_type="cpu",
             )
 

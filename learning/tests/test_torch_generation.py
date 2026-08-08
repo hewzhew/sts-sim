@@ -18,6 +18,7 @@ from sts_learning import (
     BoundedBehaviorManifestCatalog,
     ExperienceLimits,
     ExperienceSegmentBuffer,
+    FloorProgressReturnConfig,
     OnlineBatchDriver,
     SeedPartition,
     SeedSchedule,
@@ -53,6 +54,7 @@ if _TORCH_AVAILABLE:
         decode_generation_resume_state,
         encode_generation_resume_state,
     )
+    from sts_learning.torch_provenance import categorical_trainer_implementation
     from sts_learning.resume_store import (
         BoundedResumeStore,
         ResumeComponentKind,
@@ -97,6 +99,23 @@ class BoundedCategoricalGenerationRunnerTests(unittest.TestCase):
             )
 
             with self.assertRaisesRegex(TorchGenerationError, "exactly the shadow"):
+                BoundedCategoricalGenerationRunner(
+                    driver,
+                    assembler,
+                    trainer,
+                    controller,
+                    shadow,
+                    optimizer_steps_per_generation=1,
+                )
+
+            self.assertEqual(driver.env.choose_calls, [])  # type: ignore[attr-defined]
+
+    def test_generation_return_config_must_match_active_manifest(self) -> None:
+        with tempfile.TemporaryDirectory() as root:
+            driver, assembler, trainer, controller, shadow = _components(Path(root))
+            trainer.return_config = FloorProgressReturnConfig(target_floor=51)
+
+            with self.assertRaisesRegex(TorchGenerationError, "return configuration"):
                 BoundedCategoricalGenerationRunner(
                     driver,
                     assembler,
@@ -279,6 +298,7 @@ def _components(
 ):
     shadow = _scorer()
     behavior_config = RaggedCategoricalPolicyConfig(temperature=0.8)
+    return_config = FloorProgressReturnConfig()
     registry = BehaviorManifestRegistry(capacity=owner_capacity)
     store = BoundedTorchCheckpointStore(
         root / "checkpoints",
@@ -307,6 +327,9 @@ def _components(
             registry,
             behavior_manifest_template_fixture(
                 behavior_rule=behavior_config.behavior_rule,
+                trainer_implementation=categorical_trainer_implementation(
+                    return_config
+                ),
             ),
         ),
         scorer_factory,
@@ -324,6 +347,7 @@ def _components(
             max_input_array_bytes=1024 * 1024,
         ),
         behavior_config,
+        return_config,
     )
     assembler = BoundedAttemptAssembler(_attempt_limits(), trainer)
     population = initialize_population(

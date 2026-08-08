@@ -16,6 +16,7 @@ from .torch_behavior import (
     TorchBehaviorPublication,
 )
 from .torch_policy import RaggedCandidateScorer
+from .torch_provenance import categorical_trainer_implementation
 from .torch_training import SynchronousPolicyTrainer, SynchronousPolicyTrainerSnapshot
 
 
@@ -227,6 +228,16 @@ class BoundedCategoricalGenerationRunner:
         if self.trainer.registry is not self.controller.publisher.registry:
             raise TorchGenerationError(
                 "trainer and controller do not share one manifest registry"
+            )
+        active_manifest_id = self.controller.snapshot.active_manifest_id
+        if active_manifest_id is None:
+            raise TorchGenerationError("generation controller has no active behavior")
+        active_manifest = self.trainer.registry.resolve(active_manifest_id)
+        if active_manifest.trainer_implementation != categorical_trainer_implementation(
+            self.trainer.return_config
+        ):
+            raise TorchGenerationError(
+                "active behavior conflicts with the trainer return configuration"
             )
         _require_exact_optimizer_parameters(
             self.trainer.optimizer,

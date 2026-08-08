@@ -122,6 +122,11 @@ from .semantic_concat import (
     SemanticBatchConcatLimits,
     concatenate_semantic_decision_batches,
 )
+from .terminal_returns import (
+    FloorProgressReturnConfig,
+    TerminalReturnError,
+    floor_progress_terminal_return,
+)
 
 __all__ = [
     "AttemptAssemblerSnapshot",
@@ -167,6 +172,7 @@ __all__ = [
     "ExperienceSegment",
     "ExperienceSegmentBuffer",
     "ExperienceSegmentSink",
+    "FloorProgressReturnConfig",
     "GREEDY_BEHAVIOR_RULE_V1",
     "HeldOutEvaluationDelta",
     "HeldOutEvaluationError",
@@ -209,6 +215,7 @@ __all__ = [
     "TerminalAttemptOutcome",
     "TerminalAccountingBatch",
     "TerminalAttemptRecord",
+    "TerminalReturnError",
     "TerminalBatchError",
     "TerminalStepBatch",
     "TerminalTargetRunResult",
@@ -217,6 +224,7 @@ __all__ = [
     "concatenate_semantic_decision_batches",
     "evaluate_held_out_behavior",
     "evaluate_paired_held_out_behaviors",
+    "floor_progress_terminal_return",
     "iter_payload_arrays",
     "reset_with_accounting",
     "reset_scheduled_checkpointed_with_accounting",

@@ -12,6 +12,7 @@ from .attempts import AttemptAssemblyDelivery, DroppedAttemptExperience
 from .manifests import BehaviorManifestRegistry
 from .policy import BehaviorManifestId, SelectionProbability
 from .semantic_concat import SemanticBatchConcatLimits
+from .terminal_returns import FloorProgressReturnConfig
 from .torch_outcomes import CandidatePolicyScorer, on_policy_terminal_loss
 from .torch_policy import RaggedCategoricalPolicyConfig
 
@@ -47,6 +48,7 @@ class SynchronousPolicyTrainer:
         registry: BehaviorManifestRegistry,
         concat_limits: SemanticBatchConcatLimits,
         policy_config: RaggedCategoricalPolicyConfig,
+        return_config: FloorProgressReturnConfig,
         *,
         resume_snapshot: SynchronousPolicyTrainerSnapshot | None = None,
     ) -> None:
@@ -60,11 +62,14 @@ class SynchronousPolicyTrainer:
             raise TorchTrainingError("trainer requires semantic concat limits")
         if not isinstance(policy_config, RaggedCategoricalPolicyConfig):
             raise TorchTrainingError("trainer requires categorical policy config")
+        if not isinstance(return_config, FloorProgressReturnConfig):
+            raise TorchTrainingError("trainer requires terminal return config")
         self.scorer = scorer
         self.optimizer = optimizer
         self.registry = registry
         self.concat_limits = concat_limits
         self.policy_config = policy_config
+        self.return_config = return_config
         restored = _validated_resume_snapshot(resume_snapshot)
         self._deliveries = restored.deliveries
         self._optimizer_steps = restored.optimizer_steps
@@ -119,6 +124,7 @@ class SynchronousPolicyTrainer:
             self.registry,
             self.concat_limits,
             self.policy_config,
+            self.return_config,
         )
         if objective.value.ndim != 0 or not objective.value.requires_grad:
             raise TorchTrainingError(

@@ -18,6 +18,7 @@ from sts_learning import (
     BoundedBehaviorManifestCatalog,
     ExperienceLimits,
     ExperienceSegmentBuffer,
+    FloorProgressReturnConfig,
     HeldOutEvaluationSpec,
     OnlineBatchDriver,
     PairedHeldOutEvaluationSpec,
@@ -54,6 +55,7 @@ if _TORCH_AVAILABLE:
         RaggedCategoricalPolicyConfig,
         RaggedScorerConfig,
     )
+    from sts_learning.torch_provenance import categorical_trainer_implementation
     from sts_learning.torch_training import SynchronousPolicyTrainer
 
 
@@ -70,6 +72,7 @@ class RealBridgeOnlineTrainingTests(unittest.TestCase):
         schema = semantic_schema()
         scorer_config = RaggedScorerConfig(hidden_dim=8, relation_layers=0)
         behavior_config = RaggedCategoricalPolicyConfig(temperature=0.8)
+        return_config = FloorProgressReturnConfig()
 
         def scorer_factory():
             return RaggedCandidateScorer.from_bridge_schema(schema, scorer_config)
@@ -101,6 +104,9 @@ class RealBridgeOnlineTrainingTests(unittest.TestCase):
                 behavior_manifest_template_fixture(
                     semantic_schema_version=int(schema["version"]),
                     behavior_rule=behavior_config.behavior_rule,
+                    trainer_implementation=categorical_trainer_implementation(
+                        return_config
+                    ),
                 ),
             )
             behavior_generator = torch.Generator().manual_seed(94)
@@ -123,6 +129,7 @@ class RealBridgeOnlineTrainingTests(unittest.TestCase):
                     max_input_array_bytes=32 * 1024 * 1024,
                 ),
                 behavior_config,
+                return_config,
             )
             assembler = BoundedAttemptAssembler(
                 AttemptAssemblyLimits(
@@ -295,6 +302,9 @@ class RealBridgeOnlineTrainingTests(unittest.TestCase):
                     behavior_manifest_template_fixture(
                         semantic_schema_version=int(schema["version"]),
                         behavior_rule=behavior_config.behavior_rule,
+                        trainer_implementation=categorical_trainer_implementation(
+                            return_config
+                        ),
                     ),
                 ),
                 scorer_factory,

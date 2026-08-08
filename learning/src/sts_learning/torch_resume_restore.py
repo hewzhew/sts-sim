@@ -25,6 +25,7 @@ from .resume_store import (
     ResumeManifestId,
 )
 from .semantic_concat import SemanticBatchConcatLimits
+from .terminal_returns import FloorProgressReturnConfig
 from .torch_behavior import (
     CategoricalTorchBehaviorController,
     TorchBehaviorPublication,
@@ -34,6 +35,7 @@ from .torch_generation import (
     CategoricalGenerationResumeBoundary,
 )
 from .torch_policy import RaggedCandidateScorer
+from .torch_provenance import categorical_trainer_implementation
 from .torch_resume import (
     hydrate_fresh_optimizer,
     materialize_generator_state,
@@ -106,6 +108,7 @@ class CategoricalResumeRestoreConfig:
     experience_limits: ExperienceLimits
     attempt_limits: AttemptAssemblyLimits
     concat_limits: SemanticBatchConcatLimits
+    terminal_return: FloorProgressReturnConfig
     payload_limits: CategoricalResumePayloadLimits
     expected_generator_device_type: str
     max_decision_rounds_per_step: int = 256
@@ -119,6 +122,7 @@ class CategoricalResumeRestoreConfig:
             ("experience_limits", ExperienceLimits),
             ("attempt_limits", AttemptAssemblyLimits),
             ("concat_limits", SemanticBatchConcatLimits),
+            ("terminal_return", FloorProgressReturnConfig),
             ("payload_limits", CategoricalResumePayloadLimits),
         ):
             if not isinstance(getattr(self, name), expected):
@@ -246,6 +250,13 @@ class CategoricalGenerationResumeRestorer:
             raise TorchResumeRestoreError(
                 "restored behavior manifest conflicts with runtime provenance"
             )
+        if (
+            active_behavior.manifest.trainer_implementation
+            != categorical_trainer_implementation(self.config.terminal_return)
+        ):
+            raise TorchResumeRestoreError(
+                "restored behavior conflicts with terminal return config"
+            )
 
         registry = controller.publisher.registry
         trainer = SynchronousPolicyTrainer(
@@ -254,6 +265,7 @@ class CategoricalGenerationResumeRestorer:
             registry,
             self.config.concat_limits,
             controller.config,
+            self.config.terminal_return,
             resume_snapshot=saved.boundary.trainer,
         )
         assembler = BoundedAttemptAssembler(

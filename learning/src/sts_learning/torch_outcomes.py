@@ -18,6 +18,10 @@ from .semantic_concat import (
     SemanticBatchConcatLimits,
     concatenate_semantic_decision_batches,
 )
+from .terminal_returns import (
+    FloorProgressReturnConfig,
+    floor_progress_terminal_return,
+)
 from .torch_policy import RaggedCandidateLogits, RaggedCategoricalPolicyConfig
 
 
@@ -46,12 +50,13 @@ def on_policy_terminal_loss(
     registry: BehaviorManifestRegistry,
     concat_limits: SemanticBatchConcatLimits,
     policy_config: RaggedCategoricalPolicyConfig,
+    return_config: FloorProgressReturnConfig,
 ) -> OnPolicyTerminalLoss:
-    """Apply terminal REINFORCE to the exact sampled categorical behavior.
+    """Apply progress-return REINFORCE to exact sampled categorical behavior.
 
     Every complete attempt contributes equal total weight regardless of its
-    length. A victory raises the relative probability of sampled actions; a
-    defeat lowers it. Single-candidate decisions therefore have zero gradient.
+    length. Return sign controls the relative probability direction, and
+    single-candidate decisions always have zero gradient.
     """
 
     if not callable(scorer):
@@ -62,6 +67,8 @@ def on_policy_terminal_loss(
         raise TorchOutcomeError("policy objective requires semantic concat limits")
     if not isinstance(policy_config, RaggedCategoricalPolicyConfig):
         raise TorchOutcomeError("policy objective requires categorical policy config")
+    if not isinstance(return_config, FloorProgressReturnConfig):
+        raise TorchOutcomeError("policy objective requires terminal return config")
     normalized = tuple(attempts)
     if not normalized:
         raise TorchOutcomeError("policy objective requires at least one complete attempt")
@@ -70,7 +77,7 @@ def on_policy_terminal_loss(
     probability_evidence: list[tuple[SelectionProbability, ...]] = []
     payloads: list[Mapping[str, object]] = []
     selected_ordinals: list[int] = []
-    targets: list[int] = []
+    targets: list[float] = []
     weights: list[float] = []
     total_decisions = 0
     for attempt in normalized:
@@ -101,7 +108,8 @@ def on_policy_terminal_loss(
             selected_ordinals.extend(batch.selected_ordinals)
             attempt_probabilities.extend(batch.selection_probabilities)
             targets.extend(
-                [attempt.terminal.terminal_reward] * batch.decision_count
+                [floor_progress_terminal_return(attempt.terminal, return_config)]
+                * batch.decision_count
             )
             weights.extend(
                 [1.0 / (len(normalized) * expected_decisions)]

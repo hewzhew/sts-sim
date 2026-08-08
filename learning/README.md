@@ -263,10 +263,14 @@ separately if a future durable training runner resumes mid-stream.
 `sts_learning.torch_outcomes` supplies the first honest terminal objective.
 It consumes only `CompletedAttemptExperience`, resolves every behavior manifest
 before scoring, and applies the on-policy terminal loss
-`-reward * log P(selected | state)`. Victories raise the sampled action's
-relative probability and defeats lower it; single-candidate forced decisions
-have exactly zero gradient. Terms are averaged inside each attempt and then
-across attempts, so a long attempt has the same total weight as a short one.
+`-return * log P(selected | state)`. `FloorProgressReturnConfig` reserves `+1`
+for victory; a defeat at floor `f` receives
+`-1 + 2 * min(f, target_floor - 1) / target_floor`, so deeper failed runs carry
+more information but never equal a win. Negative returns lower the sampled
+action's relative probability and positive returns raise it; single-candidate
+forced decisions have exactly zero gradient. Terms are averaged inside each
+attempt and then across attempts, so a long attempt has the same total weight
+as a short one.
 The objective requires every manifest to carry the configured categorical
 rule and verifies each recorded selection probability against the current
 shadow scorer before mutation. Unknown or mismatched propensity is rejected as
@@ -290,7 +294,8 @@ probability mismatch all fail before mutation. A backward or optimizer
 exception poisons the trainer instead of inviting a retry over possibly partial
 state. Dropped-only deliveries never train. Promotion still publishes a new
 exact checkpoint manifest; the trainer never silently rewrites behavior
-identity.
+identity. The trainer implementation artifact binds the floor-return target;
+restore and runner wiring reject a different return configuration.
 
 `sts_learning.torch_generation.BoundedCategoricalGenerationRunner` is the
 first deliberately finite composition of these owners. Construction fails

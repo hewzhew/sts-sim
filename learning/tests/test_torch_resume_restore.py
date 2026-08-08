@@ -23,6 +23,7 @@ from sts_learning import (
     BoundedResumeStore,
     ExperienceLimits,
     ExperienceSegmentBuffer,
+    FloorProgressReturnConfig,
     ManifestArtifactId,
     ManifestArtifactKind,
     OnlineBatchDriver,
@@ -59,6 +60,7 @@ if _TORCH_AVAILABLE:
         encode_optimizer_state,
         encode_shadow_model_state,
     )
+    from sts_learning.torch_provenance import categorical_trainer_implementation
     from sts_learning.torch_resume_publication import (
         CategoricalGenerationResumePublisher,
         CategoricalResumePayloadLimits,
@@ -207,6 +209,24 @@ class CategoricalGenerationResumeRestorerTests(unittest.TestCase):
             ):
                 restorer.restore(publication.manifest_id)
 
+    def test_terminal_return_mismatch_is_never_exposed(self) -> None:
+        with tempfile.TemporaryDirectory() as root:
+            fixture = _ResumeFixture(Path(root))
+            publication = fixture.resume_publisher.publish(fixture.initial_runner())
+            restorer = CategoricalGenerationResumeRestorer(
+                fixture.resume_store,
+                replace(
+                    fixture.restore_config,
+                    terminal_return=FloorProgressReturnConfig(target_floor=51),
+                ),
+            )
+
+            with self.assertRaisesRegex(
+                TorchResumeRestoreError,
+                "terminal return",
+            ):
+                restorer.restore(publication.manifest_id)
+
 
 class _ResumeFixture:
     def __init__(self, root: Path) -> None:
@@ -214,6 +234,7 @@ class _ResumeFixture:
         self.behavior_root = root / "behavior"
         self.behavior_root.mkdir()
         self.behavior_config = RaggedCategoricalPolicyConfig(temperature=0.8)
+        self.return_config = FloorProgressReturnConfig()
         self.checkpoint_limits = TorchCheckpointLimits(
             max_checkpoints=3,
             max_bytes_per_checkpoint=2 * 1024 * 1024,
@@ -276,6 +297,7 @@ class _ResumeFixture:
             experience_limits=self.experience_limits,
             attempt_limits=self.attempt_limits,
             concat_limits=self.concat_limits,
+            terminal_return=self.return_config,
             payload_limits=self.payload_limits,
             expected_generator_device_type="cpu",
         )
@@ -310,6 +332,9 @@ class _ResumeFixture:
                 registry,
                 behavior_manifest_template_fixture(
                     behavior_rule=self.behavior_config.behavior_rule,
+                    trainer_implementation=categorical_trainer_implementation(
+                        self.return_config
+                    ),
                 ),
             ),
             self.scorer,
@@ -328,6 +353,7 @@ class _ResumeFixture:
             controller.publisher.registry,
             self.concat_limits,
             self.behavior_config,
+            self.return_config,
         )
         assembler = BoundedAttemptAssembler(self.attempt_limits, trainer)
         population = initialize_population(

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 import importlib.util
+import math
 import unittest
 
 from learning.tests.torch_outcome_fixtures import (
@@ -11,8 +12,10 @@ from learning.tests.torch_outcome_fixtures import (
 )
 from sts_learning import (
     BehaviorManifestRegistry,
+    FloorProgressReturnConfig,
     SelectionProbability,
     SemanticBatchConcatLimits,
+    floor_progress_terminal_return,
 )
 
 
@@ -44,6 +47,7 @@ CONCAT_LIMITS = SemanticBatchConcatLimits(
 class OnPolicyTerminalLossTests(unittest.TestCase):
     def setUp(self) -> None:
         self.config = RaggedCategoricalPolicyConfig(temperature=0.8)
+        self.return_config = FloorProgressReturnConfig(target_floor=100)
         self.registry = BehaviorManifestRegistry(capacity=1)
         self.manifest_id = self.registry.register(
             behavior_manifest_fixture(behavior_rule=self.config.behavior_rule)
@@ -79,6 +83,10 @@ class OnPolicyTerminalLossTests(unittest.TestCase):
         reference_attempt_losses = []
         for attempt in (short, long):
             terms = []
+            terminal_return = floor_progress_terminal_return(
+                attempt.terminal,
+                self.return_config,
+            )
             for batch in attempt.batches:
                 logits = reference(batch.payload)
                 selected = batch.selected_ordinals[0]
@@ -86,7 +94,7 @@ class OnPolicyTerminalLossTests(unittest.TestCase):
                     logits.values / self.config.temperature,
                     dim=0,
                 )[selected]
-                terms.append(-attempt.terminal.terminal_reward * log_probability)
+                terms.append(-terminal_return * log_probability)
             reference_attempt_losses.append(torch.stack(terms).mean())
         reference_loss = torch.stack(reference_attempt_losses).mean()
         reference_loss.backward()
@@ -104,6 +112,7 @@ class OnPolicyTerminalLossTests(unittest.TestCase):
             self.registry,
             CONCAT_LIMITS,
             self.config,
+            self.return_config,
         )
         result.value.backward()
 
@@ -118,7 +127,7 @@ class OnPolicyTerminalLossTests(unittest.TestCase):
             self.assertIsNotNone(expected.grad)
             torch.testing.assert_close(actual.grad, expected.grad)
 
-    def test_victory_and_defeat_move_selected_relative_probability_oppositely(self) -> None:
+    def test_positive_and_negative_returns_move_probability_oppositely(self) -> None:
         values = torch.nn.Parameter(torch.zeros(8))
 
         def scorer(payload):
@@ -147,17 +156,57 @@ class OnPolicyTerminalLossTests(unittest.TestCase):
             self.registry,
             CONCAT_LIMITS,
             self.config,
+            self.return_config,
         )
         result.value.backward()
 
-        self.assertAlmostEqual(float(result.value.detach()), 0.0, places=6)
+        self.assertAlmostEqual(
+            float(result.value.detach()),
+            0.4 * math.log(2.0),
+            places=6,
+        )
         self.assertEqual(result.attempt_count, 2)
         self.assertEqual(result.decision_count, 4)
         self.assertAlmostEqual(values.grad[0].item(), -0.3125, places=6)
         self.assertAlmostEqual(values.grad[1].item(), 0.3125, places=6)
         for start in (2, 4, 6):
-            self.assertAlmostEqual(values.grad[start].item(), 5.0 / 48.0, places=6)
-            self.assertAlmostEqual(values.grad[start + 1].item(), -5.0 / 48.0, places=6)
+            self.assertAlmostEqual(values.grad[start].item(), 1.0 / 48.0, places=6)
+            self.assertAlmostEqual(values.grad[start + 1].item(), -1.0 / 48.0, places=6)
+
+    def test_floor_progress_reserves_the_unique_maximum_for_victory(self) -> None:
+        config = FloorProgressReturnConfig(target_floor=52)
+        defeat = completed_attempt_fixture(
+            slot=1,
+            batches=(self._fixed_probability_batch(slot=1),),
+            reward=-1,
+        ).terminal
+
+        for floor, expected in (
+            (0, -1.0),
+            (26, 0.0),
+            (51, 1.0 - 2.0 / 52.0),
+            (999, 1.0 - 2.0 / 52.0),
+        ):
+            with self.subTest(floor=floor):
+                record = replace(
+                    defeat,
+                    terminal=replace(defeat.terminal, terminal_floor=floor),
+                )
+                self.assertAlmostEqual(
+                    floor_progress_terminal_return(record, config),
+                    expected,
+                )
+
+        victory = completed_attempt_fixture(
+            slot=1,
+            batches=(self._fixed_probability_batch(slot=1),),
+            reward=1,
+        ).terminal
+        victory = replace(
+            victory,
+            terminal=replace(victory.terminal, terminal_floor=0),
+        )
+        self.assertEqual(floor_progress_terminal_return(victory, config), 1.0)
 
     def test_forced_candidate_has_exactly_zero_policy_gradient(self) -> None:
         values = torch.nn.Parameter(torch.tensor([2.0, 3.0, 4.0]))
@@ -213,6 +262,7 @@ class OnPolicyTerminalLossTests(unittest.TestCase):
                     self.registry,
                     CONCAT_LIMITS,
                     self.config,
+                    self.return_config,
                 )
 
     def test_unknown_manifest_and_non_complete_input_fail_before_training(self) -> None:
@@ -237,6 +287,7 @@ class OnPolicyTerminalLossTests(unittest.TestCase):
                 BehaviorManifestRegistry(capacity=1),
                 CONCAT_LIMITS,
                 self.config,
+                self.return_config,
             )
         with self.assertRaisesRegex(TorchOutcomeError, "at least one"):
             on_policy_terminal_loss(
@@ -245,6 +296,7 @@ class OnPolicyTerminalLossTests(unittest.TestCase):
                 self.registry,
                 CONCAT_LIMITS,
                 self.config,
+                self.return_config,
             )
         with self.assertRaisesRegex(TorchOutcomeError, "only complete"):
             on_policy_terminal_loss(
@@ -253,6 +305,7 @@ class OnPolicyTerminalLossTests(unittest.TestCase):
                 self.registry,
                 CONCAT_LIMITS,
                 self.config,
+                self.return_config,
             )
 
     def _on_policy_batch(self, scorer, *, slot: int, row: int, ordinal: int):
