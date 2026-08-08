@@ -21,6 +21,7 @@ class TerminalAdvantageMode(IntEnum):
 
     RAW_RETURN = 0
     LEAVE_ONE_OUT = 1
+    MATCHED_FLOOR_LEAVE_ONE_OUT = 2
 
 
 @dataclass(frozen=True)
@@ -69,7 +70,11 @@ class OnPolicyObjectiveConfig:
                 "advantage_mode must be TerminalAdvantageMode"
             )
         if (
-            self.advantage_mode is TerminalAdvantageMode.LEAVE_ONE_OUT
+            self.advantage_mode
+            in (
+                TerminalAdvantageMode.LEAVE_ONE_OUT,
+                TerminalAdvantageMode.MATCHED_FLOOR_LEAVE_ONE_OUT,
+            )
             and attempts < 2
         ):
             raise TerminalReturnError(
@@ -98,6 +103,10 @@ def terminal_return_advantages(
         raise TerminalReturnError("advantage calculation requires terminal returns")
     if mode is TerminalAdvantageMode.RAW_RETURN:
         return tuple(normalized)
+    if mode is TerminalAdvantageMode.MATCHED_FLOOR_LEAVE_ONE_OUT:
+        raise TerminalReturnError(
+            "matched-floor advantage requires decision-time run progress"
+        )
     if len(normalized) < 2:
         raise TerminalReturnError(
             "leave-one-out advantage requires at least two terminal returns"

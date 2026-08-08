@@ -543,7 +543,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--held-out-seed-start", type=int, default=1_000_000)
     parser.add_argument(
         "--advantage-mode",
-        choices=("raw-return", "leave-one-out"),
+        choices=("raw-return", "leave-one-out", "matched-floor"),
         default="raw-return",
     )
     parser.add_argument(
@@ -574,7 +574,11 @@ def main() -> int:
             advantage_mode=(
                 TerminalAdvantageMode.RAW_RETURN
                 if arguments.advantage_mode == "raw-return"
-                else TerminalAdvantageMode.LEAVE_ONE_OUT
+                else (
+                    TerminalAdvantageMode.LEAVE_ONE_OUT
+                    if arguments.advantage_mode == "leave-one-out"
+                    else TerminalAdvantageMode.MATCHED_FLOOR_LEAVE_ONE_OUT
+                )
             ),
             potion_lane=RunPotionLane(arguments.potion_lane),
         )

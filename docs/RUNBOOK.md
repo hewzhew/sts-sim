@@ -827,7 +827,12 @@ behavior and fails explicitly if resume serialization is requested elsewhere.
 `leave-one-out` ablation subtracts, for each attempt, the mean return of the
 other attempts in that update; it requires at least two attempts and is bound
 into trainer provenance. Compare modes on identical training and held-out seed
-blocks instead of treating the ablation as an automatic improvement.
+blocks instead of treating the ablation as an automatic improvement. The
+`matched-floor` ablation instead uses the recorded decision-time floor and
+centers each remaining-progress target only against other attempts that reached
+that floor. A floor reached by one attempt contributes zero advantage. It also
+requires at least two attempts, is bound into trainer provenance, and must be
+evaluated as a separate fresh behavior.
 
 `test` requires PyTorch and the installed bridge and runs the complete learning
 suite; missing training dependencies are failures, not skips. `verify` runs

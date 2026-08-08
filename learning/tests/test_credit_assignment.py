@@ -14,6 +14,7 @@ from sts_learning import (
     DecisionRunProgress,
     FloorProgressReturnConfig,
     compare_credit_assignment,
+    matched_floor_leave_one_out_advantages,
     remaining_floor_progress_return,
 )
 
@@ -82,6 +83,15 @@ def test_credit_comparison_keeps_victory_reserved_and_groups_decision_floors() -
     assert comparison.matched_floor_advantage.positive == 1
     assert tuple(item.floor for item in comparison.by_decision_floor) == (0, 10, 20, 40)
     assert comparison.by_decision_floor[-1].remaining_progress.minimum == 1.0
+
+    aligned = matched_floor_leave_one_out_advantages(
+        (defeat, victory),
+        FloorProgressReturnConfig(target_floor=52),
+    )
+    assert tuple(len(attempt) for attempt in aligned) == (3, 2)
+    assert aligned[0][0] == (0.0,)
+    assert aligned[0][1][0] < 0.0
+    assert aligned[1][0][0] > 0.0
 
 
 def test_credit_comparison_rejects_missing_or_impossible_progress() -> None:

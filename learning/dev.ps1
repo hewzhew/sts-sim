@@ -23,7 +23,7 @@ param(
     [int]$EvaluationAttempts = 16,
     [int]$EvaluationMaxBatchSteps = 4096,
     [long]$EvaluationBehaviorSeed = 100000,
-    [ValidateSet("raw-return", "leave-one-out")]
+    [ValidateSet("raw-return", "leave-one-out", "matched-floor")]
     [string]$AdvantageMode = "raw-return",
     [ValidateSet("all", "never", "root-slots")]
     [string]$PotionLane = "all",

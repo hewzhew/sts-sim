@@ -758,9 +758,10 @@ The first terminal objective is an on-policy categorical policy loss, not
 imitation or raw-logit value regression. It accepts only bounded
 complete-attempt deliveries, resolves every batch's exact behavior manifest,
 and applies `-advantage * log P(selected | state)` to each sampled decision.
-The typed advantage mode either uses the raw terminal return or, for batches of
-at least two independent attempts, subtracts the mean return of every other
-attempt. This leave-one-out baseline preserves the on-policy expectation while
+The typed advantage mode either uses the raw terminal return, subtracts the
+mean terminal return of every other attempt, or uses the explicit matched-floor
+ablation described below. Both baseline modes require at least two independent
+attempts. Global leave-one-out preserves the on-policy expectation while
 removing the batch's common return level; it does not add a learned value model
 or shaped reward. The maintained floor-progress return reserves `+1` for
 victory and maps defeat floor
@@ -785,9 +786,11 @@ not change the maintained terminal-broadcast loss, add HP or potion prices, or
 survive as experience payload. The same diagnostic also reports a matched-floor
 leave-one-out advantage: each attempt's remaining-progress target is centered
 only against other independent attempts that reached that decision floor. A
-floor reached by only one attempt has zero comparison signal. This avoids
+floor reached by only one attempt has zero comparison signal. Selecting the
+provenance-bound matched-floor advantage mode applies those aligned values to
+the loss; raw terminal return remains the maintained default. This avoids
 calling an unmatched state better or worse merely because it occurred later in
-the run, but remains an ablation candidate rather than the maintained loss.
+the run, but remains an explicit ablation rather than an assumed improvement.
 One typed objective configuration owns terminal-return semantics, advantage
 mode, and the number of attempts per update. The trainer implementation
 artifact binds the return kind, target floor, advantage mode, and attempts per

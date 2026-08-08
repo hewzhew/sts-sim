@@ -12,6 +12,7 @@ from learning.tests.torch_outcome_fixtures import (
 )
 from sts_learning import (
     BehaviorManifestRegistry,
+    DecisionRunProgress,
     FloorProgressReturnConfig,
     SelectionProbability,
     SemanticBatchConcatLimits,
@@ -180,6 +181,69 @@ class OnPolicyTerminalLossTests(unittest.TestCase):
         for start in (2, 4, 6):
             self.assertAlmostEqual(values.grad[start].item(), 1.0 / 48.0, places=6)
             self.assertAlmostEqual(values.grad[start + 1].item(), -1.0 / 48.0, places=6)
+
+    def test_matched_floor_objective_compares_only_attempts_at_that_floor(self) -> None:
+        values = torch.nn.Parameter(torch.zeros(4))
+
+        def scorer(payload):
+            return RaggedCandidateLogits(
+                values=values,
+                row_splits=torch.as_tensor(
+                    payload["candidate_row_splits"],
+                    dtype=torch.long,
+                ),
+            )
+
+        attempts = []
+        for slot, terminal_floor, ordinal in ((1, 10, 0), (2, 20, 1)):
+            batch = replace(
+                decision_batch_fixture(
+                    slot=slot,
+                    semantic_row=0,
+                    selected_ordinal=ordinal,
+                    manifest_id=self.manifest_id,
+                    selection_probability=SelectionProbability.known(0.5),
+                ),
+                run_progress=(
+                    DecisionRunProgress(
+                        episode_seed=100 + slot,
+                        act=1,
+                        floor=0,
+                    ),
+                ),
+            )
+            attempt = completed_attempt_fixture(
+                slot=slot,
+                batches=(batch,),
+                reward=-1,
+            )
+            attempts.append(
+                replace(
+                    attempt,
+                    terminal=replace(
+                        attempt.terminal,
+                        terminal=replace(
+                            attempt.terminal.terminal,
+                            terminal_floor=terminal_floor,
+                        ),
+                    ),
+                )
+            )
+
+        result = on_policy_terminal_loss(
+            scorer,
+            attempts,
+            self.registry,
+            CONCAT_LIMITS,
+            self.config,
+            self.return_config,
+            TerminalAdvantageMode.MATCHED_FLOOR_LEAVE_ONE_OUT,
+        )
+        result.value.backward()
+
+        self.assertAlmostEqual(float(result.value.detach()), 0.0, places=6)
+        self.assertGreater(values.grad[0].item(), 0.0)
+        self.assertLess(values.grad[3].item(), 0.0)
 
     def test_floor_progress_reserves_the_unique_maximum_for_victory(self) -> None:
         config = FloorProgressReturnConfig(target_floor=52)

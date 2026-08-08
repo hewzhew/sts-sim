@@ -52,87 +52,58 @@ class CreditAssignmentComparison:
     by_decision_floor: tuple[DecisionFloorCreditComparison, ...]
 
 
+@dataclass(frozen=True)
+class _DecisionCreditRow:
+    floor: int
+    terminal_broadcast: float
+    remaining_progress: float
+
+
 def compare_credit_assignment(
     attempts: Sequence[CompletedAttemptExperience],
     config: FloorProgressReturnConfig,
 ) -> CreditAssignmentComparison:
     """Compare target distributions without changing the optimizer objective."""
 
-    normalized = tuple(attempts)
-    if not normalized:
-        raise CreditAssignmentError("credit comparison requires complete attempts")
-    if not all(isinstance(attempt, CompletedAttemptExperience) for attempt in normalized):
-        raise CreditAssignmentError("credit comparison accepts only complete attempts")
-    if not isinstance(config, FloorProgressReturnConfig):
-        raise CreditAssignmentError("credit comparison requires a floor return config")
-
-    broadcast: list[float] = []
-    remaining: list[float] = []
-    decision_rows: list[tuple[int, int, float, float]] = []
-    attempt_floor_returns: dict[int, dict[int, float]] = {}
-    for attempt_index, attempt in enumerate(normalized):
-        attempt_broadcast = floor_progress_terminal_return(attempt.terminal, config)
-        observed_decisions = 0
-        for batch in attempt.batches:
-            if batch.run_progress is None:
-                raise CreditAssignmentError(
-                    "credit comparison requires decision-time run progress"
-                )
-            if len(batch.run_progress) != batch.decision_count:
-                raise CreditAssignmentError(
-                    "decision-time run progress is misaligned with its batch"
-                )
-            for progress in batch.run_progress:
-                local = remaining_floor_progress_return(
-                    attempt,
-                    progress,
-                    config,
-                )
-                broadcast.append(attempt_broadcast)
-                remaining.append(local)
-                decision_rows.append(
-                    (attempt_index, progress.floor, attempt_broadcast, local)
-                )
-                previous = attempt_floor_returns.setdefault(
-                    progress.floor,
-                    {},
-                ).setdefault(attempt_index, local)
-                if previous != local:
-                    raise CreditAssignmentError(
-                        "one attempt has conflicting targets at the same floor"
-                    )
-                observed_decisions += 1
-        if observed_decisions != attempt.decision_count:
-            raise CreditAssignmentError(
-                "complete attempt progress rows disagree with its decision count"
-            )
-
-    floor_advantages: dict[tuple[int, int], float] = {}
-    for floor, attempt_values in attempt_floor_returns.items():
-        if len(attempt_values) == 1:
-            attempt_index = next(iter(attempt_values))
-            floor_advantages[(attempt_index, floor)] = 0.0
-            continue
-        values = tuple(attempt_values.values())
-        mean = math.fsum(values) / len(values)
-        scale = len(values) / (len(values) - 1)
-        for attempt_index, value in attempt_values.items():
-            floor_advantages[(attempt_index, floor)] = scale * (value - mean)
-
+    normalized, aligned = _aligned_credit_rows(attempts, config)
+    matched_aligned = _matched_floor_advantages(aligned)
+    broadcast = [
+        row.terminal_broadcast
+        for attempt in aligned
+        for batch in attempt
+        for row in batch
+    ]
+    remaining = [
+        row.remaining_progress
+        for attempt in aligned
+        for batch in attempt
+        for row in batch
+    ]
     matched = [
-        floor_advantages[(attempt_index, floor)]
-        for attempt_index, floor, _, _ in decision_rows
+        value
+        for attempt in matched_aligned
+        for batch in attempt
+        for value in batch
     ]
     by_floor: dict[int, tuple[list[float], list[float], list[float]]] = {}
-    for row, advantage in zip(decision_rows, matched, strict=True):
-        _, floor, attempt_broadcast, local = row
-        floor_broadcast, floor_remaining, floor_matched = by_floor.setdefault(
-            floor,
-            ([], [], []),
-        )
-        floor_broadcast.append(attempt_broadcast)
-        floor_remaining.append(local)
-        floor_matched.append(advantage)
+    for attempt_rows, attempt_advantages in zip(
+        aligned,
+        matched_aligned,
+        strict=True,
+    ):
+        for batch_rows, batch_advantages in zip(
+            attempt_rows,
+            attempt_advantages,
+            strict=True,
+        ):
+            for row, advantage in zip(batch_rows, batch_advantages, strict=True):
+                floor_broadcast, floor_remaining, floor_matched = by_floor.setdefault(
+                    row.floor,
+                    ([], [], []),
+                )
+                floor_broadcast.append(row.terminal_broadcast)
+                floor_remaining.append(row.remaining_progress)
+                floor_matched.append(advantage)
 
     return CreditAssignmentComparison(
         attempt_count=len(normalized),
@@ -148,6 +119,110 @@ def compare_credit_assignment(
             )
             for floor, values in sorted(by_floor.items())
         ),
+    )
+
+
+def matched_floor_leave_one_out_advantages(
+    attempts: Sequence[CompletedAttemptExperience],
+    config: FloorProgressReturnConfig,
+) -> tuple[tuple[tuple[float, ...], ...], ...]:
+    """Return attempt/batch/row-aligned advantages from matched run floors."""
+
+    _, aligned = _aligned_credit_rows(attempts, config)
+    return _matched_floor_advantages(aligned)
+
+
+def _aligned_credit_rows(
+    attempts: Sequence[CompletedAttemptExperience],
+    config: FloorProgressReturnConfig,
+) -> tuple[
+    tuple[CompletedAttemptExperience, ...],
+    tuple[tuple[tuple[_DecisionCreditRow, ...], ...], ...],
+]:
+    normalized = tuple(attempts)
+    if not normalized:
+        raise CreditAssignmentError("credit comparison requires complete attempts")
+    if not all(
+        isinstance(attempt, CompletedAttemptExperience)
+        for attempt in normalized
+    ):
+        raise CreditAssignmentError("credit comparison accepts only complete attempts")
+    if not isinstance(config, FloorProgressReturnConfig):
+        raise CreditAssignmentError("credit comparison requires a floor return config")
+
+    aligned: list[tuple[tuple[_DecisionCreditRow, ...], ...]] = []
+    for attempt in normalized:
+        attempt_broadcast = floor_progress_terminal_return(attempt.terminal, config)
+        observed_decisions = 0
+        attempt_batches: list[tuple[_DecisionCreditRow, ...]] = []
+        for batch in attempt.batches:
+            if batch.run_progress is None:
+                raise CreditAssignmentError(
+                    "credit comparison requires decision-time run progress"
+                )
+            if len(batch.run_progress) != batch.decision_count:
+                raise CreditAssignmentError(
+                    "decision-time run progress is misaligned with its batch"
+                )
+            batch_rows = tuple(
+                _DecisionCreditRow(
+                    floor=progress.floor,
+                    terminal_broadcast=attempt_broadcast,
+                    remaining_progress=remaining_floor_progress_return(
+                        attempt,
+                        progress,
+                        config,
+                    ),
+                )
+                for progress in batch.run_progress
+            )
+            attempt_batches.append(batch_rows)
+            observed_decisions += len(batch_rows)
+        if observed_decisions != attempt.decision_count:
+            raise CreditAssignmentError(
+                "complete attempt progress rows disagree with its decision count"
+            )
+        aligned.append(tuple(attempt_batches))
+    return normalized, tuple(aligned)
+
+
+def _matched_floor_advantages(
+    aligned: tuple[tuple[tuple[_DecisionCreditRow, ...], ...], ...],
+) -> tuple[tuple[tuple[float, ...], ...], ...]:
+    attempt_floor_returns: dict[int, dict[int, float]] = {}
+    for attempt_index, attempt in enumerate(aligned):
+        for batch in attempt:
+            for row in batch:
+                previous = attempt_floor_returns.setdefault(
+                    row.floor,
+                    {},
+                ).setdefault(attempt_index, row.remaining_progress)
+                if previous != row.remaining_progress:
+                    raise CreditAssignmentError(
+                        "one attempt has conflicting targets at the same floor"
+                    )
+
+    floor_advantages: dict[tuple[int, int], float] = {}
+    for floor, attempt_values in attempt_floor_returns.items():
+        if len(attempt_values) == 1:
+            attempt_index = next(iter(attempt_values))
+            floor_advantages[(attempt_index, floor)] = 0.0
+            continue
+        values = tuple(attempt_values.values())
+        mean = math.fsum(values) / len(values)
+        scale = len(values) / (len(values) - 1)
+        for attempt_index, value in attempt_values.items():
+            floor_advantages[(attempt_index, floor)] = scale * (value - mean)
+
+    return tuple(
+        tuple(
+            tuple(
+                floor_advantages[(attempt_index, row.floor)]
+                for row in batch
+            )
+            for batch in attempt
+        )
+        for attempt_index, attempt in enumerate(aligned)
     )
 
 

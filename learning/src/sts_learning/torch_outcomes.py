@@ -11,6 +11,10 @@ import torch
 from torch import Tensor
 
 from .attempts import CompletedAttemptExperience
+from .credit_assignment import (
+    CreditAssignmentError,
+    matched_floor_leave_one_out_advantages,
+)
 from .combat_experience import (
     CombatDecisionExperienceBatch,
     CompletedCombatGroupExperience,
@@ -105,13 +109,24 @@ def on_policy_terminal_loss(
         raise TorchOutcomeError("policy objective requires at least one complete attempt")
     if not all(isinstance(attempt, CompletedAttemptExperience) for attempt in normalized):
         raise TorchOutcomeError("policy objective accepts only complete attempts")
-    advantages = terminal_return_advantages(
-        tuple(
-            floor_progress_terminal_return(attempt.terminal, return_config)
-            for attempt in normalized
-        ),
-        advantage_mode,
-    )
+    matched_advantages = None
+    advantages = None
+    if advantage_mode is TerminalAdvantageMode.MATCHED_FLOOR_LEAVE_ONE_OUT:
+        try:
+            matched_advantages = matched_floor_leave_one_out_advantages(
+                normalized,
+                return_config,
+            )
+        except CreditAssignmentError as error:
+            raise TorchOutcomeError(str(error)) from error
+    else:
+        advantages = terminal_return_advantages(
+            tuple(
+                floor_progress_terminal_return(attempt.terminal, return_config)
+                for attempt in normalized
+            ),
+            advantage_mode,
+        )
 
     behavior_ids: list[tuple[BehaviorManifestId, ...]] = []
     probability_evidence: list[tuple[SelectionProbability, ...]] = []
@@ -120,7 +135,7 @@ def on_policy_terminal_loss(
     targets: list[float] = []
     weights: list[float] = []
     total_decisions = 0
-    for attempt, advantage in zip(normalized, advantages, strict=True):
+    for attempt_index, attempt in enumerate(normalized):
         expected_decisions = sum(batch.decision_count for batch in attempt.batches)
         if attempt.decision_count != expected_decisions or expected_decisions <= 0:
             raise TorchOutcomeError(
@@ -129,7 +144,7 @@ def on_policy_terminal_loss(
 
         attempt_behavior_ids: list[BehaviorManifestId] = []
         attempt_probabilities: list[SelectionProbability] = []
-        for batch in attempt.batches:
+        for batch_index, batch in enumerate(attempt.batches):
             _validate_batch(batch)
             try:
                 manifest = registry.resolve(batch.behavior_manifest_id)
@@ -145,7 +160,16 @@ def on_policy_terminal_loss(
             payloads.append(batch.payload)
             selected_ordinals.extend(batch.selected_ordinals)
             attempt_probabilities.extend(batch.selection_probabilities)
-            targets.extend([advantage] * batch.decision_count)
+            if matched_advantages is None:
+                assert advantages is not None
+                batch_targets = (advantages[attempt_index],) * batch.decision_count
+            else:
+                batch_targets = matched_advantages[attempt_index][batch_index]
+                if len(batch_targets) != batch.decision_count:
+                    raise TorchOutcomeError(
+                        "matched-floor targets are misaligned with decision rows"
+                    )
+            targets.extend(batch_targets)
             weights.extend(
                 [1.0 / (len(normalized) * expected_decisions)]
                 * batch.decision_count
