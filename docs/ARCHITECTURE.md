@@ -366,6 +366,13 @@ imports the opaque artifact once and owns this complete graph. It is not a
 held-out evaluator, curriculum, durable training-resume protocol, or evidence
 that an update improved play.
 
+The maintained `train-combat` command repeats a caller-bounded number of those
+shared-model updates over one fixed opaque artifact. It journals only compact
+configuration, generation, per-root outcome/signal, and completion facts, then
+explicitly publishes the final active behavior. Its experiment directory must
+be fresh; the journal and published scorer do not contain optimizer state and
+cannot resume training or substitute for held-out evaluation.
+
 Python recovery curricula may hold explicit opaque single-slot checkpoints.
 Saving one clones that exact in-memory run-control state only when requested;
 restoring it also restores any unfinished symbolic decoder or already selected

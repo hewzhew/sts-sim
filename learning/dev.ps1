@@ -1,9 +1,16 @@
 param(
     [Parameter(Mandatory = $true, Position = 0)]
-    [ValidateSet("configure", "doctor", "test", "verify", "check-bridge", "refresh-bridge")]
+    [ValidateSet("configure", "doctor", "test", "verify", "check-bridge", "refresh-bridge", "train-combat")]
     [string]$Command,
     [string]$Python,
-    [string]$MaturinPython = "python"
+    [string]$MaturinPython = "python",
+    [string]$Artifact,
+    [string]$Output,
+    [int]$Roots,
+    [int]$Replicates = 8,
+    [int]$Updates,
+    [long]$ModelSeed = 0,
+    [long]$BehaviorSeedBase = 1000
 )
 
 $ErrorActionPreference = "Stop"
@@ -183,6 +190,23 @@ switch ($Command) {
     }
     "test" {
         Invoke-LearningTests (Get-ConfiguredPython)
+    }
+    "train-combat" {
+        $pythonPath = Get-ConfiguredPython
+        Invoke-Doctor $pythonPath
+        Invoke-WithLearningPath {
+            & $pythonPath -m sts_learning.train_combat `
+                --artifact $Artifact `
+                --output $Output `
+                --roots $Roots `
+                --replicates $Replicates `
+                --updates $Updates `
+                --model-seed $ModelSeed `
+                --behavior-seed-base $BehaviorSeedBase
+            if ($LASTEXITCODE -ne 0) {
+                throw "combat training command failed"
+            }
+        }
     }
     "verify" {
         $pythonPath = Get-ConfiguredPython

@@ -175,6 +175,27 @@ is imported once and every slot selects from that shared typed source; slot-loca
 trainers and stores live only in temporary directories, their updates are
 discarded, and nothing is published. The runner measures whether diverse roots
 provide win, HP, or potion signal—it does not train one behavior across roots.
+
+Run bounded shared-model training over one opaque multi-root artifact through
+the configured Python runtime:
+
+```powershell
+.\learning\dev.ps1 train-combat `
+  -Artifact <combat-roots.bin> `
+  -Output <fresh-experiment-directory> `
+  -Roots <artifact-root-count> `
+  -Replicates 8 `
+  -Updates <bounded-update-count> `
+  -ModelSeed 0 `
+  -BehaviorSeedBase 1000
+```
+
+Every update collects all declared roots under one frozen behavior, applies at
+most one shared optimizer step, and immediately promotes only a real update.
+The command appends compact generation and per-root signal facts to
+`training.jsonl`, then explicitly publishes the final behavior checkpoint.
+The output directory must be absent or empty; optimizer resume is not implied.
+
 The same result includes a typed competence plan over exact source slots.
 All-loss roots enter a rescue backlog, mixed win/loss roots form the survival
 frontier, and all-win roots either form the configured terminal-HP resource

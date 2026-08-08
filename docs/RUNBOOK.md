@@ -624,6 +624,7 @@ Configure one stable Python 3.12 training runtime once, then use the small
 .\learning\dev.ps1 refresh-bridge
 .\learning\dev.ps1 test
 .\learning\dev.ps1 verify -MaturinPython <python-with-maturin>
+.\learning\dev.ps1 train-combat -Artifact <roots.bin> -Output <fresh-dir> -Roots <count> -Updates <count>
 ```
 
 `configure` installs the tool requirements declared by the local
