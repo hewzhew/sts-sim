@@ -251,6 +251,14 @@ Decision count, retained payload bytes, model rounds, and environment
 transitions all have mandatory hard limits; a batch that would exceed memory
 fails before environment mutation. Partial groups are never delivered as
 completed training experience.
+The first maintained differentiable combat objective consumes only complete
+same-root groups and only their leave-one-out win axis. Groups have equal total
+weight, replicates have equal total weight inside a group regardless of combat
+length, and each replicate divides its weight across its own retained
+decisions. The objective rechecks exact behavior manifests and recorded
+selection propensities against the scorer in one concatenated model call. HP
+and potion-retention axes remain typed evidence but do not enter this loss; a
+group with no win-axis variation therefore has exactly zero win gradient.
 Completed groups may be reduced to compact per-axis signal summaries and then
 to a caller-bounded census over distinct exact roots. That census retains only
 group, replicate, and decision counts; it neither keeps semantic payloads nor

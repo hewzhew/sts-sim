@@ -136,6 +136,13 @@ opaque bytes and constructs a fresh bridge batch with the exact expected root
 count; Rust revalidates every combat boundary and root identity first.
 Their row projection attaches all three columns to each retained replicate
 decision without choosing a training axis or scalar weighting.
+`sts_learning.torch_outcomes.on_policy_combat_win_loss` is the first narrow
+training consumer. It batches complete distinct-root groups into one scorer
+call, verifies their exact behavior manifests and sampled propensities, and
+uses only the same-root leave-one-out win advantage. Every replicate contributes
+equal total weight regardless of how many decisions it needed. HP and potion
+advantages remain excluded, so an all-win or all-loss group produces zero win
+gradient rather than a hidden resource tradeoff.
 `sts_learning.combat_signals` reduces a completed group to nonzero replicate
 and decision support per axis. Its cross-root census requires an explicit group
 bound, rejects duplicate exact roots, and retains no semantic payload. Signal
