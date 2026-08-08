@@ -24,6 +24,7 @@ from sts_learning.evaluate_run_potions import (
     RunPotionComparisonCommandConfig,
     run_run_potion_comparison,
 )
+from sts_learning.combat_potion_lane import CombatPotionLane
 from sts_learning.torch_combat_session_config import CombatSessionBridge
 from sts_learning.torch_session_config import (
     CategoricalSessionBridge,
@@ -46,12 +47,12 @@ class _CombatRootSource:
         potion_slots: Sequence[int] | None = None,
     ) -> OneRoundCombatGroup:
         assert replicate_count == 2
-        assert potion_slots is None
+        assert potion_slots in (None, ())
         return OneRoundCombatGroup(
             f"{slot_index + 1:02x}" * 32,
             f"{slot_index + 17:02x}" * 32,
             (True, False) if slot_index == 0 else (True, True),
-            potion_slots=None,
+            potion_slots=None if potion_slots is None else tuple(potion_slots),
         )
 
 
@@ -67,9 +68,9 @@ def test_run_evaluation_uses_frozen_combat_behavior_without_recovery(
         RunEvaluationCommandConfig(
             behavior=behavior,
             output=output,
-            slot_count=2,
+            slot_count=1,
             terminal_attempts=2,
-            max_batch_steps=1,
+            max_batch_steps=2,
             behavior_seed=501,
         ),
         combat_bridge=combat_bridge,
@@ -126,9 +127,9 @@ def test_run_evaluation_selects_the_no_combat_potion_environment(
         RunEvaluationCommandConfig(
             behavior=behavior,
             output=tmp_path / "run-evaluation-never",
-            slot_count=2,
+            slot_count=1,
             terminal_attempts=2,
-            max_batch_steps=1,
+            max_batch_steps=2,
             behavior_seed=501,
             potion_lane=RunPotionLane.NEVER,
         ),
@@ -137,7 +138,7 @@ def test_run_evaluation_selects_the_no_combat_potion_environment(
     )
 
     assert len(created) == 1
-    assert len(created[0]) == 2
+    assert len(created[0]) == 1
     assert summary["combat_potion_lane"] == "never"
     assert summary["combat_potion_identity_losses"] == ()
 
@@ -194,7 +195,7 @@ def test_run_training_warm_starts_publishes_and_evaluates(
             behavior_seed=94,
             training_seed_start=0,
             evaluation_attempts=2,
-            evaluation_max_batch_steps=1,
+            evaluation_max_batch_steps=2,
             evaluation_behavior_seed=501,
             held_out_seed_start=1000,
         ),
@@ -223,20 +224,67 @@ def test_run_training_warm_starts_publishes_and_evaluates(
         "completed",
     )
     assert records[0]["advantage_mode"] == "raw_return"
+    assert records[0]["requested_run_potion_lane"] == "trained"
+    assert records[0]["run_potion_lane"] == "all"
     stdout = capsys.readouterr().out
     assert (
         "run_generation=0 promoted=true attempts=2 victories=2 defeats=0 "
         "floor_sum=80 floor_counts=40:2"
     ) in stdout
     assert (
-        "run_training_complete=true generations=1 optimizer_steps=1 "
+        "run_training_complete=true potion_lane=all "
+        "potion_lane_request=trained generations=1 optimizer_steps=1 "
         "held_out_attempts=2/2 held_out_victories=2 "
         "held_out_floor_sum=80 held_out_floor_counts=40:2"
     ) in stdout
 
 
+def test_run_training_inherits_the_warm_start_potion_lane(
+    tmp_path: Path,
+) -> None:
+    behavior, combat_bridge, run_bridge = _published_behavior(
+        tmp_path,
+        potion_lane=CombatPotionLane.NEVER,
+    )
+    no_potion_populations: list[tuple[int, ...]] = []
+
+    def without_combat_potions(seeds: list[int]) -> NumpyWinningBatchEnv:
+        no_potion_populations.append(tuple(seeds))
+        return NumpyWinningBatchEnv(seeds)
+
+    run_bridge = replace(
+        run_bridge,
+        environment_without_combat_potions=without_combat_potions,
+    )
+    summary = run_run_training(
+        RunTrainingCommandConfig(
+            warm_start_behavior=behavior,
+            output=tmp_path / "run-training-never",
+            slot_count=1,
+            generations=0,
+            attempts_per_update=1,
+            max_batch_steps_per_generation=1,
+            model_seed=43,
+            behavior_seed=94,
+            training_seed_start=0,
+            evaluation_attempts=1,
+            evaluation_max_batch_steps=1,
+            evaluation_behavior_seed=501,
+            held_out_seed_start=1000,
+        ),
+        combat_bridge=combat_bridge,
+        run_bridge=run_bridge,
+    )
+
+    assert len(no_potion_populations) == 2
+    assert summary["requested_run_potion_lane"] == "trained"
+    assert summary["run_potion_lane"] == "never"
+
+
 def _published_behavior(
     root: Path,
+    *,
+    potion_lane: CombatPotionLane = CombatPotionLane.ALL,
 ) -> tuple[Path, CombatSessionBridge, CategoricalSessionBridge]:
     artifact = root / "combat-roots.bin"
     artifact.write_bytes(b"opaque-combat-roots")
@@ -255,6 +303,7 @@ def _published_behavior(
             updates=1,
             model_seed=41,
             behavior_seed_base=92,
+            potion_lane=potion_lane,
         ),
         bridge=combat_bridge,
     )

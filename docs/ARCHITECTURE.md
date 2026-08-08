@@ -270,6 +270,10 @@ provenance, not a resource price or a training reward. Routine evaluation
 inherits the published behavior's training lane, preventing an untrained
 potion action surface from appearing silently at deployment; explicit `All`
 and `Never` remain available for bounded counterfactuals.
+The first whole-run training handoff follows the same rule for its training and
+held-out environments. A `Never` run session rejects cross-process resume until
+that checkpoint schema binds the potion surface; it may still publish the
+frozen learned behavior, which carries no environment checkpoint.
 
 The standalone `bindings/python_learning` Maturin crate is excluded from the
 root Cargo workspace. Python supplies observation-local candidate ordinals,

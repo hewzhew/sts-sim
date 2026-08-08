@@ -15,6 +15,8 @@ from .evaluation import (
     HeldOutEvaluationSpec,
     evaluate_held_out_behavior,
 )
+from .combat_potion_lane import CombatPotionLane
+from .evaluate_run import RunPotionLane, resolve_run_potion_lane
 from .published_combat_behavior import (
     PublishedCombatBehavior,
     recover_published_combat_behavior,
@@ -39,7 +41,7 @@ from .torch_session_config import (
 )
 
 
-RUN_TRAINING_SCHEMA = "sts-learning-run-training-v1"
+RUN_TRAINING_SCHEMA = "sts-learning-run-training-v2"
 
 
 class RunTrainingCommandError(RuntimeError):
@@ -62,6 +64,7 @@ class RunTrainingCommandConfig:
     evaluation_behavior_seed: int
     held_out_seed_start: int
     advantage_mode: TerminalAdvantageMode = TerminalAdvantageMode.RAW_RETURN
+    potion_lane: RunPotionLane = RunPotionLane.TRAINED
 
     def __post_init__(self) -> None:
         behavior = Path(self.warm_start_behavior).resolve()
@@ -85,6 +88,10 @@ class RunTrainingCommandConfig:
         if not isinstance(self.advantage_mode, TerminalAdvantageMode):
             raise RunTrainingCommandError(
                 "run training advantage mode must be typed"
+            )
+        if not isinstance(self.potion_lane, RunPotionLane):
+            raise RunTrainingCommandError(
+                "run training potion lane must be typed"
             )
         for name in (
             "slot_count",
@@ -145,6 +152,11 @@ def run_run_training(
         CombatWinSessionLimits(),
         (config.behavior_seed,),
     )
+    potion_lane = resolve_run_potion_lane(config.potion_lane, warm_start)
+    training_run_bridge = _bridge_for_potion_lane(
+        active_run_bridge,
+        potion_lane,
+    )
     profile = replace(
         CategoricalOnlineProfile(),
         objective=OnPolicyObjectiveConfig(
@@ -168,7 +180,7 @@ def run_run_training(
     )
     factory = CategoricalOnlineSessionFactory(
         config.output,
-        active_run_bridge,
+        training_run_bridge,
         session_config,
         NoRecoveryCurriculum(),
     )
@@ -180,7 +192,7 @@ def run_run_training(
     config.output.mkdir(parents=True, exist_ok=True)
     journal_path = config.output / "training.jsonl"
     with journal_path.open("x", encoding="utf-8", newline="\n") as journal:
-        _write(journal, _configuration(config, warm_start))
+        _write(journal, _configuration(config, warm_start, potion_lane))
         for generation in range(config.generations):
             started = time.perf_counter()
             result = session.advance_generation(
@@ -215,14 +227,14 @@ def run_run_training(
             behavior_seed=config.evaluation_behavior_seed,
         )
         evaluation = evaluate_held_out_behavior(
-            active_run_bridge.environment,
+            training_run_bridge.environment,
             evaluation_policy,
             schedule=SeedSchedule(
                 SeedPartition.HELD_OUT,
                 next_candidate=config.held_out_seed_start,
             ),
             spec=HeldOutEvaluationSpec(
-                slot_count=config.slot_count,
+                slot_count=1,
                 terminal_attempt_target=config.evaluation_attempts,
                 max_batch_steps=config.evaluation_max_batch_steps,
             ),
@@ -233,6 +245,7 @@ def run_run_training(
             session,
             publication.checkpoint_id.digest.hex(),
             evaluation,
+            potion_lane,
         )
         _write(journal, summary)
 
@@ -246,6 +259,8 @@ def run_run_training(
     run = evaluation.run.summary
     print(
         "run_training_complete=true "
+        f"potion_lane={potion_lane.value} "
+        f"potion_lane_request={config.potion_lane.value} "
         f"generations={config.generations} "
         f"optimizer_steps={session.runner.trainer.snapshot.optimizer_steps} "
         f"held_out_attempts={run.terminal_attempts}/"
@@ -262,6 +277,7 @@ def run_run_training(
 def _configuration(
     config: RunTrainingCommandConfig,
     warm_start: PublishedCombatBehavior,
+    potion_lane: CombatPotionLane,
 ) -> dict[str, object]:
     return {
         "schema": RUN_TRAINING_SCHEMA,
@@ -272,6 +288,8 @@ def _configuration(
         "warm_start_training_step": warm_start.training_step,
         "warm_start_artifact_sha256": warm_start.training_artifact_sha256,
         "warm_start_potion_lane": warm_start.training_potion_lane.value,
+        "requested_run_potion_lane": config.potion_lane.value,
+        "run_potion_lane": potion_lane.value,
         "slot_count": config.slot_count,
         "generations": config.generations,
         "attempts_per_update": config.attempts_per_update,
@@ -323,6 +341,7 @@ def _summary(
     session: CategoricalOnlineSession,
     checkpoint_id: str,
     evaluation: HeldOutEvaluationResult,
+    potion_lane: CombatPotionLane,
 ) -> dict[str, object]:
     run = evaluation.run.summary
     progress = run.terminal_progress
@@ -335,6 +354,8 @@ def _summary(
             session.active_behavior_manifest_id.digest.hex()
         ),
         "active_behavior_checkpoint_id": checkpoint_id,
+        "requested_run_potion_lane": config.potion_lane.value,
+        "run_potion_lane": potion_lane.value,
         "generations": config.generations,
         "optimizer_steps": session.runner.trainer.snapshot.optimizer_steps,
         "held_out_target_reached": evaluation.complete,
@@ -346,6 +367,7 @@ def _summary(
         "held_out_floor_counts": progress.floor_counts,
         "held_out_act_counts": progress.act_counts,
         "held_out_batch_steps": run.batch_steps,
+        "held_out_slot_count": 1,
         "held_out_seed_end": evaluation.schedule_end.next_candidate,
     }
 
@@ -354,6 +376,29 @@ def _write(journal: TextIO, value: dict[str, object]) -> None:
     journal.write(json.dumps(value, separators=(",", ":"), sort_keys=True))
     journal.write("\n")
     journal.flush()
+
+
+def _bridge_for_potion_lane(
+    bridge: CategoricalSessionBridge,
+    lane: CombatPotionLane,
+) -> CategoricalSessionBridge:
+    if lane is CombatPotionLane.ALL:
+        return bridge
+    if lane is not CombatPotionLane.NEVER:
+        raise RunTrainingCommandError(
+            "whole-run training supports only all or never potion lanes"
+        )
+    return replace(
+        bridge,
+        environment=bridge.environment_without_combat_potions,
+        environment_from_checkpoint=_reject_no_potion_resume,
+    )
+
+
+def _reject_no_potion_resume(*_args: object, **_kwargs: object) -> object:
+    raise RunTrainingCommandError(
+        "no-potion whole-run training does not support resume checkpoints"
+    )
 
 
 def _positive(value: object, name: str) -> int:
@@ -415,6 +460,11 @@ def _parser() -> argparse.ArgumentParser:
         choices=("raw-return", "leave-one-out"),
         default="raw-return",
     )
+    parser.add_argument(
+        "--potion-lane",
+        choices=tuple(lane.value for lane in RunPotionLane),
+        default=RunPotionLane.TRAINED.value,
+    )
     return parser
 
 
@@ -440,6 +490,7 @@ def main() -> int:
                 if arguments.advantage_mode == "raw-return"
                 else TerminalAdvantageMode.LEAVE_ONE_OUT
             ),
+            potion_lane=RunPotionLane(arguments.potion_lane),
         )
     )
     return 0

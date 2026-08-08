@@ -274,7 +274,7 @@ switch ($Command) {
             & $pythonPath -m sts_learning.evaluate_run `
                 --behavior $Behavior `
                 --output $Output `
-                --slots $Slots `
+                --slots 1 `
                 --attempts $Attempts `
                 --max-batch-steps $MaxBatchSteps `
                 --behavior-seed $BehaviorSeed `
@@ -319,7 +319,8 @@ switch ($Command) {
                 --evaluation-max-batch-steps $EvaluationMaxBatchSteps `
                 --evaluation-behavior-seed $EvaluationBehaviorSeed `
                 --held-out-seed-start $HeldOutSeedStart `
-                --advantage-mode $AdvantageMode
+                --advantage-mode $AdvantageMode `
+                --potion-lane $RunPotionLane
             if ($LASTEXITCODE -ne 0) {
                 throw "run training command failed"
             }

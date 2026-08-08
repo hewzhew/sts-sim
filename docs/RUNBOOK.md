@@ -627,9 +627,9 @@ Configure one stable Python 3.12 training runtime once, then use the small
 .\learning\dev.ps1 train-combat -Artifact <roots.bin> -Output <fresh-dir> -Roots <count> -Updates <count> -PotionLane never
 .\learning\dev.ps1 evaluate-combat -Artifact <held-out-roots.bin> -Behavior <training-dir> -Output <fresh-dir> -Roots <count> -Replicates <count>
 .\learning\dev.ps1 evaluate-combat-potions -Artifact <held-out-roots.bin> -Behavior <training-dir> -Output <fresh-dir> -Roots <count> -Replicates <count>
-.\learning\dev.ps1 evaluate-run -Behavior <training-dir> -Output <fresh-dir> -Slots 4 -Attempts 8 -MaxBatchSteps 4096 -BehaviorSeed 10000 -HeldOutSeedStart 0 -RunPotionLane trained
+.\learning\dev.ps1 evaluate-run -Behavior <training-dir> -Output <fresh-dir> -Attempts 8 -MaxBatchSteps 4096 -BehaviorSeed 10000 -HeldOutSeedStart 0 -RunPotionLane trained
 .\learning\dev.ps1 evaluate-run-potions -Behavior <training-dir> -Output <fresh-dir> -Attempts 8 -MaxBatchSteps 4096 -BehaviorSeed 10000 -HeldOutSeedStart 0
-.\learning\dev.ps1 train-run -Behavior <combat-training-dir> -Output <fresh-dir> -Slots 4 -Generations 1 -AttemptsPerUpdate 8 -MaxBatchSteps 4096 -EvaluationAttempts 16 -HeldOutSeedStart 1000000 -AdvantageMode raw-return
+.\learning\dev.ps1 train-run -Behavior <combat-training-dir> -Output <fresh-dir> -Slots 4 -Generations 1 -AttemptsPerUpdate 8 -MaxBatchSteps 4096 -EvaluationAttempts 16 -HeldOutSeedStart 1000000 -AdvantageMode raw-return -RunPotionLane trained
 ```
 
 `configure` installs the tool requirements declared by the local
@@ -774,7 +774,10 @@ of the recorded facts, not proof of run-level continuation value.
 Use `evaluate-run` for the separate whole-run question. It recovers the exact
 published combat scorer, creates a fresh held-out seed population, disables
 recovery and training, and runs until the terminal-attempt target or explicit
-batch-step bound. The one completion line and `evaluation.json` report victory,
+batch-step bound. Maintained whole-run evaluation deliberately uses one slot:
+an atomic multi-slot step can finish several episodes at once and overshoot a
+requested target, invalidating floor-sum and fixed-prefix comparisons. The one
+completion line and `evaluation.json` report victory,
 defeat, terminal floor sum/range/histogram, act counts, and execution bounds.
 The same evaluation records each completed combat's start/end HP, max HP, gold,
 and concrete potion-slot identities, plus one compact summary line per observed
@@ -809,6 +812,11 @@ result on the disjoint `HELD_OUT` partition and writes a compact `summary.json`.
 A generation that
 hits `-MaxBatchSteps` before an optimizer step fails without publishing its
 partial live update.
+The default `-RunPotionLane trained` preserves the warm-start behavior's combat
+potion candidate surface for both training and held-out evaluation. This avoids
+injecting untrained potion actions at the handoff. No-potion run sessions do
+not yet support cross-process resume; this command publishes only the frozen
+behavior and fails explicitly if resume serialization is requested elsewhere.
 `-AdvantageMode raw-return` is the maintained default. The explicit
 `leave-one-out` ablation subtracts, for each attempt, the mean return of the
 other attempts in that update; it requires at least two attempts and is bound

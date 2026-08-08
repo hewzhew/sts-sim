@@ -83,6 +83,10 @@ class RunEvaluationCommandConfig:
             "slot_count",
             _positive(self.slot_count, "slot_count"),
         )
+        if self.slot_count != 1:
+            raise RunEvaluationCommandError(
+                "exact whole-run evaluation requires slot_count=1"
+            )
         object.__setattr__(
             self,
             "terminal_attempts",
@@ -150,7 +154,7 @@ def run_run_evaluation(
         CombatWinSessionLimits(),
         (config.behavior_seed,),
     )
-    potion_lane = _resolve_potion_lane(config.potion_lane, recovered)
+    potion_lane = resolve_run_potion_lane(config.potion_lane, recovered)
     schedule = SeedSchedule(
         SeedPartition.HELD_OUT,
         next_candidate=config.held_out_seed_start,
@@ -342,7 +346,7 @@ def _positive(value: object, name: str) -> int:
     return normalized
 
 
-def _resolve_potion_lane(
+def resolve_run_potion_lane(
     requested: RunPotionLane,
     recovered: PublishedCombatBehavior,
 ) -> CombatPotionLane:
@@ -394,7 +398,7 @@ def _parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--behavior", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
-    parser.add_argument("--slots", type=int, default=4)
+    parser.add_argument("--slots", type=int, default=1)
     parser.add_argument("--attempts", type=int, default=8)
     parser.add_argument("--max-batch-steps", type=int, default=4096)
     parser.add_argument("--behavior-seed", type=int, default=10_000)
