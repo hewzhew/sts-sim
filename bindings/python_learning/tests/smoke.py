@@ -478,6 +478,7 @@ def _assert_cross_process_checkpoint_bank_replays_episode_roots() -> None:
 
 
 def main() -> None:
+    assert callable(LearningBatchEnv.from_combat_root_artifact_bytes)
     schema = _SCHEMA
     assert schema["version"] == SEMANTIC_SCHEMA_VERSION
     assert schema["completeness"]["Complete"] == SEMANTIC_COMPLETE

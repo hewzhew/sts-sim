@@ -543,6 +543,7 @@ name = "sts_oracle_eval"
 version = "0.1.0"
 dependencies = [
  "blake2",
+ "rmp-serde",
  "serde",
  "serde_json",
  "sts_combat_knowledge",

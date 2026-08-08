@@ -129,6 +129,11 @@ bridge-owned frozen root context; the caller must not decode semantic feature
 numbers or copy the full combat observation into a parallel metadata schema.
 The bridge discovers all currently eligible roots in one call, so corpus
 selection does not create throwaway replicate groups or require per-slot probes.
+When production already owns a useful later combat checkpoint, the maintained
+handoff is one byte-bounded `CombatLearningRootBatchArtifactV1`, not a Python
+continuation parser or a guessed branch-capsule path. The caller reads those
+opaque bytes and constructs a fresh bridge batch with the exact expected root
+count; Rust revalidates every combat boundary and root identity first.
 Their row projection attaches all three columns to each retained replicate
 decision without choosing a training axis or scalar weighting.
 `sts_learning.combat_signals` reduces a completed group to nonzero replicate

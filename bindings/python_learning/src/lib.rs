@@ -8,8 +8,9 @@ use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyDict, PyList};
 use serde::{Deserialize, Serialize};
 use sts_oracle_eval::eval::run_control::{
-    CombatLearningRootV1, LearningActionV1, LearningEnvPoolV1, LearningEnvV1,
-    LearningBoundaryV1, LearningSelectionDraftV1, RunControlConfig, RunControlSessionCheckpointV1,
+    CombatLearningRootBatchArtifactV1, CombatLearningRootV1, LearningActionV1, LearningBoundaryV1,
+    LearningEnvPoolV1, LearningEnvV1, LearningSelectionDraftV1, RunControlConfig,
+    RunControlSessionCheckpointV1,
 };
 
 mod bridge_decision;
@@ -361,6 +362,20 @@ impl LearningBatchEnv {
             .map_err(value_error)
     }
 
+    /// Construct a fresh batch from exact production combat-root artifacts.
+    ///
+    /// Rust decodes and validates every opaque run-control checkpoint before
+    /// exposing the first slot. Python never receives simulator session data.
+    #[staticmethod]
+    #[pyo3(signature = (payload, *, expected_roots, max_bytes))]
+    fn from_combat_root_artifact_bytes(
+        payload: &[u8],
+        expected_roots: usize,
+        max_bytes: usize,
+    ) -> PyResult<Self> {
+        Self::decode_combat_root_artifact(payload, expected_roots, max_bytes).map_err(value_error)
+    }
+
     #[pyo3(signature = (dense_mask=false, semantic=false))]
     fn decision_batch<'py>(
         &self,
@@ -674,6 +689,41 @@ impl LearningBatchEnv {
 }
 
 impl LearningBatchEnv {
+    fn decode_combat_root_artifact(
+        payload: &[u8],
+        expected_roots: usize,
+        max_bytes: usize,
+    ) -> Result<Self, String> {
+        let artifact =
+            CombatLearningRootBatchArtifactV1::decode(payload, expected_roots, max_bytes)?;
+        let envs = artifact
+            .into_checkpoints()?
+            .into_iter()
+            .map(LearningEnvV1::from_checkpoint)
+            .collect::<Result<Vec<_>, _>>()?;
+        let pool = LearningEnvPoolV1::from_envs(envs).map_err(|error| error.to_string())?;
+        for slot_index in 0..pool.slot_count() {
+            if !matches!(
+                pool.boundary(slot_index),
+                Some(LearningBoundaryV1::Combat { .. })
+            ) {
+                return Err(format!(
+                    "combat learning root artifact slot {slot_index} is not at a combat boundary"
+                ));
+            }
+        }
+        let states = states_from_source(&pool)?;
+        if let Some(slot_index) = states
+            .iter()
+            .position(|state| !matches!(state, BridgeSlotState::Root))
+        {
+            return Err(format!(
+                "combat learning root artifact slot {slot_index} is not at an undecoded root"
+            ));
+        }
+        Ok(Self { pool, states })
+    }
+
     fn restore_slot_checkpoint(
         &mut self,
         slot_index: usize,
@@ -1063,8 +1113,8 @@ fn _native(module: &Bound<'_, PyModule>) -> PyResult<()> {
 mod checkpoint_tests {
     use sts_oracle_eval::content::cards::CardId;
     use sts_oracle_eval::eval::run_control::{
-        LearningEnvV1, LearningModelChoiceV1, LearningModelDecisionV1, LearningSelectionStepV1,
-        RunControlSession,
+        CombatLearningRootBatchArtifactV1, LearningEnvV1, LearningModelChoiceV1,
+        LearningModelDecisionV1, LearningSelectionStepV1, RunControlSession,
     };
     use sts_oracle_eval::runtime::combat::CombatCard;
     use sts_oracle_eval::state::core::{
@@ -1255,5 +1305,41 @@ mod checkpoint_tests {
             1024 * 1024,
         )
         .is_err());
+    }
+
+    #[test]
+    fn production_combat_root_artifact_constructs_fresh_bridge_batch() {
+        let mut session = RunControlSession::new(RunControlConfig::default());
+        let choice =
+            PendingChoice::DiscoverySelect(sts_oracle_eval::state::core::DiscoveryChoiceState {
+                cards: vec![CardId::Bash, CardId::FiendFire],
+                colorless: false,
+                card_type: None,
+                amount: 1,
+                can_skip: true,
+            });
+        session.engine_state = EngineState::PendingChoice(choice.clone());
+        session.active_combat = Some(ActiveCombat::new(
+            EngineState::PendingChoice(choice),
+            sts_oracle_eval::test_support::blank_test_combat(),
+            CombatContext::Room(RoomCombatContext {
+                room_type: RoomType::MonsterRoom,
+            }),
+        ));
+        let artifact = CombatLearningRootBatchArtifactV1::from_checkpoints([
+            RunControlSessionCheckpointV1::from_session(&session),
+        ])
+        .expect("capture production combat root");
+        let payload = artifact.encode(1024 * 1024).expect("encode artifact");
+        let restored = LearningBatchEnv::decode_combat_root_artifact(&payload, 1, 1024 * 1024)
+            .expect("construct bridge batch");
+
+        assert_eq!(restored.pool.slot_count(), 1);
+        assert!(matches!(restored.states[0], BridgeSlotState::Root));
+        assert!(matches!(
+            restored.pool.boundary(0),
+            Some(LearningBoundaryV1::Combat { .. })
+        ));
+        assert!(LearningBatchEnv::decode_combat_root_artifact(&payload, 2, 1024 * 1024).is_err());
     }
 }

@@ -624,6 +624,21 @@ Configure one stable Python 3.12 training runtime once, then use the small
 .\learning\dev.ps1 verify -MaturinPython <python-with-maturin>
 ```
 
+To seed a bounded learning corpus from production-owned later combat
+boundaries, convert one or more public continuations into a fresh opaque root
+batch. Every continuation must already be at an active combat input boundary;
+private capsule/cutpoint schemas are not accepted:
+
+```powershell
+cargo oracle-lab export-learning-roots --continuation <first.continuation.json> --continuation <second.continuation.json> --output <fresh.combat-roots.bin> --max-bytes 16777216
+```
+
+Pass the file bytes unchanged to
+`LearningBatchEnv.from_combat_root_artifact_bytes(payload,
+expected_roots=2, max_bytes=16777216)`. Rust validates the exact root count,
+canonical envelope, recomputed root identity/context, and current combat
+boundary before constructing the batch. Python must not inspect the payload.
+
 `test` requires PyTorch and the installed bridge and runs the complete learning
 suite; missing training dependencies are failures, not skips. `verify` runs
 that suite and then invokes `bindings/python_learning/verify.ps1` for the fresh

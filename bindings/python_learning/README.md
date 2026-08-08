@@ -105,6 +105,14 @@ the context is not copied into every decision row.
 combat root as `(slot_index, context)` pairs in one call without constructing a
 replicate group. Callers can therefore select a small corpus before paying the
 session-clone cost of `combat_group`.
+A fresh batch may instead start from exact later-run combat boundaries via
+`LearningBatchEnv.from_combat_root_artifact_bytes(payload,
+expected_roots=..., max_bytes=...)`. The payload is the versioned opaque batch
+written by `cargo oracle-lab export-learning-roots`; Rust checks its byte bound,
+exact root count, canonical encoding, unique root identities, recomputed root
+identity/context, and active combat boundary before exposing any slot. Python
+never parses a production continuation or simulator checkpoint. Private branch
+cutpoint files are intentionally not accepted.
 Every combat step repeats the exact root id and combat-state hash. Its newly
 terminal rows have no run reward fields: they return aligned terminal kind,
 bridge-owned win, HP, turn, potion, and card-play columns from

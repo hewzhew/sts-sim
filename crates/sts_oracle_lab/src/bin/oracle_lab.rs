@@ -35,6 +35,7 @@ mod exact_turn_corridor;
 mod guidance_artifact_commands;
 mod guidance_combination_audit;
 mod historical_combat_export;
+mod learning_root_commands;
 mod oracle_budget_cli;
 mod oracle_case_catalog_v2;
 mod oracle_cli;
@@ -141,6 +142,15 @@ fn main() -> Result<(), String> {
             output,
         } => print_json(&run_witness_commands::export_continuation(
             &workspace, node, &output,
+        )?),
+        Command::ExportLearningRoots {
+            continuation,
+            output,
+            max_bytes,
+        } => print_json(&learning_root_commands::export(
+            &continuation,
+            &output,
+            max_bytes,
         )?),
         Command::CompactWorkspace {
             workspace,

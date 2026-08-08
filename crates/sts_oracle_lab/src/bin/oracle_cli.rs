@@ -99,6 +99,16 @@ pub(super) enum Command {
         #[arg(long)]
         output: PathBuf,
     },
+    /// Convert exact production continuations at combat boundaries into one
+    /// bounded opaque root batch for the Python learning bridge.
+    ExportLearningRoots {
+        #[arg(long, required = true)]
+        continuation: Vec<PathBuf>,
+        #[arg(long)]
+        output: PathBuf,
+        #[arg(long, default_value_t = 16 * 1024 * 1024)]
+        max_bytes: usize,
+    },
     /// Create a fresh one-node workspace from an exact committed node.
     /// The source workspace is never modified and the output must not exist.
     CompactWorkspace {

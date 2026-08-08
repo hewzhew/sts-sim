@@ -195,6 +195,16 @@ The source batch can enumerate all current undecoded combat roots and their
 frozen contexts in one call without creating replicate groups or cloning their
 sessions; only caller-selected roots pay group construction cost.
 
+Production runs may hand later combat boundaries to this bridge only through
+the versioned `CombatLearningRootBatchArtifactV1` envelope owned by run control.
+The production-side exporter decodes a public continuation and contributes its
+exact session checkpoint; the shared eval layer independently recomputes and
+binds the combat-root identity and compact context. Bridge import is
+caller-byte-bounded, validates every root and exact root count before creating
+the pool, and exposes no session fields to Python. The bridge does not depend
+on runtime artifact types, guess continuation JSON fields, or read private
+branch cutpoint schemas.
+
 Terminal learning steps retain the typed run result plus public terminal act,
 floor, HP, max HP, and gold. The Python bridge returns those facts as compact
 columns aligned only to terminal slots. They are outcome evidence for progress
