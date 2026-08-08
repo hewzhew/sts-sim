@@ -117,7 +117,7 @@ class BoundedCombatWinGenerationRunnerTests(unittest.TestCase):
             self.assertFalse(result.promoted)
             self.assertEqual(
                 result.training.status,
-                CombatWinTrainingStatus.NO_WIN_SIGNAL,
+                CombatWinTrainingStatus.NO_OBJECTIVE_SIGNAL,
             )
             self.assertFalse(result.signals.win.has_signal)
             self.assertEqual(owners.trainer.snapshot.optimizer_steps, 0)

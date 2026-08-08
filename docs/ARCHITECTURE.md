@@ -257,18 +257,21 @@ transitions all have mandatory hard limits; a batch that would exceed memory
 fails before environment mutation. Partial groups are never delivered as
 completed training experience.
 The first maintained differentiable combat objective consumes only complete
-same-root groups and only their leave-one-out win axis. Groups have equal total
-weight, replicates have equal total weight inside a group regardless of combat
-length, and each replicate divides its weight across its own retained
-decisions. The objective rechecks exact behavior manifests and recorded
-selection propensities against the scorer in one concatenated model call. HP
-and potion-retention axes remain typed evidence but do not enter this loss; a
-group with no win-axis variation therefore has exactly zero win gradient.
+same-root groups and selects one leave-one-out axis per root. A group with any
+win/loss variation uses only its win axis. Once every replicate wins, the group
+may instead use terminal-HP ratio so early combats keep learning resource
+preservation after survival is solved. All-loss groups remain no-signal, and
+potion retention remains typed evidence outside the loss; HP is therefore not
+traded against either survival or potions. Groups have equal total weight,
+replicates have equal total weight inside a group regardless of combat length,
+and each replicate divides its weight across its own retained decisions. The
+objective rechecks exact behavior manifests and recorded selection propensities
+against the scorer in one concatenated model call.
 The synchronous combat-win trainer has its own objective configuration and
 trainer provenance; it cannot reuse a terminal floor-return behavior manifest.
-Each delivery contains exactly the declared number of complete groups. No win
-signal skips backward and optimizer mutation, while a nonzero win signal whose
-policy gradient is exactly zero also cannot claim a training step. Only one
+Each delivery contains exactly the declared number of complete groups. No
+selected-axis signal skips backward and optimizer mutation, while a nonzero
+signal whose policy gradient is exactly zero also cannot claim a training step. Only one
 finite, nonzero-gradient optimizer update increments the combat training step;
 the trainer retains scalar counters and bounded identity evidence rather than
 completed combat payloads.
@@ -288,7 +291,7 @@ The compact combat session factory is the maintained artifact-to-runner
 composition. Its bridge adapter exposes only the installed semantic schema and
 the byte-bounded opaque combat-root artifact loader. Configuration binds the
 expected root count, selected root slot, replicate count, relation-aware scorer,
-categorical behavior, Adam optimizer, one-group win objective, experience and
+categorical behavior, Adam optimizer, one-group win-first objective, experience and
 concat limits, CPU device, and immutable-store capacity. Creating generation
 zero imports and validates the artifact before constructing one exact owner
 chain; callers do not manually assemble a registry, publisher, controller, or

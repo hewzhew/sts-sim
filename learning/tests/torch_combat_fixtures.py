@@ -109,6 +109,8 @@ def combat_group_experience_fixture(
     *,
     wins: tuple[bool, bool],
     first_probability: SelectionProbability | None = None,
+    final_hps: tuple[int, int] | None = None,
+    potions_used: tuple[int, int] = (0, 1),
 ) -> CompletedCombatGroupExperience:
     first = CombatDecisionExperienceBatch(
         sequence_index=0,
@@ -139,16 +141,23 @@ def combat_group_experience_fixture(
         decision_count=1,
         payload_bytes=1,
     )
+    if final_hps is None:
+        final_hps = (70 if wins[0] else 0, 10 if wins[1] else 0)
     outcomes = CompletedCombatGroup(
         root_id=ROOT_ID,
         exact_combat_state_hash=COMBAT_HASH,
         outcomes=(
-            _outcome(0, wins[0], final_hp=70, potions_used=0),
+            _outcome(
+                0,
+                wins[0],
+                final_hp=final_hps[0],
+                potions_used=potions_used[0],
+            ),
             _outcome(
                 1,
                 wins[1],
-                final_hp=10 if wins[1] else 0,
-                potions_used=1,
+                final_hp=final_hps[1],
+                potions_used=potions_used[1],
             ),
         ),
     )

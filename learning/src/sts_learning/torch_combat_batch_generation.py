@@ -98,9 +98,27 @@ class CombatWinBatchGenerationResult:
             raise TorchCombatBatchGenerationError(
                 "combat batch generation decision count is misaligned"
             )
-        if sum(root.signals.win.has_signal for root in roots) != self.training.signal_group_count:
+        win_signal_groups = sum(root.signals.win.has_signal for root in roots)
+        terminal_hp_signal_groups = sum(
+            not root.signals.win.has_signal
+            and root.wins == root.replicate_count
+            and root.signals.terminal_hp.has_signal
+            for root in roots
+        )
+        if win_signal_groups != self.training.win_signal_group_count:
             raise TorchCombatBatchGenerationError(
                 "combat batch generation win signal count is misaligned"
+            )
+        if terminal_hp_signal_groups != self.training.terminal_hp_signal_group_count:
+            raise TorchCombatBatchGenerationError(
+                "combat batch generation terminal-HP signal count is misaligned"
+            )
+        if (
+            win_signal_groups + terminal_hp_signal_groups
+            != self.training.signal_group_count
+        ):
+            raise TorchCombatBatchGenerationError(
+                "combat batch generation selected signal count is misaligned"
             )
         if self.promotion is not None and not isinstance(
             self.promotion,

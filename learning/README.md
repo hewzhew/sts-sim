@@ -142,16 +142,18 @@ decision without choosing a training axis or scalar weighting.
 `sts_learning.torch_outcomes.on_policy_combat_win_loss` is the first narrow
 training consumer. It batches complete distinct-root groups into one scorer
 call, verifies their exact behavior manifests and sampled propensities, and
-uses only the same-root leave-one-out win advantage. Every replicate contributes
-equal total weight regardless of how many decisions it needed. HP and potion
-advantages remain excluded, so an all-win or all-loss group produces zero win
-gradient rather than a hidden resource tradeoff.
+selects one same-root advantage axis lexicographically. Any mixed win/loss
+group uses only win advantage; an all-win group may use terminal-HP advantage
+so solved early combats continue learning resource preservation. All-loss
+groups remain no-signal, and potion retention stays excluded rather than being
+silently exchanged for HP. Every replicate contributes equal total weight
+regardless of how many decisions it needed.
 `sts_learning.torch_combat_training.SynchronousCombatWinTrainer` gives this
 objective a separate provenance identity and consumes exactly the configured
-number of complete groups. No win signal and exactly zero policy gradient are
-typed no-update results; only a finite nonzero gradient performs one optimizer
-step. The trainer retains counters and bounded identity evidence, not group
-payloads.
+number of complete groups. No selected-axis signal and exactly zero policy
+gradient are typed no-update results; only a finite nonzero gradient performs
+one optimizer step. The trainer retains separate win/HP signal counters and
+bounded identity evidence, not group payloads.
 `sts_learning.torch_combat_generation.BoundedCombatWinGenerationRunner` is the
 first bounded live composition. It fixes one exact source root, requires one
 group per update, validates the scorer/optimizer/registry/controller chain, and
@@ -159,7 +161,7 @@ keeps behavior frozen for the complete group. Only a real optimizer step is
 promoted. A temporary promotion failure retains one compact pending result and
 retries it before requesting another group, while root drift fails before any
 new policy or environment mutation. The runner does not yet own cross-root
-scheduling, durable combat-training resume, or an HP/potion objective.
+scheduling, durable combat-training resume, or a scalar HP/potion objective.
 Each generation result carries the completed group's compact three-axis signal
 summary after its bounded experience has been consumed. Cross-root diagnostics
 can therefore build the existing bounded census without retaining or reopening
@@ -174,7 +176,7 @@ discarded, and nothing is published. The runner measures whether diverse roots
 provide win, HP, or potion signal—it does not train one behavior across roots.
 `sts_learning.torch_combat_batch_session.CombatWinBatchSessionFactory` owns the
 first bounded shared update. Its config requires the artifact root count to
-equal the win objective's exact group delivery width without exceeding a
+equal the win-first objective's exact group delivery width without exceeding a
 separate explicit root bound. One artifact import constructs one mutable shadow
 model, one active frozen controller, one trainer, and one independent
 caller-seeded behavior stream per root. Every root finishes under the same

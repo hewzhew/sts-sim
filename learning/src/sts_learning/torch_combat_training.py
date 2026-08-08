@@ -1,4 +1,4 @@
-"""Synchronous optimizer owner for same-root combat win learning."""
+"""Synchronous optimizer owner for same-root win-first combat learning."""
 
 from __future__ import annotations
 
@@ -24,11 +24,11 @@ from .torch_policy import RaggedCategoricalPolicyConfig
 
 
 class TorchCombatTrainingError(RuntimeError):
-    """A combat-win update cannot safely commit."""
+    """A win-first combat update cannot safely commit."""
 
 
 class CombatWinTrainingStatus(IntEnum):
-    NO_WIN_SIGNAL = 0
+    NO_OBJECTIVE_SIGNAL = 0
     ZERO_POLICY_GRADIENT = 1
     OPTIMIZER_STEP = 2
 
@@ -38,6 +38,8 @@ class CombatWinTrainingResult:
     status: CombatWinTrainingStatus
     group_count: int
     signal_group_count: int
+    win_signal_group_count: int
+    terminal_hp_signal_group_count: int
     replicate_count: int
     decision_count: int
     loss: float
@@ -54,6 +56,8 @@ class SynchronousCombatWinTrainerSnapshot:
     optimizer_steps: int
     completed_groups: int
     signal_groups: int
+    win_signal_groups: int
+    terminal_hp_signal_groups: int
     no_update_deliveries: int
     trained_replicates: int
     trained_decisions: int
@@ -107,6 +111,8 @@ class SynchronousCombatWinTrainer:
         self._optimizer_steps = 0
         self._completed_groups = 0
         self._signal_groups = 0
+        self._win_signal_groups = 0
+        self._terminal_hp_signal_groups = 0
         self._no_update_deliveries = 0
         self._trained_replicates = 0
         self._trained_decisions = 0
@@ -124,6 +130,8 @@ class SynchronousCombatWinTrainer:
             optimizer_steps=self._optimizer_steps,
             completed_groups=self._completed_groups,
             signal_groups=self._signal_groups,
+            win_signal_groups=self._win_signal_groups,
+            terminal_hp_signal_groups=self._terminal_hp_signal_groups,
             no_update_deliveries=self._no_update_deliveries,
             trained_replicates=self._trained_replicates,
             trained_decisions=self._trained_decisions,
@@ -159,17 +167,17 @@ class SynchronousCombatWinTrainer:
         )
         if objective.value.ndim != 0 or not objective.value.requires_grad:
             raise TorchCombatTrainingError(
-                "combat win objective must be a differentiable scalar"
+                "combat win-first objective must be a differentiable scalar"
             )
         loss = float(objective.value.detach().item())
         if not math.isfinite(loss):
-            raise TorchCombatTrainingError("combat win loss must be finite")
+            raise TorchCombatTrainingError("combat win-first loss must be finite")
 
         if objective.signal_group_count == 0:
             return self._finish(
                 objective,
                 loss,
-                CombatWinTrainingStatus.NO_WIN_SIGNAL,
+                CombatWinTrainingStatus.NO_OBJECTIVE_SIGNAL,
                 started,
             )
 
@@ -223,6 +231,8 @@ class SynchronousCombatWinTrainer:
         self._deliveries += 1
         self._completed_groups += objective.group_count
         self._signal_groups += objective.signal_group_count
+        self._win_signal_groups += objective.win_signal_group_count
+        self._terminal_hp_signal_groups += objective.terminal_hp_signal_group_count
         self._no_update_deliveries += int(
             status is not CombatWinTrainingStatus.OPTIMIZER_STEP
         )
@@ -235,6 +245,8 @@ class SynchronousCombatWinTrainer:
             status=status,
             group_count=objective.group_count,
             signal_group_count=objective.signal_group_count,
+            win_signal_group_count=objective.win_signal_group_count,
+            terminal_hp_signal_group_count=objective.terminal_hp_signal_group_count,
             replicate_count=objective.replicate_count,
             decision_count=objective.decision_count,
             loss=loss,

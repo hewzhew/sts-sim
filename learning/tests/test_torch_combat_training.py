@@ -81,26 +81,48 @@ class SynchronousCombatWinTrainerTests(unittest.TestCase):
         self.assertEqual(snapshot.optimizer_steps, 1)
         self.assertEqual(snapshot.completed_groups, 1)
         self.assertEqual(snapshot.signal_groups, 1)
+        self.assertEqual(snapshot.win_signal_groups, 1)
+        self.assertEqual(snapshot.terminal_hp_signal_groups, 0)
         self.assertEqual(snapshot.no_update_deliveries, 0)
         self.assertEqual(snapshot.trained_replicates, 2)
         self.assertEqual(snapshot.trained_decisions, 3)
         self.assertFalse(snapshot.poisoned)
 
-    def test_no_win_signal_does_not_touch_optimizer_or_claim_a_step(self) -> None:
+    def test_no_objective_signal_does_not_touch_optimizer_or_claim_a_step(self) -> None:
         scorer = _VectorScorer()
         trainer = self._trainer(scorer)
         before = scorer.values.detach().clone()
 
         result = trainer.train(
-            (combat_group_experience_fixture(self.manifest_id, wins=(True, True)),)
+            (
+                combat_group_experience_fixture(
+                    self.manifest_id,
+                    wins=(True, True),
+                    final_hps=(70, 70),
+                ),
+            )
         )
 
-        self.assertEqual(result.status, CombatWinTrainingStatus.NO_WIN_SIGNAL)
+        self.assertEqual(result.status, CombatWinTrainingStatus.NO_OBJECTIVE_SIGNAL)
         self.assertFalse(result.updated)
         self.assertEqual(result.optimizer_steps_after, 0)
         torch.testing.assert_close(scorer.values.detach(), before)
         self.assertEqual(trainer.snapshot.no_update_deliveries, 1)
         self.assertEqual(trainer.snapshot.trained_decisions, 0)
+
+    def test_all_win_hp_signal_commits_an_optimizer_step(self) -> None:
+        scorer = _VectorScorer()
+        trainer = self._trainer(scorer)
+
+        result = trainer.train(
+            (combat_group_experience_fixture(self.manifest_id, wins=(True, True)),)
+        )
+
+        self.assertEqual(result.status, CombatWinTrainingStatus.OPTIMIZER_STEP)
+        self.assertEqual(result.win_signal_group_count, 0)
+        self.assertEqual(result.terminal_hp_signal_group_count, 1)
+        self.assertEqual(trainer.snapshot.win_signal_groups, 0)
+        self.assertEqual(trainer.snapshot.terminal_hp_signal_groups, 1)
 
     def test_win_signal_with_zero_policy_gradient_does_not_claim_a_step(self) -> None:
         scorer = _VectorScorer(zero_gradient=True)

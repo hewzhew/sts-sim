@@ -34,8 +34,8 @@ _SEMANTIC_SCHEMA_ENCODING_VERSION = 1
 _OPTIMIZER_CONFIG_VERSION = 1
 _TRAINER_IMPLEMENTATION_VERSION = 2
 _TERMINAL_RETURN_CONFIG_VERSION = 1
-_COMBAT_WIN_TRAINER_IMPLEMENTATION_VERSION = 1
-_COMBAT_WIN_OBJECTIVE_VERSION = 1
+_COMBAT_WIN_TRAINER_IMPLEMENTATION_VERSION = 2
+_COMBAT_WIN_OBJECTIVE_VERSION = 2
 _MAX_SCHEMA_BYTES = 1 << 20
 _MAX_SCHEMA_DEPTH = 16
 _MAX_SCHEMA_ITEMS = 100_000
@@ -251,15 +251,15 @@ def categorical_trainer_implementation(
 def combat_win_trainer_implementation(
     objective_config: CombatWinObjectiveConfig,
 ) -> ManifestArtifactId:
-    """Bind same-root leave-one-out wins and the exact group update width."""
+    """Bind same-root win-first/HP-fallback learning and update width."""
 
     if not isinstance(objective_config, CombatWinObjectiveConfig):
         raise TorchProvenanceError("combat objective_config must be typed")
     return ManifestArtifactId.from_content(
         ManifestArtifactKind.TRAINER_IMPLEMENTATION,
-        b"STS-SYNCHRONOUS-COMBAT-WIN-POLICY-TRAINER\x00"
+        b"STS-SYNCHRONOUS-COMBAT-WIN-FIRST-POLICY-TRAINER\x00"
         + struct.pack(">I", _COMBAT_WIN_TRAINER_IMPLEMENTATION_VERSION)
-        + b"STS-SAME-ROOT-LEAVE-ONE-OUT-WIN\x00"
+        + b"STS-SAME-ROOT-WIN-THEN-TERMINAL-HP\x00"
         + struct.pack(
             ">IQ",
             _COMBAT_WIN_OBJECTIVE_VERSION,

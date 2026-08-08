@@ -50,11 +50,18 @@ class OnPolicyTerminalLoss:
 
 @dataclass(frozen=True)
 class OnPolicyCombatWinLoss:
-    """One win-axis combat loss without an HP/potion exchange rate."""
+    """One win-first combat loss without an HP/potion exchange rate.
+
+    A root with mixed wins and losses uses only win advantage.  An all-win
+    root may instead use terminal-HP advantage, so solved early combats keep
+    learning resource preservation.  Potion retention remains evidence only.
+    """
 
     value: Tensor
     group_count: int
     signal_group_count: int
+    win_signal_group_count: int
+    terminal_hp_signal_group_count: int
     replicate_count: int
     decision_count: int
     behavior_manifest_ids: tuple[BehaviorManifestId, ...]
@@ -167,12 +174,14 @@ def on_policy_combat_win_loss(
     concat_limits: SemanticBatchConcatLimits,
     policy_config: RaggedCategoricalPolicyConfig,
 ) -> OnPolicyCombatWinLoss:
-    """Apply same-root leave-one-out win advantages to sampled combat choices.
+    """Apply same-root lexicographic win-then-HP advantages.
 
     Every group has equal total weight. Inside a group, every replicate has
     equal total weight regardless of combat length, and its weight is split
-    equally across only that replicate's retained decisions. Terminal HP and
-    potion-retention advantages are deliberately absent from this objective.
+    equally across only that replicate's retained decisions. A group with any
+    win variation uses only win advantage. An all-win group uses terminal HP
+    when that axis varies. Potion retention is deliberately absent, so there
+    is no HP/potion exchange rate.
     """
 
     if not callable(scorer):
@@ -204,7 +213,8 @@ def on_policy_combat_win_loss(
     weights: list[float] = []
     total_replicates = 0
     total_decisions = 0
-    signal_groups = 0
+    win_signal_groups = 0
+    terminal_hp_signal_groups = 0
 
     for group in normalized:
         if not isinstance(group, CompletedCombatGroupExperience):
@@ -225,6 +235,17 @@ def on_policy_combat_win_loss(
             )
 
         advantages = group.grouped_advantages()
+        if advantages.win_has_signal:
+            selected_advantages = advantages.win
+            win_signal_groups += 1
+        elif (
+            all(outcome.won for outcome in group.outcomes.outcomes)
+            and advantages.terminal_hp_has_signal
+        ):
+            selected_advantages = advantages.terminal_hp
+            terminal_hp_signal_groups += 1
+        else:
+            selected_advantages = advantages.win
         replicate_count = len(group.outcomes.outcomes)
         decision_counts = [0] * replicate_count
         group_probabilities: list[SelectionProbability] = []
@@ -242,7 +263,7 @@ def on_policy_combat_win_loss(
             selected_ordinals.extend(batch.selected_ordinals)
             group_probabilities.extend(batch.selection_probabilities)
             for replicate_index in batch.replicate_indices:
-                targets.append(advantages.win[replicate_index])
+                targets.append(selected_advantages[replicate_index])
                 weights.append(
                     1.0
                     / (
@@ -255,7 +276,6 @@ def on_policy_combat_win_loss(
         probability_evidence.append(tuple(group_probabilities))
         total_replicates += replicate_count
         total_decisions += group.decision_count
-        signal_groups += int(advantages.win_has_signal)
 
     value = _on_policy_weighted_loss(
         scorer=scorer,
@@ -270,12 +290,14 @@ def on_policy_combat_win_loss(
         weights=weights,
         concat_limits=concat_limits,
         policy_config=policy_config,
-        objective_name="combat win",
+        objective_name="combat win-first",
     )
     return OnPolicyCombatWinLoss(
         value=value,
         group_count=len(normalized),
-        signal_group_count=signal_groups,
+        signal_group_count=win_signal_groups + terminal_hp_signal_groups,
+        win_signal_group_count=win_signal_groups,
+        terminal_hp_signal_group_count=terminal_hp_signal_groups,
         replicate_count=total_replicates,
         decision_count=total_decisions,
         behavior_manifest_ids=tuple(behavior_ids),

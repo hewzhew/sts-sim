@@ -12,7 +12,7 @@ class CombatObjectiveError(ValueError):
 
 @dataclass(frozen=True)
 class CombatWinObjectiveConfig:
-    """Exact number of distinct-root groups consumed by one update attempt."""
+    """Exact width of the win-first, all-win-HP combat objective."""
 
     groups_per_update: int = 1
 
