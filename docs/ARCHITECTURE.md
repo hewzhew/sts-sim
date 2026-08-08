@@ -310,6 +310,19 @@ root owns an isolated temporary trainer; any local update is discarded after
 its compact generation result is captured, and no behavior is published. This
 measures signal coverage and is not a shared cross-root training scheduler.
 
+The bounded combat batch generation runner is the first shared cross-root
+training owner. Every update forks the same active frozen scorer and manifest
+onto one distinct caller-seeded RNG stream per exact root. It collects all
+complete groups before calling the synchronous trainer, whose objective gives
+every distinct root equal total weight. Collection failure restores every
+behavior RNG and performs no trainer or controller mutation. A completed
+delivery attempts at most one optimizer step and one live promotion; a
+temporary promotion failure retains only the compact batch result and retries
+promotion without collecting or training again. The compact batch session
+imports the opaque artifact once and owns this complete graph. It is not a
+held-out evaluator, curriculum, durable training-resume protocol, or evidence
+that an update improved play.
+
 Python recovery curricula may hold explicit opaque single-slot checkpoints.
 Saving one clones that exact in-memory run-control state only when requested;
 restoring it also restores any unfinished symbolic decoder or already selected

@@ -555,6 +555,24 @@ class CategoricalTorchBehaviorController:
             self._policy.binding,
         )
 
+    def fork_active(
+        self,
+        generator: torch.Generator,
+    ) -> FrozenCategoricalTorchPolicy:
+        """Bind the active frozen scorer to one independent random stream."""
+
+        if self._policy is None:
+            raise TorchBehaviorError("categorical behavior controller is inactive")
+        _validate_categorical_inputs(self.config, generator)
+        _require_generator_device(self._policy.frozen_scorer, generator)
+        return FrozenCategoricalTorchPolicy(
+            self._policy.frozen_scorer,
+            self._policy.binding,
+            self.config,
+            generator,
+            _token=_PROMOTION_TOKEN,
+        )
+
     def recover_and_promote(
         self,
         manifest_id: BehaviorManifestId,

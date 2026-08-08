@@ -130,7 +130,16 @@ class CombatWinSignalCensusRunner:
             _torch_seed(seed, f"behavior_seeds[{index}]")
             for index, seed in enumerate(seeds)
         )
-        source = _combat_root_source(self.bridge, self.config, artifact)
+        if len(set(seeds)) != len(seeds):
+            raise TorchCombatSessionError(
+                "combat signal census requires distinct behavior seeds"
+            )
+        source = _combat_root_source(
+            self.bridge,
+            artifact,
+            expected_roots=self.config.expected_roots,
+            max_bytes=self.config.limits.max_artifact_bytes,
+        )
 
         generations = []
         with tempfile.TemporaryDirectory(prefix="sts-combat-signal-census-") as root:

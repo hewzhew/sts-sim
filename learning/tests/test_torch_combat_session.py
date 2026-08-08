@@ -155,8 +155,10 @@ class CombatWinSessionTests(unittest.TestCase):
         with self.assertRaisesRegex(TorchCombatSessionError, "two replicates"):
             CombatWinSessionConfig(replicate_count=1)
         with self.assertRaisesRegex(TorchCombatSessionError, "one group"):
-            CombatWinSessionProfile(
-                objective=CombatWinObjectiveConfig(groups_per_update=2)
+            CombatWinSessionConfig(
+                profile=CombatWinSessionProfile(
+                    objective=CombatWinObjectiveConfig(groups_per_update=2)
+                )
             )
         with self.assertRaisesRegex(TorchCombatSessionError, "relation-aware"):
             CombatWinSessionProfile(

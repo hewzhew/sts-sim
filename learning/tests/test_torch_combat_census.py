@@ -109,6 +109,12 @@ class CombatWinSignalCensusRunnerTests(unittest.TestCase):
                 model_seed=41,
                 behavior_seeds=(92, True),
             )
+        with self.assertRaisesRegex(TorchCombatSessionError, "distinct"):
+            runner.run_from_artifact_bytes(
+                b"opaque-two-root-artifact",
+                model_seed=41,
+                behavior_seeds=(92, 92),
+            )
         self.assertEqual(loader_calls, 0)
 
 

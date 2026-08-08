@@ -172,6 +172,18 @@ is imported once and every slot selects from that shared typed source; slot-loca
 trainers and stores live only in temporary directories, their updates are
 discarded, and nothing is published. The runner measures whether diverse roots
 provide win, HP, or potion signal—it does not train one behavior across roots.
+`sts_learning.torch_combat_batch_session.CombatWinBatchSessionFactory` owns the
+first bounded shared update. Its config requires the artifact root count to
+equal the win objective's exact group delivery width without exceeding a
+separate explicit root bound. One artifact import constructs one mutable shadow
+model, one active frozen controller, one trainer, and one independent
+caller-seeded behavior stream per root. Every root finishes under the same
+behavior manifest before the trainer sees any group; distinct roots receive
+equal objective weight. Collection failure restores all behavior RNG streams
+without training, an all-no-signal delivery preserves the active behavior, and
+a real optimizer step can cause only one live promotion. A temporary promotion
+failure retries only that promotion. This session owns no held-out evaluation,
+curriculum, durable optimizer resume, or claim that the new behavior is better.
 `sts_learning.torch_combat_session.CombatWinSessionFactory` removes the manual
 owner wiring around that runner. It accepts only a byte-bounded opaque
 production root artifact (or its file), an exact root count and selected slot,

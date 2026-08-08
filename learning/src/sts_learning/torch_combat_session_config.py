@@ -90,10 +90,6 @@ class CombatWinSessionProfile:
             raise TorchCombatSessionError("combat session optimizer must be typed")
         if not isinstance(self.objective, CombatWinObjectiveConfig):
             raise TorchCombatSessionError("combat session objective must be typed")
-        if self.objective.groups_per_update != 1:
-            raise TorchCombatSessionError(
-                "fixed-root combat session requires one group per update"
-            )
         if self.device_type != "cpu":
             raise TorchCombatSessionError(
                 "the first maintained combat session supports only cpu"
@@ -184,10 +180,61 @@ class CombatWinSessionConfig:
             )
         if not isinstance(self.profile, CombatWinSessionProfile):
             raise TorchCombatSessionError("combat session profile must be typed")
+        if self.profile.objective.groups_per_update != 1:
+            raise TorchCombatSessionError(
+                "fixed-root combat session requires one group per update"
+            )
         if not isinstance(self.limits, CombatWinSessionLimits):
             raise TorchCombatSessionError("combat session limits must be typed")
         object.__setattr__(self, "expected_roots", expected)
         object.__setattr__(self, "root_slot_index", slot)
+        object.__setattr__(self, "replicate_count", replicates)
+
+
+@dataclass(frozen=True)
+class CombatWinBatchSessionConfig:
+    """Exact multi-root delivery width, algorithm, and resource bounds."""
+
+    expected_roots: int
+    max_roots: int
+    replicate_count: int = 8
+    profile: CombatWinSessionProfile = field(
+        default_factory=CombatWinSessionProfile
+    )
+    limits: CombatWinSessionLimits = field(
+        default_factory=CombatWinSessionLimits
+    )
+
+    def __post_init__(self) -> None:
+        expected = _positive_integer(self.expected_roots, "expected_roots")
+        root_bound = _positive_integer(self.max_roots, "max_roots")
+        replicates = _positive_integer(self.replicate_count, "replicate_count")
+        if expected < 2:
+            raise TorchCombatSessionError(
+                "combat batch session requires at least two roots"
+            )
+        if expected > root_bound:
+            raise TorchCombatSessionError(
+                "combat batch session expected roots exceed max_roots"
+            )
+        if replicates < 2:
+            raise TorchCombatSessionError(
+                "combat batch session requires at least two replicates"
+            )
+        if not isinstance(self.profile, CombatWinSessionProfile):
+            raise TorchCombatSessionError(
+                "combat batch session profile must be typed"
+            )
+        if self.profile.objective.groups_per_update != expected:
+            raise TorchCombatSessionError(
+                "combat batch roots must equal groups_per_update"
+            )
+        if not isinstance(self.limits, CombatWinSessionLimits):
+            raise TorchCombatSessionError(
+                "combat batch session limits must be typed"
+            )
+        object.__setattr__(self, "expected_roots", expected)
+        object.__setattr__(self, "max_roots", root_bound)
         object.__setattr__(self, "replicate_count", replicates)
 
 

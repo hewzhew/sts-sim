@@ -665,6 +665,17 @@ census bound. It returns compact per-root generations and a signal census,
 imports the opaque batch only once, publishes nothing, and is not a cross-root
 training scheduler.
 
+For one bounded shared update, construct
+`CombatWinBatchSessionFactory` with a `CombatWinBatchSessionConfig` whose
+`expected_roots` exactly equals `profile.objective.groups_per_update` and does
+not exceed the separately declared `max_roots`. Pass one distinct explicit
+behavior seed per root. `advance()` loads no additional artifact, collects every
+root under the same frozen manifest, attempts one group-balanced optimizer
+update, and promotes at most once. It writes nothing;
+`publish_active_behavior()` is the only durable publication boundary. Treat the
+returned loss and promotion as training accounting, not held-out evidence of
+improvement.
+
 `test` requires PyTorch and the installed bridge and runs the complete learning
 suite; missing training dependencies are failures, not skips. `verify` runs
 that suite and then invokes `bindings/python_learning/verify.ps1` for the fresh

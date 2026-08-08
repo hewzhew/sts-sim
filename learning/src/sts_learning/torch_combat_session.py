@@ -5,29 +5,20 @@ from __future__ import annotations
 import operator
 from pathlib import Path
 
-import torch
-
-from .manifest_catalog import BoundedBehaviorManifestCatalog
-from .manifests import BehaviorManifestRegistry
 from .policy import BehaviorManifestId
 from .torch_behavior import (
-    CategoricalTorchBehaviorController,
     TorchBehaviorPublication,
-    TorchBehaviorPublisher,
 )
-from .torch_checkpoints import BoundedTorchCheckpointStore
 from .torch_combat_generation import (
     BoundedCombatWinGenerationRunner,
     CombatWinGenerationResult,
 )
+from .torch_combat_owners import create_combat_win_owner_graph
 from .torch_combat_session_config import (
     CombatSessionBridge,
     CombatWinSessionConfig,
     TorchCombatSessionError,
 )
-from .torch_combat_training import SynchronousCombatWinTrainer
-from .torch_policy import RaggedCandidateScorer
-from .torch_provenance import combat_win_training_manifest_template
 
 
 class CombatWinSession:
@@ -88,15 +79,6 @@ class CombatWinSessionFactory:
         self.root.mkdir(parents=True, exist_ok=True)
         self.bridge = bridge
         self.config = config
-        profile = config.profile
-        self.template = combat_win_training_manifest_template(
-            bridge.semantic_schema,
-            profile.scorer,
-            profile.behavior,
-            profile.optimizer,
-            profile.objective,
-            device_type=profile.device_type,
-        )
 
     def new_from_artifact_file(
         self,
@@ -133,7 +115,12 @@ class CombatWinSessionFactory:
         )
         model_seed = _torch_seed(model_seed, "model_seed")
         behavior_seed = _torch_seed(behavior_seed, "behavior_seed")
-        source = _combat_root_source(self.bridge, self.config, artifact)
+        source = _combat_root_source(
+            self.bridge,
+            artifact,
+            expected_roots=self.config.expected_roots,
+            max_bytes=self.config.limits.max_artifact_bytes,
+        )
         return self._new_from_combat_root_source(
             source,
             artifact_byte_count=len(artifact),
@@ -154,42 +141,22 @@ class CombatWinSessionFactory:
                 "combat-root artifact loader returned an invalid source"
             )
 
-        with torch.random.fork_rng(devices=[]):
-            torch.manual_seed(model_seed)
-            shadow = self._scorer()
-        checkpoint_store, catalog = self._behavior_stores()
-        registry = BehaviorManifestRegistry(
-            capacity=self.config.limits.owner_capacity
+        owners = create_combat_win_owner_graph(
+            self.root,
+            self.bridge,
+            self.config.profile,
+            self.config.limits,
+            model_seed=model_seed,
+            controller_seed=behavior_seed,
         )
-        controller = CategoricalTorchBehaviorController(
-            TorchBehaviorPublisher(
-                checkpoint_store,
-                catalog,
-                registry,
-                self.template,
-            ),
-            self._scorer,
-            self.config.profile.behavior,
-            torch.Generator(device="cpu").manual_seed(behavior_seed),
-        )
-        optimizer = self.config.profile.optimizer.create(shadow.parameters())
-        trainer = SynchronousCombatWinTrainer(
-            shadow,
-            optimizer,
-            registry,
-            self.config.limits.concat,
-            self.config.profile.behavior,
-            self.config.profile.objective,
-        )
-        controller.promote_live(shadow, training_step=0)
         runner = BoundedCombatWinGenerationRunner(
             source,
             slot_index=self.config.root_slot_index,
             replicate_count=self.config.replicate_count,
             limits=self.config.limits.experience,
-            trainer=trainer,
-            controller=controller,
-            shadow_scorer=shadow,
+            trainer=owners.trainer,
+            controller=owners.controller,
+            shadow_scorer=owners.shadow_scorer,
         )
         return CombatWinSession(
             runner,
@@ -201,28 +168,6 @@ class CombatWinSessionFactory:
             raise TorchCombatSessionError(
                 "new combat session requires an unused experiment root"
             )
-
-    def _scorer(self) -> RaggedCandidateScorer:
-        return RaggedCandidateScorer.from_bridge_schema(
-            self.bridge.semantic_schema,
-            self.config.profile.scorer,
-        ).to(self.config.profile.device_type)
-
-    def _behavior_stores(
-        self,
-    ) -> tuple[BoundedTorchCheckpointStore, BoundedBehaviorManifestCatalog]:
-        limits = self.config.limits
-        return (
-            BoundedTorchCheckpointStore(
-                self.root / "behavior-checkpoints",
-                limits.checkpoint_store,
-            ),
-            BoundedBehaviorManifestCatalog(
-                self.root / "behavior-manifests",
-                limits.manifest_catalog,
-            ),
-        )
-
 
 def _artifact_bytes(
     payload: bytes | bytearray | memoryview,
@@ -266,14 +211,16 @@ def _artifact_file_bytes(
 
 def _combat_root_source(
     bridge: CombatSessionBridge,
-    config: CombatWinSessionConfig,
     artifact: bytes,
+    *,
+    expected_roots: int,
+    max_bytes: int,
 ) -> object:
     try:
         source = bridge.combat_roots_from_artifact(
             artifact,
-            expected_roots=config.expected_roots,
-            max_bytes=config.limits.max_artifact_bytes,
+            expected_roots=expected_roots,
+            max_bytes=max_bytes,
         )
     except Exception as error:
         raise TorchCombatSessionError(
