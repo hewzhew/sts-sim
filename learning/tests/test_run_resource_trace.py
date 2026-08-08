@@ -89,4 +89,5 @@ def _context(
         max_hp=80,
         gold=gold,
         potion_ids=potions,
+        monster_ids=("JawWorm",) if combat else (),
     )

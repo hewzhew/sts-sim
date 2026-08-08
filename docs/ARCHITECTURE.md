@@ -260,7 +260,10 @@ merge canonical single-root payloads without exposing checkpoint fields. The
 sampler writes one fresh batch only after the requested root count is complete;
 a deadline, step bound, duplicate root, context mismatch, or byte overflow
 publishes nothing. Its compact receipt is corpus provenance, not a policy
-label or a potion-value judgment.
+label or a potion-value judgment. The receipt reuses the held-out resource
+trace owner to attach earlier same-seed combat HP, gold, and concrete potion
+transitions plus ordered canonical enemy identities; it does not retain
+decisions, sessions, or a second trajectory format.
 
 Terminal learning steps retain the typed run result plus public terminal act,
 floor, HP, max HP, and gold. The Python bridge returns those facts as compact
@@ -268,7 +271,9 @@ columns aligned only to terminal slots. They are outcome evidence for progress
 and lower-tail targets, not a shaped reward or a context-free resource score.
 An explicit `public_run_contexts()` snapshot separately exposes every current
 slot's seed, typed boundary kind, act/floor, HP/max HP, gold, and concrete
-potion-slot identities. It clones no session and retains no history.
+potion-slot identities. Active combat contexts additionally expose ordered
+canonical enemy identities; non-combat contexts expose an empty enemy set. It
+clones no session and retains no history.
 At a combat boundary, resource fields come from the active combat after
 pre-battle triggers rather than the persistent run snapshot, which is not
 synchronized again until combat resolution.

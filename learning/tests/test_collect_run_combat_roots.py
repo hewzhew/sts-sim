@@ -40,6 +40,7 @@ class _RootCapturingWinningEnv(NumpyWinningBatchEnv):
                     max_hp=80,
                     gold=50,
                     potion_ids=["FearPotion", None, None],
+                    monster_ids=[] if terminal else ["JawWorm"],
                 ),
             )
             for slot, terminal in enumerate(self.terminal)
@@ -126,6 +127,8 @@ def test_collection_captures_one_potion_root_per_seed_and_merges_once(
     assert isinstance(roots, tuple)
     assert len({root["seed"] for root in roots}) == 2
     assert all(root["potion_ids"] == ("FearPotion", None, None) for root in roots)
+    assert all(root["monster_ids"] == ("JawWorm",) for root in roots)
+    assert all(root["prior_combats"] == () for root in roots)
 
 
 def test_bounded_unmatched_potion_collection_publishes_no_artifact(

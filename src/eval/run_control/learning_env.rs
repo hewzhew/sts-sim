@@ -99,6 +99,7 @@ pub struct LearningPublicRunContextV1 {
     pub max_hp: i32,
     pub gold: i32,
     pub potion_ids: Vec<Option<PotionId>>,
+    pub monster_ids: Vec<crate::content::monsters::EnemyId>,
 }
 
 impl LearningBoundaryV1 {
@@ -216,12 +217,27 @@ impl LearningEnvV1 {
         &self,
         boundary: &LearningBoundaryV1,
     ) -> Result<LearningPublicRunContextV1, String> {
-        let (hp, max_hp, gold, potion_ids) =
+        let (hp, max_hp, gold, potion_ids, monster_ids) =
             if matches!(boundary, LearningBoundaryV1::Combat { .. }) {
                 let active = self.session.active_combat.as_ref().ok_or_else(|| {
                     "combat public run context requires an active combat".to_owned()
                 })?;
                 let combat = &active.combat_state;
+                let monster_ids = combat
+                    .entities
+                    .monsters
+                    .iter()
+                    .map(|monster| {
+                        crate::content::monsters::EnemyId::from_id(monster.monster_type).ok_or_else(
+                            || {
+                                format!(
+                                    "combat public run context has unknown monster type {}",
+                                    monster.monster_type
+                                )
+                            },
+                        )
+                    })
+                    .collect::<Result<Vec<_>, String>>()?;
                 (
                     combat.entities.player.current_hp,
                     combat.entities.player.max_hp,
@@ -232,6 +248,7 @@ impl LearningEnvV1 {
                         .iter()
                         .map(|potion| potion.as_ref().map(|potion| potion.id))
                         .collect(),
+                    monster_ids,
                 )
             } else {
                 (
@@ -244,6 +261,7 @@ impl LearningEnvV1 {
                         .iter()
                         .map(|potion| potion.as_ref().map(|potion| potion.id))
                         .collect(),
+                    Vec::new(),
                 )
             };
         Ok(LearningPublicRunContextV1 {
@@ -256,6 +274,7 @@ impl LearningEnvV1 {
             max_hp,
             gold,
             potion_ids,
+            monster_ids,
         })
     }
 
@@ -627,6 +646,10 @@ mod tests {
         combat.entities.player.current_hp = 79;
         combat.entities.player.gold = 101;
         combat.entities.potions = vec![Some(Potion::new(PotionId::FearPotion, 41)), None, None];
+        combat
+            .entities
+            .monsters
+            .push(crate::test_support::test_monster(EnemyId::JawWorm));
         session.engine_state = EngineState::CombatPlayerTurn;
         session.active_combat = Some(ActiveCombat::new(
             EngineState::CombatPlayerTurn,
@@ -647,6 +670,7 @@ mod tests {
             context.potion_ids,
             vec![Some(PotionId::FearPotion), None, None]
         );
+        assert_eq!(context.monster_ids, vec![EnemyId::JawWorm]);
     }
 
     #[test]

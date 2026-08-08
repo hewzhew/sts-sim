@@ -613,6 +613,7 @@ def main() -> None:
         context.is_combat or context.is_terminal
         for _, context in initial_contexts
     )
+    assert all(context.monster_ids == [] for _, context in initial_contexts)
     assert all(
         context.act == 1 and context.floor == 0
         for _, context in initial_contexts

@@ -377,6 +377,15 @@ impl PyLearningPublicRunContextV1 {
     fn potion_ids(&self) -> Vec<Option<String>> {
         potion_id_names(&self.inner.potion_ids)
     }
+
+    #[getter]
+    fn monster_ids(&self) -> Vec<String> {
+        self.inner
+            .monster_ids
+            .iter()
+            .map(|monster| format!("{monster:?}"))
+            .collect()
+    }
 }
 
 #[pyclass]

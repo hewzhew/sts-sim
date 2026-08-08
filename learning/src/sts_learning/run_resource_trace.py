@@ -28,6 +28,7 @@ class RunPublicContext:
     max_hp: int
     gold: int
     potion_ids: tuple[str | None, ...]
+    monster_ids: tuple[str, ...]
 
     @classmethod
     def from_bridge_row(cls, row: object) -> RunPublicContext:
@@ -44,6 +45,11 @@ class RunPublicContext:
                 "public run context cannot be combat and terminal together"
             )
         potion_ids = _potion_ids(_attribute(view, "potion_ids"))
+        monster_ids = _monster_ids(_attribute(view, "monster_ids"))
+        if is_combat != bool(monster_ids):
+            raise RunResourceTraceError(
+                "public run context monster identities disagree with combat state"
+            )
         hp = _integer(_attribute(view, "hp"), "hp", minimum=0)
         max_hp = _integer(_attribute(view, "max_hp"), "max_hp", minimum=1)
         if hp > max_hp:
@@ -64,6 +70,7 @@ class RunPublicContext:
             max_hp=max_hp,
             gold=_integer(_attribute(view, "gold"), "gold", minimum=0),
             potion_ids=potion_ids,
+            monster_ids=monster_ids,
         )
 
 
@@ -415,6 +422,15 @@ def _potion_ids(value: object) -> tuple[str | None, ...]:
             raise RunResourceTraceError("potion identity must be non-empty text or null")
         normalized.append(potion)
     return tuple(normalized)
+
+
+def _monster_ids(value: object) -> tuple[str, ...]:
+    if not isinstance(value, Sequence) or isinstance(value, (str, bytes)):
+        raise RunResourceTraceError("monster_ids must be a sequence")
+    normalized = tuple(value)
+    if any(not isinstance(monster, str) or not monster for monster in normalized):
+        raise RunResourceTraceError("monster identity must be non-empty text")
+    return normalized
 
 
 def _integer_sequence(source: Mapping[str, object], name: str) -> tuple[int, ...]:

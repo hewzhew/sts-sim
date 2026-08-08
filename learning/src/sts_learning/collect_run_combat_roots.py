@@ -31,6 +31,10 @@ from .published_run_behavior import (
 )
 from .recovery import RecoverySlotSnapshot, TerminalAccountingBatch
 from .run_resource_trace import RunPublicContext
+from .run_resource_trace import (
+    ResourceTracingEnvironmentFactory,
+    RunCombatResourceTransition,
+)
 from .seeds import SeedPartition, SeedSchedule
 from .torch_combat_session_config import CombatSessionBridge, CombatWinSessionLimits
 from .torch_session_config import CategoricalSessionBridge
@@ -149,6 +153,7 @@ class CapturedRunCombatRoot:
     hp: int
     max_hp: int
     potion_ids: tuple[str | None, ...]
+    monster_ids: tuple[str, ...]
     filled_potion_count: int
     usable_potion_count: int
 
@@ -245,6 +250,7 @@ class _RootCaptureSink:
                     hp=hp,
                     max_hp=max_hp,
                     potion_ids=context.potion_ids,
+                    monster_ids=context.monster_ids,
                     filled_potion_count=filled,
                     usable_potion_count=usable,
                 )
@@ -397,9 +403,10 @@ def run_run_combat_root_collection(
         )
 
     sink = _RootCaptureSink(config)
+    tracing_factory = ResourceTracingEnvironmentFactory(environment_factory)
 
     def capturing_factory(seeds: list[int]) -> _CapturingEnvironment:
-        env = environment_factory(seeds)
+        env = tracing_factory(seeds)
         for name in (
             "public_run_contexts",
             "combat_root_contexts",
@@ -450,6 +457,7 @@ def run_run_combat_root_collection(
         )
     with config.output.open("xb") as destination:
         destination.write(payload)
+    resource_trace = tracing_factory.trace
 
     summary: dict[str, object] = {
         "schema": "sts-learning-run-combat-root-collection-v1",
@@ -488,14 +496,44 @@ def run_run_combat_root_collection(
                 "hp": root.hp,
                 "max_hp": root.max_hp,
                 "potion_ids": root.potion_ids,
+                "monster_ids": root.monster_ids,
                 "filled_potion_count": root.filled_potion_count,
                 "usable_potion_count": root.usable_potion_count,
+                "prior_combats": _prior_combat_rows(
+                    root,
+                    resource_trace.combat_transitions,
+                ),
             }
             for root in sink.roots
         ),
     }
     print(json.dumps(summary, separators=(",", ":"), sort_keys=True), flush=True)
     return summary
+
+
+def _prior_combat_rows(
+    root: CapturedRunCombatRoot,
+    transitions: Sequence[RunCombatResourceTransition],
+) -> tuple[dict[str, object], ...]:
+    return tuple(
+        {
+            "act": transition.start.act,
+            "floor": transition.start.floor,
+            "start_hp": transition.start.hp,
+            "end_hp": transition.end.hp,
+            "max_hp": transition.end.max_hp,
+            "hp_loss": transition.hp_loss,
+            "start_gold": transition.start.gold,
+            "end_gold": transition.end.gold,
+            "start_potion_ids": transition.start.potion_ids,
+            "end_potion_ids": transition.end.potion_ids,
+            "monster_ids": transition.start.monster_ids,
+            "terminal_reward": transition.terminal_reward,
+        }
+        for transition in transitions
+        if transition.start.seed == root.seed
+        and (transition.start.act, transition.start.floor) != (root.act, root.floor)
+    )
 
 
 def _root_context_row(row: object) -> tuple[int, object]:

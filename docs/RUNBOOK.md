@@ -703,6 +703,12 @@ the behavior's model-facing lane is `never`. Floor and usable-potion filters
 are typed root facts. It merges in Rust and writes only after all requested
 roots have been collected; an incomplete bound leaves the output absent. The
 single-line receipt reports seed/site/resource facts and artifact identity.
+Each captured root also lists its earlier completed same-seed combat resource
+transitions from the existing typed `RunResourceTrace`: start/end HP and gold,
+ordered canonical enemy identities, concrete potion inventories, and terminal
+status. The captured combat itself is
+excluded even if the final collector step resolves it. This is enough to locate
+upstream attrition without retaining action history or decoding the artifact.
 Use a fresh path and a small root count first. This is a corpus sampler, not a
 trainer or evidence that the collected combats are representative.
 For a concrete rescue lane, add both `-RequiredPotionId FirePotion` and
