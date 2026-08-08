@@ -397,9 +397,13 @@ class TorchBehaviorPublicationTests(unittest.TestCase):
                 config,
                 torch.Generator().manual_seed(71),
             )
-            recovered_publication = recovered.recover_and_promote(second.manifest_id)
+            recovered_publication = recovered.recover_and_promote(
+                second.manifest_id,
+                successful_promotions=controller.snapshot.successful_promotions,
+            )
 
             self.assertEqual(recovered_publication, second)
+            self.assertEqual(recovered.snapshot, controller.snapshot)
             self.assertEqual(controller.choose(batch), recovered.choose(batch))
 
     def test_categorical_controller_keeps_old_policy_when_promotion_fails(self) -> None:

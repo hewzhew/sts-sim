@@ -500,6 +500,14 @@ buffer, no open attempt-assembly state, matching segment sequence indices, a
 healthy trainer, and an active behavior generation no newer than the shadow
 optimizer. Any violation is a typed rejection; no owner silently drops state to
 manufacture a resumable checkpoint.
+At that strict boundary, one separate canonical metadata component preserves
+the seed schedule, active ledger lineage, experience/assembler sequence and
+aggregate counters, trainer counters and bounded last-evidence fields,
+controller manifest/promotion state, and optimizer-step generation target.
+Fresh owners accept only the corresponding typed snapshots. This metadata has
+no simulator session, model tensor, optimizer tensor, generator tensor, or
+experience payload; those remain distinct components and must all be bound by
+the future final resume manifest.
 
 On an ordinary reward screen, the reward owner claims typed low-agency public
 resources before opening a nested card-reward choice. This lets the card owner

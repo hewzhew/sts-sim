@@ -136,6 +136,8 @@ class BatchDriverResumeBoundary:
 
     slot_count: int
     schedule: SeedSchedule
+    recovery_mode: RecoveryMode
+    max_recoveries_per_episode: int
     ledger_snapshots: tuple[RecoverySlotSnapshot, ...]
     checkpoint_slots: int
     experience_next_sequence_index: int | None
@@ -334,6 +336,8 @@ class OnlineBatchDriver:
         return BatchDriverResumeBoundary(
             slot_count=slot_count,
             schedule=self.schedule,
+            recovery_mode=self.ledger.mode,
+            max_recoveries_per_episode=self.ledger.max_recoveries_per_episode,
             ledger_snapshots=snapshots,
             checkpoint_slots=len(self._checkpoint_bank),
             experience_next_sequence_index=experience_sequence,

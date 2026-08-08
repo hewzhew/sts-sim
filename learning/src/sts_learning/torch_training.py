@@ -45,6 +45,8 @@ class SynchronousValueTrainer:
         optimizer: torch.optim.Optimizer,
         registry: BehaviorManifestRegistry,
         concat_limits: SemanticBatchConcatLimits,
+        *,
+        resume_snapshot: SynchronousValueTrainerSnapshot | None = None,
     ) -> None:
         if not callable(scorer):
             raise TorchTrainingError("candidate value scorer must be callable")
@@ -58,20 +60,17 @@ class SynchronousValueTrainer:
         self.optimizer = optimizer
         self.registry = registry
         self.concat_limits = concat_limits
-        self._deliveries = 0
-        self._optimizer_steps = 0
-        self._completed_attempts = 0
-        self._dropped_attempts = 0
-        self._trained_decisions = 0
-        self._last_loss: float | None = None
-        self._last_behavior_manifest_ids: (
-            tuple[tuple[BehaviorManifestId, ...], ...] | None
-        ) = None
-        self._last_selection_probabilities: (
-            tuple[tuple[SelectionProbability, ...], ...] | None
-        ) = None
-        self._total_training_seconds = 0.0
-        self._last_training_seconds: float | None = None
+        restored = _validated_resume_snapshot(resume_snapshot)
+        self._deliveries = restored.deliveries
+        self._optimizer_steps = restored.optimizer_steps
+        self._completed_attempts = restored.completed_attempts
+        self._dropped_attempts = restored.dropped_attempts
+        self._trained_decisions = restored.trained_decisions
+        self._last_loss = restored.last_loss
+        self._last_behavior_manifest_ids = restored.last_behavior_manifest_ids
+        self._last_selection_probabilities = restored.last_selection_probabilities
+        self._total_training_seconds = restored.total_training_seconds
+        self._last_training_seconds = restored.last_training_seconds
         self._poisoned = False
 
     @property
@@ -153,3 +152,94 @@ class SynchronousValueTrainer:
         elapsed = time.perf_counter() - training_started
         self._total_training_seconds += elapsed
         self._last_training_seconds = elapsed
+
+
+def _validated_resume_snapshot(
+    snapshot: SynchronousValueTrainerSnapshot | None,
+) -> SynchronousValueTrainerSnapshot:
+    if snapshot is None:
+        return SynchronousValueTrainerSnapshot(
+            deliveries=0,
+            optimizer_steps=0,
+            completed_attempts=0,
+            dropped_attempts=0,
+            trained_decisions=0,
+            last_loss=None,
+            last_behavior_manifest_ids=None,
+            last_selection_probabilities=None,
+            total_training_seconds=0.0,
+            last_training_seconds=None,
+            poisoned=False,
+        )
+    if not isinstance(snapshot, SynchronousValueTrainerSnapshot):
+        raise TorchTrainingError("trainer resume snapshot must be typed")
+    if snapshot.poisoned:
+        raise TorchTrainingError("cannot resume a poisoned trainer")
+    for name in (
+        "deliveries",
+        "optimizer_steps",
+        "completed_attempts",
+        "dropped_attempts",
+        "trained_decisions",
+    ):
+        value = getattr(snapshot, name)
+        if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+            raise TorchTrainingError(f"trainer resume {name} must be non-negative")
+    if snapshot.last_loss is not None and not math.isfinite(snapshot.last_loss):
+        raise TorchTrainingError("trainer resume loss must be finite")
+    if (
+        not math.isfinite(snapshot.total_training_seconds)
+        or snapshot.total_training_seconds < 0.0
+    ):
+        raise TorchTrainingError("trainer resume total time must be finite")
+    if snapshot.last_training_seconds is not None and (
+        not math.isfinite(snapshot.last_training_seconds)
+        or snapshot.last_training_seconds < 0.0
+    ):
+        raise TorchTrainingError("trainer resume last time must be finite")
+    if snapshot.optimizer_steps == 0:
+        if (
+            snapshot.last_loss is not None
+            or snapshot.last_behavior_manifest_ids is not None
+            or snapshot.last_selection_probabilities is not None
+            or snapshot.last_training_seconds is not None
+        ):
+            raise TorchTrainingError(
+                "trainer without optimizer steps cannot have last-training evidence"
+            )
+    else:
+        if (
+            snapshot.last_loss is None
+            or snapshot.last_behavior_manifest_ids is None
+            or snapshot.last_selection_probabilities is None
+            or snapshot.last_training_seconds is None
+        ):
+            raise TorchTrainingError(
+                "trainer optimizer steps require last-training evidence"
+            )
+        if len(snapshot.last_behavior_manifest_ids) != len(
+            snapshot.last_selection_probabilities
+        ):
+            raise TorchTrainingError("trainer resume evidence attempts are misaligned")
+        for manifest_ids, probabilities in zip(
+            snapshot.last_behavior_manifest_ids,
+            snapshot.last_selection_probabilities,
+            strict=True,
+        ):
+            if len(manifest_ids) != len(probabilities):
+                raise TorchTrainingError(
+                    "trainer resume evidence decisions are misaligned"
+                )
+            if not all(
+                isinstance(manifest_id, BehaviorManifestId)
+                for manifest_id in manifest_ids
+            ):
+                raise TorchTrainingError("trainer resume manifest ids are malformed")
+            if not all(
+                isinstance(probability, SelectionProbability)
+                for probability in probabilities
+            ):
+                raise TorchTrainingError(
+                    "trainer resume selection probabilities are malformed"
+                )
+    return snapshot

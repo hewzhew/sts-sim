@@ -103,10 +103,22 @@ class TorchOwnerStateCodecTests(unittest.TestCase):
             )
 
     def test_corrupt_unbounded_and_executable_values_fail_closed(self) -> None:
+        state = {
+            "state": [
+                None,
+                True,
+                3,
+                0.25,
+                b"bytes",
+                1 << 63,
+                (1 << 64) - 1,
+            ]
+        }
         payload = encode_owner_state(
-            {"state": [None, True, 3, 0.25, b"bytes"]},
+            state,
             max_bytes=1024,
         )
+        self.assertEqual(decode_owner_state(payload, max_bytes=1024), state)
         with self.assertRaisesRegex(TorchOwnerStateError, "trailing"):
             decode_owner_state(payload + b"\x00", max_bytes=1024)
         with self.assertRaisesRegex(TorchOwnerStateError, "byte limit"):

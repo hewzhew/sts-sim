@@ -168,6 +168,70 @@ class RecoveryLedger:
             max_recoveries_per_episode=0,
         )
 
+    @classmethod
+    def from_active_snapshots(
+        cls,
+        snapshots: Sequence[RecoverySlotSnapshot],
+        *,
+        mode: RecoveryMode,
+        max_recoveries_per_episode: int,
+    ) -> RecoveryLedger:
+        """Rebuild a fresh ledger admitted by the strict resume boundary."""
+
+        rows = tuple(snapshots)
+        if not rows:
+            raise RecoveryProtocolError("resume ledger requires at least one slot")
+        if not all(isinstance(row, RecoverySlotSnapshot) for row in rows):
+            raise RecoveryProtocolError("resume ledger snapshots must be typed")
+        for slot, row in enumerate(rows):
+            if row.slot_index != slot:
+                raise RecoveryProtocolError(
+                    "resume ledger snapshots must cover contiguous ordered slots"
+                )
+            if (
+                row.status is not RecoverySlotStatus.ACTIVE
+                or row.pending_terminal is not None
+            ):
+                raise RecoveryProtocolError(
+                    f"resume ledger slot {slot} has unfinished terminal accounting"
+                )
+            generation = _resume_counter(
+                row.episode_generation,
+                "episode generation",
+                allow_zero=True,
+            )
+            attempt = _resume_counter(
+                row.attempt_index,
+                "attempt index",
+                allow_zero=False,
+            )
+            recoveries = _resume_counter(
+                row.recoveries_used,
+                "recoveries used",
+                allow_zero=True,
+            )
+            if recoveries > max_recoveries_per_episode:
+                raise RecoveryProtocolError(
+                    f"resume ledger slot {slot} exceeds its recovery budget"
+                )
+            if attempt != recoveries + 1:
+                raise RecoveryProtocolError(
+                    f"resume ledger slot {slot} attempt lineage is inconsistent"
+                )
+            if generation != row.episode_generation:
+                raise AssertionError("normalized episode generation changed")
+
+        ledger = cls(
+            tuple(row.episode_seed for row in rows),
+            mode=mode,
+            max_recoveries_per_episode=max_recoveries_per_episode,
+        )
+        for slot, row in enumerate(rows):
+            ledger._episode_generation[slot] = row.episode_generation
+            ledger._attempt_index[slot] = row.attempt_index
+            ledger._recoveries_used[slot] = row.recoveries_used
+        return ledger
+
     @property
     def slot_count(self) -> int:
         return len(self._status)
@@ -433,3 +497,16 @@ def _normalize_seeds(seeds: Sequence[int]) -> tuple[int, ...]:
             raise RecoveryProtocolError("episode seed must be in 0..2^64-1")
         normalized.append(value)
     return tuple(normalized)
+
+
+def _resume_counter(value: object, name: str, *, allow_zero: bool) -> int:
+    if isinstance(value, bool):
+        raise RecoveryProtocolError(f"{name} must be an integer, not bool")
+    try:
+        normalized = operator.index(value)
+    except TypeError as error:
+        raise RecoveryProtocolError(f"{name} must be an integer") from error
+    lower = 0 if allow_zero else 1
+    if not lower <= normalized < 1 << 64:
+        raise RecoveryProtocolError(f"{name} is outside its unsigned 64-bit range")
+    return normalized

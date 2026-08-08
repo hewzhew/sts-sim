@@ -310,6 +310,14 @@ terminal half-state, the episode-root bank must cover every slot, the experience
 buffer must be flushed, the assembler must have no open attempt, segment
 sequence ids must agree, the trainer must be healthy, and an active behavior
 manifest must not be ahead of the shadow optimizer.
+At an admitted boundary, `sts_learning.torch_resume_metadata` encodes the seed
+schedule, active ledger lineage, segment/assembler counters, trainer counters
+and bounded last-evidence fields, controller identity, promotion count, and
+generation target as one canonical scalar component. Fresh ledger, empty
+buffer, empty assembler, trainer, and controller owners have explicit restore
+constructors; terminal half-states, open attempts, poisoned trainers, and
+inconsistent sequence or parameter lineage remain unrepresentable. This is
+still a component, not yet the final durable resume manifest.
 
 The bridge verification command installs a fresh wheel and runs both bridge
 smoke tests and these caller contracts:

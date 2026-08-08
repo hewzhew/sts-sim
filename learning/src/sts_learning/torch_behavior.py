@@ -459,11 +459,21 @@ class CategoricalTorchBehaviorController:
     def recover_and_promote(
         self,
         manifest_id: BehaviorManifestId,
+        *,
+        successful_promotions: int = 1,
     ) -> TorchBehaviorPublication:
         if self._policy is not None:
             raise TorchBehaviorError(
                 "controller recovery requires an inactive behavior slot"
             )
+        if isinstance(successful_promotions, bool):
+            raise TorchBehaviorError("successful promotions must be an integer")
+        try:
+            promotion_count = operator.index(successful_promotions)
+        except TypeError as error:
+            raise TorchBehaviorError("successful promotions must be an integer") from error
+        if promotion_count <= 0:
+            raise TorchBehaviorError("successful promotions must be positive")
         policy = CheckpointedCategoricalTorchPolicy.recover(
             manifest_id,
             self.publisher.store,
@@ -474,7 +484,7 @@ class CategoricalTorchBehaviorController:
             self.generator,
         )
         self._policy = policy
-        self._successful_promotions = 1
+        self._successful_promotions = promotion_count
         return policy.publication
 
     def choose(self, decision_batch: Mapping[str, object]) -> BatchPolicyChoice:

@@ -129,6 +129,8 @@ class BoundedAttemptAssembler:
         self,
         limits: AttemptAssemblyLimits,
         sink: CompletedAttemptSink,
+        *,
+        resume_snapshot: AttemptAssemblerSnapshot | None = None,
     ) -> None:
         if not isinstance(limits, AttemptAssemblyLimits):
             raise AttemptAssemblyError("limits must be AttemptAssemblyLimits")
@@ -136,10 +138,38 @@ class BoundedAttemptAssembler:
             raise AttemptAssemblyError("completed attempt sink must be callable")
         self.limits = limits
         self._sink = sink
-        self._next_sequence_index = 0
+        if resume_snapshot is None:
+            next_sequence_index = 0
+            completed_attempts = 0
+            dropped_attempts = 0
+        else:
+            if not isinstance(resume_snapshot, AttemptAssemblerSnapshot):
+                raise AttemptAssemblyError("resume snapshot must be typed")
+            if (
+                resume_snapshot.open_attempts != 0
+                or resume_snapshot.dropped_open_attempts != 0
+                or resume_snapshot.retained_decisions != 0
+                or resume_snapshot.retained_payload_bytes != 0
+            ):
+                raise AttemptAssemblyError(
+                    "resume snapshot contains open attempt state"
+                )
+            next_sequence_index = _nonnegative_integer(
+                resume_snapshot.next_sequence_index,
+                "resume next_sequence_index",
+            )
+            completed_attempts = _nonnegative_integer(
+                resume_snapshot.completed_attempts,
+                "resume completed_attempts",
+            )
+            dropped_attempts = _nonnegative_integer(
+                resume_snapshot.dropped_attempts,
+                "resume dropped_attempts",
+            )
+        self._next_sequence_index = next_sequence_index
         self._open: dict[AttemptKey, _OpenAttempt] = {}
-        self._completed_attempts = 0
-        self._dropped_attempts = 0
+        self._completed_attempts = completed_attempts
+        self._dropped_attempts = dropped_attempts
 
     @property
     def completed_attempt_sink(self) -> CompletedAttemptSink:
@@ -346,4 +376,16 @@ def _positive_integer(value: object, name: str) -> int:
         raise AttemptAssemblyError(f"{name} must be an integer") from error
     if normalized <= 0:
         raise AttemptAssemblyError(f"{name} must be positive")
+    return normalized
+
+
+def _nonnegative_integer(value: object, name: str) -> int:
+    if isinstance(value, bool):
+        raise AttemptAssemblyError(f"{name} must be an integer, not bool")
+    try:
+        normalized = operator.index(value)
+    except TypeError as error:
+        raise AttemptAssemblyError(f"{name} must be an integer") from error
+    if normalized < 0:
+        raise AttemptAssemblyError(f"{name} must be non-negative")
     return normalized

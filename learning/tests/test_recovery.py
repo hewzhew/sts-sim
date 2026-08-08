@@ -122,6 +122,28 @@ class RecoveryLedgerTests(unittest.TestCase):
         self.assertTrue(outcome.zero_recovery)
         self.assertEqual(outcome.attempts, 1)
 
+    def test_active_resume_snapshots_restore_exact_lineage(self) -> None:
+        ledger = RecoveryLedger.training([100, (1 << 64) - 1], max_recoveries_per_episode=2)
+        ledger.record_terminal(terminal_batch(terminal(0, -1)))
+        ledger.commit_recovery(ledger.prepare_recovery([0]))
+        snapshots = ledger.snapshots()
+
+        restored = RecoveryLedger.from_active_snapshots(
+            snapshots,
+            mode=ledger.mode,
+            max_recoveries_per_episode=ledger.max_recoveries_per_episode,
+        )
+        self.assertEqual(restored.snapshots(), snapshots)
+
+        pending = RecoveryLedger.training([5], max_recoveries_per_episode=1)
+        pending.record_terminal(terminal_batch(terminal(0, -1)))
+        with self.assertRaisesRegex(RecoveryProtocolError, "unfinished"):
+            RecoveryLedger.from_active_snapshots(
+                pending.snapshots(),
+                mode=pending.mode,
+                max_recoveries_per_episode=1,
+            )
+
     def test_inactive_terminal_batch_does_not_mutate_valid_prefix(self) -> None:
         ledger = RecoveryLedger.training([400, 401], max_recoveries_per_episode=1)
         ledger.record_terminal(terminal_batch(terminal(1, 1, hp=10)))

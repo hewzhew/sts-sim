@@ -86,6 +86,23 @@ class SynchronousValueTrainerTests(unittest.TestCase):
         self.assertGreater(trainer.snapshot.total_training_seconds, 0.0)
         self.assertGreater(trainer.snapshot.last_training_seconds, 0.0)
 
+        restored_parameter = torch.nn.Parameter(torch.tensor([0.2, 5.0]))
+
+        def restored_scorer(payload):
+            return RaggedCandidateLogits(
+                values=restored_parameter,
+                row_splits=torch.tensor([0, 2]),
+            )
+
+        restored = SynchronousValueTrainer(
+            restored_scorer,
+            torch.optim.SGD([restored_parameter], lr=0.1),
+            registry,
+            CONCAT_LIMITS,
+            resume_snapshot=trainer.snapshot,
+        )
+        self.assertEqual(restored.snapshot, trainer.snapshot)
+
     def test_unknown_manifest_fails_before_optimizer_and_can_be_retried(self) -> None:
         registry = BehaviorManifestRegistry(capacity=1)
         manifest = behavior_manifest_fixture()

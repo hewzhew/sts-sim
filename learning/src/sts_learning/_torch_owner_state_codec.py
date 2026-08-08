@@ -34,6 +34,7 @@ _LIST = 7
 _TUPLE = 8
 _MAPPING = 9
 _TENSOR = 10
+_UNSIGNED_INTEGER = 11
 
 _DTYPES: dict[torch.dtype, tuple[int, np.dtype[object]]] = {
     torch.float16: (1, np.dtype("<f2")),
@@ -133,9 +134,12 @@ def _encode_value(
     elif value is True:
         writer.append(bytes([_TRUE]))
     elif type(value) is int:
-        if not -(1 << 63) <= value < (1 << 63):
-            raise TorchOwnerStateError("owner state integer is outside signed 64-bit range")
-        writer.append(bytes([_INTEGER]) + struct.pack(">q", value))
+        if -(1 << 63) <= value < (1 << 63):
+            writer.append(bytes([_INTEGER]) + struct.pack(">q", value))
+        elif 0 <= value < (1 << 64):
+            writer.append(bytes([_UNSIGNED_INTEGER]) + struct.pack(">Q", value))
+        else:
+            raise TorchOwnerStateError("owner state integer is outside 64-bit range")
     elif type(value) is float:
         if not math.isfinite(value):
             raise TorchOwnerStateError("owner state float must be finite")
@@ -199,9 +203,11 @@ def _encode_mapping(
 
 def _canonical_key(key: int | str) -> bytes:
     if type(key) is int:
-        if not -(1 << 63) <= key < (1 << 63):
-            raise TorchOwnerStateError("owner state integer key is outside signed 64-bit range")
-        return bytes([_INTEGER]) + struct.pack(">q", key)
+        if -(1 << 63) <= key < (1 << 63):
+            return bytes([_INTEGER]) + struct.pack(">q", key)
+        if 0 <= key < (1 << 64):
+            return bytes([_UNSIGNED_INTEGER]) + struct.pack(">Q", key)
+        raise TorchOwnerStateError("owner state integer key is outside 64-bit range")
     encoded = key.encode("utf-8")
     if len(encoded) > _MAX_STRING_BYTES:
         raise TorchOwnerStateError("owner state string key is too large")
@@ -240,6 +246,8 @@ def _decode_value(reader: _Reader, *, depth: int) -> object:
         return True
     if tag == _INTEGER:
         return struct.unpack(">q", reader.read(8))[0]
+    if tag == _UNSIGNED_INTEGER:
+        return struct.unpack(">Q", reader.read(8))[0]
     if tag == _FLOAT:
         value = struct.unpack(">d", reader.read(8))[0]
         if not math.isfinite(value):

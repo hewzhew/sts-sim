@@ -264,11 +264,19 @@ class ExperienceSegment:
 class ExperienceSegmentBuffer:
     """One bounded mutable segment; sealed segments are caller-consumed."""
 
-    def __init__(self, limits: ExperienceLimits) -> None:
+    def __init__(
+        self,
+        limits: ExperienceLimits,
+        *,
+        next_sequence_index: int = 0,
+    ) -> None:
         if not isinstance(limits, ExperienceLimits):
             raise ExperienceError("limits must be ExperienceLimits")
         self.limits = limits
-        self._next_sequence_index = 0
+        self._next_sequence_index = _nonnegative_integer(
+            next_sequence_index,
+            "next_sequence_index",
+        )
         self._batches: list[DecisionExperienceBatch] = []
         self._decision_count = 0
         self._payload_bytes = 0

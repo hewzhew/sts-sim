@@ -390,6 +390,14 @@ class ExperienceSegmentTests(unittest.TestCase):
         with self.assertRaisesRegex(ExperienceError, "already"):
             buffer.record_terminals([valid])
 
+    def test_empty_resume_preserves_next_segment_identity(self) -> None:
+        buffer = ExperienceSegmentBuffer(
+            ExperienceLimits(max_decisions=2, max_payload_bytes=1024),
+            next_sequence_index=7,
+        )
+        self.assertTrue(buffer.empty)
+        self.assertEqual(buffer.next_sequence_index, 7)
+
 
 if __name__ == "__main__":
     unittest.main()

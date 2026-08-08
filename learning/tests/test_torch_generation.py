@@ -51,6 +51,10 @@ if _TORCH_AVAILABLE:
         RaggedCategoricalPolicyConfig,
         RaggedScorerConfig,
     )
+    from sts_learning.torch_resume_metadata import (
+        decode_generation_resume_state,
+        encode_generation_resume_state,
+    )
     from sts_learning.torch_training import SynchronousValueTrainer
 
 
@@ -167,6 +171,17 @@ class BoundedCategoricalGenerationRunnerTests(unittest.TestCase):
             self.assertEqual(boundary.assembler.open_attempts, 0)
             self.assertEqual(boundary.trainer.optimizer_steps, 0)
             self.assertEqual(boundary.controller.active_training_step, 0)
+            payload = encode_generation_resume_state(
+                boundary,
+                optimizer_steps_per_generation=runner.optimizer_steps_per_generation,
+                max_bytes=1024 * 1024,
+            )
+            restored = decode_generation_resume_state(
+                payload,
+                max_bytes=1024 * 1024,
+            )
+            self.assertEqual(restored.boundary, boundary)
+            self.assertEqual(restored.optimizer_steps_per_generation, 1)
 
             manifest_id = controller.snapshot.active_manifest_id
             assert manifest_id is not None

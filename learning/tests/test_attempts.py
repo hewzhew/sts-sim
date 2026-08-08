@@ -290,6 +290,13 @@ class BoundedAttemptAssemblerTests(unittest.TestCase):
         self.assertEqual(assembler.snapshot.next_sequence_index, 1)
         self.assertEqual(assembler.snapshot.completed_attempts, 1)
 
+        resumed = BoundedAttemptAssembler(
+            assembler.limits,
+            sink,
+            resume_snapshot=assembler.snapshot,
+        )
+        self.assertEqual(resumed.snapshot, assembler.snapshot)
+
     def test_sequence_and_open_attempt_limits_fail_before_mutation(self) -> None:
         sink = RecordingAttemptSink()
         assembler = BoundedAttemptAssembler(
