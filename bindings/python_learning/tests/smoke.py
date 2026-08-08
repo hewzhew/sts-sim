@@ -596,6 +596,10 @@ def main() -> None:
         context.boundary_kind == RUN_BOUNDARY_STRATEGIC
         for _, context in initial_contexts
     )
+    assert all(
+        context.strategic_context_kind == semantic_schema()["context_kind"]["Event"]
+        for _, context in initial_contexts
+    )
     assert not any(
         context.is_combat or context.is_terminal
         for _, context in initial_contexts

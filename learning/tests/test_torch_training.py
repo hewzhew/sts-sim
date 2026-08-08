@@ -83,6 +83,7 @@ class SynchronousPolicyTrainerTests(unittest.TestCase):
                     act=1,
                     floor=12,
                     is_combat=True,
+                    strategic_context_kind=None,
                 ),
             ),
         )

@@ -820,7 +820,10 @@ result on the disjoint `HELD_OUT` partition and writes a compact `summary.json`.
 Each generation journal row also records a bounded credit diagnostic: current
 terminal-broadcast decision targets beside decision-local remaining-floor
 targets and their matched-floor leave-one-out advantages, including sign counts
-and per-decision-floor and combat/strategic scope aggregates. This is a target-distribution comparison
+and per-decision-floor, combat/strategic scope, and typed strategic-context
+aggregates. Context rows include their strategic-scope attempt-equal weight and a
+non-authoritative floor-plus-context leave-one-out comparison; unsupported
+context groups remain zero. This is a target-distribution comparison
 only; training still uses the configured terminal objective and the diagnostic
 does not price HP, gold, or potions.
 A generation that

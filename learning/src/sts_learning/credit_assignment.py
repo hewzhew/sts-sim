@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import math
-from collections.abc import Sequence
+from collections.abc import Callable, Hashable, Sequence
 from dataclasses import dataclass
 
 from .attempts import CompletedAttemptExperience
@@ -52,6 +52,20 @@ class DecisionScopeCreditComparison:
 
 
 @dataclass(frozen=True)
+class DecisionStrategicContextCreditComparison:
+    """Target comparison for one typed strategic decision context."""
+
+    context_kind: int
+    strategic_scope_weight: float
+    matched_floor_strategic_weighted_target: float
+    matched_floor_context_strategic_weighted_target: float
+    terminal_broadcast: DecisionCreditDistribution
+    remaining_progress: DecisionCreditDistribution
+    matched_floor_advantage: DecisionCreditDistribution
+    matched_floor_context_advantage: DecisionCreditDistribution
+
+
+@dataclass(frozen=True)
 class CreditAssignmentComparison:
     """Current terminal broadcast beside a decision-local progress target."""
 
@@ -59,14 +73,17 @@ class CreditAssignmentComparison:
     terminal_broadcast: DecisionCreditDistribution
     remaining_progress: DecisionCreditDistribution
     matched_floor_advantage: DecisionCreditDistribution
+    matched_floor_context_advantage: DecisionCreditDistribution
     by_decision_floor: tuple[DecisionFloorCreditComparison, ...]
     by_combat_scope: tuple[DecisionScopeCreditComparison, ...]
+    by_strategic_context: tuple[DecisionStrategicContextCreditComparison, ...]
 
 
 @dataclass(frozen=True)
 class _DecisionCreditRow:
     floor: int
     is_combat: bool
+    strategic_context_kind: int | None
     terminal_broadcast: float
     remaining_progress: float
 
@@ -79,6 +96,7 @@ def compare_credit_assignment(
 
     normalized, aligned = _aligned_credit_rows(attempts, config)
     matched_aligned = _matched_floor_advantages(aligned)
+    context_matched_aligned = _matched_floor_context_advantages(aligned)
     broadcast = [
         row.terminal_broadcast
         for attempt in aligned
@@ -97,19 +115,45 @@ def compare_credit_assignment(
         for batch in attempt
         for value in batch
     ]
+    context_matched_values = [
+        value
+        for attempt in context_matched_aligned
+        for batch in attempt
+        for value in batch
+    ]
     by_floor: dict[int, tuple[list[float], list[float], list[float]]] = {}
     by_scope: dict[bool, tuple[list[float], list[float], list[float]]] = {}
-    for attempt_rows, attempt_advantages in zip(
+    by_context: dict[
+        int,
+        tuple[list[float], list[float], list[float], list[float]],
+    ] = {}
+    context_objective: dict[int, list[float]] = {}
+    for attempt_rows, attempt_advantages, attempt_context_advantages in zip(
         aligned,
         matched_aligned,
+        context_matched_aligned,
         strict=True,
     ):
-        for batch_rows, batch_advantages in zip(
+        strategic_decisions = sum(
+            not row.is_combat for batch in attempt_rows for row in batch
+        )
+        strategic_row_weight = (
+            0.0
+            if strategic_decisions == 0
+            else 1.0 / (len(aligned) * strategic_decisions)
+        )
+        for batch_rows, batch_advantages, batch_context_advantages in zip(
             attempt_rows,
             attempt_advantages,
+            attempt_context_advantages,
             strict=True,
         ):
-            for row, advantage in zip(batch_rows, batch_advantages, strict=True):
+            for row, advantage, context_advantage in zip(
+                batch_rows,
+                batch_advantages,
+                batch_context_advantages,
+                strict=True,
+            ):
                 floor_broadcast, floor_remaining, floor_matched = by_floor.setdefault(
                     row.floor,
                     ([], [], []),
@@ -124,12 +168,36 @@ def compare_credit_assignment(
                 scope_broadcast.append(row.terminal_broadcast)
                 scope_remaining.append(row.remaining_progress)
                 scope_matched.append(advantage)
+                if not row.is_combat:
+                    context = row.strategic_context_kind
+                    if context is None:
+                        raise CreditAssignmentError(
+                            "strategic credit row is missing its context kind"
+                        )
+                    (
+                        context_broadcast,
+                        context_remaining,
+                        context_floor_matched,
+                        context_context_matched,
+                    ) = by_context.setdefault(context, ([], [], [], []))
+                    context_broadcast.append(row.terminal_broadcast)
+                    context_remaining.append(row.remaining_progress)
+                    context_floor_matched.append(advantage)
+                    context_context_matched.append(context_advantage)
+                    objective = context_objective.setdefault(
+                        context,
+                        [0.0, 0.0, 0.0],
+                    )
+                    objective[0] += strategic_row_weight
+                    objective[1] += strategic_row_weight * advantage
+                    objective[2] += strategic_row_weight * context_advantage
 
     return CreditAssignmentComparison(
         attempt_count=len(normalized),
         terminal_broadcast=_distribution(broadcast),
         remaining_progress=_distribution(remaining),
         matched_floor_advantage=_distribution(matched),
+        matched_floor_context_advantage=_distribution(context_matched_values),
         by_decision_floor=tuple(
             DecisionFloorCreditComparison(
                 floor=floor,
@@ -147,6 +215,23 @@ def compare_credit_assignment(
                 matched_floor_advantage=_distribution(values[2]),
             )
             for is_combat, values in sorted(by_scope.items())
+        ),
+        by_strategic_context=tuple(
+            DecisionStrategicContextCreditComparison(
+                context_kind=context_kind,
+                strategic_scope_weight=context_objective[context_kind][0],
+                matched_floor_strategic_weighted_target=(
+                    context_objective[context_kind][1]
+                ),
+                matched_floor_context_strategic_weighted_target=(
+                    context_objective[context_kind][2]
+                ),
+                terminal_broadcast=_distribution(values[0]),
+                remaining_progress=_distribution(values[1]),
+                matched_floor_advantage=_distribution(values[2]),
+                matched_floor_context_advantage=_distribution(values[3]),
+            )
+            for context_kind, values in sorted(by_context.items())
         ),
     )
 
@@ -197,6 +282,7 @@ def _aligned_credit_rows(
                 _DecisionCreditRow(
                     floor=progress.floor,
                     is_combat=progress.is_combat,
+                    strategic_context_kind=progress.strategic_context_kind,
                     terminal_broadcast=attempt_broadcast,
                     remaining_progress=remaining_floor_progress_return(
                         attempt,
@@ -219,35 +305,56 @@ def _aligned_credit_rows(
 def _matched_floor_advantages(
     aligned: tuple[tuple[tuple[_DecisionCreditRow, ...], ...], ...],
 ) -> tuple[tuple[tuple[float, ...], ...], ...]:
-    attempt_floor_returns: dict[int, dict[int, float]] = {}
+    return _matched_group_advantages(aligned, lambda row: row.floor)
+
+
+def _matched_floor_context_advantages(
+    aligned: tuple[tuple[tuple[_DecisionCreditRow, ...], ...], ...],
+) -> tuple[tuple[tuple[float, ...], ...], ...]:
+    return _matched_group_advantages(
+        aligned,
+        lambda row: (
+            row.floor,
+            row.is_combat,
+            row.strategic_context_kind,
+        ),
+    )
+
+
+def _matched_group_advantages(
+    aligned: tuple[tuple[tuple[_DecisionCreditRow, ...], ...], ...],
+    group_key: Callable[[_DecisionCreditRow], Hashable],
+) -> tuple[tuple[tuple[float, ...], ...], ...]:
+    attempt_group_returns: dict[Hashable, dict[int, float]] = {}
     for attempt_index, attempt in enumerate(aligned):
         for batch in attempt:
             for row in batch:
-                previous = attempt_floor_returns.setdefault(
-                    row.floor,
+                group = group_key(row)
+                previous = attempt_group_returns.setdefault(
+                    group,
                     {},
                 ).setdefault(attempt_index, row.remaining_progress)
                 if previous != row.remaining_progress:
                     raise CreditAssignmentError(
-                        "one attempt has conflicting targets at the same floor"
+                        "one attempt has conflicting targets in one matched group"
                     )
 
-    floor_advantages: dict[tuple[int, int], float] = {}
-    for floor, attempt_values in attempt_floor_returns.items():
+    group_advantages: dict[tuple[int, Hashable], float] = {}
+    for group, attempt_values in attempt_group_returns.items():
         if len(attempt_values) == 1:
             attempt_index = next(iter(attempt_values))
-            floor_advantages[(attempt_index, floor)] = 0.0
+            group_advantages[(attempt_index, group)] = 0.0
             continue
         values = tuple(attempt_values.values())
         mean = math.fsum(values) / len(values)
         scale = len(values) / (len(values) - 1)
         for attempt_index, value in attempt_values.items():
-            floor_advantages[(attempt_index, floor)] = scale * (value - mean)
+            group_advantages[(attempt_index, group)] = scale * (value - mean)
 
     return tuple(
         tuple(
             tuple(
-                floor_advantages[(attempt_index, row.floor)]
+                group_advantages[(attempt_index, group_key(row))]
                 for row in batch
             )
             for batch in attempt

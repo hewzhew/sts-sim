@@ -231,6 +231,7 @@ def run_run_training(
                 f"credit={_credit_line(credit)} "
                 f"credit_floors={_credit_floor_line(credit)} "
                 f"credit_scopes={_credit_scope_line(credit)} "
+                f"credit_contexts={_credit_context_line(credit)} "
                 f"seconds={elapsed:.3f}",
                 flush=True,
             )
@@ -465,12 +466,15 @@ def _credit_line(comparison: CreditAssignmentComparison | None) -> str:
     terminal = comparison.terminal_broadcast
     local = comparison.remaining_progress
     matched = comparison.matched_floor_advantage
+    context = comparison.matched_floor_context_advantage
     return (
         f"broadcast:{terminal.negative}/{terminal.zero}/{terminal.positive}"
         f"@{terminal.mean:.4f};"
         f"local:{local.negative}/{local.zero}/{local.positive}@{local.mean:.4f};"
         f"matched:{matched.negative}/{matched.zero}/{matched.positive}"
-        f"@{matched.mean:.4f}"
+        f"@{matched.mean:.4f};"
+        f"context:{context.negative}/{context.zero}/{context.positive}"
+        f"@{context.mean:.4f}"
     )
 
 
@@ -500,6 +504,24 @@ def _credit_scope_line(comparison: CreditAssignmentComparison | None) -> str:
     )
 
 
+def _credit_context_line(comparison: CreditAssignmentComparison | None) -> str:
+    if comparison is None:
+        return "unavailable"
+    return ",".join(
+        f"{row.context_kind}:{row.remaining_progress.decision_count}"
+        f"#{row.matched_floor_advantage.negative}/"
+        f"{row.matched_floor_advantage.zero}/"
+        f"{row.matched_floor_advantage.positive}"
+        f"~{row.matched_floor_context_advantage.negative}/"
+        f"{row.matched_floor_context_advantage.zero}/"
+        f"{row.matched_floor_context_advantage.positive}"
+        f"@{row.strategic_scope_weight:.4f}"
+        f">{row.matched_floor_strategic_weighted_target:.4f}"
+        f">{row.matched_floor_context_strategic_weighted_target:.4f}"
+        for row in comparison.by_strategic_context
+    )
+
+
 def _credit_assignment(
     comparison: CreditAssignmentComparison | None,
 ) -> dict[str, object] | None:
@@ -515,6 +537,9 @@ def _credit_assignment(
         ),
         "matched_floor_advantage": _credit_distribution(
             comparison.matched_floor_advantage
+        ),
+        "matched_floor_context_advantage": _credit_distribution(
+            comparison.matched_floor_context_advantage
         ),
         "by_decision_floor": [
             {
@@ -545,6 +570,31 @@ def _credit_assignment(
                 ),
             }
             for row in comparison.by_combat_scope
+        ],
+        "by_strategic_context": [
+            {
+                "context_kind": row.context_kind,
+                "strategic_scope_weight": row.strategic_scope_weight,
+                "matched_floor_strategic_weighted_target": (
+                    row.matched_floor_strategic_weighted_target
+                ),
+                "matched_floor_context_strategic_weighted_target": (
+                    row.matched_floor_context_strategic_weighted_target
+                ),
+                "terminal_broadcast": _credit_distribution(
+                    row.terminal_broadcast
+                ),
+                "remaining_progress": _credit_distribution(
+                    row.remaining_progress
+                ),
+                "matched_floor_advantage": _credit_distribution(
+                    row.matched_floor_advantage
+                ),
+                "matched_floor_context_advantage": _credit_distribution(
+                    row.matched_floor_context_advantage
+                ),
+            }
+            for row in comparison.by_strategic_context
         ],
     }
 

@@ -20,6 +20,7 @@ class DecisionRunProgress:
     act: int
     floor: int
     is_combat: bool
+    strategic_context_kind: int | None
 
     def __post_init__(self) -> None:
         object.__setattr__(
@@ -31,6 +32,22 @@ class DecisionRunProgress:
         object.__setattr__(self, "floor", _integer(self.floor, "floor", minimum=0))
         if type(self.is_combat) is not bool:
             raise DecisionProgressError("is_combat must be bool")
+        context = self.strategic_context_kind
+        if self.is_combat:
+            if context is not None:
+                raise DecisionProgressError(
+                    "combat decision cannot carry a strategic context kind"
+                )
+        elif context is None:
+            raise DecisionProgressError(
+                "strategic decision requires a strategic context kind"
+            )
+        else:
+            object.__setattr__(
+                self,
+                "strategic_context_kind",
+                _integer(context, "strategic_context_kind", minimum=1),
+            )
 
 
 class DecisionProgressProvider(Protocol):
@@ -63,6 +80,7 @@ class BridgeDecisionProgressProvider:
         )
         if len(set(slots)) != len(slots):
             raise DecisionProgressError("decision progress slots contain duplicates")
+        requested = set(slots)
         rows = self._source()
         if not isinstance(rows, Sequence) or isinstance(rows, (str, bytes)):
             raise DecisionProgressError(
@@ -77,6 +95,8 @@ class BridgeDecisionProgressProvider:
                     "public run context row must contain two values"
                 )
             slot = _integer(row[0], "public run context slot", minimum=0)
+            if slot not in requested:
+                continue
             if slot in contexts:
                 raise DecisionProgressError("public run contexts repeat a slot")
             view = row[1]
@@ -85,6 +105,7 @@ class BridgeDecisionProgressProvider:
                 act=_attribute(view, "act"),
                 floor=_attribute(view, "floor"),
                 is_combat=_attribute(view, "is_combat"),
+                strategic_context_kind=_attribute(view, "strategic_context_kind"),
             )
         try:
             return tuple(contexts[slot] for slot in slots)

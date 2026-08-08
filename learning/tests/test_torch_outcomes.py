@@ -211,6 +211,7 @@ class OnPolicyTerminalLossTests(unittest.TestCase):
                         act=1,
                         floor=0,
                         is_combat=True,
+                        strategic_context_kind=None,
                     ),
                 ),
             )
@@ -268,6 +269,7 @@ class OnPolicyTerminalLossTests(unittest.TestCase):
                         act=1,
                         floor=1,
                         is_combat=is_combat,
+                        strategic_context_kind=None if is_combat else 1,
                     ),
                 ),
             )

@@ -804,6 +804,12 @@ selects only strategic rows and renormalizes each attempt across those rows.
 Strategic-only rejects attempts without a strategic decision and never silently
 turns combat rows into strategic rows. `All` remains the maintained default;
 strategic-only is an interference ablation, not an assumed improvement.
+Decision-time progress also carries the bridge's typed strategic context kind
+for Map, CardReward, Event, Shop, Reward, Campfire, BossRelic, RunChoice, or
+Treasure boundaries. Diagnostics report strategic-scope attempt-equal weight and a
+second leave-one-out comparison matched by both floor and context. That tighter
+comparison does not change training; it exposes floor-only contrasts between
+unlike strategic sites and leaves unsupported groups explicitly at zero.
 One typed objective configuration owns terminal-return semantics, advantage
 mode, and the number of attempts per update. The trainer implementation
 artifact binds the return kind, target floor, advantage mode, decision scope, and attempts per

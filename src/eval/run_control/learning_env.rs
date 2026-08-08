@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use crate::ai::combat_learning_observation::{
     combat_learning_observation_v1, CombatLearningObservationV1,
 };
-use crate::ai::planner_core::{LegalCandidateSet, PlannerObservation};
+use crate::ai::planner_core::{LegalCandidateSet, PlannerDecisionContext, PlannerObservation};
 use crate::content::potions::PotionId;
 use crate::sim::combat_action_surface::{
     combat_legal_action_surface_v2, pending_choice_input_is_legal, CombatLegalActionSurfaceV2,
@@ -72,10 +72,26 @@ pub enum LearningBoundaryKindV1 {
     Unsupported,
 }
 
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[repr(u8)]
+#[serde(rename_all = "snake_case")]
+pub enum LearningStrategicContextKindV1 {
+    Map = 1,
+    CardReward = 2,
+    Event = 3,
+    Shop = 4,
+    Reward = 5,
+    Campfire = 6,
+    BossRelic = 7,
+    RunChoice = 8,
+    Treasure = 9,
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct LearningPublicRunContextV1 {
     pub boundary_kind: LearningBoundaryKindV1,
+    pub strategic_context_kind: Option<LearningStrategicContextKindV1>,
     pub seed: u64,
     pub act: u8,
     pub floor: i32,
@@ -107,6 +123,23 @@ impl LearningBoundaryV1 {
 
     pub fn is_terminal(&self) -> bool {
         matches!(self, Self::Terminal { .. })
+    }
+
+    pub fn strategic_context_kind(&self) -> Option<LearningStrategicContextKindV1> {
+        let Self::Strategic { boundary } = self else {
+            return None;
+        };
+        Some(match &boundary.observation.context {
+            PlannerDecisionContext::Map { .. } => LearningStrategicContextKindV1::Map,
+            PlannerDecisionContext::CardReward { .. } => LearningStrategicContextKindV1::CardReward,
+            PlannerDecisionContext::Event { .. } => LearningStrategicContextKindV1::Event,
+            PlannerDecisionContext::Shop { .. } => LearningStrategicContextKindV1::Shop,
+            PlannerDecisionContext::Reward => LearningStrategicContextKindV1::Reward,
+            PlannerDecisionContext::Campfire => LearningStrategicContextKindV1::Campfire,
+            PlannerDecisionContext::BossRelic => LearningStrategicContextKindV1::BossRelic,
+            PlannerDecisionContext::RunChoice => LearningStrategicContextKindV1::RunChoice,
+            PlannerDecisionContext::Treasure => LearningStrategicContextKindV1::Treasure,
+        })
     }
 }
 
@@ -185,6 +218,7 @@ impl LearningEnvV1 {
     ) -> LearningPublicRunContextV1 {
         LearningPublicRunContextV1 {
             boundary_kind: boundary.kind(),
+            strategic_context_kind: boundary.strategic_context_kind(),
             seed: self.session.run_state.seed,
             act: self.session.run_state.act_num,
             floor: self.session.run_state.floor_num,

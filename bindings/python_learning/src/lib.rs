@@ -329,6 +329,11 @@ impl PyLearningPublicRunContextV1 {
     }
 
     #[getter]
+    fn strategic_context_kind(&self) -> Option<u8> {
+        self.inner.strategic_context_kind.map(|kind| kind as u8)
+    }
+
+    #[getter]
     fn is_combat(&self) -> bool {
         self.inner.boundary_kind == LearningBoundaryKindV1::Combat
     }

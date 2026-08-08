@@ -295,6 +295,7 @@ class NumpyWinningBatchEnv(NumpyFakeBatchEnv):
                     boundary_kind=2 if terminal else 1,
                     is_combat=not terminal,
                     is_terminal=terminal,
+                    strategic_context_kind=None,
                     seed=self.seeds[slot],
                     act=3,
                     floor=40,

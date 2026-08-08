@@ -169,7 +169,7 @@ pub use forced_transition::{
 pub use learning_env::{
     LearningActionV1, LearningBoundaryKindV1, LearningBoundaryV1, LearningCombatBoundaryV1,
     LearningEnvV1, LearningObservationCompletenessV1, LearningPublicRunContextV1, LearningStepV1,
-    LearningStrategicBoundaryV1, LearningTerminalOutcomeV1,
+    LearningStrategicBoundaryV1, LearningStrategicContextKindV1, LearningTerminalOutcomeV1,
 };
 pub use learning_env_pool::{
     LearningEnvPoolError, LearningEnvPoolModelBatchV1, LearningEnvPoolSlotStepV1,

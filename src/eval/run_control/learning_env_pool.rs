@@ -368,7 +368,9 @@ impl std::error::Error for LearningEnvPoolError {}
 mod tests {
     use super::*;
     use crate::content::potions::{Potion, PotionId};
-    use crate::eval::run_control::{LearningBoundaryKindV1, RunControlSession};
+    use crate::eval::run_control::{
+        LearningBoundaryKindV1, LearningStrategicContextKindV1, RunControlSession,
+    };
     use crate::state::core::RunResult;
 
     #[test]
@@ -380,13 +382,18 @@ mod tests {
         session.run_state.max_hp = 85;
         session.run_state.gold = 123;
         session.run_state.potions = vec![Some(Potion::new(PotionId::GamblersBrew, 0)), None];
+        let seed = session.run_state.seed;
         let pool = LearningEnvPoolV1::from_envs([LearningEnvV1::from_session(session)])
             .expect("create pool");
 
         let context = pool.public_run_context(0).expect("public run context");
 
         assert_eq!(context.boundary_kind, LearningBoundaryKindV1::Strategic);
-        assert_eq!(context.seed, 0);
+        assert_eq!(
+            context.strategic_context_kind,
+            Some(LearningStrategicContextKindV1::Event)
+        );
+        assert_eq!(context.seed, seed);
         assert_eq!((context.act, context.floor), (2, 19));
         assert_eq!((context.hp, context.max_hp, context.gold), (41, 85, 123));
         assert_eq!(context.potion_ids, vec![Some(PotionId::GamblersBrew), None]);

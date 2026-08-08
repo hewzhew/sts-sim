@@ -22,7 +22,7 @@ use sts_oracle_eval::content::relics::RelicId;
 use sts_oracle_eval::eval::run_control::{
     LearningModelCandidateSemanticsV1, LearningModelDecisionV1, LearningModelObservationV1,
     LearningRunSelectionFamilyV1, LearningSelectionCandidateSemanticsV1,
-    LearningSelectionDecisionV1, LearningSelectionDraftV1,
+    LearningSelectionDecisionV1, LearningSelectionDraftV1, LearningStrategicContextKindV1,
     LearningStrategicModelObservationV1,
 };
 use sts_oracle_eval::sim::combat_action_surface::CombatSelectionDistinctByV2;
@@ -352,15 +352,15 @@ pub enum RelationKind: u16 {
 numeric_schema_enum! {
 #[derive(Clone, Copy, Debug)]
 pub enum ContextKind: i64 {
-    Map = 1,
-    CardReward = 2,
-    Event = 3,
-    Shop = 4,
-    Reward = 5,
-    Campfire = 6,
-    BossRelic = 7,
-    RunChoice = 8,
-    Treasure = 9,
+    Map = LearningStrategicContextKindV1::Map as i64,
+    CardReward = LearningStrategicContextKindV1::CardReward as i64,
+    Event = LearningStrategicContextKindV1::Event as i64,
+    Shop = LearningStrategicContextKindV1::Shop as i64,
+    Reward = LearningStrategicContextKindV1::Reward as i64,
+    Campfire = LearningStrategicContextKindV1::Campfire as i64,
+    BossRelic = LearningStrategicContextKindV1::BossRelic as i64,
+    RunChoice = LearningStrategicContextKindV1::RunChoice as i64,
+    Treasure = LearningStrategicContextKindV1::Treasure as i64,
 }}
 
 numeric_schema_enum! {
