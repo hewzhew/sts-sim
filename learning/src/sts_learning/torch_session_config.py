@@ -15,7 +15,7 @@ from .manifest_catalog import BehaviorManifestCatalogLimits
 from .resume_store import ResumeStoreLimits
 from .seeds import SeedPartition, SeedSchedule
 from .semantic_concat import SemanticBatchConcatLimits
-from .terminal_returns import FloorProgressReturnConfig
+from .terminal_returns import OnPolicyObjectiveConfig
 from .torch_checkpoints import TorchCheckpointLimits
 from .torch_policy import RaggedCategoricalPolicyConfig, RaggedScorerConfig
 from .torch_provenance import AdamTrainingConfig
@@ -85,7 +85,7 @@ class CategoricalOnlineProfile:
     scorer: RaggedScorerConfig = RaggedScorerConfig()
     behavior: RaggedCategoricalPolicyConfig = RaggedCategoricalPolicyConfig()
     optimizer: AdamTrainingConfig = AdamTrainingConfig()
-    terminal_return: FloorProgressReturnConfig = FloorProgressReturnConfig()
+    objective: OnPolicyObjectiveConfig = OnPolicyObjectiveConfig()
     optimizer_steps_per_generation: int = 1
     device_type: str = "cpu"
 
@@ -96,8 +96,8 @@ class CategoricalOnlineProfile:
             raise TorchSessionError("session behavior config must be typed")
         if not isinstance(self.optimizer, AdamTrainingConfig):
             raise TorchSessionError("session optimizer config must be typed")
-        if not isinstance(self.terminal_return, FloorProgressReturnConfig):
-            raise TorchSessionError("session terminal return config must be typed")
+        if not isinstance(self.objective, OnPolicyObjectiveConfig):
+            raise TorchSessionError("session objective config must be typed")
         optimizer_steps = _positive_integer(
             self.optimizer_steps_per_generation,
             "optimizer_steps_per_generation",
@@ -128,7 +128,6 @@ class CategoricalSessionLimits:
         max_payload_bytes_per_attempt=64 * 1024 * 1024,
     )
     attempt_updates: AttemptUpdateBatchLimits = AttemptUpdateBatchLimits(
-        attempts_per_update=8,
         max_decisions_per_update=4_096,
         max_payload_bytes_per_update=64 * 1024 * 1024,
     )

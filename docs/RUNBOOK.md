@@ -614,12 +614,22 @@ cargo build -p sts_oracle_tools --release --bin combat_search_v2_driver
 git diff --check
 ```
 
-Changes to the standalone Python bridge or online `learning/` caller use one
-isolated wheel-and-caller verification entrypoint:
+Configure one stable Python 3.12 training runtime once, then use the small
+`learning/dev.ps1` surface for routine learning work:
 
 ```powershell
-.\bindings\python_learning\verify.ps1 -Python <python-3.12-executable>
+.\learning\dev.ps1 configure -Python <python-3.12-with-numpy-torch-and-bridge>
+.\learning\dev.ps1 doctor
+.\learning\dev.ps1 test
+.\learning\dev.ps1 verify -MaturinPython <python-with-maturin>
 ```
+
+`test` requires PyTorch and the installed bridge and runs the complete learning
+suite; missing training dependencies are failures, not skips. `verify` runs
+that suite and then invokes `bindings/python_learning/verify.ps1` for the fresh
+wheel, Rust bridge, smoke, and isolated minimal caller contracts. The lower-level
+bridge command intentionally permits optional PyTorch tests to skip and is not
+the maintained training-verification entrypoint.
 
 The root package is the sole default member and disables automatic bins and
 integration tests. Bare `cargo test --lib` therefore checks only the core

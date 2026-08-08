@@ -22,6 +22,7 @@ from sts_learning import (
     ExperienceSegmentBuffer,
     FloorProgressReturnConfig,
     OnlineBatchDriver,
+    OnPolicyObjectiveConfig,
     SeedPartition,
     SeedSchedule,
     SemanticBatchConcatLimits,
@@ -121,7 +122,10 @@ class BoundedCategoricalGenerationRunnerTests(unittest.TestCase):
             driver, assembler, batcher, trainer, controller, shadow = _components(
                 Path(root)
             )
-            trainer.return_config = FloorProgressReturnConfig(target_floor=51)
+            trainer.objective_config = OnPolicyObjectiveConfig(
+                terminal_return=FloorProgressReturnConfig(target_floor=51),
+                attempts_per_update=1,
+            )
 
             with self.assertRaisesRegex(TorchGenerationError, "trainer implementation"):
                 BoundedCategoricalGenerationRunner(
@@ -222,7 +226,6 @@ class BoundedCategoricalGenerationRunnerTests(unittest.TestCase):
             self.assertEqual(boundary.driver.slot_count, 1)
             self.assertEqual(boundary.driver.checkpoint_slots, 1)
             self.assertEqual(boundary.assembler.open_attempts, 0)
-            self.assertEqual(boundary.update_batcher.pending_attempts, 0)
             self.assertEqual(boundary.trainer.optimizer_steps, 0)
             self.assertEqual(boundary.controller.active_training_step, 0)
             payload = encode_generation_resume_state(
@@ -319,6 +322,10 @@ def _components(
     shadow = _scorer()
     behavior_config = RaggedCategoricalPolicyConfig(temperature=0.8)
     return_config = FloorProgressReturnConfig()
+    objective_config = OnPolicyObjectiveConfig(
+        terminal_return=return_config,
+        attempts_per_update=1,
+    )
     registry = BehaviorManifestRegistry(capacity=owner_capacity)
     store = BoundedTorchCheckpointStore(
         root / "checkpoints",
@@ -348,8 +355,7 @@ def _components(
             behavior_manifest_template_fixture(
                 behavior_rule=behavior_config.behavior_rule,
                 trainer_implementation=categorical_trainer_implementation(
-                    return_config,
-                    1,
+                    objective_config,
                 ),
             ),
         ),
@@ -368,12 +374,11 @@ def _components(
             max_input_array_bytes=1024 * 1024,
         ),
         behavior_config,
-        return_config,
-        1,
+        objective_config,
     )
     batcher = BoundedAttemptUpdateBatcher(
+        objective_config.attempts_per_update,
         AttemptUpdateBatchLimits(
-            attempts_per_update=1,
             max_decisions_per_update=64,
             max_payload_bytes_per_update=1024 * 1024,
         ),

@@ -23,6 +23,7 @@ from sts_learning import (
     FloorProgressReturnConfig,
     HeldOutEvaluationSpec,
     OnlineBatchDriver,
+    OnPolicyObjectiveConfig,
     PairedHeldOutEvaluationSpec,
     SemanticBatchConcatLimits,
     SeedPartition,
@@ -75,6 +76,10 @@ class RealBridgeOnlineTrainingTests(unittest.TestCase):
         scorer_config = RaggedScorerConfig(hidden_dim=8, relation_layers=0)
         behavior_config = RaggedCategoricalPolicyConfig(temperature=0.8)
         return_config = FloorProgressReturnConfig()
+        objective_config = OnPolicyObjectiveConfig(
+            terminal_return=return_config,
+            attempts_per_update=1,
+        )
 
         def scorer_factory():
             return RaggedCandidateScorer.from_bridge_schema(schema, scorer_config)
@@ -107,8 +112,7 @@ class RealBridgeOnlineTrainingTests(unittest.TestCase):
                     semantic_schema_version=int(schema["version"]),
                     behavior_rule=behavior_config.behavior_rule,
                     trainer_implementation=categorical_trainer_implementation(
-                        return_config,
-                        1,
+                        objective_config,
                     ),
                 ),
             )
@@ -132,12 +136,11 @@ class RealBridgeOnlineTrainingTests(unittest.TestCase):
                     max_input_array_bytes=32 * 1024 * 1024,
                 ),
                 behavior_config,
-                return_config,
-                1,
+                objective_config,
             )
             update_batcher = BoundedAttemptUpdateBatcher(
+                objective_config.attempts_per_update,
                 AttemptUpdateBatchLimits(
-                    attempts_per_update=1,
                     max_decisions_per_update=1_024,
                     max_payload_bytes_per_update=32 * 1024 * 1024,
                 ),
@@ -316,8 +319,7 @@ class RealBridgeOnlineTrainingTests(unittest.TestCase):
                         semantic_schema_version=int(schema["version"]),
                         behavior_rule=behavior_config.behavior_rule,
                         trainer_implementation=categorical_trainer_implementation(
-                            return_config,
-                            1,
+                            objective_config,
                         ),
                     ),
                 ),

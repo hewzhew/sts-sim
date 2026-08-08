@@ -11,6 +11,7 @@ from learning.tests.torch_outcome_fixtures import (
 from sts_learning import (
     BehaviorManifestRegistry,
     FloorProgressReturnConfig,
+    OnPolicyObjectiveConfig,
     SelectionProbability,
     SemanticBatchConcatLimits,
 )
@@ -37,6 +38,10 @@ CONCAT_LIMITS = SemanticBatchConcatLimits(
     max_input_array_bytes=1024 * 1024,
 )
 RETURN_CONFIG = FloorProgressReturnConfig()
+OBJECTIVE_CONFIG = OnPolicyObjectiveConfig(
+    terminal_return=RETURN_CONFIG,
+    attempts_per_update=1,
+)
 
 
 @unittest.skipUnless(_TORCH_AVAILABLE, "optional PyTorch dependency is not installed")
@@ -60,8 +65,7 @@ class SynchronousPolicyTrainerTests(unittest.TestCase):
             registry,
             CONCAT_LIMITS,
             POLICY_CONFIG,
-            RETURN_CONFIG,
-            1,
+            OBJECTIVE_CONFIG,
         )
         batch = decision_batch_fixture(
             slot=1,
@@ -111,8 +115,7 @@ class SynchronousPolicyTrainerTests(unittest.TestCase):
             registry,
             CONCAT_LIMITS,
             POLICY_CONFIG,
-            RETURN_CONFIG,
-            1,
+            OBJECTIVE_CONFIG,
             resume_snapshot=trainer.snapshot,
         )
         self.assertEqual(restored.snapshot, trainer.snapshot)
@@ -134,8 +137,7 @@ class SynchronousPolicyTrainerTests(unittest.TestCase):
             registry,
             CONCAT_LIMITS,
             POLICY_CONFIG,
-            RETURN_CONFIG,
-            1,
+            OBJECTIVE_CONFIG,
         )
         batch = decision_batch_fixture(
             slot=1,
@@ -184,8 +186,7 @@ class SynchronousPolicyTrainerTests(unittest.TestCase):
             registry,
             CONCAT_LIMITS,
             POLICY_CONFIG,
-            RETURN_CONFIG,
-            1,
+            OBJECTIVE_CONFIG,
         )
         batch = decision_batch_fixture(
             slot=1,

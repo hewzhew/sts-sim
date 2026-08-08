@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import math
-import operator
 import time
 from dataclasses import dataclass
 
@@ -13,7 +12,7 @@ from .attempts import AttemptAssemblyDelivery, DroppedAttemptExperience
 from .manifests import BehaviorManifestRegistry
 from .policy import BehaviorManifestId, SelectionProbability
 from .semantic_concat import SemanticBatchConcatLimits
-from .terminal_returns import FloorProgressReturnConfig
+from .terminal_returns import OnPolicyObjectiveConfig
 from .torch_outcomes import CandidatePolicyScorer, on_policy_terminal_loss
 from .torch_policy import RaggedCategoricalPolicyConfig
 
@@ -49,8 +48,7 @@ class SynchronousPolicyTrainer:
         registry: BehaviorManifestRegistry,
         concat_limits: SemanticBatchConcatLimits,
         policy_config: RaggedCategoricalPolicyConfig,
-        return_config: FloorProgressReturnConfig,
-        attempts_per_update: int,
+        objective_config: OnPolicyObjectiveConfig,
         *,
         resume_snapshot: SynchronousPolicyTrainerSnapshot | None = None,
     ) -> None:
@@ -64,18 +62,14 @@ class SynchronousPolicyTrainer:
             raise TorchTrainingError("trainer requires semantic concat limits")
         if not isinstance(policy_config, RaggedCategoricalPolicyConfig):
             raise TorchTrainingError("trainer requires categorical policy config")
-        if not isinstance(return_config, FloorProgressReturnConfig):
-            raise TorchTrainingError("trainer requires terminal return config")
+        if not isinstance(objective_config, OnPolicyObjectiveConfig):
+            raise TorchTrainingError("trainer requires on-policy objective config")
         self.scorer = scorer
         self.optimizer = optimizer
         self.registry = registry
         self.concat_limits = concat_limits
         self.policy_config = policy_config
-        self.return_config = return_config
-        self.attempts_per_update = _positive_integer(
-            attempts_per_update,
-            "attempts_per_update",
-        )
+        self.objective_config = objective_config
         restored = _validated_resume_snapshot(resume_snapshot)
         self._deliveries = restored.deliveries
         self._optimizer_steps = restored.optimizer_steps
@@ -122,7 +116,7 @@ class SynchronousPolicyTrainer:
             self._deliveries += 1
             self._dropped_attempts += dropped_count
             return
-        if completed_count != self.attempts_per_update:
+        if completed_count != self.objective_config.attempts_per_update:
             raise TorchTrainingError(
                 "training delivery must contain exactly attempts_per_update "
                 "completed attempts"
@@ -135,7 +129,7 @@ class SynchronousPolicyTrainer:
             self.registry,
             self.concat_limits,
             self.policy_config,
-            self.return_config,
+            self.objective_config.terminal_return,
         )
         if objective.value.ndim != 0 or not objective.value.requires_grad:
             raise TorchTrainingError(
@@ -266,15 +260,3 @@ def _validated_resume_snapshot(
                     "trainer resume selection probabilities are malformed"
                 )
     return snapshot
-
-
-def _positive_integer(value: object, name: str) -> int:
-    if isinstance(value, bool):
-        raise TorchTrainingError(f"{name} must be an integer, not bool")
-    try:
-        normalized = operator.index(value)
-    except TypeError as error:
-        raise TorchTrainingError(f"{name} must be an integer") from error
-    if normalized <= 0:
-        raise TorchTrainingError(f"{name} must be positive")
-    return normalized

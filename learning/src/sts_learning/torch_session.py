@@ -134,8 +134,7 @@ class CategoricalOnlineSessionFactory:
             profile.scorer,
             profile.behavior,
             profile.optimizer,
-            profile.terminal_return,
-            config.limits.attempt_updates.attempts_per_update,
+            profile.objective,
             device_type=profile.device_type,
         )
 
@@ -188,10 +187,10 @@ class CategoricalOnlineSessionFactory:
             registry,
             self.config.limits.concat,
             self.config.profile.behavior,
-            self.config.profile.terminal_return,
-            self.config.limits.attempt_updates.attempts_per_update,
+            self.config.profile.objective,
         )
         update_batcher = BoundedAttemptUpdateBatcher(
+            self.config.profile.objective.attempts_per_update,
             self.config.limits.attempt_updates,
             trainer,
         )
@@ -250,7 +249,7 @@ class CategoricalOnlineSessionFactory:
                 attempt_limits=self.config.limits.attempts,
                 attempt_update_limits=self.config.limits.attempt_updates,
                 concat_limits=self.config.limits.concat,
-                terminal_return=self.config.profile.terminal_return,
+                objective=self.config.profile.objective,
                 payload_limits=self.config.limits.resume_payloads,
                 expected_generator_device_type=(
                     self.config.profile.device_type

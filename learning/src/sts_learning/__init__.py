@@ -14,7 +14,6 @@ from .attempts import (
 from .attempt_batching import (
     AttemptUpdateBatchError,
     AttemptUpdateBatchLimits,
-    AttemptUpdateBatchSnapshot,
     BoundedAttemptUpdateBatcher,
 )
 from .driver import (
@@ -130,6 +129,7 @@ from .semantic_concat import (
 )
 from .terminal_returns import (
     FloorProgressReturnConfig,
+    OnPolicyObjectiveConfig,
     TerminalReturnError,
     floor_progress_terminal_return,
 )
@@ -142,7 +142,6 @@ __all__ = [
     "AttemptDropReason",
     "AttemptUpdateBatchError",
     "AttemptUpdateBatchLimits",
-    "AttemptUpdateBatchSnapshot",
     "BatchCurriculum",
     "BatchDriverError",
     "BatchDriverResumeBoundary",
@@ -192,6 +191,7 @@ __all__ = [
     "ManifestArtifactId",
     "ManifestArtifactKind",
     "OnlineBatchDriver",
+    "OnPolicyObjectiveConfig",
     "PairedHeldOutEvaluationResult",
     "PairedHeldOutEvaluationSpec",
     "PreparedDecisionBatch",

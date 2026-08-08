@@ -12,7 +12,6 @@ from ._torch_owner_state_codec import (
     encode_owner_state,
 )
 from .attempts import AttemptAssemblerSnapshot
-from .attempt_batching import AttemptUpdateBatchSnapshot
 from .driver import BatchDriverResumeBoundary
 from .policy import BehaviorManifestId, SelectionProbability
 from .recovery import RecoveryMode, RecoverySlotSnapshot, RecoverySlotStatus
@@ -24,7 +23,7 @@ from .torch_training import SynchronousPolicyTrainerSnapshot
 
 
 _GENERATION_COMPONENT = "categorical_generation_state"
-_COMPONENT_VERSION = 2
+_COMPONENT_VERSION = 3
 
 
 @dataclass(frozen=True)
@@ -99,27 +98,6 @@ def encode_generation_resume_state(
                     "completed_attempts": boundary.assembler.completed_attempts,
                     "dropped_attempts": boundary.assembler.dropped_attempts,
                 },
-                "update_batcher": {
-                    "deliveries": boundary.update_batcher.deliveries,
-                    "sink_deliveries": boundary.update_batcher.sink_deliveries,
-                    "update_batches": boundary.update_batcher.update_batches,
-                    "completed_attempts": (
-                        boundary.update_batcher.completed_attempts
-                    ),
-                    "dropped_attempts": boundary.update_batcher.dropped_attempts,
-                    "pending_attempts": boundary.update_batcher.pending_attempts,
-                    "pending_decisions": boundary.update_batcher.pending_decisions,
-                    "pending_payload_bytes": (
-                        boundary.update_batcher.pending_payload_bytes
-                    ),
-                    "pending_behavior_manifest_id": (
-                        None
-                        if boundary.update_batcher.pending_behavior_manifest_id
-                        is None
-                        else boundary.update_batcher.pending_behavior_manifest_id.digest
-                    ),
-                    "poisoned": boundary.update_batcher.poisoned,
-                },
                 "trainer": {
                     "deliveries": trainer.deliveries,
                     "optimizer_steps": trainer.optimizer_steps,
@@ -180,7 +158,6 @@ def decode_generation_resume_state(
                 "optimizer_steps_per_generation",
                 "driver",
                 "assembler",
-                "update_batcher",
                 "trainer",
                 "controller",
             },
@@ -198,7 +175,6 @@ def decode_generation_resume_state(
         )
         driver = _decode_driver_boundary(root["driver"])
         assembler = _decode_assembler_snapshot(root["assembler"])
-        update_batcher = _decode_update_batch_snapshot(root["update_batcher"])
         trainer = _decode_trainer_snapshot(root["trainer"])
         controller = _decode_controller_snapshot(root["controller"])
     except (TorchOwnerStateError, ValueError, TypeError, KeyError) as error:
@@ -218,33 +194,6 @@ def decode_generation_resume_state(
         raise TorchResumeStateError("generation resume contains open attempt state")
     if trainer.poisoned:
         raise TorchResumeStateError("generation resume trainer is poisoned")
-    if update_batcher.poisoned:
-        raise TorchResumeStateError("generation resume update batcher is poisoned")
-    if (
-        update_batcher.pending_attempts != 0
-        or update_batcher.pending_decisions != 0
-        or update_batcher.pending_payload_bytes != 0
-        or update_batcher.pending_behavior_manifest_id is not None
-    ):
-        raise TorchResumeStateError(
-            "generation resume contains pending attempt update payload"
-        )
-    if (
-        assembler.completed_attempts != update_batcher.completed_attempts
-        or assembler.dropped_attempts != update_batcher.dropped_attempts
-    ):
-        raise TorchResumeStateError(
-            "generation resume assembler and update batcher counters differ"
-        )
-    if (
-        update_batcher.sink_deliveries != trainer.deliveries
-        or update_batcher.update_batches != trainer.optimizer_steps
-        or update_batcher.completed_attempts != trainer.completed_attempts
-        or update_batcher.dropped_attempts != trainer.dropped_attempts
-    ):
-        raise TorchResumeStateError(
-            "generation resume update batcher and trainer counters differ"
-        )
     if (
         controller.active_manifest_id is None
         or controller.active_training_step is None
@@ -258,7 +207,6 @@ def decode_generation_resume_state(
         boundary=CategoricalGenerationResumeBoundary(
             driver=driver,
             assembler=assembler,
-            update_batcher=update_batcher,
             trainer=trainer,
             controller=controller,
         ),
@@ -403,78 +351,6 @@ def _decode_assembler_snapshot(value: object) -> AttemptAssemblerSnapshot:
             for name in raw
         }
     )
-
-
-def _decode_update_batch_snapshot(value: object) -> AttemptUpdateBatchSnapshot:
-    raw = _exact_mapping(
-        value,
-        {
-            "deliveries",
-            "sink_deliveries",
-            "update_batches",
-            "completed_attempts",
-            "dropped_attempts",
-            "pending_attempts",
-            "pending_decisions",
-            "pending_payload_bytes",
-            "pending_behavior_manifest_id",
-            "poisoned",
-        },
-        "attempt update batcher state",
-    )
-    manifest_raw = raw["pending_behavior_manifest_id"]
-    manifest_id = None
-    if manifest_raw is not None:
-        if not isinstance(manifest_raw, bytes):
-            raise TorchResumeStateError(
-                "pending behavior manifest id must be bytes"
-            )
-        manifest_id = BehaviorManifestId(manifest_raw)
-    poisoned = raw["poisoned"]
-    if type(poisoned) is not bool:
-        raise TorchResumeStateError("attempt update poisoned flag must be bool")
-    snapshot = AttemptUpdateBatchSnapshot(
-        deliveries=_nonnegative_integer(raw["deliveries"], "update deliveries"),
-        sink_deliveries=_nonnegative_integer(
-            raw["sink_deliveries"],
-            "update sink_deliveries",
-        ),
-        update_batches=_nonnegative_integer(
-            raw["update_batches"],
-            "update batches",
-        ),
-        completed_attempts=_nonnegative_integer(
-            raw["completed_attempts"],
-            "update completed_attempts",
-        ),
-        dropped_attempts=_nonnegative_integer(
-            raw["dropped_attempts"],
-            "update dropped_attempts",
-        ),
-        pending_attempts=_nonnegative_integer(
-            raw["pending_attempts"],
-            "update pending_attempts",
-        ),
-        pending_decisions=_nonnegative_integer(
-            raw["pending_decisions"],
-            "update pending_decisions",
-        ),
-        pending_payload_bytes=_nonnegative_integer(
-            raw["pending_payload_bytes"],
-            "update pending_payload_bytes",
-        ),
-        pending_behavior_manifest_id=manifest_id,
-        poisoned=poisoned,
-    )
-    if snapshot.sink_deliveries > snapshot.deliveries:
-        raise TorchResumeStateError(
-            "attempt update sink deliveries exceed input deliveries"
-        )
-    if snapshot.update_batches > snapshot.sink_deliveries:
-        raise TorchResumeStateError(
-            "attempt update batches exceed sink deliveries"
-        )
-    return snapshot
 
 
 def _decode_trainer_snapshot(value: object) -> SynchronousPolicyTrainerSnapshot:

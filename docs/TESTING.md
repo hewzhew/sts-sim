@@ -23,9 +23,13 @@ Tests are deliberately split across real Cargo packages:
   package plus evaluation, run-control, branch runtime, tools, and their shared
   contracts;
 - `cargo architecture <filter>` runs dependency-free source-boundary checks.
-- `bindings/python_learning/verify.ps1` builds the standalone wheel and runs
-  its Rust/Python contracts together with the separate online `learning/`
-  caller tests.
+- `learning/dev.ps1 test` uses the explicitly configured Python 3.12 runtime
+  and requires NumPy, PyTorch, the installed bridge, and the repository caller;
+  it is the maintained complete online-learning test entrypoint;
+- `learning/dev.ps1 verify` runs that complete suite before delegating to
+  `bindings/python_learning/verify.ps1`, which builds a fresh standalone wheel
+  and checks Rust, smoke, and isolated minimal caller contracts. The lower-level
+  bridge verifier permits optional dependency tests to skip.
 
 Bare `cargo test --lib` addresses only the default core package and is not a
 complete repository check. Keep local unit tests beside their owning module;

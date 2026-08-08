@@ -1,4 +1,4 @@
-"""Strictly bounded on-policy attempt batches for one optimizer update."""
+"""Strictly bounded live-only attempt batches for one optimizer update."""
 
 from __future__ import annotations
 
@@ -20,35 +20,17 @@ class AttemptUpdateBatchError(RuntimeError):
 
 @dataclass(frozen=True)
 class AttemptUpdateBatchLimits:
-    """Exact update size plus hard retained decision and payload bounds."""
+    """Hard retained decision and payload bounds for one update batch."""
 
-    attempts_per_update: int
     max_decisions_per_update: int
     max_payload_bytes_per_update: int
 
     def __post_init__(self) -> None:
         for name in (
-            "attempts_per_update",
             "max_decisions_per_update",
             "max_payload_bytes_per_update",
         ):
             object.__setattr__(self, name, _positive_integer(getattr(self, name), name))
-
-
-@dataclass(frozen=True)
-class AttemptUpdateBatchSnapshot:
-    """Compact counters; pending tensor payloads are deliberately absent."""
-
-    deliveries: int
-    sink_deliveries: int
-    update_batches: int
-    completed_attempts: int
-    dropped_attempts: int
-    pending_attempts: int
-    pending_decisions: int
-    pending_payload_bytes: int
-    pending_behavior_manifest_id: BehaviorManifestId | None
-    poisoned: bool
 
 
 class BoundedAttemptUpdateBatcher:
@@ -56,23 +38,20 @@ class BoundedAttemptUpdateBatcher:
 
     def __init__(
         self,
+        attempts_per_update: int,
         limits: AttemptUpdateBatchLimits,
         sink: CompletedAttemptSink,
-        *,
-        resume_snapshot: AttemptUpdateBatchSnapshot | None = None,
     ) -> None:
+        self.attempts_per_update = _positive_integer(
+            attempts_per_update,
+            "attempts_per_update",
+        )
         if not isinstance(limits, AttemptUpdateBatchLimits):
             raise AttemptUpdateBatchError("limits must be AttemptUpdateBatchLimits")
         if not callable(sink):
             raise AttemptUpdateBatchError("attempt update sink must be callable")
-        restored = _validated_resume_snapshot(resume_snapshot)
         self.limits = limits
         self._sink = sink
-        self._deliveries = restored.deliveries
-        self._sink_deliveries = restored.sink_deliveries
-        self._update_batches = restored.update_batches
-        self._completed_attempts = restored.completed_attempts
-        self._dropped_attempts = restored.dropped_attempts
         self._pending: tuple[CompletedAttemptExperience, ...] = ()
         self._pending_decisions = 0
         self._pending_payload_bytes = 0
@@ -81,24 +60,42 @@ class BoundedAttemptUpdateBatcher:
 
     @property
     def update_sink(self) -> CompletedAttemptSink:
-        """Return the exact synchronous owner wired after update batching."""
-
         return self._sink
 
     @property
-    def snapshot(self) -> AttemptUpdateBatchSnapshot:
-        return AttemptUpdateBatchSnapshot(
-            deliveries=self._deliveries,
-            sink_deliveries=self._sink_deliveries,
-            update_batches=self._update_batches,
-            completed_attempts=self._completed_attempts,
-            dropped_attempts=self._dropped_attempts,
-            pending_attempts=len(self._pending),
-            pending_decisions=self._pending_decisions,
-            pending_payload_bytes=self._pending_payload_bytes,
-            pending_behavior_manifest_id=self._pending_behavior_manifest_id,
-            poisoned=self._poisoned,
-        )
+    def pending_attempts(self) -> int:
+        return len(self._pending)
+
+    @property
+    def pending_decisions(self) -> int:
+        return self._pending_decisions
+
+    @property
+    def pending_payload_bytes(self) -> int:
+        return self._pending_payload_bytes
+
+    @property
+    def pending_behavior_manifest_id(self) -> BehaviorManifestId | None:
+        return self._pending_behavior_manifest_id
+
+    @property
+    def poisoned(self) -> bool:
+        return self._poisoned
+
+    def require_quiescent(self) -> None:
+        """Reject durable publication unless this live-only owner is empty."""
+
+        if self._poisoned:
+            raise AttemptUpdateBatchError("attempt update batcher is poisoned")
+        if (
+            self._pending
+            or self._pending_decisions != 0
+            or self._pending_payload_bytes != 0
+            or self._pending_behavior_manifest_id is not None
+        ):
+            raise AttemptUpdateBatchError(
+                "attempt update batcher contains pending live-only payload"
+            )
 
     def __call__(self, delivery: AttemptAssemblyDelivery) -> None:
         if self._poisoned:
@@ -112,18 +109,20 @@ class BoundedAttemptUpdateBatcher:
         if len(set(incoming_keys)) != len(incoming_keys):
             raise AttemptUpdateBatchError("attempt update delivery repeats a lineage")
         if pending_keys.intersection(incoming_keys):
-            raise AttemptUpdateBatchError("attempt update batch repeats a pending lineage")
+            raise AttemptUpdateBatchError(
+                "attempt update batch repeats a pending lineage"
+            )
         dropped_keys = [attempt.lineage.key for attempt in dropped]
         if len(set(dropped_keys)) != len(dropped_keys):
-            raise AttemptUpdateBatchError("attempt update delivery repeats a dropped lineage")
+            raise AttemptUpdateBatchError(
+                "attempt update delivery repeats a dropped lineage"
+            )
         if set(incoming_keys).intersection(dropped_keys):
             raise AttemptUpdateBatchError("one lineage is both completed and dropped")
 
         incoming_manifest_id = _single_behavior_manifest_id(completed)
-        pending_count = len(self._pending)
-        next_count = pending_count + len(completed)
-        target = self.limits.attempts_per_update
-        if next_count > target:
+        next_count = len(self._pending) + len(completed)
+        if next_count > self.attempts_per_update:
             raise AttemptUpdateBatchError(
                 "attempt update delivery exceeds the exact attempts_per_update target"
             )
@@ -136,10 +135,12 @@ class BoundedAttemptUpdateBatcher:
                 "attempt update batch mixes behavior manifest identities"
             )
 
-        incoming_decisions = sum(attempt.decision_count for attempt in completed)
-        incoming_payload_bytes = sum(attempt.payload_bytes for attempt in completed)
-        next_decisions = self._pending_decisions + incoming_decisions
-        next_payload_bytes = self._pending_payload_bytes + incoming_payload_bytes
+        next_decisions = self._pending_decisions + sum(
+            attempt.decision_count for attempt in completed
+        )
+        next_payload_bytes = self._pending_payload_bytes + sum(
+            attempt.payload_bytes for attempt in completed
+        )
         if next_decisions > self.limits.max_decisions_per_update:
             raise AttemptUpdateBatchError(
                 "attempt update batch exceeds max_decisions_per_update"
@@ -150,7 +151,7 @@ class BoundedAttemptUpdateBatcher:
             )
         next_pending = self._pending + completed
 
-        ready = next_count == target
+        ready = next_count == self.attempts_per_update
         sink_delivery = None
         if ready:
             sink_delivery = AttemptAssemblyDelivery(
@@ -164,30 +165,24 @@ class BoundedAttemptUpdateBatcher:
             try:
                 self._sink(sink_delivery)
             except Exception:
-                self._pending = ()
-                self._pending_decisions = 0
-                self._pending_payload_bytes = 0
-                self._pending_behavior_manifest_id = None
+                self._clear_pending()
                 self._poisoned = True
                 raise
 
-        self._deliveries += 1
-        self._completed_attempts += len(completed)
-        self._dropped_attempts += len(dropped)
-        if sink_delivery is not None:
-            self._sink_deliveries += 1
         if ready:
-            self._update_batches += 1
-            self._pending = ()
-            self._pending_decisions = 0
-            self._pending_payload_bytes = 0
-            self._pending_behavior_manifest_id = None
+            self._clear_pending()
         else:
             self._pending = next_pending
             self._pending_decisions = next_decisions
             self._pending_payload_bytes = next_payload_bytes
             if incoming_manifest_id is not None:
                 self._pending_behavior_manifest_id = incoming_manifest_id
+
+    def _clear_pending(self) -> None:
+        self._pending = ()
+        self._pending_decisions = 0
+        self._pending_payload_bytes = 0
+        self._pending_behavior_manifest_id = None
 
 
 def _validated_delivery(
@@ -212,10 +207,18 @@ def _validated_delivery(
     for attempt in delivery.completed:
         if not attempt.batches:
             raise AttemptUpdateBatchError("completed attempt has no policy decisions")
-        if attempt.decision_count != sum(batch.decision_count for batch in attempt.batches):
-            raise AttemptUpdateBatchError("completed attempt decision count is inconsistent")
-        if attempt.payload_bytes != sum(batch.payload_bytes for batch in attempt.batches):
-            raise AttemptUpdateBatchError("completed attempt payload bytes are inconsistent")
+        if attempt.decision_count != sum(
+            batch.decision_count for batch in attempt.batches
+        ):
+            raise AttemptUpdateBatchError(
+                "completed attempt decision count is inconsistent"
+            )
+        if attempt.payload_bytes != sum(
+            batch.payload_bytes for batch in attempt.batches
+        ):
+            raise AttemptUpdateBatchError(
+                "completed attempt payload bytes are inconsistent"
+            )
     return delivery.completed, delivery.dropped
 
 
@@ -234,67 +237,13 @@ def _single_behavior_manifest_id(
     return next(iter(manifest_ids), None)
 
 
-def _validated_resume_snapshot(
-    snapshot: AttemptUpdateBatchSnapshot | None,
-) -> AttemptUpdateBatchSnapshot:
-    if snapshot is None:
-        return AttemptUpdateBatchSnapshot(
-            deliveries=0,
-            sink_deliveries=0,
-            update_batches=0,
-            completed_attempts=0,
-            dropped_attempts=0,
-            pending_attempts=0,
-            pending_decisions=0,
-            pending_payload_bytes=0,
-            pending_behavior_manifest_id=None,
-            poisoned=False,
-        )
-    if not isinstance(snapshot, AttemptUpdateBatchSnapshot):
-        raise AttemptUpdateBatchError("attempt update resume snapshot must be typed")
-    if snapshot.poisoned:
-        raise AttemptUpdateBatchError("cannot resume a poisoned attempt update batcher")
-    for name in (
-        "deliveries",
-        "sink_deliveries",
-        "update_batches",
-        "completed_attempts",
-        "dropped_attempts",
-        "pending_attempts",
-        "pending_decisions",
-        "pending_payload_bytes",
-    ):
-        _nonnegative_integer(getattr(snapshot, name), f"resume {name}")
-    if (
-        snapshot.pending_attempts != 0
-        or snapshot.pending_decisions != 0
-        or snapshot.pending_payload_bytes != 0
-        or snapshot.pending_behavior_manifest_id is not None
-    ):
-        raise AttemptUpdateBatchError(
-            "resume snapshot contains pending attempt update payload"
-        )
-    if snapshot.sink_deliveries > snapshot.deliveries:
-        raise AttemptUpdateBatchError("resume sink deliveries exceed input deliveries")
-    if snapshot.update_batches > snapshot.sink_deliveries:
-        raise AttemptUpdateBatchError("resume update batches exceed sink deliveries")
-    return snapshot
-
-
 def _positive_integer(value: object, name: str) -> int:
-    normalized = _nonnegative_integer(value, name)
-    if normalized == 0:
-        raise AttemptUpdateBatchError(f"{name} must be positive")
-    return normalized
-
-
-def _nonnegative_integer(value: object, name: str) -> int:
     if isinstance(value, bool):
         raise AttemptUpdateBatchError(f"{name} must be an integer, not bool")
     try:
         normalized = operator.index(value)
     except TypeError as error:
         raise AttemptUpdateBatchError(f"{name} must be an integer") from error
-    if normalized < 0:
-        raise AttemptUpdateBatchError(f"{name} must be non-negative")
+    if normalized <= 0:
+        raise AttemptUpdateBatchError(f"{name} must be positive")
     return normalized

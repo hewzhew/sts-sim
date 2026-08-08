@@ -29,7 +29,7 @@ from .resume_store import (
     ResumeManifestId,
 )
 from .semantic_concat import SemanticBatchConcatLimits
-from .terminal_returns import FloorProgressReturnConfig
+from .terminal_returns import OnPolicyObjectiveConfig
 from .torch_behavior import (
     CategoricalTorchBehaviorController,
     TorchBehaviorPublication,
@@ -113,7 +113,7 @@ class CategoricalResumeRestoreConfig:
     attempt_limits: AttemptAssemblyLimits
     attempt_update_limits: AttemptUpdateBatchLimits
     concat_limits: SemanticBatchConcatLimits
-    terminal_return: FloorProgressReturnConfig
+    objective: OnPolicyObjectiveConfig
     payload_limits: CategoricalResumePayloadLimits
     expected_generator_device_type: str
     max_decision_rounds_per_step: int = 256
@@ -128,7 +128,7 @@ class CategoricalResumeRestoreConfig:
             ("attempt_limits", AttemptAssemblyLimits),
             ("attempt_update_limits", AttemptUpdateBatchLimits),
             ("concat_limits", SemanticBatchConcatLimits),
-            ("terminal_return", FloorProgressReturnConfig),
+            ("objective", OnPolicyObjectiveConfig),
             ("payload_limits", CategoricalResumePayloadLimits),
         ):
             if not isinstance(getattr(self, name), expected):
@@ -259,8 +259,7 @@ class CategoricalGenerationResumeRestorer:
         if (
             active_behavior.manifest.trainer_implementation
             != categorical_trainer_implementation(
-                self.config.terminal_return,
-                self.config.attempt_update_limits.attempts_per_update,
+                self.config.objective,
             )
         ):
             raise TorchResumeRestoreError(
@@ -274,14 +273,13 @@ class CategoricalGenerationResumeRestorer:
             registry,
             self.config.concat_limits,
             controller.config,
-            self.config.terminal_return,
-            self.config.attempt_update_limits.attempts_per_update,
+            self.config.objective,
             resume_snapshot=saved.boundary.trainer,
         )
         update_batcher = BoundedAttemptUpdateBatcher(
+            self.config.objective.attempts_per_update,
             self.config.attempt_update_limits,
             trainer,
-            resume_snapshot=saved.boundary.update_batcher,
         )
         assembler = BoundedAttemptAssembler(
             self.config.attempt_limits,

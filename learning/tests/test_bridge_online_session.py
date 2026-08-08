@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from sts_learning import AttemptUpdateBatchLimits
+from sts_learning import AttemptUpdateBatchLimits, OnPolicyObjectiveConfig
 
 
 _TORCH_AVAILABLE = importlib.util.find_spec("torch") is not None
@@ -47,12 +47,14 @@ class RealBridgeCategoricalOnlineSessionTests(unittest.TestCase):
                         behavior=RaggedCategoricalPolicyConfig(
                             temperature=0.8
                         ),
+                        objective=OnPolicyObjectiveConfig(
+                            attempts_per_update=1,
+                        ),
                         optimizer_steps_per_generation=1,
                     ),
                     limits=CategoricalSessionLimits(
                         owner_capacity=4,
                         attempt_updates=AttemptUpdateBatchLimits(
-                            attempts_per_update=1,
                             max_decisions_per_update=4_096,
                             max_payload_bytes_per_update=64 * 1024 * 1024,
                         ),

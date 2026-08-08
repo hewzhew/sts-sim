@@ -11,7 +11,7 @@ from learning.tests.driver_fixtures import (
     NumpyWinningBatchEnv,
 )
 from learning.tests.semantic_fixtures import semantic_schema_fixture
-from sts_learning import AttemptUpdateBatchLimits
+from sts_learning import AttemptUpdateBatchLimits, OnPolicyObjectiveConfig
 
 
 _TORCH_AVAILABLE = importlib.util.find_spec("torch") is not None
@@ -95,7 +95,7 @@ class CategoricalOnlineSessionTests(unittest.TestCase):
             self.assertFalse(partial.generation.promoted)
             self.assertEqual(session.runner.trainer.snapshot.optimizer_steps, 0)
             self.assertEqual(
-                session.runner.update_batcher.snapshot.pending_attempts,
+                session.runner.update_batcher.pending_attempts,
                 1,
             )
             with self.assertRaisesRegex(TorchGenerationError, "pending"):
@@ -105,7 +105,7 @@ class CategoricalOnlineSessionTests(unittest.TestCase):
             self.assertTrue(completed.generation.promoted)
             self.assertEqual(session.runner.trainer.snapshot.optimizer_steps, 1)
             self.assertEqual(
-                session.runner.update_batcher.snapshot.pending_attempts,
+                session.runner.update_batcher.pending_attempts,
                 0,
             )
 
@@ -127,12 +127,14 @@ def _factory(root: Path, *, attempts_per_update: int = 1):
             profile=CategoricalOnlineProfile(
                 scorer=RaggedScorerConfig(hidden_dim=4, relation_layers=0),
                 behavior=RaggedCategoricalPolicyConfig(temperature=0.8),
+                objective=OnPolicyObjectiveConfig(
+                    attempts_per_update=attempts_per_update,
+                ),
                 optimizer_steps_per_generation=1,
             ),
             limits=CategoricalSessionLimits(
                 owner_capacity=4,
                 attempt_updates=AttemptUpdateBatchLimits(
-                    attempts_per_update=attempts_per_update,
                     max_decisions_per_update=64,
                     max_payload_bytes_per_update=1024 * 1024,
                 ),

@@ -5,7 +5,7 @@ import unittest
 from dataclasses import replace
 
 from learning.tests.semantic_fixtures import semantic_schema_fixture
-from sts_learning import FloorProgressReturnConfig
+from sts_learning import FloorProgressReturnConfig, OnPolicyObjectiveConfig
 
 
 _TORCH_AVAILABLE = importlib.util.find_spec("torch") is not None
@@ -40,14 +40,17 @@ class TorchProvenanceTests(unittest.TestCase):
         behavior = RaggedCategoricalPolicyConfig(temperature=0.8)
         optimizer = AdamTrainingConfig(learning_rate=0.002)
         terminal_return = FloorProgressReturnConfig(target_floor=52)
+        objective = OnPolicyObjectiveConfig(
+            terminal_return=terminal_return,
+            attempts_per_update=8,
+        )
 
         template = categorical_training_manifest_template(
             schema,
             scorer,
             behavior,
             optimizer,
-            terminal_return,
-            8,
+            objective,
             device_type="cpu",
         )
         reordered = categorical_training_manifest_template(
@@ -55,8 +58,7 @@ class TorchProvenanceTests(unittest.TestCase):
             scorer,
             behavior,
             optimizer,
-            terminal_return,
-            8,
+            objective,
             device_type="cpu",
         )
         changed_model = categorical_training_manifest_template(
@@ -64,8 +66,7 @@ class TorchProvenanceTests(unittest.TestCase):
             replace(scorer, hidden_dim=8),
             behavior,
             optimizer,
-            terminal_return,
-            8,
+            objective,
             device_type="cpu",
         )
         changed_optimizer = categorical_training_manifest_template(
@@ -73,8 +74,7 @@ class TorchProvenanceTests(unittest.TestCase):
             scorer,
             behavior,
             replace(optimizer, learning_rate=0.003),
-            terminal_return,
-            8,
+            objective,
             device_type="cpu",
         )
         changed_return = categorical_training_manifest_template(
@@ -82,8 +82,10 @@ class TorchProvenanceTests(unittest.TestCase):
             scorer,
             behavior,
             optimizer,
-            replace(terminal_return, target_floor=51),
-            8,
+            replace(
+                objective,
+                terminal_return=replace(terminal_return, target_floor=51),
+            ),
             device_type="cpu",
         )
         changed_attempt_batch = categorical_training_manifest_template(
@@ -91,8 +93,7 @@ class TorchProvenanceTests(unittest.TestCase):
             scorer,
             behavior,
             optimizer,
-            terminal_return,
-            4,
+            replace(objective, attempts_per_update=4),
             device_type="cpu",
         )
 
@@ -142,8 +143,7 @@ class TorchProvenanceTests(unittest.TestCase):
                 RaggedScorerConfig(hidden_dim=4, relation_layers=0),
                 RaggedCategoricalPolicyConfig(temperature=0.8),
                 AdamTrainingConfig(),
-                FloorProgressReturnConfig(),
-                8,
+                OnPolicyObjectiveConfig(),
                 device_type="cpu",
             )
 

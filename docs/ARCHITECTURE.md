@@ -441,7 +441,9 @@ delivery, or resource overflow fails before optimizer mutation. Dropped-only
 rows pass through synchronously without entering the pending tensor batch. A
 sink exception poisons the batcher and releases pending arrays because the
 downstream optimizer may have mutated partially. Pending attempt payload is
-live-only and is never admitted to durable resume.
+live-only and is never admitted to durable resume. The batcher owns no durable
+snapshot or lifetime counters; resume admission asks it only to prove that it is
+empty and healthy.
 
 An optional PyTorch candidate scorer lives only in the Python `learning/`
 owner and is not imported by the ordinary package root. Construction consumes
@@ -479,9 +481,10 @@ categorical rule to match its typed configuration and recomputes every recorded
 selection propensity from the current shadow scorer before mutation. Unknown
 or mismatched propensity is explicitly off-policy and rejected. Any future
 off-policy correction requires a separate objective with declared assumptions.
-The trainer implementation artifact binds the return kind, target floor, and
-attempts per update; runner construction and process restore reject any
-conflicting runtime config.
+One typed objective configuration owns both terminal-return semantics and the
+number of attempts per update. The trainer implementation artifact binds the
+return kind, target floor, and attempts per update; runner construction and
+process restore reject any conflicting runtime config.
 After validation, all retained decision payloads in one delivery are combined
 into one semantic ragged batch and scored by exactly one model call. Flat row
 weights are `1 / (attempt_count * decisions_in_that_attempt)`, which is
@@ -529,13 +532,14 @@ Any violation is a typed rejection; no owner silently drops state to
 manufacture a resumable checkpoint.
 At that strict boundary, one separate canonical metadata component preserves
 the seed schedule, active ledger lineage, experience/assembler sequence and
-aggregate counters, update-batcher counters, trainer counters and bounded
-last-evidence fields,
+aggregate counters, trainer counters and bounded last-evidence fields,
 controller manifest/promotion state, and optimizer-step generation target.
-Fresh owners accept only the corresponding typed snapshots. This metadata has
-no simulator session, model tensor, optimizer tensor, generator tensor, or
-experience payload; those remain distinct components bound by the final resume
-manifest.
+The live-only update batcher has no encoded state: admission requires it to be
+quiescent and restore creates a fresh empty owner from the objective config and
+resource limits. Other fresh owners accept only the corresponding typed
+snapshots. This metadata has no simulator session, model tensor, optimizer
+tensor, generator tensor, or experience payload; those remain distinct
+components bound by the final resume manifest.
 The resume store owns exactly six immutable component kinds: current
 environment, episode-root bank, shadow model, optimizer, categorical generator,
 and generation metadata. One publication batch-previews aggregate distinct

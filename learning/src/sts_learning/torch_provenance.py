@@ -20,7 +20,7 @@ from .torch_policy import (
     RaggedScorerConfig,
     SemanticSchemaDimensions,
 )
-from .terminal_returns import FloorProgressReturnConfig
+from .terminal_returns import OnPolicyObjectiveConfig
 
 
 class TorchProvenanceError(ValueError):
@@ -116,8 +116,7 @@ def categorical_training_manifest_template(
     scorer_config: RaggedScorerConfig,
     behavior_config: RaggedCategoricalPolicyConfig,
     optimizer_config: AdamTrainingConfig,
-    return_config: FloorProgressReturnConfig,
-    attempts_per_update: int,
+    objective_config: OnPolicyObjectiveConfig,
     *,
     device_type: str,
 ) -> BehaviorManifestTemplate:
@@ -129,12 +128,8 @@ def categorical_training_manifest_template(
         raise TorchProvenanceError("behavior_config must be typed")
     if not isinstance(optimizer_config, AdamTrainingConfig):
         raise TorchProvenanceError("optimizer_config must be typed")
-    if not isinstance(return_config, FloorProgressReturnConfig):
-        raise TorchProvenanceError("return_config must be typed")
-    attempts_per_update = _positive_integer(
-        attempts_per_update,
-        "attempts_per_update",
-    )
+    if not isinstance(objective_config, OnPolicyObjectiveConfig):
+        raise TorchProvenanceError("objective_config must be typed")
     if type(device_type) is not str or not device_type:
         raise TorchProvenanceError("device_type must be a non-empty string")
     try:
@@ -174,8 +169,7 @@ def categorical_training_manifest_template(
         schema_content,
     )
     trainer_implementation = categorical_trainer_implementation(
-        return_config,
-        attempts_per_update,
+        objective_config,
     )
     return BehaviorManifestTemplate(
         model_definition=model_definition,
@@ -189,17 +183,12 @@ def categorical_training_manifest_template(
 
 
 def categorical_trainer_implementation(
-    return_config: FloorProgressReturnConfig,
-    attempts_per_update: int,
+    objective_config: OnPolicyObjectiveConfig,
 ) -> ManifestArtifactId:
     """Bind the exact objective, return, and attempts-per-update contract."""
 
-    if not isinstance(return_config, FloorProgressReturnConfig):
-        raise TorchProvenanceError("return_config must be typed")
-    attempts_per_update = _positive_integer(
-        attempts_per_update,
-        "attempts_per_update",
-    )
+    if not isinstance(objective_config, OnPolicyObjectiveConfig):
+        raise TorchProvenanceError("objective_config must be typed")
     return ManifestArtifactId.from_content(
         ManifestArtifactKind.TRAINER_IMPLEMENTATION,
         b"STS-SYNCHRONOUS-TERMINAL-POLICY-TRAINER\x00"
@@ -208,8 +197,8 @@ def categorical_trainer_implementation(
         + struct.pack(
             ">IQQ",
             _TERMINAL_RETURN_CONFIG_VERSION,
-            return_config.target_floor,
-            attempts_per_update,
+            objective_config.terminal_return.target_floor,
+            objective_config.attempts_per_update,
         )
         + _runtime_version_bytes(),
     )
@@ -285,16 +274,4 @@ def _finite_float(value: object, name: str) -> float:
         raise TorchProvenanceError(f"{name} must be a real number") from error
     if not math.isfinite(normalized):
         raise TorchProvenanceError(f"{name} must be finite")
-    return normalized
-
-
-def _positive_integer(value: object, name: str) -> int:
-    if isinstance(value, bool):
-        raise TorchProvenanceError(f"{name} must be an integer, not bool")
-    try:
-        normalized = operator.index(value)
-    except TypeError as error:
-        raise TorchProvenanceError(f"{name} must be an integer") from error
-    if normalized <= 0:
-        raise TorchProvenanceError(f"{name} must be positive")
     return normalized

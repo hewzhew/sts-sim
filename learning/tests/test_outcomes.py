@@ -5,8 +5,11 @@ import unittest
 import numpy as np
 
 from sts_learning import (
+    FloorProgressReturnConfig,
+    OnPolicyObjectiveConfig,
     TerminalAttemptOutcome,
     TerminalBatchError,
+    TerminalReturnError,
     TerminalStepBatch,
 )
 
@@ -89,6 +92,25 @@ class TerminalStepBatchTests(unittest.TestCase):
             TerminalAttemptOutcome(True, 1, 3, 51, 20, 80, 50)
         with self.assertRaisesRegex(TerminalBatchError, "must be an integer"):
             TerminalAttemptOutcome(0, 1, 3, 51.5, 20, 80, 50)
+
+
+class OnPolicyObjectiveConfigTests(unittest.TestCase):
+    def test_objective_owns_typed_return_and_positive_update_size(self) -> None:
+        terminal_return = FloorProgressReturnConfig(target_floor=52)
+
+        objective = OnPolicyObjectiveConfig(
+            terminal_return=terminal_return,
+            attempts_per_update=4,
+        )
+
+        self.assertIs(objective.terminal_return, terminal_return)
+        self.assertEqual(objective.attempts_per_update, 4)
+        with self.assertRaisesRegex(TerminalReturnError, "must be typed"):
+            OnPolicyObjectiveConfig(terminal_return=object())
+        for invalid in (True, 0, -1, 1.5):
+            with self.subTest(invalid=invalid):
+                with self.assertRaises(TerminalReturnError):
+                    OnPolicyObjectiveConfig(attempts_per_update=invalid)
 
 
 if __name__ == "__main__":

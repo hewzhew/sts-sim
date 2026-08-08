@@ -30,6 +30,31 @@ class FloorProgressReturnConfig:
         object.__setattr__(self, "target_floor", target)
 
 
+@dataclass(frozen=True)
+class OnPolicyObjectiveConfig:
+    """Exact terminal objective and complete-attempt update size."""
+
+    terminal_return: FloorProgressReturnConfig = FloorProgressReturnConfig()
+    attempts_per_update: int = 8
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.terminal_return, FloorProgressReturnConfig):
+            raise TerminalReturnError("terminal_return must be typed")
+        if isinstance(self.attempts_per_update, bool):
+            raise TerminalReturnError(
+                "attempts_per_update must be an integer, not bool"
+            )
+        try:
+            attempts = operator.index(self.attempts_per_update)
+        except TypeError as error:
+            raise TerminalReturnError(
+                "attempts_per_update must be an integer"
+            ) from error
+        if attempts <= 0:
+            raise TerminalReturnError("attempts_per_update must be positive")
+        object.__setattr__(self, "attempts_per_update", attempts)
+
+
 def floor_progress_terminal_return(
     attempt: TerminalAttemptRecord,
     config: FloorProgressReturnConfig,

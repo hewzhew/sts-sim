@@ -238,7 +238,9 @@ mixed manifests, repeated lineage, overfull deliveries, and resource overflow
 fail before optimizer mutation. Dropped-only deliveries pass through without
 joining the tensor batch. A downstream exception poisons the owner and releases
 pending arrays. A partially filled update batch is deliberately live-only and
-cannot be encoded as a durable resume point.
+cannot be encoded as a durable resume point. The owner exposes only its current
+pending bounds and `require_quiescent()`; it has no durable snapshot or lifetime
+accounting surface.
 
 `sts_learning.torch_policy` is an optional, device-agnostic PyTorch baseline
 over that same bridge-owned semantic graph. It is intentionally absent from
@@ -333,16 +335,16 @@ batcher must be empty and healthy, segment sequence ids must agree, the trainer
 must be healthy, and an active behavior
 manifest must not be ahead of the shadow optimizer.
 At an admitted boundary, `sts_learning.torch_resume_metadata` encodes the seed
-schedule, active ledger lineage, segment/assembler/update-batcher counters,
-trainer counters and bounded last-evidence fields, controller identity,
-promotion count, and
-generation target as one canonical scalar component. Fresh ledger, empty
-buffer, empty assembler, empty update batcher, trainer, and controller owners
-have explicit restore
-constructors; terminal half-states, open attempts, poisoned trainers, and
-inconsistent sequence or parameter lineage remain unrepresentable. This
-metadata is the scalar member of the final durable resume manifest, not an
-independent resume authority.
+schedule, active ledger lineage, experience/assembler sequence state, trainer
+counters and bounded last-evidence fields, controller identity, promotion
+count, and generation target as one canonical scalar component. The live-only
+update batcher contributes no metadata: admission first requires it to be empty
+and healthy, and restore constructs a fresh empty owner from the typed objective
+configuration. Fresh ledger, empty buffer, empty assembler, trainer, and
+controller owners have explicit restore constructors; terminal half-states,
+open attempts, poisoned trainers, and inconsistent sequence or parameter
+lineage remain unrepresentable. This metadata is the scalar member of the final
+durable resume manifest, not an independent resume authority.
 
 `sts_learning.resume_store` is the bounded durable owner for the six immutable
 resume components: current environment, episode-root bank, shadow model,
@@ -380,13 +382,19 @@ same-behavior complete attempts per optimizer update. `recover_behavior(...)`
 materializes a frozen manifest with an explicit fresh RNG seed for the existing
 paired held-out evaluator; evaluation never reuses the mutable shadow model.
 
-The bridge verification command installs a fresh wheel and runs both bridge
-smoke tests and these caller contracts:
+Use the repository's single learning-development entrypoint after configuring
+one Python 3.12 runtime that already contains NumPy, PyTorch, and the bridge:
 
 ```powershell
-.\bindings\python_learning\verify.ps1 -Python <python-3.12-executable>
+.\learning\dev.ps1 configure -Python <python-3.12-with-torch-and-bridge>
+.\learning\dev.ps1 doctor
+.\learning\dev.ps1 test
+.\learning\dev.ps1 verify -MaturinPython <python-with-maturin>
 ```
 
-When that isolated verification environment exposes PyTorch, the same caller
-test discovery also enables the scorer's synthetic optimizer contract and its
-real-bridge semantic-batch integration test.
+`test` fails if the configured training dependencies are unavailable and runs
+the complete learning suite. `verify` runs that suite first, then delegates to
+the lower-level `bindings/python_learning/verify.ps1` for a fresh wheel, Rust
+bridge contracts, and isolated minimal caller coverage. The lower-level command
+allows optional PyTorch tests to skip and must not be used as evidence that the
+training suite ran.

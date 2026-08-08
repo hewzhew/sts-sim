@@ -107,5 +107,5 @@ Write-Output $summary
 Write-Output ("python=" + $pythonPath)
 Write-Output ("wheel=" + $wheel.Name)
 Write-Output "rust_tests=passed"
-Write-Output "learning_tests=passed"
+Write-Output "isolated_caller_tests=passed_optional_dependencies_may_skip"
 Write-Output ("artifact_root=" + $runRoot)

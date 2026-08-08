@@ -22,6 +22,7 @@ from sts_learning import (
     ExperienceSegmentBuffer,
     FloorProgressReturnConfig,
     OnlineBatchDriver,
+    OnPolicyObjectiveConfig,
     ResumeStoreLimits,
     SeedPartition,
     SeedSchedule,
@@ -87,6 +88,10 @@ class RealBridgeCategoricalResumeRestorerTests(unittest.TestCase):
             scorer_config = RaggedScorerConfig(hidden_dim=4, relation_layers=0)
             behavior_config = RaggedCategoricalPolicyConfig(temperature=0.8)
             return_config = FloorProgressReturnConfig()
+            objective_config = OnPolicyObjectiveConfig(
+                terminal_return=return_config,
+                attempts_per_update=1,
+            )
 
             def scorer_factory():
                 return RaggedCandidateScorer.from_bridge_schema(
@@ -121,8 +126,7 @@ class RealBridgeCategoricalResumeRestorerTests(unittest.TestCase):
                             semantic_schema_version=int(schema["version"]),
                             behavior_rule=behavior_config.behavior_rule,
                             trainer_implementation=categorical_trainer_implementation(
-                                return_config,
-                                1,
+                                objective_config,
                             ),
                         ),
                     ),
@@ -149,8 +153,7 @@ class RealBridgeCategoricalResumeRestorerTests(unittest.TestCase):
                 controller.publisher.registry,
                 concat_limits,
                 behavior_config,
-                return_config,
-                1,
+                objective_config,
             )
             attempt_limits = AttemptAssemblyLimits(
                 max_open_attempts=1,
@@ -162,11 +165,11 @@ class RealBridgeCategoricalResumeRestorerTests(unittest.TestCase):
                 max_payload_bytes=4 * 1024 * 1024,
             )
             attempt_update_limits = AttemptUpdateBatchLimits(
-                attempts_per_update=1,
                 max_decisions_per_update=256,
                 max_payload_bytes_per_update=8 * 1024 * 1024,
             )
             update_batcher = BoundedAttemptUpdateBatcher(
+                objective_config.attempts_per_update,
                 attempt_update_limits,
                 trainer,
             )
@@ -235,7 +238,7 @@ class RealBridgeCategoricalResumeRestorerTests(unittest.TestCase):
                     attempt_limits=attempt_limits,
                     attempt_update_limits=attempt_update_limits,
                     concat_limits=concat_limits,
-                    terminal_return=return_config,
+                    objective=objective_config,
                     payload_limits=payload_limits,
                     expected_generator_device_type="cpu",
                 ),

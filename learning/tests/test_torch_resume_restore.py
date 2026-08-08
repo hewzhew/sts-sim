@@ -29,6 +29,7 @@ from sts_learning import (
     ManifestArtifactId,
     ManifestArtifactKind,
     OnlineBatchDriver,
+    OnPolicyObjectiveConfig,
     ResumeStoreLimits,
     SeedPartition,
     SeedSchedule,
@@ -141,10 +142,6 @@ class CategoricalGenerationResumeRestorerTests(unittest.TestCase):
             resumed_boundary = resumed.require_resume_boundary()
             self.assertEqual(resumed_boundary.driver, baseline_boundary.driver)
             self.assertEqual(resumed_boundary.assembler, baseline_boundary.assembler)
-            self.assertEqual(
-                resumed_boundary.update_batcher,
-                baseline_boundary.update_batcher,
-            )
             self.assertEqual(resumed_boundary.controller, baseline_boundary.controller)
             self.assertEqual(
                 resumed_boundary.trainer.optimizer_steps,
@@ -223,7 +220,10 @@ class CategoricalGenerationResumeRestorerTests(unittest.TestCase):
                 fixture.resume_store,
                 replace(
                     fixture.restore_config,
-                    terminal_return=FloorProgressReturnConfig(target_floor=51),
+                    objective=replace(
+                        fixture.objective_config,
+                        terminal_return=FloorProgressReturnConfig(target_floor=51),
+                    ),
                 ),
             )
 
@@ -237,15 +237,14 @@ class CategoricalGenerationResumeRestorerTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as root:
             fixture = _ResumeFixture(Path(root))
             publication = fixture.resume_publisher.publish(fixture.initial_runner())
-            mismatched_limits = replace(
-                fixture.attempt_update_limits,
-                attempts_per_update=2,
-            )
             restorer = CategoricalGenerationResumeRestorer(
                 fixture.resume_store,
                 replace(
                     fixture.restore_config,
-                    attempt_update_limits=mismatched_limits,
+                    objective=replace(
+                        fixture.objective_config,
+                        attempts_per_update=2,
+                    ),
                 ),
             )
 
@@ -263,6 +262,10 @@ class _ResumeFixture:
         self.behavior_root.mkdir()
         self.behavior_config = RaggedCategoricalPolicyConfig(temperature=0.8)
         self.return_config = FloorProgressReturnConfig()
+        self.objective_config = OnPolicyObjectiveConfig(
+            terminal_return=self.return_config,
+            attempts_per_update=1,
+        )
         self.checkpoint_limits = TorchCheckpointLimits(
             max_checkpoints=3,
             max_bytes_per_checkpoint=2 * 1024 * 1024,
@@ -283,7 +286,6 @@ class _ResumeFixture:
             max_payload_bytes_per_attempt=1024 * 1024,
         )
         self.attempt_update_limits = AttemptUpdateBatchLimits(
-            attempts_per_update=1,
             max_decisions_per_update=64,
             max_payload_bytes_per_update=1024 * 1024,
         )
@@ -331,7 +333,7 @@ class _ResumeFixture:
             attempt_limits=self.attempt_limits,
             attempt_update_limits=self.attempt_update_limits,
             concat_limits=self.concat_limits,
-            terminal_return=self.return_config,
+            objective=self.objective_config,
             payload_limits=self.payload_limits,
             expected_generator_device_type="cpu",
         )
@@ -367,8 +369,7 @@ class _ResumeFixture:
                 behavior_manifest_template_fixture(
                     behavior_rule=self.behavior_config.behavior_rule,
                     trainer_implementation=categorical_trainer_implementation(
-                        self.return_config,
-                        self.attempt_update_limits.attempts_per_update,
+                        self.objective_config,
                     ),
                 ),
             ),
@@ -388,10 +389,10 @@ class _ResumeFixture:
             controller.publisher.registry,
             self.concat_limits,
             self.behavior_config,
-            self.return_config,
-            self.attempt_update_limits.attempts_per_update,
+            self.objective_config,
         )
         update_batcher = BoundedAttemptUpdateBatcher(
+            self.objective_config.attempts_per_update,
             self.attempt_update_limits,
             trainer,
         )
