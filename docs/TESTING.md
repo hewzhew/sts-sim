@@ -25,10 +25,9 @@ Tests are deliberately split across real Cargo packages:
 - `cargo architecture <filter>` runs dependency-free source-boundary checks.
 - `learning/dev.ps1 test` uses the explicitly configured Python 3.12 runtime
   and requires NumPy, PyTorch, the installed bridge, and the repository caller;
-  it is the maintained complete online-learning test entrypoint. Its shared
-  runner accepts `unittest.TestCase` tests only and rejects module-level
-  `test_*` functions before discovery, so alternate collectors cannot silently
-  double-count forwarding wrappers;
+  it is the maintained complete online-learning pytest entrypoint. New and
+  rewritten tests use plain pytest functions; existing `unittest.TestCase`
+  files remain collected while their contracts are reviewed and migrated;
 - `learning/dev.ps1 verify` runs that complete suite before delegating to
   `bindings/python_learning/verify.ps1`, which builds a fresh standalone wheel
   and checks Rust, smoke, and isolated minimal caller contracts. The lower-level

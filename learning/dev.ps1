@@ -11,6 +11,7 @@ $ErrorActionPreference = "Stop"
 $learningRoot = (Resolve-Path -LiteralPath $PSScriptRoot).Path
 $repositoryRoot = (Resolve-Path -LiteralPath (Join-Path $learningRoot "..")).Path
 $sourceRoot = Join-Path $learningRoot "src"
+$testRoot = Join-Path $learningRoot "tests"
 $hostRoot = Join-Path $repositoryRoot ".oracle-lab\hosts"
 $pythonFile = Join-Path $hostRoot "learning-python.txt"
 $reportRoot = Join-Path $repositoryRoot ".oracle-lab\reports"
@@ -43,6 +44,31 @@ function Invoke-WithLearningPath([scriptblock]$Body) {
     }
 }
 
+function Install-TestDependencies([string]$PythonPath) {
+    $projectFile = Join-Path $learningRoot "pyproject.toml"
+    $requirements = @(& $PythonPath -c @'
+import pathlib
+import sys
+import tomllib
+
+project = tomllib.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
+requirements = project["project"]["optional-dependencies"]["test"]
+if not requirements:
+    raise SystemExit("sts-learning test extra is empty")
+for requirement in requirements:
+    print(requirement)
+'@ $projectFile)
+    if ($LASTEXITCODE -ne 0 -or $requirements.Count -eq 0) {
+        throw "failed to resolve sts-learning test dependencies"
+    }
+    & $PythonPath -m pip install `
+        --disable-pip-version-check `
+        @requirements
+    if ($LASTEXITCODE -ne 0) {
+        throw "failed to install sts-learning test dependencies"
+    }
+}
+
 function Invoke-Doctor([string]$PythonPath) {
     $doctor = @'
 import pathlib
@@ -52,6 +78,13 @@ if sys.version_info[:2] != (3, 12):
     raise SystemExit(f"expected Python 3.12, got {sys.version.split()[0]}")
 
 import numpy
+try:
+    import pytest
+except ModuleNotFoundError as error:
+    raise SystemExit(
+        "pytest is missing; rerun .\\learning\\dev.ps1 configure "
+        "-Python <python.exe>"
+    ) from error
 import torch
 import sts_learning
 import sts_learning_bridge
@@ -95,6 +128,7 @@ if missing:
 
 print(f"python={sys.executable}")
 print(f"numpy={numpy.__version__}")
+print(f"pytest={pytest.__version__}")
 print(f"torch={torch.__version__}")
 print(f"bridge={sts_learning_bridge.__file__}")
 print(f"learning={package_root}")
@@ -117,7 +151,7 @@ function Invoke-LearningTests([string]$PythonPath) {
     try {
         $ErrorActionPreference = "Continue"
         Invoke-WithLearningPath {
-            & $PythonPath (Join-Path $learningRoot "run_tests.py") *> $log
+            & $PythonPath -m pytest $testRoot -q *> $log
             $script:testExit = $LASTEXITCODE
         }
     }
@@ -129,12 +163,8 @@ function Invoke-LearningTests([string]$PythonPath) {
         Get-Content -LiteralPath $log -Tail 80
         throw "learning tests failed; full log: $log"
     }
-    $ran = Get-Content -LiteralPath $log | Where-Object { $_ -match "^Ran [0-9]+ tests? in " } | Select-Object -Last 1
-    $result = Get-Content -LiteralPath $log | Where-Object { $_ -match "^OK$" } | Select-Object -Last 1
-    if (-not $ran -or -not $result) {
-        throw "learning tests completed without an unskipped OK summary; full log: $log"
-    }
-    Write-Output $ran
+    $summary = Get-Content -LiteralPath $log | Where-Object { $_.Trim() } | Select-Object -Last 1
+    Write-Output $summary
     Write-Output "learning_tests=passed"
     Write-Output ("log=" + $log)
 }
@@ -142,6 +172,7 @@ function Invoke-LearningTests([string]$PythonPath) {
 switch ($Command) {
     "configure" {
         $pythonPath = Resolve-PythonExecutable $Python
+        Install-TestDependencies $pythonPath
         Invoke-Doctor $pythonPath
         New-Item -ItemType Directory -Path $hostRoot -Force | Out-Null
         Set-Content -LiteralPath $pythonFile -Value $pythonPath -NoNewline
@@ -184,6 +215,9 @@ switch ($Command) {
         }
         else {
             Get-ConfiguredPython
+        }
+        if ($Python) {
+            Install-TestDependencies $pythonPath
         }
         & (Join-Path $repositoryRoot "bindings\python_learning\verify.ps1") `
             -Python $pythonPath `

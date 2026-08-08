@@ -626,9 +626,20 @@ Configure one stable Python 3.12 training runtime once, then use the small
 .\learning\dev.ps1 verify -MaturinPython <python-with-maturin>
 ```
 
+`configure` installs the tool requirements declared by the local
+`sts-learning[test]` extra into the selected runtime, then verifies Python,
+pytest, NumPy, PyTorch, the repository caller, and the installed bridge. The
+caller continues to load from the repository source path, so configuration
+does not build or install the local package into its own worktree. No separate
+requirements file or global pytest installation is needed.
+
 Use `check-bridge` for the routine bridge edit loop. It builds a dev-profile
 wheel and verifies it through the isolated Python smoke and caller suite in
-seconds without changing the configured training runtime. Use
+seconds without changing the configured training runtime. A lightweight
+pytest tool environment is cached by Python ABI under ignored `.oracle-lab/`
+storage and revalidated against the `sts-learning[test]` requirement on every
+run. Each bridge wheel and smoke environment remains fresh; optional training
+dependencies may stay absent from the pytest tool and their tests may skip. Use
 `refresh-bridge` when a real experiment needs the new bridge: it verifies and
 installs a release-profile wheel with `--no-deps`, but defers the second Rust
 test-binary link. Neither command mutates NumPy or PyTorch. `verify` is the

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import unittest
+import pytest
 
 from sts_learning import (
     CombatAxisSignalSummary,
@@ -25,35 +25,31 @@ def _summary(root_byte: str, *, hp_signal: bool) -> CombatGroupSignalSummary:
     )
 
 
-class CombatSignalTests(unittest.TestCase):
-    def test_census_aggregates_distinct_roots_without_payloads(self) -> None:
-        census = build_combat_signal_census(
-            (_summary("1", hp_signal=True), _summary("2", hp_signal=False)),
-            max_groups=2,
-        )
+def test_census_aggregates_distinct_roots_without_payloads() -> None:
+    census = build_combat_signal_census(
+        (_summary("1", hp_signal=True), _summary("2", hp_signal=False)),
+        max_groups=2,
+    )
 
-        self.assertEqual(census.group_count, 2)
-        self.assertEqual(census.replicate_count, 8)
-        self.assertEqual(census.decision_count, 40)
-        self.assertEqual(census.win.signal_group_count, 0)
-        self.assertEqual(census.terminal_hp.signal_group_count, 1)
-        self.assertEqual(census.terminal_hp.signal_replicate_count, 4)
-        self.assertEqual(census.terminal_hp.signal_decision_count, 20)
-
-    def test_census_rejects_duplicate_roots_and_group_overflow(self) -> None:
-        summary = _summary("1", hp_signal=True)
-        for summaries, bound in (
-            ((summary, summary), 2),
-            ((summary,), 0),
-        ):
-            with self.subTest(bound=bound):
-                with self.assertRaises(CombatSignalError):
-                    build_combat_signal_census(summaries, max_groups=bound)
-
-    def test_axis_signal_rejects_decisions_without_a_signal_replicate(self) -> None:
-        with self.assertRaises(CombatSignalError):
-            CombatAxisSignalSummary(0, 1)
+    assert census.group_count == 2
+    assert census.replicate_count == 8
+    assert census.decision_count == 40
+    assert census.win.signal_group_count == 0
+    assert census.terminal_hp.signal_group_count == 1
+    assert census.terminal_hp.signal_replicate_count == 4
+    assert census.terminal_hp.signal_decision_count == 20
 
 
-if __name__ == "__main__":
-    unittest.main()
+def test_census_rejects_duplicate_roots_and_group_overflow() -> None:
+    summary = _summary("1", hp_signal=True)
+    for summaries, bound in (
+        ((summary, summary), 2),
+        ((summary,), 0),
+    ):
+        with pytest.raises(CombatSignalError):
+            build_combat_signal_census(summaries, max_groups=bound)
+
+
+def test_axis_signal_rejects_decisions_without_a_signal_replicate() -> None:
+    with pytest.raises(CombatSignalError):
+        CombatAxisSignalSummary(0, 1)
