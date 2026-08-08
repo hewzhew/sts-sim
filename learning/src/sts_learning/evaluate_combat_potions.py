@@ -120,6 +120,14 @@ def run_combat_potion_sweep(
         f"output={config.output}",
         flush=True,
     )
+    print(
+        "combat_potion_sweep_roots "
+        "metrics=wins/final_hp_sum/potions_used/potions_discarded "
+        f"count={len(summary['roots'])}",
+        flush=True,
+    )
+    for root in summary["roots"]:
+        print(_root_completion(root), flush=True)
     return summary
 
 
@@ -288,6 +296,24 @@ def _root_lane_summary(label: str, root: dict[str, object]) -> dict[str, object]
         "lost_potion_ids": dict(sorted(lost.items())),
         "gained_potion_ids": dict(sorted(gained.items())),
     }
+
+
+def _root_completion(root: dict[str, object]) -> str:
+    context = root["context"]
+    potions = "+".join(
+        potion for potion in context["potion_ids"] if potion is not None
+    ) or "none"
+    lanes = ",".join(
+        f"{lane['label']}:{lane['wins']}/{lane['final_hp_sum']}/"
+        f"{lane['potions_used']}/{lane['potions_discarded']}"
+        for lane in root["lanes"]
+    )
+    return (
+        f"combat_potion_sweep_root slot={root['slot_index']} "
+        f"site=A{context['act']}F{context['floor']} "
+        f"hp={context['hp']}/{context['max_hp']} potions={potions} "
+        f"lanes={lanes}"
+    )
 
 
 def _parser() -> argparse.ArgumentParser:

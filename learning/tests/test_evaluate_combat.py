@@ -241,6 +241,16 @@ def test_evaluation_recovers_published_behavior_without_training_or_experience(
         "combat_potion_sweep_complete=true "
         "lanes=never,root-slot-0,root-slot-1,all"
     ) in sweep_stdout
+    assert (
+        "combat_potion_sweep_roots "
+        "metrics=wins/final_hp_sum/potions_used/potions_discarded count=2"
+    ) in sweep_stdout
+    assert (
+        "combat_potion_sweep_root slot=0 site=A1F4 hp=80/80 "
+        "potions=EntropicBrew+GamblersBrew "
+        "lanes=never:1/61/0/0,root-slot-0:1/61/1/0,"
+        "root-slot-1:1/61/1/0,all:1/61/1/0"
+    ) in sweep_stdout
 
 
 def test_observed_resource_frontier_keeps_hp_potion_tradeoffs_incomparable() -> None:

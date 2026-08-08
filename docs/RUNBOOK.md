@@ -756,6 +756,9 @@ every filled root potion slot discovered from the exact root contexts, and
 keeps its own `evaluation.json`; the top-level `potion-sweep.json` is only a
 compact typed index and aggregate comparison. The output directory must be
 fresh. Slot lanes remain concrete-identity counterfactuals, not potion prices.
+The completion output also emits one bounded line per root with starting site,
+HP, potion identities, and lane win/HP/use/discard aggregates, so routine
+classification does not require reopening or probing the JSON schema.
 
 Each root also reports an observed-resource Pareto frontier among its winning
 replicates. The order compares final HP, max HP, gold, and exact potion
