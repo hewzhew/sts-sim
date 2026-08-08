@@ -213,6 +213,18 @@ The bridge still owns no policy, optimizer, automatic reset, or PyTorch
 dependency. Keeping the crate standalone prevents Python build dependencies
 from entering ordinary simulator checks.
 
+An undecoded combat slot may create a fixed-size group of exact same-root
+combat episodes. Rust owns the normalized run-session root id, exact combat
+state hash, numbered replicate lineage, and terminal outcome facts; each
+bridge transition repeats both root identities and emits aligned terminal win,
+HP, turn, potion, and card-play columns only for newly terminal replicates.
+The Python caller rejects a terminal batch from another root before mutating
+its bounded accumulator and completes a group only after receiving exactly one
+outcome for every replicate. Same-root leave-one-out evidence remains three
+independent axes: win, terminal-HP ratio, and potion retention. There is no
+default scalar exchange rate between HP and potions, and the execution
+primitive is not itself a trainer or teacher.
+
 Python recovery curricula may hold explicit opaque single-slot checkpoints.
 Saving one clones that exact in-memory run-control state only when requested;
 restoring it also restores any unfinished symbolic decoder or already selected

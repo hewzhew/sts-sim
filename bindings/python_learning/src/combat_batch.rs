@@ -88,6 +88,11 @@ impl CombatLearningBatchEnv {
         self.states = states_from_source(&self.pool).map_err(runtime_error)?;
 
         let result = PyDict::new(py);
+        result.set_item("root_id", self.pool.root_identity().root_id.as_str())?;
+        result.set_item(
+            "exact_combat_state_hash",
+            self.pool.root_identity().exact_combat_state_hash.as_str(),
+        )?;
         result.set_item(
             "slot_indices",
             usize_array(
@@ -128,6 +133,16 @@ impl CombatLearningBatchEnv {
                 terminal_slots
                     .iter()
                     .map(|(_, outcome)| combat_terminal_code(outcome.combat.terminal))
+                    .collect(),
+            ),
+        )?;
+        result.set_item(
+            "terminal_won",
+            PyArray1::from_vec(
+                py,
+                terminal_slots
+                    .iter()
+                    .map(|(_, outcome)| outcome.combat.terminal == CombatTerminal::Win)
                     .collect(),
             ),
         )?;

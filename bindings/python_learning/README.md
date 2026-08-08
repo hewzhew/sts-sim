@@ -97,10 +97,15 @@ replicate_count)` creates a `CombatLearningBatchEnv` without exposing or
 reconstructing the run-control checkpoint in Python. Every replicate shares
 the exact root id and combat-state hash, keeps its own numbered episode
 lineage, and uses the same `decision_batch`, `choose`, and atomic `step` rhythm.
-Combat step results have no run reward fields: they return aligned terminal
-kind, HP, turn, potion, and card-play columns from `CombatBaselineOutcomeV1`.
-The source run slot is unchanged. This is an execution primitive for
-caller-owned grouped objectives, not an implementation of RLOO or a teacher.
+Every combat step repeats the exact root id and combat-state hash. Its newly
+terminal rows have no run reward fields: they return aligned terminal kind,
+bridge-owned win, HP, turn, potion, and card-play columns from
+`CombatBaselineOutcomeV1`. The source run slot is unchanged. The Python caller
+can accumulate exactly one row per replicate and derive separate same-root
+leave-one-out win, terminal-HP-ratio, and potion-retention axes. It does not
+combine HP and potion facts into a default scalar score. This remains an
+execution primitive for caller-owned grouped objectives, not a trainer or a
+teacher.
 
 Terminal step batches retain aligned `terminal_slot_indices`,
 `terminal_reward`, public `terminal_act`, `terminal_floor`, `terminal_hp`,

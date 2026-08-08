@@ -16,6 +16,14 @@ from .attempt_batching import (
     AttemptUpdateBatchLimits,
     BoundedAttemptUpdateBatcher,
 )
+from .combat_outcomes import (
+    CombatGroupedAdvantages,
+    CombatGroupOutcomeAccumulator,
+    CombatOutcomeError,
+    CombatTerminalOutcome,
+    CombatTerminalStepBatch,
+    CompletedCombatGroup,
+)
 from .driver import (
     BatchCurriculum,
     BatchDriverError,
@@ -166,6 +174,12 @@ __all__ = [
     "BoundedBehaviorManifestCatalog",
     "BoundedResumeStore",
     "CheckpointBatch",
+    "CombatGroupedAdvantages",
+    "CombatGroupOutcomeAccumulator",
+    "CombatOutcomeError",
+    "CombatTerminalOutcome",
+    "CombatTerminalStepBatch",
+    "CompletedCombatGroup",
     "CheckpointedEpisodeResetTarget",
     "CompletedAttemptExperience",
     "CompletedAttemptSink",

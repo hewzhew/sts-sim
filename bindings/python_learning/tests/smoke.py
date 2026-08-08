@@ -200,11 +200,14 @@ def _assert_same_root_combat_group(env: LearningBatchEnv, slot: int) -> None:
             ]
             group.choose(ordinals)
         step = group.step()
+        assert step["root_id"] == group.root_id
+        assert step["exact_combat_state_hash"] == group.exact_combat_state_hash
         terminal_count = int(step["terminal_slot_indices"].size)
         assert step["slot_indices"].dtype == np.uint64
         assert step["terminated"].dtype == np.bool_
         assert step["terminal_slot_indices"].dtype == np.uint64
         assert step["terminal_kind"].dtype == np.uint8
+        assert step["terminal_won"].dtype == np.bool_
         assert np.array_equal(
             step["terminal_slot_indices"],
             step["slot_indices"][step["terminated"]],
@@ -218,6 +221,9 @@ def _assert_same_root_combat_group(env: LearningBatchEnv, slot: int) -> None:
                     COMBAT_TERMINAL_UNRESOLVED,
                 ],
             )
+        )
+        assert np.array_equal(
+            step["terminal_won"], step["terminal_kind"] == COMBAT_TERMINAL_WIN
         )
         for key in (
             "terminal_start_hp",
