@@ -44,10 +44,22 @@ partial row.
 `checkpoint_slot(slot_index)` returns an opaque, in-process exact checkpoint;
 `restore_slot(slot_index, checkpoint)` restores both the simulator and any
 unfinished symbolic-selection prefix without rerolling RNG. Checkpoints are
-created only on an explicit caller request, are never serialized through the
-bridge, and do not form an automatic history. A recovery curriculum therefore
-owns checkpoint retention, retry counts, and replacement policy without
-becoming part of environment mechanics.
+created only on an explicit caller request and do not form an automatic
+history. A recovery curriculum therefore owns checkpoint retention, retry
+counts, and replacement policy without becoming part of environment
+mechanics.
+
+Cross-process callers may explicitly snapshot the complete fixed batch with
+`checkpoint_bytes(max_bytes=...)` and construct a fresh owner with
+`LearningBatchEnv.from_checkpoint_bytes(payload, expected_slots=...,
+max_bytes=...)`. The versioned opaque payload contains each exact run-control
+session plus only the candidate-ordinal prefix needed to rebuild bridge-local
+symbolic selection or a prepared action. Restore requires the exact slot count,
+checks the caller byte limit before decoding, reconstructs every environment,
+and replays every ordinal through the current typed decoder before exposing the
+first slot. A corrupt, stale, or no-longer-legal prefix therefore fails closed.
+The bridge does not inspect the payload in Python, use pickle, write files, or
+publish an automatic checkpoint stream.
 
 For vectorized curricula, `checkpoint_slots(slot_indices)` and
 `restore_slots(slot_indices, checkpoints)` perform one cross-language call for

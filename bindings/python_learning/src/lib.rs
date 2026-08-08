@@ -1,10 +1,12 @@
 use std::collections::BTreeSet;
+use std::io::{self, Cursor, Write};
 
 use numpy::ndarray::Array2;
 use numpy::{IntoPyArray, PyArray1};
 use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
-use pyo3::types::PyDict;
+use pyo3::types::{PyBytes, PyDict};
+use serde::{Deserialize, Serialize};
 use sts_oracle_eval::eval::run_control::{
     LearningActionV1, LearningBoundaryV1, LearningEnvPoolV1, LearningEnvV1, LearningModelChoiceV1,
     LearningModelDecisionV1, LearningModelObservationV1, LearningSelectionDraftV1,
@@ -27,13 +29,92 @@ use semantic::{
 const PHASE_STRATEGIC_ROOT: u8 = 0;
 const PHASE_COMBAT_ROOT: u8 = 1;
 const PHASE_SELECTION: u8 = 2;
+const BATCH_CHECKPOINT_MAGIC: &[u8] = b"STS-LEARNING-BATCH\0";
+const BATCH_CHECKPOINT_VERSION: u32 = 1;
 
 #[derive(Clone, Debug)]
 enum BridgeSlotState {
     Terminal,
     Root,
-    Selection(LearningSelectionDraftV1),
-    Ready(LearningActionV1),
+    Selection {
+        draft: LearningSelectionDraftV1,
+        decision_ordinals: Vec<usize>,
+    },
+    Ready {
+        action: LearningActionV1,
+        decision_ordinals: Vec<usize>,
+    },
+}
+
+impl BridgeSlotState {
+    fn decision_ordinals(&self) -> &[usize] {
+        match self {
+            Self::Terminal | Self::Root => &[],
+            Self::Selection {
+                decision_ordinals, ..
+            }
+            | Self::Ready {
+                decision_ordinals, ..
+            } => decision_ordinals,
+        }
+    }
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct SerializedLearningBatchCheckpointV1 {
+    slots: Vec<SerializedLearningSlotCheckpointV1>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct SerializedLearningSlotCheckpointV1 {
+    source_slot_index: usize,
+    session: RunControlSessionCheckpointV1,
+    decision_ordinals: Vec<usize>,
+}
+
+struct BoundedCheckpointWriter {
+    bytes: Vec<u8>,
+    max_bytes: usize,
+}
+
+impl BoundedCheckpointWriter {
+    fn new(max_bytes: usize) -> Result<Self, String> {
+        let header_bytes = BATCH_CHECKPOINT_MAGIC.len() + std::mem::size_of::<u32>();
+        if max_bytes < header_bytes {
+            return Err("batch checkpoint byte limit is smaller than its header".to_owned());
+        }
+        let mut bytes = Vec::with_capacity(max_bytes.min(64 * 1024));
+        bytes.extend_from_slice(BATCH_CHECKPOINT_MAGIC);
+        bytes.extend_from_slice(&BATCH_CHECKPOINT_VERSION.to_be_bytes());
+        Ok(Self { bytes, max_bytes })
+    }
+
+    fn finish(self) -> Vec<u8> {
+        self.bytes
+    }
+}
+
+impl Write for BoundedCheckpointWriter {
+    fn write(&mut self, buffer: &[u8]) -> io::Result<usize> {
+        let next = self
+            .bytes
+            .len()
+            .checked_add(buffer.len())
+            .ok_or_else(|| io::Error::other("batch checkpoint byte count overflow"))?;
+        if next > self.max_bytes {
+            return Err(io::Error::other(
+                "batch checkpoint exceeds its caller-provided byte limit",
+            ));
+        }
+        self.bytes.extend_from_slice(buffer);
+        Ok(buffer.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
 }
 
 /// Opaque, in-process exact state owned by the caller.
@@ -145,9 +226,35 @@ impl LearningBatchEnv {
 
     #[getter]
     fn ready(&self) -> bool {
-        self.states
-            .iter()
-            .all(|state| matches!(state, BridgeSlotState::Terminal | BridgeSlotState::Ready(_)))
+        self.states.iter().all(|state| {
+            matches!(
+                state,
+                BridgeSlotState::Terminal | BridgeSlotState::Ready { .. }
+            )
+        })
+    }
+
+    #[pyo3(signature = (*, max_bytes))]
+    fn checkpoint_bytes<'py>(
+        &self,
+        py: Python<'py>,
+        max_bytes: usize,
+    ) -> PyResult<Bound<'py, PyBytes>> {
+        let payload = self
+            .encode_cross_process_checkpoint(max_bytes)
+            .map_err(value_error)?;
+        Ok(PyBytes::new(py, &payload))
+    }
+
+    #[staticmethod]
+    #[pyo3(signature = (payload, *, expected_slots, max_bytes))]
+    fn from_checkpoint_bytes(
+        payload: &[u8],
+        expected_slots: usize,
+        max_bytes: usize,
+    ) -> PyResult<Self> {
+        Self::decode_cross_process_checkpoint(payload, expected_slots, max_bytes)
+            .map_err(value_error)
     }
 
     #[pyo3(signature = (dense_mask=false, semantic=false))]
@@ -210,33 +317,13 @@ impl LearningBatchEnv {
                     "slot {slot_index} candidate ordinal {ordinal} is outside 0..{candidate_count}"
                 )));
             }
-            match &mut next_states[slot_index] {
-                BridgeSlotState::Root => {
-                    let boundary = self.pool.boundary(slot_index).ok_or_else(|| {
-                        PyRuntimeError::new_err(format!("missing pool slot {slot_index}"))
-                    })?;
-                    let decision =
-                        LearningModelDecisionV1::from_boundary(boundary).map_err(value_error)?;
-                    next_states[slot_index] = match decision.choose(ordinal).map_err(value_error)? {
-                        LearningModelChoiceV1::Apply(action) => BridgeSlotState::Ready(action),
-                        LearningModelChoiceV1::DecodeSelection(draft) => {
-                            BridgeSlotState::Selection(draft)
-                        }
-                    };
-                }
-                BridgeSlotState::Selection(draft) => {
-                    if let LearningSelectionStepV1::Apply(action) =
-                        draft.choose(ordinal).map_err(value_error)?
-                    {
-                        next_states[slot_index] = BridgeSlotState::Ready(action);
-                    }
-                }
-                BridgeSlotState::Terminal | BridgeSlotState::Ready(_) => {
-                    return Err(PyRuntimeError::new_err(format!(
-                        "slot {slot_index} appeared in a decision batch without a pending decision"
-                    )));
-                }
-            }
+            apply_bridge_ordinal(
+                &self.pool,
+                slot_index,
+                &mut next_states[slot_index],
+                ordinal,
+            )
+            .map_err(value_error)?;
         }
         self.states = next_states;
         Ok(())
@@ -251,9 +338,9 @@ impl LearningBatchEnv {
         let mut actions = Vec::with_capacity(self.pool.active_count());
         for state in &self.states {
             match state {
-                BridgeSlotState::Ready(action) => actions.push(action.clone()),
+                BridgeSlotState::Ready { action, .. } => actions.push(action.clone()),
                 BridgeSlotState::Terminal => {}
-                BridgeSlotState::Root | BridgeSlotState::Selection(_) => {
+                BridgeSlotState::Root | BridgeSlotState::Selection { .. } => {
                     return Err(PyRuntimeError::new_err(
                         "driver readiness changed while collecting actions",
                     ));
@@ -534,6 +621,92 @@ impl LearningBatchEnv {
 }
 
 impl LearningBatchEnv {
+    fn encode_cross_process_checkpoint(&self, max_bytes: usize) -> Result<Vec<u8>, String> {
+        let slots = self
+            .states
+            .iter()
+            .enumerate()
+            .map(|(source_slot_index, state)| {
+                let session = self
+                    .pool
+                    .checkpoint_slot(source_slot_index)
+                    .map_err(|error| error.to_string())?;
+                Ok(SerializedLearningSlotCheckpointV1 {
+                    source_slot_index,
+                    session,
+                    decision_ordinals: state.decision_ordinals().to_vec(),
+                })
+            })
+            .collect::<Result<Vec<_>, String>>()?;
+        let checkpoint = SerializedLearningBatchCheckpointV1 { slots };
+        encode_serialized_batch_checkpoint(&checkpoint, max_bytes)
+    }
+
+    fn decode_cross_process_checkpoint(
+        payload: &[u8],
+        expected_slots: usize,
+        max_bytes: usize,
+    ) -> Result<Self, String> {
+        if expected_slots == 0 {
+            return Err("batch checkpoint expected slot count must be positive".to_owned());
+        }
+        if payload.len() > max_bytes {
+            return Err("batch checkpoint exceeds its caller-provided byte limit".to_owned());
+        }
+        let header_bytes = BATCH_CHECKPOINT_MAGIC.len() + std::mem::size_of::<u32>();
+        if payload.len() < header_bytes {
+            return Err("batch checkpoint ended before its header".to_owned());
+        }
+        if &payload[..BATCH_CHECKPOINT_MAGIC.len()] != BATCH_CHECKPOINT_MAGIC {
+            return Err("batch checkpoint magic is invalid".to_owned());
+        }
+        let version_start = BATCH_CHECKPOINT_MAGIC.len();
+        let version = u32::from_be_bytes(
+            payload[version_start..header_bytes]
+                .try_into()
+                .map_err(|_| "batch checkpoint version is truncated")?,
+        );
+        if version != BATCH_CHECKPOINT_VERSION {
+            return Err("batch checkpoint format version is unsupported".to_owned());
+        }
+        let mut decoder = rmp_serde::Deserializer::new(Cursor::new(&payload[header_bytes..]));
+        let checkpoint = SerializedLearningBatchCheckpointV1::deserialize(&mut decoder)
+            .map_err(|error| format!("cannot decode batch checkpoint: {error}"))?;
+        if usize::try_from(decoder.position()).ok() != Some(payload.len() - header_bytes) {
+            return Err("batch checkpoint contains trailing bytes".to_owned());
+        }
+        if encode_serialized_batch_checkpoint(&checkpoint, max_bytes)? != payload {
+            return Err("batch checkpoint encoding is not canonical".to_owned());
+        }
+        if checkpoint.slots.len() != expected_slots {
+            return Err(format!(
+                "batch checkpoint contains {} slots, expected {expected_slots}",
+                checkpoint.slots.len()
+            ));
+        }
+        for (expected_slot, slot) in checkpoint.slots.iter().enumerate() {
+            if slot.source_slot_index != expected_slot {
+                return Err(format!(
+                    "batch checkpoint slot {} is stored at position {expected_slot}",
+                    slot.source_slot_index
+                ));
+            }
+        }
+
+        let envs = checkpoint
+            .slots
+            .iter()
+            .map(|slot| LearningEnvV1::from_checkpoint(slot.session.clone()))
+            .collect::<Result<Vec<_>, _>>()?;
+        let pool = LearningEnvPoolV1::from_envs(envs).map_err(|error| error.to_string())?;
+        let states = checkpoint
+            .slots
+            .iter()
+            .map(|slot| replay_bridge_state(&pool, slot.source_slot_index, &slot.decision_ordinals))
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(Self { pool, states })
+    }
+
     fn decision_snapshot(&self) -> PyResult<DecisionSnapshot> {
         let mut slot_indices = Vec::new();
         let mut phases = Vec::new();
@@ -554,10 +727,10 @@ impl LearningBatchEnv {
                     };
                     (phase, decision.candidates.len())
                 }
-                BridgeSlotState::Selection(draft) => {
+                BridgeSlotState::Selection { draft, .. } => {
                     (PHASE_SELECTION, draft.decision().candidates.len())
                 }
-                BridgeSlotState::Terminal | BridgeSlotState::Ready(_) => continue,
+                BridgeSlotState::Terminal | BridgeSlotState::Ready { .. } => continue,
             };
             if candidate_count == 0 {
                 return Err(PyRuntimeError::new_err(format!(
@@ -596,7 +769,7 @@ impl LearningBatchEnv {
                         LearningModelDecisionV1::from_boundary(boundary).map_err(value_error)?;
                     builder.push_decision(&decision).map_err(runtime_error)?;
                 }
-                BridgeSlotState::Selection(draft) => {
+                BridgeSlotState::Selection { draft, .. } => {
                     let boundary = self.pool.boundary(slot_index).ok_or_else(|| {
                         PyRuntimeError::new_err(format!("missing pool slot {slot_index}"))
                     })?;
@@ -606,11 +779,90 @@ impl LearningBatchEnv {
                         .push_selection(decision.observation, draft)
                         .map_err(runtime_error)?;
                 }
-                BridgeSlotState::Terminal | BridgeSlotState::Ready(_) => {}
+                BridgeSlotState::Terminal | BridgeSlotState::Ready { .. } => {}
             }
         }
         Ok(builder.finish())
     }
+}
+
+fn encode_serialized_batch_checkpoint(
+    checkpoint: &SerializedLearningBatchCheckpointV1,
+    max_bytes: usize,
+) -> Result<Vec<u8>, String> {
+    let mut writer = BoundedCheckpointWriter::new(max_bytes)?;
+    rmp_serde::encode::write_named(&mut writer, checkpoint)
+        .map_err(|error| format!("cannot encode batch checkpoint: {error}"))?;
+    Ok(writer.finish())
+}
+
+fn apply_bridge_ordinal(
+    pool: &LearningEnvPoolV1,
+    slot_index: usize,
+    state: &mut BridgeSlotState,
+    ordinal: usize,
+) -> Result<(), String> {
+    let next = match state.clone() {
+        BridgeSlotState::Root => {
+            let boundary = pool
+                .boundary(slot_index)
+                .ok_or_else(|| format!("missing pool slot {slot_index}"))?;
+            let decision = LearningModelDecisionV1::from_boundary(boundary)
+                .map_err(|error| error.to_string())?;
+            match decision
+                .choose(ordinal)
+                .map_err(|error| error.to_string())?
+            {
+                LearningModelChoiceV1::Apply(action) => BridgeSlotState::Ready {
+                    action,
+                    decision_ordinals: vec![ordinal],
+                },
+                LearningModelChoiceV1::DecodeSelection(draft) => BridgeSlotState::Selection {
+                    draft,
+                    decision_ordinals: vec![ordinal],
+                },
+            }
+        }
+        BridgeSlotState::Selection {
+            mut draft,
+            mut decision_ordinals,
+        } => {
+            decision_ordinals.push(ordinal);
+            match draft.choose(ordinal).map_err(|error| error.to_string())? {
+                LearningSelectionStepV1::Continue => BridgeSlotState::Selection {
+                    draft,
+                    decision_ordinals,
+                },
+                LearningSelectionStepV1::Apply(action) => BridgeSlotState::Ready {
+                    action,
+                    decision_ordinals,
+                },
+            }
+        }
+        BridgeSlotState::Terminal | BridgeSlotState::Ready { .. } => {
+            return Err(format!(
+                "slot {slot_index} decision prefix continues after readiness"
+            ));
+        }
+    };
+    *state = next;
+    Ok(())
+}
+
+fn replay_bridge_state(
+    pool: &LearningEnvPoolV1,
+    slot_index: usize,
+    decision_ordinals: &[usize],
+) -> Result<BridgeSlotState, String> {
+    let mut state = match pool.boundary(slot_index) {
+        Some(LearningBoundaryV1::Terminal { .. }) => BridgeSlotState::Terminal,
+        Some(_) => BridgeSlotState::Root,
+        None => return Err(format!("missing pool slot {slot_index}")),
+    };
+    for ordinal in decision_ordinals {
+        apply_bridge_ordinal(pool, slot_index, &mut state, *ordinal)?;
+    }
+    Ok(state)
 }
 
 fn states_from_pool(pool: &LearningEnvPoolV1) -> Vec<BridgeSlotState> {
@@ -870,17 +1122,88 @@ mod checkpoint_tests {
         let checkpoint = LearningSlotCheckpoint {
             source_slot_index: 0,
             session: env.pool.checkpoint_slot(0).expect("checkpoint prefix"),
-            bridge_state: BridgeSlotState::Selection(draft.clone()),
+            bridge_state: BridgeSlotState::Selection {
+                draft: draft.clone(),
+                decision_ordinals: vec![0, 1],
+            },
         };
+        env.states[0] = checkpoint.bridge_state.clone();
+        let payload = env
+            .encode_cross_process_checkpoint(1024 * 1024)
+            .expect("encode selection prefix");
+        let restored = LearningBatchEnv::decode_cross_process_checkpoint(&payload, 1, 1024 * 1024)
+            .expect("restore selection prefix in a fresh owner");
+        assert_eq!(
+            restored
+                .encode_cross_process_checkpoint(1024 * 1024)
+                .expect("re-encode restored prefix"),
+            payload
+        );
+        let BridgeSlotState::Selection {
+            draft: restored_draft,
+            decision_ordinals,
+        } = &restored.states[0]
+        else {
+            panic!("cross-process checkpoint must resume symbolic selection");
+        };
+        assert_eq!(decision_ordinals, &[0, 1]);
+        assert_eq!(restored_draft.selected_domain_indices(), &[0]);
+        assert_eq!(restored_draft.decision().candidates.len(), 2);
+
+        assert!(env.encode_cross_process_checkpoint(16).is_err());
+        assert!(
+            LearningBatchEnv::decode_cross_process_checkpoint(&payload, 2, 1024 * 1024,).is_err()
+        );
+        let mut bad_magic = payload.clone();
+        bad_magic[0] ^= 0xff;
+        assert!(
+            LearningBatchEnv::decode_cross_process_checkpoint(&bad_magic, 1, 1024 * 1024,).is_err()
+        );
+        let header_bytes = BATCH_CHECKPOINT_MAGIC.len() + std::mem::size_of::<u32>();
+
+        let mut trailing = payload.clone();
+        trailing.push(0xc0);
+        let trailing_error =
+            LearningBatchEnv::decode_cross_process_checkpoint(&trailing, 1, 1024 * 1024)
+                .err()
+                .expect("trailing MessagePack value must be rejected");
+        assert!(trailing_error.contains("trailing bytes"));
+
+        assert_eq!(
+            payload[header_bytes], 0x81,
+            "root must use a one-entry fixmap"
+        );
+        let mut noncanonical = Vec::with_capacity(payload.len() + 2);
+        noncanonical.extend_from_slice(&payload[..header_bytes]);
+        noncanonical.extend_from_slice(&[0xde, 0x00, 0x01]);
+        noncanonical.extend_from_slice(&payload[header_bytes + 1..]);
+        let noncanonical_error =
+            LearningBatchEnv::decode_cross_process_checkpoint(&noncanonical, 1, 1024 * 1024)
+                .err()
+                .expect("non-canonical MessagePack map width must be rejected");
+        assert!(noncanonical_error.contains("not canonical"));
+
+        let mut malformed: SerializedLearningBatchCheckpointV1 =
+            rmp_serde::from_slice(&payload[header_bytes..]).expect("decode owned payload");
+        malformed.slots[0].decision_ordinals.push(usize::MAX);
+        let malformed = encode_serialized_batch_checkpoint(&malformed, 1024 * 1024)
+            .expect("encode malformed prefix fixture");
+        assert!(
+            LearningBatchEnv::decode_cross_process_checkpoint(&malformed, 1, 1024 * 1024,).is_err()
+        );
+
         let LearningSelectionStepV1::Apply(action) = draft.choose(0).expect("submit prefix") else {
             panic!("submit must produce an action");
         };
-        env.states[0] = BridgeSlotState::Ready(action);
-        assert!(matches!(env.states[0], BridgeSlotState::Ready(_)));
+        env.states[0] = BridgeSlotState::Ready {
+            action,
+            decision_ordinals: vec![0, 1, 0],
+        };
+        assert!(matches!(env.states[0], BridgeSlotState::Ready { .. }));
 
         env.restore_slot_checkpoint(0, &checkpoint)
             .expect("restore prefix");
-        let BridgeSlotState::Selection(draft) = &env.states[0] else {
+        let BridgeSlotState::Selection { draft, .. } = &env.states[0] else {
             panic!("restored slot must resume symbolic selection");
         };
         assert_eq!(draft.selected_domain_indices(), &[0]);

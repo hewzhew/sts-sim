@@ -265,6 +265,62 @@ def _assert_explicit_checkpoint_replays_exactly() -> None:
         raise AssertionError("checkpoint update added a missing slot")
 
 
+def _assert_cross_process_checkpoint_replays_exactly() -> None:
+    max_bytes = 16 * 1024 * 1024
+    env = LearningBatchEnv([37])
+    root = env.decision_batch(dense_mask=True, semantic=True)
+    root_payload = bytes(env.checkpoint_bytes(max_bytes=max_bytes))
+    assert root_payload == bytes(env.checkpoint_bytes(max_bytes=max_bytes))
+    restored_root_env = LearningBatchEnv.from_checkpoint_bytes(
+        root_payload,
+        expected_slots=1,
+        max_bytes=max_bytes,
+    )
+    _assert_decision_batch_equal(
+        root,
+        restored_root_env.decision_batch(dense_mask=True, semantic=True),
+    )
+
+    for payload, expected_slots, byte_limit in (
+        (root_payload, 2, max_bytes),
+        (root_payload, 1, len(root_payload) - 1),
+        (bytes([root_payload[0] ^ 0xFF]) + root_payload[1:], 1, max_bytes),
+    ):
+        try:
+            LearningBatchEnv.from_checkpoint_bytes(
+                payload,
+                expected_slots=expected_slots,
+                max_bytes=byte_limit,
+            )
+        except ValueError:
+            pass
+        else:
+            raise AssertionError("invalid cross-process checkpoint was accepted")
+
+    _choose_first_until_ready(env)
+    ready_payload = bytes(env.checkpoint_bytes(max_bytes=max_bytes))
+    restored_ready_env = LearningBatchEnv.from_checkpoint_bytes(
+        ready_payload,
+        expected_slots=1,
+        max_bytes=max_bytes,
+    )
+    assert restored_ready_env.ready
+    first_step = env.step()
+    replay_step = restored_ready_env.step()
+    for field in (
+        "slot_indices",
+        "reward",
+        "terminated",
+        "terminal_slot_indices",
+        "terminal_reward",
+    ):
+        assert np.array_equal(first_step[field], replay_step[field])
+    _assert_decision_batch_equal(
+        env.decision_batch(dense_mask=True, semantic=True),
+        restored_ready_env.decision_batch(dense_mask=True, semantic=True),
+    )
+
+
 def main() -> None:
     schema = _SCHEMA
     assert schema["version"] == SEMANTIC_SCHEMA_VERSION
@@ -305,6 +361,7 @@ def main() -> None:
     assert schema["domain_vocabulary_size"]["enemy_id"] == 65
     assert schema["domain_vocabulary_size"]["power_id"] == 135
     _assert_explicit_checkpoint_replays_exactly()
+    _assert_cross_process_checkpoint_replays_exactly()
 
     seeds = list(range(1, 6))
     random_states = [seed ^ _SEED_XOR for seed in seeds]

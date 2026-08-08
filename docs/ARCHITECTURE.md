@@ -188,8 +188,15 @@ from entering ordinary simulator checks.
 Python recovery curricula may hold explicit opaque single-slot checkpoints.
 Saving one clones that exact in-memory run-control state only when requested;
 restoring it also restores any unfinished symbolic decoder or already selected
-action and therefore does not reroll RNG. The bridge serializes no checkpoint,
-keeps no automatic history, and owns no retry or resurrection policy.
+action and therefore does not reroll RNG. Explicit process-resume callers may
+instead request one versioned, caller-byte-bounded snapshot of the complete
+fixed batch. It stores each exact run-control session plus the candidate
+ordinal prefix needed for bridge-local decoder state; fresh restore requires
+the exact slot count and replays that prefix through the current typed decoder
+before exposing any slot. It therefore serializes neither inference features
+nor private draft/action objects, and a stale or malformed prefix fails closed.
+The bridge uses no pickle, keeps no automatic history, and owns no retry,
+retention, filesystem publication, or resurrection policy.
 Vectorized callers use opaque checkpoint batches. Every target and replacement
 boundary is validated before the first mutation, so a failed recovery batch
 cannot partly restore the environment pool.
