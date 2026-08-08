@@ -225,6 +225,11 @@ rate. Cross-combat resource value requires an exact continuation and remains
 outside this command. These facts measure that exact manifest on the bounded
 held-out sample and are not an improvement claim without a same-input frozen
 baseline.
+For local classification only, each root includes an observed-resource Pareto
+frontier over winning replicates using final HP, max HP, gold, and exact potion
+multisets. A result with more HP but a different or smaller potion inventory is
+left incomparable; the frontier does not model deck mutations, relic counters,
+future encounters, or route value and is not automatically a training target.
 
 The same result includes a typed competence plan over exact source slots.
 All-loss roots enter a rescue backlog, mixed win/loss roots form the survival

@@ -15,6 +15,7 @@ from .combat_evaluation import (
     CombatEvaluationRootResult,
     CombatHeldOutEvaluationResult,
     CombatHeldOutEvaluator,
+    combat_observed_resource_frontier,
 )
 from .combat_root_artifacts import (
     load_combat_root_source,
@@ -30,7 +31,7 @@ from .torch_combat_session_config import (
 )
 
 
-COMBAT_EVALUATION_SCHEMA = "sts-learning-combat-held-out-evaluation-v2"
+COMBAT_EVALUATION_SCHEMA = "sts-learning-combat-held-out-evaluation-v3"
 
 
 class CombatEvaluationCommandError(RuntimeError):
@@ -188,6 +189,18 @@ def run_combat_evaluation(
         or "-"
         for root in result.roots
     )
+    resource_frontiers = tuple(
+        combat_observed_resource_frontier(root.group.outcomes)
+        for root in result.roots
+    )
+    root_resource_frontiers = ",".join(
+        str(len(frontier.frontier_replicate_indices))
+        for frontier in resource_frontiers
+    )
+    root_resource_dominated = ",".join(
+        str(len(frontier.dominated_replicate_indices))
+        for frontier in resource_frontiers
+    )
     potion_losses = Counter(
         potion
         for root in result.roots
@@ -225,6 +238,8 @@ def run_combat_evaluation(
         f"root_wins={root_wins} root_final_hp_sums={root_final_hp} "
         f"root_potions_used={root_potions_used} "
         f"root_potions_discarded={root_potions_discarded} "
+        f"root_resource_frontiers={root_resource_frontiers} "
+        f"root_resource_dominated={root_resource_dominated} "
         f"root_sites={root_sites} root_start_potions={root_start_potions} "
         f"lost_potions={lost_potions} gained_potions={gained_potions} "
         f"seconds={elapsed:.3f} output={config.output}",
@@ -269,6 +284,10 @@ def _summary(
             outcome.final_potion_ids,
         )[1]
     )
+    resource_frontiers = tuple(
+        combat_observed_resource_frontier(root.group.outcomes)
+        for root in result.roots
+    )
     return {
         "schema": COMBAT_EVALUATION_SCHEMA,
         "kind": "completed",
@@ -298,6 +317,18 @@ def _summary(
         ),
         "lost_potion_ids": dict(sorted(potion_losses.items())),
         "gained_potion_ids": dict(sorted(potion_gains.items())),
+        "observed_resource_frontier_replicates": sum(
+            len(frontier.frontier_replicate_indices)
+            for frontier in resource_frontiers
+        ),
+        "observed_resource_dominated_replicates": sum(
+            len(frontier.dominated_replicate_indices)
+            for frontier in resource_frontiers
+        ),
+        "observed_resource_incomparable_winning_pairs": sum(
+            frontier.incomparable_pair_count
+            for frontier in resource_frontiers
+        ),
         "turns_sum": sum(outcome.turns for outcome in outcomes),
         "cards_played_sum": sum(outcome.cards_played for outcome in outcomes),
         "roots": roots,
@@ -311,6 +342,7 @@ def _root_summary(
 ) -> dict[str, object]:
     outcomes = root.group.outcomes
     context = root.context
+    resource_frontier = combat_observed_resource_frontier(outcomes)
     return {
         "slot_index": slot_index,
         "root_id": root.group.root_id,
@@ -345,6 +377,27 @@ def _root_summary(
         "potions_discarded": sum(
             outcome.potions_discarded for outcome in outcomes
         ),
+        "observed_resource_order": {
+            "winning_replicate_indices": (
+                resource_frontier.winning_replicate_indices
+            ),
+            "frontier_replicate_indices": (
+                resource_frontier.frontier_replicate_indices
+            ),
+            "dominated_replicate_indices": (
+                resource_frontier.dominated_replicate_indices
+            ),
+            "dominators_by_replicate": (
+                resource_frontier.dominators_by_replicate
+            ),
+            "strict_order_pair_count": (
+                resource_frontier.strict_order_pair_count
+            ),
+            "equivalent_pair_count": resource_frontier.equivalent_pair_count,
+            "incomparable_pair_count": (
+                resource_frontier.incomparable_pair_count
+            ),
+        },
         "outcomes": tuple(
             {
                 "replicate_index": outcome.replicate_index,

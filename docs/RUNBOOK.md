@@ -722,6 +722,12 @@ experience buffer, or behavior promotion. A result measures the exact frozen
 manifest on that bounded sample; it does not establish improvement without a
 comparable baseline using the same roots and RNG streams.
 
+Each root also reports an observed-resource Pareto frontier among its winning
+replicates. The order compares final HP, max HP, gold, and exact potion
+multisets coordinate-wise. HP/potion tradeoffs and unlike potion identities are
+incomparable rather than silently converted. Treat this as local classification
+of the recorded facts, not proof of run-level continuation value.
+
 `test` requires PyTorch and the installed bridge and runs the complete learning
 suite; missing training dependencies are failures, not skips. `verify` runs
 that suite and then invokes `bindings/python_learning/verify.ps1` for the fresh

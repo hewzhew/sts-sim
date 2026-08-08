@@ -297,6 +297,13 @@ concrete starting/final/lost/gained potion identities, and use/discard counts
 independently inspectable. A lost identity is a multiset inventory fact, not a
 claim about whether spending it was strategically correct. Cross-combat value
 requires an exact run continuation and remains outside the combat evaluator.
+Among winning replicates, the evaluator may additionally report an
+`observed-resource` Pareto frontier over final HP, max HP, gold, and exact
+potion-identity multisets. One result orders another only when every observed
+axis is no worse. Different potion identities and any HP/potion tradeoff stay
+incomparable. The frontier intentionally omits deck mutations, persistent relic
+counters, future encounters, and route options, so it is not continuation
+dominance or a training reward by itself.
 
 The combat-group caller captures each semantic decision batch before policy
 inference through the same policy-neutral frozen-row owner used by run

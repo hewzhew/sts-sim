@@ -9,6 +9,8 @@ pytest.importorskip("torch")
 
 from learning.tests.semantic_fixtures import semantic_schema_fixture
 from learning.tests.torch_combat_fixtures import OneRoundCombatGroup
+from sts_learning.combat_evaluation import combat_observed_resource_frontier
+from sts_learning.combat_outcomes import CombatTerminalOutcome
 from sts_learning.evaluate_combat import (
     CombatEvaluationCommandConfig,
     run_combat_evaluation,
@@ -105,7 +107,7 @@ def test_evaluation_recovers_published_behavior_without_training_or_experience(
         bridge=bridge,
     )
 
-    assert summary["schema"] == "sts-learning-combat-held-out-evaluation-v2"
+    assert summary["schema"] == "sts-learning-combat-held-out-evaluation-v3"
     assert training_source.calls == [0, 1]
     assert evaluation_source.calls == [0, 1]
     assert summary["wins"] == 3
@@ -116,6 +118,9 @@ def test_evaluation_recovers_published_behavior_without_training_or_experience(
     assert summary["gold_delta_sum"] == 0
     assert summary["lost_potion_ids"] == {"EntropicBrew": 2}
     assert summary["gained_potion_ids"] == {"BlockPotion": 2}
+    assert summary["observed_resource_frontier_replicates"] == 3
+    assert summary["observed_resource_dominated_replicates"] == 0
+    assert summary["observed_resource_incomparable_winning_pairs"] == 1
     assert tuple(root["wins"] for root in summary["roots"]) == (1, 2)
     assert summary["roots"][0]["context"]["floor"] == 4
     assert summary["roots"][0]["context"]["gold"] == 99
@@ -132,6 +137,15 @@ def test_evaluation_recovers_published_behavior_without_training_or_experience(
     assert summary["roots"][0]["outcomes"][1]["gained_potion_ids"] == (
         "BlockPotion",
     )
+    assert summary["roots"][1]["observed_resource_order"] == {
+        "winning_replicate_indices": (0, 1),
+        "frontier_replicate_indices": (0, 1),
+        "dominated_replicate_indices": (),
+        "dominators_by_replicate": ((), ()),
+        "strict_order_pair_count": 0,
+        "equivalent_pair_count": 0,
+        "incomparable_pair_count": 1,
+    }
     assert (behavior / "training.jsonl").read_bytes() == training_journal_before
     assert tuple(path.name for path in output.iterdir()) == ("evaluation.json",)
     assert json.loads((output / "evaluation.json").read_text(encoding="utf-8"))[
@@ -140,5 +154,48 @@ def test_evaluation_recovers_published_behavior_without_training_or_experience(
     stdout = capsys.readouterr().out
     assert "evaluation_complete=true wins=3 losses=1 root_wins=1,2" in stdout
     assert "root_sites=A1F4,A1F4" in stdout
+    assert "root_resource_frontiers=1,2 root_resource_dominated=0,0" in stdout
     assert "root_start_potions=EntropicBrew+GamblersBrew" in stdout
     assert "lost_potions=EntropicBrew:2 gained_potions=BlockPotion:2" in stdout
+
+
+def test_observed_resource_frontier_keeps_hp_potion_tradeoffs_incomparable() -> None:
+    def outcome(
+        replicate_index: int,
+        *,
+        won: bool,
+        hp: int,
+        potions: tuple[str | None, ...],
+    ) -> CombatTerminalOutcome:
+        return CombatTerminalOutcome(
+            replicate_index=replicate_index,
+            terminal_kind=1 if won else 2,
+            won=won,
+            start_hp=80,
+            final_hp=hp,
+            final_max_hp=80,
+            final_gold=99,
+            hp_loss=80 - hp,
+            turns=3,
+            potions_used=0,
+            potions_discarded=0,
+            cards_played=8,
+            final_potion_ids=potions,
+        )
+
+    frontier = combat_observed_resource_frontier(
+        (
+            outcome(0, won=True, hp=60, potions=("BlockPotion", "SkillPotion")),
+            outcome(1, won=True, hp=70, potions=("BlockPotion", None)),
+            outcome(2, won=True, hp=50, potions=("BlockPotion", None)),
+            outcome(3, won=False, hp=0, potions=("BlockPotion", "SkillPotion")),
+        )
+    )
+
+    assert frontier.winning_replicate_indices == (0, 1, 2)
+    assert frontier.frontier_replicate_indices == (0, 1)
+    assert frontier.dominated_replicate_indices == (2,)
+    assert frontier.dominators_by_replicate == ((), (), (0, 1), ())
+    assert frontier.strict_order_pair_count == 2
+    assert frontier.equivalent_pair_count == 0
+    assert frontier.incomparable_pair_count == 1

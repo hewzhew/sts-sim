@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import operator
+from collections import Counter
 from collections.abc import Sequence
 from dataclasses import dataclass
 
 from .combat_outcomes import (
     CombatGroupOutcomeAccumulator,
     CombatOutcomeError,
+    CombatTerminalOutcome,
     CombatTerminalStepBatch,
     CompletedCombatGroup,
 )
@@ -34,6 +36,178 @@ class CombatEvaluationLimits:
                 name,
                 _positive_integer(getattr(self, name), name),
             )
+
+
+@dataclass(frozen=True)
+class CombatObservedResourceFrontier:
+    """Pareto order over terminal resource facts that the evaluator observes.
+
+    This is deliberately not continuation value. Exact potion identities are
+    compared as multisets; unlike identities and HP/potion tradeoffs remain
+    incomparable.
+    """
+
+    replicate_count: int
+    winning_replicate_indices: tuple[int, ...]
+    frontier_replicate_indices: tuple[int, ...]
+    dominated_replicate_indices: tuple[int, ...]
+    dominators_by_replicate: tuple[tuple[int, ...], ...]
+    strict_order_pair_count: int
+    equivalent_pair_count: int
+    incomparable_pair_count: int
+
+    def __post_init__(self) -> None:
+        replicate_count = _positive_integer(
+            self.replicate_count,
+            "replicate_count",
+        )
+        winning = _replicate_indices(
+            self.winning_replicate_indices,
+            replicate_count,
+            "winning_replicate_indices",
+        )
+        frontier = _replicate_indices(
+            self.frontier_replicate_indices,
+            replicate_count,
+            "frontier_replicate_indices",
+        )
+        dominated = _replicate_indices(
+            self.dominated_replicate_indices,
+            replicate_count,
+            "dominated_replicate_indices",
+        )
+        if (
+            set(frontier) & set(dominated)
+            or (set(frontier) | set(dominated)) != set(winning)
+        ):
+            raise CombatEvaluationError(
+                "observed resource frontier must partition winning replicates"
+            )
+        dominators = tuple(
+            _replicate_indices(row, replicate_count, "dominators_by_replicate")
+            for row in self.dominators_by_replicate
+        )
+        if len(dominators) != replicate_count:
+            raise CombatEvaluationError(
+                "observed resource dominators must align to every replicate"
+            )
+        for replicate_index, row in enumerate(dominators):
+            if replicate_index in row or not set(row) <= set(winning):
+                raise CombatEvaluationError(
+                    "observed resource dominators are invalid"
+                )
+            if (replicate_index in dominated) != bool(row):
+                raise CombatEvaluationError(
+                    "observed resource dominance partition is inconsistent"
+                )
+        pair_names = (
+            "strict_order_pair_count",
+            "equivalent_pair_count",
+            "incomparable_pair_count",
+        )
+        pair_counts = tuple(
+            _nonnegative_integer(getattr(self, name), name)
+            for name in pair_names
+        )
+        if pair_counts[0] != sum(len(row) for row in dominators):
+            raise CombatEvaluationError(
+                "observed resource strict pairs disagree with dominators"
+            )
+        if sum(pair_counts) != len(winning) * (len(winning) - 1) // 2:
+            raise CombatEvaluationError(
+                "observed resource pair counts do not cover winning pairs"
+            )
+        object.__setattr__(self, "replicate_count", replicate_count)
+        object.__setattr__(self, "winning_replicate_indices", winning)
+        object.__setattr__(self, "frontier_replicate_indices", frontier)
+        object.__setattr__(self, "dominated_replicate_indices", dominated)
+        object.__setattr__(self, "dominators_by_replicate", dominators)
+        for name, value in zip(pair_names, pair_counts, strict=True):
+            object.__setattr__(self, name, value)
+
+
+def combat_observed_resource_frontier(
+    outcomes: Sequence[CombatTerminalOutcome],
+) -> CombatObservedResourceFrontier:
+    """Return a no-exchange-rate Pareto order over winning terminal facts."""
+
+    normalized = tuple(outcomes)
+    if not normalized or not all(
+        isinstance(outcome, CombatTerminalOutcome) for outcome in normalized
+    ):
+        raise CombatEvaluationError(
+            "observed resource frontier requires typed terminal outcomes"
+        )
+    if tuple(outcome.replicate_index for outcome in normalized) != tuple(
+        range(len(normalized))
+    ):
+        raise CombatEvaluationError(
+            "observed resource frontier requires contiguous ordered replicates"
+        )
+    winning = tuple(outcome.replicate_index for outcome in normalized if outcome.won)
+    dominators: list[list[int]] = [[] for _ in normalized]
+    strict_pairs = 0
+    equivalent_pairs = 0
+    incomparable_pairs = 0
+    for left_offset, left_index in enumerate(winning):
+        for right_index in winning[left_offset + 1 :]:
+            relation = _observed_resource_relation(
+                normalized[left_index],
+                normalized[right_index],
+            )
+            if relation is None:
+                incomparable_pairs += 1
+            elif relation > 0:
+                dominators[right_index].append(left_index)
+                strict_pairs += 1
+            elif relation < 0:
+                dominators[left_index].append(right_index)
+                strict_pairs += 1
+            elif relation == 0:
+                equivalent_pairs += 1
+    dominated = tuple(index for index in winning if dominators[index])
+    frontier = tuple(index for index in winning if not dominators[index])
+    return CombatObservedResourceFrontier(
+        replicate_count=len(normalized),
+        winning_replicate_indices=winning,
+        frontier_replicate_indices=frontier,
+        dominated_replicate_indices=dominated,
+        dominators_by_replicate=tuple(tuple(row) for row in dominators),
+        strict_order_pair_count=strict_pairs,
+        equivalent_pair_count=equivalent_pairs,
+        incomparable_pair_count=incomparable_pairs,
+    )
+
+
+def _observed_resource_relation(
+    left: CombatTerminalOutcome,
+    right: CombatTerminalOutcome,
+) -> int | None:
+    left_potions = Counter(
+        potion for potion in left.final_potion_ids if potion is not None
+    )
+    right_potions = Counter(
+        potion for potion in right.final_potion_ids if potion is not None
+    )
+    left_no_worse = (
+        left.final_hp >= right.final_hp
+        and left.final_max_hp >= right.final_max_hp
+        and left.final_gold >= right.final_gold
+        and not (right_potions - left_potions)
+    )
+    right_no_worse = (
+        right.final_hp >= left.final_hp
+        and right.final_max_hp >= left.final_max_hp
+        and right.final_gold >= left.final_gold
+        and not (left_potions - right_potions)
+    )
+    if left_no_worse and right_no_worse:
+        return 0
+    if left_no_worse:
+        return 1
+    if right_no_worse:
+        return -1
+    return None
 
 
 @dataclass(frozen=True)
@@ -421,6 +595,24 @@ def _nonnegative_integer(value: object, name: str) -> int:
         raise CombatEvaluationError(f"{name} must be an integer") from error
     if normalized < 0:
         raise CombatEvaluationError(f"{name} must be non-negative")
+    return normalized
+
+
+def _replicate_indices(
+    values: object,
+    replicate_count: int,
+    name: str,
+) -> tuple[int, ...]:
+    try:
+        normalized = tuple(
+            _nonnegative_integer(value, name) for value in values
+        )
+    except TypeError as error:
+        raise CombatEvaluationError(f"{name} must be iterable") from error
+    if normalized != tuple(sorted(set(normalized))):
+        raise CombatEvaluationError(f"{name} must be sorted and unique")
+    if any(value >= replicate_count for value in normalized):
+        raise CombatEvaluationError(f"{name} contains an out-of-range replicate")
     return normalized
 
 
