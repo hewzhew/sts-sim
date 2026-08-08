@@ -370,9 +370,11 @@ generation zero only in an unused root; `publish()` emits an exact initial
 resume point; `restore(id)` rebuilds fresh owners; and
 `advance_generation(max_batch_steps=...)` advances only live state. Callers set
 checkpoint cadence explicitly by invoking `publish()`; neither completed nor
-unfinished generation calls write files. Restore verifies the saved slot count,
-training seed partition, and recovery budget against the supplied session
-configuration. The
+unfinished generation calls write files. `advance_generations(...)` removes
+caller-written loops while remaining bounded: it stops at the first incomplete
+generation and returns aggregate counters only. Restore verifies the saved slot
+count, training seed partition, and recovery budget against the supplied
+session configuration. The
 first maintained profile is deliberately CPU-only and defaults to eight
 same-behavior complete attempts per optimizer update. Maintained online
 sessions require at least one relation layer: a relation-blind bag of tokens

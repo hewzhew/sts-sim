@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import operator
+from dataclasses import dataclass
 from pathlib import Path
 
 import torch
@@ -58,6 +59,32 @@ class NoRecoveryCurriculum:
         return RecoveryPlan()
 
 
+@dataclass(frozen=True)
+class CategoricalTrainingAdvanceResult:
+    """Aggregate-only result for one bounded multi-generation continuation."""
+
+    active_manifest_id_before: BehaviorManifestId
+    active_manifest_id_after: BehaviorManifestId
+    active_training_step_before: int
+    active_training_step_after: int
+    target_generations: int
+    completed_generations: int
+    batch_step_limit_per_generation: int
+    batch_steps: int
+    terminal_attempts: int
+    terminal_flushes: int
+    optimizer_steps_before: int
+    optimizer_steps_after: int
+
+    @property
+    def complete(self) -> bool:
+        return self.completed_generations == self.target_generations
+
+    @property
+    def step_limit_reached(self) -> bool:
+        return not self.complete
+
+
 class CategoricalOnlineSession:
     """One live runner with explicit progress and durable publication."""
 
@@ -91,6 +118,64 @@ class CategoricalOnlineSession:
         """Advance live training without implicitly writing a checkpoint."""
 
         return self.runner.advance(max_batch_steps=max_batch_steps)
+
+    def advance_generations(
+        self,
+        *,
+        generations: int,
+        max_batch_steps_per_generation: int,
+    ) -> CategoricalTrainingAdvanceResult:
+        """Advance whole live generations until the first bounded incomplete one."""
+
+        target = _non_negative_integer(generations, "generations")
+        step_limit = _non_negative_integer(
+            max_batch_steps_per_generation,
+            "max_batch_steps_per_generation",
+        )
+        controller_before = self.runner.controller.snapshot
+        trainer_before = self.runner.trainer.snapshot
+        manifest_before = controller_before.active_manifest_id
+        training_step_before = controller_before.active_training_step
+        if manifest_before is None or training_step_before is None:
+            raise TorchSessionError("session has no active behavior")
+
+        completed = 0
+        batch_steps = 0
+        terminal_attempts = 0
+        terminal_flushes = 0
+        while completed < target:
+            result = self.advance_generation(max_batch_steps=step_limit)
+            batch_steps += result.batch_steps
+            terminal_attempts += result.terminal_attempts
+            terminal_flushes += result.terminal_flushes
+            if not result.promoted:
+                break
+            completed += 1
+
+        controller_after = self.runner.controller.snapshot
+        trainer_after = self.runner.trainer.snapshot
+        manifest_after = controller_after.active_manifest_id
+        training_step_after = controller_after.active_training_step
+        if manifest_after is None or training_step_after is None:
+            raise TorchSessionError("session lost its active behavior")
+        if training_step_after - training_step_before != completed:
+            raise TorchSessionError(
+                "multi-generation promotion count disagrees with active training step"
+            )
+        return CategoricalTrainingAdvanceResult(
+            active_manifest_id_before=manifest_before,
+            active_manifest_id_after=manifest_after,
+            active_training_step_before=training_step_before,
+            active_training_step_after=training_step_after,
+            target_generations=target,
+            completed_generations=completed,
+            batch_step_limit_per_generation=step_limit,
+            batch_steps=batch_steps,
+            terminal_attempts=terminal_attempts,
+            terminal_flushes=terminal_flushes,
+            optimizer_steps_before=trainer_before.optimizer_steps,
+            optimizer_steps_after=trainer_after.optimizer_steps,
+        )
 
 
 class CategoricalOnlineSessionFactory:

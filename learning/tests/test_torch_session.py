@@ -91,17 +91,27 @@ class CategoricalOnlineSessionTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as root:
             root_path = Path(root)
             session = _factory(root_path).new(model_seed=43, behavior_seed=94)
-            initial_files = tuple(path for path in root_path.rglob("*") if path.is_file())
+            initial_files = tuple(
+                path for path in root_path.rglob("*") if path.is_file()
+            )
 
-            for expected_step in range(1, 7):
-                result = session.advance_generation(max_batch_steps=1)
-                self.assertTrue(result.promoted)
-                self.assertEqual(
-                    session.runner.controller.snapshot.active_training_step,
-                    expected_step,
-                )
+            result = session.advance_generations(
+                generations=6,
+                max_batch_steps_per_generation=1,
+            )
 
-            live_files = tuple(path for path in root_path.rglob("*") if path.is_file())
+            self.assertTrue(result.complete)
+            self.assertFalse(result.step_limit_reached)
+            self.assertEqual(result.completed_generations, 6)
+            self.assertEqual(result.optimizer_steps_before, 0)
+            self.assertEqual(result.optimizer_steps_after, 6)
+            self.assertEqual(result.active_training_step_before, 0)
+            self.assertEqual(result.active_training_step_after, 6)
+            self.assertEqual(result.batch_steps, 6)
+
+            live_files = tuple(
+                path for path in root_path.rglob("*") if path.is_file()
+            )
             self.assertEqual(live_files, initial_files)
             self.assertEqual(
                 session.runner.controller.publisher.registry.snapshot.registered_manifests,
@@ -117,8 +127,48 @@ class CategoricalOnlineSessionTests(unittest.TestCase):
             )
 
             session.publish()
-            durable_files = tuple(path for path in root_path.rglob("*") if path.is_file())
+            durable_files = tuple(
+                path for path in root_path.rglob("*") if path.is_file()
+            )
             self.assertGreater(len(durable_files), len(live_files))
+
+    def test_multi_generation_advance_stops_at_first_incomplete_generation(self) -> None:
+        with tempfile.TemporaryDirectory() as root:
+            session = _factory(Path(root), attempts_per_update=2).new(
+                model_seed=43,
+                behavior_seed=94,
+            )
+
+            result = session.advance_generations(
+                generations=3,
+                max_batch_steps_per_generation=1,
+            )
+
+            self.assertFalse(result.complete)
+            self.assertTrue(result.step_limit_reached)
+            self.assertEqual(result.completed_generations, 0)
+            self.assertEqual(result.batch_steps, 1)
+            self.assertEqual(result.optimizer_steps_before, 0)
+            self.assertEqual(result.optimizer_steps_after, 0)
+            self.assertEqual(
+                session.runner.update_batcher.pending_attempts,
+                1,
+            )
+
+    def test_multi_generation_counts_reject_bool(self) -> None:
+        with tempfile.TemporaryDirectory() as root:
+            session = _factory(Path(root)).new(model_seed=43, behavior_seed=94)
+
+            with self.assertRaisesRegex(TorchSessionError, "integer, not bool"):
+                session.advance_generations(
+                    generations=True,
+                    max_batch_steps_per_generation=1,
+                )
+            with self.assertRaisesRegex(TorchSessionError, "integer, not bool"):
+                session.advance_generations(
+                    generations=1,
+                    max_batch_steps_per_generation=True,
+                )
 
     def test_partial_attempt_update_batch_stays_live_only_until_full(self) -> None:
         with tempfile.TemporaryDirectory() as root:

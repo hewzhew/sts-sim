@@ -567,9 +567,11 @@ The compact categorical session factory is the sole maintained assembly path
 for this baseline. One typed bridge binding, training-partition configuration,
 algorithm profile, resource limits, curriculum, and experiment root create
 either generation zero or a restored runner. `advance_generation` performs no
-durable I/O; callers choose checkpoint cadence explicitly through `publish`.
-Pending update batches remain live-only and fail resume admission. Restore
-additionally requires the saved
+durable I/O. Its bounded `advance_generations` composition stops at the first
+incomplete generation and retains only aggregate counts, not per-generation
+results or attempts. Callers choose checkpoint cadence explicitly through
+`publish`. Pending update batches remain live-only and fail resume admission.
+Restore additionally requires the saved
 slot count, seed-partition rule, and recovery budget to match the session
 configuration. The first maintained profile is CPU-only, collects eight
 same-behavior complete attempts per optimizer update, requires at least one
