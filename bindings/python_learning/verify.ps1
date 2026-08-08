@@ -24,6 +24,10 @@ $pythonPath = (& $Python -c "import sys; print(sys.executable)").Trim()
 if ($LASTEXITCODE -ne 0 -or -not $pythonPath) {
     throw "failed to resolve target Python executable"
 }
+$pythonRuntimeRoot = (& $pythonPath -c "import sys; print(sys.base_prefix)").Trim()
+if ($LASTEXITCODE -ne 0 -or -not $pythonRuntimeRoot -or -not (Test-Path -LiteralPath $pythonRuntimeRoot -PathType Container)) {
+    throw "failed to resolve target Python runtime root"
+}
 
 $env:PYO3_PYTHON = $pythonPath
 $savedErrorPreference = $ErrorActionPreference
@@ -40,13 +44,20 @@ if ($buildExit -ne 0) {
     throw "Maturin wheel build failed; full log: $buildLog"
 }
 
-$ErrorActionPreference = "Continue"
-& cargo test `
-    --manifest-path (Join-Path $bridgeRoot "Cargo.toml") `
-    --release `
-    --lib *> $rustTestLog
-$rustTestExit = $LASTEXITCODE
-$ErrorActionPreference = $savedErrorPreference
+$savedPath = [Environment]::GetEnvironmentVariable("PATH", "Process")
+$env:PATH = "$pythonRuntimeRoot;$savedPath"
+try {
+    $ErrorActionPreference = "Continue"
+    & cargo test `
+        --manifest-path (Join-Path $bridgeRoot "Cargo.toml") `
+        --release `
+        --lib *> $rustTestLog
+    $rustTestExit = $LASTEXITCODE
+}
+finally {
+    $ErrorActionPreference = $savedErrorPreference
+    [Environment]::SetEnvironmentVariable("PATH", $savedPath, "Process")
+}
 if ($rustTestExit -ne 0) {
     Get-Content -LiteralPath $rustTestLog -Tail 80
     throw "Rust learning bridge contract tests failed; full log: $rustTestLog"
