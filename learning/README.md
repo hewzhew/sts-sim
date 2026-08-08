@@ -226,9 +226,19 @@ memory bound. An over-limit attempt releases all retained arrays immediately,
 remains a compact dropped marker until terminal, and is reported as dropped
 rather than relabeled as complete. One delivery contains every terminal from a
 segment; sink failure commits neither assembler state nor segment sequence.
-The batches inside one completed attempt may intentionally carry different
-behavior manifest ids when online updates occurred while that attempt remained
-active.
+The generic assembler can represent batches with different behavior manifest
+ids, but the maintained on-policy training path rejects such an attempt rather
+than treating it as one policy sample.
+
+`sts_learning.attempt_batching.BoundedAttemptUpdateBatcher` is the next
+synchronous owner in that maintained path. It collects exactly the configured
+number of complete attempts from one frozen behavior before one trainer call.
+Attempts, decisions, and retained payload bytes are independently bounded;
+mixed manifests, repeated lineage, overfull deliveries, and resource overflow
+fail before optimizer mutation. Dropped-only deliveries pass through without
+joining the tensor batch. A downstream exception poisons the owner and releases
+pending arrays. A partially filled update batch is deliberately live-only and
+cannot be encoded as a durable resume point.
 
 `sts_learning.torch_policy` is an optional, device-agnostic PyTorch baseline
 over that same bridge-owned semantic graph. It is intentionally absent from
@@ -283,30 +293,33 @@ eliminating one small PyTorch forward per historical decision. The caller must
 inject semantic concat row and input-array-byte limits; batching is never an
 excuse for unbounded replay memory.
 
-`sts_learning.torch_training.SynchronousPolicyTrainer` plugs directly into the
-complete-attempt assembler as a synchronous shadow-policy sink. One delivery
-causes at most one optimizer step; the trainer retains no attempt queue and no
-semantic arrays, only scalar totals and the latest bounded manifest-id and
-selection-probability sequences. Its required concat limits bound the
-one-forward replay batch.
+`sts_learning.torch_training.SynchronousPolicyTrainer` is the synchronous
+shadow-policy sink behind the update batcher. A non-empty training delivery
+must contain exactly the configured attempts per update and causes exactly one
+optimizer step; a dropped-only delivery only updates accounting. The trainer
+retains no attempt queue and no semantic arrays, only scalar totals and the
+latest bounded manifest-id and selection-probability sequences. Its required
+concat limits bound the one-forward replay batch.
 Unknown behavior, unknown propensity, behavior-rule mismatch, and recomputed
 probability mismatch all fail before mutation. A backward or optimizer
 exception poisons the trainer instead of inviting a retry over possibly partial
 state. Dropped-only deliveries never train. Promotion still publishes a new
 exact checkpoint manifest; the trainer never silently rewrites behavior
-identity. The trainer implementation artifact binds the floor-return target;
-restore and runner wiring reject a different return configuration.
+identity. The trainer implementation artifact binds the floor-return target and
+attempts per update; restore and runner wiring reject either mismatch.
 
 `sts_learning.torch_generation.BoundedCategoricalGenerationRunner` is the
 first deliberately finite composition of these owners. Construction fails
-before environment mutation unless the driver, attempt assembler, synchronous
-trainer, categorical controller, shared registry, shadow scorer, and optimizer
+before environment mutation unless the driver, attempt assembler, update
+batcher, synchronous trainer, categorical controller, shared registry, shadow
+scorer, and optimizer
 parameters form one exact chain. A generation is exactly one optimizer step
 beyond the active behavior manifest's training step; larger values are rejected
 because the second update would already be off-policy against the still-live
-frozen behavior. Each call has a caller-supplied batch-step limit, flushes the
-experience segment only after a terminal batch, and promotes immediately after
-that one update. It novel-previews capacity before training and exact-previews
+frozen behavior. Each call has a caller-supplied batch-step limit and flushes
+the experience segment only after a terminal batch. The behavior stays frozen
+while the update batch fills, then promotes immediately after that one update.
+It novel-previews capacity before training and exact-previews
 an already reached target, so a durable failed promotion remains retryable even
 when every owner is full. An exhausted call with no terminal update leaves the
 old frozen behavior live. Its result is
@@ -315,14 +328,17 @@ own persistence: restarting exact training goes through the
 separate six-component resume store and typed restorer. Its resume admission
 boundary is fail-closed: the environment must be between decisions with no
 terminal half-state, the episode-root bank must cover every slot, the experience
-buffer must be flushed, the assembler must have no open attempt, segment
-sequence ids must agree, the trainer must be healthy, and an active behavior
+buffer must be flushed, the assembler must have no open attempt, the update
+batcher must be empty and healthy, segment sequence ids must agree, the trainer
+must be healthy, and an active behavior
 manifest must not be ahead of the shadow optimizer.
 At an admitted boundary, `sts_learning.torch_resume_metadata` encodes the seed
-schedule, active ledger lineage, segment/assembler counters, trainer counters
-and bounded last-evidence fields, controller identity, promotion count, and
+schedule, active ledger lineage, segment/assembler/update-batcher counters,
+trainer counters and bounded last-evidence fields, controller identity,
+promotion count, and
 generation target as one canonical scalar component. Fresh ledger, empty
-buffer, empty assembler, trainer, and controller owners have explicit restore
+buffer, empty assembler, empty update batcher, trainer, and controller owners
+have explicit restore
 constructors; terminal half-states, open attempts, poisoned trainers, and
 inconsistent sequence or parameter lineage remain unrepresentable. This
 metadata is the scalar member of the final durable resume manifest, not an
@@ -359,7 +375,8 @@ resume point; `restore(id)` rebuilds fresh owners; and
 real optimizer-step promotion. An unfinished bounded call returns no fake
 durable resume point. Restore verifies the saved slot count, training seed
 partition, and recovery budget against the supplied session configuration. The
-first maintained profile is deliberately CPU-only. `recover_behavior(...)`
+first maintained profile is deliberately CPU-only and defaults to eight
+same-behavior complete attempts per optimizer update. `recover_behavior(...)`
 materializes a frozen manifest with an explicit fresh RNG seed for the existing
 paired held-out evaluator; evaluation never reuses the mutable shadow model.
 

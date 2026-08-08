@@ -10,6 +10,10 @@ from typing import Protocol
 import torch
 
 from .attempts import AttemptAssemblyLimits, BoundedAttemptAssembler
+from .attempt_batching import (
+    AttemptUpdateBatchLimits,
+    BoundedAttemptUpdateBatcher,
+)
 from .driver import (
     BatchCurriculum,
     BatchEnvironment,
@@ -107,6 +111,7 @@ class CategoricalResumeRestoreConfig:
     curriculum: BatchCurriculum
     experience_limits: ExperienceLimits
     attempt_limits: AttemptAssemblyLimits
+    attempt_update_limits: AttemptUpdateBatchLimits
     concat_limits: SemanticBatchConcatLimits
     terminal_return: FloorProgressReturnConfig
     payload_limits: CategoricalResumePayloadLimits
@@ -121,6 +126,7 @@ class CategoricalResumeRestoreConfig:
         for name, expected in (
             ("experience_limits", ExperienceLimits),
             ("attempt_limits", AttemptAssemblyLimits),
+            ("attempt_update_limits", AttemptUpdateBatchLimits),
             ("concat_limits", SemanticBatchConcatLimits),
             ("terminal_return", FloorProgressReturnConfig),
             ("payload_limits", CategoricalResumePayloadLimits),
@@ -252,10 +258,13 @@ class CategoricalGenerationResumeRestorer:
             )
         if (
             active_behavior.manifest.trainer_implementation
-            != categorical_trainer_implementation(self.config.terminal_return)
+            != categorical_trainer_implementation(
+                self.config.terminal_return,
+                self.config.attempt_update_limits.attempts_per_update,
+            )
         ):
             raise TorchResumeRestoreError(
-                "restored behavior conflicts with terminal return config"
+                "restored behavior conflicts with trainer configuration"
             )
 
         registry = controller.publisher.registry
@@ -266,11 +275,17 @@ class CategoricalGenerationResumeRestorer:
             self.config.concat_limits,
             controller.config,
             self.config.terminal_return,
+            self.config.attempt_update_limits.attempts_per_update,
             resume_snapshot=saved.boundary.trainer,
+        )
+        update_batcher = BoundedAttemptUpdateBatcher(
+            self.config.attempt_update_limits,
+            trainer,
+            resume_snapshot=saved.boundary.update_batcher,
         )
         assembler = BoundedAttemptAssembler(
             self.config.attempt_limits,
-            trainer,
+            update_batcher,
             resume_snapshot=saved.boundary.assembler,
         )
         sequence_index = driver_state.experience_next_sequence_index
@@ -306,6 +321,7 @@ class CategoricalGenerationResumeRestorer:
         runner = BoundedCategoricalGenerationRunner(
             driver,
             assembler,
+            update_batcher,
             trainer,
             controller,
             shadow,

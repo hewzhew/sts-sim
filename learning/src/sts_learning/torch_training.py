@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+import operator
 import time
 from dataclasses import dataclass
 
@@ -49,6 +50,7 @@ class SynchronousPolicyTrainer:
         concat_limits: SemanticBatchConcatLimits,
         policy_config: RaggedCategoricalPolicyConfig,
         return_config: FloorProgressReturnConfig,
+        attempts_per_update: int,
         *,
         resume_snapshot: SynchronousPolicyTrainerSnapshot | None = None,
     ) -> None:
@@ -70,6 +72,10 @@ class SynchronousPolicyTrainer:
         self.concat_limits = concat_limits
         self.policy_config = policy_config
         self.return_config = return_config
+        self.attempts_per_update = _positive_integer(
+            attempts_per_update,
+            "attempts_per_update",
+        )
         restored = _validated_resume_snapshot(resume_snapshot)
         self._deliveries = restored.deliveries
         self._optimizer_steps = restored.optimizer_steps
@@ -116,6 +122,11 @@ class SynchronousPolicyTrainer:
             self._deliveries += 1
             self._dropped_attempts += dropped_count
             return
+        if completed_count != self.attempts_per_update:
+            raise TorchTrainingError(
+                "training delivery must contain exactly attempts_per_update "
+                "completed attempts"
+            )
 
         training_started = time.perf_counter()
         objective = on_policy_terminal_loss(
@@ -255,3 +266,15 @@ def _validated_resume_snapshot(
                     "trainer resume selection probabilities are malformed"
                 )
     return snapshot
+
+
+def _positive_integer(value: object, name: str) -> int:
+    if isinstance(value, bool):
+        raise TorchTrainingError(f"{name} must be an integer, not bool")
+    try:
+        normalized = operator.index(value)
+    except TypeError as error:
+        raise TorchTrainingError(f"{name} must be an integer") from error
+    if normalized <= 0:
+        raise TorchTrainingError(f"{name} must be positive")
+    return normalized

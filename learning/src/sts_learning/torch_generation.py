@@ -8,6 +8,10 @@ from dataclasses import dataclass
 import torch
 
 from .attempts import AttemptAssemblerSnapshot, BoundedAttemptAssembler
+from .attempt_batching import (
+    AttemptUpdateBatchSnapshot,
+    BoundedAttemptUpdateBatcher,
+)
 from .driver import BatchDriverError, BatchDriverResumeBoundary, OnlineBatchDriver
 from .policy import BehaviorManifestId
 from .torch_behavior import (
@@ -54,6 +58,7 @@ class CategoricalGenerationResumeBoundary:
 
     driver: BatchDriverResumeBoundary
     assembler: AttemptAssemblerSnapshot
+    update_batcher: AttemptUpdateBatchSnapshot
     trainer: SynchronousPolicyTrainerSnapshot
     controller: CategoricalTorchBehaviorControllerSnapshot
 
@@ -65,6 +70,7 @@ class BoundedCategoricalGenerationRunner:
         self,
         driver: OnlineBatchDriver,
         assembler: BoundedAttemptAssembler,
+        update_batcher: BoundedAttemptUpdateBatcher,
         trainer: SynchronousPolicyTrainer,
         controller: CategoricalTorchBehaviorController,
         shadow_scorer: RaggedCandidateScorer,
@@ -75,6 +81,10 @@ class BoundedCategoricalGenerationRunner:
             raise TorchGenerationError("generation runner requires an online driver")
         if not isinstance(assembler, BoundedAttemptAssembler):
             raise TorchGenerationError("generation runner requires an attempt assembler")
+        if not isinstance(update_batcher, BoundedAttemptUpdateBatcher):
+            raise TorchGenerationError(
+                "generation runner requires an attempt update batcher"
+            )
         if not isinstance(trainer, SynchronousPolicyTrainer):
             raise TorchGenerationError("generation runner requires a policy trainer")
         if not isinstance(controller, CategoricalTorchBehaviorController):
@@ -91,6 +101,7 @@ class BoundedCategoricalGenerationRunner:
             )
         self.driver = driver
         self.assembler = assembler
+        self.update_batcher = update_batcher
         self.trainer = trainer
         self.controller = controller
         self.shadow_scorer = shadow_scorer
@@ -128,6 +139,19 @@ class BoundedCategoricalGenerationRunner:
                 "experience buffer and attempt assembler sequence indices differ"
             )
 
+        update_batcher = self.update_batcher.snapshot
+        if update_batcher.poisoned:
+            raise TorchGenerationError("generation attempt update batcher is poisoned")
+        if (
+            update_batcher.pending_attempts != 0
+            or update_batcher.pending_decisions != 0
+            or update_batcher.pending_payload_bytes != 0
+            or update_batcher.pending_behavior_manifest_id is not None
+        ):
+            raise TorchGenerationError(
+                "resume boundary requires no pending attempt update batch"
+            )
+
         trainer = self.trainer.snapshot
         if trainer.poisoned:
             raise TorchGenerationError("generation trainer is poisoned")
@@ -144,6 +168,7 @@ class BoundedCategoricalGenerationRunner:
         return CategoricalGenerationResumeBoundary(
             driver=driver,
             assembler=assembler,
+            update_batcher=update_batcher,
             trainer=trainer,
             controller=controller,
         )
@@ -219,8 +244,43 @@ class BoundedCategoricalGenerationRunner:
             raise TorchGenerationError("driver policy is not the generation controller")
         if self.driver.experience_sink is not self.assembler:
             raise TorchGenerationError("driver is not wired to the generation assembler")
-        if self.assembler.completed_attempt_sink is not self.trainer:
-            raise TorchGenerationError("assembler is not wired to the generation trainer")
+        if self.assembler.completed_attempt_sink is not self.update_batcher:
+            raise TorchGenerationError(
+                "assembler is not wired to the generation update batcher"
+            )
+        if self.update_batcher.update_sink is not self.trainer:
+            raise TorchGenerationError(
+                "attempt update batcher is not wired to the generation trainer"
+            )
+        if (
+            self.update_batcher.limits.attempts_per_update
+            != self.trainer.attempts_per_update
+        ):
+            raise TorchGenerationError(
+                "attempt update batcher and trainer disagree on attempts_per_update"
+            )
+        assembler_snapshot = self.assembler.snapshot
+        update_snapshot = self.update_batcher.snapshot
+        trainer_snapshot = self.trainer.snapshot
+        if (
+            assembler_snapshot.completed_attempts
+            != update_snapshot.completed_attempts
+            or assembler_snapshot.dropped_attempts
+            != update_snapshot.dropped_attempts
+        ):
+            raise TorchGenerationError(
+                "assembler and attempt update batcher counters differ"
+            )
+        if (
+            update_snapshot.sink_deliveries != trainer_snapshot.deliveries
+            or update_snapshot.update_batches != trainer_snapshot.optimizer_steps
+            or update_snapshot.completed_attempts - update_snapshot.pending_attempts
+            != trainer_snapshot.completed_attempts
+            or update_snapshot.dropped_attempts != trainer_snapshot.dropped_attempts
+        ):
+            raise TorchGenerationError(
+                "attempt update batcher and trainer counters differ"
+            )
         if self.trainer.scorer is not self.shadow_scorer:
             raise TorchGenerationError(
                 "trainer does not score the generation shadow model"
@@ -232,12 +292,20 @@ class BoundedCategoricalGenerationRunner:
         active_manifest_id = self.controller.snapshot.active_manifest_id
         if active_manifest_id is None:
             raise TorchGenerationError("generation controller has no active behavior")
-        active_manifest = self.trainer.registry.resolve(active_manifest_id)
-        if active_manifest.trainer_implementation != categorical_trainer_implementation(
-            self.trainer.return_config
+        if (
+            update_snapshot.pending_behavior_manifest_id is not None
+            and update_snapshot.pending_behavior_manifest_id != active_manifest_id
         ):
             raise TorchGenerationError(
-                "active behavior conflicts with the trainer return configuration"
+                "pending attempt update batch does not match active behavior"
+            )
+        active_manifest = self.trainer.registry.resolve(active_manifest_id)
+        if active_manifest.trainer_implementation != categorical_trainer_implementation(
+            self.trainer.return_config,
+            self.trainer.attempts_per_update,
+        ):
+            raise TorchGenerationError(
+                "active behavior conflicts with the trainer implementation"
             )
         _require_exact_optimizer_parameters(
             self.trainer.optimizer,

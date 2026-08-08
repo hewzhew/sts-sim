@@ -5,6 +5,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from sts_learning import AttemptUpdateBatchLimits
+
 
 _TORCH_AVAILABLE = importlib.util.find_spec("torch") is not None
 _BRIDGE_AVAILABLE = importlib.util.find_spec("sts_learning_bridge") is not None
@@ -47,7 +49,14 @@ class RealBridgeCategoricalOnlineSessionTests(unittest.TestCase):
                         ),
                         optimizer_steps_per_generation=1,
                     ),
-                    limits=CategoricalSessionLimits(owner_capacity=4),
+                    limits=CategoricalSessionLimits(
+                        owner_capacity=4,
+                        attempt_updates=AttemptUpdateBatchLimits(
+                            attempts_per_update=1,
+                            max_decisions_per_update=4_096,
+                            max_payload_bytes_per_update=64 * 1024 * 1024,
+                        ),
+                    ),
                 ),
                 NoRecoveryCurriculum(),
             )

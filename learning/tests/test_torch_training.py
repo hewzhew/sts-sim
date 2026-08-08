@@ -27,13 +27,15 @@ if _TORCH_AVAILABLE:
         SynchronousPolicyTrainer,
         TorchTrainingError,
     )
+    POLICY_CONFIG = RaggedCategoricalPolicyConfig()
+else:
+    POLICY_CONFIG = None
 
 
 CONCAT_LIMITS = SemanticBatchConcatLimits(
     max_rows=16,
     max_input_array_bytes=1024 * 1024,
 )
-POLICY_CONFIG = RaggedCategoricalPolicyConfig()
 RETURN_CONFIG = FloorProgressReturnConfig()
 
 
@@ -59,6 +61,7 @@ class SynchronousPolicyTrainerTests(unittest.TestCase):
             CONCAT_LIMITS,
             POLICY_CONFIG,
             RETURN_CONFIG,
+            1,
         )
         batch = decision_batch_fixture(
             slot=1,
@@ -109,6 +112,7 @@ class SynchronousPolicyTrainerTests(unittest.TestCase):
             CONCAT_LIMITS,
             POLICY_CONFIG,
             RETURN_CONFIG,
+            1,
             resume_snapshot=trainer.snapshot,
         )
         self.assertEqual(restored.snapshot, trainer.snapshot)
@@ -131,6 +135,7 @@ class SynchronousPolicyTrainerTests(unittest.TestCase):
             CONCAT_LIMITS,
             POLICY_CONFIG,
             RETURN_CONFIG,
+            1,
         )
         batch = decision_batch_fixture(
             slot=1,
@@ -180,6 +185,7 @@ class SynchronousPolicyTrainerTests(unittest.TestCase):
             CONCAT_LIMITS,
             POLICY_CONFIG,
             RETURN_CONFIG,
+            1,
         )
         batch = decision_batch_fixture(
             slot=1,

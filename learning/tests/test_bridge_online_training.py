@@ -12,9 +12,11 @@ from learning.tests.torch_outcome_fixtures import (
 )
 from sts_learning import (
     AttemptAssemblyLimits,
+    AttemptUpdateBatchLimits,
     BehaviorManifestCatalogLimits,
     BehaviorManifestRegistry,
     BoundedAttemptAssembler,
+    BoundedAttemptUpdateBatcher,
     BoundedBehaviorManifestCatalog,
     ExperienceLimits,
     ExperienceSegmentBuffer,
@@ -105,7 +107,8 @@ class RealBridgeOnlineTrainingTests(unittest.TestCase):
                     semantic_schema_version=int(schema["version"]),
                     behavior_rule=behavior_config.behavior_rule,
                     trainer_implementation=categorical_trainer_implementation(
-                        return_config
+                        return_config,
+                        1,
                     ),
                 ),
             )
@@ -130,6 +133,15 @@ class RealBridgeOnlineTrainingTests(unittest.TestCase):
                 ),
                 behavior_config,
                 return_config,
+                1,
+            )
+            update_batcher = BoundedAttemptUpdateBatcher(
+                AttemptUpdateBatchLimits(
+                    attempts_per_update=1,
+                    max_decisions_per_update=1_024,
+                    max_payload_bytes_per_update=32 * 1024 * 1024,
+                ),
+                trainer,
             )
             assembler = BoundedAttemptAssembler(
                 AttemptAssemblyLimits(
@@ -137,7 +149,7 @@ class RealBridgeOnlineTrainingTests(unittest.TestCase):
                     max_decisions_per_attempt=1_024,
                     max_payload_bytes_per_attempt=32 * 1024 * 1024,
                 ),
-                trainer,
+                update_batcher,
             )
             population = initialize_population(
                 LearningBatchEnv,
@@ -160,6 +172,7 @@ class RealBridgeOnlineTrainingTests(unittest.TestCase):
             generation_runner = BoundedCategoricalGenerationRunner(
                 driver,
                 assembler,
+                update_batcher,
                 trainer,
                 controller,
                 shadow,
@@ -303,7 +316,8 @@ class RealBridgeOnlineTrainingTests(unittest.TestCase):
                         semantic_schema_version=int(schema["version"]),
                         behavior_rule=behavior_config.behavior_rule,
                         trainer_implementation=categorical_trainer_implementation(
-                            return_config
+                            return_config,
+                            1,
                         ),
                     ),
                 ),

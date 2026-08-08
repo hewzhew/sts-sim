@@ -47,6 +47,7 @@ class TorchProvenanceTests(unittest.TestCase):
             behavior,
             optimizer,
             terminal_return,
+            8,
             device_type="cpu",
         )
         reordered = categorical_training_manifest_template(
@@ -55,6 +56,7 @@ class TorchProvenanceTests(unittest.TestCase):
             behavior,
             optimizer,
             terminal_return,
+            8,
             device_type="cpu",
         )
         changed_model = categorical_training_manifest_template(
@@ -63,6 +65,7 @@ class TorchProvenanceTests(unittest.TestCase):
             behavior,
             optimizer,
             terminal_return,
+            8,
             device_type="cpu",
         )
         changed_optimizer = categorical_training_manifest_template(
@@ -71,6 +74,7 @@ class TorchProvenanceTests(unittest.TestCase):
             behavior,
             replace(optimizer, learning_rate=0.003),
             terminal_return,
+            8,
             device_type="cpu",
         )
         changed_return = categorical_training_manifest_template(
@@ -79,6 +83,16 @@ class TorchProvenanceTests(unittest.TestCase):
             behavior,
             optimizer,
             replace(terminal_return, target_floor=51),
+            8,
+            device_type="cpu",
+        )
+        changed_attempt_batch = categorical_training_manifest_template(
+            schema,
+            scorer,
+            behavior,
+            optimizer,
+            terminal_return,
+            4,
             device_type="cpu",
         )
 
@@ -90,6 +104,10 @@ class TorchProvenanceTests(unittest.TestCase):
         )
         self.assertNotEqual(
             changed_return.trainer_implementation,
+            template.trainer_implementation,
+        )
+        self.assertNotEqual(
+            changed_attempt_batch.trainer_implementation,
             template.trainer_implementation,
         )
 
@@ -125,6 +143,7 @@ class TorchProvenanceTests(unittest.TestCase):
                 RaggedCategoricalPolicyConfig(temperature=0.8),
                 AdamTrainingConfig(),
                 FloorProgressReturnConfig(),
+                8,
                 device_type="cpu",
             )
 

@@ -432,6 +432,17 @@ contain both a terminal generation and its reset replacement, so the open
 attempt limit applies after terminal closure. Downstream sink failure commits
 neither sequence progress nor tentative assembler state.
 
+The maintained on-policy path places one separate bounded update batcher after
+attempt assembly. It retains an exact configured number of complete attempts
+from one behavior manifest before delivering a single optimizer batch. The
+attempt count, total decision count, and retained payload bytes are all hard
+limits. A mixed-manifest attempt or batch, duplicate lineage, overfull terminal
+delivery, or resource overflow fails before optimizer mutation. Dropped-only
+rows pass through synchronously without entering the pending tensor batch. A
+sink exception poisons the batcher and releases pending arrays because the
+downstream optimizer may have mutated partially. Pending attempt payload is
+live-only and is never admitted to durable resume.
+
 An optional PyTorch candidate scorer lives only in the Python `learning/`
 owner and is not imported by the ordinary package root. Construction consumes
 one bridge `semantic_schema()` result and derives numeric embedding dimensions
@@ -468,18 +479,21 @@ categorical rule to match its typed configuration and recomputes every recorded
 selection propensity from the current shadow scorer before mutation. Unknown
 or mismatched propensity is explicitly off-policy and rejected. Any future
 off-policy correction requires a separate objective with declared assumptions.
-The trainer implementation artifact binds the return kind and target floor;
-runner construction and process restore reject any conflicting runtime config.
+The trainer implementation artifact binds the return kind, target floor, and
+attempts per update; runner construction and process restore reject any
+conflicting runtime config.
 After validation, all retained decision payloads in one delivery are combined
 into one semantic ragged batch and scored by exactly one model call. Flat row
 weights are `1 / (attempt_count * decisions_in_that_attempt)`, which is
 mathematically the same attempt-equal objective without one tiny forward per
 historical decision. The trainer must provide explicit semantic concat row and
 array-byte limits; vectorization does not weaken the existing memory bound.
-A synchronous optional trainer can serve directly as the complete-attempt
-assembler sink. It performs at most one optimizer step for one delivery, keeps
-only aggregate counters plus the most recent bounded manifest-id and selection-
-probability sequences, and never queues attempts or tensor payloads. Unknown
+A synchronous optional trainer serves behind the update batcher. A non-empty
+training delivery must contain exactly the configured attempts per update and
+performs exactly one optimizer step; dropped-only deliveries only update
+accounting. The trainer keeps only aggregate counters plus the most recent
+bounded manifest-id and selection-probability sequences, and never queues
+attempts or tensor payloads. Unknown
 manifest identity, incompatible behavior rule, unknown propensity, or a
 propensity that does not match the shadow scorer fails before optimizer
 mutation; an exception during backward or optimizer mutation poisons the
@@ -489,8 +503,9 @@ a shadow policy model; publication binds its new exact checkpoint before that
 model can become live behavior.
 
 The optional bounded categorical generation runner composes one exact
-driver-to-assembler-to-trainer-to-controller chain without becoming another
-experience store. It verifies object identity for that chain, the shared
+driver-to-assembler-to-update-batcher-to-trainer-to-controller chain without
+becoming another experience store. It verifies object identity and counter
+agreement for that chain, the shared
 manifest registry, the shadow scorer, and every optimizer parameter before any
 environment mutation. Each generation is exactly one optimizer step beyond the
 active behavior's training step, not a terminal count or wall-clock guess;
@@ -507,14 +522,15 @@ in-process composition; exact restart is owned by the separate six-component
 resume boundary and can never be inferred from a model checkpoint alone.
 The process-resume admission boundary is deliberately strict. It accepts only
 an environment between decisions with no terminal accounting in flight, a full
-episode-root bank, an empty experience
-buffer, no open attempt-assembly state, matching segment sequence indices, a
-healthy trainer, and an active behavior generation no newer than the shadow
-optimizer. Any violation is a typed rejection; no owner silently drops state to
+episode-root bank, an empty experience buffer, no open attempt-assembly state,
+an empty healthy update batcher, matching segment sequence indices, a healthy
+trainer, and an active behavior generation no newer than the shadow optimizer.
+Any violation is a typed rejection; no owner silently drops state to
 manufacture a resumable checkpoint.
 At that strict boundary, one separate canonical metadata component preserves
 the seed schedule, active ledger lineage, experience/assembler sequence and
-aggregate counters, trainer counters and bounded last-evidence fields,
+aggregate counters, update-batcher counters, trainer counters and bounded
+last-evidence fields,
 controller manifest/promotion state, and optimizer-step generation target.
 Fresh owners accept only the corresponding typed snapshots. This metadata has
 no simulator session, model tensor, optimizer tensor, generator tensor, or
@@ -535,7 +551,8 @@ materializes a fresh environment and episode-root bank through the bridge,
 hydrates a fresh shadow scorer, exact optimizer topology, and categorical
 generator, then recovers the frozen active behavior through the durable
 behavior catalog. It rebuilds the ledger, schedule, empty experience buffer,
-attempt assembler, trainer, controller, driver, and generation runner from the
+attempt assembler, empty update batcher, trainer, controller, driver, and
+generation runner from the
 typed metadata. The complete fresh runner is exposed only after its own strict
 resume boundary exactly reproduces the saved boundary; a missing component,
 incompatible runtime factory, foreign slot identity, or partial owner graph
@@ -544,10 +561,12 @@ The compact categorical session factory is the sole maintained assembly path
 for this baseline. One typed bridge binding, training-partition configuration,
 algorithm profile, resource limits, curriculum, and experiment root create
 either generation zero or a restored runner. A promoted generation can publish
-its resume manifest in the same operation; bounded progress that has not yet
-promoted remains explicitly live-only. Restore additionally requires the saved
+its resume manifest in the same operation; bounded progress with a pending
+update batch or without promotion remains explicitly live-only. Restore
+additionally requires the saved
 slot count, seed-partition rule, and recovery budget to match the session
-configuration. The first maintained profile is CPU-only and does not silently
+configuration. The first maintained profile is CPU-only, collects eight
+same-behavior complete attempts per optimizer update, and does not silently
 select another device.
 
 On an ordinary reward screen, the reward owner claims typed low-agency public

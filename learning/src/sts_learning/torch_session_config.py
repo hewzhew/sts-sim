@@ -8,6 +8,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 
 from .attempts import AttemptAssemblyLimits
+from .attempt_batching import AttemptUpdateBatchLimits
 from .driver import BatchEnvironment
 from .experience import ExperienceLimits
 from .manifest_catalog import BehaviorManifestCatalogLimits
@@ -126,6 +127,11 @@ class CategoricalSessionLimits:
         max_decisions_per_attempt=4_096,
         max_payload_bytes_per_attempt=64 * 1024 * 1024,
     )
+    attempt_updates: AttemptUpdateBatchLimits = AttemptUpdateBatchLimits(
+        attempts_per_update=8,
+        max_decisions_per_update=4_096,
+        max_payload_bytes_per_update=64 * 1024 * 1024,
+    )
     concat: SemanticBatchConcatLimits = SemanticBatchConcatLimits(
         max_rows=4_096,
         max_input_array_bytes=64 * 1024 * 1024,
@@ -150,6 +156,7 @@ class CategoricalSessionLimits:
         for name, expected in (
             ("experience", ExperienceLimits),
             ("attempts", AttemptAssemblyLimits),
+            ("attempt_updates", AttemptUpdateBatchLimits),
             ("concat", SemanticBatchConcatLimits),
             ("resume_payloads", CategoricalResumePayloadLimits),
         ):

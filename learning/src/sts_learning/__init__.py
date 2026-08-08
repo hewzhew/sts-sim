@@ -11,6 +11,12 @@ from .attempts import (
     CompletedAttemptSink,
     DroppedAttemptExperience,
 )
+from .attempt_batching import (
+    AttemptUpdateBatchError,
+    AttemptUpdateBatchLimits,
+    AttemptUpdateBatchSnapshot,
+    BoundedAttemptUpdateBatcher,
+)
 from .driver import (
     BatchCurriculum,
     BatchDriverError,
@@ -134,6 +140,9 @@ __all__ = [
     "AttemptAssemblyError",
     "AttemptAssemblyLimits",
     "AttemptDropReason",
+    "AttemptUpdateBatchError",
+    "AttemptUpdateBatchLimits",
+    "AttemptUpdateBatchSnapshot",
     "BatchCurriculum",
     "BatchDriverError",
     "BatchDriverResumeBoundary",
@@ -154,6 +163,7 @@ __all__ = [
     "BehaviorRuleBinding",
     "DETERMINISTIC_SELECTION",
     "BoundedAttemptAssembler",
+    "BoundedAttemptUpdateBatcher",
     "BoundedBehaviorManifestCatalog",
     "BoundedResumeStore",
     "CheckpointBatch",

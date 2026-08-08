@@ -11,9 +11,11 @@ from learning.tests.torch_outcome_fixtures import (
 )
 from sts_learning import (
     AttemptAssemblyLimits,
+    AttemptUpdateBatchLimits,
     BehaviorManifestCatalogLimits,
     BehaviorManifestRegistry,
     BoundedAttemptAssembler,
+    BoundedAttemptUpdateBatcher,
     BoundedBehaviorManifestCatalog,
     BoundedResumeStore,
     ExperienceLimits,
@@ -119,7 +121,8 @@ class RealBridgeCategoricalResumeRestorerTests(unittest.TestCase):
                             semantic_schema_version=int(schema["version"]),
                             behavior_rule=behavior_config.behavior_rule,
                             trainer_implementation=categorical_trainer_implementation(
-                                return_config
+                                return_config,
+                                1,
                             ),
                         ),
                     ),
@@ -147,6 +150,7 @@ class RealBridgeCategoricalResumeRestorerTests(unittest.TestCase):
                 concat_limits,
                 behavior_config,
                 return_config,
+                1,
             )
             attempt_limits = AttemptAssemblyLimits(
                 max_open_attempts=1,
@@ -157,7 +161,16 @@ class RealBridgeCategoricalResumeRestorerTests(unittest.TestCase):
                 max_decisions=16,
                 max_payload_bytes=4 * 1024 * 1024,
             )
-            assembler = BoundedAttemptAssembler(attempt_limits, trainer)
+            attempt_update_limits = AttemptUpdateBatchLimits(
+                attempts_per_update=1,
+                max_decisions_per_update=256,
+                max_payload_bytes_per_update=8 * 1024 * 1024,
+            )
+            update_batcher = BoundedAttemptUpdateBatcher(
+                attempt_update_limits,
+                trainer,
+            )
+            assembler = BoundedAttemptAssembler(attempt_limits, update_batcher)
             population = initialize_population(
                 LearningBatchEnv,
                 slot_count=1,
@@ -174,6 +187,7 @@ class RealBridgeCategoricalResumeRestorerTests(unittest.TestCase):
             runner = BoundedCategoricalGenerationRunner(
                 driver,
                 assembler,
+                update_batcher,
                 trainer,
                 controller,
                 shadow,
@@ -219,6 +233,7 @@ class RealBridgeCategoricalResumeRestorerTests(unittest.TestCase):
                     curriculum=NoRecovery(),
                     experience_limits=experience_limits,
                     attempt_limits=attempt_limits,
+                    attempt_update_limits=attempt_update_limits,
                     concat_limits=concat_limits,
                     terminal_return=return_config,
                     payload_limits=payload_limits,

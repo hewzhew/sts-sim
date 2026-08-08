@@ -11,6 +11,7 @@ from learning.tests.driver_fixtures import (
     NumpyWinningBatchEnv,
 )
 from learning.tests.semantic_fixtures import semantic_schema_fixture
+from sts_learning import AttemptUpdateBatchLimits
 
 
 _TORCH_AVAILABLE = importlib.util.find_spec("torch") is not None
@@ -31,6 +32,7 @@ if _TORCH_AVAILABLE:
         CategoricalSessionBridge,
         CategoricalSessionLimits,
     )
+    from sts_learning.torch_generation import TorchGenerationError
 
 
 @unittest.skipUnless(_TORCH_AVAILABLE, "optional PyTorch dependency is not installed")
@@ -81,8 +83,34 @@ class CategoricalOnlineSessionTests(unittest.TestCase):
             with self.assertRaisesRegex(TorchSessionError, "slot_count"):
                 mismatched.restore(initial_resume.manifest_id)
 
+    def test_partial_attempt_update_batch_stays_live_only_until_full(self) -> None:
+        with tempfile.TemporaryDirectory() as root:
+            session = _factory(Path(root), attempts_per_update=2).new(
+                model_seed=43,
+                behavior_seed=94,
+            )
 
-def _factory(root: Path):
+            partial = session.advance_generation(max_batch_steps=1)
+
+            self.assertFalse(partial.generation.promoted)
+            self.assertEqual(session.runner.trainer.snapshot.optimizer_steps, 0)
+            self.assertEqual(
+                session.runner.update_batcher.snapshot.pending_attempts,
+                1,
+            )
+            with self.assertRaisesRegex(TorchGenerationError, "pending"):
+                session.publish()
+
+            completed = session.advance_generation(max_batch_steps=1)
+            self.assertTrue(completed.generation.promoted)
+            self.assertEqual(session.runner.trainer.snapshot.optimizer_steps, 1)
+            self.assertEqual(
+                session.runner.update_batcher.snapshot.pending_attempts,
+                0,
+            )
+
+
+def _factory(root: Path, *, attempts_per_update: int = 1):
     return CategoricalOnlineSessionFactory(
         root,
         CategoricalSessionBridge(
@@ -101,7 +129,14 @@ def _factory(root: Path):
                 behavior=RaggedCategoricalPolicyConfig(temperature=0.8),
                 optimizer_steps_per_generation=1,
             ),
-            limits=CategoricalSessionLimits(owner_capacity=4),
+            limits=CategoricalSessionLimits(
+                owner_capacity=4,
+                attempt_updates=AttemptUpdateBatchLimits(
+                    attempts_per_update=attempts_per_update,
+                    max_decisions_per_update=64,
+                    max_payload_bytes_per_update=1024 * 1024,
+                ),
+            ),
         ),
         NoRecoveryCurriculum(),
     )

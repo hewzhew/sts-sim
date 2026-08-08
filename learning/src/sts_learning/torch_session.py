@@ -9,6 +9,7 @@ from pathlib import Path
 import torch
 
 from .attempts import BoundedAttemptAssembler
+from .attempt_batching import BoundedAttemptUpdateBatcher
 from .driver import (
     BatchCurriculum,
     OnlineBatchDriver,
@@ -134,6 +135,7 @@ class CategoricalOnlineSessionFactory:
             profile.behavior,
             profile.optimizer,
             profile.terminal_return,
+            config.limits.attempt_updates.attempts_per_update,
             device_type=profile.device_type,
         )
 
@@ -187,10 +189,15 @@ class CategoricalOnlineSessionFactory:
             self.config.limits.concat,
             self.config.profile.behavior,
             self.config.profile.terminal_return,
+            self.config.limits.attempt_updates.attempts_per_update,
+        )
+        update_batcher = BoundedAttemptUpdateBatcher(
+            self.config.limits.attempt_updates,
+            trainer,
         )
         assembler = BoundedAttemptAssembler(
             self.config.limits.attempts,
-            trainer,
+            update_batcher,
         )
         controller.publish_and_promote(shadow, training_step=0)
         driver = OnlineBatchDriver(
@@ -208,6 +215,7 @@ class CategoricalOnlineSessionFactory:
         runner = BoundedCategoricalGenerationRunner(
             driver,
             assembler,
+            update_batcher,
             trainer,
             controller,
             shadow,
@@ -240,6 +248,7 @@ class CategoricalOnlineSessionFactory:
                 curriculum=self.curriculum,
                 experience_limits=self.config.limits.experience,
                 attempt_limits=self.config.limits.attempts,
+                attempt_update_limits=self.config.limits.attempt_updates,
                 concat_limits=self.config.limits.concat,
                 terminal_return=self.config.profile.terminal_return,
                 payload_limits=self.config.limits.resume_payloads,

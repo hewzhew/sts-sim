@@ -12,9 +12,11 @@ from learning.tests.torch_outcome_fixtures import (
 )
 from sts_learning import (
     AttemptAssemblyLimits,
+    AttemptUpdateBatchLimits,
     BehaviorManifestCatalogLimits,
     BehaviorManifestRegistry,
     BoundedAttemptAssembler,
+    BoundedAttemptUpdateBatcher,
     BoundedBehaviorManifestCatalog,
     ExperienceLimits,
     ExperienceSegmentBuffer,
@@ -71,16 +73,19 @@ if _TORCH_AVAILABLE:
 class BoundedCategoricalGenerationRunnerTests(unittest.TestCase):
     def test_miswired_generation_owners_fail_before_environment_mutation(self) -> None:
         with tempfile.TemporaryDirectory() as root:
-            driver, assembler, trainer, controller, shadow = _components(Path(root))
+            driver, assembler, batcher, trainer, controller, shadow = _components(
+                Path(root)
+            )
             disconnected = BoundedAttemptAssembler(
                 _attempt_limits(),
-                trainer,
+                batcher,
             )
 
             with self.assertRaisesRegex(TorchGenerationError, "not wired"):
                 BoundedCategoricalGenerationRunner(
                     driver,
                     disconnected,
+                    batcher,
                     trainer,
                     controller,
                     shadow,
@@ -88,12 +93,12 @@ class BoundedCategoricalGenerationRunnerTests(unittest.TestCase):
                 )
 
             self.assertEqual(driver.env.choose_calls, [])  # type: ignore[attr-defined]
-            self.assertIs(assembler.completed_attempt_sink, trainer)
+            self.assertIs(assembler.completed_attempt_sink, batcher)
 
     def test_generation_optimizer_must_own_the_exact_shadow_parameters(self) -> None:
         with tempfile.TemporaryDirectory() as root:
             other = _scorer()
-            driver, assembler, trainer, controller, shadow = _components(
+            driver, assembler, batcher, trainer, controller, shadow = _components(
                 Path(root),
                 optimizer_model=other,
             )
@@ -102,6 +107,7 @@ class BoundedCategoricalGenerationRunnerTests(unittest.TestCase):
                 BoundedCategoricalGenerationRunner(
                     driver,
                     assembler,
+                    batcher,
                     trainer,
                     controller,
                     shadow,
@@ -112,13 +118,16 @@ class BoundedCategoricalGenerationRunnerTests(unittest.TestCase):
 
     def test_generation_return_config_must_match_active_manifest(self) -> None:
         with tempfile.TemporaryDirectory() as root:
-            driver, assembler, trainer, controller, shadow = _components(Path(root))
+            driver, assembler, batcher, trainer, controller, shadow = _components(
+                Path(root)
+            )
             trainer.return_config = FloorProgressReturnConfig(target_floor=51)
 
-            with self.assertRaisesRegex(TorchGenerationError, "return configuration"):
+            with self.assertRaisesRegex(TorchGenerationError, "trainer implementation"):
                 BoundedCategoricalGenerationRunner(
                     driver,
                     assembler,
+                    batcher,
                     trainer,
                     controller,
                     shadow,
@@ -129,11 +138,14 @@ class BoundedCategoricalGenerationRunnerTests(unittest.TestCase):
 
     def test_generation_target_and_step_limit_require_typed_counts(self) -> None:
         with tempfile.TemporaryDirectory() as root:
-            driver, assembler, trainer, controller, shadow = _components(Path(root))
+            driver, assembler, batcher, trainer, controller, shadow = _components(
+                Path(root)
+            )
             with self.assertRaisesRegex(TorchGenerationError, "positive"):
                 BoundedCategoricalGenerationRunner(
                     driver,
                     assembler,
+                    batcher,
                     trainer,
                     controller,
                     shadow,
@@ -143,6 +155,7 @@ class BoundedCategoricalGenerationRunnerTests(unittest.TestCase):
                 BoundedCategoricalGenerationRunner(
                     driver,
                     assembler,
+                    batcher,
                     trainer,
                     controller,
                     shadow,
@@ -151,6 +164,7 @@ class BoundedCategoricalGenerationRunnerTests(unittest.TestCase):
             runner = BoundedCategoricalGenerationRunner(
                 driver,
                 assembler,
+                batcher,
                 trainer,
                 controller,
                 shadow,
@@ -168,13 +182,14 @@ class BoundedCategoricalGenerationRunnerTests(unittest.TestCase):
 
     def test_novel_publication_capacity_fails_before_training_or_environment(self) -> None:
         with tempfile.TemporaryDirectory() as root:
-            driver, assembler, trainer, controller, shadow = _components(
+            driver, assembler, batcher, trainer, controller, shadow = _components(
                 Path(root),
                 owner_capacity=1,
             )
             runner = BoundedCategoricalGenerationRunner(
                 driver,
                 assembler,
+                batcher,
                 trainer,
                 controller,
                 shadow,
@@ -190,10 +205,13 @@ class BoundedCategoricalGenerationRunnerTests(unittest.TestCase):
 
     def test_resume_boundary_requires_flushed_and_closed_experience(self) -> None:
         with tempfile.TemporaryDirectory() as root:
-            driver, assembler, trainer, controller, shadow = _components(Path(root))
+            driver, assembler, batcher, trainer, controller, shadow = _components(
+                Path(root)
+            )
             runner = BoundedCategoricalGenerationRunner(
                 driver,
                 assembler,
+                batcher,
                 trainer,
                 controller,
                 shadow,
@@ -204,6 +222,7 @@ class BoundedCategoricalGenerationRunnerTests(unittest.TestCase):
             self.assertEqual(boundary.driver.slot_count, 1)
             self.assertEqual(boundary.driver.checkpoint_slots, 1)
             self.assertEqual(boundary.assembler.open_attempts, 0)
+            self.assertEqual(boundary.update_batcher.pending_attempts, 0)
             self.assertEqual(boundary.trainer.optimizer_steps, 0)
             self.assertEqual(boundary.controller.active_training_step, 0)
             payload = encode_generation_resume_state(
@@ -240,12 +259,13 @@ class BoundedCategoricalGenerationRunnerTests(unittest.TestCase):
     def test_safe_generation_publishes_all_components_and_manifest_last(self) -> None:
         with tempfile.TemporaryDirectory() as root:
             (Path(root) / "behavior").mkdir()
-            driver, assembler, trainer, controller, shadow = _components(
+            driver, assembler, batcher, trainer, controller, shadow = _components(
                 Path(root) / "behavior"
             )
             runner = BoundedCategoricalGenerationRunner(
                 driver,
                 assembler,
+                batcher,
                 trainer,
                 controller,
                 shadow,
@@ -328,7 +348,8 @@ def _components(
             behavior_manifest_template_fixture(
                 behavior_rule=behavior_config.behavior_rule,
                 trainer_implementation=categorical_trainer_implementation(
-                    return_config
+                    return_config,
+                    1,
                 ),
             ),
         ),
@@ -348,8 +369,17 @@ def _components(
         ),
         behavior_config,
         return_config,
+        1,
     )
-    assembler = BoundedAttemptAssembler(_attempt_limits(), trainer)
+    batcher = BoundedAttemptUpdateBatcher(
+        AttemptUpdateBatchLimits(
+            attempts_per_update=1,
+            max_decisions_per_update=64,
+            max_payload_bytes_per_update=1024 * 1024,
+        ),
+        trainer,
+    )
+    assembler = BoundedAttemptAssembler(_attempt_limits(), batcher)
     population = initialize_population(
         NumpyFakeBatchEnv,
         slot_count=1,
@@ -368,7 +398,7 @@ def _components(
         ),
         experience_sink=assembler,
     )
-    return driver, assembler, trainer, controller, shadow
+    return driver, assembler, batcher, trainer, controller, shadow
 
 
 def _attempt_limits() -> AttemptAssemblyLimits:

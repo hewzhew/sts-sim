@@ -16,9 +16,11 @@ from learning.tests.torch_outcome_fixtures import (
 )
 from sts_learning import (
     AttemptAssemblyLimits,
+    AttemptUpdateBatchLimits,
     BehaviorManifestCatalogLimits,
     BehaviorManifestRegistry,
     BoundedAttemptAssembler,
+    BoundedAttemptUpdateBatcher,
     BoundedBehaviorManifestCatalog,
     BoundedResumeStore,
     ExperienceLimits,
@@ -139,6 +141,10 @@ class CategoricalGenerationResumeRestorerTests(unittest.TestCase):
             resumed_boundary = resumed.require_resume_boundary()
             self.assertEqual(resumed_boundary.driver, baseline_boundary.driver)
             self.assertEqual(resumed_boundary.assembler, baseline_boundary.assembler)
+            self.assertEqual(
+                resumed_boundary.update_batcher,
+                baseline_boundary.update_batcher,
+            )
             self.assertEqual(resumed_boundary.controller, baseline_boundary.controller)
             self.assertEqual(
                 resumed_boundary.trainer.optimizer_steps,
@@ -223,7 +229,29 @@ class CategoricalGenerationResumeRestorerTests(unittest.TestCase):
 
             with self.assertRaisesRegex(
                 TorchResumeRestoreError,
-                "terminal return",
+                "trainer configuration",
+            ):
+                restorer.restore(publication.manifest_id)
+
+    def test_attempts_per_update_mismatch_is_never_exposed(self) -> None:
+        with tempfile.TemporaryDirectory() as root:
+            fixture = _ResumeFixture(Path(root))
+            publication = fixture.resume_publisher.publish(fixture.initial_runner())
+            mismatched_limits = replace(
+                fixture.attempt_update_limits,
+                attempts_per_update=2,
+            )
+            restorer = CategoricalGenerationResumeRestorer(
+                fixture.resume_store,
+                replace(
+                    fixture.restore_config,
+                    attempt_update_limits=mismatched_limits,
+                ),
+            )
+
+            with self.assertRaisesRegex(
+                TorchResumeRestoreError,
+                "trainer configuration",
             ):
                 restorer.restore(publication.manifest_id)
 
@@ -253,6 +281,11 @@ class _ResumeFixture:
             max_open_attempts=1,
             max_decisions_per_attempt=64,
             max_payload_bytes_per_attempt=1024 * 1024,
+        )
+        self.attempt_update_limits = AttemptUpdateBatchLimits(
+            attempts_per_update=1,
+            max_decisions_per_update=64,
+            max_payload_bytes_per_update=1024 * 1024,
         )
         self.concat_limits = SemanticBatchConcatLimits(
             max_rows=64,
@@ -296,6 +329,7 @@ class _ResumeFixture:
             curriculum=NoRecovery(),
             experience_limits=self.experience_limits,
             attempt_limits=self.attempt_limits,
+            attempt_update_limits=self.attempt_update_limits,
             concat_limits=self.concat_limits,
             terminal_return=self.return_config,
             payload_limits=self.payload_limits,
@@ -333,7 +367,8 @@ class _ResumeFixture:
                 behavior_manifest_template_fixture(
                     behavior_rule=self.behavior_config.behavior_rule,
                     trainer_implementation=categorical_trainer_implementation(
-                        self.return_config
+                        self.return_config,
+                        self.attempt_update_limits.attempts_per_update,
                     ),
                 ),
             ),
@@ -354,8 +389,13 @@ class _ResumeFixture:
             self.concat_limits,
             self.behavior_config,
             self.return_config,
+            self.attempt_update_limits.attempts_per_update,
         )
-        assembler = BoundedAttemptAssembler(self.attempt_limits, trainer)
+        update_batcher = BoundedAttemptUpdateBatcher(
+            self.attempt_update_limits,
+            trainer,
+        )
+        assembler = BoundedAttemptAssembler(self.attempt_limits, update_batcher)
         population = initialize_population(
             NumpyWinningBatchEnv,
             slot_count=1,
@@ -372,6 +412,7 @@ class _ResumeFixture:
         return BoundedCategoricalGenerationRunner(
             driver,
             assembler,
+            update_batcher,
             trainer,
             controller,
             shadow,
