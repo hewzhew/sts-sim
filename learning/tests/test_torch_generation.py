@@ -55,6 +55,15 @@ if _TORCH_AVAILABLE:
         decode_generation_resume_state,
         encode_generation_resume_state,
     )
+    from sts_learning.resume_store import (
+        BoundedResumeStore,
+        ResumeComponentKind,
+        ResumeStoreLimits,
+    )
+    from sts_learning.torch_resume_publication import (
+        CategoricalGenerationResumePublisher,
+        CategoricalResumePayloadLimits,
+    )
     from sts_learning.torch_training import SynchronousValueTrainer
 
 
@@ -236,6 +245,58 @@ class BoundedCategoricalGenerationRunnerTests(unittest.TestCase):
             self.assertEqual(promoted.publication, durable)
             self.assertEqual(controller.snapshot.active_training_step, 2)
             self.assertEqual(driver.env.choose_calls, [])  # type: ignore[attr-defined]
+
+    def test_safe_generation_publishes_all_components_and_manifest_last(self) -> None:
+        with tempfile.TemporaryDirectory() as root:
+            (Path(root) / "behavior").mkdir()
+            driver, assembler, trainer, controller, shadow = _components(
+                Path(root) / "behavior"
+            )
+            runner = BoundedCategoricalGenerationRunner(
+                driver,
+                assembler,
+                trainer,
+                controller,
+                shadow,
+                optimizer_steps_per_generation=1,
+            )
+            store = BoundedResumeStore(
+                Path(root) / "resume",
+                ResumeStoreLimits(
+                    max_components=6,
+                    max_bytes_per_component=2 * 1024 * 1024,
+                    max_total_component_bytes=12 * 1024 * 1024,
+                    max_manifests=1,
+                    max_bytes_per_manifest=1024,
+                    max_total_manifest_bytes=1024,
+                ),
+            )
+            publisher = CategoricalGenerationResumePublisher(
+                store,
+                CategoricalResumePayloadLimits(
+                    max_environment_bytes=1024,
+                    max_episode_root_bank_bytes=1024,
+                    max_shadow_model_bytes=1024 * 1024,
+                    max_optimizer_bytes=1024 * 1024,
+                    max_generator_bytes=1024 * 1024,
+                    max_metadata_bytes=1024 * 1024,
+                ),
+            )
+
+            publication = publisher.publish(runner)
+            self.assertEqual(store.snapshot.components, 6)
+            self.assertEqual(store.snapshot.manifests, 1)
+            resolved = store.resolve(publication.manifest_id)
+            self.assertEqual(set(resolved), set(ResumeComponentKind))
+            self.assertTrue(
+                resolved[ResumeComponentKind.ENVIRONMENT].startswith(b"FAKE-ENV")
+            )
+            self.assertTrue(
+                resolved[ResumeComponentKind.EPISODE_ROOT_BANK].startswith(
+                    b"FAKE-BANK"
+                )
+            )
+            self.assertEqual(publisher.publish(runner).manifest_id, publication.manifest_id)
 
 
 def _components(

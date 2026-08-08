@@ -35,6 +35,17 @@ class FakeCheckpointBatch:
         updated.update(replacements.checkpoints)
         return FakeCheckpointBatch(updated)
 
+    def checkpoint_bytes(self, *, max_bytes: int) -> bytes:
+        payload = b"FAKE-BANK\x00" + b"".join(
+            slot.to_bytes(8, "big")
+            + seed.to_bytes(8, "big")
+            + generation.to_bytes(8, "big")
+            for slot, (seed, generation) in sorted(self.checkpoints.items())
+        )
+        if len(payload) > max_bytes:
+            raise ValueError("fake checkpoint bank exceeds byte limit")
+        return payload
+
 
 class FakeBatchEnv:
     def __init__(
@@ -109,6 +120,15 @@ class FakeBatchEnv:
                 for slot in slot_indices
             }
         )
+
+    def checkpoint_bytes(self, *, max_bytes: int) -> bytes:
+        payload = b"FAKE-ENV\x00" + b"".join(
+            seed.to_bytes(8, "big") + generation.to_bytes(8, "big")
+            for seed, generation in zip(self.seeds, self.generations, strict=True)
+        )
+        if len(payload) > max_bytes:
+            raise ValueError("fake environment checkpoint exceeds byte limit")
+        return payload
 
     def restore_slots(
         self,

@@ -5,11 +5,18 @@ from __future__ import annotations
 from collections.abc import Mapping
 
 import torch
+from torch import nn
 
 from ._torch_owner_state_codec import (
     TorchOwnerStateError,
     decode_owner_state,
     encode_owner_state,
+)
+from ._torch_checkpoint_codec import (
+    TorchCheckpointError,
+    decode_state_dict,
+    encode_state_dict,
+    validate_compatible_state,
 )
 
 
@@ -20,6 +27,45 @@ class TorchResumeStateError(RuntimeError):
 _OPTIMIZER_COMPONENT = "optimizer_state"
 _GENERATOR_COMPONENT = "categorical_generator_state"
 _COMPONENT_VERSION = 1
+
+
+def encode_shadow_model_state(model: nn.Module, *, max_bytes: int) -> bytes:
+    """Encode the mutable shadow model independently from frozen behavior."""
+
+    if not isinstance(model, nn.Module):
+        raise TorchResumeStateError("shadow checkpoint requires a torch Module")
+    try:
+        return encode_state_dict(model.state_dict(), max_bytes=max_bytes)
+    except TorchCheckpointError as error:
+        raise TorchResumeStateError(str(error)) from error
+
+
+def materialize_shadow_model_state(
+    payload: bytes,
+    factory,
+    *,
+    max_bytes: int,
+) -> nn.Module:
+    """Build a fresh shadow model and reject any partial or incompatible state."""
+
+    if not isinstance(payload, bytes) or len(payload) > max_bytes:
+        raise TorchResumeStateError("shadow checkpoint exceeds its byte limit")
+    if not callable(factory):
+        raise TorchResumeStateError("shadow checkpoint factory must be callable")
+    try:
+        state = decode_state_dict(payload)
+        model = factory()
+        if not isinstance(model, nn.Module):
+            raise TorchResumeStateError("shadow checkpoint factory returned no Module")
+        validate_compatible_state(model.state_dict(), state)
+        model.load_state_dict(state, strict=True)
+        if encode_shadow_model_state(model, max_bytes=max_bytes) != payload:
+            raise TorchResumeStateError(
+                "hydrated shadow model does not reproduce its canonical checkpoint"
+            )
+        return model
+    except TorchCheckpointError as error:
+        raise TorchResumeStateError(str(error)) from error
 
 
 def encode_optimizer_state(

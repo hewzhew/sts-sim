@@ -18,13 +18,26 @@ if _TORCH_AVAILABLE:
         TorchResumeStateError,
         encode_generator_state,
         encode_optimizer_state,
+        encode_shadow_model_state,
         hydrate_fresh_optimizer,
         materialize_generator_state,
+        materialize_shadow_model_state,
     )
 
 
 @unittest.skipUnless(_TORCH_AVAILABLE, "optional PyTorch dependency is not installed")
 class TorchOwnerStateCodecTests(unittest.TestCase):
+    def test_shadow_model_round_trip_is_independent_from_optimizer(self) -> None:
+        model = torch.nn.Linear(3, 2)
+        payload = encode_shadow_model_state(model, max_bytes=1024 * 1024)
+        restored = materialize_shadow_model_state(
+            payload,
+            lambda: torch.nn.Linear(3, 2),
+            max_bytes=1024 * 1024,
+        )
+        for left, right in zip(model.parameters(), restored.parameters(), strict=True):
+            self.assertTrue(torch.equal(left, right))
+
     def test_adam_state_round_trip_preserves_the_next_optimizer_update(self) -> None:
         torch.manual_seed(17)
         left = torch.nn.Linear(3, 2)

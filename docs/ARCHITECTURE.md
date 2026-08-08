@@ -508,6 +508,16 @@ Fresh owners accept only the corresponding typed snapshots. This metadata has
 no simulator session, model tensor, optimizer tensor, generator tensor, or
 experience payload; those remain distinct components and must all be bound by
 the future final resume manifest.
+The resume store owns exactly six immutable component kinds: current
+environment, episode-root bank, shadow model, optimizer, categorical generator,
+and generation metadata. One publication batch-previews aggregate distinct
+component capacity, writes every component through the shared atomic
+content-store kernel, and publishes one small canonical manifest last. A
+manifest binds every kind exactly once by digest and stored byte count. Reopen
+and resolve revalidate every envelope, kind, digest, and size; component files
+without a manifest are inert, while a manifest with any unavailable component
+is not resumable. The live categorical publisher captures all six from one
+admitted runner boundary rather than accepting caller-assembled identities.
 
 On an ordinary reward screen, the reward owner claims typed low-agency public
 resources before opening a nested card-reward choice. This lets the card owner

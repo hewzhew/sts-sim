@@ -47,6 +47,8 @@ class CheckpointBatch(Protocol):
 
     def updated(self, replacements: CheckpointBatch) -> CheckpointBatch: ...
 
+    def checkpoint_bytes(self, *, max_bytes: int) -> bytes: ...
+
 
 class BatchEnvironment(Protocol):
     """Narrow structural type implemented by the standalone Rust bridge."""
@@ -81,6 +83,8 @@ class BatchEnvironment(Protocol):
         slot_indices: list[int],
         seeds: list[int],
     ) -> CheckpointBatch: ...
+
+    def checkpoint_bytes(self, *, max_bytes: int) -> bytes: ...
 
 
 class BatchPolicy(Protocol):
@@ -295,6 +299,12 @@ class OnlineBatchDriver:
         """Return the configured synchronous sink owner without exposing a queue."""
 
         return self._experience_sink
+
+    @property
+    def checkpoint_bank(self) -> CheckpointBatch:
+        """Return the opaque full episode-root bank to the resume owner."""
+
+        return self._checkpoint_bank
 
     def require_resume_boundary(self) -> BatchDriverResumeBoundary:
         """Reject mutable half-states before any process-resume publication."""

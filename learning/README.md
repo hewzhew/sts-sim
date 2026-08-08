@@ -319,6 +319,16 @@ constructors; terminal half-states, open attempts, poisoned trainers, and
 inconsistent sequence or parameter lineage remain unrepresentable. This is
 still a component, not yet the final durable resume manifest.
 
+`sts_learning.resume_store` is the bounded durable owner for the six immutable
+resume components: current environment, episode-root bank, shadow model,
+optimizer, categorical generator, and generation metadata. It batch-previews
+all distinct component count/bytes before writing anything, commits components
+through the shared flushed atomic content store, and publishes one small
+canonical manifest last. Reopen verifies filenames, digests, envelopes, kinds,
+sizes, and the complete six-way binding. The optional
+`CategoricalGenerationResumePublisher` captures all six from one admitted live
+runner boundary, so callers do not assemble manifests by hand.
+
 The bridge verification command installs a fresh wheel and runs both bridge
 smoke tests and these caller contracts:
 
