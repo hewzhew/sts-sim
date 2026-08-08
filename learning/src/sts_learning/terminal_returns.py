@@ -24,6 +24,13 @@ class TerminalAdvantageMode(IntEnum):
     MATCHED_FLOOR_LEAVE_ONE_OUT = 2
 
 
+class RunDecisionScope(IntEnum):
+    """Which whole-run decision rows receive the terminal objective."""
+
+    ALL = 0
+    STRATEGIC = 1
+
+
 @dataclass(frozen=True)
 class FloorProgressReturnConfig:
     """Map terminal floor progress below one reserved victory return."""
@@ -49,6 +56,7 @@ class OnPolicyObjectiveConfig:
     terminal_return: FloorProgressReturnConfig = FloorProgressReturnConfig()
     attempts_per_update: int = 8
     advantage_mode: TerminalAdvantageMode = TerminalAdvantageMode.RAW_RETURN
+    decision_scope: RunDecisionScope = RunDecisionScope.ALL
 
     def __post_init__(self) -> None:
         if not isinstance(self.terminal_return, FloorProgressReturnConfig):
@@ -69,6 +77,8 @@ class OnPolicyObjectiveConfig:
             raise TerminalReturnError(
                 "advantage_mode must be TerminalAdvantageMode"
             )
+        if not isinstance(self.decision_scope, RunDecisionScope):
+            raise TerminalReturnError("decision_scope must be RunDecisionScope")
         if (
             self.advantage_mode
             in (

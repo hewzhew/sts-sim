@@ -587,7 +587,7 @@ freezes the bridge's existing semantic decision batch without re-declaring its
 feature schema. Rows are aligned to exact slot, seed, episode generation,
 attempt index, recovery count, the subsequently selected candidate ordinal, and
 its typed selection probability. Whole-run training additionally captures the
-bridge's compact public seed, act, and floor at that same pre-inference
+bridge's compact public seed, act, floor, and combat-boundary flag at that same pre-inference
 boundary through an explicit optional provider. It does not recover those facts
 from semantic feature arrays or inspect an opaque session. Every retained
 decision batch also carries that exact behavior manifest identity. Lineage and
@@ -791,9 +791,16 @@ provenance-bound matched-floor advantage mode applies those aligned values to
 the loss; raw terminal return remains the maintained default. This avoids
 calling an unmatched state better or worse merely because it occurred later in
 the run, but remains an explicit ablation rather than an assumed improvement.
+Combat and strategic decision rows are additionally counted as separate typed
+scopes so a whole-run update cannot hide which surface dominates its credit
+mass. The provenance-bound decision scope either trains every retained row or
+selects only strategic rows and renormalizes each attempt across those rows.
+Strategic-only rejects attempts without a strategic decision and never silently
+turns combat rows into strategic rows. `All` remains the maintained default;
+strategic-only is an interference ablation, not an assumed improvement.
 One typed objective configuration owns terminal-return semantics, advantage
 mode, and the number of attempts per update. The trainer implementation
-artifact binds the return kind, target floor, advantage mode, and attempts per
+artifact binds the return kind, target floor, advantage mode, decision scope, and attempts per
 update; runner construction and
 process restore reject any conflicting runtime config.
 After validation, all retained decision payloads in one delivery are combined

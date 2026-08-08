@@ -34,6 +34,7 @@ def _attempt(*, reward: int, terminal_floor: int, decision_floors: tuple[int, ..
                     episode_seed=100,
                     act=1,
                     floor=floor,
+                    is_combat=(index % 2 == 0),
                 ),
             ),
         )
@@ -81,6 +82,10 @@ def test_credit_comparison_keeps_victory_reserved_and_groups_decision_floors() -
     assert comparison.matched_floor_advantage.negative == 1
     assert comparison.matched_floor_advantage.zero == 3
     assert comparison.matched_floor_advantage.positive == 1
+    assert tuple(
+        (row.is_combat, row.remaining_progress.decision_count)
+        for row in comparison.by_combat_scope
+    ) == ((False, 2), (True, 3))
     assert tuple(item.floor for item in comparison.by_decision_floor) == (0, 10, 20, 40)
     assert comparison.by_decision_floor[-1].remaining_progress.minimum == 1.0
 

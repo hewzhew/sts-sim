@@ -25,6 +25,8 @@ param(
     [long]$EvaluationBehaviorSeed = 100000,
     [ValidateSet("raw-return", "leave-one-out", "matched-floor")]
     [string]$AdvantageMode = "raw-return",
+    [ValidateSet("all", "strategic")]
+    [string]$DecisionScope = "all",
     [ValidateSet("all", "never", "root-slots")]
     [string]$PotionLane = "all",
     [ValidateSet("trained", "all", "never")]
@@ -320,6 +322,7 @@ switch ($Command) {
                 --evaluation-behavior-seed $EvaluationBehaviorSeed `
                 --held-out-seed-start $HeldOutSeedStart `
                 --advantage-mode $AdvantageMode `
+                --decision-scope $DecisionScope `
                 --potion-lane $RunPotionLane
             if ($LASTEXITCODE -ne 0) {
                 throw "run training command failed"

@@ -20,7 +20,7 @@ from .combat_experience import (
     CompletedCombatGroupExperience,
 )
 from .combat_objective import CombatAllWinAxis, CombatWinObjectiveConfig
-from .experience import DecisionExperienceBatch
+from .experience import DecisionExperienceBatch, ExperienceError
 from .manifests import BehaviorManifestRegistry
 from .policy import BehaviorManifestId, SelectionProbability
 from .semantic_concat import (
@@ -29,6 +29,7 @@ from .semantic_concat import (
 )
 from .terminal_returns import (
     FloorProgressReturnConfig,
+    RunDecisionScope,
     TerminalAdvantageMode,
     floor_progress_terminal_return,
     terminal_return_advantages,
@@ -84,6 +85,7 @@ def on_policy_terminal_loss(
     policy_config: RaggedCategoricalPolicyConfig,
     return_config: FloorProgressReturnConfig,
     advantage_mode: TerminalAdvantageMode,
+    decision_scope: RunDecisionScope = RunDecisionScope.ALL,
 ) -> OnPolicyTerminalLoss:
     """Apply progress-return REINFORCE to exact sampled categorical behavior.
 
@@ -104,6 +106,8 @@ def on_policy_terminal_loss(
         raise TorchOutcomeError("policy objective requires terminal return config")
     if not isinstance(advantage_mode, TerminalAdvantageMode):
         raise TorchOutcomeError("policy objective requires typed advantage mode")
+    if not isinstance(decision_scope, RunDecisionScope):
+        raise TorchOutcomeError("policy objective requires typed decision scope")
     normalized = tuple(attempts)
     if not normalized:
         raise TorchOutcomeError("policy objective requires at least one complete attempt")
@@ -136,16 +140,39 @@ def on_policy_terminal_loss(
     weights: list[float] = []
     total_decisions = 0
     for attempt_index, attempt in enumerate(normalized):
-        expected_decisions = sum(batch.decision_count for batch in attempt.batches)
-        if attempt.decision_count != expected_decisions or expected_decisions <= 0:
+        retained_decisions = sum(batch.decision_count for batch in attempt.batches)
+        if attempt.decision_count != retained_decisions or retained_decisions <= 0:
             raise TorchOutcomeError(
                 "complete attempt decision count disagrees with retained batches"
             )
 
-        attempt_behavior_ids: list[BehaviorManifestId] = []
-        attempt_probabilities: list[SelectionProbability] = []
+        scoped_batches: list[tuple[int, DecisionExperienceBatch, tuple[int, ...]]] = []
+        scoped_decisions = 0
         for batch_index, batch in enumerate(attempt.batches):
             _validate_batch(batch)
+            row_indices = _decision_scope_rows(batch, decision_scope)
+            if not row_indices:
+                continue
+            try:
+                scoped = (
+                    batch
+                    if len(row_indices) == batch.decision_count
+                    else batch.select_rows(row_indices)
+                )
+            except ExperienceError as error:
+                raise TorchOutcomeError(
+                    "cannot select configured whole-run decision scope"
+                ) from error
+            scoped_batches.append((batch_index, scoped, row_indices))
+            scoped_decisions += scoped.decision_count
+        if scoped_decisions == 0:
+            raise TorchOutcomeError(
+                "complete attempt has no decisions in the configured scope"
+            )
+
+        attempt_behavior_ids: list[BehaviorManifestId] = []
+        attempt_probabilities: list[SelectionProbability] = []
+        for batch_index, batch, row_indices in scoped_batches:
             try:
                 manifest = registry.resolve(batch.behavior_manifest_id)
             except ValueError as error:
@@ -164,19 +191,20 @@ def on_policy_terminal_loss(
                 assert advantages is not None
                 batch_targets = (advantages[attempt_index],) * batch.decision_count
             else:
-                batch_targets = matched_advantages[attempt_index][batch_index]
+                original_targets = matched_advantages[attempt_index][batch_index]
+                batch_targets = tuple(original_targets[row] for row in row_indices)
                 if len(batch_targets) != batch.decision_count:
                     raise TorchOutcomeError(
                         "matched-floor targets are misaligned with decision rows"
                     )
             targets.extend(batch_targets)
             weights.extend(
-                [1.0 / (len(normalized) * expected_decisions)]
+                [1.0 / (len(normalized) * scoped_decisions)]
                 * batch.decision_count
             )
         behavior_ids.append(tuple(attempt_behavior_ids))
         probability_evidence.append(tuple(attempt_probabilities))
-        total_decisions += expected_decisions
+        total_decisions += scoped_decisions
 
     value = _on_policy_weighted_loss(
         scorer=scorer,
@@ -341,6 +369,25 @@ def on_policy_combat_win_loss(
         decision_count=total_decisions,
         behavior_manifest_ids=tuple(behavior_ids),
         selection_probabilities=tuple(probability_evidence),
+    )
+
+
+def _decision_scope_rows(
+    batch: DecisionExperienceBatch,
+    scope: RunDecisionScope,
+) -> tuple[int, ...]:
+    if scope is RunDecisionScope.ALL:
+        return tuple(range(batch.decision_count))
+    if batch.run_progress is None:
+        raise TorchOutcomeError(
+            "strategic decision scope requires decision-time run progress"
+        )
+    if len(batch.run_progress) != batch.decision_count:
+        raise TorchOutcomeError("decision scope progress rows are misaligned")
+    return tuple(
+        row
+        for row, progress in enumerate(batch.run_progress)
+        if not progress.is_combat
     )
 
 

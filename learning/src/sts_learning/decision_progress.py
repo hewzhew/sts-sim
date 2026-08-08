@@ -19,6 +19,7 @@ class DecisionRunProgress:
     episode_seed: int
     act: int
     floor: int
+    is_combat: bool
 
     def __post_init__(self) -> None:
         object.__setattr__(
@@ -28,6 +29,8 @@ class DecisionRunProgress:
         )
         object.__setattr__(self, "act", _integer(self.act, "act", minimum=0))
         object.__setattr__(self, "floor", _integer(self.floor, "floor", minimum=0))
+        if type(self.is_combat) is not bool:
+            raise DecisionProgressError("is_combat must be bool")
 
 
 class DecisionProgressProvider(Protocol):
@@ -81,6 +84,7 @@ class BridgeDecisionProgressProvider:
                 episode_seed=_attribute(view, "seed"),
                 act=_attribute(view, "act"),
                 floor=_attribute(view, "floor"),
+                is_combat=_attribute(view, "is_combat"),
             )
         try:
             return tuple(contexts[slot] for slot in slots)

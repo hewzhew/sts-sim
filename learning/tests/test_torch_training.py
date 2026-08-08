@@ -78,7 +78,12 @@ class SynchronousPolicyTrainerTests(unittest.TestCase):
                 selection_probability=SelectionProbability.known(0.5),
             ),
             run_progress=(
-                DecisionRunProgress(episode_seed=101, act=1, floor=12),
+                DecisionRunProgress(
+                    episode_seed=101,
+                    act=1,
+                    floor=12,
+                    is_combat=True,
+                ),
             ),
         )
         delivery = AttemptAssemblyDelivery(

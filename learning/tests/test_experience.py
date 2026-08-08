@@ -135,8 +135,8 @@ class ExperienceSegmentTests(unittest.TestCase):
             semantic_batch_fixture(),
             [snapshot(4), snapshot(9)],
             [
-                DecisionRunProgress(episode_seed=104, act=1, floor=3),
-                DecisionRunProgress(episode_seed=109, act=2, floor=19),
+                DecisionRunProgress(episode_seed=104, act=1, floor=3, is_combat=False),
+                DecisionRunProgress(episode_seed=109, act=2, floor=19, is_combat=True),
             ],
         )
         batch = DecisionExperienceBatch.from_prepared(
@@ -149,14 +149,21 @@ class ExperienceSegmentTests(unittest.TestCase):
         assert batch.run_progress == prepared.run_progress
         selected = batch.select_rows([1])
         assert selected.run_progress == (
-            DecisionRunProgress(episode_seed=109, act=2, floor=19),
+            DecisionRunProgress(episode_seed=109, act=2, floor=19, is_combat=True),
         )
 
         with self.assertRaisesRegex(ExperienceError, "progress seed"):
             PreparedDecisionBatch.capture(
                 decision_batch((0,), (1,)),
                 [snapshot(0)],
-                [DecisionRunProgress(episode_seed=999, act=1, floor=3)],
+                [
+                    DecisionRunProgress(
+                        episode_seed=999,
+                        act=1,
+                        floor=3,
+                        is_combat=False,
+                    )
+                ],
             )
 
     def test_capture_rejects_misaligned_lineage_and_object_arrays(self) -> None:

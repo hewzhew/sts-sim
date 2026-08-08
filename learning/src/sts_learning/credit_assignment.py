@@ -42,6 +42,16 @@ class DecisionFloorCreditComparison:
 
 
 @dataclass(frozen=True)
+class DecisionScopeCreditComparison:
+    """Target comparison for combat or strategic decision rows."""
+
+    is_combat: bool
+    terminal_broadcast: DecisionCreditDistribution
+    remaining_progress: DecisionCreditDistribution
+    matched_floor_advantage: DecisionCreditDistribution
+
+
+@dataclass(frozen=True)
 class CreditAssignmentComparison:
     """Current terminal broadcast beside a decision-local progress target."""
 
@@ -50,11 +60,13 @@ class CreditAssignmentComparison:
     remaining_progress: DecisionCreditDistribution
     matched_floor_advantage: DecisionCreditDistribution
     by_decision_floor: tuple[DecisionFloorCreditComparison, ...]
+    by_combat_scope: tuple[DecisionScopeCreditComparison, ...]
 
 
 @dataclass(frozen=True)
 class _DecisionCreditRow:
     floor: int
+    is_combat: bool
     terminal_broadcast: float
     remaining_progress: float
 
@@ -86,6 +98,7 @@ def compare_credit_assignment(
         for value in batch
     ]
     by_floor: dict[int, tuple[list[float], list[float], list[float]]] = {}
+    by_scope: dict[bool, tuple[list[float], list[float], list[float]]] = {}
     for attempt_rows, attempt_advantages in zip(
         aligned,
         matched_aligned,
@@ -104,6 +117,13 @@ def compare_credit_assignment(
                 floor_broadcast.append(row.terminal_broadcast)
                 floor_remaining.append(row.remaining_progress)
                 floor_matched.append(advantage)
+                scope_broadcast, scope_remaining, scope_matched = by_scope.setdefault(
+                    row.is_combat,
+                    ([], [], []),
+                )
+                scope_broadcast.append(row.terminal_broadcast)
+                scope_remaining.append(row.remaining_progress)
+                scope_matched.append(advantage)
 
     return CreditAssignmentComparison(
         attempt_count=len(normalized),
@@ -118,6 +138,15 @@ def compare_credit_assignment(
                 matched_floor_advantage=_distribution(values[2]),
             )
             for floor, values in sorted(by_floor.items())
+        ),
+        by_combat_scope=tuple(
+            DecisionScopeCreditComparison(
+                is_combat=is_combat,
+                terminal_broadcast=_distribution(values[0]),
+                remaining_progress=_distribution(values[1]),
+                matched_floor_advantage=_distribution(values[2]),
+            )
+            for is_combat, values in sorted(by_scope.items())
         ),
     )
 
@@ -167,6 +196,7 @@ def _aligned_credit_rows(
             batch_rows = tuple(
                 _DecisionCreditRow(
                     floor=progress.floor,
+                    is_combat=progress.is_combat,
                     terminal_broadcast=attempt_broadcast,
                     remaining_progress=remaining_floor_progress_return(
                         attempt,

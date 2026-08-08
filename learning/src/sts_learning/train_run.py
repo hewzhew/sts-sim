@@ -26,7 +26,11 @@ from .published_combat_behavior import (
     recover_published_combat_behavior,
 )
 from .seeds import SeedPartition, SeedSchedule
-from .terminal_returns import OnPolicyObjectiveConfig, TerminalAdvantageMode
+from .terminal_returns import (
+    OnPolicyObjectiveConfig,
+    RunDecisionScope,
+    TerminalAdvantageMode,
+)
 from .torch_combat_session_config import (
     CombatSessionBridge,
     CombatWinSessionLimits,
@@ -68,6 +72,7 @@ class RunTrainingCommandConfig:
     evaluation_behavior_seed: int
     held_out_seed_start: int
     advantage_mode: TerminalAdvantageMode = TerminalAdvantageMode.RAW_RETURN
+    decision_scope: RunDecisionScope = RunDecisionScope.ALL
     potion_lane: RunPotionLane = RunPotionLane.TRAINED
 
     def __post_init__(self) -> None:
@@ -92,6 +97,10 @@ class RunTrainingCommandConfig:
         if not isinstance(self.advantage_mode, TerminalAdvantageMode):
             raise RunTrainingCommandError(
                 "run training advantage mode must be typed"
+            )
+        if not isinstance(self.decision_scope, RunDecisionScope):
+            raise RunTrainingCommandError(
+                "run training decision scope must be typed"
             )
         if not isinstance(self.potion_lane, RunPotionLane):
             raise RunTrainingCommandError(
@@ -166,6 +175,7 @@ def run_run_training(
         objective=OnPolicyObjectiveConfig(
             attempts_per_update=config.attempts_per_update,
             advantage_mode=config.advantage_mode,
+            decision_scope=config.decision_scope,
         ),
     )
     limits = replace(
@@ -218,6 +228,7 @@ def run_run_training(
                 f"loss={_optional_float(session.runner.trainer.snapshot.last_loss)} "
                 f"credit={_credit_line(credit)} "
                 f"credit_floors={_credit_floor_line(credit)} "
+                f"credit_scopes={_credit_scope_line(credit)} "
                 f"seconds={elapsed:.3f}",
                 flush=True,
             )
@@ -301,6 +312,7 @@ def _configuration(
         "generations": config.generations,
         "attempts_per_update": config.attempts_per_update,
         "advantage_mode": config.advantage_mode.name.lower(),
+        "decision_scope": config.decision_scope.name.lower(),
         "max_batch_steps_per_generation": (
             config.max_batch_steps_per_generation
         ),
@@ -473,6 +485,19 @@ def _credit_floor_line(comparison: CreditAssignmentComparison | None) -> str:
     )
 
 
+def _credit_scope_line(comparison: CreditAssignmentComparison | None) -> str:
+    if comparison is None:
+        return "unavailable"
+    return ",".join(
+        f"{'combat' if row.is_combat else 'strategic'}:"
+        f"{row.remaining_progress.decision_count}"
+        f"#{row.matched_floor_advantage.negative}/"
+        f"{row.matched_floor_advantage.zero}/"
+        f"{row.matched_floor_advantage.positive}"
+        for row in comparison.by_combat_scope
+    )
+
+
 def _credit_assignment(
     comparison: CreditAssignmentComparison | None,
 ) -> dict[str, object] | None:
@@ -503,6 +528,21 @@ def _credit_assignment(
                 ),
             }
             for row in comparison.by_decision_floor
+        ],
+        "by_combat_scope": [
+            {
+                "is_combat": row.is_combat,
+                "terminal_broadcast": _credit_distribution(
+                    row.terminal_broadcast
+                ),
+                "remaining_progress": _credit_distribution(
+                    row.remaining_progress
+                ),
+                "matched_floor_advantage": _credit_distribution(
+                    row.matched_floor_advantage
+                ),
+            }
+            for row in comparison.by_combat_scope
         ],
     }
 
@@ -547,6 +587,11 @@ def _parser() -> argparse.ArgumentParser:
         default="raw-return",
     )
     parser.add_argument(
+        "--decision-scope",
+        choices=("all", "strategic"),
+        default="all",
+    )
+    parser.add_argument(
         "--potion-lane",
         choices=tuple(lane.value for lane in RunPotionLane),
         default=RunPotionLane.TRAINED.value,
@@ -579,6 +624,11 @@ def main() -> int:
                     if arguments.advantage_mode == "leave-one-out"
                     else TerminalAdvantageMode.MATCHED_FLOOR_LEAVE_ONE_OUT
                 )
+            ),
+            decision_scope=(
+                RunDecisionScope.ALL
+                if arguments.decision_scope == "all"
+                else RunDecisionScope.STRATEGIC
             ),
             potion_lane=RunPotionLane(arguments.potion_lane),
         )

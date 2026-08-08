@@ -14,6 +14,7 @@ from sts_learning import (
     BehaviorManifestRegistry,
     DecisionRunProgress,
     FloorProgressReturnConfig,
+    RunDecisionScope,
     SelectionProbability,
     SemanticBatchConcatLimits,
     TerminalAdvantageMode,
@@ -209,6 +210,7 @@ class OnPolicyTerminalLossTests(unittest.TestCase):
                         episode_seed=100 + slot,
                         act=1,
                         floor=0,
+                        is_combat=True,
                     ),
                 ),
             )
@@ -244,6 +246,55 @@ class OnPolicyTerminalLossTests(unittest.TestCase):
         self.assertAlmostEqual(float(result.value.detach()), 0.0, places=6)
         self.assertGreater(values.grad[0].item(), 0.0)
         self.assertLess(values.grad[3].item(), 0.0)
+
+    def test_strategic_scope_excludes_combat_rows_and_renormalizes_attempt(self) -> None:
+        values = torch.nn.Parameter(torch.zeros(2))
+
+        def scorer(payload):
+            return RaggedCandidateLogits(
+                values=values,
+                row_splits=torch.as_tensor(
+                    payload["candidate_row_splits"],
+                    dtype=torch.long,
+                ),
+            )
+
+        batches = tuple(
+            replace(
+                self._fixed_probability_batch(slot=1),
+                run_progress=(
+                    DecisionRunProgress(
+                        episode_seed=101,
+                        act=1,
+                        floor=1,
+                        is_combat=is_combat,
+                    ),
+                ),
+            )
+            for is_combat in (True, False)
+        )
+        attempt = completed_attempt_fixture(
+            slot=1,
+            batches=batches,
+            reward=1,
+        )
+
+        result = on_policy_terminal_loss(
+            scorer,
+            (attempt,),
+            self.registry,
+            CONCAT_LIMITS,
+            self.config,
+            self.return_config,
+            TerminalAdvantageMode.RAW_RETURN,
+            RunDecisionScope.STRATEGIC,
+        )
+        result.value.backward()
+
+        self.assertEqual(result.decision_count, 1)
+        self.assertAlmostEqual(float(result.value.detach()), math.log(2.0), places=6)
+        self.assertLess(values.grad[0].item(), 0.0)
+        self.assertGreater(values.grad[1].item(), 0.0)
 
     def test_floor_progress_reserves_the_unique_maximum_for_victory(self) -> None:
         config = FloorProgressReturnConfig(target_floor=52)

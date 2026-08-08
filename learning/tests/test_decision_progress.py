@@ -16,6 +16,7 @@ class _View:
     seed: int
     act: int
     floor: int
+    is_combat: bool
 
 
 class _Environment:
@@ -30,23 +31,23 @@ def test_bridge_provider_returns_requested_slots_in_decision_order() -> None:
     provider = BridgeDecisionProgressProvider(
         _Environment(
             [
-                (0, _View(seed=101, act=1, floor=3)),
-                (1, _View(seed=202, act=2, floor=21)),
+                (0, _View(seed=101, act=1, floor=3, is_combat=False)),
+                (1, _View(seed=202, act=2, floor=21, is_combat=True)),
             ]
         )
     )
 
     assert provider.capture((1, 0)) == (
-        DecisionRunProgress(episode_seed=202, act=2, floor=21),
-        DecisionRunProgress(episode_seed=101, act=1, floor=3),
+        DecisionRunProgress(episode_seed=202, act=2, floor=21, is_combat=True),
+        DecisionRunProgress(episode_seed=101, act=1, floor=3, is_combat=False),
     )
 
 
 @pytest.mark.parametrize(
     ("rows", "message"),
     [
-        ([(0, _View(101, 1, 3)), (0, _View(101, 1, 3))], "repeat"),
-        ([(0, _View(101, 1, 3))], "slot 1"),
+        ([(0, _View(101, 1, 3, False)), (0, _View(101, 1, 3, False))], "repeat"),
+        ([(0, _View(101, 1, 3, False))], "slot 1"),
         ([(0, object())], "missing seed"),
     ],
 )
