@@ -337,6 +337,22 @@ optimizer, bridge decoder, curriculum, and memory-limit configuration remain
 explicit caller inputs after restart rather than executable data hidden in a
 checkpoint.
 
+`sts_learning.torch_provenance` supplies the maintained categorical baseline's
+real manifest identities instead of test-fixture digests. It canonically hashes
+the complete bridge schema without interpreting feature names and binds typed
+scorer, categorical-rule, Adam, device, implementation-version, and PyTorch
+runtime facts. Unsupported or oversized schema trees fail closed.
+
+`sts_learning.torch_session` and `torch_session_config` collapse the repeated
+owner wiring into one bounded experiment-root factory. `new(...)` creates
+generation zero only in an unused root; `publish()` emits an exact initial
+resume point; `restore(id)` rebuilds fresh owners; and
+`advance_generation(max_batch_steps=...)` publishes automatically only after a
+real optimizer-step promotion. An unfinished bounded call returns no fake
+durable resume point. Restore verifies the saved slot count, training seed
+partition, and recovery budget against the supplied session configuration. The
+first maintained profile is deliberately CPU-only.
+
 The bridge verification command installs a fresh wheel and runs both bridge
 smoke tests and these caller contracts:
 

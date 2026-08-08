@@ -317,6 +317,12 @@ registry resolves those identities without retaining model objects, checkpoint
 payloads, file paths, or display strings. Unknown identities, conflicting
 claimed identities, capacity overflow, and any expected checkpoint/config/schema
 mismatch fail closed; the registry never evicts an older binding implicitly.
+The maintained categorical baseline derives those non-checkpoint identities
+from one canonical machine encoding of the complete bridge-provided semantic
+schema, typed scorer and Adam configuration, explicit device type, maintained
+implementation versions, and the PyTorch runtime version. Mapping order cannot
+change an identity, unsupported schema values fail closed, and Python does not
+redeclare or interpret the bridge feature names while hashing them.
 The manifest itself has a canonical versioned binary encoding. A separate
 durable catalog stores that exact payload under its manifest SHA-256 with
 mandatory count, per-manifest-byte, and total-byte limits. It shares the atomic
@@ -527,6 +533,15 @@ typed metadata. The complete fresh runner is exposed only after its own strict
 resume boundary exactly reproduces the saved boundary; a missing component,
 incompatible runtime factory, foreign slot identity, or partial owner graph
 therefore fails closed.
+The compact categorical session factory is the sole maintained assembly path
+for this baseline. One typed bridge binding, training-partition configuration,
+algorithm profile, resource limits, curriculum, and experiment root create
+either generation zero or a restored runner. A promoted generation can publish
+its resume manifest in the same operation; bounded progress that has not yet
+promoted remains explicitly live-only. Restore additionally requires the saved
+slot count, seed-partition rule, and recovery budget to match the session
+configuration. The first maintained profile is CPU-only and does not silently
+select another device.
 
 On an ordinary reward screen, the reward owner claims typed low-agency public
 resources before opening a nested card-reward choice. This lets the card owner
