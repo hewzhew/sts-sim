@@ -14,13 +14,21 @@ from sts_learning import (
     DecisionRunProgress,
     FloorProgressReturnConfig,
     compare_credit_assignment,
+    matched_episode_floor_context_leave_one_out_advantages,
     matched_floor_context_leave_one_out_advantages,
     matched_floor_leave_one_out_advantages,
     remaining_floor_progress_return,
 )
 
 
-def _attempt(*, reward: int, terminal_floor: int, decision_floors: tuple[int, ...]):
+def _attempt(
+    *,
+    reward: int,
+    terminal_floor: int,
+    decision_floors: tuple[int, ...],
+    episode_seed: int = 100,
+    attempt_index: int = 1,
+):
     manifest_id = behavior_manifest_fixture().identity
     batches = tuple(
         replace(
@@ -41,6 +49,25 @@ def _attempt(*, reward: int, terminal_floor: int, decision_floors: tuple[int, ..
             ),
         )
         for index, floor in enumerate(decision_floors)
+    )
+    lineage = replace(
+        batches[0].lineages[0],
+        key=replace(
+            batches[0].lineages[0].key,
+            episode_seed=episode_seed,
+            attempt_index=attempt_index,
+        ),
+        recoveries_used=attempt_index - 1,
+    )
+    batches = tuple(
+        replace(
+            batch,
+            lineages=(lineage,),
+            run_progress=(
+                replace(batch.run_progress[0], episode_seed=episode_seed),
+            ),
+        )
+        for batch in batches
     )
     attempt = completed_attempt_fixture(slot=0, batches=batches, reward=reward)
     return replace(
@@ -140,3 +167,36 @@ def test_credit_comparison_rejects_missing_or_impossible_progress() -> None:
     impossible = _attempt(reward=-1, terminal_floor=4, decision_floors=(5,))
     with pytest.raises(CreditAssignmentError, match="precedes"):
         compare_credit_assignment((impossible,), FloorProgressReturnConfig())
+
+
+def test_episode_matched_credit_uses_only_retries_from_the_same_root() -> None:
+    first = _attempt(
+        reward=-1,
+        terminal_floor=10,
+        decision_floors=(0,),
+        episode_seed=10,
+        attempt_index=1,
+    )
+    retry = _attempt(
+        reward=-1,
+        terminal_floor=20,
+        decision_floors=(0,),
+        episode_seed=10,
+        attempt_index=2,
+    )
+    other_root = _attempt(
+        reward=-1,
+        terminal_floor=30,
+        decision_floors=(0,),
+        episode_seed=20,
+        attempt_index=1,
+    )
+
+    aligned = matched_episode_floor_context_leave_one_out_advantages(
+        (first, retry, other_root),
+        FloorProgressReturnConfig(target_floor=52),
+    )
+
+    assert aligned[0][0][0] < 0.0
+    assert aligned[1][0][0] > 0.0
+    assert aligned[2][0][0] == 0.0

@@ -23,6 +23,7 @@ class TerminalAdvantageMode(IntEnum):
     LEAVE_ONE_OUT = 1
     MATCHED_FLOOR_LEAVE_ONE_OUT = 2
     MATCHED_FLOOR_CONTEXT_LEAVE_ONE_OUT = 3
+    MATCHED_EPISODE_FLOOR_CONTEXT_LEAVE_ONE_OUT = 4
 
 
 class RunDecisionScope(IntEnum):
@@ -86,6 +87,7 @@ class OnPolicyObjectiveConfig:
                 TerminalAdvantageMode.LEAVE_ONE_OUT,
                 TerminalAdvantageMode.MATCHED_FLOOR_LEAVE_ONE_OUT,
                 TerminalAdvantageMode.MATCHED_FLOOR_CONTEXT_LEAVE_ONE_OUT,
+                TerminalAdvantageMode.MATCHED_EPISODE_FLOOR_CONTEXT_LEAVE_ONE_OUT,
             )
             and attempts < 2
         ):
@@ -118,6 +120,7 @@ def terminal_return_advantages(
     if mode in (
         TerminalAdvantageMode.MATCHED_FLOOR_LEAVE_ONE_OUT,
         TerminalAdvantageMode.MATCHED_FLOOR_CONTEXT_LEAVE_ONE_OUT,
+        TerminalAdvantageMode.MATCHED_EPISODE_FLOOR_CONTEXT_LEAVE_ONE_OUT,
     ):
         raise TerminalReturnError(
             "matched advantage requires decision-time run progress"

@@ -270,6 +270,11 @@ def _summary(
         "behavior_training_potion_slots": (
             recovered.training_potion_slots if combat_trained else ()
         ),
+        "behavior_run_sampling_mode": (
+            None
+            if combat_trained
+            else recovered.training_sampling_mode.value
+        ),
         "behavior_run_objective": (
             None
             if combat_trained

@@ -13,6 +13,7 @@ from torch import Tensor
 from .attempts import CompletedAttemptExperience
 from .credit_assignment import (
     CreditAssignmentError,
+    matched_episode_floor_context_leave_one_out_advantages,
     matched_floor_context_leave_one_out_advantages,
     matched_floor_leave_one_out_advantages,
 )
@@ -119,17 +120,29 @@ def on_policy_terminal_loss(
     if advantage_mode in (
         TerminalAdvantageMode.MATCHED_FLOOR_LEAVE_ONE_OUT,
         TerminalAdvantageMode.MATCHED_FLOOR_CONTEXT_LEAVE_ONE_OUT,
+        TerminalAdvantageMode.MATCHED_EPISODE_FLOOR_CONTEXT_LEAVE_ONE_OUT,
     ):
         try:
-            matched_advantages = (
-                matched_floor_leave_one_out_advantages(normalized, return_config)
-                if advantage_mode
-                is TerminalAdvantageMode.MATCHED_FLOOR_LEAVE_ONE_OUT
-                else matched_floor_context_leave_one_out_advantages(
+            if advantage_mode is TerminalAdvantageMode.MATCHED_FLOOR_LEAVE_ONE_OUT:
+                matched_advantages = matched_floor_leave_one_out_advantages(
                     normalized,
                     return_config,
                 )
-            )
+            elif (
+                advantage_mode
+                is TerminalAdvantageMode.MATCHED_FLOOR_CONTEXT_LEAVE_ONE_OUT
+            ):
+                matched_advantages = matched_floor_context_leave_one_out_advantages(
+                    normalized,
+                    return_config,
+                )
+            else:
+                matched_advantages = (
+                    matched_episode_floor_context_leave_one_out_advantages(
+                        normalized,
+                        return_config,
+                    )
+                )
         except CreditAssignmentError as error:
             raise TorchOutcomeError(str(error)) from error
     else:

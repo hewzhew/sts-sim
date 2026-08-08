@@ -10,6 +10,7 @@ from pathlib import Path
 
 from .combat_potion_lane import CombatPotionLane
 from .manifests import BehaviorManifestId, ManifestArtifactId, ManifestArtifactKind
+from .run_sampling import RunSamplingMode
 from .seeds import SeedPartition, SeedSchedule
 from .terminal_returns import (
     OnPolicyObjectiveConfig,
@@ -42,6 +43,7 @@ class PublishedRunBehavior:
     checkpoint_id: ManifestArtifactId
     training_step: int
     training_potion_lane: CombatPotionLane
+    training_sampling_mode: RunSamplingMode
     objective: OnPolicyObjectiveConfig
     policies: tuple[CheckpointedCategoricalTorchPolicy, ...]
 
@@ -57,6 +59,8 @@ class PublishedRunBehavior:
             raise PublishedRunBehaviorError("run behavior potion lane must be typed")
         if self.training_potion_lane is CombatPotionLane.ROOT_SLOTS:
             raise PublishedRunBehaviorError("whole-run training cannot publish root slots")
+        if not isinstance(self.training_sampling_mode, RunSamplingMode):
+            raise PublishedRunBehaviorError("run behavior sampling mode must be typed")
         if not isinstance(self.objective, OnPolicyObjectiveConfig):
             raise PublishedRunBehaviorError("run behavior objective must be typed")
         if not self.policies or not all(
@@ -127,6 +131,22 @@ def recover_published_run_behavior(
     potion_lane = _potion_lane(completed.get("run_potion_lane"))
     if _potion_lane(configuration.get("run_potion_lane")) is not potion_lane:
         raise PublishedRunBehaviorError("run potion lane changed across publication")
+    configuration_sampling_mode = _sampling_mode(
+        configuration.get(
+            "sampling_mode",
+            RunSamplingMode.INDEPENDENT_COHORTS.value,
+        )
+    )
+    completed_sampling_mode = _sampling_mode(
+        completed.get(
+            "sampling_mode",
+            RunSamplingMode.INDEPENDENT_COHORTS.value,
+        )
+    )
+    if completed_sampling_mode is not configuration_sampling_mode:
+        raise PublishedRunBehaviorError(
+            "run sampling mode changed across publication"
+        )
 
     profile = replace(CategoricalOnlineProfile(), objective=objective)
     limits = replace(
@@ -170,6 +190,7 @@ def recover_published_run_behavior(
         checkpoint_id=checkpoint_id,
         training_step=training_step,
         training_potion_lane=potion_lane,
+        training_sampling_mode=configuration_sampling_mode,
         objective=objective,
         policies=policies,
     )
@@ -265,6 +286,15 @@ def _potion_lane(value: object) -> CombatPotionLane:
     if lane is CombatPotionLane.ROOT_SLOTS:
         raise PublishedRunBehaviorError("whole-run publication cannot use root slots")
     return lane
+
+
+def _sampling_mode(value: object) -> RunSamplingMode:
+    try:
+        return RunSamplingMode(value)
+    except (TypeError, ValueError) as error:
+        raise PublishedRunBehaviorError(
+            "run sampling mode is unsupported"
+        ) from error
 
 
 def _digest(value: object, name: str) -> bytes:

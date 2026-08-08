@@ -14,6 +14,7 @@ from .driver import (
     TerminalProgressAggregate,
 )
 from .policy import BehaviorManifestId
+from .run_sampling import EpisodeRootRetryCurriculum
 from .torch_behavior import (
     CategoricalTorchBehaviorController,
     CategoricalTorchBehaviorControllerSnapshot,
@@ -43,6 +44,8 @@ class CategoricalGenerationAdvanceResult:
     terminal_attempts: int
     terminal_victories: int
     terminal_defeats: int
+    sampled_episodes: int
+    recoveries: int
     terminal_progress: TerminalProgressAggregate
     terminal_flushes: int
     optimizer_steps_before: int
@@ -113,14 +116,37 @@ class BoundedCategoricalGenerationRunner:
         self.shadow_scorer = shadow_scorer
         self._optimizer_steps_per_generation = steps
         slot_count = self.driver.ledger.slot_count
-        if self.driver.ledger.max_recoveries_per_episode != 0:
-            raise TorchGenerationError(
-                "episode-cohort generations require zero recovery"
-            )
-        if self.update_batcher.attempts_per_update % slot_count != 0:
-            raise TorchGenerationError(
-                "attempts_per_update must contain complete environment-slot cohorts"
-            )
+        recovery_budget = self.driver.ledger.max_recoveries_per_episode
+        retry_curriculum = self.driver.curriculum
+        if recovery_budget == 0:
+            if isinstance(retry_curriculum, EpisodeRootRetryCurriculum):
+                raise TorchGenerationError(
+                    "episode-root retry curriculum requires a recovery budget"
+                )
+            if self.update_batcher.attempts_per_update % slot_count != 0:
+                raise TorchGenerationError(
+                    "attempts_per_update must contain complete environment-slot cohorts"
+                )
+        else:
+            if not isinstance(retry_curriculum, EpisodeRootRetryCurriculum):
+                raise TorchGenerationError(
+                    "nonzero generation recovery requires episode-root retries"
+                )
+            if slot_count != 1:
+                raise TorchGenerationError(
+                    "episode-root retry generations require exactly one slot"
+                )
+            if (
+                retry_curriculum.attempts_per_update
+                != self.update_batcher.attempts_per_update
+            ):
+                raise TorchGenerationError(
+                    "retry curriculum and update batch disagree on attempt count"
+                )
+            if recovery_budget != self.update_batcher.attempts_per_update - 1:
+                raise TorchGenerationError(
+                    "retry recovery budget must close one complete attempt update"
+                )
         self._validate_wiring()
 
     @property
@@ -207,6 +233,9 @@ class BoundedCategoricalGenerationRunner:
         max_terminal_floor: int | None = None
         terminal_floor_counts: dict[int, int] = {}
         terminal_act_counts: dict[int, int] = {}
+        sampled_episode_keys: set[tuple[int, int]] = set()
+        completed_episodes = 0
+        recoveries = 0
         terminal_flushes = 0
         dropped_attempts_before = self.assembler.snapshot.dropped_attempts
         while (
@@ -224,6 +253,12 @@ class BoundedCategoricalGenerationRunner:
             terminal_defeats += sum(
                 attempt.terminal_reward == -1 for attempt in result.attempts
             )
+            sampled_episode_keys.update(
+                (attempt.episode_seed, attempt.episode_generation)
+                for attempt in result.attempts
+            )
+            recoveries += len(result.recoveries)
+            completed_episodes += len(result.completed_episodes)
             for attempt in result.attempts:
                 floor = attempt.terminal.terminal_floor
                 terminal_floor_sum += floor
@@ -258,6 +293,20 @@ class BoundedCategoricalGenerationRunner:
             raise TorchGenerationError("generation trainer became poisoned")
         promotion = None
         if trainer_after.optimizer_steps >= target_step:
+            if (
+                isinstance(
+                    self.driver.curriculum,
+                    EpisodeRootRetryCurriculum,
+                )
+                and self.driver.curriculum.attempts_in_update != 0
+            ):
+                raise TorchGenerationError(
+                    "retry curriculum did not close its optimizer boundary"
+                )
+            if completed_episodes != len(sampled_episode_keys):
+                raise TorchGenerationError(
+                    "optimizer update contains an incomplete sampled episode"
+                )
             if self.driver.env.terminal_count != self.driver.ledger.slot_count:
                 raise TorchGenerationError(
                     "optimizer update completed before its episode cohort closed"
@@ -276,6 +325,8 @@ class BoundedCategoricalGenerationRunner:
             terminal_attempts=terminal_attempts,
             terminal_victories=terminal_victories,
             terminal_defeats=terminal_defeats,
+            sampled_episodes=len(sampled_episode_keys),
+            recoveries=recoveries,
             terminal_progress=TerminalProgressAggregate(
                 attempts=terminal_attempts,
                 floor_sum=terminal_floor_sum,

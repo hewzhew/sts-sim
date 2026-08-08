@@ -24,6 +24,7 @@ from sts_learning import (
     BoundedBehaviorManifestCatalog,
     ExperienceLimits,
     ExperienceSegmentBuffer,
+    EpisodeRootRetryCurriculum,
     FloorProgressReturnConfig,
     OnlineBatchDriver,
     OnPolicyObjectiveConfig,
@@ -274,6 +275,41 @@ class BoundedCategoricalGenerationRunnerTests(unittest.TestCase):
                 [[0, 1], [0, 1], [0, 1], [0, 1]],
             )
 
+    def test_single_slot_retry_generation_closes_after_an_early_victory(self) -> None:
+        with tempfile.TemporaryDirectory() as root:
+            curriculum = EpisodeRootRetryCurriculum(attempts_per_update=3)
+            driver, assembler, batcher, trainer, controller, shadow = _components(
+                Path(root),
+                attempts_per_update=3,
+                max_recoveries_per_episode=2,
+                curriculum=curriculum,
+                environment=lambda seeds: _NumpyScheduledBatchEnv(
+                    seeds,
+                    terminal_plans=({0: 1}, {0: -1}, {0: -1}),
+                ),
+            )
+            runner = BoundedCategoricalGenerationRunner(
+                driver,
+                assembler,
+                batcher,
+                trainer,
+                controller,
+                shadow,
+                optimizer_steps_per_generation=1,
+            )
+
+            result = runner.advance(max_batch_steps=3)
+
+            self.assertTrue(result.promoted)
+            self.assertEqual(result.terminal_attempts, 3)
+            self.assertEqual(result.sampled_episodes, 2)
+            self.assertEqual(result.recoveries, 1)
+            self.assertEqual(curriculum.attempts_in_update, 0)
+            self.assertEqual(driver.env.restore_calls, [[0]])  # type: ignore[attr-defined]
+            self.assertEqual(driver.env.terminal_count, 0)
+            self.assertEqual(assembler.snapshot.open_attempts, 0)
+            self.assertEqual(batcher.pending_attempts, 0)
+
     def test_resume_boundary_requires_flushed_and_closed_experience(self) -> None:
         with tempfile.TemporaryDirectory() as root:
             driver, assembler, batcher, trainer, controller, shadow = _components(
@@ -388,6 +424,8 @@ def _components(
     environment=NumpyFakeBatchEnv,
     slot_count: int = 1,
     attempts_per_update: int = 1,
+    max_recoveries_per_episode: int = 0,
+    curriculum=None,
 ):
     shadow = _scorer()
     behavior_config = RaggedCategoricalPolicyConfig(temperature=0.8)
@@ -458,13 +496,17 @@ def _components(
     population = initialize_population(
         environment,
         slot_count=slot_count,
-        schedule=SeedSchedule(SeedPartition.HELD_OUT),
-        max_recoveries_per_episode=0,
+        schedule=SeedSchedule(
+            SeedPartition.TRAINING
+            if max_recoveries_per_episode
+            else SeedPartition.HELD_OUT
+        ),
+        max_recoveries_per_episode=max_recoveries_per_episode,
     )
     driver = OnlineBatchDriver(
         population,
         policy=controller,
-        curriculum=NoRecovery(),
+        curriculum=NoRecovery() if curriculum is None else curriculum,
         experience_buffer=ExperienceSegmentBuffer(
             ExperienceLimits(
                 max_decisions=8,

@@ -26,6 +26,10 @@ from .published_combat_behavior import (
     recover_published_combat_behavior,
 )
 from .published_run_behavior import RUN_TRAINING_SCHEMA
+from .run_sampling import (
+    EpisodeRootRetryCurriculum,
+    RunSamplingMode,
+)
 from .seeds import SeedPartition, SeedSchedule
 from .terminal_returns import (
     OnPolicyObjectiveConfig,
@@ -61,6 +65,9 @@ _ADVANTAGE_MODE_ARGUMENTS = {
     "matched-floor-context": (
         TerminalAdvantageMode.MATCHED_FLOOR_CONTEXT_LEAVE_ONE_OUT
     ),
+    "matched-episode-floor-context": (
+        TerminalAdvantageMode.MATCHED_EPISODE_FLOOR_CONTEXT_LEAVE_ONE_OUT
+    ),
 }
 
 
@@ -81,6 +88,7 @@ class RunTrainingCommandConfig:
     held_out_seed_start: int
     advantage_mode: TerminalAdvantageMode = TerminalAdvantageMode.RAW_RETURN
     decision_scope: RunDecisionScope = RunDecisionScope.ALL
+    sampling_mode: RunSamplingMode = RunSamplingMode.INDEPENDENT_COHORTS
     potion_lane: RunPotionLane = RunPotionLane.TRAINED
 
     def __post_init__(self) -> None:
@@ -110,6 +118,10 @@ class RunTrainingCommandConfig:
             raise RunTrainingCommandError(
                 "run training decision scope must be typed"
             )
+        if not isinstance(self.sampling_mode, RunSamplingMode):
+            raise RunTrainingCommandError(
+                "run training sampling mode must be typed"
+            )
         if not isinstance(self.potion_lane, RunPotionLane):
             raise RunTrainingCommandError(
                 "run training potion lane must be typed"
@@ -125,6 +137,22 @@ class RunTrainingCommandConfig:
         if self.attempts_per_update % self.slot_count != 0:
             raise RunTrainingCommandError(
                 "attempts_per_update must contain complete slot cohorts"
+            )
+        paired_mode = (
+            TerminalAdvantageMode.MATCHED_EPISODE_FLOOR_CONTEXT_LEAVE_ONE_OUT
+        )
+        if self.sampling_mode is RunSamplingMode.EPISODE_ROOT_RETRIES:
+            if self.slot_count != 1:
+                raise RunTrainingCommandError(
+                    "episode-root retry sampling requires slot_count=1"
+                )
+            if self.advantage_mode is not paired_mode:
+                raise RunTrainingCommandError(
+                    "episode-root retries require episode-matched credit"
+                )
+        elif self.advantage_mode is paired_mode:
+            raise RunTrainingCommandError(
+                "episode-matched credit requires episode-root retries"
             )
         object.__setattr__(
             self,
@@ -194,13 +222,18 @@ def run_run_training(
         CategoricalSessionLimits(),
         owner_capacity=max(16, config.generations + 2),
     )
+    retry_sampling = (
+        config.sampling_mode is RunSamplingMode.EPISODE_ROOT_RETRIES
+    )
     session_config = CategoricalOnlineSessionConfig(
         schedule=SeedSchedule(
             SeedPartition.TRAINING,
             next_candidate=config.training_seed_start,
         ),
         slot_count=config.slot_count,
-        max_recoveries_per_episode=0,
+        max_recoveries_per_episode=(
+            config.attempts_per_update - 1 if retry_sampling else 0
+        ),
         profile=profile,
         limits=limits,
     )
@@ -208,7 +241,11 @@ def run_run_training(
         config.output,
         training_run_bridge,
         session_config,
-        NoRecoveryCurriculum(),
+        (
+            EpisodeRootRetryCurriculum(config.attempts_per_update)
+            if retry_sampling
+            else NoRecoveryCurriculum()
+        ),
     )
     session = factory.new(
         model_seed=config.model_seed,
@@ -233,6 +270,8 @@ def run_run_training(
                 f"attempts={result.terminal_attempts} "
                 f"victories={result.terminal_victories} "
                 f"defeats={result.terminal_defeats} "
+                f"episodes={result.sampled_episodes} "
+                f"recoveries={result.recoveries} "
                 f"floor_sum={progress.floor_sum} "
                 f"floor_counts={_counts(progress.floor_counts)} "
                 f"batch_steps={result.batch_steps}/"
@@ -292,6 +331,7 @@ def run_run_training(
         "run_training_complete=true "
         f"potion_lane={potion_lane.value} "
         f"potion_lane_request={config.potion_lane.value} "
+        f"sampling_mode={config.sampling_mode.value} "
         f"generations={config.generations} "
         f"optimizer_steps={session.runner.trainer.snapshot.optimizer_steps} "
         f"held_out_attempts={run.terminal_attempts}/"
@@ -321,6 +361,7 @@ def _configuration(
         "warm_start_potion_lane": warm_start.training_potion_lane.value,
         "requested_run_potion_lane": config.potion_lane.value,
         "run_potion_lane": potion_lane.value,
+        "sampling_mode": config.sampling_mode.value,
         "slot_count": config.slot_count,
         "generations": config.generations,
         "attempts_per_update": config.attempts_per_update,
@@ -358,6 +399,8 @@ def _generation(
         "terminal_attempts": result.terminal_attempts,
         "victories": result.terminal_victories,
         "defeats": result.terminal_defeats,
+        "sampled_episodes": result.sampled_episodes,
+        "recoveries": result.recoveries,
         "terminal_floor_sum": progress.floor_sum,
         "terminal_floor_counts": progress.floor_counts,
         "terminal_act_counts": progress.act_counts,
@@ -391,6 +434,7 @@ def _summary(
         "active_behavior_checkpoint_id": checkpoint_id,
         "requested_run_potion_lane": config.potion_lane.value,
         "run_potion_lane": potion_lane.value,
+        "sampling_mode": config.sampling_mode.value,
         "generations": config.generations,
         "optimizer_steps": session.runner.trainer.snapshot.optimizer_steps,
         "held_out_target_reached": evaluation.complete,
@@ -477,6 +521,7 @@ def _credit_line(comparison: CreditAssignmentComparison | None) -> str:
     local = comparison.remaining_progress
     matched = comparison.matched_floor_advantage
     context = comparison.matched_floor_context_advantage
+    episode_context = comparison.matched_episode_floor_context_advantage
     return (
         f"broadcast:{terminal.negative}/{terminal.zero}/{terminal.positive}"
         f"@{terminal.mean:.4f};"
@@ -484,7 +529,10 @@ def _credit_line(comparison: CreditAssignmentComparison | None) -> str:
         f"matched:{matched.negative}/{matched.zero}/{matched.positive}"
         f"@{matched.mean:.4f};"
         f"context:{context.negative}/{context.zero}/{context.positive}"
-        f"@{context.mean:.4f}"
+        f"@{context.mean:.4f};"
+        f"episode_context:{episode_context.negative}/"
+        f"{episode_context.zero}/{episode_context.positive}"
+        f"@{episode_context.mean:.4f}"
     )
 
 
@@ -550,6 +598,9 @@ def _credit_assignment(
         ),
         "matched_floor_context_advantage": _credit_distribution(
             comparison.matched_floor_context_advantage
+        ),
+        "matched_episode_floor_context_advantage": _credit_distribution(
+            comparison.matched_episode_floor_context_advantage
         ),
         "by_decision_floor": [
             {
@@ -654,6 +705,11 @@ def _parser() -> argparse.ArgumentParser:
         default="all",
     )
     parser.add_argument(
+        "--sampling-mode",
+        choices=tuple(mode.value for mode in RunSamplingMode),
+        default=RunSamplingMode.INDEPENDENT_COHORTS.value,
+    )
+    parser.add_argument(
         "--potion-lane",
         choices=tuple(lane.value for lane in RunPotionLane),
         default=RunPotionLane.TRAINED.value,
@@ -684,6 +740,7 @@ def main() -> int:
                 if arguments.decision_scope == "all"
                 else RunDecisionScope.STRATEGIC
             ),
+            sampling_mode=RunSamplingMode(arguments.sampling_mode),
             potion_lane=RunPotionLane(arguments.potion_lane),
         )
     )

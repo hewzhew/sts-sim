@@ -69,6 +69,7 @@ from .credit_assignment import (
     DecisionScopeCreditComparison,
     DecisionStrategicContextCreditComparison,
     compare_credit_assignment,
+    matched_episode_floor_context_leave_one_out_advantages,
     matched_floor_context_leave_one_out_advantages,
     matched_floor_leave_one_out_advantages,
     remaining_floor_progress_return,
@@ -78,6 +79,11 @@ from .decision_progress import (
     DecisionProgressError,
     DecisionProgressProvider,
     DecisionRunProgress,
+)
+from .run_sampling import (
+    EpisodeRootRetryCurriculum,
+    RunSamplingError,
+    RunSamplingMode,
 )
 from .driver import (
     BatchCurriculum,
@@ -330,6 +336,9 @@ __all__ = [
     "SelectionProbability",
     "SemanticBatchError",
     "SemanticBatchConcatLimits",
+    "EpisodeRootRetryCurriculum",
+    "RunSamplingError",
+    "RunSamplingMode",
     "SegmentCloseReason",
     "TerminalAttemptOutcome",
     "TerminalAccountingBatch",
@@ -350,6 +359,7 @@ __all__ = [
     "evaluate_paired_held_out_behaviors",
     "floor_progress_terminal_return",
     "iter_payload_arrays",
+    "matched_episode_floor_context_leave_one_out_advantages",
     "matched_floor_context_leave_one_out_advantages",
     "matched_floor_leave_one_out_advantages",
     "remaining_floor_progress_return",

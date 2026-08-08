@@ -25,11 +25,18 @@ from sts_learning.evaluate_run_potions import (
     run_run_potion_comparison,
 )
 from sts_learning.combat_potion_lane import CombatPotionLane
+from sts_learning.published_run_behavior import (
+    PublishedRunBehaviorError,
+    recover_published_run_behavior,
+)
+from sts_learning.run_sampling import RunSamplingMode
+from sts_learning.terminal_returns import TerminalAdvantageMode
 from sts_learning.torch_combat_session_config import CombatSessionBridge
 from sts_learning.torch_session_config import (
     CategoricalSessionBridge,
 )
 from sts_learning.train_run import (
+    RunTrainingCommandError,
     RunTrainingCommandConfig,
     run_run_training,
 )
@@ -79,6 +86,7 @@ def test_run_evaluation_uses_frozen_combat_behavior_without_recovery(
 
     assert summary["schema"] == "sts-learning-run-held-out-evaluation-v3"
     assert summary["behavior_training_kind"] == "combat"
+    assert summary["behavior_run_sampling_mode"] is None
     assert summary["combat_potion_lane"] == "all"
     assert summary["requested_combat_potion_lane"] == "trained"
     assert summary["kind"] == "completed"
@@ -226,16 +234,18 @@ def test_run_training_warm_starts_publishes_and_evaluates(
     )
     assert records[0]["advantage_mode"] == "raw_return"
     assert records[0]["decision_scope"] == "all"
+    assert records[0]["sampling_mode"] == "independent-cohorts"
     assert records[0]["requested_run_potion_lane"] == "trained"
     assert records[0]["run_potion_lane"] == "all"
     stdout = capsys.readouterr().out
     assert (
         "run_generation=0 promoted=true attempts=2 victories=2 defeats=0 "
-        "floor_sum=80 floor_counts=40:2"
+        "episodes=2 recoveries=0 floor_sum=80 floor_counts=40:2"
     ) in stdout
     assert (
         "run_training_complete=true potion_lane=all "
-        "potion_lane_request=trained generations=1 optimizer_steps=1 "
+        "potion_lane_request=trained sampling_mode=independent-cohorts "
+        "generations=1 optimizer_steps=1 "
         "held_out_attempts=2/2 held_out_victories=2 "
         "held_out_floor_sum=80 held_out_floor_counts=40:2"
     ) in stdout
@@ -254,12 +264,68 @@ def test_run_training_warm_starts_publishes_and_evaluates(
         run_bridge=run_bridge,
     )
     assert reevaluation["behavior_training_kind"] == "run"
+    assert reevaluation["behavior_run_sampling_mode"] == "independent-cohorts"
     assert reevaluation["behavior_run_objective"] == {
         "attempts_per_update": 2,
         "advantage_mode": "raw_return",
         "decision_scope": "all",
     }
     assert reevaluation["terminal_attempts"] == 2
+
+    records[-1]["sampling_mode"] = "episode-root-retries"
+    (output / "training.jsonl").write_text(
+        "".join(
+            json.dumps(record, separators=(",", ":"), sort_keys=True) + "\n"
+            for record in records
+        ),
+        encoding="utf-8",
+        newline="\n",
+    )
+    with pytest.raises(PublishedRunBehaviorError, match="sampling mode changed"):
+        recover_published_run_behavior(output, run_bridge, (777,))
+
+
+def test_run_training_binds_episode_matched_credit_to_root_retries(
+    tmp_path: Path,
+) -> None:
+    behavior = tmp_path / "behavior"
+    behavior.mkdir()
+    common = dict(
+        warm_start_behavior=behavior,
+        output=tmp_path / "output",
+        slot_count=1,
+        generations=1,
+        attempts_per_update=2,
+        max_batch_steps_per_generation=10,
+        model_seed=1,
+        behavior_seed=2,
+        training_seed_start=3,
+        evaluation_attempts=1,
+        evaluation_max_batch_steps=10,
+        evaluation_behavior_seed=4,
+        held_out_seed_start=5,
+    )
+
+    with pytest.raises(RunTrainingCommandError, match="requires episode-root"):
+        RunTrainingCommandConfig(
+            **common,
+            advantage_mode=(
+                TerminalAdvantageMode.MATCHED_EPISODE_FLOOR_CONTEXT_LEAVE_ONE_OUT
+            ),
+        )
+    with pytest.raises(RunTrainingCommandError, match="require episode-matched"):
+        RunTrainingCommandConfig(
+            **common,
+            sampling_mode=RunSamplingMode.EPISODE_ROOT_RETRIES,
+        )
+    with pytest.raises(RunTrainingCommandError, match="slot_count=1"):
+        RunTrainingCommandConfig(
+            **{**common, "slot_count": 2, "attempts_per_update": 2},
+            advantage_mode=(
+                TerminalAdvantageMode.MATCHED_EPISODE_FLOOR_CONTEXT_LEAVE_ONE_OUT
+            ),
+            sampling_mode=RunSamplingMode.EPISODE_ROOT_RETRIES,
+        )
 
 
 def test_run_training_inherits_the_warm_start_potion_lane(

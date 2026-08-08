@@ -812,6 +812,10 @@ provenance-bound floor-plus-context mode can apply that tighter comparison to
 the loss as a separate ablation. It removes floor-only contrasts between unlike
 combat/strategic sites and leaves unsupported groups explicitly at zero; it is
 not an assumed improvement.
+For the explicit paired-root sampling ablation, a third matcher additionally
+binds the episode seed and generation. Only retries of the same exact episode
+root may then baseline one another at a matching floor and typed context;
+another seed is unsupported even when every visible progress field agrees.
 One typed objective configuration owns terminal-return semantics, advantage
 mode, and the number of attempts per update. The trainer implementation
 artifact binds the return kind, target floor, advantage mode, decision scope, and attempts per
@@ -860,6 +864,16 @@ aggregate progress and the optional live binding. The runner itself remains an
 in-process composition; exact restart is owned by the separate explicit
 six-component resume boundary and can never be inferred from a model checkpoint
 alone.
+The separate paired-root generation mode is deliberately single-slot. After a
+defeat it restores the unchanged episode-root checkpoint, preserving simulator
+RNG while the stochastic behavior stream produces another trajectory. A
+victory completes immediately; later attempts may use the next scheduled root.
+At the exact attempt-update boundary the curriculum completes the current
+defeat instead of restoring it, so the environment is terminal before optimizer
+mutation and no episode crosses promotion. The recovery budget is exactly one
+less than the attempt batch, episode-matched credit is mandatory, and held-out
+evaluation remains structurally zero-recovery. Generation evidence reports both
+distinct sampled episodes and recovery count.
 The process-resume admission boundary is deliberately strict. It accepts only
 an environment between decisions with no terminal accounting in flight, a full
 episode-root bank, an empty experience buffer, no open attempt-assembly state,

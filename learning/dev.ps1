@@ -23,8 +23,10 @@ param(
     [int]$EvaluationAttempts = 16,
     [int]$EvaluationMaxBatchSteps = 4096,
     [long]$EvaluationBehaviorSeed = 100000,
-    [ValidateSet("raw-return", "leave-one-out", "matched-floor", "matched-floor-context")]
+    [ValidateSet("raw-return", "leave-one-out", "matched-floor", "matched-floor-context", "matched-episode-floor-context")]
     [string]$AdvantageMode = "raw-return",
+    [ValidateSet("independent-cohorts", "episode-root-retries")]
+    [string]$SamplingMode = "independent-cohorts",
     [ValidateSet("all", "strategic")]
     [string]$DecisionScope = "all",
     [ValidateSet("all", "never", "root-slots")]
@@ -323,6 +325,7 @@ switch ($Command) {
                 --held-out-seed-start $HeldOutSeedStart `
                 --advantage-mode $AdvantageMode `
                 --decision-scope $DecisionScope `
+                --sampling-mode $SamplingMode `
                 --potion-lane $RunPotionLane
             if ($LASTEXITCODE -ne 0) {
                 throw "run training command failed"

@@ -629,7 +629,7 @@ Configure one stable Python 3.12 training runtime once, then use the small
 .\learning\dev.ps1 evaluate-combat-potions -Artifact <held-out-roots.bin> -Behavior <training-dir> -Output <fresh-dir> -Roots <count> -Replicates <count>
 .\learning\dev.ps1 evaluate-run -Behavior <training-dir> -Output <fresh-dir> -Attempts 8 -MaxBatchSteps 4096 -BehaviorSeed 10000 -HeldOutSeedStart 0 -RunPotionLane trained
 .\learning\dev.ps1 evaluate-run-potions -Behavior <training-dir> -Output <fresh-dir> -Attempts 8 -MaxBatchSteps 4096 -BehaviorSeed 10000 -HeldOutSeedStart 0
-.\learning\dev.ps1 train-run -Behavior <combat-training-dir> -Output <fresh-dir> -Slots 4 -Generations 1 -AttemptsPerUpdate 8 -MaxBatchSteps 4096 -EvaluationAttempts 16 -HeldOutSeedStart 1000000 -AdvantageMode raw-return -DecisionScope all -RunPotionLane trained
+.\learning\dev.ps1 train-run -Behavior <combat-training-dir> -Output <fresh-dir> -Slots 4 -Generations 1 -AttemptsPerUpdate 8 -MaxBatchSteps 4096 -EvaluationAttempts 16 -HeldOutSeedStart 1000000 -AdvantageMode raw-return -DecisionScope all -SamplingMode independent-cohorts -RunPotionLane trained
 ```
 
 `configure` installs the tool requirements declared by the local
@@ -807,12 +807,13 @@ objective when applicable.
 Use `train-run` for the first whole-run on-policy handoff. `-Behavior` is a
 verified completed `train-combat` directory whose scorer becomes an independent
 generation-zero parameter copy. Training uses the `TRAINING` seed partition,
-zero recovery, the terminal floor-progress return, and exactly
+the terminal floor-progress return, and exactly
 `-AttemptsPerUpdate` complete runs per generation. The attempt count must be a
 multiple of `-Slots`: faster slots park at terminal until the complete slot
 cohort finishes, and the next cohort is reset only before another old-behavior
 cohort or after promotion to the new behavior. No run may cross a behavior
-manifest boundary. Each generation reports its
+manifest boundary. This default `independent-cohorts` mode uses zero recovery.
+Each generation reports its
 own terminal-floor histogram. The command publishes only after every requested
 generation completes, but publishes only the frozen behavior checkpoint and
 manifest—not optimizer or environment resume state. It then evaluates the
@@ -823,9 +824,10 @@ targets and their matched-floor leave-one-out advantages, including sign counts
 and per-decision-floor, combat/strategic scope, and typed strategic-context
 aggregates. Context rows include their strategic-scope attempt-equal weight and a
 non-authoritative floor-plus-context leave-one-out comparison; unsupported
-context groups remain zero. This is a target-distribution comparison
-only; training still uses the configured terminal objective and the diagnostic
-does not price HP, gold, or potions.
+context groups remain zero. The overall diagnostic also reports an episode-plus-
+floor-plus-context comparison. This is a target-distribution comparison only;
+training still uses the configured terminal objective and the diagnostic does
+not price HP, gold, or potions.
 A generation that
 hits `-MaxBatchSteps` before an optimizer step fails without publishing its
 partial live update.
@@ -849,6 +851,15 @@ typed combat/strategic context. It therefore gives zero advantage to a context
 observed in only one attempt instead of borrowing signal from a different site
 on the same floor. It is separately bound into trainer provenance and remains
 an ablation, not the maintained default.
+`-SamplingMode episode-root-retries` is a single-slot training ablation. It
+restores the exact episode root after each defeat until the fixed attempt-update
+boundary; victories finish normally, and the boundary defeat is completed so
+no live episode crosses promotion. It requires
+`-AdvantageMode matched-episode-floor-context`, which compares only retries from
+the same episode seed and generation at the same floor and typed context. The
+training recovery budget is derived as `AttemptsPerUpdate - 1`; held-out
+evaluation still uses zero recovery. Treat recovery count as sampling evidence,
+not reward or a competence metric.
 `-DecisionScope all` is the maintained default. The explicit `strategic`
 ablation removes combat-boundary rows from the whole-run loss and renormalizes
 each attempt over its remaining strategic decisions; it does not change the

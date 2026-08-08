@@ -74,6 +74,7 @@ class CreditAssignmentComparison:
     remaining_progress: DecisionCreditDistribution
     matched_floor_advantage: DecisionCreditDistribution
     matched_floor_context_advantage: DecisionCreditDistribution
+    matched_episode_floor_context_advantage: DecisionCreditDistribution
     by_decision_floor: tuple[DecisionFloorCreditComparison, ...]
     by_combat_scope: tuple[DecisionScopeCreditComparison, ...]
     by_strategic_context: tuple[DecisionStrategicContextCreditComparison, ...]
@@ -81,6 +82,8 @@ class CreditAssignmentComparison:
 
 @dataclass(frozen=True)
 class _DecisionCreditRow:
+    episode_seed: int
+    episode_generation: int
     floor: int
     is_combat: bool
     strategic_context_kind: int | None
@@ -97,6 +100,9 @@ def compare_credit_assignment(
     normalized, aligned = _aligned_credit_rows(attempts, config)
     matched_aligned = _matched_floor_advantages(aligned)
     context_matched_aligned = _matched_floor_context_advantages(aligned)
+    episode_context_matched_aligned = (
+        _matched_episode_floor_context_advantages(aligned)
+    )
     broadcast = [
         row.terminal_broadcast
         for attempt in aligned
@@ -118,6 +124,12 @@ def compare_credit_assignment(
     context_matched_values = [
         value
         for attempt in context_matched_aligned
+        for batch in attempt
+        for value in batch
+    ]
+    episode_context_matched_values = [
+        value
+        for attempt in episode_context_matched_aligned
         for batch in attempt
         for value in batch
     ]
@@ -198,6 +210,9 @@ def compare_credit_assignment(
         remaining_progress=_distribution(remaining),
         matched_floor_advantage=_distribution(matched),
         matched_floor_context_advantage=_distribution(context_matched_values),
+        matched_episode_floor_context_advantage=_distribution(
+            episode_context_matched_values
+        ),
         by_decision_floor=tuple(
             DecisionFloorCreditComparison(
                 floor=floor,
@@ -256,6 +271,16 @@ def matched_floor_context_leave_one_out_advantages(
     return _matched_floor_context_advantages(aligned)
 
 
+def matched_episode_floor_context_leave_one_out_advantages(
+    attempts: Sequence[CompletedAttemptExperience],
+    config: FloorProgressReturnConfig,
+) -> tuple[tuple[tuple[float, ...], ...], ...]:
+    """Return aligned advantages matched by episode, floor, and context."""
+
+    _, aligned = _aligned_credit_rows(attempts, config)
+    return _matched_episode_floor_context_advantages(aligned)
+
+
 def _aligned_credit_rows(
     attempts: Sequence[CompletedAttemptExperience],
     config: FloorProgressReturnConfig,
@@ -290,6 +315,8 @@ def _aligned_credit_rows(
                 )
             batch_rows = tuple(
                 _DecisionCreditRow(
+                    episode_seed=progress.episode_seed,
+                    episode_generation=attempt.lineage.key.episode_generation,
                     floor=progress.floor,
                     is_combat=progress.is_combat,
                     strategic_context_kind=progress.strategic_context_kind,
@@ -302,6 +329,13 @@ def _aligned_credit_rows(
                 )
                 for progress in batch.run_progress
             )
+            if any(
+                row.episode_seed != attempt.lineage.key.episode_seed
+                for row in batch_rows
+            ):
+                raise CreditAssignmentError(
+                    "decision-time seed disagrees with attempt lineage"
+                )
             attempt_batches.append(batch_rows)
             observed_decisions += len(batch_rows)
         if observed_decisions != attempt.decision_count:
@@ -324,6 +358,21 @@ def _matched_floor_context_advantages(
     return _matched_group_advantages(
         aligned,
         lambda row: (
+            row.floor,
+            row.is_combat,
+            row.strategic_context_kind,
+        ),
+    )
+
+
+def _matched_episode_floor_context_advantages(
+    aligned: tuple[tuple[tuple[_DecisionCreditRow, ...], ...], ...],
+) -> tuple[tuple[tuple[float, ...], ...], ...]:
+    return _matched_group_advantages(
+        aligned,
+        lambda row: (
+            row.episode_seed,
+            row.episode_generation,
             row.floor,
             row.is_combat,
             row.strategic_context_kind,
