@@ -276,6 +276,10 @@ An exact encounter selector binds one canonical `EncounterId`; the bridge
 normalizes it through the simulator's typed parser so an unknown name fails
 before any run advances. Variable members of encounters such as `GremlinGang`
 do not change that identity.
+Persisting the identity changed the serialized run checkpoint layout. Combat
+root artifacts and cross-process learning checkpoints therefore use format
+version 2 and reject version 1 before payload decoding; old evidence is
+regenerated rather than guessed or silently migrated.
 
 Terminal learning steps retain the typed run result plus public terminal act,
 floor, HP, max HP, and gold. The Python bridge returns those facts as compact

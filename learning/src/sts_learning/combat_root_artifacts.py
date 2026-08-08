@@ -72,7 +72,7 @@ def load_combat_root_source(
         )
     except Exception as error:
         raise TorchCombatSessionError(
-            "combat-root artifact import failed"
+            f"combat-root artifact import failed: {error}"
         ) from error
     if not callable(getattr(source, "combat_group", None)):
         raise TorchCombatSessionError(

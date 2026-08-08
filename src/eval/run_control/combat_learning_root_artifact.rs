@@ -15,7 +15,7 @@ use super::{
 };
 
 pub const COMBAT_LEARNING_ROOT_ARTIFACT_MAGIC: &[u8] = b"STS-COMBAT-LEARNING-ROOTS\0";
-pub const COMBAT_LEARNING_ROOT_ARTIFACT_FORMAT_VERSION: u32 = 1;
+pub const COMBAT_LEARNING_ROOT_ARTIFACT_FORMAT_VERSION: u32 = 2;
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -279,6 +279,13 @@ mod tests {
         }
         assert!(CombatLearningRootBatchArtifactV1::decode(&payload, 1, 1024 * 1024,).is_err());
         assert!(CombatLearningRootBatchArtifactV1::decode(&payload, 2, 16).is_err());
+        let mut legacy_version = payload.clone();
+        let version_start = COMBAT_LEARNING_ROOT_ARTIFACT_MAGIC.len();
+        legacy_version[version_start..version_start + std::mem::size_of::<u32>()]
+            .copy_from_slice(&1u32.to_be_bytes());
+        let error = CombatLearningRootBatchArtifactV1::decode(&legacy_version, 2, 1024 * 1024)
+            .expect_err("reject the pre-encounter-identity artifact version");
+        assert!(error.contains("format version is unsupported"));
     }
 
     #[test]

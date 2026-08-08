@@ -713,6 +713,9 @@ For a concrete encounter corpus, pass `-RequiredEncounterId GremlinGang` (or
 another canonical ID). The installed bridge normalizes the ID before any run
 advances, and the receipt records the normalized contract. Variable member
 composition remains part of the exact root rather than the selector identity.
+Encounter-aware roots use opaque artifact format version 2. Version 1 roots
+fail explicitly as incompatible and must be recollected from their recorded
+seed/behavior provenance.
 It reports both the requested run potion lane and the resolved combat potion
 lane, so `trained` inheritance never has to be inferred from a lone `never` or
 `all` value.
