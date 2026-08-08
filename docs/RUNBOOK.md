@@ -722,8 +722,10 @@ replacement in that slot remains unavailable.
 Use `evaluate-combat` on a distinct opaque root artifact after publication. The
 behavior directory must be an exact completed `train-combat` output containing
 one durable checkpoint and manifest. The evaluator verifies their complete
-provenance, gives every root an independent explicit behavior RNG stream, and
-writes only `evaluation.json` with per-replicate win, HP/max HP, gold, turn,
+provenance, recovers the training artifact digest and potion lane, and rejects
+an evaluation artifact with the same digest before constructing combat groups.
+It gives every root an independent explicit behavior RNG stream and writes only
+`evaluation.json` with per-replicate win, HP/max HP, gold, turn,
 concrete starting/final/lost/gained potion identities, potion use/discard
 counts, and card facts plus compact aggregates. The completion line includes each root's
 site and starting potion identities, so routine resource-loss classification

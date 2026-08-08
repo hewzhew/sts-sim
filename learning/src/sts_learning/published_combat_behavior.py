@@ -11,6 +11,11 @@ from typing import Mapping
 import torch
 
 from .combat_objective import CombatWinObjectiveConfig
+from .combat_potion_lane import (
+    CombatPotionLane,
+    CombatPotionLaneError,
+    normalize_combat_potion_slots,
+)
 from .manifest_catalog import BoundedBehaviorManifestCatalog
 from .manifests import (
     BehaviorManifestRegistry,
@@ -48,6 +53,9 @@ class PublishedCombatBehavior:
     checkpoint_id: ManifestArtifactId
     training_step: int
     training_root_count: int
+    training_artifact_sha256: str
+    training_potion_lane: CombatPotionLane
+    training_potion_slots: tuple[int, ...]
     policies: tuple[FrozenCategoricalTorchPolicy, ...]
 
     def __post_init__(self) -> None:
@@ -73,6 +81,23 @@ class PublishedCombatBehavior:
             "training_root_count",
             _positive(self.training_root_count, "training_root_count"),
         )
+        object.__setattr__(
+            self,
+            "training_artifact_sha256",
+            _sha256(self.training_artifact_sha256, "training_artifact_sha256"),
+        )
+        if not isinstance(self.training_potion_lane, CombatPotionLane):
+            raise PublishedCombatBehaviorError(
+                "published combat behavior requires a typed training potion lane"
+            )
+        try:
+            potion_slots = normalize_combat_potion_slots(
+                self.training_potion_lane,
+                self.training_potion_slots,
+            )
+        except CombatPotionLaneError as error:
+            raise PublishedCombatBehaviorError(str(error)) from error
+        object.__setattr__(self, "training_potion_slots", potion_slots)
         policies = tuple(self.policies)
         if not policies or not all(
             isinstance(policy, FrozenCategoricalTorchPolicy)
@@ -131,6 +156,17 @@ def recover_published_combat_behavior(
     training_root_count = _positive(
         configuration.get("root_count"),
         "training root_count",
+    )
+    training_artifact_sha256 = _sha256(
+        configuration.get("artifact_sha256"),
+        "training artifact_sha256",
+    )
+    training_potion_lane = _potion_lane(
+        configuration.get("potion_lane"),
+    )
+    training_potion_slots = _potion_slots(
+        configuration.get("potion_slots"),
+        training_potion_lane,
     )
     profile = replace(
         CombatWinSessionProfile(),
@@ -215,6 +251,9 @@ def recover_published_combat_behavior(
         checkpoint_id=manifest.model_checkpoint,
         training_step=training_step,
         training_root_count=training_root_count,
+        training_artifact_sha256=training_artifact_sha256,
+        training_potion_lane=training_potion_lane,
+        training_potion_slots=training_potion_slots,
         policies=(first,) + tuple(
             first.fork(generator) for generator in generators[1:]
         ),
@@ -287,6 +326,47 @@ def _required_string(value: Mapping[str, object], name: str) -> str:
     if not isinstance(field, str) or not field:
         raise PublishedCombatBehaviorError(f"{name} must be a non-empty string")
     return field
+
+
+def _sha256(value: object, name: str) -> str:
+    if not isinstance(value, str) or len(value) != 64:
+        raise PublishedCombatBehaviorError(
+            f"{name} must be a lowercase SHA-256 digest"
+        )
+    try:
+        bytes.fromhex(value)
+    except ValueError as error:
+        raise PublishedCombatBehaviorError(
+            f"{name} must be a lowercase SHA-256 digest"
+        ) from error
+    if value != value.lower():
+        raise PublishedCombatBehaviorError(
+            f"{name} must be a lowercase SHA-256 digest"
+        )
+    return value
+
+
+def _potion_lane(value: object) -> CombatPotionLane:
+    try:
+        return CombatPotionLane(value)
+    except (TypeError, ValueError) as error:
+        raise PublishedCombatBehaviorError(
+            "training potion_lane is unsupported"
+        ) from error
+
+
+def _potion_slots(
+    value: object,
+    lane: CombatPotionLane,
+) -> tuple[int, ...]:
+    if not isinstance(value, list):
+        raise PublishedCombatBehaviorError(
+            "training potion_slots must be an array"
+        )
+    try:
+        return normalize_combat_potion_slots(lane, value)
+    except CombatPotionLaneError as error:
+        raise PublishedCombatBehaviorError(str(error)) from error
 
 
 def _positive(value: object, name: str) -> int:

@@ -36,7 +36,7 @@ from .torch_combat_session_config import (
 )
 
 
-COMBAT_EVALUATION_SCHEMA = "sts-learning-combat-held-out-evaluation-v5"
+COMBAT_EVALUATION_SCHEMA = "sts-learning-combat-held-out-evaluation-v6"
 
 
 class CombatEvaluationCommandError(RuntimeError):
@@ -139,17 +139,22 @@ def run_combat_evaluation(
         config.artifact,
         max_bytes=session_limits.max_artifact_bytes,
     )
-    source = load_combat_root_source(
-        active_bridge,
-        artifact,
-        expected_roots=config.root_count,
-        max_bytes=session_limits.max_artifact_bytes,
-    )
+    artifact_sha256 = hashlib.sha256(artifact).hexdigest()
     recovered = recover_published_combat_behavior(
         config.behavior,
         active_bridge,
         session_limits,
         config.behavior_seeds,
+    )
+    if artifact_sha256 == recovered.training_artifact_sha256:
+        raise CombatEvaluationCommandError(
+            "combat held-out evaluation artifact matches the training artifact"
+        )
+    source = load_combat_root_source(
+        active_bridge,
+        artifact,
+        expected_roots=config.root_count,
+        max_bytes=session_limits.max_artifact_bytes,
     )
     evaluator = CombatHeldOutEvaluator(
         source,
@@ -173,7 +178,7 @@ def run_combat_evaluation(
         recovered,
         result,
         artifact_bytes=len(artifact),
-        artifact_sha256=hashlib.sha256(artifact).hexdigest(),
+        artifact_sha256=artifact_sha256,
         elapsed=elapsed,
     )
     config.output.mkdir(parents=True, exist_ok=True)
@@ -334,6 +339,11 @@ def _summary(
         "behavior_checkpoint_id": recovered.checkpoint_id.digest.hex(),
         "behavior_training_step": recovered.training_step,
         "behavior_training_root_count": recovered.training_root_count,
+        "behavior_training_artifact_sha256": (
+            recovered.training_artifact_sha256
+        ),
+        "behavior_training_potion_lane": recovered.training_potion_lane.value,
+        "behavior_training_potion_slots": recovered.training_potion_slots,
         "root_count": config.root_count,
         "replicate_count": config.replicate_count,
         "behavior_seeds": config.behavior_seeds,

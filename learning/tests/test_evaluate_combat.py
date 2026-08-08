@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from collections.abc import Sequence
 from pathlib import Path
@@ -14,6 +15,7 @@ from sts_learning.combat_evaluation import combat_observed_resource_frontier
 from sts_learning.combat_outcomes import CombatTerminalOutcome
 from sts_learning.evaluate_combat import (
     CombatEvaluationCommandConfig,
+    CombatEvaluationCommandError,
     run_combat_evaluation,
 )
 from sts_learning.evaluate_combat_potions import (
@@ -109,6 +111,23 @@ def test_evaluation_recovers_published_behavior_without_training_or_experience(
     training_journal_before = (behavior / "training.jsonl").read_bytes()
     output = tmp_path / "held-out"
 
+    with pytest.raises(
+        CombatEvaluationCommandError,
+        match="held-out evaluation artifact matches the training artifact",
+    ):
+        run_combat_evaluation(
+            CombatEvaluationCommandConfig(
+                artifact=training_artifact,
+                behavior=behavior,
+                output=tmp_path / "leaked-evaluation",
+                root_count=2,
+                replicate_count=2,
+                behavior_seed_base=1_000,
+            ),
+            bridge=bridge,
+        )
+    assert not (tmp_path / "leaked-evaluation").exists()
+
     summary = run_combat_evaluation(
         CombatEvaluationCommandConfig(
             artifact=evaluation_artifact,
@@ -121,7 +140,7 @@ def test_evaluation_recovers_published_behavior_without_training_or_experience(
         bridge=bridge,
     )
 
-    assert summary["schema"] == "sts-learning-combat-held-out-evaluation-v5"
+    assert summary["schema"] == "sts-learning-combat-held-out-evaluation-v6"
     assert summary["potion_lane"] == "all"
     assert summary["potion_slots"] == ()
     assert training_source.calls == [(0, None), (1, None)]
@@ -130,6 +149,11 @@ def test_evaluation_recovers_published_behavior_without_training_or_experience(
     assert summary["losses"] == 1
     assert summary["behavior_training_step"] == 1
     assert summary["behavior_training_root_count"] == 2
+    assert summary["behavior_training_artifact_sha256"] == hashlib.sha256(
+        training_artifact.read_bytes()
+    ).hexdigest()
+    assert summary["behavior_training_potion_lane"] == "all"
+    assert summary["behavior_training_potion_slots"] == ()
     assert summary["final_hp_sum"] == 201
     assert summary["gold_delta_sum"] == 0
     assert summary["lost_potion_ids"] == {"EntropicBrew": 2}

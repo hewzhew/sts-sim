@@ -178,6 +178,9 @@ def _validate_lane_identity(results: tuple[dict[str, object], ...]) -> None:
         first["artifact_sha256"],
         first["behavior_manifest_id"],
         first["behavior_checkpoint_id"],
+        first["behavior_training_artifact_sha256"],
+        first["behavior_training_potion_lane"],
+        tuple(first["behavior_training_potion_slots"]),
         tuple(first["behavior_seeds"]),
     )
     roots = tuple(
@@ -189,6 +192,9 @@ def _validate_lane_identity(results: tuple[dict[str, object], ...]) -> None:
             result["artifact_sha256"],
             result["behavior_manifest_id"],
             result["behavior_checkpoint_id"],
+            result["behavior_training_artifact_sha256"],
+            result["behavior_training_potion_lane"],
+            tuple(result["behavior_training_potion_slots"]),
             tuple(result["behavior_seeds"]),
         ) != boundary:
             raise CombatEvaluationCommandError(
@@ -216,6 +222,15 @@ def _summary(
         "behavior": str(config.behavior),
         "behavior_manifest_id": first["behavior_manifest_id"],
         "behavior_checkpoint_id": first["behavior_checkpoint_id"],
+        "behavior_training_artifact_sha256": first[
+            "behavior_training_artifact_sha256"
+        ],
+        "behavior_training_potion_lane": first[
+            "behavior_training_potion_lane"
+        ],
+        "behavior_training_potion_slots": first[
+            "behavior_training_potion_slots"
+        ],
         "root_count": config.root_count,
         "replicate_count": config.replicate_count,
         "behavior_seeds": first["behavior_seeds"],

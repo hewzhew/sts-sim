@@ -297,6 +297,10 @@ concrete starting/final/lost/gained potion identities, and use/discard counts
 independently inspectable. A lost identity is a multiset inventory fact, not a
 claim about whether spending it was strategically correct. Cross-combat value
 requires an exact run continuation and remains outside the combat evaluator.
+Published behavior recovery also retains the training root artifact digest and
+training potion lane from the bounded journal. Evaluation rejects an artifact
+with that same digest before constructing any combat groups, so a training-set
+measurement cannot be labeled held-out.
 Each evaluation also declares one model-facing potion lane. `All` exposes the
 ordinary learning candidate surface; `Never` removes every potion use and
 discard candidate; `RootSlots` admits only the exact starting potion identities

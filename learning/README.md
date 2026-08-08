@@ -222,8 +222,10 @@ Evaluate the published frozen behavior on a distinct held-out root batch with:
 ```
 
 This command verifies the exact durable manifest, checkpoint, maintained model
-profile, schema, trainer provenance, and training step before evaluation. It
-uses independent explicit RNG streams per root and writes one compact
+profile, schema, trainer provenance, training step, training root artifact
+digest, and training potion lane before evaluation. It rejects the training
+artifact itself before constructing combat groups, uses independent explicit
+RNG streams per root, and writes one compact
 `evaluation.json`; it creates no optimizer, trainer, experience collector, or
 promotion owner. The root and terminal records preserve HP/max HP, gold,
 concrete potion-slot identities, lost/gained identity deltas, potion use/discard
