@@ -266,6 +266,12 @@ transitions plus ordered canonical enemy identities; it does not retain
 decisions, sessions, or a second trajectory format. History is sliced strictly
 before the captured `(act, floor)` boundary, even when another slot keeps the
 batch alive and the captured episode later advances.
+The minimum usable-potion selector may be zero for an unconditioned run-derived
+combat corpus; concrete potion rescue corpora still bind an exact identity and
+slot.
+An optional distinct-encounter contract deduplicates the unordered canonical
+enemy multiset inside one batch. It is explicit rather than a silent default,
+because repeated exact roots can still be useful for distributional training.
 
 Terminal learning steps retain the typed run result plus public terminal act,
 floor, HP, max HP, and gold. The Python bridge returns those facts as compact

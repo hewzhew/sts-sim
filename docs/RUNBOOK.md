@@ -703,6 +703,12 @@ the behavior's model-facing lane is `never`. Floor and usable-potion filters
 are typed root facts. It merges in Rust and writes only after all requested
 roots have been collected; an incomplete bound leaves the output absent. The
 single-line receipt reports seed/site/resource facts and artifact identity.
+Set `-MinUsablePotions 0` to collect ordinary run-derived combat roots without
+conditioning the corpus on potion ownership. An exact potion rescue corpus
+still supplies both `-RequiredPotionId` and `-RequiredPotionSlot`.
+Add `-DistinctEncounters` for a small diversity census or training batch; the
+collector then admits at most one root for each unordered canonical enemy
+multiset and reports the active contract in its receipt.
 It reports both the requested run potion lane and the resolved combat potion
 lane, so `trained` inheritance never has to be inferred from a lone `never` or
 `all` value.

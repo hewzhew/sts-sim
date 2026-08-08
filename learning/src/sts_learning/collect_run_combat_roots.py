@@ -88,6 +88,7 @@ class RunCombatRootCollectionConfig:
     potion_lane: RunPotionLane = RunPotionLane.TRAINED
     max_artifact_bytes: int = 16 * 1024 * 1024
     required_potion: RequiredPotionSlot | None = None
+    distinct_encounters: bool = False
 
     def __post_init__(self) -> None:
         behavior = Path(self.behavior).resolve()
@@ -119,6 +120,10 @@ class RunCombatRootCollectionConfig:
             raise RunCombatRootCollectionError(
                 "required potion selector must be typed"
             )
+        if not isinstance(self.distinct_encounters, bool):
+            raise RunCombatRootCollectionError(
+                "distinct encounter selector must be boolean"
+            )
         object.__setattr__(self, "behavior", behavior)
         object.__setattr__(self, "output", output)
         root_count = _positive(self.root_count, "root_count")
@@ -131,7 +136,7 @@ class RunCombatRootCollectionConfig:
         object.__setattr__(
             self,
             "min_usable_potions",
-            _positive(self.min_usable_potions, "min_usable_potions"),
+            _nonnegative(self.min_usable_potions, "min_usable_potions"),
         )
         object.__setattr__(
             self,
@@ -164,6 +169,7 @@ class _RootCaptureSink:
         self.payloads: list[bytes] = []
         self.roots: list[CapturedRunCombatRoot] = []
         self._captured_seeds: set[int] = set()
+        self._captured_encounters: set[tuple[str, ...]] = set()
 
     @property
     def complete(self) -> bool:
@@ -231,6 +237,12 @@ class _RootCaptureSink:
                 or context.potion_ids[required.slot_index] != required.potion_id
             ):
                 continue
+            encounter = tuple(sorted(context.monster_ids))
+            if (
+                self.config.distinct_encounters
+                and encounter in self._captured_encounters
+            ):
+                continue
             payload = bytes(
                 env.combat_root_artifact_bytes(
                     [slot],
@@ -256,6 +268,7 @@ class _RootCaptureSink:
                 )
             )
             self._captured_seeds.add(context.seed)
+            self._captured_encounters.add(encounter)
 
 
 class _CapturingEnvironment:
@@ -472,6 +485,7 @@ def run_run_combat_root_collection(
         "training_seed_end": driver.schedule.next_candidate,
         "min_floor": config.min_floor,
         "min_usable_potions": config.min_usable_potions,
+        "distinct_encounters": config.distinct_encounters,
         "required_potion_id": (
             None
             if config.required_potion is None
@@ -591,7 +605,7 @@ def _seed(value: object, name: str) -> int:
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
-            "Capture exact later-combat roots with typed potion inventory while "
+            "Capture exact run-derived combat roots with typed resource context while "
             "a frozen behavior advances training-partition runs."
         )
     )
@@ -606,6 +620,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--min-usable-potions", type=int, default=1)
     parser.add_argument("--required-potion-id")
     parser.add_argument("--required-potion-slot", type=int)
+    parser.add_argument("--distinct-encounters", action="store_true")
     parser.add_argument(
         "--potion-lane",
         choices=tuple(lane.value for lane in RunPotionLane),
@@ -646,6 +661,7 @@ def main() -> int:
             potion_lane=RunPotionLane(arguments.potion_lane),
             max_artifact_bytes=arguments.max_artifact_bytes,
             required_potion=required_potion,
+            distinct_encounters=arguments.distinct_encounters,
         )
     )
     return 0

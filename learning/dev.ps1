@@ -41,6 +41,7 @@ param(
     [ValidateSet("trained", "all", "never")]
     [string]$RunPotionLane = "trained",
     [int[]]$PotionSlots = @(),
+    [switch]$DistinctEncounters,
     [ValidateSet("dev", "release")]
     [string]$BridgeProfile = "release"
 )
@@ -330,6 +331,9 @@ switch ($Command) {
                 "--required-potion-id", $RequiredPotionId,
                 "--required-potion-slot", $RequiredPotionSlot
             )
+        }
+        if ($DistinctEncounters) {
+            $requiredPotionArguments += @("--distinct-encounters")
         }
         Invoke-Doctor $pythonPath
         Invoke-WithLearningPath {

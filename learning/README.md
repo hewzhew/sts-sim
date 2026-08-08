@@ -188,6 +188,11 @@ opaque batch only after reaching its declared root target; a step/deadline,
 identity, alignment, or byte failure leaves no output. Its receipt records the
 collected seed/site/resource facts but assigns no potion value and supplies no
 teacher labels.
+The minimum usable-potion filter accepts zero, allowing an ordinary
+run-derived combat corpus that is not biased toward potion-bearing paths.
+An explicit distinct-encounter mode admits at most one root for each unordered
+canonical enemy multiset within a batch; repeated encounters remain the normal
+default when distributional frequency is the intended evidence.
 It keeps the requested run potion lane separate from the resolved combat
 potion lane, including when `trained` inherits `all` or `never`.
 Its receipt composes the existing typed run-resource trace and includes prior

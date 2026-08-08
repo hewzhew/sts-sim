@@ -21,6 +21,8 @@ from sts_learning.evaluate_run import RunPotionLane  # noqa: E402
 
 
 class _RootCapturingWinningEnv(NumpyWinningBatchEnv):
+    potion_ids = ("FearPotion", None, None)
+
     @staticmethod
     def supported_potion_ids() -> list[str]:
         return ["FearPotion", "FirePotion"]
@@ -40,7 +42,7 @@ class _RootCapturingWinningEnv(NumpyWinningBatchEnv):
                     hp=20 if terminal else 70,
                     max_hp=80,
                     gold=50,
-                    potion_ids=["FearPotion", None, None],
+                    potion_ids=list(self.potion_ids),
                     monster_ids=[] if terminal else ["JawWorm"],
                 ),
             )
@@ -56,8 +58,12 @@ class _RootCapturingWinningEnv(NumpyWinningBatchEnv):
                     floor=3,
                     hp=70,
                     max_hp=80,
-                    filled_potion_count=1,
-                    usable_potion_count=1,
+                    filled_potion_count=sum(
+                        potion is not None for potion in self.potion_ids
+                    ),
+                    usable_potion_count=sum(
+                        potion is not None for potion in self.potion_ids
+                    ),
                 ),
             )
             for slot, terminal in enumerate(self.terminal)
@@ -74,6 +80,21 @@ class _RootCapturingWinningEnv(NumpyWinningBatchEnv):
         payload = b"opaque-root:" + self.seeds[0].to_bytes(8, "big")
         assert len(payload) <= max_bytes
         return payload
+
+
+class _PotionlessRootCapturingWinningEnv(_RootCapturingWinningEnv):
+    potion_ids = (None, None, None)
+
+
+class _AlternatingEncounterRootEnv(_PotionlessRootCapturingWinningEnv):
+    def public_run_contexts(self) -> list[tuple[int, SimpleNamespace]]:
+        rows = super().public_run_contexts()
+        for slot, context in rows:
+            if not self.terminal[slot]:
+                context.monster_ids = [
+                    "JawWorm" if self.seeds[slot] % 2 == 0 else "Cultist"
+                ]
+        return rows
 
 
 def test_collection_captures_one_potion_root_per_seed_and_merges_once(
@@ -135,6 +156,78 @@ def test_collection_captures_one_potion_root_per_seed_and_merges_once(
     assert all(root["potion_ids"] == ("FearPotion", None, None) for root in roots)
     assert all(root["monster_ids"] == ("JawWorm",) for root in roots)
     assert all(root["prior_combats"] == () for root in roots)
+
+
+def test_collection_can_capture_a_potionless_combat_root(tmp_path: Path) -> None:
+    behavior, combat_bridge, run_bridge = published_behavior(tmp_path)
+    run_bridge = replace(
+        run_bridge,
+        environment=_PotionlessRootCapturingWinningEnv,
+        environment_without_combat_potions=_PotionlessRootCapturingWinningEnv,
+        environment_from_checkpoint=(
+            _PotionlessRootCapturingWinningEnv.from_checkpoint_bytes
+        ),
+    )
+    output = tmp_path / "potionless-root.bin"
+
+    summary = run_run_combat_root_collection(
+        RunCombatRootCollectionConfig(
+            behavior=behavior,
+            output=output,
+            root_count=1,
+            max_batch_steps=1,
+            wall_ms=10_000,
+            behavior_seed=94,
+            training_seed_start=100,
+            min_floor=2,
+            min_usable_potions=0,
+            max_artifact_bytes=1024,
+        ),
+        combat_bridge=combat_bridge,
+        run_bridge=run_bridge,
+        artifact_merger=lambda payloads, *, max_bytes: payloads[0],
+    )
+
+    assert output.is_file()
+    assert summary["min_usable_potions"] == 0
+    assert summary["roots"][0]["potion_ids"] == (None, None, None)
+    assert summary["roots"][0]["usable_potion_count"] == 0
+
+
+def test_collection_can_require_distinct_encounters(tmp_path: Path) -> None:
+    behavior, combat_bridge, run_bridge = published_behavior(tmp_path)
+    run_bridge = replace(
+        run_bridge,
+        environment=_AlternatingEncounterRootEnv,
+        environment_without_combat_potions=_AlternatingEncounterRootEnv,
+        environment_from_checkpoint=_AlternatingEncounterRootEnv.from_checkpoint_bytes,
+    )
+    output = tmp_path / "distinct-encounters.bin"
+
+    summary = run_run_combat_root_collection(
+        RunCombatRootCollectionConfig(
+            behavior=behavior,
+            output=output,
+            root_count=2,
+            max_batch_steps=2,
+            wall_ms=10_000,
+            behavior_seed=94,
+            training_seed_start=100,
+            min_floor=2,
+            min_usable_potions=0,
+            max_artifact_bytes=1024,
+            distinct_encounters=True,
+        ),
+        combat_bridge=combat_bridge,
+        run_bridge=run_bridge,
+        artifact_merger=lambda payloads, *, max_bytes: b"merged",
+    )
+
+    assert summary["distinct_encounters"] is True
+    assert {tuple(root["monster_ids"]) for root in summary["roots"]} == {
+        ("Cultist",),
+        ("JawWorm",),
+    }
 
 
 def test_bounded_unmatched_potion_collection_publishes_no_artifact(
