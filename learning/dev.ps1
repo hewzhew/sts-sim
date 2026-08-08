@@ -1,6 +1,6 @@
 param(
     [Parameter(Mandatory = $true, Position = 0)]
-    [ValidateSet("configure", "doctor", "test", "verify", "check-bridge", "refresh-bridge", "train-combat", "evaluate-combat", "evaluate-combat-potions", "evaluate-run", "evaluate-run-potions", "train-run")]
+    [ValidateSet("configure", "doctor", "test", "verify", "check-bridge", "refresh-bridge", "train-combat", "evaluate-combat", "evaluate-combat-potions", "evaluate-run", "evaluate-run-potions", "collect-run-roots", "train-run")]
     [string]$Command,
     [string]$Python,
     [string]$MaturinPython = "python",
@@ -23,6 +23,10 @@ param(
     [int]$EvaluationAttempts = 16,
     [int]$EvaluationMaxBatchSteps = 4096,
     [long]$EvaluationBehaviorSeed = 100000,
+    [int]$WallMs = 60000,
+    [int]$MinFloor = 2,
+    [int]$MinUsablePotions = 1,
+    [int]$MaxArtifactBytes = 16777216,
     [ValidateSet("raw-return", "leave-one-out", "matched-floor", "matched-floor-context", "matched-episode-floor-context")]
     [string]$AdvantageMode = "raw-return",
     [ValidateSet("independent-cohorts", "episode-root-retries")]
@@ -134,6 +138,7 @@ if source_root not in package_root.parents:
 
 required_bridge_methods = (
     "from_combat_root_artifact_bytes",
+    "merge_combat_root_artifact_bytes",
     "combat_root_artifact_bytes",
     "combat_group",
     "combat_root_contexts",
@@ -303,6 +308,27 @@ switch ($Command) {
                 --held-out-seed-start $HeldOutSeedStart
             if ($LASTEXITCODE -ne 0) {
                 throw "run potion comparison command failed"
+            }
+        }
+    }
+    "collect-run-roots" {
+        $pythonPath = Get-ConfiguredPython
+        Invoke-Doctor $pythonPath
+        Invoke-WithLearningPath {
+            & $pythonPath -m sts_learning.collect_run_combat_roots `
+                --behavior $Behavior `
+                --output $Output `
+                --roots $Roots `
+                --max-batch-steps $MaxBatchSteps `
+                --wall-ms $WallMs `
+                --behavior-seed $BehaviorSeed `
+                --training-seed-start $TrainingSeedStart `
+                --min-floor $MinFloor `
+                --min-usable-potions $MinUsablePotions `
+                --max-artifact-bytes $MaxArtifactBytes `
+                --potion-lane $RunPotionLane
+            if ($LASTEXITCODE -ne 0) {
+                throw "run combat-root collection failed"
             }
         }
     }

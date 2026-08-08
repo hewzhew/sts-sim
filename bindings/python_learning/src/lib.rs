@@ -450,6 +450,28 @@ impl LearningBatchEnv {
         Self::decode_combat_root_artifact(payload, expected_roots, max_bytes).map_err(value_error)
     }
 
+    /// Merge canonical single-root payloads while keeping checkpoints opaque.
+    #[staticmethod]
+    #[pyo3(signature = (payloads, *, max_bytes))]
+    fn merge_combat_root_artifact_bytes<'py>(
+        py: Python<'py>,
+        payloads: Vec<Vec<u8>>,
+        max_bytes: usize,
+    ) -> PyResult<Bound<'py, PyBytes>> {
+        if payloads.is_empty() || payloads.len() > MAX_EXPORTED_COMBAT_ROOTS {
+            return Err(PyValueError::new_err(format!(
+                "combat root merge requires 1..={MAX_EXPORTED_COMBAT_ROOTS} payloads"
+            )));
+        }
+        let artifact = CombatLearningRootBatchArtifactV1::merge_single_root_payloads(
+            payloads.iter().map(Vec::as_slice),
+            max_bytes,
+        )
+        .map_err(value_error)?;
+        let payload = artifact.encode(max_bytes).map_err(value_error)?;
+        Ok(PyBytes::new(py, &payload))
+    }
+
     /// Export selected current undecoded combat slots as one opaque root artifact.
     ///
     /// Python may persist or forward the bytes but never receives simulator

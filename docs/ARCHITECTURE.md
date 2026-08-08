@@ -251,6 +251,15 @@ caller-byte-bounded, validates every root and exact root count before creating
 the pool, and exposes no session fields to Python. The bridge does not depend
 on runtime artifact types, guess continuation JSON fields, or read private
 branch cutpoint schemas.
+The bounded later-combat sampler advances one frozen published behavior over
+training-partition runs and inspects only the bridge's aligned public run
+context and undecoded combat-root context. It captures at most one qualifying
+root per seed, filters by typed floor and usable-potion count, and asks Rust to
+merge canonical single-root payloads without exposing checkpoint fields. The
+sampler writes one fresh batch only after the requested root count is complete;
+a deadline, step bound, duplicate root, context mismatch, or byte overflow
+publishes nothing. Its compact receipt is corpus provenance, not a policy
+label or a potion-value judgment.
 
 Terminal learning steps retain the typed run result plus public terminal act,
 floor, HP, max HP, and gold. The Python bridge returns those facts as compact
@@ -259,6 +268,9 @@ and lower-tail targets, not a shaped reward or a context-free resource score.
 An explicit `public_run_contexts()` snapshot separately exposes every current
 slot's seed, typed boundary kind, act/floor, HP/max HP, gold, and concrete
 potion-slot identities. It clones no session and retains no history.
+At a combat boundary, resource fields come from the active combat after
+pre-battle triggers rather than the persistent run snapshot, which is not
+synchronized again until combat resolution.
 Evaluation callers may use successive snapshots to identify cross-combat
 resource transitions, but the bridge does not assign potion value, aggregate
 the facts, or feed them into the terminal reward.

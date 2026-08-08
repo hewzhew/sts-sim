@@ -138,7 +138,12 @@ impl LearningEnvPoolV1 {
                 slot_index,
                 slot_count: self.slots.len(),
             })?;
-        Ok(slot.env.public_run_context(&slot.boundary))
+        slot.env
+            .public_run_context(&slot.boundary)
+            .map_err(|message| LearningEnvPoolError::PublicRunContext {
+                slot_index,
+                message,
+            })
     }
 
     /// Explicitly replaces one slot after a caller has chosen its reset or
@@ -330,6 +335,10 @@ pub enum LearningEnvPoolError {
         message: String,
     },
     CombatRootContext {
+        slot_index: usize,
+        message: String,
+    },
+    PublicRunContext {
         slot_index: usize,
         message: String,
     },

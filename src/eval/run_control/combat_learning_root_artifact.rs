@@ -120,6 +120,31 @@ impl CombatLearningRootBatchArtifactV1 {
         Ok(self.roots.into_iter().map(|root| root.session).collect())
     }
 
+    /// Merge canonical single-root payloads without exposing checkpoint fields.
+    pub fn merge_single_root_payloads<'a>(
+        payloads: impl IntoIterator<Item = &'a [u8]>,
+        max_input_bytes: usize,
+    ) -> Result<Self, String> {
+        let mut total_input_bytes = 0usize;
+        let mut checkpoints = Vec::new();
+        for (index, payload) in payloads.into_iter().enumerate() {
+            total_input_bytes = total_input_bytes
+                .checked_add(payload.len())
+                .ok_or_else(|| "combat learning root merge input byte count overflow".to_owned())?;
+            if total_input_bytes > max_input_bytes {
+                return Err("combat learning root merge exceeds its input byte limit".to_owned());
+            }
+            let artifact = Self::decode(payload, 1, max_input_bytes).map_err(|error| {
+                format!("combat learning root merge input {index} is invalid: {error}")
+            })?;
+            checkpoints.extend(artifact.into_checkpoints()?);
+        }
+        if checkpoints.is_empty() {
+            return Err("combat learning root merge requires at least one input".to_owned());
+        }
+        Self::from_checkpoints(checkpoints)
+    }
+
     fn validate(&self, expected_root_count: Option<usize>) -> Result<(), String> {
         if self.roots.is_empty() {
             return Err("combat learning root artifact must contain at least one root".to_owned());
@@ -273,6 +298,49 @@ mod tests {
             CombatLearningRootBatchArtifactV1::from_checkpoints([root]).expect("capture root");
         artifact.roots[0].context.hp -= 1;
         assert!(artifact.encode(1024 * 1024).is_err());
+    }
+
+    #[test]
+    fn artifact_merges_distinct_canonical_single_root_payloads() {
+        let first =
+            CombatLearningRootBatchArtifactV1::from_checkpoints([combat_root_checkpoint(20)])
+                .expect("capture first root")
+                .encode(1024 * 1024)
+                .expect("encode first root");
+        let second =
+            CombatLearningRootBatchArtifactV1::from_checkpoints([combat_root_checkpoint(21)])
+                .expect("capture second root")
+                .encode(1024 * 1024)
+                .expect("encode second root");
+
+        let merged = CombatLearningRootBatchArtifactV1::merge_single_root_payloads(
+            [first.as_slice(), second.as_slice()],
+            1024 * 1024,
+        )
+        .expect("merge distinct roots");
+
+        assert_eq!(merged.roots().len(), 2);
+        assert!(
+            CombatLearningRootBatchArtifactV1::merge_single_root_payloads(
+                [first.as_slice(), second.as_slice()],
+                first.len() + second.len() - 1,
+            )
+            .is_err()
+        );
+        assert!(
+            CombatLearningRootBatchArtifactV1::merge_single_root_payloads(
+                [first.as_slice(), first.as_slice()],
+                1024 * 1024,
+            )
+            .is_err()
+        );
+        assert!(
+            CombatLearningRootBatchArtifactV1::merge_single_root_payloads(
+                std::iter::empty::<&[u8]>(),
+                1024 * 1024,
+            )
+            .is_err()
+        );
     }
 
     fn combat_root_checkpoint(monster_hp: i32) -> RunControlSessionCheckpointV1 {

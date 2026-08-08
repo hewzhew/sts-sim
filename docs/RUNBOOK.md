@@ -629,6 +629,7 @@ Configure one stable Python 3.12 training runtime once, then use the small
 .\learning\dev.ps1 evaluate-combat-potions -Artifact <held-out-roots.bin> -Behavior <training-dir> -Output <fresh-dir> -Roots <count> -Replicates <count>
 .\learning\dev.ps1 evaluate-run -Behavior <training-dir> -Output <fresh-dir> -Attempts 8 -MaxBatchSteps 4096 -BehaviorSeed 10000 -HeldOutSeedStart 0 -RunPotionLane trained
 .\learning\dev.ps1 evaluate-run-potions -Behavior <training-dir> -Output <fresh-dir> -Attempts 8 -MaxBatchSteps 4096 -BehaviorSeed 10000 -HeldOutSeedStart 0
+.\learning\dev.ps1 collect-run-roots -Behavior <training-dir> -Output <fresh.bin> -Roots 2 -MaxBatchSteps 4096 -WallMs 60000 -BehaviorSeed 120000 -TrainingSeedStart 10000000 -MinFloor 2 -MinUsablePotions 1 -RunPotionLane trained
 .\learning\dev.ps1 train-run -Behavior <combat-training-dir> -Output <fresh-dir> -Slots 4 -Generations 1 -AttemptsPerUpdate 8 -MaxBatchSteps 4096 -EvaluationAttempts 16 -HeldOutSeedStart 1000000 -AdvantageMode raw-return -DecisionScope all -SamplingMode independent-cohorts -RunPotionLane trained
 ```
 
@@ -683,6 +684,27 @@ Pass the file bytes unchanged to
 expected_roots=2, max_bytes=16777216)`. Rust validates the exact root count,
 canonical envelope, recomputed root identity/context, and current combat
 boundary before constructing the batch. Python must not inspect the payload.
+To sample potion-bearing later combats from the actual trajectories of one
+published frozen behavior, use the typed run collector instead of reconstructing
+continuations or probing JSON:
+
+```powershell
+.\learning\dev.ps1 collect-run-roots `
+  -Behavior <completed-training-directory> `
+  -Output <fresh.combat-roots.bin> `
+  -Roots 2 -MaxBatchSteps 4096 -WallMs 60000 `
+  -BehaviorSeed 120000 -TrainingSeedStart 10000000 `
+  -MinFloor 2 -MinUsablePotions 1 -RunPotionLane trained
+```
+
+The command uses one run slot, captures at most one undecoded combat root from
+each seed, and keeps concrete inventory inside the opaque checkpoint even when
+the behavior's model-facing lane is `never`. Floor and usable-potion filters
+are typed root facts. It merges in Rust and writes only after all requested
+roots have been collected; an incomplete bound leaves the output absent. The
+single-line receipt reports seed/site/resource facts and artifact identity.
+Use a fresh path and a small root count first. This is a corpus sampler, not a
+trainer or evidence that the collected combats are representative.
 When a combat case has validated exact production context and a typed action
 file already replays to a win, derive a bounded reverse-curriculum batch with:
 

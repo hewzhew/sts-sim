@@ -178,6 +178,16 @@ emits their first combats as one batch; `learning-root export` converts public
 continuations already at useful later combat boundaries. The caller reads those
 opaque bytes and constructs a fresh bridge batch with the exact expected root
 count; Rust revalidates every combat boundary and root identity first.
+`sts_learning.collect_run_combat_roots` supplies the bounded corpus path when
+useful later continuations do not yet exist. It advances one published frozen
+behavior over training-partition runs, aligns compact public run facts with
+undecoded combat-root contexts, and captures at most one typed floor- and
+usable-potion-qualified root per seed. Rust merges the canonical single-root
+payloads without exposing their sessions. The command publishes one fresh
+opaque batch only after reaching its declared root target; a step/deadline,
+identity, alignment, or byte failure leaves no output. Its receipt records the
+collected seed/site/resource facts but assigns no potion value and supplies no
+teacher labels.
 Their row projection attaches all three columns to each retained replicate
 decision without choosing a training axis or scalar weighting.
 `sts_learning.torch_outcomes.on_policy_combat_win_loss` is the first narrow

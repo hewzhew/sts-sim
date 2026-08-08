@@ -215,24 +215,48 @@ impl LearningEnvV1 {
     pub(super) fn public_run_context(
         &self,
         boundary: &LearningBoundaryV1,
-    ) -> LearningPublicRunContextV1 {
-        LearningPublicRunContextV1 {
+    ) -> Result<LearningPublicRunContextV1, String> {
+        let (hp, max_hp, gold, potion_ids) =
+            if matches!(boundary, LearningBoundaryV1::Combat { .. }) {
+                let active = self.session.active_combat.as_ref().ok_or_else(|| {
+                    "combat public run context requires an active combat".to_owned()
+                })?;
+                let combat = &active.combat_state;
+                (
+                    combat.entities.player.current_hp,
+                    combat.entities.player.max_hp,
+                    combat.entities.player.gold,
+                    combat
+                        .entities
+                        .potions
+                        .iter()
+                        .map(|potion| potion.as_ref().map(|potion| potion.id))
+                        .collect(),
+                )
+            } else {
+                (
+                    self.session.run_state.current_hp,
+                    self.session.run_state.max_hp,
+                    self.session.run_state.gold,
+                    self.session
+                        .run_state
+                        .potions
+                        .iter()
+                        .map(|potion| potion.as_ref().map(|potion| potion.id))
+                        .collect(),
+                )
+            };
+        Ok(LearningPublicRunContextV1 {
             boundary_kind: boundary.kind(),
             strategic_context_kind: boundary.strategic_context_kind(),
             seed: self.session.run_state.seed,
             act: self.session.run_state.act_num,
             floor: self.session.run_state.floor_num,
-            hp: self.session.run_state.current_hp,
-            max_hp: self.session.run_state.max_hp,
-            gold: self.session.run_state.gold,
-            potion_ids: self
-                .session
-                .run_state
-                .potions
-                .iter()
-                .map(|potion| potion.as_ref().map(|potion| potion.id))
-                .collect(),
-        }
+            hp,
+            max_hp,
+            gold,
+            potion_ids,
+        })
     }
 
     pub fn restore(&mut self, checkpoint: RunControlSessionCheckpointV1) -> Result<(), String> {
@@ -591,6 +615,38 @@ mod tests {
                 card_index: 0,
                 target: Some(7),
             }));
+    }
+
+    #[test]
+    fn combat_public_context_uses_active_resources_after_prebattle() {
+        let mut session = RunControlSession::new(RunControlConfig::default());
+        session.run_state.current_hp = 80;
+        session.run_state.gold = 99;
+        session.run_state.potions = vec![None, None, None];
+        let mut combat = crate::test_support::blank_test_combat();
+        combat.entities.player.current_hp = 79;
+        combat.entities.player.gold = 101;
+        combat.entities.potions = vec![Some(Potion::new(PotionId::FearPotion, 41)), None, None];
+        session.engine_state = EngineState::CombatPlayerTurn;
+        session.active_combat = Some(ActiveCombat::new(
+            EngineState::CombatPlayerTurn,
+            combat,
+            CombatContext::Room(RoomCombatContext {
+                room_type: RoomType::MonsterRoom,
+            }),
+        ));
+        let env = LearningEnvV1::from_session(session);
+        let boundary = env.observe().expect("observe combat boundary");
+
+        let context = env
+            .public_run_context(&boundary)
+            .expect("capture current combat resources");
+
+        assert_eq!((context.hp, context.gold), (79, 101));
+        assert_eq!(
+            context.potion_ids,
+            vec![Some(PotionId::FearPotion), None, None]
+        );
     }
 
     #[test]

@@ -208,8 +208,12 @@ def _assert_same_root_combat_group(env: LearningBatchEnv, slot: int) -> None:
     preview_context = available[slot]
     assert isinstance(preview_context, CombatLearningRootContextV1)
     payload = env.combat_root_artifact_bytes([slot], max_bytes=16 * 1024 * 1024)
+    merged_payload = LearningBatchEnv.merge_combat_root_artifact_bytes(
+        [payload],
+        max_bytes=16 * 1024 * 1024,
+    )
     restored = LearningBatchEnv.from_combat_root_artifact_bytes(
-        payload,
+        merged_payload,
         expected_roots=1,
         max_bytes=16 * 1024 * 1024,
     )
@@ -536,6 +540,7 @@ def _assert_cross_process_checkpoint_bank_replays_episode_roots() -> None:
 
 def main() -> None:
     assert callable(LearningBatchEnv.from_combat_root_artifact_bytes)
+    assert callable(LearningBatchEnv.merge_combat_root_artifact_bytes)
     assert callable(LearningBatchEnv.combat_root_artifact_bytes)
     schema = _SCHEMA
     assert schema["version"] == SEMANTIC_SCHEMA_VERSION
