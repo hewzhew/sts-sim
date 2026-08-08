@@ -143,15 +143,7 @@ fn main() -> Result<(), String> {
         } => print_json(&run_witness_commands::export_continuation(
             &workspace, node, &output,
         )?),
-        Command::ExportLearningRoots {
-            continuation,
-            output,
-            max_bytes,
-        } => print_json(&learning_root_commands::export(
-            &continuation,
-            &output,
-            max_bytes,
-        )?),
+        Command::LearningRoot(command) => learning_root_commands::run(command),
         Command::CompactWorkspace {
             workspace,
             node,

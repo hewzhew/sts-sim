@@ -193,6 +193,95 @@ impl OwnerAuditRuntime {
     }
 }
 
+/// One atomic outcome from the current production non-combat policy.
+///
+/// This deliberately hides owner routing, ranking, and routine types. Callers
+/// may drive a bounded production path without copying the private owner-audit
+/// orchestration or treating display order as policy order.
+#[derive(Clone, Debug, PartialEq)]
+pub enum OracleProductionNoncombatStepV1 {
+    Applied(sts_simulator::eval::run_control::RunProgressStepV1),
+    CombatBoundary,
+    AutomationGap { reason: String },
+}
+
+/// Applies at most one current production non-combat mutation.
+///
+/// Route automation and low-agency transitions remain owned by run control.
+/// At a high-agency owner boundary this selects the first auto-expandable
+/// production candidate, matching the baseline branch policy, or applies the
+/// owner's atomic routine. Combat is never searched or resolved here.
+pub fn apply_oracle_production_noncombat_step_v1(
+    session: &mut sts_simulator::eval::run_control::RunControlSession,
+) -> Result<OracleProductionNoncombatStepV1, String> {
+    use owner_model::OwnerDecision;
+    use sts_simulator::eval::run_control::{
+        RunControlAutoStepOptions, RunControlRouteAutomationMode, RunProgressStepV1,
+    };
+
+    if session.active_combat.is_some() {
+        return Ok(OracleProductionNoncombatStepV1::CombatBoundary);
+    }
+
+    let automatic = session.apply_progress_step(RunControlAutoStepOptions {
+        route: RunControlRouteAutomationMode::Policy,
+        ..RunControlAutoStepOptions::default()
+    })?;
+    match automatic.progress_steps.as_slice() {
+        [step @ (RunProgressStepV1::Decision(_)
+        | RunProgressStepV1::ForcedTransition(_)
+        | RunProgressStepV1::CombatResolution(_))] => {
+            return Ok(OracleProductionNoncombatStepV1::Applied(step.clone()));
+        }
+        [RunProgressStepV1::Stop(stop)] => {
+            if session.active_combat.is_some() {
+                return Ok(OracleProductionNoncombatStepV1::CombatBoundary);
+            }
+            let Some(owner) = boundary_router::owner_for_current_boundary(session) else {
+                return Ok(OracleProductionNoncombatStepV1::AutomationGap {
+                    reason: stop.reason.clone(),
+                });
+            };
+            let surface = sts_simulator::eval::run_control::build_decision_surface(session);
+            let owned = match owners::owner_decision(session, owner, &surface) {
+                OwnerDecision::Candidates(choices) => {
+                    let Some(choice) = choices
+                        .into_iter()
+                        .find(owner_model::OwnerChoice::auto_expand_allowed)
+                    else {
+                        return Ok(OracleProductionNoncombatStepV1::AutomationGap {
+                            reason: format!(
+                                "production owner {owner:?} has no auto-expandable candidate"
+                            ),
+                        });
+                    };
+                    session.apply_owner_candidate(&choice.candidate_id, choice.action)?
+                }
+                OwnerDecision::Routine(routine) => {
+                    owner_routines::apply_owner_routine(session, routine)?
+                }
+                OwnerDecision::Gap(reason) => {
+                    return Ok(OracleProductionNoncombatStepV1::AutomationGap {
+                        reason: format!("production owner {owner:?} gap: {reason}"),
+                    });
+                }
+            };
+            match owned.progress_steps.as_slice() {
+                [step
+                @ (RunProgressStepV1::Decision(_) | RunProgressStepV1::ForcedTransition(_))] => {
+                    Ok(OracleProductionNoncombatStepV1::Applied(step.clone()))
+                }
+                _ => Err(format!(
+                    "production owner {owner:?} did not produce exactly one non-combat mutation"
+                )),
+            }
+        }
+        _ => {
+            Err("production non-combat step produced neither one mutation nor one stop".to_string())
+        }
+    }
+}
+
 /// Reconstructs the strategic facts captured when the production combat owner
 /// opens an exact combat. Callers must first restore and validate the exact
 /// production session; this helper never infers context from display text.

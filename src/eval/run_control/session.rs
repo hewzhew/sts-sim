@@ -1,6 +1,8 @@
-use std::path::PathBuf;
+use std::{fmt, path::PathBuf};
 
-use serde::de::{DeserializeOwned, Error as DeError};
+use serde::de::{
+    value::MapAccessDeserializer, Error as DeError, IgnoredAny, MapAccess, SeqAccess, Visitor,
+};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::ai::combat_search_v2::CombatSearchV2PotionPolicy;
@@ -246,60 +248,89 @@ impl<'de> Deserialize<'de> for RunControlSessionCheckpointV1 {
     where
         D: Deserializer<'de>,
     {
-        let value = serde_json::Value::deserialize(deserializer)?;
-        if let Some(items) = value.as_array() {
-            return compact_checkpoint_from_values(items).map_err(D::Error::custom);
+        deserializer.deserialize_any(RunControlSessionCheckpointVisitorV1)
+    }
+}
+
+/// Decode the compact tuple through typed sequence access. Real combat states
+/// contain integer-keyed entity maps that MessagePack supports but an
+/// intermediate `serde_json::Value` cannot represent.
+struct RunControlSessionCheckpointVisitorV1;
+
+impl<'de> Visitor<'de> for RunControlSessionCheckpointVisitorV1 {
+    type Value = RunControlSessionCheckpointV1;
+
+    fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("a compact run-control checkpoint tuple or legacy checkpoint object")
+    }
+
+    fn visit_seq<A>(self, mut sequence: A) -> Result<Self::Value, A::Error>
+    where
+        A: SeqAccess<'de>,
+    {
+        let engine_state = checkpoint_field(&mut sequence, 0, &self)?;
+        let run_state = checkpoint_field(&mut sequence, 1, &self)?;
+        let active_combat = checkpoint_field(&mut sequence, 2, &self)?;
+        let decision_step = checkpoint_field(&mut sequence, 3, &self)?;
+        let search_max_nodes = checkpoint_field(&mut sequence, 4, &self)?;
+        let search_wall_ms = checkpoint_field(&mut sequence, 5, &self)?;
+        let search_max_hp_loss = checkpoint_field(&mut sequence, 6, &self)?;
+        let search_potion_policy = checkpoint_field(&mut sequence, 7, &self)?;
+        let search_max_potions_used = checkpoint_field(&mut sequence, 8, &self)?;
+        let combat_sequence = checkpoint_field(&mut sequence, 9, &self)?;
+        let extras: Option<RunControlSessionCheckpointExtrasV1> =
+            checkpoint_field(&mut sequence, 10, &self)?;
+        if sequence.next_element::<IgnoredAny>()?.is_some() {
+            return Err(A::Error::invalid_length(12, &self));
         }
-        serde_json::from_value::<RunControlSessionCheckpointLegacyV1>(value)
+        let extras = extras.unwrap_or_default();
+        Ok(RunControlSessionCheckpointV1 {
+            engine_state,
+            run_state,
+            active_combat,
+            decision_step,
+            reward_automation: extras.reward_automation,
+            shop_visit_context: extras.shop_visit_context,
+            auto_capture: extras.auto_capture,
+            search_max_nodes,
+            search_wall_ms,
+            search_max_hp_loss,
+            search_potion_policy,
+            search_max_potions_used,
+            combat_outcomes: extras.combat_outcomes,
+            combat_sequence,
+            auto_capture_last_combat_sequence: extras.auto_capture_last_combat_sequence,
+            last_completed_combat_sequence: extras.last_completed_combat_sequence,
+            last_completed_combat_source: extras.last_completed_combat_source,
+            current_combat_source: extras.current_combat_source,
+            last_combat_automation_sequence: extras.last_combat_automation_sequence,
+            last_combat_automation_trajectory: extras.last_combat_automation_trajectory,
+            last_capture_case: extras.last_capture_case,
+            recent_combat_attrition: extras.recent_combat_attrition,
+        })
+    }
+
+    fn visit_map<A>(self, map: A) -> Result<Self::Value, A::Error>
+    where
+        A: MapAccess<'de>,
+    {
+        RunControlSessionCheckpointLegacyV1::deserialize(MapAccessDeserializer::new(map))
             .map(RunControlSessionCheckpointLegacyV1::into_checkpoint)
-            .map_err(D::Error::custom)
     }
 }
 
-fn compact_checkpoint_from_values(
-    items: &[serde_json::Value],
-) -> Result<RunControlSessionCheckpointV1, String> {
-    if items.len() != 11 {
-        return Err(format!(
-            "compact run-control checkpoint expected 11 fields, got {}",
-            items.len()
-        ));
-    }
-    let extras = compact_value::<Option<RunControlSessionCheckpointExtrasV1>>(items, 10, "extras")?
-        .unwrap_or_default();
-    Ok(RunControlSessionCheckpointV1 {
-        engine_state: compact_value(items, 0, "engine_state")?,
-        run_state: compact_value(items, 1, "run_state")?,
-        active_combat: compact_value(items, 2, "active_combat")?,
-        decision_step: compact_value(items, 3, "decision_step")?,
-        reward_automation: extras.reward_automation,
-        shop_visit_context: extras.shop_visit_context,
-        auto_capture: extras.auto_capture,
-        search_max_nodes: compact_value(items, 4, "search_max_nodes")?,
-        search_wall_ms: compact_value(items, 5, "search_wall_ms")?,
-        search_max_hp_loss: compact_value(items, 6, "search_max_hp_loss")?,
-        search_potion_policy: compact_value(items, 7, "search_potion_policy")?,
-        search_max_potions_used: compact_value(items, 8, "search_max_potions_used")?,
-        combat_outcomes: extras.combat_outcomes,
-        combat_sequence: compact_value(items, 9, "combat_sequence")?,
-        auto_capture_last_combat_sequence: extras.auto_capture_last_combat_sequence,
-        last_completed_combat_sequence: extras.last_completed_combat_sequence,
-        last_completed_combat_source: extras.last_completed_combat_source,
-        current_combat_source: extras.current_combat_source,
-        last_combat_automation_sequence: extras.last_combat_automation_sequence,
-        last_combat_automation_trajectory: extras.last_combat_automation_trajectory,
-        last_capture_case: extras.last_capture_case,
-        recent_combat_attrition: extras.recent_combat_attrition,
-    })
-}
-
-fn compact_value<T: DeserializeOwned>(
-    items: &[serde_json::Value],
+fn checkpoint_field<'de, A, T>(
+    sequence: &mut A,
     index: usize,
-    label: &str,
-) -> Result<T, String> {
-    serde_json::from_value(items[index].clone())
-        .map_err(|err| format!("invalid compact run-control checkpoint {label}: {err}"))
+    visitor: &RunControlSessionCheckpointVisitorV1,
+) -> Result<T, A::Error>
+where
+    A: SeqAccess<'de>,
+    T: Deserialize<'de>,
+{
+    sequence
+        .next_element()?
+        .ok_or_else(|| A::Error::invalid_length(index, visitor))
 }
 
 #[derive(Deserialize)]

@@ -195,11 +195,16 @@ The source batch can enumerate all current undecoded combat roots and their
 frozen contexts in one call without creating replicate groups or cloning their
 sessions; only caller-selected roots pay group construction cost.
 
-Production runs may hand later combat boundaries to this bridge only through
-the versioned `CombatLearningRootBatchArtifactV1` envelope owned by run control.
-The production-side exporter decodes a public continuation and contributes its
-exact session checkpoint; the shared eval layer independently recomputes and
-binds the combat-root identity and compact context. Bridge import is
+Production runs hand combat boundaries to this bridge only through the
+versioned `CombatLearningRootBatchArtifactV1` envelope owned by run control.
+The first-combat collector advances a fresh seed through one narrow public
+production non-combat step that hides private owner routing and selects the
+same first auto-expandable candidate as the baseline branch policy. It stops
+before combat search and contributes the exact in-memory checkpoint directly.
+For later boundaries, the production-side exporter decodes a public
+continuation and contributes its exact session checkpoint. In both paths the
+shared eval layer independently recomputes and binds the combat-root identity
+and compact context. Bridge import is
 caller-byte-bounded, validates every root and exact root count before creating
 the pool, and exposes no session fields to Python. The bridge does not depend
 on runtime artifact types, guess continuation JSON fields, or read private

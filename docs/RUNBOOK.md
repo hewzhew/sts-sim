@@ -632,13 +632,22 @@ not mutate NumPy or PyTorch. Ordinary Python-only edits still use `test`.
 For first setup, pass `-Python <python.exe>` to refresh and record that runtime
 only after the guarded installation and final doctor both succeed.
 
-To seed a bounded learning corpus from production-owned later combat
-boundaries, convert one or more public continuations into a fresh opaque root
-batch. Every continuation must already be at an active combat input boundary;
-private capsule/cutpoint schemas are not accepted:
+To collect the first production-owned combat from a fresh seed without an
+intermediate workspace or continuation JSON, write one fresh opaque root:
 
 ```powershell
-cargo oracle-lab export-learning-roots --continuation <first.continuation.json> --continuation <second.continuation.json> --output <fresh.combat-roots.bin> --max-bytes 16777216
+cargo oracle-lab learning-root collect --seed <seed> --ascension 0 --output <fresh.combat-root.bin> --max-progress-steps 64 --wall-ms 10000 --max-bytes 16777216
+```
+
+The collector uses current production non-combat owners, stops before combat
+search, and writes nothing when its progress/wall bound or an automation gap
+prevents reaching combat. To seed a bounded corpus from production-owned later
+combat boundaries, convert one or more public continuations into a fresh opaque
+root batch. Every continuation must already be at an active combat input
+boundary; private capsule/cutpoint schemas are not accepted:
+
+```powershell
+cargo oracle-lab learning-root export --continuation <first.continuation.json> --continuation <second.continuation.json> --output <fresh.combat-roots.bin> --max-bytes 16777216
 ```
 
 Pass the file bytes unchanged to

@@ -279,6 +279,7 @@ mod tests {
         let mut session = RunControlSession::new(Default::default());
         let mut combat = blank_test_combat();
         combat.zones.hand = vec![CombatCard::new(CardId::Strike, 51)];
+        combat.entities.power_db.insert(7, Vec::new());
         let mut monster = test_monster(EnemyId::JawWorm);
         monster.id = 7;
         monster.current_hp = monster_hp;

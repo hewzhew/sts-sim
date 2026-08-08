@@ -108,7 +108,7 @@ session-clone cost of `combat_group`.
 A fresh batch may instead start from exact later-run combat boundaries via
 `LearningBatchEnv.from_combat_root_artifact_bytes(payload,
 expected_roots=..., max_bytes=...)`. The payload is the versioned opaque batch
-written by `cargo oracle-lab export-learning-roots`; Rust checks its byte bound,
+written by `cargo oracle-lab learning-root export`; Rust checks its byte bound,
 exact root count, canonical encoding, unique root identities, recomputed root
 identity/context, and active combat boundary before exposing any slot. Python
 never parses a production continuation or simulator checkpoint. Private branch

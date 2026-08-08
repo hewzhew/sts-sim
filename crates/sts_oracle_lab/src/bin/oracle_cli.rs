@@ -19,6 +19,7 @@ use super::combat_route_compare::CombatCaseRouteCompareArgs;
 use super::combat_scratch_cli::CombatScratchCommand;
 use super::depth_beam_audits::DepthBeamTurnAuditArgs;
 use super::guidance_combination_audit::GuidanceCombinationAuditArgs;
+use super::learning_root_commands::LearningRootCommand;
 use super::oracle_budget_cli::BudgetArgs;
 use super::oracle_case_catalog_v2::CaseCommandArgs;
 use super::oracle_contract_v2::{ArtifactCommandArgs, ContractCommandArgs};
@@ -99,16 +100,9 @@ pub(super) enum Command {
         #[arg(long)]
         output: PathBuf,
     },
-    /// Convert exact production continuations at combat boundaries into one
-    /// bounded opaque root batch for the Python learning bridge.
-    ExportLearningRoots {
-        #[arg(long, required = true)]
-        continuation: Vec<PathBuf>,
-        #[arg(long)]
-        output: PathBuf,
-        #[arg(long, default_value_t = 16 * 1024 * 1024)]
-        max_bytes: usize,
-    },
+    /// Collect or export opaque production combat roots for online learning.
+    #[command(subcommand)]
+    LearningRoot(LearningRootCommand),
     /// Create a fresh one-node workspace from an exact committed node.
     /// The source workspace is never modified and the output must not exist.
     CompactWorkspace {
