@@ -5,6 +5,10 @@ import time
 import numpy as np
 
 from sts_learning_bridge import (
+    COMBAT_TERMINAL_LOSS,
+    COMBAT_TERMINAL_UNRESOLVED,
+    COMBAT_TERMINAL_WIN,
+    CombatLearningBatchEnv,
     LearningBatchEnv,
     LearningCheckpointBatch,
     PHASE_COMBAT_ROOT,
@@ -169,6 +173,75 @@ def _choose_first_until_ready(env: LearningBatchEnv) -> None:
         env.choose([0] * int(batch["slot_indices"].size))
         rounds += 1
         assert rounds < 100
+
+
+def _assert_same_root_combat_group(env: LearningBatchEnv, slot: int) -> None:
+    before = env.decision_batch(dense_mask=True, semantic=True)
+    group = env.combat_group(slot, 2)
+    assert isinstance(group, CombatLearningBatchEnv)
+    assert group.replicate_count == 2
+    assert group.terminal_count == 0
+    assert len(group.root_id) == 64
+    assert len(group.exact_combat_state_hash) == 64
+
+    random_states = [slot ^ _SEED_XOR, slot ^ _SEED_XOR ^ 0xA5A5_A5A5]
+    terminal_seen: set[int] = set()
+    rounds = 0
+    while group.terminal_count < group.replicate_count:
+        while not group.ready:
+            batch = group.decision_batch(dense_mask=True, semantic=True)
+            assert np.all(batch["phase"] != PHASE_STRATEGIC_ROOT)
+            _assert_semantic(batch)
+            ordinals = [
+                _pick(random_states, int(replicate), int(count))
+                for replicate, count in zip(
+                    batch["slot_indices"], batch["candidate_counts"], strict=True
+                )
+            ]
+            group.choose(ordinals)
+        step = group.step()
+        terminal_count = int(step["terminal_slot_indices"].size)
+        assert step["slot_indices"].dtype == np.uint64
+        assert step["terminated"].dtype == np.bool_
+        assert step["terminal_slot_indices"].dtype == np.uint64
+        assert step["terminal_kind"].dtype == np.uint8
+        assert np.array_equal(
+            step["terminal_slot_indices"],
+            step["slot_indices"][step["terminated"]],
+        )
+        assert np.all(
+            np.isin(
+                step["terminal_kind"],
+                [
+                    COMBAT_TERMINAL_WIN,
+                    COMBAT_TERMINAL_LOSS,
+                    COMBAT_TERMINAL_UNRESOLVED,
+                ],
+            )
+        )
+        for key in (
+            "terminal_start_hp",
+            "terminal_final_hp",
+            "terminal_hp_loss",
+        ):
+            assert step[key].dtype == np.int32
+            assert step[key].shape == (terminal_count,)
+        for key in (
+            "terminal_turns",
+            "terminal_potions_used",
+            "terminal_potions_discarded",
+            "terminal_cards_played",
+        ):
+            assert step[key].dtype == np.uint32
+            assert step[key].shape == (terminal_count,)
+        terminal_seen.update(int(value) for value in step["terminal_slot_indices"])
+        rounds += 1
+        assert rounds < 1_000
+
+    assert terminal_seen == {0, 1}
+    _assert_decision_batch_equal(
+        before, env.decision_batch(dense_mask=True, semantic=True)
+    )
 
 
 def _assert_explicit_checkpoint_replays_exactly() -> None:
@@ -436,6 +509,7 @@ def main() -> None:
     saw_selection = False
     saw_candidate_target = False
     saw_combat_candidate_target = False
+    checked_combat_group = False
 
     while env.terminal_count < env.slot_count:
         while not env.ready:
@@ -462,6 +536,12 @@ def main() -> None:
             saw_selection |= batch_selection
             saw_candidate_target |= batch_candidate_target
             saw_combat_candidate_target |= batch_combat_candidate_target
+
+            if not checked_combat_group:
+                combat_rows = np.flatnonzero(batch["phase"] == PHASE_COMBAT_ROOT)
+                if combat_rows.size:
+                    _assert_same_root_combat_group(env, int(slots[int(combat_rows[0])]))
+                    checked_combat_group = True
 
             ordinals = [
                 _pick(random_states, int(slot), int(count))
@@ -508,6 +588,7 @@ def main() -> None:
     assert saw_combat
     assert saw_candidate_target
     assert saw_combat_candidate_target
+    assert checked_combat_group
     print(
         "python_learning_bridge_smoke "
         f"episodes={env.slot_count} steps={total_steps} "

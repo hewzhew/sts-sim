@@ -91,6 +91,17 @@ the wrong environment lineage.
 The bridge still contains no policy, optimizer, automatic reset, or PyTorch
 dependency. Its semantic arrays are an input contract, not evidence that a
 particular model or learning objective is correct.
+
+At an undecoded combat root, `LearningBatchEnv.combat_group(slot_index,
+replicate_count)` creates a `CombatLearningBatchEnv` without exposing or
+reconstructing the run-control checkpoint in Python. Every replicate shares
+the exact root id and combat-state hash, keeps its own numbered episode
+lineage, and uses the same `decision_batch`, `choose`, and atomic `step` rhythm.
+Combat step results have no run reward fields: they return aligned terminal
+kind, HP, turn, potion, and card-play columns from `CombatBaselineOutcomeV1`.
+The source run slot is unchanged. This is an execution primitive for
+caller-owned grouped objectives, not an implementation of RLOO or a teacher.
+
 Terminal step batches retain aligned `terminal_slot_indices`,
 `terminal_reward`, public `terminal_act`, `terminal_floor`, `terminal_hp`,
 `terminal_max_hp`, and `terminal_gold` columns. These raw outcome facts support

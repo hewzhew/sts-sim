@@ -179,6 +179,14 @@ not an estimator or teacher label. Grouped baselines, combat policy gradients,
 or search-improved targets must be separate caller-owned objectives and may not
 substitute unrelated run seeds for same-root replicates.
 
+The Python bridge may derive one `CombatLearningBatchEnv` only from an
+undecoded combat-root slot in an existing typed batch. Python receives the
+shared root identities, replicate indices, ordinary sparse semantic action
+rows, and typed combat terminal columns; it does not receive or reconstruct the
+root session. Deriving or running the group does not advance the source run
+slot. This bridge surface owns neither reward shaping nor durable combat-group
+checkpoint publication.
+
 Terminal learning steps retain the typed run result plus public terminal act,
 floor, HP, max HP, and gold. The Python bridge returns those facts as compact
 columns aligned only to terminal slots. They are outcome evidence for progress

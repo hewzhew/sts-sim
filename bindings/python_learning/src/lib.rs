@@ -8,22 +8,33 @@ use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyDict};
 use serde::{Deserialize, Serialize};
 use sts_oracle_eval::eval::run_control::{
-    LearningActionV1, LearningBoundaryV1, LearningEnvPoolV1, LearningEnvV1, LearningModelChoiceV1,
-    LearningModelDecisionV1, LearningModelObservationV1, LearningSelectionDraftV1,
+    CombatLearningRootV1, LearningActionV1, LearningEnvPoolV1, LearningEnvV1,
+    LearningModelChoiceV1, LearningModelDecisionV1, LearningSelectionDraftV1,
     LearningSelectionStepV1, RunControlConfig, RunControlSessionCheckpointV1,
 };
 
+mod bridge_decision;
+mod combat_batch;
 mod semantic;
+
+use bridge_decision::{
+    bridge_states_ready, choose_bridge_ordinals, collect_ready_actions,
+    decision_snapshot_from_source, replay_bridge_state, semantic_snapshot_from_source,
+    states_from_source,
+};
+use combat_batch::{
+    CombatLearningBatchEnv, COMBAT_TERMINAL_LOSS, COMBAT_TERMINAL_UNRESOLVED, COMBAT_TERMINAL_WIN,
+};
 
 use semantic::{
     ActionKind, CardZoneKind, CategoricalField, CombatActionKind, ContextKind, CounterItemKind,
     EnemyIdentityKind, IndexedChoiceCandidateKind, IndexedChoiceReasonKind, IntentKind,
     PublicCounterKind, RelationKind, RewardKind, ScalarField, SelectionCandidateKind,
-    SelectionDomainKind, SelectionReasonKind, SemanticBatch, SemanticBatchBuilder,
-    SemanticCompleteness, TokenKind, CARD_ID_VOCABULARY_SIZE, CATEGORICAL_VOCABULARY_SIZES,
-    ENCOUNTER_ID_VOCABULARY_SIZE, ENEMY_ID_VOCABULARY_SIZE, EVENT_ID_VOCABULARY_SIZE,
-    NO_CANDIDATE_TOKEN, POTION_ID_VOCABULARY_SIZE, POWER_ID_VOCABULARY_SIZE,
-    RELIC_ID_VOCABULARY_SIZE, SEMANTIC_SCHEMA_VERSION,
+    SelectionDomainKind, SelectionReasonKind, SemanticBatch, SemanticCompleteness, TokenKind,
+    CARD_ID_VOCABULARY_SIZE, CATEGORICAL_VOCABULARY_SIZES, ENCOUNTER_ID_VOCABULARY_SIZE,
+    ENEMY_ID_VOCABULARY_SIZE, EVENT_ID_VOCABULARY_SIZE, NO_CANDIDATE_TOKEN,
+    POTION_ID_VOCABULARY_SIZE, POWER_ID_VOCABULARY_SIZE, RELIC_ID_VOCABULARY_SIZE,
+    SEMANTIC_SCHEMA_VERSION,
 };
 
 const PHASE_STRATEGIC_ROOT: u8 = 0;
@@ -308,7 +319,7 @@ impl LearningBatchEnv {
                 ..RunControlConfig::default()
             }))
             .map_err(runtime_error)?;
-        let states = states_from_pool(&pool);
+        let states = states_from_source(&pool).map_err(runtime_error)?;
         Ok(Self { pool, states })
     }
 
@@ -324,12 +335,7 @@ impl LearningBatchEnv {
 
     #[getter]
     fn ready(&self) -> bool {
-        self.states.iter().all(|state| {
-            matches!(
-                state,
-                BridgeSlotState::Terminal | BridgeSlotState::Ready { .. }
-            )
-        })
+        bridge_states_ready(&self.states)
     }
 
     #[pyo3(signature = (*, max_bytes))]
@@ -363,68 +369,12 @@ impl LearningBatchEnv {
         semantic: bool,
     ) -> PyResult<Bound<'py, PyDict>> {
         let snapshot = self.decision_snapshot()?;
-        let result = PyDict::new(py);
-        result.set_item(
-            "slot_indices",
-            usize_array(py, snapshot.slot_indices.clone()),
-        )?;
-        result.set_item("phase", PyArray1::from_vec(py, snapshot.phases))?;
-        result.set_item(
-            "candidate_counts",
-            usize_array(py, snapshot.candidate_counts.clone()),
-        )?;
-        result.set_item(
-            "candidate_row_splits",
-            usize_array(py, snapshot.candidate_row_splits),
-        )?;
-        if dense_mask {
-            let width = snapshot.candidate_counts.iter().copied().max().unwrap_or(0);
-            let mut values = vec![false; snapshot.candidate_counts.len().saturating_mul(width)];
-            for (row, count) in snapshot.candidate_counts.iter().copied().enumerate() {
-                values[row * width..row * width + count].fill(true);
-            }
-            let mask = Array2::from_shape_vec((snapshot.candidate_counts.len(), width), values)
-                .map_err(|error| PyRuntimeError::new_err(error.to_string()))?;
-            result.set_item("dense_action_mask", mask.into_pyarray(py))?;
-        }
-        if semantic {
-            result.set_item("semantic", semantic_dict(py, self.semantic_snapshot()?)?)?;
-        }
-        Ok(result)
+        let semantic = semantic.then(|| self.semantic_snapshot()).transpose()?;
+        decision_batch_dict(py, snapshot, dense_mask, semantic)
     }
 
     fn choose(&mut self, ordinals: Vec<usize>) -> PyResult<()> {
-        let snapshot = self.decision_snapshot()?;
-        if ordinals.len() != snapshot.slot_indices.len() {
-            return Err(PyValueError::new_err(format!(
-                "expected {} candidate ordinals, received {}",
-                snapshot.slot_indices.len(),
-                ordinals.len()
-            )));
-        }
-
-        let mut next_states = self.states.clone();
-        for ((slot_index, candidate_count), ordinal) in snapshot
-            .slot_indices
-            .into_iter()
-            .zip(snapshot.candidate_counts)
-            .zip(ordinals)
-        {
-            if ordinal >= candidate_count {
-                return Err(PyValueError::new_err(format!(
-                    "slot {slot_index} candidate ordinal {ordinal} is outside 0..{candidate_count}"
-                )));
-            }
-            apply_bridge_ordinal(
-                &self.pool,
-                slot_index,
-                &mut next_states[slot_index],
-                ordinal,
-            )
-            .map_err(value_error)?;
-        }
-        self.states = next_states;
-        Ok(())
+        choose_bridge_ordinals(&self.pool, &mut self.states, ordinals).map_err(value_error)
     }
 
     fn step<'py>(&mut self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
@@ -433,20 +383,9 @@ impl LearningBatchEnv {
                 "all active slots must finish root and selection decisions before step",
             ));
         }
-        let mut actions = Vec::with_capacity(self.pool.active_count());
-        for state in &self.states {
-            match state {
-                BridgeSlotState::Ready { action, .. } => actions.push(action.clone()),
-                BridgeSlotState::Terminal => {}
-                BridgeSlotState::Root | BridgeSlotState::Selection { .. } => {
-                    return Err(PyRuntimeError::new_err(
-                        "driver readiness changed while collecting actions",
-                    ));
-                }
-            }
-        }
+        let actions = collect_ready_actions(&self.states).map_err(runtime_error)?;
         let step = self.pool.step_active(actions).map_err(runtime_error)?;
-        self.states = states_from_pool(&self.pool);
+        self.states = states_from_source(&self.pool).map_err(runtime_error)?;
 
         let result = PyDict::new(py);
         result.set_item(
@@ -530,6 +469,24 @@ impl LearningBatchEnv {
             result.set_item(key, PyArray1::from_vec(py, values))?;
         }
         Ok(result)
+    }
+
+    fn combat_group(
+        &self,
+        slot_index: usize,
+        replicate_count: usize,
+    ) -> PyResult<CombatLearningBatchEnv> {
+        if !matches!(self.states.get(slot_index), Some(BridgeSlotState::Root)) {
+            return Err(PyValueError::new_err(format!(
+                "slot {slot_index} must be at an undecoded root decision"
+            )));
+        }
+        let checkpoint = self
+            .pool
+            .checkpoint_slot(slot_index)
+            .map_err(runtime_error)?;
+        let root = CombatLearningRootV1::from_checkpoint(checkpoint).map_err(value_error)?;
+        CombatLearningBatchEnv::from_root(&root, replicate_count).map_err(value_error)
     }
 
     fn reset_slot(&mut self, slot_index: usize, seed: u64) -> PyResult<()> {
@@ -789,81 +746,11 @@ impl LearningBatchEnv {
     }
 
     fn decision_snapshot(&self) -> PyResult<DecisionSnapshot> {
-        let mut slot_indices = Vec::new();
-        let mut phases = Vec::new();
-        let mut candidate_counts = Vec::new();
-        let mut candidate_row_splits = vec![0];
-
-        for (slot_index, state) in self.states.iter().enumerate() {
-            let (phase, candidate_count) = match state {
-                BridgeSlotState::Root => {
-                    let boundary = self.pool.boundary(slot_index).ok_or_else(|| {
-                        PyRuntimeError::new_err(format!("missing pool slot {slot_index}"))
-                    })?;
-                    let decision =
-                        LearningModelDecisionV1::from_boundary(boundary).map_err(value_error)?;
-                    let phase = match decision.observation {
-                        LearningModelObservationV1::Strategic(_) => PHASE_STRATEGIC_ROOT,
-                        LearningModelObservationV1::Combat(_) => PHASE_COMBAT_ROOT,
-                    };
-                    (phase, decision.candidates.len())
-                }
-                BridgeSlotState::Selection { draft, .. } => {
-                    (PHASE_SELECTION, draft.decision().candidates.len())
-                }
-                BridgeSlotState::Terminal | BridgeSlotState::Ready { .. } => continue,
-            };
-            if candidate_count == 0 {
-                return Err(PyRuntimeError::new_err(format!(
-                    "slot {slot_index} exposed an empty decision row"
-                )));
-            }
-            let next = candidate_row_splits
-                .last()
-                .copied()
-                .unwrap_or(0usize)
-                .checked_add(candidate_count)
-                .ok_or_else(|| PyRuntimeError::new_err("candidate count overflow"))?;
-            slot_indices.push(slot_index);
-            phases.push(phase);
-            candidate_counts.push(candidate_count);
-            candidate_row_splits.push(next);
-        }
-
-        Ok(DecisionSnapshot {
-            slot_indices,
-            phases,
-            candidate_counts,
-            candidate_row_splits,
-        })
+        decision_snapshot_from_source(&self.pool, &self.states).map_err(runtime_error)
     }
 
     fn semantic_snapshot(&self) -> PyResult<SemanticBatch> {
-        let mut builder = SemanticBatchBuilder::new();
-        for (slot_index, state) in self.states.iter().enumerate() {
-            match state {
-                BridgeSlotState::Root => {
-                    let boundary = self.pool.boundary(slot_index).ok_or_else(|| {
-                        PyRuntimeError::new_err(format!("missing pool slot {slot_index}"))
-                    })?;
-                    let decision =
-                        LearningModelDecisionV1::from_boundary(boundary).map_err(value_error)?;
-                    builder.push_decision(&decision).map_err(runtime_error)?;
-                }
-                BridgeSlotState::Selection { draft, .. } => {
-                    let boundary = self.pool.boundary(slot_index).ok_or_else(|| {
-                        PyRuntimeError::new_err(format!("missing pool slot {slot_index}"))
-                    })?;
-                    let decision =
-                        LearningModelDecisionV1::from_boundary(boundary).map_err(value_error)?;
-                    builder
-                        .push_selection(decision.observation, draft)
-                        .map_err(runtime_error)?;
-                }
-                BridgeSlotState::Terminal | BridgeSlotState::Ready { .. } => {}
-            }
-        }
-        Ok(builder.finish())
+        semantic_snapshot_from_source(&self.pool, &self.states).map_err(runtime_error)
     }
 }
 
@@ -916,83 +803,40 @@ fn decode_serialized_checkpoint(
     Ok(checkpoint)
 }
 
-fn apply_bridge_ordinal(
-    pool: &LearningEnvPoolV1,
-    slot_index: usize,
-    state: &mut BridgeSlotState,
-    ordinal: usize,
-) -> Result<(), String> {
-    let next = match state.clone() {
-        BridgeSlotState::Root => {
-            let boundary = pool
-                .boundary(slot_index)
-                .ok_or_else(|| format!("missing pool slot {slot_index}"))?;
-            let decision = LearningModelDecisionV1::from_boundary(boundary)
-                .map_err(|error| error.to_string())?;
-            match decision
-                .choose(ordinal)
-                .map_err(|error| error.to_string())?
-            {
-                LearningModelChoiceV1::Apply(action) => BridgeSlotState::Ready {
-                    action,
-                    decision_ordinals: vec![ordinal],
-                },
-                LearningModelChoiceV1::DecodeSelection(draft) => BridgeSlotState::Selection {
-                    draft,
-                    decision_ordinals: vec![ordinal],
-                },
-            }
+fn decision_batch_dict<'py>(
+    py: Python<'py>,
+    snapshot: DecisionSnapshot,
+    dense_mask: bool,
+    semantic: Option<SemanticBatch>,
+) -> PyResult<Bound<'py, PyDict>> {
+    let result = PyDict::new(py);
+    result.set_item(
+        "slot_indices",
+        usize_array(py, snapshot.slot_indices.clone()),
+    )?;
+    result.set_item("phase", PyArray1::from_vec(py, snapshot.phases))?;
+    result.set_item(
+        "candidate_counts",
+        usize_array(py, snapshot.candidate_counts.clone()),
+    )?;
+    result.set_item(
+        "candidate_row_splits",
+        usize_array(py, snapshot.candidate_row_splits),
+    )?;
+    if dense_mask {
+        let width = snapshot.candidate_counts.iter().copied().max().unwrap_or(0);
+        let mut values = vec![false; snapshot.candidate_counts.len().saturating_mul(width)];
+        for (row, count) in snapshot.candidate_counts.iter().copied().enumerate() {
+            values[row * width..row * width + count].fill(true);
         }
-        BridgeSlotState::Selection {
-            mut draft,
-            mut decision_ordinals,
-        } => {
-            decision_ordinals.push(ordinal);
-            match draft.choose(ordinal).map_err(|error| error.to_string())? {
-                LearningSelectionStepV1::Continue => BridgeSlotState::Selection {
-                    draft,
-                    decision_ordinals,
-                },
-                LearningSelectionStepV1::Apply(action) => BridgeSlotState::Ready {
-                    action,
-                    decision_ordinals,
-                },
-            }
-        }
-        BridgeSlotState::Terminal | BridgeSlotState::Ready { .. } => {
-            return Err(format!(
-                "slot {slot_index} decision prefix continues after readiness"
-            ));
-        }
-    };
-    *state = next;
-    Ok(())
-}
-
-fn replay_bridge_state(
-    pool: &LearningEnvPoolV1,
-    slot_index: usize,
-    decision_ordinals: &[usize],
-) -> Result<BridgeSlotState, String> {
-    let mut state = match pool.boundary(slot_index) {
-        Some(LearningBoundaryV1::Terminal { .. }) => BridgeSlotState::Terminal,
-        Some(_) => BridgeSlotState::Root,
-        None => return Err(format!("missing pool slot {slot_index}")),
-    };
-    for ordinal in decision_ordinals {
-        apply_bridge_ordinal(pool, slot_index, &mut state, *ordinal)?;
+        let mask = Array2::from_shape_vec((snapshot.candidate_counts.len(), width), values)
+            .map_err(|error| PyRuntimeError::new_err(error.to_string()))?;
+        result.set_item("dense_action_mask", mask.into_pyarray(py))?;
     }
-    Ok(state)
-}
-
-fn states_from_pool(pool: &LearningEnvPoolV1) -> Vec<BridgeSlotState> {
-    (0..pool.slot_count())
-        .map(|slot_index| match pool.boundary(slot_index) {
-            Some(LearningBoundaryV1::Terminal { .. }) => BridgeSlotState::Terminal,
-            Some(_) => BridgeSlotState::Root,
-            None => unreachable!("pool slot count and boundary lookup diverged"),
-        })
-        .collect()
+    if let Some(semantic) = semantic {
+        result.set_item("semantic", semantic_dict(py, semantic)?)?;
+    }
+    Ok(result)
 }
 
 fn usize_array(py: Python<'_>, values: Vec<usize>) -> Bound<'_, PyArray1<u64>> {
@@ -1159,6 +1003,7 @@ fn runtime_error(error: impl ToString) -> PyErr {
 
 #[pymodule]
 fn _native(module: &Bound<'_, PyModule>) -> PyResult<()> {
+    module.add_class::<CombatLearningBatchEnv>()?;
     module.add_class::<LearningBatchEnv>()?;
     module.add_class::<LearningCheckpointBatch>()?;
     module.add_class::<LearningSlotCheckpoint>()?;
@@ -1166,6 +1011,9 @@ fn _native(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add("PHASE_STRATEGIC_ROOT", PHASE_STRATEGIC_ROOT)?;
     module.add("PHASE_COMBAT_ROOT", PHASE_COMBAT_ROOT)?;
     module.add("PHASE_SELECTION", PHASE_SELECTION)?;
+    module.add("COMBAT_TERMINAL_WIN", COMBAT_TERMINAL_WIN)?;
+    module.add("COMBAT_TERMINAL_LOSS", COMBAT_TERMINAL_LOSS)?;
+    module.add("COMBAT_TERMINAL_UNRESOLVED", COMBAT_TERMINAL_UNRESOLVED)?;
     module.add("SEMANTIC_SCHEMA_VERSION", SEMANTIC_SCHEMA_VERSION)?;
     module.add(
         "SEMANTIC_NOT_ENCODED",
@@ -1223,7 +1071,7 @@ mod checkpoint_tests {
         let pool = LearningEnvPoolV1::from_envs([LearningEnvV1::from_session(session)])
             .expect("create selection pool");
         let mut env = LearningBatchEnv {
-            states: states_from_pool(&pool),
+            states: states_from_source(&pool).expect("derive bridge states"),
             pool,
         };
 

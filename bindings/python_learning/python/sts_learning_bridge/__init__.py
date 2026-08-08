@@ -1,6 +1,10 @@
 """Batched typed control bridge for sts_simulator learning experiments."""
 
 from ._native import (
+    COMBAT_TERMINAL_LOSS,
+    COMBAT_TERMINAL_UNRESOLVED,
+    COMBAT_TERMINAL_WIN,
+    CombatLearningBatchEnv,
     LearningBatchEnv,
     LearningCheckpointBatch,
     LearningSlotCheckpoint,
@@ -18,6 +22,10 @@ from ._native import (
 )
 
 __all__ = [
+    "COMBAT_TERMINAL_LOSS",
+    "COMBAT_TERMINAL_UNRESOLVED",
+    "COMBAT_TERMINAL_WIN",
+    "CombatLearningBatchEnv",
     "LearningBatchEnv",
     "LearningCheckpointBatch",
     "LearningSlotCheckpoint",

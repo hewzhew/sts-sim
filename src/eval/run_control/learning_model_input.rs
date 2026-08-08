@@ -517,6 +517,12 @@ impl<'a> LearningModelDecisionV1<'a> {
         })
     }
 
+    pub fn from_combat_boundary(
+        boundary: &'a LearningCombatBoundaryV1,
+    ) -> Result<Self, LearningModelInputError> {
+        Self::from_combat(boundary)
+    }
+
     fn from_strategic(
         boundary: &'a LearningStrategicBoundaryV1,
     ) -> Result<Self, LearningModelInputError> {
@@ -677,7 +683,7 @@ impl<'a> LearningModelBatchV1<'a> {
         Self::from_decision_results(
             boundaries
                 .into_iter()
-                .map(LearningModelDecisionV1::from_combat),
+                .map(LearningModelDecisionV1::from_combat_boundary),
         )
     }
 
