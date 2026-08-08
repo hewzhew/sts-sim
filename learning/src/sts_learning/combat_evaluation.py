@@ -37,10 +37,103 @@ class CombatEvaluationLimits:
 
 
 @dataclass(frozen=True)
+class CombatEvaluationRootContext:
+    """Public run context needed to interpret one combat resource outcome."""
+
+    act: int
+    floor: int
+    ascension_level: int
+    turn: int
+    is_boss_fight: bool
+    is_elite_fight: bool
+    monster_count: int
+    living_monster_count: int
+    potion_slot_count: int
+    filled_potion_count: int
+    usable_potion_count: int
+    master_deck_card_count: int
+    relic_count: int
+    hand_card_count: int
+    hp: int
+    max_hp: int
+    gold: int
+    potion_ids: tuple[str | None, ...]
+
+    @classmethod
+    def from_environment(cls, env: object) -> CombatEvaluationRootContext:
+        try:
+            context = env.root_context
+            return cls(
+                act=context.act,
+                floor=context.floor,
+                ascension_level=context.ascension_level,
+                turn=context.turn,
+                is_boss_fight=context.is_boss_fight,
+                is_elite_fight=context.is_elite_fight,
+                monster_count=context.monster_count,
+                living_monster_count=context.living_monster_count,
+                potion_slot_count=context.potion_slot_count,
+                filled_potion_count=context.filled_potion_count,
+                usable_potion_count=context.usable_potion_count,
+                master_deck_card_count=context.master_deck_card_count,
+                relic_count=context.relic_count,
+                hand_card_count=context.hand_card_count,
+                hp=context.hp,
+                max_hp=context.max_hp,
+                gold=env.root_gold,
+                potion_ids=tuple(env.root_potion_ids),
+            )
+        except AttributeError as error:
+            raise CombatEvaluationError(
+                "combat evaluation source omitted exact root context"
+            ) from error
+
+    def __post_init__(self) -> None:
+        for name in (
+            "act",
+            "floor",
+            "ascension_level",
+            "turn",
+            "monster_count",
+            "living_monster_count",
+            "potion_slot_count",
+            "filled_potion_count",
+            "usable_potion_count",
+            "master_deck_card_count",
+            "relic_count",
+            "hand_card_count",
+            "hp",
+            "max_hp",
+            "gold",
+        ):
+            object.__setattr__(
+                self,
+                name,
+                _nonnegative_integer(getattr(self, name), name),
+            )
+        for name in ("is_boss_fight", "is_elite_fight"):
+            if not isinstance(getattr(self, name), bool):
+                raise CombatEvaluationError(f"{name} must be boolean")
+        if self.hp == 0 or self.max_hp == 0 or self.hp > self.max_hp:
+            raise CombatEvaluationError("root hp must be in 1..max_hp")
+        potion_ids = _potion_ids(self.potion_ids, "root potion_ids")
+        if len(potion_ids) != self.potion_slot_count:
+            raise CombatEvaluationError(
+                "root potion ids do not match potion_slot_count"
+            )
+        if sum(potion is not None for potion in potion_ids) != self.filled_potion_count:
+            raise CombatEvaluationError(
+                "root potion ids do not match filled_potion_count"
+            )
+        object.__setattr__(self, "potion_ids", potion_ids)
+
+
+@dataclass(frozen=True)
 class CombatEvaluationRootResult:
     """Terminal facts for every replicate of one exact held-out root."""
 
     group: CompletedCombatGroup
+    context: CombatEvaluationRootContext
     model_rounds: int
     transitions: int
 
@@ -48,6 +141,21 @@ class CombatEvaluationRootResult:
         if not isinstance(self.group, CompletedCombatGroup):
             raise CombatEvaluationError(
                 "combat evaluation root requires a completed combat group"
+            )
+        if not isinstance(self.context, CombatEvaluationRootContext):
+            raise CombatEvaluationError(
+                "combat evaluation root requires typed public context"
+            )
+        if self.context.hp != self.group.outcomes[0].start_hp:
+            raise CombatEvaluationError(
+                "combat evaluation context and outcome start_hp disagree"
+            )
+        if any(
+            len(outcome.final_potion_ids) != self.context.potion_slot_count
+            for outcome in self.group.outcomes
+        ):
+            raise CombatEvaluationError(
+                "combat evaluation outcome changed potion slot count"
             )
         object.__setattr__(
             self,
@@ -243,6 +351,7 @@ def _evaluate_group(
         raise CombatEvaluationError(
             "combat evaluation requires a fresh group"
         )
+    context = CombatEvaluationRootContext.from_environment(env)
     try:
         outcomes = CombatGroupOutcomeAccumulator(
             root_id=env.root_id,
@@ -290,6 +399,7 @@ def _evaluate_group(
             )
     return CombatEvaluationRootResult(
         group=outcomes.finish(),
+        context=context,
         model_rounds=model_rounds,
         transitions=transitions,
     )
@@ -312,3 +422,18 @@ def _nonnegative_integer(value: object, name: str) -> int:
     if normalized < 0:
         raise CombatEvaluationError(f"{name} must be non-negative")
     return normalized
+
+
+def _potion_ids(value: object, name: str) -> tuple[str | None, ...]:
+    try:
+        potion_ids = tuple(value)
+    except TypeError as error:
+        raise CombatEvaluationError(f"{name} must be iterable") from error
+    if not all(
+        potion is None or isinstance(potion, str) and potion
+        for potion in potion_ids
+    ):
+        raise CombatEvaluationError(
+            f"{name} must contain non-empty ids or empty slots"
+        )
+    return potion_ids

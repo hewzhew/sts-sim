@@ -81,11 +81,14 @@ class _TwoTransitionWinningReplay:
             "terminal_won": (True,) if terminal else (),
             "terminal_start_hp": (80,) if terminal else (),
             "terminal_final_hp": (10,) if terminal else (),
+            "terminal_final_max_hp": (80,) if terminal else (),
+            "terminal_final_gold": (99,) if terminal else (),
             "terminal_hp_loss": (70,) if terminal else (),
             "terminal_turns": (3,) if terminal else (),
             "terminal_potions_used": (1,) if terminal else (),
             "terminal_potions_discarded": (0,) if terminal else (),
             "terminal_cards_played": (8,) if terminal else (),
+            "terminal_potion_ids": ((None,),) if terminal else (),
         }
 
 

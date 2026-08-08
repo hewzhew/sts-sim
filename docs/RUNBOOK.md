@@ -711,11 +711,16 @@ Use `evaluate-combat` on a distinct opaque root artifact after publication. The
 behavior directory must be an exact completed `train-combat` output containing
 one durable checkpoint and manifest. The evaluator verifies their complete
 provenance, gives every root an independent explicit behavior RNG stream, and
-writes only `evaluation.json` with per-replicate win, HP, turn, potion, and card
-facts plus compact aggregates. It creates no optimizer, trainer, experience
-buffer, or behavior promotion. A result measures the exact frozen manifest on
-that bounded sample; it does not establish improvement without a comparable
-baseline using the same roots and RNG streams.
+writes only `evaluation.json` with per-replicate win, HP/max HP, gold, turn,
+concrete starting/final/lost/gained potion identities, potion use/discard
+counts, and card facts plus compact aggregates. The completion line includes each root's
+site and starting potion identities, so routine resource-loss classification
+does not require reopening the JSON. Identity loss is an inventory fact, not a
+static potion-value score; strategic retained value requires an exact run
+continuation outside this evaluator. It creates no optimizer, trainer,
+experience buffer, or behavior promotion. A result measures the exact frozen
+manifest on that bounded sample; it does not establish improvement without a
+comparable baseline using the same roots and RNG streams.
 
 `test` requires PyTorch and the installed bridge and runs the complete learning
 suite; missing training dependencies are failures, not skips. `verify` runs

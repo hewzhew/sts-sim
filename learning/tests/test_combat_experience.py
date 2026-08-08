@@ -69,11 +69,17 @@ class _OneStepCombatGroup:
             "terminal_won": np.asarray([True, False], dtype=np.bool_),
             "terminal_start_hp": np.asarray([80, 80], dtype=np.int32),
             "terminal_final_hp": np.asarray([70, 0], dtype=np.int32),
+            "terminal_final_max_hp": np.asarray([80, 80], dtype=np.int32),
+            "terminal_final_gold": np.asarray([99, 99], dtype=np.int32),
             "terminal_hp_loss": np.asarray([10, 80], dtype=np.int32),
             "terminal_turns": np.asarray([3, 5], dtype=np.uint32),
             "terminal_potions_used": np.asarray([0, 1], dtype=np.uint32),
             "terminal_potions_discarded": np.asarray([0, 0], dtype=np.uint32),
             "terminal_cards_played": np.asarray([8, 12], dtype=np.uint32),
+            "terminal_potion_ids": (
+                ("FearPotion",),
+                (None,),
+            ),
         }
 
 

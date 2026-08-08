@@ -6,6 +6,7 @@ import argparse
 import hashlib
 import json
 import time
+from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -29,7 +30,7 @@ from .torch_combat_session_config import (
 )
 
 
-COMBAT_EVALUATION_SCHEMA = "sts-learning-combat-held-out-evaluation-v1"
+COMBAT_EVALUATION_SCHEMA = "sts-learning-combat-held-out-evaluation-v2"
 
 
 class CombatEvaluationCommandError(RuntimeError):
@@ -170,10 +171,62 @@ def run_combat_evaluation(
         str(sum(outcome.potions_used for outcome in root.group.outcomes))
         for root in result.roots
     )
+    root_potions_discarded = ",".join(
+        str(sum(outcome.potions_discarded for outcome in root.group.outcomes))
+        for root in result.roots
+    )
+    root_sites = ",".join(
+        f"A{root.context.act}F{root.context.floor}"
+        for root in result.roots
+    )
+    root_start_potions = ",".join(
+        "+".join(
+            potion
+            for potion in root.context.potion_ids
+            if potion is not None
+        )
+        or "-"
+        for root in result.roots
+    )
+    potion_losses = Counter(
+        potion
+        for root in result.roots
+        for outcome in root.group.outcomes
+        for potion in _potion_identity_change(
+            root.context.potion_ids,
+            outcome.final_potion_ids,
+        )[0]
+    )
+    potion_gains = Counter(
+        potion
+        for root in result.roots
+        for outcome in root.group.outcomes
+        for potion in _potion_identity_change(
+            root.context.potion_ids,
+            outcome.final_potion_ids,
+        )[1]
+    )
+    lost_potions = (
+        ",".join(
+            f"{potion}:{count}"
+            for potion, count in sorted(potion_losses.items())
+        )
+        or "none"
+    )
+    gained_potions = (
+        ",".join(
+            f"{potion}:{count}"
+            for potion, count in sorted(potion_gains.items())
+        )
+        or "none"
+    )
     print(
         f"evaluation_complete=true wins={result.wins} losses={result.losses} "
         f"root_wins={root_wins} root_final_hp_sums={root_final_hp} "
         f"root_potions_used={root_potions_used} "
+        f"root_potions_discarded={root_potions_discarded} "
+        f"root_sites={root_sites} root_start_potions={root_start_potions} "
+        f"lost_potions={lost_potions} gained_potions={gained_potions} "
         f"seconds={elapsed:.3f} output={config.output}",
         flush=True,
     )
@@ -198,6 +251,24 @@ def _summary(
         for root in result.roots
         for outcome in root.group.outcomes
     )
+    potion_losses = Counter(
+        potion
+        for root in result.roots
+        for outcome in root.group.outcomes
+        for potion in _potion_identity_change(
+            root.context.potion_ids,
+            outcome.final_potion_ids,
+        )[0]
+    )
+    potion_gains = Counter(
+        potion
+        for root in result.roots
+        for outcome in root.group.outcomes
+        for potion in _potion_identity_change(
+            root.context.potion_ids,
+            outcome.final_potion_ids,
+        )[1]
+    )
     return {
         "schema": COMBAT_EVALUATION_SCHEMA,
         "kind": "completed",
@@ -216,10 +287,17 @@ def _summary(
         "losses": result.losses,
         "final_hp_sum": sum(outcome.final_hp for outcome in outcomes),
         "hp_loss_sum": sum(outcome.hp_loss for outcome in outcomes),
+        "gold_delta_sum": sum(
+            outcome.final_gold - root.context.gold
+            for root in result.roots
+            for outcome in root.group.outcomes
+        ),
         "potions_used": sum(outcome.potions_used for outcome in outcomes),
         "potions_discarded": sum(
             outcome.potions_discarded for outcome in outcomes
         ),
+        "lost_potion_ids": dict(sorted(potion_losses.items())),
+        "gained_potion_ids": dict(sorted(potion_gains.items())),
         "turns_sum": sum(outcome.turns for outcome in outcomes),
         "cards_played_sum": sum(outcome.cards_played for outcome in outcomes),
         "roots": roots,
@@ -232,6 +310,7 @@ def _root_summary(
     root: CombatEvaluationRootResult,
 ) -> dict[str, object]:
     outcomes = root.group.outcomes
+    context = root.context
     return {
         "slot_index": slot_index,
         "root_id": root.group.root_id,
@@ -240,7 +319,26 @@ def _root_summary(
         "losses": root.losses,
         "model_rounds": root.model_rounds,
         "transitions": root.transitions,
-        "start_hp": outcomes[0].start_hp,
+        "context": {
+            "act": context.act,
+            "floor": context.floor,
+            "ascension_level": context.ascension_level,
+            "turn": context.turn,
+            "is_boss_fight": context.is_boss_fight,
+            "is_elite_fight": context.is_elite_fight,
+            "monster_count": context.monster_count,
+            "living_monster_count": context.living_monster_count,
+            "master_deck_card_count": context.master_deck_card_count,
+            "relic_count": context.relic_count,
+            "hand_card_count": context.hand_card_count,
+            "hp": context.hp,
+            "max_hp": context.max_hp,
+            "gold": context.gold,
+            "potion_slot_count": context.potion_slot_count,
+            "filled_potion_count": context.filled_potion_count,
+            "usable_potion_count": context.usable_potion_count,
+            "potion_ids": context.potion_ids,
+        },
         "final_hp_sum": sum(outcome.final_hp for outcome in outcomes),
         "hp_loss_sum": sum(outcome.hp_loss for outcome in outcomes),
         "potions_used": sum(outcome.potions_used for outcome in outcomes),
@@ -253,15 +351,52 @@ def _root_summary(
                 "terminal_kind": outcome.terminal_kind,
                 "won": outcome.won,
                 "final_hp": outcome.final_hp,
+                "final_max_hp": outcome.final_max_hp,
+                "final_gold": outcome.final_gold,
+                "gold_delta": outcome.final_gold - context.gold,
                 "hp_loss": outcome.hp_loss,
                 "turns": outcome.turns,
                 "potions_used": outcome.potions_used,
                 "potions_discarded": outcome.potions_discarded,
                 "cards_played": outcome.cards_played,
+                "final_potion_ids": outcome.final_potion_ids,
+                "lost_potion_ids": _potion_identity_change(
+                    context.potion_ids,
+                    outcome.final_potion_ids,
+                )[0],
+                "gained_potion_ids": _potion_identity_change(
+                    context.potion_ids,
+                    outcome.final_potion_ids,
+                )[1],
             }
             for outcome in outcomes
         ),
     }
+
+
+def _potion_identity_change(
+    starting: tuple[str | None, ...],
+    final: tuple[str | None, ...],
+) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    retained = Counter(potion for potion in final if potion is not None)
+    lost: list[str] = []
+    for potion in starting:
+        if potion is None:
+            continue
+        if retained[potion] > 0:
+            retained[potion] -= 1
+        else:
+            lost.append(potion)
+    existing = Counter(potion for potion in starting if potion is not None)
+    gained: list[str] = []
+    for potion in final:
+        if potion is None:
+            continue
+        if existing[potion] > 0:
+            existing[potion] -= 1
+        else:
+            gained.append(potion)
+    return tuple(lost), tuple(gained)
 
 
 def _positive(value: object, name: str) -> int:

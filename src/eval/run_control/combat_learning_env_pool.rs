@@ -8,8 +8,8 @@ use std::fmt;
 
 use super::{
     CombatLearningBoundaryV1, CombatLearningEnvCheckpointV1, CombatLearningEnvV1,
-    CombatLearningRootContextV1, CombatLearningRootIdentityV1, CombatLearningRootV1,
-    CombatLearningTerminalOutcomeV1, LearningActionV1, LearningModelBatchV1,
+    CombatLearningResourceSnapshotV1, CombatLearningRootContextV1, CombatLearningRootIdentityV1,
+    CombatLearningRootV1, CombatLearningTerminalOutcomeV1, LearningActionV1, LearningModelBatchV1,
     LearningModelInputError,
 };
 
@@ -23,6 +23,7 @@ struct CombatLearningEnvPoolSlotV1 {
 pub struct CombatLearningEnvPoolV1 {
     root: CombatLearningRootIdentityV1,
     root_context: CombatLearningRootContextV1,
+    root_resources: CombatLearningResourceSnapshotV1,
     slots: Vec<CombatLearningEnvPoolSlotV1>,
     poisoned: bool,
 }
@@ -59,6 +60,7 @@ impl CombatLearningEnvPoolV1 {
         Ok(Self {
             root: root.identity().clone(),
             root_context: *root.context(),
+            root_resources: root.resources().clone(),
             slots,
             poisoned: false,
         })
@@ -70,6 +72,10 @@ impl CombatLearningEnvPoolV1 {
 
     pub fn root_context(&self) -> &CombatLearningRootContextV1 {
         &self.root_context
+    }
+
+    pub fn root_resources(&self) -> &CombatLearningResourceSnapshotV1 {
+        &self.root_resources
     }
 
     pub fn replicate_count(&self) -> usize {

@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::ai::combat_state_key::combat_exact_state_hash_v2;
+use crate::content::potions::PotionId;
 use crate::state::core::ClientInput;
 
 use super::learning_env::{learning_combat_boundary_v1, prepare_learning_combat_input_v1};
@@ -52,11 +53,25 @@ pub struct CombatLearningEpisodeIdentityV1 {
     pub replicate_index: u32,
 }
 
+/// Persistent run resources at one exact combat boundary.
+///
+/// Potion identity stays explicit evidence; this type assigns no retained value
+/// or exchange rate between HP, gold, and inventory.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct CombatLearningResourceSnapshotV1 {
+    pub hp: i32,
+    pub max_hp: i32,
+    pub gold: i32,
+    pub potion_ids: Vec<Option<PotionId>>,
+}
+
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct CombatLearningTerminalOutcomeV1 {
     pub episode: CombatLearningEpisodeIdentityV1,
     pub combat: CombatBaselineOutcomeV1,
+    pub resources: CombatLearningResourceSnapshotV1,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -100,6 +115,7 @@ pub struct CombatLearningEnvCheckpointV1 {
 pub struct CombatLearningRootV1 {
     identity: CombatLearningRootIdentityV1,
     context: CombatLearningRootContextV1,
+    resources: CombatLearningResourceSnapshotV1,
     session: RunControlSessionCheckpointV1,
     previous_outcome: Option<CombatBaselineOutcomeV1>,
 }
@@ -112,10 +128,12 @@ impl CombatLearningRootV1 {
             exact_combat_state_hash: combat_exact_state_hash_v2(&position.engine, &position.combat),
         };
         let context = combat_learning_root_context_v1(&session, &position.combat)?;
+        let resources = combat_learning_resources_from_combat_v1(&position.combat);
         let previous_outcome = session.last_combat_baseline().cloned();
         Ok(Self {
             identity,
             context,
+            resources,
             session: RunControlSessionCheckpointV1::from_session(&session),
             previous_outcome,
         })
@@ -133,6 +151,10 @@ impl CombatLearningRootV1 {
         &self.context
     }
 
+    pub fn resources(&self) -> &CombatLearningResourceSnapshotV1 {
+        &self.resources
+    }
+
     pub fn spawn(&self, replicate_index: u32) -> Result<CombatLearningEnvV1, String> {
         let env = CombatLearningEnvV1 {
             episode: CombatLearningEpisodeIdentityV1 {
@@ -144,6 +166,38 @@ impl CombatLearningRootV1 {
         };
         env.observe()?;
         Ok(env)
+    }
+}
+
+fn combat_learning_resources_from_combat_v1(
+    combat: &crate::runtime::combat::CombatState,
+) -> CombatLearningResourceSnapshotV1 {
+    CombatLearningResourceSnapshotV1 {
+        hp: combat.entities.player.current_hp,
+        max_hp: combat.entities.player.max_hp,
+        gold: combat.entities.player.gold,
+        potion_ids: combat
+            .entities
+            .potions
+            .iter()
+            .map(|slot| slot.as_ref().map(|potion| potion.id))
+            .collect(),
+    }
+}
+
+fn combat_learning_resources_from_run_v1(
+    session: &RunControlSession,
+) -> CombatLearningResourceSnapshotV1 {
+    CombatLearningResourceSnapshotV1 {
+        hp: session.run_state.current_hp,
+        max_hp: session.run_state.max_hp,
+        gold: session.run_state.gold,
+        potion_ids: session
+            .run_state
+            .potions
+            .iter()
+            .map(|slot| slot.as_ref().map(|potion| potion.id))
+            .collect(),
     }
 }
 
@@ -257,6 +311,7 @@ impl CombatLearningEnvV1 {
             outcome: CombatLearningTerminalOutcomeV1 {
                 episode: self.episode.clone(),
                 combat,
+                resources: combat_learning_resources_from_run_v1(&self.session),
             },
         })
     }

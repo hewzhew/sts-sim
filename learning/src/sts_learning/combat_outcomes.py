@@ -21,11 +21,14 @@ class CombatTerminalOutcome:
     won: bool
     start_hp: int
     final_hp: int
+    final_max_hp: int
+    final_gold: int
     hp_loss: int
     turns: int
     potions_used: int
     potions_discarded: int
     cards_played: int
+    final_potion_ids: tuple[str | None, ...]
 
     def __post_init__(self) -> None:
         for name in (
@@ -33,6 +36,8 @@ class CombatTerminalOutcome:
             "terminal_kind",
             "start_hp",
             "final_hp",
+            "final_max_hp",
+            "final_gold",
             "hp_loss",
             "turns",
             "potions_used",
@@ -50,6 +55,12 @@ class CombatTerminalOutcome:
             raise CombatOutcomeError("start_hp must be positive")
         if self.final_hp < 0:
             raise CombatOutcomeError("final_hp must be non-negative")
+        if self.final_max_hp <= 0 or self.final_hp > self.final_max_hp:
+            raise CombatOutcomeError(
+                "final_hp must be in 0..final_max_hp"
+            )
+        if self.final_gold < 0:
+            raise CombatOutcomeError("final_gold must be non-negative")
         if self.hp_loss != max(self.start_hp - self.final_hp, 0):
             raise CombatOutcomeError("hp_loss disagrees with start_hp and final_hp")
         for name in (
@@ -60,6 +71,15 @@ class CombatTerminalOutcome:
         ):
             if getattr(self, name) < 0:
                 raise CombatOutcomeError(f"{name} must be non-negative")
+        potion_ids = tuple(self.final_potion_ids)
+        if not all(
+            potion is None or isinstance(potion, str) and potion
+            for potion in potion_ids
+        ):
+            raise CombatOutcomeError(
+                "final_potion_ids must contain non-empty ids or empty slots"
+            )
+        object.__setattr__(self, "final_potion_ids", potion_ids)
 
 
 @dataclass(frozen=True)
@@ -103,6 +123,8 @@ class CombatTerminalStepBatch:
                 "terminal_kind",
                 "terminal_start_hp",
                 "terminal_final_hp",
+                "terminal_final_max_hp",
+                "terminal_final_gold",
                 "terminal_hp_loss",
                 "terminal_turns",
                 "terminal_potions_used",
@@ -127,11 +149,19 @@ class CombatTerminalStepBatch:
                 won=columns["terminal_won"][row],
                 start_hp=columns["terminal_start_hp"][row],
                 final_hp=columns["terminal_final_hp"][row],
+                final_max_hp=columns["terminal_final_max_hp"][row],
+                final_gold=columns["terminal_final_gold"][row],
                 hp_loss=columns["terminal_hp_loss"][row],
                 turns=columns["terminal_turns"][row],
                 potions_used=columns["terminal_potions_used"][row],
                 potions_discarded=columns["terminal_potions_discarded"][row],
                 cards_played=columns["terminal_cards_played"][row],
+                final_potion_ids=_potion_id_row(
+                    step,
+                    "terminal_potion_ids",
+                    row,
+                    row_count,
+                ),
             )
             for row in range(row_count)
         )
@@ -313,6 +343,34 @@ def _boolean_column(step: Mapping[str, object], name: str) -> tuple[bool, ...]:
     if isinstance(raw, (str, bytes)) or not isinstance(raw, Iterable):
         raise CombatOutcomeError(f"combat terminal column {name} is not iterable")
     return tuple(_boolean(value, name) for value in raw)
+
+
+def _potion_id_row(
+    step: Mapping[str, object],
+    name: str,
+    row: int,
+    row_count: int,
+) -> tuple[str | None, ...]:
+    try:
+        raw_rows = step[name]
+    except KeyError as error:
+        raise CombatOutcomeError(f"bridge combat step is missing {name}") from error
+    if isinstance(raw_rows, (str, bytes)) or not isinstance(raw_rows, Iterable):
+        raise CombatOutcomeError(f"combat terminal column {name} is not iterable")
+    rows = tuple(raw_rows)
+    if len(rows) != row_count:
+        raise CombatOutcomeError(
+            f"combat terminal column {name} has {len(rows)} rows, expected {row_count}"
+        )
+    raw = rows[row]
+    if isinstance(raw, (str, bytes)) or not isinstance(raw, Iterable):
+        raise CombatOutcomeError(f"combat terminal {name} row is not iterable")
+    values = tuple(raw)
+    if not all(value is None or isinstance(value, str) and value for value in values):
+        raise CombatOutcomeError(
+            f"combat terminal {name} row contains an invalid potion id"
+        )
+    return values
 
 
 def _string_field(step: Mapping[str, object], name: str) -> str:

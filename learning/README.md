@@ -212,9 +212,15 @@ This command verifies the exact durable manifest, checkpoint, maintained model
 profile, schema, trainer provenance, and training step before evaluation. It
 uses independent explicit RNG streams per root and writes one compact
 `evaluation.json`; it creates no optimizer, trainer, experience collector, or
-promotion owner. The terminal win, HP, turn, potion, and card facts measure that
-exact manifest on the bounded held-out sample and are not an improvement claim
-without a same-input frozen baseline.
+promotion owner. The root and terminal records preserve HP/max HP, gold,
+concrete potion-slot identities, lost/gained identity deltas, potion use/discard
+counts, turn, and card facts as separate axes. Potion identity deltas are
+multiset inventory facts; the
+evaluator neither assigns potion tiers nor invents an HP/gold/potion exchange
+rate. Cross-combat resource value requires an exact continuation and remains
+outside this command. These facts measure that exact manifest on the bounded
+held-out sample and are not an improvement claim without a same-input frozen
+baseline.
 
 The same result includes a typed competence plan over exact source slots.
 All-loss roots enter a rescue backlog, mixed win/loss roots form the survival

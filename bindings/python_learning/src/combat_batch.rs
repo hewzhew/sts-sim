@@ -195,6 +195,16 @@ impl CombatLearningBatchEnv {
     }
 
     #[getter]
+    fn root_gold(&self) -> i32 {
+        self.pool.root_resources().gold
+    }
+
+    #[getter]
+    fn root_potion_ids(&self) -> Vec<Option<String>> {
+        potion_id_names(&self.pool.root_resources().potion_ids)
+    }
+
+    #[getter]
     fn replicate_count(&self) -> usize {
         self.pool.replicate_count()
     }
@@ -384,8 +394,42 @@ impl CombatLearningBatchEnv {
         ] {
             result.set_item(key, PyArray1::from_vec(py, values))?;
         }
+        for (key, values) in [
+            (
+                "terminal_final_max_hp",
+                terminal_slots
+                    .iter()
+                    .map(|(_, outcome)| outcome.resources.max_hp)
+                    .collect(),
+            ),
+            (
+                "terminal_final_gold",
+                terminal_slots
+                    .iter()
+                    .map(|(_, outcome)| outcome.resources.gold)
+                    .collect(),
+            ),
+        ] {
+            result.set_item(key, PyArray1::from_vec(py, values))?;
+        }
+        result.set_item(
+            "terminal_potion_ids",
+            terminal_slots
+                .iter()
+                .map(|(_, outcome)| potion_id_names(&outcome.resources.potion_ids))
+                .collect::<Vec<_>>(),
+        )?;
         Ok(result)
     }
+}
+
+fn potion_id_names(
+    potion_ids: &[Option<sts_oracle_eval::content::potions::PotionId>],
+) -> Vec<Option<String>> {
+    potion_ids
+        .iter()
+        .map(|potion| potion.map(|potion| format!("{potion:?}")))
+        .collect()
 }
 
 impl CombatLearningBatchEnv {

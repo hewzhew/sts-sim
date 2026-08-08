@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import numpy as np
 
 from learning.tests.semantic_fixtures import semantic_batch_fixture
@@ -35,6 +37,26 @@ class OneRoundCombatGroup:
         self.exact_combat_state_hash = exact_combat_state_hash
         self.wins = wins
         self.final_hps = final_hps
+        self.root_context = SimpleNamespace(
+            act=1,
+            floor=4,
+            ascension_level=20,
+            turn=1,
+            is_boss_fight=False,
+            is_elite_fight=False,
+            monster_count=1,
+            living_monster_count=1,
+            potion_slot_count=2,
+            filled_potion_count=2,
+            usable_potion_count=2,
+            master_deck_card_count=12,
+            relic_count=1,
+            hand_card_count=5,
+            hp=80,
+            max_hp=80,
+        )
+        self.root_gold = 99
+        self.root_potion_ids = ("EntropicBrew", "GamblersBrew")
         self.terminal_count = 0
         self.ready = False
         self.choose_calls = 0
@@ -73,11 +95,17 @@ class OneRoundCombatGroup:
             "terminal_won": np.asarray(self.wins, dtype=np.bool_),
             "terminal_start_hp": np.asarray([80, 80], dtype=np.int32),
             "terminal_final_hp": final_hp,
+            "terminal_final_max_hp": np.asarray([80, 80], dtype=np.int32),
+            "terminal_final_gold": np.asarray([99, 99], dtype=np.int32),
             "terminal_hp_loss": 80 - final_hp,
             "terminal_turns": np.asarray([3, 5], dtype=np.uint32),
             "terminal_potions_used": np.asarray([0, 1], dtype=np.uint32),
             "terminal_potions_discarded": np.asarray([0, 0], dtype=np.uint32),
             "terminal_cards_played": np.asarray([8, 12], dtype=np.uint32),
+            "terminal_potion_ids": (
+                ("EntropicBrew", "GamblersBrew"),
+                ("BlockPotion", "GamblersBrew"),
+            ),
         }
 
 
@@ -190,9 +218,16 @@ def _outcome(
         won=won,
         start_hp=80,
         final_hp=final_hp,
+        final_max_hp=80,
+        final_gold=99,
         hp_loss=80 - final_hp,
         turns=3,
         potions_used=potions_used,
         potions_discarded=0,
         cards_played=8,
+        final_potion_ids=(
+            ("FearPotion", "GamblersBrew")
+            if potions_used == 0
+            else (None, "GamblersBrew")
+        ),
     )

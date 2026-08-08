@@ -30,11 +30,14 @@ def _outcome(
         won=kind == WIN_KIND,
         start_hp=80,
         final_hp=final_hp,
+        final_max_hp=80,
+        final_gold=99,
         hp_loss=max(80 - final_hp, 0),
         turns=3,
         potions_used=potions_used,
         potions_discarded=0,
         cards_played=8,
+        final_potion_ids=("FearPotion",),
     )
 
 
@@ -50,6 +53,8 @@ def _bridge_step(replicates: list[int]) -> dict[str, object]:
         "terminal_final_hp": np.asarray(
             [80 - 10 * replicate for replicate in replicates], dtype=np.int32
         ),
+        "terminal_final_max_hp": np.full(rows, 80, dtype=np.int32),
+        "terminal_final_gold": np.full(rows, 99, dtype=np.int32),
         "terminal_hp_loss": np.asarray(
             [10 * replicate for replicate in replicates], dtype=np.int32
         ),
@@ -57,6 +62,7 @@ def _bridge_step(replicates: list[int]) -> dict[str, object]:
         "terminal_potions_used": np.zeros(rows, dtype=np.uint32),
         "terminal_potions_discarded": np.zeros(rows, dtype=np.uint32),
         "terminal_cards_played": np.full(rows, 8, dtype=np.uint32),
+        "terminal_potion_ids": tuple(("FearPotion",) for _ in range(rows)),
     }
 
 
@@ -146,11 +152,14 @@ def test_same_root_group_rejects_mismatched_start_hp() -> None:
         won=True,
         start_hp=79,
         final_hp=79,
+        final_max_hp=80,
+        final_gold=99,
         hp_loss=0,
         turns=3,
         potions_used=0,
         potions_discarded=0,
         cards_played=8,
+        final_potion_ids=("FearPotion",),
     )
 
     with pytest.raises(CombatOutcomeError):

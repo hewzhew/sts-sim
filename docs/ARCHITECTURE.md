@@ -167,7 +167,11 @@ captures one compact typed `CombatLearningRootContextV1` from public root facts:
 act, floor, ascension, turn, encounter flags, entity and inventory counts, deck,
 relic and hand counts, and root HP. The context is collection metadata rather
 than a second observation, feature dictionary, reward, or teacher label; it is
-not repeated in decision rows. Every spawned episode carries the root identity
+not repeated in decision rows. A separate exact resource snapshot retains root
+HP/max HP, gold, and every potion slot by typed identity. Terminal episodes
+retain those same resource axes after combat. These snapshots are outcome
+facts, not a static potion ranking or an exchange rate among survival, HP,
+gold, and potion identities. Every spawned episode carries the root identity
 plus an explicit replicate index,
 accepts only `LearningActionV1::CombatInput`, reuses the complete combat
 observation and legal-action surface above, and terminates with the existing
@@ -270,13 +274,21 @@ An undecoded combat slot may create a fixed-size group of exact same-root
 combat episodes. Rust owns the normalized run-session root id, exact combat
 state hash, numbered replicate lineage, and terminal outcome facts; each
 bridge transition repeats both root identities and emits aligned terminal win,
-HP, turn, potion, and card-play columns only for newly terminal replicates.
+HP/max HP, gold, concrete potion-slot identities, turn, potion-action counts,
+and card-play columns only for newly terminal replicates.
 The Python caller rejects a terminal batch from another root before mutating
 its bounded accumulator and completes a group only after receiving exactly one
 outcome for every replicate. Same-root leave-one-out evidence remains three
 independent axes: win, terminal-HP ratio, and potion retention. There is no
 default scalar exchange rate between HP and potions, and the execution
 primitive is not itself a trainer or teacher.
+
+Held-out combat evaluation preserves these resource facts without reducing
+them to one score. Its root and replicate records make HP and gold deltas,
+concrete starting/final/lost/gained potion identities, and use/discard counts
+independently inspectable. A lost identity is a multiset inventory fact, not a
+claim about whether spending it was strategically correct. Cross-combat value
+requires an exact run continuation and remains outside the combat evaluator.
 
 The combat-group caller captures each semantic decision batch before policy
 inference through the same policy-neutral frozen-row owner used by run

@@ -224,6 +224,9 @@ def _assert_same_root_combat_group(env: LearningBatchEnv, slot: int) -> None:
     assert isinstance(context, CombatLearningRootContextV1)
     assert _combat_root_context_values(preview_context) == _combat_root_context_values(context)
     assert context.act >= 1
+    assert group.root_gold >= 0
+    assert len(group.root_potion_ids) == context.potion_slot_count
+    assert all(potion is None or isinstance(potion, str) for potion in group.root_potion_ids)
     assert context.floor >= 0
     assert context.ascension_level >= 0
     assert context.turn >= 0
@@ -283,9 +286,16 @@ def _assert_same_root_combat_group(env: LearningBatchEnv, slot: int) -> None:
             "terminal_start_hp",
             "terminal_final_hp",
             "terminal_hp_loss",
+            "terminal_final_max_hp",
+            "terminal_final_gold",
         ):
             assert step[key].dtype == np.int32
             assert step[key].shape == (terminal_count,)
+        assert len(step["terminal_potion_ids"]) == terminal_count
+        assert all(
+            len(potions) == context.potion_slot_count
+            for potions in step["terminal_potion_ids"]
+        )
         for key in (
             "terminal_turns",
             "terminal_potions_used",

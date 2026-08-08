@@ -105,6 +105,7 @@ def test_evaluation_recovers_published_behavior_without_training_or_experience(
         bridge=bridge,
     )
 
+    assert summary["schema"] == "sts-learning-combat-held-out-evaluation-v2"
     assert training_source.calls == [0, 1]
     assert evaluation_source.calls == [0, 1]
     assert summary["wins"] == 3
@@ -112,10 +113,25 @@ def test_evaluation_recovers_published_behavior_without_training_or_experience(
     assert summary["behavior_training_step"] == 1
     assert summary["behavior_training_root_count"] == 2
     assert summary["final_hp_sum"] == 201
+    assert summary["gold_delta_sum"] == 0
+    assert summary["lost_potion_ids"] == {"EntropicBrew": 2}
+    assert summary["gained_potion_ids"] == {"BlockPotion": 2}
     assert tuple(root["wins"] for root in summary["roots"]) == (1, 2)
+    assert summary["roots"][0]["context"]["floor"] == 4
+    assert summary["roots"][0]["context"]["gold"] == 99
+    assert summary["roots"][0]["context"]["potion_ids"] == (
+        "EntropicBrew",
+        "GamblersBrew",
+    )
     assert tuple(
         outcome["final_hp"] for outcome in summary["roots"][0]["outcomes"]
     ) == (0, 61)
+    assert summary["roots"][0]["outcomes"][1]["lost_potion_ids"] == (
+        "EntropicBrew",
+    )
+    assert summary["roots"][0]["outcomes"][1]["gained_potion_ids"] == (
+        "BlockPotion",
+    )
     assert (behavior / "training.jsonl").read_bytes() == training_journal_before
     assert tuple(path.name for path in output.iterdir()) == ("evaluation.json",)
     assert json.loads((output / "evaluation.json").read_text(encoding="utf-8"))[
@@ -123,3 +139,6 @@ def test_evaluation_recovers_published_behavior_without_training_or_experience(
     ] == summary["behavior_manifest_id"]
     stdout = capsys.readouterr().out
     assert "evaluation_complete=true wins=3 losses=1 root_wins=1,2" in stdout
+    assert "root_sites=A1F4,A1F4" in stdout
+    assert "root_start_potions=EntropicBrew+GamblersBrew" in stdout
+    assert "lost_potions=EntropicBrew:2 gained_potions=BlockPotion:2" in stdout
