@@ -40,6 +40,19 @@ class CategoricalOnlineSessionTests(unittest.TestCase):
             factory = _factory(Path(root))
             initial = factory.new(model_seed=43, behavior_seed=94)
             initial_resume = initial.publish()
+            evaluation_left = factory.recover_behavior(
+                initial.active_behavior_manifest_id,
+                behavior_seed=501,
+            )
+            evaluation_right = factory.recover_behavior(
+                initial.active_behavior_manifest_id,
+                behavior_seed=501,
+            )
+            decision = initial.runner.driver.env.decision_batch(semantic=True)
+            self.assertEqual(
+                evaluation_left.choose(decision),
+                evaluation_right.choose(decision),
+            )
 
             generation_zero = factory.restore(initial_resume.manifest_id)
             generation_one = generation_zero.advance_generation(max_batch_steps=1)

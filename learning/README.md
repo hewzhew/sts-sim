@@ -351,7 +351,9 @@ resume point; `restore(id)` rebuilds fresh owners; and
 real optimizer-step promotion. An unfinished bounded call returns no fake
 durable resume point. Restore verifies the saved slot count, training seed
 partition, and recovery budget against the supplied session configuration. The
-first maintained profile is deliberately CPU-only.
+first maintained profile is deliberately CPU-only. `recover_behavior(...)`
+materializes a frozen manifest with an explicit fresh RNG seed for the existing
+paired held-out evaluator; evaluation never reuses the mutable shadow model.
 
 The bridge verification command installs a fresh wheel and runs both bridge
 smoke tests and these caller contracts:

@@ -24,6 +24,7 @@ from .policy import BehaviorManifestId
 from .resume_store import BoundedResumeStore, ResumeManifestId
 from .torch_behavior import (
     CategoricalTorchBehaviorController,
+    CheckpointedCategoricalTorchPolicy,
     TorchBehaviorPublisher,
 )
 from .torch_checkpoints import BoundedTorchCheckpointStore
@@ -266,6 +267,26 @@ class CategoricalOnlineSessionFactory:
                 "restored seed partition conflicts with the session config"
             )
         return self._session(restored.runner, resume_store)
+
+    def recover_behavior(
+        self,
+        manifest_id: BehaviorManifestId,
+        *,
+        behavior_seed: int,
+    ) -> CheckpointedCategoricalTorchPolicy:
+        """Materialize one frozen behavior for held-out evaluation."""
+
+        seed = _torch_seed(behavior_seed, "behavior_seed")
+        checkpoint_store, catalog = self._behavior_stores()
+        return CheckpointedCategoricalTorchPolicy.recover(
+            manifest_id,
+            checkpoint_store,
+            catalog,
+            BehaviorManifestRegistry(capacity=1),
+            self._scorer,
+            self.config.profile.behavior,
+            torch.Generator(device="cpu").manual_seed(seed),
+        )
 
     def _scorer(self) -> RaggedCandidateScorer:
         return RaggedCandidateScorer.from_bridge_schema(
