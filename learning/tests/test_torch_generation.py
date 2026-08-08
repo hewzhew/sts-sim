@@ -74,6 +74,13 @@ if _TORCH_AVAILABLE:
     from sts_learning.torch_training import SynchronousPolicyTrainer
 
 
+class _NumpyScheduledBatchEnv(NumpyWinningBatchEnv):
+    """Full semantic fixture that honors caller-provided terminal plans."""
+
+    def step(self) -> dict[str, object]:
+        return NumpyFakeBatchEnv.step(self)
+
+
 @unittest.skipUnless(_TORCH_AVAILABLE, "optional PyTorch dependency is not installed")
 class BoundedCategoricalGenerationRunnerTests(unittest.TestCase):
     def test_miswired_generation_owners_fail_before_environment_mutation(self) -> None:
@@ -222,6 +229,51 @@ class BoundedCategoricalGenerationRunnerTests(unittest.TestCase):
             self.assertEqual(controller.publisher.store.snapshot.checkpoints, 0)
             self.assertEqual(controller.publisher.catalog.snapshot.manifests, 0)
 
+    def test_multi_slot_generations_promote_only_between_complete_cohorts(self) -> None:
+        with tempfile.TemporaryDirectory() as root:
+            driver, assembler, batcher, trainer, controller, shadow = _components(
+                Path(root),
+                slot_count=2,
+                attempts_per_update=4,
+                environment=lambda seeds: _NumpyScheduledBatchEnv(
+                    seeds,
+                    terminal_plans=(
+                        {0: -1},
+                        {1: -1},
+                        {0: -1, 1: -1},
+                        {1: -1},
+                        {0: -1},
+                        {0: -1, 1: -1},
+                    ),
+                ),
+            )
+            runner = BoundedCategoricalGenerationRunner(
+                driver,
+                assembler,
+                batcher,
+                trainer,
+                controller,
+                shadow,
+                optimizer_steps_per_generation=1,
+            )
+
+            first = runner.advance(max_batch_steps=3)
+            second = runner.advance(max_batch_steps=3)
+
+            self.assertTrue(first.promoted)
+            self.assertTrue(second.promoted)
+            self.assertEqual(first.terminal_attempts, 4)
+            self.assertEqual(second.terminal_attempts, 4)
+            self.assertEqual(trainer.snapshot.optimizer_steps, 2)
+            self.assertEqual(controller.snapshot.active_training_step, 2)
+            self.assertEqual(driver.env.terminal_count, 0)
+            self.assertEqual(assembler.snapshot.open_attempts, 0)
+            self.assertEqual(batcher.pending_attempts, 0)
+            self.assertEqual(
+                [slots for slots, _ in driver.env.reset_calls],  # type: ignore[attr-defined]
+                [[0, 1], [0, 1], [0, 1], [0, 1]],
+            )
+
     def test_resume_boundary_requires_flushed_and_closed_experience(self) -> None:
         with tempfile.TemporaryDirectory() as root:
             driver, assembler, batcher, trainer, controller, shadow = _components(
@@ -334,13 +386,15 @@ def _components(
     optimizer_model=None,
     owner_capacity: int = 2,
     environment=NumpyFakeBatchEnv,
+    slot_count: int = 1,
+    attempts_per_update: int = 1,
 ):
     shadow = _scorer()
     behavior_config = RaggedCategoricalPolicyConfig(temperature=0.8)
     return_config = FloorProgressReturnConfig()
     objective_config = OnPolicyObjectiveConfig(
         terminal_return=return_config,
-        attempts_per_update=1,
+        attempts_per_update=attempts_per_update,
     )
     registry = BehaviorManifestRegistry(capacity=owner_capacity)
     store = BoundedTorchCheckpointStore(
@@ -403,7 +457,7 @@ def _components(
     assembler = BoundedAttemptAssembler(_attempt_limits(), batcher)
     population = initialize_population(
         environment,
-        slot_count=1,
+        slot_count=slot_count,
         schedule=SeedSchedule(SeedPartition.HELD_OUT),
         max_recoveries_per_episode=0,
     )
@@ -424,7 +478,7 @@ def _components(
 
 def _attempt_limits() -> AttemptAssemblyLimits:
     return AttemptAssemblyLimits(
-        max_open_attempts=1,
+        max_open_attempts=8,
         max_decisions_per_attempt=64,
         max_payload_bytes_per_attempt=1024 * 1024,
     )

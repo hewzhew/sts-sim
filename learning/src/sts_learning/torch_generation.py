@@ -112,6 +112,15 @@ class BoundedCategoricalGenerationRunner:
         self.controller = controller
         self.shadow_scorer = shadow_scorer
         self._optimizer_steps_per_generation = steps
+        slot_count = self.driver.ledger.slot_count
+        if self.driver.ledger.max_recoveries_per_episode != 0:
+            raise TorchGenerationError(
+                "episode-cohort generations require zero recovery"
+            )
+        if self.update_batcher.attempts_per_update % slot_count != 0:
+            raise TorchGenerationError(
+                "attempts_per_update must contain complete environment-slot cohorts"
+            )
         self._validate_wiring()
 
     @property
@@ -199,11 +208,14 @@ class BoundedCategoricalGenerationRunner:
         terminal_floor_counts: dict[int, int] = {}
         terminal_act_counts: dict[int, int] = {}
         terminal_flushes = 0
+        dropped_attempts_before = self.assembler.snapshot.dropped_attempts
         while (
             self.trainer.snapshot.optimizer_steps < target_step
             and batch_steps < step_limit
         ):
-            result = self.driver.advance()
+            if self.driver.env.terminal_count == self.driver.ledger.slot_count:
+                self.driver.refill_completed()
+            result = self.driver.advance(refill_completed=False)
             batch_steps += 1
             terminal_attempts += len(result.attempts)
             terminal_victories += sum(
@@ -233,16 +245,28 @@ class BoundedCategoricalGenerationRunner:
             if result.attempts:
                 self.driver.flush_experience()
                 terminal_flushes += 1
+                if (
+                    self.assembler.snapshot.dropped_attempts
+                    != dropped_attempts_before
+                ):
+                    raise TorchGenerationError(
+                        "episode-cohort generation cannot drop an attempt"
+                    )
 
         trainer_after = self.trainer.snapshot
         if trainer_after.poisoned:
             raise TorchGenerationError("generation trainer became poisoned")
         promotion = None
         if trainer_after.optimizer_steps >= target_step:
+            if self.driver.env.terminal_count != self.driver.ledger.slot_count:
+                raise TorchGenerationError(
+                    "optimizer update completed before its episode cohort closed"
+                )
             promotion = self.controller.promote_live(
                 self.shadow_scorer,
                 training_step=trainer_after.optimizer_steps,
             )
+            self.driver.refill_completed()
 
         return CategoricalGenerationAdvanceResult(
             active_manifest_id_before=active_manifest_id,

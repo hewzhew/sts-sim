@@ -112,6 +112,45 @@ class BatchDriverTests(unittest.TestCase):
         self.assertEqual(driver.ledger.snapshot(1).episode_generation, 1)
         self.assertNotEqual(tuple(env.seeds), initial_seeds)
 
+    def test_driver_can_park_and_refill_one_complete_slot_cohort(self) -> None:
+        envs: list[FakeBatchEnv] = []
+
+        def factory(seeds: list[int]) -> FakeBatchEnv:
+            env = FakeBatchEnv(
+                seeds,
+                terminal_plans=({0: 1}, {1: -1}),
+            )
+            envs.append(env)
+            return env
+
+        population = initialize_population(
+            factory,
+            slot_count=2,
+            schedule=SeedSchedule(SeedPartition.TRAINING),
+            max_recoveries_per_episode=0,
+        )
+        driver = OnlineBatchDriver(
+            population,
+            policy=RecordingPolicy(),
+            curriculum=NoRecovery(),
+        )
+
+        first = driver.advance(refill_completed=False)
+        second = driver.advance(refill_completed=False)
+
+        env = envs[0]
+        self.assertEqual(len(first.completed_episodes), 1)
+        self.assertEqual(len(second.completed_episodes), 1)
+        self.assertEqual(env.terminal_count, 2)
+        self.assertEqual(env.reset_calls, [])
+        self.assertEqual(driver.refill_completed(), (0, 1))
+        self.assertEqual(env.terminal_count, 0)
+        self.assertEqual([call[0] for call in env.reset_calls], [[0, 1]])
+        self.assertEqual(
+            tuple(snapshot.episode_generation for snapshot in driver.ledger.snapshots()),
+            (1, 1),
+        )
+
     def test_terminal_target_run_stops_after_an_atomic_multi_terminal_step(self) -> None:
         population = initialize_population(
             lambda seeds: FakeBatchEnv(

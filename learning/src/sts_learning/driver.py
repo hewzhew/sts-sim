@@ -451,11 +451,13 @@ class OnlineBatchDriver:
             experience_next_sequence_index=experience_sequence,
         )
 
-    def advance(self) -> BatchStepResult:
-        """Resolve decisions, step once, and immediately refill completed slots."""
+    def advance(self, *, refill_completed: bool = True) -> BatchStepResult:
+        """Resolve one step, optionally parking completed slots at a cohort barrier."""
 
         if self._experience_sink_failed:
             raise BatchDriverError("experience sink previously failed")
+        if not isinstance(refill_completed, bool):
+            raise BatchDriverError("refill_completed must be bool")
         decision_rounds = 0
         experience_segments = 0
         experience_decisions = 0
@@ -609,7 +611,7 @@ class OnlineBatchDriver:
             for attempt in accounting.attempts
             if attempt.slot_index in completed_by_slot
         )
-        if completed:
+        if completed and refill_completed:
             reset_slots = tuple(outcome.slot_index for outcome in completed)
             (
                 _,
@@ -634,6 +636,43 @@ class OnlineBatchDriver:
             emitted_experience_decisions=experience_decisions,
             emitted_experience_payload_bytes=experience_payload_bytes,
         )
+
+    def refill_completed(self) -> tuple[int, ...]:
+        """Reset every currently parked terminal slot as one scheduled cohort."""
+
+        if self._experience_sink_failed:
+            raise BatchDriverError("experience sink previously failed")
+        terminal_count = operator.index(self.env.terminal_count)
+        completed = {
+            RecoverySlotStatus.VICTORY_COMPLETE,
+            RecoverySlotStatus.DEFEAT_COMPLETE,
+        }
+        reset_slots = tuple(
+            snapshot.slot_index
+            for snapshot in self.ledger.snapshots()
+            if snapshot.status in completed
+        )
+        if len(reset_slots) != terminal_count:
+            raise BatchDriverError(
+                "terminal environment slots and completed ledger slots differ"
+            )
+        if not reset_slots:
+            raise BatchDriverError("no completed slots are parked for refill")
+        if self._experience_buffer is not None and not self._experience_buffer.empty:
+            raise BatchDriverError("completed-slot refill requires flushed experience")
+        (
+            _,
+            next_schedule,
+            replacements,
+        ) = reset_scheduled_checkpointed_with_accounting(
+            self.env,
+            reset_slots,
+            self.ledger,
+            self.schedule,
+        )
+        self._checkpoint_bank = self._checkpoint_bank.updated(replacements)
+        self.schedule = next_schedule
+        return reset_slots
 
     def flush_experience(self) -> ExperienceSegment | None:
         """Seal and synchronously consume the current bounded segment."""

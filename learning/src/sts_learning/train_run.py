@@ -112,6 +112,10 @@ class RunTrainingCommandConfig:
             "evaluation_max_batch_steps",
         ):
             object.__setattr__(self, name, _positive(getattr(self, name), name))
+        if self.attempts_per_update % self.slot_count != 0:
+            raise RunTrainingCommandError(
+                "attempts_per_update must contain complete slot cohorts"
+            )
         object.__setattr__(
             self,
             "generations",

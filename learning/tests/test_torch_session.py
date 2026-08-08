@@ -185,7 +185,10 @@ class CategoricalOnlineSessionTests(unittest.TestCase):
                 session.runner.update_batcher.pending_attempts,
                 1,
             )
-            with self.assertRaisesRegex(TorchGenerationError, "pending"):
+            with self.assertRaisesRegex(
+                TorchGenerationError,
+                "terminal environment slots",
+            ):
                 session.publish()
 
             completed = session.advance_generation(max_batch_steps=1)

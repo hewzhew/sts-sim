@@ -839,8 +839,15 @@ active behavior's training step, not a terminal count or wall-clock guess;
 larger step counts are rejected because a second update against experience from
 the unchanged frozen behavior would be off-policy. A call advances at most its
 declared batch-step limit and explicitly flushes experience only after a
-terminal batch. Reaching the one-step target freezes and promotes the current
-shadow scorer exactly once without durable I/O. The result retains only
+terminal batch. Completed slots park at their terminal boundary until every
+environment slot in that cohort has completed. Attempts per update must contain
+an exact number of whole cohorts. Cohort generations require zero recovery and
+fail closed if an attempt exceeds its retention bounds. Intermediate cohorts refill together under
+the unchanged behavior; the final cohort remains parked until the optimizer
+step and live promotion both complete, then refills together under the new
+behavior. A fast slot therefore cannot start an old-behavior episode and finish
+it after promotion under a new manifest. Reaching the one-step target freezes
+and promotes the current shadow scorer exactly once without durable I/O. The result retains only
 aggregate progress and the optional live binding. The runner itself remains an
 in-process composition; exact restart is owned by the separate explicit
 six-component resume boundary and can never be inferred from a model checkpoint

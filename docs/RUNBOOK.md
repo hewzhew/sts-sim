@@ -808,7 +808,11 @@ Use `train-run` for the first whole-run on-policy handoff. `-Behavior` is a
 verified completed `train-combat` directory whose scorer becomes an independent
 generation-zero parameter copy. Training uses the `TRAINING` seed partition,
 zero recovery, the terminal floor-progress return, and exactly
-`-AttemptsPerUpdate` complete runs per generation. Each generation reports its
+`-AttemptsPerUpdate` complete runs per generation. The attempt count must be a
+multiple of `-Slots`: faster slots park at terminal until the complete slot
+cohort finishes, and the next cohort is reset only before another old-behavior
+cohort or after promotion to the new behavior. No run may cross a behavior
+manifest boundary. Each generation reports its
 own terminal-floor histogram. The command publishes only after every requested
 generation completes, but publishes only the frozen behavior checkpoint and
 manifest—not optimizer or environment resume state. It then evaluates the
