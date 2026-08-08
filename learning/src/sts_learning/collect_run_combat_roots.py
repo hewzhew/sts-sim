@@ -466,6 +466,7 @@ def run_run_combat_root_collection(
         "behavior_manifest_id": recovered.manifest_id.digest.hex(),
         "behavior_checkpoint_id": recovered.checkpoint_id.digest.hex(),
         "behavior_seed": config.behavior_seed,
+        "requested_run_potion_lane": config.potion_lane.value,
         "run_potion_lane": potion_lane.value,
         "training_seed_start": config.training_seed_start,
         "training_seed_end": driver.schedule.next_candidate,

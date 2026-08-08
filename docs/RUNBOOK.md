@@ -703,6 +703,9 @@ the behavior's model-facing lane is `never`. Floor and usable-potion filters
 are typed root facts. It merges in Rust and writes only after all requested
 roots have been collected; an incomplete bound leaves the output absent. The
 single-line receipt reports seed/site/resource facts and artifact identity.
+It reports both the requested run potion lane and the resolved combat potion
+lane, so `trained` inheritance never has to be inferred from a lone `never` or
+`all` value.
 Each captured root also lists its earlier completed same-seed combat resource
 transitions from the existing typed `RunResourceTrace`: start/end HP and gold,
 ordered canonical enemy identities, concrete potion inventories, and terminal

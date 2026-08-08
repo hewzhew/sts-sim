@@ -10,6 +10,7 @@ pytest.importorskip("torch")
 
 from learning.tests.driver_fixtures import NumpyWinningBatchEnv  # noqa: E402
 from learning.tests.run_training_fixtures import published_behavior  # noqa: E402
+from sts_learning.combat_potion_lane import CombatPotionLane  # noqa: E402
 from sts_learning.collect_run_combat_roots import (  # noqa: E402
     RequiredPotionSlot,
     RunCombatRootCollectionError,
@@ -78,7 +79,10 @@ class _RootCapturingWinningEnv(NumpyWinningBatchEnv):
 def test_collection_captures_one_potion_root_per_seed_and_merges_once(
     tmp_path: Path,
 ) -> None:
-    behavior, combat_bridge, run_bridge = published_behavior(tmp_path)
+    behavior, combat_bridge, run_bridge = published_behavior(
+        tmp_path,
+        potion_lane=CombatPotionLane.NEVER,
+    )
     run_bridge = replace(
         run_bridge,
         environment=_RootCapturingWinningEnv,
@@ -106,7 +110,7 @@ def test_collection_captures_one_potion_root_per_seed_and_merges_once(
             training_seed_start=100,
             min_floor=2,
             min_usable_potions=1,
-            potion_lane=RunPotionLane.NEVER,
+            potion_lane=RunPotionLane.TRAINED,
             max_artifact_bytes=1024,
             required_potion=RequiredPotionSlot(0, "FearPotion"),
         ),
@@ -123,6 +127,8 @@ def test_collection_captures_one_potion_root_per_seed_and_merges_once(
     assert summary["terminal_attempts"] == 2
     assert summary["required_potion_id"] == "FearPotion"
     assert summary["required_potion_slot"] == 0
+    assert summary["requested_run_potion_lane"] == "trained"
+    assert summary["run_potion_lane"] == "never"
     roots = summary["roots"]
     assert isinstance(roots, tuple)
     assert len({root["seed"] for root in roots}) == 2

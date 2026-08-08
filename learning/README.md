@@ -188,6 +188,8 @@ opaque batch only after reaching its declared root target; a step/deadline,
 identity, alignment, or byte failure leaves no output. Its receipt records the
 collected seed/site/resource facts but assigns no potion value and supplies no
 teacher labels.
+It keeps the requested run potion lane separate from the resolved combat
+potion lane, including when `trained` inherits `all` or `never`.
 Its receipt composes the existing typed run-resource trace and includes prior
 same-seed combat HP/gold/potion transitions for each captured root. It retains
 ordered canonical enemy identities but no action rows or session history, and
