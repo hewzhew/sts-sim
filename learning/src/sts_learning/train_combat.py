@@ -6,9 +6,10 @@ import argparse
 import hashlib
 import json
 import time
+from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import TextIO
+from typing import Protocol, TextIO
 
 from .combat_objective import CombatWinObjectiveConfig
 from .combat_potion_lane import (
@@ -17,10 +18,12 @@ from .combat_potion_lane import (
     normalize_combat_potion_slots,
 )
 from .torch_combat_batch_generation import (
+    BoundedCombatWinBatchGenerationRunner,
     CombatWinBatchGenerationResult,
     CombatWinRootGenerationResult,
 )
 from .torch_combat_batch_session import CombatWinBatchSessionFactory
+from .torch_behavior import TorchBehaviorPublication
 from .torch_combat_session_config import (
     CombatSessionBridge,
     CombatWinBatchSessionConfig,
@@ -34,6 +37,15 @@ COMBAT_TRAINING_SCHEMA = "sts-learning-combat-training-v3"
 
 class CombatTrainingCommandError(RuntimeError):
     """A bounded combat training command is malformed."""
+
+
+class _CombatTrainingSession(Protocol):
+    artifact_byte_count: int
+    runner: BoundedCombatWinBatchGenerationRunner
+
+    def advance(self) -> CombatWinBatchGenerationResult: ...
+
+    def publish_active_behavior(self) -> TorchBehaviorPublication: ...
 
 
 @dataclass(frozen=True)
@@ -169,6 +181,67 @@ def run_combat_training(
         ),
     )
 
+    return _run_combat_training_session(
+        config,
+        session=session,
+        profile=profile,
+        behavior_seeds=config.behavior_seeds,
+        warm_start_manifest_id=(
+            None if warm_start is None else warm_start.manifest_id.digest.hex()
+        ),
+        warm_start_checkpoint_id=(
+            None if warm_start is None else warm_start.checkpoint_id.digest.hex()
+        ),
+        warm_start_training_step=(
+            None if warm_start is None else warm_start.training_step
+        ),
+    )
+
+
+def _run_combat_training_session(
+    config: CombatTrainingCommandConfig,
+    *,
+    session: _CombatTrainingSession,
+    profile: CombatWinSessionProfile,
+    behavior_seeds: tuple[int, ...],
+    warm_start_manifest_id: str | None,
+    warm_start_checkpoint_id: str | None,
+    warm_start_training_step: int | None,
+    configuration_extra: Mapping[str, object] | None = None,
+    completion_extra: Mapping[str, object] | None = None,
+) -> dict[str, object]:
+    """Journal and publish one already-constructed combat training session."""
+
+    configuration = {
+        "schema": COMBAT_TRAINING_SCHEMA,
+        "kind": "configuration",
+        "artifact": str(config.artifact),
+        "artifact_sha256": _sha256(config.artifact),
+        "artifact_bytes": session.artifact_byte_count,
+        "root_count": config.root_count,
+        "replicate_count": config.replicate_count,
+        "updates": config.updates,
+        "model_seed": config.model_seed,
+        "behavior_seeds": behavior_seeds,
+        "all_win_axis": profile.objective.all_win_axis.name,
+        "potion_lane": config.potion_lane.value,
+        "potion_slots": config.potion_slots,
+        "initialization": (
+            "random"
+            if config.warm_start_behavior is None
+            else "published-behavior"
+        ),
+        "warm_start_behavior": (
+            None
+            if config.warm_start_behavior is None
+            else str(config.warm_start_behavior)
+        ),
+        "warm_start_manifest_id": warm_start_manifest_id,
+        "warm_start_checkpoint_id": warm_start_checkpoint_id,
+        "warm_start_training_step": warm_start_training_step,
+    }
+    _extend_record(configuration, configuration_extra)
+
     total_wins = 0
     total_losses = 0
     started = time.perf_counter()
@@ -177,45 +250,7 @@ def run_combat_training(
         encoding="utf-8",
         newline="\n",
     ) as journal:
-        _write(
-            journal,
-            {
-                "schema": COMBAT_TRAINING_SCHEMA,
-                "kind": "configuration",
-                "artifact": str(config.artifact),
-                "artifact_sha256": _sha256(config.artifact),
-                "artifact_bytes": session.artifact_byte_count,
-                "root_count": config.root_count,
-                "replicate_count": config.replicate_count,
-                "updates": config.updates,
-                "model_seed": config.model_seed,
-                "behavior_seeds": config.behavior_seeds,
-                "all_win_axis": profile.objective.all_win_axis.name,
-                "potion_lane": config.potion_lane.value,
-                "potion_slots": config.potion_slots,
-                "initialization": (
-                    "random" if warm_start is None else "published-behavior"
-                ),
-                "warm_start_behavior": (
-                    None
-                    if config.warm_start_behavior is None
-                    else str(config.warm_start_behavior)
-                ),
-                "warm_start_manifest_id": (
-                    None
-                    if warm_start is None
-                    else warm_start.manifest_id.digest.hex()
-                ),
-                "warm_start_checkpoint_id": (
-                    None
-                    if warm_start is None
-                    else warm_start.checkpoint_id.digest.hex()
-                ),
-                "warm_start_training_step": (
-                    None if warm_start is None else warm_start.training_step
-                ),
-            },
-        )
+        _write(journal, configuration)
         for generation in range(config.updates):
             generation_started = time.perf_counter()
             result = session.advance()
@@ -258,8 +293,24 @@ def run_combat_training(
             "final_manifest_id": publication.manifest_id.digest.hex(),
             "final_checkpoint_id": publication.checkpoint_id.digest.hex(),
         }
+        _extend_record(summary, completion_extra)
         _write(journal, summary)
     return summary
+
+
+def _extend_record(
+    record: dict[str, object],
+    extra: Mapping[str, object] | None,
+) -> None:
+    if extra is None:
+        return
+    overlap = record.keys() & extra.keys()
+    if overlap:
+        fields = ", ".join(sorted(overlap))
+        raise CombatTrainingCommandError(
+            f"combat training journal extension repeats fields: {fields}"
+        )
+    record.update(extra)
 
 
 def _generation(

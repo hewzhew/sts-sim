@@ -1,6 +1,6 @@
 param(
     [Parameter(Mandatory = $true, Position = 0)]
-    [ValidateSet("configure", "doctor", "test", "verify", "check-bridge", "refresh-bridge", "train-combat", "evaluate-combat", "evaluate-combat-potions", "evaluate-run", "evaluate-run-potions", "collect-run-roots", "train-run")]
+    [ValidateSet("configure", "doctor", "test", "verify", "check-bridge", "refresh-bridge", "train-combat", "train-combat-recovery", "evaluate-combat", "evaluate-combat-potions", "evaluate-run", "evaluate-run-potions", "collect-run-roots", "train-run")]
     [string]$Command,
     [string]$Python,
     [string]$MaturinPython = "python",
@@ -251,6 +251,29 @@ switch ($Command) {
                 @potionArguments
             if ($LASTEXITCODE -ne 0) {
                 throw "combat training command failed"
+            }
+        }
+    }
+    "train-combat-recovery" {
+        $pythonPath = Get-ConfiguredPython
+        $warmStartArguments = @()
+        if ($Behavior) {
+            $warmStartArguments = @("--warm-start-behavior", $Behavior)
+        }
+        Invoke-Doctor $pythonPath
+        Invoke-WithLearningPath {
+            & $pythonPath -m sts_learning.train_combat_recovery `
+                --artifact $Artifact `
+                --output $Output `
+                --roots $Roots `
+                --replicates $Replicates `
+                --updates $Updates `
+                --model-seed $ModelSeed `
+                --behavior-seed-base $BehaviorSeedBase `
+                @warmStartArguments `
+                @potionArguments
+            if ($LASTEXITCODE -ne 0) {
+                throw "combat recovery training command failed"
             }
         }
     }

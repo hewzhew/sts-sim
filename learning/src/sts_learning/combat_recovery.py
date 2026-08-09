@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import operator
 from collections import deque
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Protocol
 
@@ -29,7 +29,11 @@ class _CombatRecoveryHandle(Protocol):
     source_exact_combat_state_hash: str
     source_replicate_index: int
 
-    def spawn_group(self, replicate_count: int): ...
+    def spawn_group(
+        self,
+        replicate_count: int,
+        potion_slots: Sequence[int] | None = None,
+    ): ...
 
 
 @dataclass(frozen=True)
@@ -89,9 +93,23 @@ class CombatRecoveryRoot:
         object.__setattr__(self, "teacher_replicate_index", teacher)
         object.__setattr__(self, "transitions_to_terminal", distance)
 
-    def spawn_group(self, replicate_count: int):
+    def spawn_group(
+        self,
+        replicate_count: int,
+        potion_slots: Sequence[int] | None = None,
+    ):
         count = _positive_integer(replicate_count, "replicate_count")
-        group = self._handle.spawn_group(count)
+        slots = (
+            None
+            if potion_slots is None
+            else tuple(
+                _nonnegative_integer(slot, f"potion_slots[{index}]")
+                for index, slot in enumerate(potion_slots)
+            )
+        )
+        if slots is not None and len(set(slots)) != len(slots):
+            raise CombatRecoveryError("recovery potion slots must be distinct")
+        group = self._handle.spawn_group(count, slots)
         if (
             getattr(group, "root_id", None),
             getattr(group, "exact_combat_state_hash", None),
@@ -164,11 +182,16 @@ class CombatRecoveryRootSource:
     def root_count(self) -> int:
         return self.plan.root_count
 
-    def combat_group(self, slot_index: int, replicate_count: int):
+    def combat_group(
+        self,
+        slot_index: int,
+        replicate_count: int,
+        potion_slots: Sequence[int] | None = None,
+    ):
         slot = _nonnegative_integer(slot_index, "slot_index")
         if slot >= self.root_count:
             raise CombatRecoveryError("recovery root slot is out of range")
-        return self.plan.roots[slot].spawn_group(replicate_count)
+        return self.plan.roots[slot].spawn_group(replicate_count, potion_slots)
 
 
 def replay_winning_recovery_roots(

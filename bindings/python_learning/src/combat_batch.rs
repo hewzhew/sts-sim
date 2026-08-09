@@ -79,8 +79,18 @@ impl CombatLearningRecoveryRoot {
         PyCombatLearningRootContextV1::from_context(*self.root.context())
     }
 
-    fn spawn_group(&self, replicate_count: usize) -> PyResult<CombatLearningBatchEnv> {
-        CombatLearningBatchEnv::from_root(&self.root, replicate_count).map_err(value_error)
+    #[pyo3(signature = (replicate_count, potion_slots=None))]
+    fn spawn_group(
+        &self,
+        replicate_count: usize,
+        potion_slots: Option<Vec<usize>>,
+    ) -> PyResult<CombatLearningBatchEnv> {
+        CombatLearningBatchEnv::from_root_with_potion_slots(
+            &self.root,
+            replicate_count,
+            potion_slots,
+        )
+        .map_err(value_error)
     }
 }
 
@@ -527,9 +537,11 @@ mod tests {
         assert_eq!(recovery.source_replicate_index, 0);
         assert_ne!(recovery.root.identity(), root.identity());
         let recovered =
-            CombatLearningBatchEnv::from_root(&recovery.root, 2).expect("spawn recovered group");
+            CombatLearningBatchEnv::from_root_with_potion_slots(&recovery.root, 2, Some(vec![]))
+                .expect("spawn recovered group");
         assert_eq!(recovered.replicate_count(), 2);
         assert_eq!(recovered.root_id(), recovery.root.identity().root_id);
+        assert_eq!(recovered.potion_slots(), Some(vec![]));
     }
 
     fn combat_root_session() -> RunControlSession {

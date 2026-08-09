@@ -230,6 +230,17 @@ terminal-nearest window. The ordinals prove replay identity; they are not
 supervised action labels and do not enter the on-policy loss. This mechanism
 cannot manufacture a teacher for an all-loss root: such a root remains in the
 rescue backlog until a separately verified winning trajectory exists.
+The maintained in-process recovery trainer discovers that win under one frozen
+behavior, selects the highest-final-HP verified replicate with replicate index
+as the deterministic tie-break, and requires the exact requested suffix-root
+count before constructing an update. Discovery, replay, and every derived root
+use the same explicit potion lane. The derived groups then sample fresh
+on-policy actions under that unchanged behavior; the selected replay ordinals
+never enter their loss. Later optimizer updates may reuse the same immutable
+suffix roots, but each update still samples under its own current frozen
+behavior. The ordinary combat-training journal records the curriculum and
+source facts so its final publication remains recoverable by the same behavior
+loader.
 For a production-context `CombatCase`, the offline learning-root producer may
 replay a typed winning action file through the restored run-control session and
 export only a bounded terminal-nearest window as an ordinary opaque root batch.

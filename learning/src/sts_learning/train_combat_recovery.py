@@ -1,0 +1,190 @@
+"""Bounded reverse-curriculum combat training from one verified source win."""
+
+from __future__ import annotations
+
+import argparse
+from dataclasses import replace
+from pathlib import Path
+
+from .combat_objective import CombatWinObjectiveConfig
+from .combat_potion_lane import CombatPotionLane
+from .torch_combat_recovery_session import CombatWinRecoverySessionFactory
+from .torch_combat_session_config import (
+    CombatSessionBridge,
+    CombatWinBatchSessionConfig,
+    CombatWinSessionLimits,
+    CombatWinSessionProfile,
+)
+from .train_combat import (
+    CombatTrainingCommandConfig,
+    CombatTrainingCommandError,
+    _potion_slots_text,
+    _run_combat_training_session,
+)
+
+
+def run_combat_recovery_training(
+    config: CombatTrainingCommandConfig,
+    *,
+    bridge: CombatSessionBridge | None = None,
+) -> dict[str, object]:
+    """Discover one win, train on its exact suffix roots, and publish behavior."""
+
+    if not isinstance(config, CombatTrainingCommandConfig):
+        raise CombatTrainingCommandError(
+            "combat recovery config must be typed"
+        )
+    active_bridge = bridge if bridge is not None else CombatSessionBridge.installed()
+    if not isinstance(active_bridge, CombatSessionBridge):
+        raise CombatTrainingCommandError(
+            "combat recovery bridge must be typed"
+        )
+    source_behavior_seed = config.behavior_seed_base
+    recovery_behavior_seeds = tuple(
+        config.behavior_seed_base + index + 1
+        for index in range(config.root_count)
+    )
+    if recovery_behavior_seeds[-1] >= 1 << 63:
+        raise CombatTrainingCommandError(
+            "combat recovery behavior seeds must stay below 2^63"
+        )
+    profile = replace(
+        CombatWinSessionProfile(),
+        objective=CombatWinObjectiveConfig(
+            groups_per_update=config.root_count
+        ),
+    )
+    limits = replace(
+        CombatWinSessionLimits(),
+        owner_capacity=max(16, config.updates + 1),
+    )
+    warm_start = None
+    if config.warm_start_behavior is not None:
+        from .published_combat_behavior import recover_published_combat_behavior
+
+        warm_start = recover_published_combat_behavior(
+            config.warm_start_behavior,
+            active_bridge,
+            CombatWinSessionLimits(),
+            (source_behavior_seed,),
+        )
+    session = CombatWinRecoverySessionFactory(
+        config.output,
+        active_bridge,
+        CombatWinBatchSessionConfig(
+            expected_roots=config.root_count,
+            max_roots=config.root_count,
+            replicate_count=config.replicate_count,
+            profile=profile,
+            limits=limits,
+            potion_lane=config.potion_lane,
+            potion_slots=config.potion_slots,
+        ),
+    ).new_from_artifact_file(
+        config.artifact,
+        model_seed=config.model_seed,
+        source_behavior_seed=source_behavior_seed,
+        recovery_behavior_seeds=recovery_behavior_seeds,
+        initial_scorer=(
+            None if warm_start is None else warm_start.policies[0].frozen_scorer
+        ),
+    )
+
+    discovery = session.discovery
+    return _run_combat_training_session(
+        config,
+        session=session,
+        profile=profile,
+        behavior_seeds=recovery_behavior_seeds,
+        warm_start_manifest_id=(
+            None if warm_start is None else warm_start.manifest_id.digest.hex()
+        ),
+        warm_start_checkpoint_id=(
+            None if warm_start is None else warm_start.checkpoint_id.digest.hex()
+        ),
+        warm_start_training_step=(
+            None if warm_start is None else warm_start.training_step
+        ),
+        configuration_extra={
+            "curriculum": "verified-win-terminal-nearest",
+            "teacher_selection": "highest-final-hp-then-lowest-index",
+            "source_replicate_count": config.replicate_count,
+            "recovery_replicate_count": config.replicate_count,
+            "source_behavior_seed": source_behavior_seed,
+            "source_root_id": discovery.root_id,
+            "source_exact_combat_state_hash": discovery.exact_combat_state_hash,
+            "source_wins": discovery.wins,
+            "source_losses": discovery.losses,
+            "teacher_replicate_index": discovery.teacher_replicate_index,
+            "teacher_final_hp": discovery.teacher_final_hp,
+            "teacher_turns": discovery.teacher_turns,
+        },
+        completion_extra={
+            "source_wins": discovery.wins,
+            "source_losses": discovery.losses,
+            "teacher_replicate_index": discovery.teacher_replicate_index,
+            "teacher_final_hp": discovery.teacher_final_hp,
+            "recovery_root_count": discovery.recovery_root_count,
+        },
+    )
+
+
+def _parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        description=(
+            "Train from terminal-nearest roots of one replay-verified behavior win."
+        ),
+    )
+    parser.add_argument("--artifact", type=Path, required=True)
+    parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--roots", type=int, required=True)
+    parser.add_argument("--replicates", type=int, default=8)
+    parser.add_argument("--updates", type=int, required=True)
+    parser.add_argument("--model-seed", type=int, default=0)
+    parser.add_argument("--behavior-seed-base", type=int, default=1_000)
+    parser.add_argument("--warm-start-behavior", type=Path)
+    parser.add_argument(
+        "--potion-lane",
+        choices=tuple(lane.value for lane in CombatPotionLane),
+        default=CombatPotionLane.ALL.value,
+    )
+    parser.add_argument("--potion-slot", action="append", type=int, default=[])
+    return parser
+
+
+def main() -> int:
+    arguments = _parser().parse_args()
+    summary = run_combat_recovery_training(
+        CombatTrainingCommandConfig(
+            artifact=arguments.artifact,
+            output=arguments.output,
+            root_count=arguments.roots,
+            replicate_count=arguments.replicates,
+            updates=arguments.updates,
+            model_seed=arguments.model_seed,
+            behavior_seed_base=arguments.behavior_seed_base,
+            potion_lane=CombatPotionLane(arguments.potion_lane),
+            potion_slots=tuple(arguments.potion_slot),
+            warm_start_behavior=arguments.warm_start_behavior,
+        )
+    )
+    print(
+        "training_complete=true curriculum=verified-win-terminal-nearest "
+        f"optimizer_steps={summary['optimizer_steps']} "
+        f"source_wins={summary['source_wins']} "
+        f"source_losses={summary['source_losses']} "
+        f"teacher_replicate={summary['teacher_replicate_index']} "
+        f"teacher_final_hp={summary['teacher_final_hp']} "
+        f"recovery_roots={summary['recovery_root_count']} "
+        f"potion_lane={arguments.potion_lane} "
+        f"potion_slots={_potion_slots_text(arguments)} "
+        f"wins={summary['total_wins']} losses={summary['total_losses']} "
+        f"seconds={summary['elapsed_seconds']:.3f} "
+        f"output={arguments.output.resolve()}",
+        flush=True,
+    )
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

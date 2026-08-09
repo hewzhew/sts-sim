@@ -30,7 +30,13 @@ class _RecoveryHandle:
         self.source_exact_combat_state_hash = COMBAT_HASH
         self.source_replicate_index = 0
 
-    def spawn_group(self, replicate_count: int) -> _SpawnedGroup:
+    def spawn_group(
+        self,
+        replicate_count: int,
+        potion_slots: tuple[int, ...] | None = None,
+    ) -> _SpawnedGroup:
+        if potion_slots not in (None, (0,)):
+            raise AssertionError("recovery received an unexpected potion lane")
         return _SpawnedGroup(
             self.root_id,
             self.exact_combat_state_hash,
@@ -139,6 +145,7 @@ class CombatRecoveryTests(unittest.TestCase):
         spawned = selected.combat_group(0, 4)
         self.assertEqual(spawned.replicate_count, 4)
         self.assertEqual(spawned.root_id, plan.roots[0].root_id)
+        selected.combat_group(0, 4, (0,))
 
     def test_loss_cannot_be_promoted_to_a_recovery_teacher(self) -> None:
         experience = combat_group_experience_fixture(

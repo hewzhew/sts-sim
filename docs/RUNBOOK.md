@@ -625,6 +625,7 @@ Configure one stable Python 3.12 training runtime once, then use the small
 .\learning\dev.ps1 test
 .\learning\dev.ps1 verify -MaturinPython <python-with-maturin>
 .\learning\dev.ps1 train-combat -Artifact <roots.bin> -Behavior <optional-warm-start-dir> -Output <fresh-dir> -Roots <count> -Updates <count> -PotionLane never
+.\learning\dev.ps1 train-combat-recovery -Artifact <single-root.bin> -Behavior <warm-start-dir> -Output <fresh-dir> -Roots 4 -Replicates 8 -Updates 1 -PotionLane root-slots -PotionSlots 0
 .\learning\dev.ps1 evaluate-combat -Artifact <held-out-roots.bin> -Behavior <training-dir> -Output <fresh-dir> -Roots <count> -Replicates <count>
 .\learning\dev.ps1 evaluate-combat-potions -Artifact <held-out-roots.bin> -Behavior <training-dir> -Output <fresh-dir> -Roots <count> -Replicates <count>
 .\learning\dev.ps1 evaluate-run -Behavior <training-dir> -Output <fresh-dir> -Attempts 8 -MaxBatchSteps 4096 -BehaviorSeed 10000 -HeldOutSeedStart 0 -RunPotionLane trained
@@ -776,7 +777,22 @@ update, and promotes at most once. It writes nothing;
 returned loss and promotion as training accounting, not held-out evidence of
 improvement.
 
-The batch session binds `PotionLane all|never|root-slots` into its root source.
+`train-combat-recovery` accepts exactly one canonical root instead of a
+multi-root training batch. Under one frozen behavior it samples the requested
+replicates, chooses the verified win with highest final HP (lowest replicate
+index breaks ties), exactly replays its recorded ordinals, and derives the
+requested number of terminal-nearest roots. A shorter win or an all-loss source
+fails before training. It then performs ordinary group-balanced on-policy
+updates over those immutable suffix roots and publishes the result in the same
+recoverable combat-training layout. `-Roots` is the exact suffix width and
+`-Replicates` applies independently to source discovery and every suffix group.
+The declared potion lane is reapplied to discovery, replay, and derived groups;
+a Fire-only source therefore cannot silently become an unrestricted-potion
+curriculum. The replay ordinals establish provenance only and never become
+supervised action targets.
+
+The batch and recovery sessions bind `PotionLane all|never|root-slots` into
+their root sources.
 Prefer `never` when the selected roots already have no-potion winning coverage,
 so the all-win terminal-HP axis cannot learn to burn inventory for local HP. An
 all-loss `never` group stays no-signal; move it to `root-slots` with one
@@ -785,8 +801,8 @@ all-loss `never` group stays no-signal; move it to `root-slots` with one
 replacement in that slot remains unavailable.
 
 Use `evaluate-combat` on a distinct opaque root artifact after publication. The
-behavior directory must be an exact completed `train-combat` output containing
-one durable checkpoint and manifest. The evaluator verifies their complete
+behavior directory must be an exact completed combat-training output containing
+one durable checkpoint and manifest. The evaluator verifies its complete
 provenance, recovers the training artifact digest and potion lane, and rejects
 an evaluation artifact with the same digest before constructing combat groups.
 It gives every root an independent explicit behavior RNG stream and writes only
