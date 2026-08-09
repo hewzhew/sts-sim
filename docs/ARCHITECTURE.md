@@ -921,6 +921,11 @@ provenance-bound matched-floor advantage modes remain explicit REINFORCE
 ablations; value PPO accepts only decision-local GAE. This avoids
 calling an unmatched state better or worse merely because it occurred later in
 the run, but remains an explicit ablation rather than an assumed improvement.
+Episode-root retry diagnostics additionally retain one bounded row per exact
+episode seed and generation: retry count, terminal-floor span, and matched
+episode/floor/context signal distributions for all and strategic decisions.
+These rows expose root learning potential for sampler experiments; they do not
+select, replay, or weight roots by themselves.
 Combat and strategic decision rows are additionally counted as separate typed
 scopes so a whole-run update cannot hide which surface dominates its credit
 mass. The provenance-bound decision scope either trains every retained row or

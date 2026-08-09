@@ -66,6 +66,22 @@ class DecisionStrategicContextCreditComparison:
 
 
 @dataclass(frozen=True)
+class EpisodeRootCreditComparison:
+    """Learning-potential evidence for retries from one exact episode root."""
+
+    episode_seed: int
+    episode_generation: int
+    attempt_count: int
+    terminal_floor_min: int
+    terminal_floor_max: int
+    terminal_floor_mean: float
+    matched_episode_floor_context_advantage: DecisionCreditDistribution
+    strategic_matched_episode_floor_context_advantage: (
+        DecisionCreditDistribution | None
+    )
+
+
+@dataclass(frozen=True)
 class CreditAssignmentComparison:
     """Current terminal broadcast beside a decision-local progress target."""
 
@@ -78,6 +94,7 @@ class CreditAssignmentComparison:
     by_decision_floor: tuple[DecisionFloorCreditComparison, ...]
     by_combat_scope: tuple[DecisionScopeCreditComparison, ...]
     by_strategic_context: tuple[DecisionStrategicContextCreditComparison, ...]
+    by_episode_root: tuple[EpisodeRootCreditComparison, ...]
 
 
 @dataclass(frozen=True)
@@ -133,6 +150,40 @@ def compare_credit_assignment(
         for batch in attempt
         for value in batch
     ]
+    by_episode_root: dict[
+        tuple[int, int],
+        tuple[list[int], list[float], list[float]],
+    ] = {}
+    for attempt, attempt_rows, attempt_advantages in zip(
+        normalized,
+        aligned,
+        episode_context_matched_aligned,
+        strict=True,
+    ):
+        key = (
+            attempt.lineage.key.episode_seed,
+            attempt.lineage.key.episode_generation,
+        )
+        floors, all_advantages, strategic_advantages = by_episode_root.setdefault(
+            key,
+            ([], [], []),
+        )
+        floors.append(attempt.terminal.terminal.terminal_floor)
+        for batch_rows, batch_advantages in zip(
+            attempt_rows,
+            attempt_advantages,
+            strict=True,
+        ):
+            all_advantages.extend(batch_advantages)
+            strategic_advantages.extend(
+                advantage
+                for row, advantage in zip(
+                    batch_rows,
+                    batch_advantages,
+                    strict=True,
+                )
+                if not row.is_combat
+            )
     by_floor: dict[int, tuple[list[float], list[float], list[float]]] = {}
     by_scope: dict[bool, tuple[list[float], list[float], list[float]]] = {}
     by_context: dict[
@@ -247,6 +298,23 @@ def compare_credit_assignment(
                 matched_floor_context_advantage=_distribution(values[3]),
             )
             for context_kind, values in sorted(by_context.items())
+        ),
+        by_episode_root=tuple(
+            EpisodeRootCreditComparison(
+                episode_seed=episode_seed,
+                episode_generation=episode_generation,
+                attempt_count=len(values[0]),
+                terminal_floor_min=min(values[0]),
+                terminal_floor_max=max(values[0]),
+                terminal_floor_mean=math.fsum(values[0]) / len(values[0]),
+                matched_episode_floor_context_advantage=_distribution(values[1]),
+                strategic_matched_episode_floor_context_advantage=(
+                    _distribution(values[2]) if values[2] else None
+                ),
+            )
+            for (episode_seed, episode_generation), values in sorted(
+                by_episode_root.items()
+            )
         ),
     )
 

@@ -200,3 +200,26 @@ def test_episode_matched_credit_uses_only_retries_from_the_same_root() -> None:
     assert aligned[0][0][0] < 0.0
     assert aligned[1][0][0] > 0.0
     assert aligned[2][0][0] == 0.0
+
+    comparison = compare_credit_assignment(
+        (first, retry, other_root),
+        FloorProgressReturnConfig(target_floor=52),
+    )
+    assert tuple(
+        (
+            row.episode_seed,
+            row.attempt_count,
+            row.terminal_floor_min,
+            row.terminal_floor_max,
+        )
+        for row in comparison.by_episode_root
+    ) == ((10, 2, 10, 20), (20, 1, 30, 30))
+    first_root = comparison.by_episode_root[0]
+    other = comparison.by_episode_root[1]
+    assert first_root.matched_episode_floor_context_advantage.negative == 1
+    assert first_root.matched_episode_floor_context_advantage.positive == 1
+    assert other.matched_episode_floor_context_advantage.zero == 1
+    assert all(
+        row.strategic_matched_episode_floor_context_advantage is None
+        for row in comparison.by_episode_root
+    )

@@ -368,6 +368,7 @@ def run_run_training(
                 f"credit_floors={_credit_floor_line(credit)} "
                 f"credit_scopes={_credit_scope_line(credit)} "
                 f"credit_contexts={_credit_context_line(credit)} "
+                f"credit_roots={_credit_root_line(credit)} "
                 f"seconds={elapsed:.3f}",
                 flush=True,
             )
@@ -846,6 +847,27 @@ def _credit_context_line(comparison: CreditAssignmentComparison | None) -> str:
     )
 
 
+def _credit_root_line(comparison: CreditAssignmentComparison | None) -> str:
+    if comparison is None:
+        return "unavailable"
+    return ",".join(
+        f"{row.episode_seed}:{row.episode_generation}:"
+        f"{row.attempt_count}@{row.terminal_floor_min}-{row.terminal_floor_max}"
+        f"#{_optional_credit_signs(row.strategic_matched_episode_floor_context_advantage)}"
+        for row in comparison.by_episode_root
+    )
+
+
+def _optional_credit_signs(
+    distribution: DecisionCreditDistribution | None,
+) -> str:
+    if distribution is None:
+        return "none"
+    return (
+        f"{distribution.negative}/{distribution.zero}/{distribution.positive}"
+    )
+
+
 def _credit_assignment(
     comparison: CreditAssignmentComparison | None,
 ) -> dict[str, object] | None:
@@ -922,6 +944,29 @@ def _credit_assignment(
                 ),
             }
             for row in comparison.by_strategic_context
+        ],
+        "by_episode_root": [
+            {
+                "episode_seed": row.episode_seed,
+                "episode_generation": row.episode_generation,
+                "attempt_count": row.attempt_count,
+                "terminal_floor_min": row.terminal_floor_min,
+                "terminal_floor_max": row.terminal_floor_max,
+                "terminal_floor_mean": row.terminal_floor_mean,
+                "matched_episode_floor_context_advantage": (
+                    _credit_distribution(
+                        row.matched_episode_floor_context_advantage
+                    )
+                ),
+                "strategic_matched_episode_floor_context_advantage": (
+                    None
+                    if row.strategic_matched_episode_floor_context_advantage is None
+                    else _credit_distribution(
+                        row.strategic_matched_episode_floor_context_advantage
+                    )
+                ),
+            }
+            for row in comparison.by_episode_root
         ],
     }
 
