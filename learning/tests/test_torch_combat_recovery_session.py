@@ -163,8 +163,9 @@ class _ReplayableGroup:
 class _ReplayableSource:
     root = ("12" * 32, "ab" * 32)
 
-    def __init__(self, *, has_win: bool = True) -> None:
+    def __init__(self, *, has_win: bool = True, expected_slot: int = 0) -> None:
         self.has_win = has_win
+        self.expected_slot = expected_slot
         self.calls: list[tuple[int, int, tuple[int, ...] | None]] = []
         self.groups: list[_ReplayableGroup] = []
 
@@ -174,7 +175,7 @@ class _ReplayableSource:
         replicate_count: int,
         potion_slots: tuple[int, ...] | None = None,
     ) -> _ReplayableGroup:
-        assert slot_index == 0
+        assert slot_index == self.expected_slot
         normalized_slots = None if potion_slots is None else tuple(potion_slots)
         self.calls.append((slot_index, replicate_count, normalized_slots))
         group = _ReplayableGroup(
@@ -258,3 +259,36 @@ def test_all_loss_source_cannot_create_a_recovery_curriculum(tmp_path: Path) -> 
             source_behavior_seed=11,
             recovery_behavior_seeds=(12, 13),
         )
+
+
+def test_recovery_session_selects_one_root_from_a_multi_root_artifact(
+    tmp_path: Path,
+) -> None:
+    source = _ReplayableSource(expected_slot=1)
+    imported: list[int] = []
+
+    def load_source(payload: bytes, *, expected_roots: int, **_: object):
+        imported.append(expected_roots)
+        return source
+
+    bridge = CombatSessionBridge(
+        combat_roots_from_artifact=load_source,
+        semantic_schema=semantic_schema_fixture(),
+    )
+    session = CombatWinRecoverySessionFactory(
+        tmp_path / "session",
+        bridge,
+        _config(),
+        source_expected_roots=2,
+        source_root_slot=1,
+    ).new_from_artifact_bytes(
+        b"opaque-roots",
+        model_seed=7,
+        source_behavior_seed=11,
+        recovery_behavior_seeds=(12, 13),
+    )
+
+    assert imported == [2]
+    assert source.calls == [(1, 2, (0,)), (1, 1, (0,))]
+    assert session.discovery.source_artifact_root_count == 2
+    assert session.discovery.source_root_slot == 1

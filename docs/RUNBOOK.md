@@ -625,7 +625,7 @@ Configure one stable Python 3.12 training runtime once, then use the small
 .\learning\dev.ps1 test
 .\learning\dev.ps1 verify -MaturinPython <python-with-maturin>
 .\learning\dev.ps1 train-combat -Artifact <roots.bin> -Behavior <optional-warm-start-dir> -Output <fresh-dir> -Roots <count> -Updates <count> -PotionLane never -CombatPolicyUpdate ppo-clip
-.\learning\dev.ps1 train-combat-recovery -Artifact <single-root.bin> -Behavior <warm-start-dir> -Output <fresh-dir> -Roots 4 -Replicates 8 -Updates 1 -PotionLane root-slots -PotionSlots 0 -CombatPolicyUpdate ppo-clip
+.\learning\dev.ps1 train-combat-recovery -Artifact <roots.bin> -SourceExpectedRoots <artifact-root-count> -SourceRootSlot <zero-based-slot> -Behavior <warm-start-dir> -Output <fresh-dir> -Roots 4 -Replicates 8 -Updates 1 -PotionLane root-slots -PotionSlots 0 -CombatPolicyUpdate ppo-clip
 .\learning\dev.ps1 evaluate-combat -Artifact <held-out-roots.bin> -Behavior <training-dir> -Output <fresh-dir> -Roots <count> -Replicates <count>
 .\learning\dev.ps1 evaluate-combat-potions -Artifact <held-out-roots.bin> -Behavior <training-dir> -Output <fresh-dir> -Roots <count> -Replicates <count>
 .\learning\dev.ps1 evaluate-run -Behavior <training-dir> -Output <fresh-dir> -Attempts 8 -MaxBatchSteps 4096 -BehaviorSeed 10000 -HeldOutSeedStart 0 -RunPotionLane trained
@@ -783,8 +783,10 @@ entropy. It writes nothing;
 returned loss and promotion as training accounting, not held-out evidence of
 improvement.
 
-`train-combat-recovery` accepts exactly one canonical root instead of a
-multi-root training batch. Under one frozen behavior it samples the requested
+`train-combat-recovery` selects one explicit canonical root from an artifact;
+`-SourceExpectedRoots` validates the artifact width and `-SourceRootSlot`
+selects the zero-based root without copying or extracting it. Under one frozen
+behavior it samples the requested
 replicates, chooses the verified win with highest final HP (lowest replicate
 index breaks ties), exactly replays its recorded ordinals, and derives the
 requested number of terminal-nearest roots. A shorter win or an all-loss source

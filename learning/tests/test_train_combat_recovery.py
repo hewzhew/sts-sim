@@ -28,7 +28,7 @@ def test_recovery_training_journal_is_a_recoverable_combat_publication(
     artifact = tmp_path / "source.bin"
     artifact.write_bytes(b"opaque-root")
     output = tmp_path / "training"
-    source = _ReplayableSource()
+    source = _ReplayableSource(expected_slot=1)
     bridge = CombatSessionBridge(
         combat_roots_from_artifact=lambda payload, **_: source,
         semantic_schema=semantic_schema_fixture(),
@@ -47,6 +47,8 @@ def test_recovery_training_journal_is_a_recoverable_combat_publication(
             potion_slots=(0,),
             policy_update=CombatPolicyUpdateConfig.ppo_clip(),
         ),
+        source_expected_roots=2,
+        source_root_slot=1,
         bridge=bridge,
     )
 
@@ -59,6 +61,8 @@ def test_recovery_training_journal_is_a_recoverable_combat_publication(
     assert records[0]["curriculum"] == "verified-win-terminal-nearest"
     assert records[0]["teacher_replicate_index"] == 1
     assert records[0]["root_count"] == 2
+    assert records[0]["source_artifact_root_count"] == 2
+    assert records[0]["source_root_slot"] == 1
     assert records[0]["policy_update_rule"] == "PPO_CLIP"
     assert 1 <= records[1]["optimizer_steps_applied"] <= 4
     assert records[-1]["final_manifest_id"] == summary["final_manifest_id"]

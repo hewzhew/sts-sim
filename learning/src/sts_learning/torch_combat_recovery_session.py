@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import operator
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -45,6 +46,8 @@ class TorchCombatRecoverySessionError(RuntimeError):
 class CombatRecoveryDiscoveryResult:
     """Compact facts for the winning source group used to derive recovery roots."""
 
+    source_artifact_root_count: int
+    source_root_slot: int
     root_id: str
     exact_combat_state_hash: str
     behavior_manifest_id: BehaviorManifestId
@@ -118,6 +121,9 @@ class CombatWinRecoverySessionFactory:
         root: str | Path,
         bridge: CombatSessionBridge,
         config: CombatWinBatchSessionConfig,
+        *,
+        source_expected_roots: int = 1,
+        source_root_slot: int = 0,
     ) -> None:
         if not isinstance(bridge, CombatSessionBridge):
             raise TorchCombatRecoverySessionError(
@@ -127,6 +133,25 @@ class CombatWinRecoverySessionFactory:
             raise TorchCombatRecoverySessionError(
                 "recovery session requires a typed batch config"
             )
+        self.source_expected_roots = _positive_integer(
+            source_expected_roots,
+            "source_expected_roots",
+        )
+        if isinstance(source_root_slot, bool):
+            raise TorchCombatRecoverySessionError(
+                "source_root_slot must be an integer, not bool"
+            )
+        try:
+            normalized_source_slot = operator.index(source_root_slot)
+        except TypeError as error:
+            raise TorchCombatRecoverySessionError(
+                "source_root_slot must be an integer"
+            ) from error
+        if not 0 <= normalized_source_slot < self.source_expected_roots:
+            raise TorchCombatRecoverySessionError(
+                "source_root_slot must identify a root in the source artifact"
+            )
+        self.source_root_slot = normalized_source_slot
         self.root = Path(root).resolve()
         if self.root.exists() and not self.root.is_dir():
             raise TorchCombatRecoverySessionError(
@@ -191,7 +216,7 @@ class CombatWinRecoverySessionFactory:
         source = load_combat_root_source(
             self.bridge,
             artifact,
-            expected_roots=1,
+            expected_roots=self.source_expected_roots,
             max_bytes=self.config.limits.max_artifact_bytes,
         )
         source = CombatPotionLaneRootSource(
@@ -211,7 +236,10 @@ class CombatWinRecoverySessionFactory:
         source_policy = owners.controller.fork_active(
             torch.Generator(device="cpu").manual_seed(source_seed)
         )
-        source_group = source.combat_group(0, self.config.replicate_count)
+        source_group = source.combat_group(
+            self.source_root_slot,
+            self.config.replicate_count,
+        )
         source_run = CombatGroupDriver(
             source_group,
             source_policy,
@@ -226,7 +254,7 @@ class CombatWinRecoverySessionFactory:
         teacher = _highest_final_hp_winner(experience)
         plan = replay_winning_recovery_roots(
             source,
-            slot_index=0,
+            slot_index=self.source_root_slot,
             experience=experience,
             teacher_replicate_index=teacher.replicate_index,
             max_roots=self.config.expected_roots,
@@ -259,6 +287,8 @@ class CombatWinRecoverySessionFactory:
         outcomes = experience.outcomes.outcomes
         wins = sum(outcome.won for outcome in outcomes)
         discovery = CombatRecoveryDiscoveryResult(
+            source_artifact_root_count=self.source_expected_roots,
+            source_root_slot=self.source_root_slot,
             root_id=experience.root_id,
             exact_combat_state_hash=experience.exact_combat_state_hash,
             behavior_manifest_id=experience.behavior_manifest_id,

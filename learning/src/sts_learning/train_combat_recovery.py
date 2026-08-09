@@ -27,6 +27,8 @@ from .train_combat import (
 def run_combat_recovery_training(
     config: CombatTrainingCommandConfig,
     *,
+    source_expected_roots: int = 1,
+    source_root_slot: int = 0,
     bridge: CombatSessionBridge | None = None,
 ) -> dict[str, object]:
     """Discover one win, train on its exact suffix roots, and publish behavior."""
@@ -82,6 +84,8 @@ def run_combat_recovery_training(
             potion_lane=config.potion_lane,
             potion_slots=config.potion_slots,
         ),
+        source_expected_roots=source_expected_roots,
+        source_root_slot=source_root_slot,
     ).new_from_artifact_file(
         config.artifact,
         model_seed=config.model_seed,
@@ -113,6 +117,8 @@ def run_combat_recovery_training(
             "source_replicate_count": config.replicate_count,
             "recovery_replicate_count": config.replicate_count,
             "source_behavior_seed": source_behavior_seed,
+            "source_artifact_root_count": discovery.source_artifact_root_count,
+            "source_root_slot": discovery.source_root_slot,
             "source_root_id": discovery.root_id,
             "source_exact_combat_state_hash": discovery.exact_combat_state_hash,
             "source_wins": discovery.wins,
@@ -144,6 +150,8 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--updates", type=int, required=True)
     parser.add_argument("--model-seed", type=int, default=0)
     parser.add_argument("--behavior-seed-base", type=int, default=1_000)
+    parser.add_argument("--source-expected-roots", type=int, default=1)
+    parser.add_argument("--source-root-slot", type=int, default=0)
     parser.add_argument("--warm-start-behavior", type=Path)
     parser.add_argument(
         "--policy-update",
@@ -174,7 +182,9 @@ def main() -> int:
             potion_slots=tuple(arguments.potion_slot),
             warm_start_behavior=arguments.warm_start_behavior,
             policy_update=_policy_update(arguments.policy_update),
-        )
+        ),
+        source_expected_roots=arguments.source_expected_roots,
+        source_root_slot=arguments.source_root_slot,
     )
     print(
         "training_complete=true curriculum=verified-win-terminal-nearest "
@@ -182,6 +192,8 @@ def main() -> int:
         f"policy_update={arguments.policy_update} "
         f"source_wins={summary['source_wins']} "
         f"source_losses={summary['source_losses']} "
+        f"source_artifact_roots={arguments.source_expected_roots} "
+        f"source_root_slot={arguments.source_root_slot} "
         f"teacher_replicate={summary['teacher_replicate_index']} "
         f"teacher_final_hp={summary['teacher_final_hp']} "
         f"recovery_roots={summary['recovery_root_count']} "

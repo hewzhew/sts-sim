@@ -14,6 +14,8 @@ param(
     [string]$CombatPolicyUpdate = "reinforce",
     [long]$ModelSeed = 0,
     [long]$BehaviorSeedBase = 1000,
+    [int]$SourceExpectedRoots = 1,
+    [int]$SourceRootSlot = 0,
     [int]$Slots = 4,
     [int]$Attempts = 8,
     [int]$MaxBatchSteps = 4096,
@@ -273,6 +275,8 @@ switch ($Command) {
                 --updates $Updates `
                 --model-seed $ModelSeed `
                 --behavior-seed-base $BehaviorSeedBase `
+                --source-expected-roots $SourceExpectedRoots `
+                --source-root-slot $SourceRootSlot `
                 --policy-update $CombatPolicyUpdate `
                 @warmStartArguments `
                 @potionArguments
