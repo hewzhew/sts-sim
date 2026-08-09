@@ -63,7 +63,20 @@ def create_combat_win_owner_graph(
         shadow = scorer_factory()
     if initial_scorer is not None:
         try:
-            shadow.load_state_dict(initial_scorer.state_dict(), strict=True)
+            if shadow.config.value_head and not initial_scorer.config.value_head:
+                incompatible = shadow.load_state_dict(
+                    initial_scorer.state_dict(),
+                    strict=False,
+                )
+                if incompatible.unexpected_keys or not incompatible.missing_keys:
+                    raise RuntimeError("actor-only warm start changed shared keys")
+                if not all(
+                    key.startswith("value_head.")
+                    for key in incompatible.missing_keys
+                ):
+                    raise RuntimeError("actor-only warm start missed policy keys")
+            else:
+                shadow.load_state_dict(initial_scorer.state_dict(), strict=True)
         except RuntimeError as error:
             raise TorchCombatSessionError(
                 "combat owner initial scorer is incompatible with the maintained profile"

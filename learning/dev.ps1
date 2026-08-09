@@ -10,7 +10,7 @@ param(
     [int]$Roots,
     [int]$Replicates = 8,
     [int]$Updates,
-    [ValidateSet("reinforce", "ppo-clip")]
+    [ValidateSet("reinforce", "ppo-clip", "ppo-clip-value")]
     [string]$CombatPolicyUpdate = "reinforce",
     [long]$ModelSeed = 0,
     [long]$BehaviorSeedBase = 1000,

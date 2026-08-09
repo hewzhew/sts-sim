@@ -41,7 +41,11 @@ from .terminal_returns import (
     floor_progress_terminal_return,
     terminal_return_advantages,
 )
-from .torch_policy import RaggedCandidateLogits, RaggedCategoricalPolicyConfig
+from .torch_policy import (
+    RaggedActorCriticOutput,
+    RaggedCandidateLogits,
+    RaggedCategoricalPolicyConfig,
+)
 
 
 class TorchOutcomeError(ValueError):
@@ -85,6 +89,8 @@ class OnPolicyCombatWinLoss:
     approximate_kl: float
     clip_fraction: float
     entropy: float
+    value_loss: float
+    actor_advantages: tuple[float, ...]
 
 
 @dataclass(frozen=True)
@@ -93,6 +99,8 @@ class _CombatPolicyLoss:
     approximate_kl: float
     clip_fraction: float
     entropy: float
+    value_loss: float
+    actor_advantages: tuple[float, ...]
 
 
 def on_policy_terminal_loss(
@@ -277,6 +285,7 @@ def on_policy_combat_win_loss(
     objective_config: CombatWinObjectiveConfig,
     *,
     require_matching_propensities: bool = True,
+    fixed_actor_advantages: Sequence[float] | None = None,
 ) -> OnPolicyCombatWinLoss:
     """Apply same-root win-first advantages with a typed all-win fallback.
 
@@ -308,6 +317,13 @@ def on_policy_combat_win_loss(
         raise TorchOutcomeError(
             "combat win objective propensity check must be bool"
         )
+    if (
+        fixed_actor_advantages is not None
+        and not objective_config.policy_update.uses_value_baseline
+    ):
+        raise TorchOutcomeError(
+            "fixed combat advantages require a value baseline"
+        )
     normalized = tuple(groups)
     if not normalized:
         raise TorchOutcomeError(
@@ -321,12 +337,14 @@ def on_policy_combat_win_loss(
     selected_ordinals: list[int] = []
     targets: list[float] = []
     weights: list[float] = []
+    group_indices: list[int] = []
+    leave_one_out_scales: list[float] = []
     total_replicates = 0
     total_decisions = 0
     win_signal_groups = 0
     terminal_hp_signal_groups = 0
 
-    for group in normalized:
+    for group_index, group in enumerate(normalized):
         if not isinstance(group, CompletedCombatGroupExperience):
             raise TorchOutcomeError("combat win objective accepts only complete groups")
         root = (group.root_id, group.exact_combat_state_hash)
@@ -347,6 +365,10 @@ def on_policy_combat_win_loss(
         advantages = group.grouped_advantages()
         if advantages.win_has_signal:
             selected_advantages = advantages.win
+            selected_returns = tuple(
+                1.0 if outcome.won else 0.0
+                for outcome in group.outcomes.outcomes
+            )
             win_signal_groups += 1
         elif (
             objective_config.all_win_axis is CombatAllWinAxis.TERMINAL_HP
@@ -354,9 +376,18 @@ def on_policy_combat_win_loss(
             and advantages.terminal_hp_has_signal
         ):
             selected_advantages = advantages.terminal_hp
+            start_hp = group.outcomes.outcomes[0].start_hp
+            selected_returns = tuple(
+                outcome.final_hp / start_hp
+                for outcome in group.outcomes.outcomes
+            )
             terminal_hp_signal_groups += 1
         else:
             selected_advantages = advantages.win
+            selected_returns = tuple(
+                1.0 if outcome.won else 0.0
+                for outcome in group.outcomes.outcomes
+            )
         replicate_count = len(group.outcomes.outcomes)
         decision_counts = [0] * replicate_count
         group_probabilities: list[SelectionProbability] = []
@@ -374,7 +405,11 @@ def on_policy_combat_win_loss(
             selected_ordinals.extend(batch.selected_ordinals)
             group_probabilities.extend(batch.selection_probabilities)
             for replicate_index in batch.replicate_indices:
-                targets.append(selected_advantages[replicate_index])
+                targets.append(
+                    selected_returns[replicate_index]
+                    if objective_config.policy_update.uses_value_baseline
+                    else selected_advantages[replicate_index]
+                )
                 weights.append(
                     1.0
                     / (
@@ -382,6 +417,10 @@ def on_policy_combat_win_loss(
                         * replicate_count
                         * decision_counts[replicate_index]
                     )
+                )
+                group_indices.append(group_index)
+                leave_one_out_scales.append(
+                    replicate_count / (replicate_count - 1)
                 )
         behavior_ids.append(group.behavior_manifest_id)
         probability_evidence.append(tuple(group_probabilities))
@@ -399,10 +438,13 @@ def on_policy_combat_win_loss(
         ),
         targets=targets,
         weights=weights,
+        group_indices=group_indices,
+        leave_one_out_scales=leave_one_out_scales,
         concat_limits=concat_limits,
         policy_config=policy_config,
         update_config=objective_config.policy_update,
         require_matching_propensities=require_matching_propensities,
+        fixed_actor_advantages=fixed_actor_advantages,
     )
     return OnPolicyCombatWinLoss(
         value=policy_loss.value,
@@ -417,6 +459,8 @@ def on_policy_combat_win_loss(
         approximate_kl=policy_loss.approximate_kl,
         clip_fraction=policy_loss.clip_fraction,
         entropy=policy_loss.entropy,
+        value_loss=policy_loss.value_loss,
+        actor_advantages=policy_loss.actor_advantages,
     )
 
 
@@ -548,10 +592,13 @@ def _combat_policy_weighted_loss(
     selection_probabilities: Sequence[SelectionProbability],
     targets: Sequence[float],
     weights: Sequence[float],
+    group_indices: Sequence[int],
+    leave_one_out_scales: Sequence[float],
     concat_limits: SemanticBatchConcatLimits,
     policy_config: RaggedCategoricalPolicyConfig,
     update_config: CombatPolicyUpdateConfig,
     require_matching_propensities: bool,
+    fixed_actor_advantages: Sequence[float] | None,
 ) -> _CombatPolicyLoss:
     if not isinstance(update_config, CombatPolicyUpdateConfig):
         raise TorchOutcomeError("combat policy update config must be typed")
@@ -573,6 +620,8 @@ def _combat_policy_weighted_loss(
             approximate_kl=0.0,
             clip_fraction=0.0,
             entropy=0.0,
+            value_loss=0.0,
+            actor_advantages=tuple(float(target) for target in targets),
         )
 
     decision_count = len(selected_ordinals)
@@ -580,6 +629,8 @@ def _combat_policy_weighted_loss(
         len(selection_probabilities)
         == len(targets)
         == len(weights)
+        == len(group_indices)
+        == len(leave_one_out_scales)
         == decision_count
         > 0
     ):
@@ -602,7 +653,22 @@ def _combat_policy_weighted_loss(
         recorded_log_probabilities.append(math.log(value))
 
     combined = concatenate_semantic_decision_batches(payloads, concat_limits)
-    logits = scorer(combined)
+    predicted_values: Tensor | None = None
+    if update_config.uses_value_baseline:
+        actor_critic = getattr(scorer, "actor_critic", None)
+        if not callable(actor_critic):
+            raise TorchOutcomeError(
+                "combat value PPO requires an actor-critic scorer"
+            )
+        actor_critic_output = actor_critic(combined)
+        if not isinstance(actor_critic_output, RaggedActorCriticOutput):
+            raise TorchOutcomeError(
+                "actor-critic scorer returned an invalid output"
+            )
+        logits = actor_critic_output.logits
+        predicted_values = actor_critic_output.row_values
+    else:
+        logits = scorer(combined)
     if not isinstance(logits, RaggedCandidateLogits):
         raise TorchOutcomeError(
             "candidate policy scorer must return RaggedCandidateLogits"
@@ -634,6 +700,62 @@ def _combat_policy_weighted_loss(
         dtype=selected_log_probabilities.dtype,
         device=selected_log_probabilities.device,
     )
+    actor_advantages = target_tensor
+    value_loss = torch.zeros(
+        (),
+        dtype=target_tensor.dtype,
+        device=target_tensor.device,
+    )
+    if predicted_values is not None:
+        if predicted_values.shape != target_tensor.shape:
+            raise TorchOutcomeError(
+                "combat critic values are misaligned"
+            )
+        if fixed_actor_advantages is None:
+            group_tensor = torch.as_tensor(
+                group_indices,
+                dtype=torch.long,
+                device=target_tensor.device,
+            )
+            scale_tensor = torch.as_tensor(
+                leave_one_out_scales,
+                dtype=target_tensor.dtype,
+                device=target_tensor.device,
+            )
+            group_count = max(group_indices) + 1
+            residual = target_tensor - predicted_values.detach()
+            group_weight = torch.zeros(
+                group_count,
+                dtype=target_tensor.dtype,
+                device=target_tensor.device,
+            )
+            group_residual = torch.zeros_like(group_weight)
+            group_weight.index_add_(0, group_tensor, weight_tensor)
+            group_residual.index_add_(0, group_tensor, residual * weight_tensor)
+            if bool(torch.any(group_weight <= 0.0)):
+                raise TorchOutcomeError(
+                    "combat critic group weight must be positive"
+                )
+            actor_advantages = (
+                residual - (group_residual / group_weight)[group_tensor]
+            ) * scale_tensor
+        else:
+            if (
+                len(fixed_actor_advantages) != decision_count
+                or not all(
+                    math.isfinite(value) for value in fixed_actor_advantages
+                )
+            ):
+                raise TorchOutcomeError(
+                    "fixed combat advantages are misaligned or non-finite"
+                )
+            actor_advantages = torch.as_tensor(
+                fixed_actor_advantages,
+                dtype=target_tensor.dtype,
+                device=target_tensor.device,
+            )
+        value_error = predicted_values - target_tensor
+        value_loss = 0.5 * torch.sum(value_error.square() * weight_tensor)
     log_ratio = selected_log_probabilities - old_log_probability_tensor
     ratio = torch.exp(log_ratio)
     clipped_ratio = torch.clamp(
@@ -642,14 +764,14 @@ def _combat_policy_weighted_loss(
         1.0 + update_config.clip_coefficient,
     )
     policy_terms = torch.maximum(
-        -target_tensor * ratio,
-        -target_tensor * clipped_ratio,
+        -actor_advantages * ratio,
+        -actor_advantages * clipped_ratio,
     )
     entropies = _ragged_entropies(logits, policy_config)
     loss = torch.sum(policy_terms * weight_tensor) - (
         update_config.entropy_coefficient
         * torch.sum(entropies * weight_tensor)
-    )
+    ) + update_config.value_loss_coefficient * value_loss
     diagnostic_weight = torch.sum(weight_tensor)
     approximate_kl = torch.sum(
         ((ratio - 1.0) - log_ratio) * weight_tensor
@@ -661,7 +783,13 @@ def _combat_policy_weighted_loss(
         * weight_tensor
     ) / diagnostic_weight
     mean_entropy = torch.sum(entropies * weight_tensor) / diagnostic_weight
-    diagnostics = (loss, approximate_kl, clip_fraction, mean_entropy)
+    diagnostics = (
+        loss,
+        approximate_kl,
+        clip_fraction,
+        mean_entropy,
+        value_loss,
+    )
     if not all(bool(torch.all(torch.isfinite(value))) for value in diagnostics):
         raise TorchOutcomeError("combat PPO objective must be finite")
     return _CombatPolicyLoss(
@@ -669,6 +797,11 @@ def _combat_policy_weighted_loss(
         approximate_kl=float(approximate_kl.detach().item()),
         clip_fraction=float(clip_fraction.detach().item()),
         entropy=float(mean_entropy.detach().item()),
+        value_loss=float(value_loss.detach().item()),
+        actor_advantages=tuple(
+            float(value)
+            for value in actor_advantages.detach().cpu().tolist()
+        ),
     )
 
 

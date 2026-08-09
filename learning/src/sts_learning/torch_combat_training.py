@@ -49,6 +49,7 @@ class CombatWinTrainingResult:
     approximate_kl: float
     clip_fraction: float
     entropy: float
+    value_loss: float
 
     @property
     def updated(self) -> bool:
@@ -191,6 +192,11 @@ class SynchronousCombatWinTrainer:
             )
 
         optimizer_steps_applied = 0
+        fixed_actor_advantages = (
+            objective.actor_advantages
+            if self.objective_config.policy_update.uses_value_baseline
+            else None
+        )
         try:
             for epoch in range(self.objective_config.policy_update.epochs):
                 if epoch > 0:
@@ -202,6 +208,7 @@ class SynchronousCombatWinTrainer:
                         self.policy_config,
                         self.objective_config,
                         require_matching_propensities=False,
+                        fixed_actor_advantages=fixed_actor_advantages,
                     )
                     loss = float(objective.value.detach().item())
                     if not math.isfinite(loss):
@@ -315,4 +322,5 @@ class SynchronousCombatWinTrainer:
             approximate_kl=objective.approximate_kl,
             clip_fraction=objective.clip_fraction,
             entropy=objective.entropy,
+            value_loss=objective.value_loss,
         )

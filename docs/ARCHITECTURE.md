@@ -416,6 +416,17 @@ gradient-norm clipping, entropy regularization, and a target-KL early stop are
 part of the typed trainer provenance; approximate KL, clip fraction, entropy,
 and actual optimizer-step count remain training diagnostics rather than held-out
 evidence.
+The distinct PPO-clip-value rule adds a scalar value head over the shared
+decision-row state. It predicts the selected axis's raw terminal return while
+the actor advantage remains centered independently inside each exact-root
+group, so win and terminal-HP axes never acquire a cross-root exchange rate.
+The value head starts at zero; the first actor advantage therefore matches the
+existing leave-one-out direction. Actor advantages and behavior probabilities
+are frozen when the delivery is collected and remain unchanged across PPO
+epochs, while the critic receives weighted mean-squared return loss. An
+actor-only warm start initializes every shared policy key and leaves only the
+new value-head keys at their defined zero-output initialization. Actor-only and
+actor-critic scorers retain distinct exact model and trainer identities.
 The training root source also binds one explicit model-facing potion lane.
 `Never` is the primary resource-preserving lane for roots that can already win
 without potion actions; it makes terminal-HP refinement honest by removing
@@ -428,7 +439,8 @@ trainer provenance; it cannot reuse a terminal floor-return behavior manifest.
 Each delivery contains exactly the declared number of complete groups. No
 selected-axis signal skips backward and optimizer mutation, while a nonzero
 signal whose policy gradient is exactly zero also cannot claim a training step.
-A REINFORCE delivery applies exactly one optimizer step. A PPO-clip delivery
+A REINFORCE delivery applies exactly one optimizer step. A PPO-clip or
+PPO-clip-value delivery
 applies one or more bounded optimizer steps until its epoch cap, zero gradient,
 or target-KL stop, then discards the batch. The trainer retains scalar counters
 and bounded identity evidence rather than completed combat payloads.

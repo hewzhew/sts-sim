@@ -45,7 +45,7 @@ def test_recovery_training_journal_is_a_recoverable_combat_publication(
             behavior_seed_base=11,
             potion_lane=CombatPotionLane.ROOT_SLOTS,
             potion_slots=(0,),
-            policy_update=CombatPolicyUpdateConfig.ppo_clip(),
+            policy_update=CombatPolicyUpdateConfig.ppo_clip_value(),
         ),
         source_expected_roots=2,
         source_root_slot=1,
@@ -63,8 +63,10 @@ def test_recovery_training_journal_is_a_recoverable_combat_publication(
     assert records[0]["root_count"] == 2
     assert records[0]["source_artifact_root_count"] == 2
     assert records[0]["source_root_slot"] == 1
-    assert records[0]["policy_update_rule"] == "PPO_CLIP"
+    assert records[0]["policy_update_rule"] == "PPO_CLIP_VALUE"
+    assert records[0]["policy_value_loss_coefficient"] == 0.5
     assert 1 <= records[1]["optimizer_steps_applied"] <= 4
+    assert records[1]["value_loss"] > 0.0
     assert records[-1]["final_manifest_id"] == summary["final_manifest_id"]
     assert summary["source_wins"] == 1
     assert summary["teacher_final_hp"] == 30

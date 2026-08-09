@@ -30,6 +30,8 @@ class TorchProvenanceError(ValueError):
 
 _MODEL_DEFINITION_VERSION = 1
 _MODEL_CONFIG_VERSION = 1
+_ACTOR_CRITIC_MODEL_DEFINITION_VERSION = 2
+_ACTOR_CRITIC_MODEL_CONFIG_VERSION = 2
 _SEMANTIC_SCHEMA_ENCODING_VERSION = 1
 _OPTIMIZER_CONFIG_VERSION = 1
 _TRAINER_IMPLEMENTATION_VERSION = 4
@@ -38,6 +40,8 @@ _COMBAT_WIN_TRAINER_IMPLEMENTATION_VERSION = 3
 _COMBAT_WIN_OBJECTIVE_VERSION = 3
 _COMBAT_PPO_TRAINER_IMPLEMENTATION_VERSION = 4
 _COMBAT_PPO_OBJECTIVE_VERSION = 4
+_COMBAT_VALUE_PPO_TRAINER_IMPLEMENTATION_VERSION = 1
+_COMBAT_VALUE_PPO_OBJECTIVE_VERSION = 1
 _MAX_SCHEMA_BYTES = 1 << 20
 _MAX_SCHEMA_DEPTH = 16
 _MAX_SCHEMA_ITEMS = 100_000
@@ -187,25 +191,41 @@ def _categorical_manifest_template(
         raise TorchProvenanceError(str(error)) from error
 
     runtime = _runtime_version_bytes()
+    model_definition_version = (
+        _ACTOR_CRITIC_MODEL_DEFINITION_VERSION
+        if scorer_config.value_head
+        else _MODEL_DEFINITION_VERSION
+    )
     model_definition = ManifestArtifactId.from_content(
         ManifestArtifactKind.MODEL_DEFINITION,
         b"STS-RAGGED-CANDIDATE-SCORER\x00"
-        + struct.pack(">I", _MODEL_DEFINITION_VERSION)
+        + struct.pack(">I", model_definition_version)
         + runtime,
     )
     encoded_device = device_type.encode("utf-8")
     if len(encoded_device) > 255:
         raise TorchProvenanceError("device_type is too large")
-    model_config = ManifestArtifactId.from_content(
-        ManifestArtifactKind.MODEL_CONFIG,
-        b"STS-RAGGED-SCORER-CONFIG\x00"
-        + struct.pack(
+    if scorer_config.value_head:
+        encoded_model_config = struct.pack(
+            ">IQQBB",
+            _ACTOR_CRITIC_MODEL_CONFIG_VERSION,
+            scorer_config.hidden_dim,
+            scorer_config.relation_layers,
+            1,
+            len(encoded_device),
+        )
+    else:
+        encoded_model_config = struct.pack(
             ">IQQB",
             _MODEL_CONFIG_VERSION,
             scorer_config.hidden_dim,
             scorer_config.relation_layers,
             len(encoded_device),
         )
+    model_config = ManifestArtifactId.from_content(
+        ManifestArtifactKind.MODEL_CONFIG,
+        b"STS-RAGGED-SCORER-CONFIG\x00"
+        + encoded_model_config
         + encoded_device,
     )
     schema_content = (
@@ -271,6 +291,34 @@ def combat_win_trainer_implementation(
                 _COMBAT_WIN_OBJECTIVE_VERSION,
                 objective_config.groups_per_update,
                 int(objective_config.all_win_axis),
+            )
+            + _runtime_version_bytes(),
+        )
+    if update.rule is CombatPolicyUpdateRule.PPO_CLIP_VALUE:
+        max_grad_norm = update.max_grad_norm
+        target_kl = update.target_kl
+        return ManifestArtifactId.from_content(
+            ManifestArtifactKind.TRAINER_IMPLEMENTATION,
+            b"STS-SYNCHRONOUS-COMBAT-PPO-CLIP-VALUE-TRAINER\x00"
+            + struct.pack(
+                ">I",
+                _COMBAT_VALUE_PPO_TRAINER_IMPLEMENTATION_VERSION,
+            )
+            + b"STS-SAME-ROOT-WIN-FIRST-PPO-CLIP-VALUE\x00"
+            + struct.pack(
+                ">IQBBQdddBdBd",
+                _COMBAT_VALUE_PPO_OBJECTIVE_VERSION,
+                objective_config.groups_per_update,
+                int(objective_config.all_win_axis),
+                int(update.rule),
+                update.epochs,
+                update.clip_coefficient,
+                update.entropy_coefficient,
+                update.value_loss_coefficient,
+                int(max_grad_norm is not None),
+                0.0 if max_grad_norm is None else max_grad_norm,
+                int(target_kl is not None),
+                0.0 if target_kl is None else target_kl,
             )
             + _runtime_version_bytes(),
         )

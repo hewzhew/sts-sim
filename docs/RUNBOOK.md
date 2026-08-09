@@ -783,6 +783,14 @@ entropy. It writes nothing;
 returned loss and promotion as training accounting, not held-out evidence of
 improvement.
 
+`-CombatPolicyUpdate ppo-clip-value` selects the separate actor-critic profile.
+Its zero-output value head predicts raw win or terminal-HP return, its actor
+advantage stays centered within each exact root and is frozen across PPO
+epochs, and the journal reports `value_loss`. It may warm-start shared actor
+weights from a policy-only publication, but publishes a distinct model
+identity. Keep it opt-in until held-out evidence justifies making it the
+maintained default.
+
 `train-combat-recovery` selects one explicit canonical root from an artifact;
 `-SourceExpectedRoots` validates the artifact width and `-SourceRootSlot`
 selects the zero-based root without copying or extracting it. Under one frozen

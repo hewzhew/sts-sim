@@ -77,6 +77,28 @@ class TorchPolicyTests(unittest.TestCase):
         optimizer.step()
         self.assertFalse(torch.equal(before, scorer.scorer[-1].weight.detach()))
 
+    def test_actor_critic_head_starts_neutral_and_aligns_to_rows(self) -> None:
+        scorer = RaggedCandidateScorer.from_bridge_schema(
+            semantic_schema_fixture(),
+            RaggedScorerConfig(
+                hidden_dim=24,
+                relation_layers=1,
+                value_head=True,
+            ),
+        )
+        batch = semantic_batch_fixture()
+
+        output = scorer.actor_critic(batch)
+
+        torch.testing.assert_close(output.logits.values, scorer(batch).values)
+        self.assertEqual(tuple(output.row_values.shape), (2,))
+        torch.testing.assert_close(output.row_values, torch.zeros(2))
+        output.row_values.sum().backward()
+        assert scorer.value_head is not None
+        final = scorer.value_head[-1]
+        assert isinstance(final, torch.nn.Linear)
+        self.assertTrue(bool(torch.any(final.bias.grad != 0)))
+
     def test_cross_row_relation_is_rejected(self) -> None:
         scorer = RaggedCandidateScorer.from_bridge_schema(semantic_schema_fixture())
         batch = semantic_batch_fixture()

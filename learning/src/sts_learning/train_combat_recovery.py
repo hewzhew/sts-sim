@@ -15,6 +15,7 @@ from .torch_combat_session_config import (
     CombatWinSessionLimits,
     CombatWinSessionProfile,
 )
+from .torch_policy import RaggedScorerConfig
 from .train_combat import (
     CombatTrainingCommandConfig,
     CombatTrainingCommandError,
@@ -53,6 +54,9 @@ def run_combat_recovery_training(
         )
     profile = replace(
         CombatWinSessionProfile(),
+        scorer=RaggedScorerConfig(
+            value_head=config.policy_update.uses_value_baseline,
+        ),
         objective=CombatWinObjectiveConfig(
             groups_per_update=config.root_count,
             policy_update=config.policy_update,
@@ -155,7 +159,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--warm-start-behavior", type=Path)
     parser.add_argument(
         "--policy-update",
-        choices=("reinforce", "ppo-clip"),
+        choices=("reinforce", "ppo-clip", "ppo-clip-value"),
         default="reinforce",
     )
     parser.add_argument(

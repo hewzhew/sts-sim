@@ -39,7 +39,7 @@ from .torch_combat_session_config import (
     CombatWinSessionLimits,
     CombatWinSessionProfile,
 )
-from .torch_policy import RaggedCandidateScorer
+from .torch_policy import RaggedCandidateScorer, RaggedScorerConfig
 from .torch_provenance import combat_win_training_manifest_template
 from .train_combat import COMBAT_TRAINING_SCHEMA, LEGACY_COMBAT_TRAINING_SCHEMA
 
@@ -174,11 +174,15 @@ def recover_published_combat_behavior(
         configuration.get("potion_slots"),
         training_potion_lane,
     )
+    policy_update = _policy_update(configuration)
     profile = replace(
         CombatWinSessionProfile(),
+        scorer=RaggedScorerConfig(
+            value_head=policy_update.uses_value_baseline,
+        ),
         objective=CombatWinObjectiveConfig(
             groups_per_update=training_root_count,
-            policy_update=_policy_update(configuration),
+            policy_update=policy_update,
         ),
     )
     if configuration.get("all_win_axis") != profile.objective.all_win_axis.name:
@@ -369,12 +373,16 @@ def _policy_update(
     raw_rule = configuration.get("policy_update_rule")
     if raw_rule is None or raw_rule == CombatPolicyUpdateRule.REINFORCE.name:
         return CombatPolicyUpdateConfig()
-    if raw_rule != CombatPolicyUpdateRule.PPO_CLIP.name:
+    if raw_rule not in (
+        CombatPolicyUpdateRule.PPO_CLIP.name,
+        CombatPolicyUpdateRule.PPO_CLIP_VALUE.name,
+    ):
         raise PublishedCombatBehaviorError(
             "training policy_update_rule is unsupported"
         )
+    rule = CombatPolicyUpdateRule[raw_rule]
     return CombatPolicyUpdateConfig(
-        rule=CombatPolicyUpdateRule.PPO_CLIP,
+        rule=rule,
         epochs=_positive(
             configuration.get("policy_update_epochs"),
             "policy_update_epochs",
@@ -394,6 +402,14 @@ def _policy_update(
         target_kl=_optional_finite_float(
             configuration.get("policy_target_kl"),
             "policy_target_kl",
+        ),
+        value_loss_coefficient=(
+            _finite_float(
+                configuration.get("policy_value_loss_coefficient"),
+                "policy_value_loss_coefficient",
+            )
+            if rule is CombatPolicyUpdateRule.PPO_CLIP_VALUE
+            else 0.0
         ),
     )
 

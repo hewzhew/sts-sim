@@ -34,6 +34,7 @@ from .torch_combat_session_config import (
     CombatWinSessionLimits,
     CombatWinSessionProfile,
 )
+from .torch_policy import RaggedScorerConfig
 
 
 LEGACY_COMBAT_TRAINING_SCHEMA = "sts-learning-combat-training-v3"
@@ -154,6 +155,9 @@ def run_combat_training(
         raise CombatTrainingCommandError("combat training bridge must be typed")
     profile = replace(
         CombatWinSessionProfile(),
+        scorer=RaggedScorerConfig(
+            value_head=config.policy_update.uses_value_baseline,
+        ),
         objective=CombatWinObjectiveConfig(
             groups_per_update=config.root_count,
             policy_update=config.policy_update,
@@ -247,6 +251,9 @@ def _run_combat_training_session(
         ),
         "policy_max_grad_norm": profile.objective.policy_update.max_grad_norm,
         "policy_target_kl": profile.objective.policy_update.target_kl,
+        "policy_value_loss_coefficient": (
+            profile.objective.policy_update.value_loss_coefficient
+        ),
         "potion_lane": config.potion_lane.value,
         "potion_slots": config.potion_slots,
         "initialization": (
@@ -300,6 +307,7 @@ def _run_combat_training_session(
                 f"approx_kl={result.training.approximate_kl:.6g} "
                 f"clip_fraction={result.training.clip_fraction:.6g} "
                 f"entropy={result.training.entropy:.6g} "
+                f"value_loss={result.training.value_loss:.6g} "
                 f"root_wins={root_wins} root_objectives={root_objectives} "
                 f"seconds={elapsed:.3f}",
                 flush=True,
@@ -370,6 +378,7 @@ def _generation(
         "approximate_kl": result.training.approximate_kl,
         "clip_fraction": result.training.clip_fraction,
         "entropy": result.training.entropy,
+        "value_loss": result.training.value_loss,
         "roots": tuple(
             _root(slot_index, root)
             for slot_index, root in enumerate(result.roots)
@@ -450,6 +459,8 @@ def _policy_update(name: str) -> CombatPolicyUpdateConfig:
         )
     if name == "ppo-clip":
         return CombatPolicyUpdateConfig.ppo_clip()
+    if name == "ppo-clip-value":
+        return CombatPolicyUpdateConfig.ppo_clip_value()
     raise CombatTrainingCommandError("unsupported combat policy update")
 
 
@@ -467,7 +478,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--warm-start-behavior", type=Path)
     parser.add_argument(
         "--policy-update",
-        choices=("reinforce", "ppo-clip"),
+        choices=("reinforce", "ppo-clip", "ppo-clip-value"),
         default="reinforce",
     )
     parser.add_argument(

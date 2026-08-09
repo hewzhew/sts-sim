@@ -122,6 +122,7 @@ class RaggedScorerConfig:
 
     hidden_dim: int = 64
     relation_layers: int = 2
+    value_head: bool = False
 
     def __post_init__(self) -> None:
         object.__setattr__(
@@ -134,6 +135,8 @@ class RaggedScorerConfig:
             "relation_layers",
             _non_negative_integer(self.relation_layers, "relation_layers"),
         )
+        if type(self.value_head) is not bool:
+            raise TorchPolicyError("value_head must be bool")
 
 
 @dataclass(frozen=True)
@@ -170,6 +173,22 @@ class RaggedCandidateLogits:
             ordinal = int(torch.argmax(self.values[start:end]).item())
             ordinals.append(ordinal)
         return ordinals
+
+
+@dataclass(frozen=True)
+class RaggedActorCriticOutput:
+    """Candidate policy logits and one scalar value per decision row."""
+
+    logits: RaggedCandidateLogits
+    row_values: Tensor
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.logits, RaggedCandidateLogits):
+            raise TorchPolicyError("actor-critic logits must be ragged")
+        if self.row_values.ndim != 1:
+            raise TorchPolicyError("actor-critic values must be one-dimensional")
+        if self.row_values.numel() != self.logits.row_count:
+            raise TorchPolicyError("actor-critic values must align to decision rows")
 
 
 _RAGGED_CATEGORICAL_RULE_V1 = ManifestArtifactId.from_content(
@@ -349,6 +368,17 @@ class RaggedCandidateScorer(nn.Module):
             nn.SiLU(),
             nn.Linear(hidden_dim, 1),
         )
+        self.value_head = None
+        if self.config.value_head:
+            self.value_head = nn.Sequential(
+                nn.Linear(hidden_dim, hidden_dim),
+                nn.SiLU(),
+                nn.Linear(hidden_dim, 1),
+            )
+            final = self.value_head[-1]
+            assert isinstance(final, nn.Linear)
+            nn.init.zeros_(final.weight)
+            nn.init.zeros_(final.bias)
         self.register_buffer(
             "_categorical_offsets",
             torch.tensor(schema.categorical_offsets, dtype=torch.long),
@@ -380,6 +410,25 @@ class RaggedCandidateScorer(nn.Module):
         return cls(SemanticSchemaDimensions.from_bridge_schema(schema), config)
 
     def forward(self, decision_batch: Mapping[str, object]) -> RaggedCandidateLogits:
+        logits, _ = self._forward_encoded(decision_batch)
+        return logits
+
+    def actor_critic(
+        self,
+        decision_batch: Mapping[str, object],
+    ) -> RaggedActorCriticOutput:
+        if self.value_head is None:
+            raise TorchPolicyError("actor-critic output requires a value head")
+        logits, row_state = self._forward_encoded(decision_batch)
+        return RaggedActorCriticOutput(
+            logits=logits,
+            row_values=self.value_head(row_state).squeeze(1),
+        )
+
+    def _forward_encoded(
+        self,
+        decision_batch: Mapping[str, object],
+    ) -> tuple[RaggedCandidateLogits, Tensor]:
         device = self.token_kind.weight.device
         semantic = _mapping(_required(decision_batch, "semantic"), "semantic")
         batch_version = _non_negative_integer(
@@ -491,7 +540,10 @@ class RaggedCandidateScorer(nn.Module):
             dim=1,
         )
         values = self.scorer(score_inputs).squeeze(1)
-        return RaggedCandidateLogits(values=values, row_splits=candidate_splits)
+        return (
+            RaggedCandidateLogits(values=values, row_splits=candidate_splits),
+            row_state,
+        )
 
     def _categorical_state(
         self,
