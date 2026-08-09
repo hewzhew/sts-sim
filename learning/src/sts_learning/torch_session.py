@@ -34,7 +34,11 @@ from .torch_generation import (
     BoundedCategoricalGenerationRunner,
     CategoricalGenerationAdvanceResult,
 )
-from .torch_policy import RaggedCandidateScorer
+from .torch_policy import (
+    RaggedCandidateScorer,
+    TorchPolicyError,
+    load_scorer_warm_start,
+)
 from .torch_provenance import categorical_training_manifest_template
 from .torch_resume_publication import (
     CategoricalGenerationResumePublisher,
@@ -229,6 +233,7 @@ class CategoricalOnlineSessionFactory:
         model_seed: int,
         behavior_seed: int,
         initial_scorer: RaggedCandidateScorer | None = None,
+        initial_scorer_actor_only: bool = False,
     ) -> CategoricalOnlineSession:
         """Create generation zero only in an unused experiment root."""
 
@@ -243,6 +248,8 @@ class CategoricalOnlineSessionFactory:
             raise TorchSessionError(
                 "session initial_scorer must be a RaggedCandidateScorer"
             )
+        if type(initial_scorer_actor_only) is not bool:
+            raise TorchSessionError("initial_scorer_actor_only must be bool")
         checkpoint_store, catalog = self._behavior_stores()
         resume_store = self._resume_store()
         if (
@@ -258,32 +265,12 @@ class CategoricalOnlineSessionFactory:
             shadow = self._scorer()
         if initial_scorer is not None:
             try:
-                if shadow.config.value_head == initial_scorer.config.value_head:
-                    shadow.load_state_dict(initial_scorer.state_dict(), strict=True)
-                else:
-                    actor_state = {
-                        key: value
-                        for key, value in initial_scorer.state_dict().items()
-                        if not key.startswith("value_head.")
-                    }
-                    incompatible = shadow.load_state_dict(actor_state, strict=False)
-                    expected_missing = (
-                        {
-                            key
-                            for key in shadow.state_dict()
-                            if key.startswith("value_head.")
-                        }
-                        if shadow.config.value_head
-                        else set()
-                    )
-                    if (
-                        incompatible.unexpected_keys
-                        or set(incompatible.missing_keys) != expected_missing
-                    ):
-                        raise RuntimeError(
-                            "actor-only warm start changed shared policy keys"
-                        )
-            except RuntimeError as error:
+                load_scorer_warm_start(
+                    shadow,
+                    initial_scorer,
+                    actor_only=initial_scorer_actor_only,
+                )
+            except TorchPolicyError as error:
                 raise TorchSessionError(
                     "session initial scorer is incompatible with the maintained profile"
                 ) from error

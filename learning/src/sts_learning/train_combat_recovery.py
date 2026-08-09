@@ -16,11 +16,13 @@ from .torch_combat_session_config import (
     CombatWinSessionProfile,
 )
 from .torch_policy import RaggedScorerConfig
+from .torch_session_config import CategoricalSessionBridge
 from .train_combat import (
     CombatTrainingCommandConfig,
     CombatTrainingCommandError,
     _policy_update,
     _potion_slots_text,
+    _recover_combat_warm_start,
     _run_combat_training_session,
 )
 
@@ -31,6 +33,7 @@ def run_combat_recovery_training(
     source_expected_roots: int = 1,
     source_root_slot: int = 0,
     bridge: CombatSessionBridge | None = None,
+    run_bridge: CategoricalSessionBridge | None = None,
 ) -> dict[str, object]:
     """Discover one win, train on its exact suffix roots, and publish behavior."""
 
@@ -66,16 +69,12 @@ def run_combat_recovery_training(
         CombatWinSessionLimits(),
         owner_capacity=max(16, config.updates + 1),
     )
-    warm_start = None
-    if config.warm_start_behavior is not None:
-        from .published_combat_behavior import recover_published_combat_behavior
-
-        warm_start = recover_published_combat_behavior(
-            config.warm_start_behavior,
-            active_bridge,
-            CombatWinSessionLimits(),
-            (source_behavior_seed,),
-        )
+    warm_start, warm_start_training_kind = _recover_combat_warm_start(
+        config.warm_start_behavior,
+        active_bridge,
+        run_bridge,
+        source_behavior_seed,
+    )
     session = CombatWinRecoverySessionFactory(
         config.output,
         active_bridge,
@@ -98,6 +97,7 @@ def run_combat_recovery_training(
         initial_scorer=(
             None if warm_start is None else warm_start.policies[0].frozen_scorer
         ),
+        initial_scorer_actor_only=warm_start_training_kind == "run",
     )
 
     discovery = session.discovery
@@ -115,6 +115,7 @@ def run_combat_recovery_training(
         warm_start_training_step=(
             None if warm_start is None else warm_start.training_step
         ),
+        warm_start_training_kind=warm_start_training_kind,
         configuration_extra={
             "curriculum": "verified-win-terminal-nearest",
             "teacher_selection": "highest-final-hp-then-lowest-index",

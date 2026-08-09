@@ -12,11 +12,13 @@ from learning.tests.semantic_fixtures import semantic_schema_fixture
 from learning.tests.run_training_fixtures import published_behavior
 from learning.tests.torch_combat_fixtures import OneRoundCombatGroup
 from sts_learning.combat_potion_lane import CombatPotionLane
+from sts_learning import RunPolicyUpdateConfig
 from sts_learning.torch_combat_session_config import CombatSessionBridge
 from sts_learning.train_combat import (
     CombatTrainingCommandConfig,
     run_combat_training,
 )
+from sts_learning.train_run import RunTrainingCommandConfig, run_run_training
 
 
 _ROOTS = (
@@ -102,6 +104,7 @@ def test_training_command_runs_updates_journals_and_publishes(
     assert records[0]["potion_slots"] == []
     assert records[0]["initialization"] == "random"
     assert records[0]["warm_start_manifest_id"] is None
+    assert records[0]["warm_start_training_kind"] is None
     assert records[1]["roots"][1]["slot_index"] == 1
     assert records[1]["roots"][1]["selected_objective"] == "hp"
     assert records[1]["active_manifest_id_before"] != records[1][
@@ -146,6 +149,58 @@ def test_training_command_warm_starts_from_a_verified_published_behavior(
     assert configuration["warm_start_manifest_id"] is not None
     assert configuration["warm_start_checkpoint_id"] is not None
     assert configuration["warm_start_training_step"] == 1
+    assert configuration["warm_start_training_kind"] == "combat"
     assert records[-1]["final_manifest_id"] != configuration[
         "warm_start_manifest_id"
     ]
+
+
+def test_training_command_warm_starts_actor_only_from_run_value_behavior(
+    tmp_path: Path,
+) -> None:
+    combat_behavior, combat_bridge, run_bridge = published_behavior(tmp_path)
+    run_behavior = tmp_path / "run-value-behavior"
+    run_run_training(
+        RunTrainingCommandConfig(
+            warm_start_behavior=combat_behavior,
+            output=run_behavior,
+            slot_count=2,
+            generations=1,
+            attempts_per_update=2,
+            max_batch_steps_per_generation=1,
+            model_seed=43,
+            behavior_seed=94,
+            training_seed_start=0,
+            evaluation_attempts=2,
+            evaluation_max_batch_steps=2,
+            evaluation_behavior_seed=501,
+            held_out_seed_start=1000,
+            policy_update=RunPolicyUpdateConfig.ppo_clip_value(),
+        ),
+        combat_bridge=combat_bridge,
+        run_bridge=run_bridge,
+    )
+    output = tmp_path / "run-warm-started-combat"
+
+    run_combat_training(
+        CombatTrainingCommandConfig(
+            artifact=tmp_path / "combat-roots.bin",
+            output=output,
+            root_count=2,
+            replicate_count=2,
+            updates=1,
+            model_seed=44,
+            behavior_seed_base=102,
+            potion_lane=CombatPotionLane.NEVER,
+            warm_start_behavior=run_behavior,
+        ),
+        bridge=combat_bridge,
+        run_bridge=run_bridge,
+    )
+
+    configuration = json.loads(
+        (output / "training.jsonl").read_text(encoding="utf-8").splitlines()[0]
+    )
+    assert configuration["warm_start_training_kind"] == "run"
+    assert configuration["warm_start_manifest_id"] is not None
+    assert configuration["policy_update_rule"] == "REINFORCE"

@@ -610,6 +610,47 @@ class RaggedCandidateScorer(nn.Module):
         return _mean_by_token(encoded, token_indices, token_count)
 
 
+def load_scorer_warm_start(
+    target: RaggedCandidateScorer,
+    source: RaggedCandidateScorer,
+    *,
+    actor_only: bool = False,
+) -> None:
+    """Copy a compatible scorer, optionally resetting objective-local value state."""
+
+    if not isinstance(target, RaggedCandidateScorer) or not isinstance(
+        source,
+        RaggedCandidateScorer,
+    ):
+        raise TorchPolicyError("scorer warm start requires typed scorers")
+    if type(actor_only) is not bool:
+        raise TorchPolicyError("scorer warm-start actor_only must be bool")
+    try:
+        if not actor_only and target.config.value_head == source.config.value_head:
+            target.load_state_dict(source.state_dict(), strict=True)
+            return
+        actor_state = {
+            key: value
+            for key, value in source.state_dict().items()
+            if not key.startswith("value_head.")
+        }
+        incompatible = target.load_state_dict(actor_state, strict=False)
+        expected_missing = {
+            key
+            for key in target.state_dict()
+            if key.startswith("value_head.")
+        }
+        if (
+            incompatible.unexpected_keys
+            or set(incompatible.missing_keys) != expected_missing
+        ):
+            raise RuntimeError("actor-only warm start changed shared policy keys")
+    except RuntimeError as error:
+        raise TorchPolicyError(
+            "warm-start scorer is incompatible with the maintained profile"
+        ) from error
+
+
 class GreedyTorchPolicy:
     """Driver adapter that performs one batched scorer call per decision round."""
 

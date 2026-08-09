@@ -21,7 +21,11 @@ from .torch_combat_session_config import (
     TorchCombatSessionError,
 )
 from .torch_combat_training import SynchronousCombatWinTrainer
-from .torch_policy import RaggedCandidateScorer
+from .torch_policy import (
+    RaggedCandidateScorer,
+    TorchPolicyError,
+    load_scorer_warm_start,
+)
 from .torch_provenance import combat_win_training_manifest_template
 
 
@@ -41,6 +45,7 @@ def create_combat_win_owner_graph(
     model_seed: int,
     controller_seed: int,
     initial_scorer: RaggedCandidateScorer | None = None,
+    initial_scorer_actor_only: bool = False,
 ) -> CombatWinOwnerGraph:
     """Create one exact mutable shadow and one independent frozen behavior."""
 
@@ -51,6 +56,8 @@ def create_combat_win_owner_graph(
         raise TorchCombatSessionError(
             "combat owner initial_scorer must be a RaggedCandidateScorer"
         )
+    if type(initial_scorer_actor_only) is not bool:
+        raise TorchCombatSessionError("initial_scorer_actor_only must be bool")
 
     def scorer_factory() -> RaggedCandidateScorer:
         return RaggedCandidateScorer.from_bridge_schema(
@@ -63,21 +70,12 @@ def create_combat_win_owner_graph(
         shadow = scorer_factory()
     if initial_scorer is not None:
         try:
-            if shadow.config.value_head and not initial_scorer.config.value_head:
-                incompatible = shadow.load_state_dict(
-                    initial_scorer.state_dict(),
-                    strict=False,
-                )
-                if incompatible.unexpected_keys or not incompatible.missing_keys:
-                    raise RuntimeError("actor-only warm start changed shared keys")
-                if not all(
-                    key.startswith("value_head.")
-                    for key in incompatible.missing_keys
-                ):
-                    raise RuntimeError("actor-only warm start missed policy keys")
-            else:
-                shadow.load_state_dict(initial_scorer.state_dict(), strict=True)
-        except RuntimeError as error:
+            load_scorer_warm_start(
+                shadow,
+                initial_scorer,
+                actor_only=initial_scorer_actor_only,
+            )
+        except TorchPolicyError as error:
             raise TorchCombatSessionError(
                 "combat owner initial scorer is incompatible with the maintained profile"
             ) from error

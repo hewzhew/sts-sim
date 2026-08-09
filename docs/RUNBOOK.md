@@ -634,6 +634,11 @@ Configure one stable Python 3.12 training runtime once, then use the small
 .\learning\dev.ps1 train-run -Behavior <combat-training-dir> -Output <fresh-dir> -Slots 4 -Generations 1 -AttemptsPerUpdate 32 -MaxBatchSteps 4096 -EvaluationAttempts 16 -HeldOutSeedStart 1000000 -AdvantageMode decision-local-gae -DecisionScope all -SamplingMode independent-cohorts -RunPolicyUpdate ppo-clip-value -RunPotionLane trained
 ```
 
+`train-combat` and `train-combat-recovery` may warm start from either a verified
+combat- or run-training publication. Cross-objective handoffs copy only actor
+parameters: a run continuation critic is never reused as a combat outcome
+critic, and a combat critic is never reused as a run continuation critic.
+
 `configure` installs the tool requirements declared by the local
 `sts-learning[test]` extra into the selected runtime, then verifies Python,
 pytest, NumPy, PyTorch, the repository caller, and the installed bridge. The

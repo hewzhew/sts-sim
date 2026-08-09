@@ -324,6 +324,7 @@ def run_run_training(
         model_seed=config.model_seed,
         behavior_seed=config.behavior_seed,
         initial_scorer=warm_start.policies[0].frozen_scorer,
+        initial_scorer_actor_only=True,
     )
     config.output.mkdir(parents=True, exist_ok=True)
     journal_path = config.output / "training.jsonl"

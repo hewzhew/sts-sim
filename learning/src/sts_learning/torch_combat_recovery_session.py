@@ -169,6 +169,7 @@ class CombatWinRecoverySessionFactory:
         source_behavior_seed: int,
         recovery_behavior_seeds: Sequence[int],
         initial_scorer: RaggedCandidateScorer | None = None,
+        initial_scorer_actor_only: bool = False,
     ) -> CombatWinRecoverySession:
         payload = read_combat_root_artifact(
             artifact,
@@ -180,6 +181,7 @@ class CombatWinRecoverySessionFactory:
             source_behavior_seed=source_behavior_seed,
             recovery_behavior_seeds=recovery_behavior_seeds,
             initial_scorer=initial_scorer,
+            initial_scorer_actor_only=initial_scorer_actor_only,
         )
 
     def new_from_artifact_bytes(
@@ -190,6 +192,7 @@ class CombatWinRecoverySessionFactory:
         source_behavior_seed: int,
         recovery_behavior_seeds: Sequence[int],
         initial_scorer: RaggedCandidateScorer | None = None,
+        initial_scorer_actor_only: bool = False,
     ) -> CombatWinRecoverySession:
         self._require_unused_root()
         artifact = normalize_combat_root_artifact(
@@ -232,6 +235,7 @@ class CombatWinRecoverySessionFactory:
             model_seed=normalized_model_seed,
             controller_seed=source_seed,
             initial_scorer=initial_scorer,
+            initial_scorer_actor_only=initial_scorer_actor_only,
         )
         source_policy = owners.controller.fork_active(
             torch.Generator(device="cpu").manual_seed(source_seed)

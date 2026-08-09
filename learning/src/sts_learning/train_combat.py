@@ -9,7 +9,7 @@ import time
 from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Protocol, TextIO
+from typing import TYPE_CHECKING, Protocol, TextIO
 
 from .combat_objective import (
     CombatPolicyUpdateConfig,
@@ -35,6 +35,11 @@ from .torch_combat_session_config import (
     CombatWinSessionProfile,
 )
 from .torch_policy import RaggedScorerConfig
+from .torch_session_config import CategoricalSessionBridge
+
+if TYPE_CHECKING:
+    from .published_combat_behavior import PublishedCombatBehavior
+    from .published_run_behavior import PublishedRunBehavior
 
 
 LEGACY_COMBAT_TRAINING_SCHEMA = "sts-learning-combat-training-v3"
@@ -145,6 +150,7 @@ def run_combat_training(
     config: CombatTrainingCommandConfig,
     *,
     bridge: CombatSessionBridge | None = None,
+    run_bridge: CategoricalSessionBridge | None = None,
 ) -> dict[str, object]:
     """Run bounded online updates and publish the final active behavior."""
 
@@ -167,16 +173,12 @@ def run_combat_training(
         CombatWinSessionLimits(),
         owner_capacity=max(16, config.updates + 1),
     )
-    warm_start = None
-    if config.warm_start_behavior is not None:
-        from .published_combat_behavior import recover_published_combat_behavior
-
-        warm_start = recover_published_combat_behavior(
-            config.warm_start_behavior,
-            active_bridge,
-            CombatWinSessionLimits(),
-            (config.behavior_seed_base,),
-        )
+    warm_start, warm_start_training_kind = _recover_combat_warm_start(
+        config.warm_start_behavior,
+        active_bridge,
+        run_bridge,
+        config.behavior_seed_base,
+    )
     session = CombatWinBatchSessionFactory(
         config.output,
         active_bridge,
@@ -196,6 +198,7 @@ def run_combat_training(
         initial_scorer=(
             None if warm_start is None else warm_start.policies[0].frozen_scorer
         ),
+        initial_scorer_actor_only=warm_start_training_kind == "run",
     )
 
     return _run_combat_training_session(
@@ -212,6 +215,55 @@ def run_combat_training(
         warm_start_training_step=(
             None if warm_start is None else warm_start.training_step
         ),
+        warm_start_training_kind=warm_start_training_kind,
+    )
+
+
+def _recover_combat_warm_start(
+    behavior: Path | None,
+    combat_bridge: CombatSessionBridge,
+    run_bridge: CategoricalSessionBridge | None,
+    behavior_seed: int,
+) -> tuple[PublishedCombatBehavior | PublishedRunBehavior | None, str | None]:
+    if behavior is None:
+        return None, None
+    from .published_run_behavior import (
+        is_run_training_publication,
+        recover_published_run_behavior,
+    )
+
+    if is_run_training_publication(behavior):
+        active_run_bridge = (
+            run_bridge
+            if run_bridge is not None
+            else CategoricalSessionBridge.installed()
+        )
+        if not isinstance(active_run_bridge, CategoricalSessionBridge):
+            raise CombatTrainingCommandError(
+                "run warm-start recovery bridge must be typed"
+            )
+        if active_run_bridge.semantic_schema != combat_bridge.semantic_schema:
+            raise CombatTrainingCommandError(
+                "run warm-start and combat training semantic schemas differ"
+            )
+        return (
+            recover_published_run_behavior(
+                behavior,
+                active_run_bridge,
+                (behavior_seed,),
+            ),
+            "run",
+        )
+    from .published_combat_behavior import recover_published_combat_behavior
+
+    return (
+        recover_published_combat_behavior(
+            behavior,
+            combat_bridge,
+            CombatWinSessionLimits(),
+            (behavior_seed,),
+        ),
+        "combat",
     )
 
 
@@ -224,6 +276,7 @@ def _run_combat_training_session(
     warm_start_manifest_id: str | None,
     warm_start_checkpoint_id: str | None,
     warm_start_training_step: int | None,
+    warm_start_training_kind: str | None = None,
     configuration_extra: Mapping[str, object] | None = None,
     completion_extra: Mapping[str, object] | None = None,
 ) -> dict[str, object]:
@@ -269,6 +322,7 @@ def _run_combat_training_session(
         "warm_start_manifest_id": warm_start_manifest_id,
         "warm_start_checkpoint_id": warm_start_checkpoint_id,
         "warm_start_training_step": warm_start_training_step,
+        "warm_start_training_kind": warm_start_training_kind,
     }
     _extend_record(configuration, configuration_extra)
 
