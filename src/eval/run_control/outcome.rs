@@ -232,8 +232,9 @@ pub(in crate::eval::run_control) fn combat_enemy_hp(combat: &CombatState) -> i32
         .entities
         .monsters
         .iter()
+        .filter(|monster| monster.is_alive_for_action())
         .fold(0i32, |total, monster| {
-            total.saturating_add(monster.current_hp.max(0))
+            total.saturating_add(monster.current_hp)
         })
 }
 
@@ -281,6 +282,16 @@ mod tests {
         let outcome = tracker.finish("escaped-jaw", &finished);
 
         assert_eq!(outcome.terminal, CombatTerminal::Unresolved);
+    }
+
+    #[test]
+    fn enemy_hp_evidence_excludes_escaped_monsters() {
+        let mut combat = finished_jaw_worm().combat_state;
+        combat.entities.monsters[0].current_hp = 40;
+
+        assert_eq!(combat_enemy_hp(&combat), 40);
+        combat.entities.monsters[0].is_escaped = true;
+        assert_eq!(combat_enemy_hp(&combat), 0);
     }
 
     fn finished_jaw_worm() -> FinishedActiveCombat {

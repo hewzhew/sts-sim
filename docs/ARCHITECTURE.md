@@ -358,9 +358,10 @@ An undecoded combat slot may create a fixed-size group of exact same-root
 combat episodes. Rust owns the normalized run-session root id, exact combat
 state hash, numbered replicate lineage, and terminal outcome facts; each
 bridge transition repeats both root identities and emits aligned terminal win,
-player HP/max HP, total enemy HP at the root and terminal boundary, gold,
-concrete potion-slot identities, turn, potion-action counts, and card-play
-columns only for newly terminal replicates.
+player HP/max HP, total actionable living-enemy HP at the root and terminal
+boundary, gold, concrete potion-slot identities, turn, potion-action counts,
+and card-play columns only for newly terminal replicates. Escaped, dying, and
+half-dead entities retained by the engine do not become remaining-HP evidence.
 The Python caller rejects a terminal batch from another root before mutating
 its bounded accumulator and completes a group only after receiving exactly one
 outcome for every replicate. Same-root leave-one-out evidence remains four

@@ -134,8 +134,9 @@ never parses a production continuation or simulator checkpoint. Private branch
 cutpoint files are intentionally not accepted.
 Every combat step repeats the exact root id and combat-state hash. Its newly
 terminal rows have no run reward fields: they return aligned terminal kind,
-bridge-owned win, player HP, root/terminal total enemy HP, turn, potion, and
-card-play columns. The source run slot is unchanged. The Python caller can
+bridge-owned win, player HP, root/terminal actionable living-enemy HP, turn,
+potion, and card-play columns. Escaped, dying, and half-dead entities are
+excluded. The source run slot is unchanged. The Python caller can
 accumulate exactly one row per replicate and derive separate same-root
 leave-one-out win, player-terminal-HP-ratio, enemy-HP-progress, and
 potion-retention axes. Enemy progress remains diagnostic and does not change

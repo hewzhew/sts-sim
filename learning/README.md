@@ -314,9 +314,11 @@ artifact itself before constructing combat groups, uses independent explicit
 RNG streams per root, and writes one compact
 `evaluation.json`; it creates no optimizer, trainer, experience collector, or
 promotion owner. The root and terminal records preserve HP/max HP, gold,
-concrete potion-slot identities, lost/gained identity deltas, potion use/discard
-counts, turn, and card facts as separate axes. Potion identity deltas are
-multiset inventory facts; the
+actionable living-enemy HP, concrete potion-slot identities, lost/gained
+identity deltas, potion use/discard counts, turn, and card facts as separate
+axes. Per-root enemy-HP ranges and signal-replicate counts make all-loss
+variation inspectable without selecting it as a training objective. Potion
+identity deltas are multiset inventory facts; the
 evaluator neither assigns potion tiers nor invents an HP/gold/potion exchange
 rate. Cross-combat resource value requires an exact continuation and remains
 outside this command. These facts measure that exact manifest on the bounded

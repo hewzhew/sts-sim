@@ -17,6 +17,7 @@ from .combat_evaluation import (
     CombatHeldOutEvaluator,
     combat_observed_resource_frontier,
 )
+from .combat_outcomes import combat_advantage_has_signal
 from .combat_potion_lane import (
     CombatPotionLane,
     CombatPotionLaneError,
@@ -42,7 +43,7 @@ from .torch_combat_session_config import (
 from .torch_session_config import CategoricalSessionBridge
 
 
-COMBAT_EVALUATION_SCHEMA = "sts-learning-combat-held-out-evaluation-v7"
+COMBAT_EVALUATION_SCHEMA = "sts-learning-combat-held-out-evaluation-v8"
 
 
 class CombatEvaluationCommandError(RuntimeError):
@@ -223,6 +224,24 @@ def run_combat_evaluation(
         str(sum(outcome.final_hp for outcome in root.group.outcomes))
         for root in result.roots
     )
+    root_enemy_final_hp = ",".join(
+        str(sum(outcome.enemy_final_hp for outcome in root.group.outcomes))
+        for root in result.roots
+    )
+    root_enemy_final_hp_ranges = ",".join(
+        f"{min(outcome.enemy_final_hp for outcome in root.group.outcomes)}-"
+        f"{max(outcome.enemy_final_hp for outcome in root.group.outcomes)}"
+        for root in result.roots
+    )
+    root_enemy_hp_signals = ",".join(
+        str(
+            sum(
+                combat_advantage_has_signal(value)
+                for value in root.group.grouped_advantages().enemy_hp_progress
+            )
+        )
+        for root in result.roots
+    )
     root_potions_used = ",".join(
         str(sum(outcome.potions_used for outcome in root.group.outcomes))
         for root in result.roots
@@ -294,6 +313,9 @@ def run_combat_evaluation(
             f"potion_lane={result.potion_lane.value} "
             f"potion_slots={_potion_slots_text(result)} "
             f"root_wins={root_wins} root_final_hp_sums={root_final_hp} "
+            f"root_enemy_final_hp_sums={root_enemy_final_hp} "
+            f"root_enemy_final_hp_ranges={root_enemy_final_hp_ranges} "
+            f"root_enemy_hp_signal_replicates={root_enemy_hp_signals} "
             f"root_potions_used={root_potions_used} "
             f"root_potions_discarded={root_potions_discarded} "
             f"root_resource_frontiers={root_resource_frontiers} "
@@ -407,6 +429,21 @@ def _summary(
         "losses": result.losses,
         "final_hp_sum": sum(outcome.final_hp for outcome in outcomes),
         "hp_loss_sum": sum(outcome.hp_loss for outcome in outcomes),
+        "enemy_final_hp_sum": sum(
+            outcome.enemy_final_hp for outcome in outcomes
+        ),
+        "enemy_final_hp_min": min(
+            outcome.enemy_final_hp for outcome in outcomes
+        ),
+        "enemy_final_hp_max": max(
+            outcome.enemy_final_hp for outcome in outcomes
+        ),
+        "enemy_hp_progress_signal_roots": sum(
+            root["enemy_hp_progress_signal_replicates"] > 0 for root in roots
+        ),
+        "enemy_hp_progress_signal_replicates": sum(
+            root["enemy_hp_progress_signal_replicates"] for root in roots
+        ),
         "gold_delta_sum": sum(
             outcome.final_gold - root.context.gold
             for root in result.roots
@@ -443,6 +480,7 @@ def _root_summary(
 ) -> dict[str, object]:
     outcomes = root.group.outcomes
     context = root.context
+    enemy_hp_progress = root.group.grouped_advantages().enemy_hp_progress
     resource_frontier = combat_observed_resource_frontier(outcomes)
     return {
         "slot_index": slot_index,
@@ -474,6 +512,19 @@ def _root_summary(
         },
         "final_hp_sum": sum(outcome.final_hp for outcome in outcomes),
         "hp_loss_sum": sum(outcome.hp_loss for outcome in outcomes),
+        "enemy_start_hp": outcomes[0].enemy_start_hp,
+        "enemy_final_hp_sum": sum(
+            outcome.enemy_final_hp for outcome in outcomes
+        ),
+        "enemy_final_hp_min": min(
+            outcome.enemy_final_hp for outcome in outcomes
+        ),
+        "enemy_final_hp_max": max(
+            outcome.enemy_final_hp for outcome in outcomes
+        ),
+        "enemy_hp_progress_signal_replicates": sum(
+            combat_advantage_has_signal(value) for value in enemy_hp_progress
+        ),
         "potions_used": sum(outcome.potions_used for outcome in outcomes),
         "potions_discarded": sum(
             outcome.potions_discarded for outcome in outcomes
@@ -509,6 +560,7 @@ def _root_summary(
                 "final_gold": outcome.final_gold,
                 "gold_delta": outcome.final_gold - context.gold,
                 "hp_loss": outcome.hp_loss,
+                "enemy_final_hp": outcome.enemy_final_hp,
                 "turns": outcome.turns,
                 "potions_used": outcome.potions_used,
                 "potions_discarded": outcome.potions_discarded,

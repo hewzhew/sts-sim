@@ -142,7 +142,7 @@ def test_evaluation_recovers_published_behavior_without_training_or_experience(
         bridge=bridge,
     )
 
-    assert summary["schema"] == "sts-learning-combat-held-out-evaluation-v7"
+    assert summary["schema"] == "sts-learning-combat-held-out-evaluation-v8"
     assert summary["behavior_training_kind"] == "combat"
     assert summary["potion_lane"] == "all"
     assert summary["potion_slots"] == ()
@@ -158,6 +158,9 @@ def test_evaluation_recovers_published_behavior_without_training_or_experience(
     assert summary["behavior_training_potion_lane"] == "all"
     assert summary["behavior_training_potion_slots"] == ()
     assert summary["final_hp_sum"] == 201
+    assert summary["enemy_final_hp_sum"] == 20
+    assert summary["enemy_hp_progress_signal_roots"] == 1
+    assert summary["enemy_hp_progress_signal_replicates"] == 2
     assert summary["gold_delta_sum"] == 0
     assert summary["lost_potion_ids"] == {"EntropicBrew": 2}
     assert summary["gained_potion_ids"] == {"BlockPotion": 2}
@@ -174,6 +177,15 @@ def test_evaluation_recovers_published_behavior_without_training_or_experience(
     assert tuple(
         outcome["final_hp"] for outcome in summary["roots"][0]["outcomes"]
     ) == (0, 61)
+    assert summary["roots"][0]["enemy_start_hp"] == 40
+    assert summary["roots"][0]["enemy_final_hp_sum"] == 20
+    assert summary["roots"][0]["enemy_final_hp_min"] == 0
+    assert summary["roots"][0]["enemy_final_hp_max"] == 20
+    assert summary["roots"][0]["enemy_hp_progress_signal_replicates"] == 2
+    assert tuple(
+        outcome["enemy_final_hp"]
+        for outcome in summary["roots"][0]["outcomes"]
+    ) == (20, 0)
     assert summary["roots"][0]["outcomes"][1]["lost_potion_ids"] == (
         "EntropicBrew",
     )
