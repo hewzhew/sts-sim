@@ -161,6 +161,16 @@ compatibility. It records any allowed historical model-definition, optimizer,
 or trainer provenance digest difference instead of treating the source as a
 current publication.
 
+An optional typed `CombatRetryCoverageConfig` may retain one opaque checkpoint
+per live combat root to widen demonstration coverage. The first attempt remains
+greedy; only a failed retry uses the separately seeded categorical sampler, and
+each combat has an explicit retry ceiling. Restoring a combat never replays or
+duplicates a strategic teacher row. Normal victories/defeats, total retry work,
+rescued combats, and per-terminal-run retry counts remain separate, so this
+coverage curriculum cannot masquerade as a zero-recovery run result. The mode
+is disabled by default and remains bounded by the collector's existing batch
+step, row, byte, and wall-time limits.
+
 `sts_learning.strategic_behavior_cloning` consumes that in-memory corpus
 without inventing a second feature schema. It classifies each original run seed
 through the stable `SeedPartitionSpec` before concatenation, rejects an empty or

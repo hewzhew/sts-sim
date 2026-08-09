@@ -67,6 +67,9 @@ def test_behavior_clone_splits_by_seed_and_does_not_mutate_combat_anchor() -> No
         terminal_floors=(3, 3),
         terminal_hps=(0, 0),
         terminal_max_hps=(80, 80),
+        combat_retries=0,
+        rescued_combats=0,
+        terminal_combat_retries=(0, 0),
     )
     split = split_strategic_demonstrations(
         corpus,

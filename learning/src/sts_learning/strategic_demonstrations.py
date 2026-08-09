@@ -11,6 +11,7 @@ from enum import Enum
 from pathlib import Path
 
 import numpy as np
+import torch
 
 from .combat_potion_lane import CombatPotionLane
 from .decision_progress import BridgeDecisionProgressProvider, DecisionRunProgress
@@ -21,7 +22,11 @@ from .published_combat_behavior import (
 )
 from .semantic_batch import select_semantic_decision_rows
 from .torch_combat_session_config import CombatSessionBridge, CombatWinSessionLimits
-from .torch_policy import GreedyTorchPolicy
+from .torch_policy import (
+    GreedyTorchPolicy,
+    RaggedCategoricalPolicyConfig,
+    sample_ragged_categorical,
+)
 from .torch_session_config import CategoricalSessionBridge
 
 
@@ -34,6 +39,31 @@ class CombatAnchorMode(Enum):
 
     STRICT_PUBLICATION = "strict_publication"
     COMPATIBLE_WEIGHT_IMPORT = "compatible_weight_import"
+
+
+@dataclass(frozen=True)
+class CombatRetryCoverageConfig:
+    """Bounded combat-root retries used only to widen corpus coverage."""
+
+    max_retries_per_combat: int
+    sampling_seed: int = 300_000
+    temperature: float = 1.0
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "max_retries_per_combat",
+            _positive(self.max_retries_per_combat, "max_retries_per_combat"),
+        )
+        sampling_seed = _nonnegative(self.sampling_seed, "sampling_seed")
+        if sampling_seed >= 1 << 63:
+            raise StrategicDemonstrationError("sampling_seed must be below 2^63")
+        object.__setattr__(self, "sampling_seed", sampling_seed)
+        try:
+            policy = RaggedCategoricalPolicyConfig(self.temperature)
+        except RuntimeError as error:
+            raise StrategicDemonstrationError(str(error)) from error
+        object.__setattr__(self, "temperature", policy.temperature)
 
 
 @dataclass(frozen=True)
@@ -51,6 +81,7 @@ class StrategicDemonstrationConfig:
     wall_ms: int = 60_000
     potion_lane: RunPotionLane = RunPotionLane.TRAINED
     combat_anchor_mode: CombatAnchorMode = CombatAnchorMode.STRICT_PUBLICATION
+    combat_retry_coverage: CombatRetryCoverageConfig | None = None
 
     def __post_init__(self) -> None:
         behavior = Path(self.behavior).resolve()
@@ -86,6 +117,11 @@ class StrategicDemonstrationConfig:
             raise StrategicDemonstrationError("potion_lane must be typed")
         if not isinstance(self.combat_anchor_mode, CombatAnchorMode):
             raise StrategicDemonstrationError("combat_anchor_mode must be typed")
+        if self.combat_retry_coverage is not None and not isinstance(
+            self.combat_retry_coverage,
+            CombatRetryCoverageConfig,
+        ):
+            raise StrategicDemonstrationError("combat_retry_coverage must be typed")
 
 
 @dataclass(frozen=True)
@@ -127,6 +163,9 @@ class StrategicDemonstrationCorpus:
     terminal_floors: tuple[int, ...]
     terminal_hps: tuple[int, ...]
     terminal_max_hps: tuple[int, ...]
+    combat_retries: int
+    rescued_combats: int
+    terminal_combat_retries: tuple[int, ...]
 
     def __post_init__(self) -> None:
         terminal_columns = (
@@ -149,6 +188,28 @@ class StrategicDemonstrationCorpus:
             raise StrategicDemonstrationError("terminal victory accounting disagrees")
         if self.defeats != sum(reward < 0 for reward in self.terminal_rewards):
             raise StrategicDemonstrationError("terminal defeat accounting disagrees")
+        object.__setattr__(
+            self,
+            "combat_retries",
+            _nonnegative(self.combat_retries, "combat_retries"),
+        )
+        object.__setattr__(
+            self,
+            "rescued_combats",
+            _nonnegative(self.rescued_combats, "rescued_combats"),
+        )
+        if len(self.terminal_combat_retries) != self.completed_runs:
+            raise StrategicDemonstrationError(
+                "terminal combat-retry counts are misaligned"
+            )
+        if any(retries < 0 for retries in self.terminal_combat_retries):
+            raise StrategicDemonstrationError(
+                "terminal combat-retry counts must be non-negative"
+            )
+        if sum(self.terminal_combat_retries) > self.combat_retries:
+            raise StrategicDemonstrationError(
+                "terminal retry accounting exceeds all combat retries"
+            )
 
     @property
     def context_counts(self) -> dict[int, int]:
@@ -239,9 +300,23 @@ def collect_strategic_demonstrations(
     terminal_floors: list[int] = []
     terminal_hps: list[int] = []
     terminal_max_hps: list[int] = []
+    terminal_combat_retries: list[int] = []
+    combat_retries = 0
+    rescued_combats = 0
     stop_reason = "completed_runs"
     started = time.perf_counter()
     next_seed = config.training_seed_start
+    retry_config = config.combat_retry_coverage
+    retry_policy_config = (
+        None
+        if retry_config is None
+        else RaggedCategoricalPolicyConfig(retry_config.temperature)
+    )
+    retry_generator = (
+        None
+        if retry_config is None
+        else torch.Generator(device="cpu").manual_seed(retry_config.sampling_seed)
+    )
 
     while completed_runs < config.run_count:
         if _deadline_reached(started, config.wall_ms):
@@ -252,6 +327,10 @@ def collect_strategic_demonstrations(
         next_seed += cohort_size
         env = environment_factory(seeds, config.ascension_level)
         provider = BridgeDecisionProgressProvider(env)
+        combat_root_keys: dict[int, tuple[int, int, int]] = {}
+        combat_root_checkpoints: dict[int, object] = {}
+        current_combat_retries = [0] * cohort_size
+        run_combat_retries = [0] * cohort_size
         cohort_steps = 0
         cohort_rounds = 0
         while env.terminal_count < env.slot_count:
@@ -287,6 +366,36 @@ def collect_strategic_demonstrations(
                 raise StrategicDemonstrationError(
                     "production behavior labeled a non-strategic-root row"
                 )
+            if retry_config is not None:
+                checkpoint_slots = getattr(env, "checkpoint_slots", None)
+                restore_slots = getattr(env, "restore_slots", None)
+                if not callable(checkpoint_slots) or not callable(restore_slots):
+                    raise StrategicDemonstrationError(
+                        "combat retry coverage requires checkpoint_slots/restore_slots"
+                    )
+                for index, row in enumerate(progress):
+                    slot = int(slots[index])
+                    if not row.is_combat:
+                        if slot in combat_root_checkpoints:
+                            if current_combat_retries[slot] > 0:
+                                rescued_combats += 1
+                            combat_root_checkpoints.pop(slot)
+                            combat_root_keys.pop(slot)
+                            current_combat_retries[slot] = 0
+                        continue
+                    key = (row.episode_seed, row.act, row.floor)
+                    if combat_root_keys.get(slot) == key:
+                        continue
+                    if slot in combat_root_checkpoints and current_combat_retries[slot] > 0:
+                        rescued_combats += 1
+                    checkpoint = checkpoint_slots([slot])
+                    if len(checkpoint) != 1:
+                        raise StrategicDemonstrationError(
+                            "combat root checkpoint did not contain exactly one slot"
+                        )
+                    combat_root_keys[slot] = key
+                    combat_root_checkpoints[slot] = checkpoint
+                    current_combat_retries[slot] = 0
 
             available_rows = tuple(int(row) for row in np.flatnonzero(available))
             remaining_rows = config.max_rows - teacher_rows
@@ -322,8 +431,29 @@ def collect_strategic_demonstrations(
                 for index, row in enumerate(progress)
             )
 
-            fallback = combat_policy.choose(batch)
-            ordinals = list(fallback.ordinals)
+            if retry_config is None:
+                ordinals = list(combat_policy.choose(batch).ordinals)
+            else:
+                assert retry_policy_config is not None
+                assert retry_generator is not None
+                with torch.inference_mode():
+                    logits = combat_policy.scorer(batch)
+                    ordinals = logits.greedy_ordinals()
+                    if any(
+                        row.is_combat and current_combat_retries[int(slots[index])] > 0
+                        for index, row in enumerate(progress)
+                    ):
+                        sampled = sample_ragged_categorical(
+                            logits,
+                            retry_policy_config,
+                            retry_generator,
+                        )
+                        for index, row in enumerate(progress):
+                            if (
+                                row.is_combat
+                                and current_combat_retries[int(slots[index])] > 0
+                            ):
+                                ordinals[index] = sampled.ordinals[index]
             for index, row in enumerate(progress):
                 if available[index]:
                     ordinals[index] = int(targets[index])
@@ -355,15 +485,47 @@ def collect_strategic_demonstrations(
                     raise StrategicDemonstrationError(
                         "terminal outcome references an unknown cohort slot"
                     )
-                terminal_episode_seeds.extend(seeds[int(slot)] for slot in terminal_slots)
-                terminal_rewards.extend(map(int, rewards))
-                terminal_acts.extend(map(int, acts))
-                terminal_floors.extend(map(int, floors))
-                terminal_hps.extend(map(int, hps))
-                terminal_max_hps.extend(map(int, max_hps))
-                completed_runs += rewards.size
-                victories += int(np.count_nonzero(rewards > 0))
-                defeats += int(np.count_nonzero(rewards < 0))
+                accepted_positions: list[int] = []
+                for position, raw_slot in enumerate(terminal_slots):
+                    slot = int(raw_slot)
+                    reward = int(rewards[position])
+                    if retry_config is not None and reward < 0:
+                        checkpoint = combat_root_checkpoints.get(slot)
+                        if checkpoint is None:
+                            raise StrategicDemonstrationError(
+                                "terminal combat defeat has no retry root checkpoint"
+                            )
+                        if (
+                            current_combat_retries[slot]
+                            < retry_config.max_retries_per_combat
+                        ):
+                            env.restore_slots([slot], checkpoint)
+                            current_combat_retries[slot] += 1
+                            run_combat_retries[slot] += 1
+                            combat_retries += 1
+                            continue
+                    accepted_positions.append(position)
+                    if retry_config is not None:
+                        if current_combat_retries[slot] > 0 and reward > 0:
+                            rescued_combats += 1
+                        combat_root_checkpoints.pop(slot, None)
+                        combat_root_keys.pop(slot, None)
+                        current_combat_retries[slot] = 0
+                    terminal_combat_retries.append(run_combat_retries[slot])
+                terminal_episode_seeds.extend(
+                    seeds[int(terminal_slots[position])]
+                    for position in accepted_positions
+                )
+                terminal_rewards.extend(int(rewards[position]) for position in accepted_positions)
+                terminal_acts.extend(int(acts[position]) for position in accepted_positions)
+                terminal_floors.extend(int(floors[position]) for position in accepted_positions)
+                terminal_hps.extend(int(hps[position]) for position in accepted_positions)
+                terminal_max_hps.extend(
+                    int(max_hps[position]) for position in accepted_positions
+                )
+                completed_runs += len(accepted_positions)
+                victories += sum(int(rewards[position]) > 0 for position in accepted_positions)
+                defeats += sum(int(rewards[position]) < 0 for position in accepted_positions)
                 batch_steps += 1
                 cohort_steps += 1
             if stop_reason in {"max_rows", "max_array_bytes"}:
@@ -395,6 +557,9 @@ def collect_strategic_demonstrations(
         terminal_floors=tuple(terminal_floors),
         terminal_hps=tuple(terminal_hps),
         terminal_max_hps=tuple(terminal_max_hps),
+        combat_retries=combat_retries,
+        rescued_combats=rescued_combats,
+        terminal_combat_retries=tuple(terminal_combat_retries),
     )
 
 
