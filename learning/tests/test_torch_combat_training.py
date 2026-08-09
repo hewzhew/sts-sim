@@ -7,6 +7,8 @@ from learning.tests.torch_combat_fixtures import combat_group_experience_fixture
 from learning.tests.torch_outcome_fixtures import behavior_manifest_fixture
 from sts_learning import (
     BehaviorManifestRegistry,
+    CombatPolicyUpdateConfig,
+    CombatPolicyUpdateRule,
     CombatWinObjectiveConfig,
     SemanticBatchConcatLimits,
 )
@@ -163,6 +165,38 @@ class SynchronousCombatWinTrainerTests(unittest.TestCase):
                 )
             )
         self.assertEqual(trainer.snapshot.deliveries, 0)
+
+    def test_ppo_clip_applies_bounded_multiple_steps_to_one_frozen_batch(self) -> None:
+        scorer = _VectorScorer()
+        trainer = SynchronousCombatWinTrainer(
+            scorer,
+            torch.optim.SGD(scorer.parameters(), lr=0.01),
+            self.registry,
+            CONCAT_LIMITS,
+            self.policy_config,
+            CombatWinObjectiveConfig(
+                policy_update=CombatPolicyUpdateConfig(
+                    rule=CombatPolicyUpdateRule.PPO_CLIP,
+                    epochs=4,
+                    clip_coefficient=0.2,
+                    entropy_coefficient=0.01,
+                    max_grad_norm=0.5,
+                    target_kl=None,
+                )
+            ),
+        )
+
+        result = trainer.train(
+            (combat_group_experience_fixture(self.manifest_id, wins=(True, False)),)
+        )
+
+        self.assertEqual(result.status, CombatWinTrainingStatus.OPTIMIZER_STEP)
+        self.assertEqual(result.optimizer_steps_applied, 4)
+        self.assertEqual(result.optimizer_steps_after, 4)
+        self.assertGreaterEqual(result.approximate_kl, 0.0)
+        self.assertGreater(result.entropy, 0.0)
+        self.assertEqual(trainer.snapshot.trained_replicates, 8)
+        self.assertEqual(trainer.snapshot.trained_decisions, 12)
 
     def _trainer(self, scorer: _VectorScorer) -> SynchronousCombatWinTrainer:
         return SynchronousCombatWinTrainer(

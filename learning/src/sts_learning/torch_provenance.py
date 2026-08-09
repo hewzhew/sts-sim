@@ -10,7 +10,7 @@ from dataclasses import dataclass
 
 import torch
 
-from .combat_objective import CombatWinObjectiveConfig
+from .combat_objective import CombatPolicyUpdateRule, CombatWinObjectiveConfig
 from .manifests import (
     BehaviorManifestTemplate,
     ManifestArtifactId,
@@ -36,6 +36,8 @@ _TRAINER_IMPLEMENTATION_VERSION = 4
 _TERMINAL_RETURN_CONFIG_VERSION = 1
 _COMBAT_WIN_TRAINER_IMPLEMENTATION_VERSION = 3
 _COMBAT_WIN_OBJECTIVE_VERSION = 3
+_COMBAT_PPO_TRAINER_IMPLEMENTATION_VERSION = 4
+_COMBAT_PPO_OBJECTIVE_VERSION = 4
 _MAX_SCHEMA_BYTES = 1 << 20
 _MAX_SCHEMA_DEPTH = 16
 _MAX_SCHEMA_ITEMS = 100_000
@@ -257,16 +259,41 @@ def combat_win_trainer_implementation(
 
     if not isinstance(objective_config, CombatWinObjectiveConfig):
         raise TorchProvenanceError("combat objective_config must be typed")
+    update = objective_config.policy_update
+    if update.rule is CombatPolicyUpdateRule.REINFORCE:
+        return ManifestArtifactId.from_content(
+            ManifestArtifactKind.TRAINER_IMPLEMENTATION,
+            b"STS-SYNCHRONOUS-COMBAT-WIN-FIRST-POLICY-TRAINER\x00"
+            + struct.pack(">I", _COMBAT_WIN_TRAINER_IMPLEMENTATION_VERSION)
+            + b"STS-SAME-ROOT-WIN-FIRST-OPTIONAL-ALL-WIN-AXIS\x00"
+            + struct.pack(
+                ">IQB",
+                _COMBAT_WIN_OBJECTIVE_VERSION,
+                objective_config.groups_per_update,
+                int(objective_config.all_win_axis),
+            )
+            + _runtime_version_bytes(),
+        )
+    max_grad_norm = update.max_grad_norm
+    target_kl = update.target_kl
     return ManifestArtifactId.from_content(
         ManifestArtifactKind.TRAINER_IMPLEMENTATION,
-        b"STS-SYNCHRONOUS-COMBAT-WIN-FIRST-POLICY-TRAINER\x00"
-        + struct.pack(">I", _COMBAT_WIN_TRAINER_IMPLEMENTATION_VERSION)
-        + b"STS-SAME-ROOT-WIN-FIRST-OPTIONAL-ALL-WIN-AXIS\x00"
+        b"STS-SYNCHRONOUS-COMBAT-PPO-CLIP-POLICY-TRAINER\x00"
+        + struct.pack(">I", _COMBAT_PPO_TRAINER_IMPLEMENTATION_VERSION)
+        + b"STS-SAME-ROOT-WIN-FIRST-PPO-CLIP\x00"
         + struct.pack(
-            ">IQB",
-            _COMBAT_WIN_OBJECTIVE_VERSION,
+            ">IQBBQddBdBd",
+            _COMBAT_PPO_OBJECTIVE_VERSION,
             objective_config.groups_per_update,
             int(objective_config.all_win_axis),
+            int(update.rule),
+            update.epochs,
+            update.clip_coefficient,
+            update.entropy_coefficient,
+            int(max_grad_norm is not None),
+            0.0 if max_grad_norm is None else max_grad_norm,
+            int(target_kl is not None),
+            0.0 if target_kl is None else target_kl,
         )
         + _runtime_version_bytes(),
     )

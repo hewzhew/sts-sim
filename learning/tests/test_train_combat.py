@@ -96,7 +96,8 @@ def test_training_command_runs_updates_journals_and_publishes(
         "generation",
         "completed",
     )
-    assert records[0]["schema"] == "sts-learning-combat-training-v3"
+    assert records[0]["schema"] == "sts-learning-combat-training-v4"
+    assert records[0]["policy_update_rule"] == "REINFORCE"
     assert records[0]["potion_lane"] == "never"
     assert records[0]["potion_slots"] == []
     assert records[0]["initialization"] == "random"

@@ -624,8 +624,8 @@ Configure one stable Python 3.12 training runtime once, then use the small
 .\learning\dev.ps1 refresh-bridge
 .\learning\dev.ps1 test
 .\learning\dev.ps1 verify -MaturinPython <python-with-maturin>
-.\learning\dev.ps1 train-combat -Artifact <roots.bin> -Behavior <optional-warm-start-dir> -Output <fresh-dir> -Roots <count> -Updates <count> -PotionLane never
-.\learning\dev.ps1 train-combat-recovery -Artifact <single-root.bin> -Behavior <warm-start-dir> -Output <fresh-dir> -Roots 4 -Replicates 8 -Updates 1 -PotionLane root-slots -PotionSlots 0
+.\learning\dev.ps1 train-combat -Artifact <roots.bin> -Behavior <optional-warm-start-dir> -Output <fresh-dir> -Roots <count> -Updates <count> -PotionLane never -CombatPolicyUpdate ppo-clip
+.\learning\dev.ps1 train-combat-recovery -Artifact <single-root.bin> -Behavior <warm-start-dir> -Output <fresh-dir> -Roots 4 -Replicates 8 -Updates 1 -PotionLane root-slots -PotionSlots 0 -CombatPolicyUpdate ppo-clip
 .\learning\dev.ps1 evaluate-combat -Artifact <held-out-roots.bin> -Behavior <training-dir> -Output <fresh-dir> -Roots <count> -Replicates <count>
 .\learning\dev.ps1 evaluate-combat-potions -Artifact <held-out-roots.bin> -Behavior <training-dir> -Output <fresh-dir> -Roots <count> -Replicates <count>
 .\learning\dev.ps1 evaluate-run -Behavior <training-dir> -Output <fresh-dir> -Attempts 8 -MaxBatchSteps 4096 -BehaviorSeed 10000 -HeldOutSeedStart 0 -RunPotionLane trained
@@ -772,7 +772,13 @@ For one bounded shared update, construct
 not exceed the separately declared `max_roots`. Pass one distinct explicit
 behavior seed per root. `advance()` loads no additional artifact, collects every
 root under the same frozen manifest, attempts one group-balanced optimizer
-update, and promotes at most once. It writes nothing;
+delivery, and promotes at most once. `-CombatPolicyUpdate reinforce` (the
+compatibility default) performs one exact on-policy step. `ppo-clip` uses the
+recorded selection probabilities to apply at most four clipped epochs with
+entropy and gradient-norm regularization, stopping before an epoch whose
+approximate KL already exceeds the preset target. The generation receipt and
+journal report the actual optimizer steps, approximate KL, clip fraction, and
+entropy. It writes nothing;
 `publish_active_behavior()` is the only durable publication boundary. Treat the
 returned loss and promotion as training accounting, not held-out evidence of
 improvement.

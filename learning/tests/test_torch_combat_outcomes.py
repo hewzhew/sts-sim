@@ -10,6 +10,8 @@ from sts_learning import (
     BehaviorManifestId,
     BehaviorManifestRegistry,
     CombatAllWinAxis,
+    CombatPolicyUpdateConfig,
+    CombatPolicyUpdateRule,
     CombatWinObjectiveConfig,
     SelectionProbability,
     SemanticBatchConcatLimits,
@@ -237,6 +239,59 @@ class OnPolicyCombatWinLossTests(unittest.TestCase):
                 self.config,
                 self.objective,
             )
+
+    def test_ppo_clip_reuses_recorded_probabilities_with_drift_diagnostics(self) -> None:
+        values = torch.nn.Parameter(torch.zeros(7))
+
+        def scorer(payload):
+            return RaggedCandidateLogits(
+                values=values,
+                row_splits=torch.as_tensor(
+                    payload["candidate_row_splits"],
+                    dtype=torch.long,
+                ),
+            )
+
+        objective = CombatWinObjectiveConfig(
+            policy_update=CombatPolicyUpdateConfig(
+                rule=CombatPolicyUpdateRule.PPO_CLIP,
+                epochs=2,
+                clip_coefficient=0.2,
+                entropy_coefficient=0.0,
+                max_grad_norm=0.5,
+                target_kl=None,
+            )
+        )
+        experience = combat_group_experience_fixture(
+            self.manifest_id,
+            wins=(True, False),
+        )
+        initial = on_policy_combat_win_loss(
+            scorer,
+            (experience,),
+            self.registry,
+            CONCAT_LIMITS,
+            self.config,
+            objective,
+        )
+        self.assertAlmostEqual(initial.approximate_kl, 0.0, places=7)
+        self.assertAlmostEqual(initial.clip_fraction, 0.0, places=7)
+        self.assertGreater(initial.entropy, 0.0)
+
+        with torch.no_grad():
+            values[0] = 3.0
+        reused = on_policy_combat_win_loss(
+            scorer,
+            (experience,),
+            self.registry,
+            CONCAT_LIMITS,
+            self.config,
+            objective,
+            require_matching_propensities=False,
+        )
+        self.assertGreater(reused.approximate_kl, 0.0)
+        self.assertGreater(reused.clip_fraction, 0.0)
+        self.assertTrue(torch.isfinite(reused.value))
 
 if __name__ == "__main__":
     unittest.main()

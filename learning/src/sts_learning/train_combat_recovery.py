@@ -18,6 +18,7 @@ from .torch_combat_session_config import (
 from .train_combat import (
     CombatTrainingCommandConfig,
     CombatTrainingCommandError,
+    _policy_update,
     _potion_slots_text,
     _run_combat_training_session,
 )
@@ -51,7 +52,8 @@ def run_combat_recovery_training(
     profile = replace(
         CombatWinSessionProfile(),
         objective=CombatWinObjectiveConfig(
-            groups_per_update=config.root_count
+            groups_per_update=config.root_count,
+            policy_update=config.policy_update,
         ),
     )
     limits = replace(
@@ -144,6 +146,11 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--behavior-seed-base", type=int, default=1_000)
     parser.add_argument("--warm-start-behavior", type=Path)
     parser.add_argument(
+        "--policy-update",
+        choices=("reinforce", "ppo-clip"),
+        default="reinforce",
+    )
+    parser.add_argument(
         "--potion-lane",
         choices=tuple(lane.value for lane in CombatPotionLane),
         default=CombatPotionLane.ALL.value,
@@ -166,11 +173,13 @@ def main() -> int:
             potion_lane=CombatPotionLane(arguments.potion_lane),
             potion_slots=tuple(arguments.potion_slot),
             warm_start_behavior=arguments.warm_start_behavior,
+            policy_update=_policy_update(arguments.policy_update),
         )
     )
     print(
         "training_complete=true curriculum=verified-win-terminal-nearest "
         f"optimizer_steps={summary['optimizer_steps']} "
+        f"policy_update={arguments.policy_update} "
         f"source_wins={summary['source_wins']} "
         f"source_losses={summary['source_losses']} "
         f"teacher_replicate={summary['teacher_replicate_index']} "

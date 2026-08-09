@@ -405,7 +405,14 @@ survival or potions. Groups have equal total weight,
 replicates have equal total weight inside a group regardless of combat length,
 and each replicate divides its weight across its own retained decisions. The
 objective rechecks exact behavior manifests and recorded selection propensities
-against the scorer in one concatenated model call.
+against the scorer in one concatenated model call. The baseline update rule is
+one exact REINFORCE step. The optional PPO-clip rule first performs that same
+on-policy check, then may reuse the immutable batch for a bounded number of
+optimizer epochs against its recorded behavior probabilities. Ratio clipping,
+gradient-norm clipping, entropy regularization, and a target-KL early stop are
+part of the typed trainer provenance; approximate KL, clip fraction, entropy,
+and actual optimizer-step count remain training diagnostics rather than held-out
+evidence.
 The training root source also binds one explicit model-facing potion lane.
 `Never` is the primary resource-preserving lane for roots that can already win
 without potion actions; it makes terminal-HP refinement honest by removing
@@ -417,19 +424,20 @@ The synchronous combat-win trainer has its own objective configuration and
 trainer provenance; it cannot reuse a terminal floor-return behavior manifest.
 Each delivery contains exactly the declared number of complete groups. No
 selected-axis signal skips backward and optimizer mutation, while a nonzero
-signal whose policy gradient is exactly zero also cannot claim a training step. Only one
-finite, nonzero-gradient optimizer update increments the combat training step;
-the trainer retains scalar counters and bounded identity evidence rather than
-completed combat payloads.
+signal whose policy gradient is exactly zero also cannot claim a training step.
+A REINFORCE delivery applies exactly one optimizer step. A PPO-clip delivery
+applies one or more bounded optimizer steps until its epoch cap, zero gradient,
+or target-KL stop, then discards the batch. The trainer retains scalar counters
+and bounded identity evidence rather than completed combat payloads.
 
 The first combat generation runner deliberately narrows that contract to one
 fixed exact root, one group per call, and `groups_per_update == 1`. Construction
 requires one exact scorer/optimizer/registry/controller/provenance chain. The
 live behavior stays frozen while the group runs. A no-signal or zero-gradient
-result leaves it unchanged; one real optimizer step must be followed by an
-immediate atomic live promotion. If promotion temporarily fails, the runner
+result leaves it unchanged; one finite bounded update must be followed by one
+immediate atomic live promotion at the resulting optimizer step. If promotion temporarily fails, the runner
 retains only a compact pending result and retries promotion before requesting
-another group, so it cannot train the same experience twice. A changed source
+another group, so it cannot apply a second delivery to the same experience. A changed source
 root is rejected before policy or environment mutation. This runner owns no
 cross-root scheduler, durable checkpoint cadence, or HP/potion scalar target.
 

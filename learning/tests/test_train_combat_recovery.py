@@ -9,6 +9,7 @@ pytest.importorskip("torch")
 
 from learning.tests.semantic_fixtures import semantic_schema_fixture
 from learning.tests.test_torch_combat_recovery_session import _ReplayableSource
+from sts_learning.combat_objective import CombatPolicyUpdateConfig
 from sts_learning.combat_potion_lane import CombatPotionLane
 from sts_learning.published_combat_behavior import recover_published_combat_behavior
 from sts_learning.torch_combat_session_config import (
@@ -44,6 +45,7 @@ def test_recovery_training_journal_is_a_recoverable_combat_publication(
             behavior_seed_base=11,
             potion_lane=CombatPotionLane.ROOT_SLOTS,
             potion_slots=(0,),
+            policy_update=CombatPolicyUpdateConfig.ppo_clip(),
         ),
         bridge=bridge,
     )
@@ -57,6 +59,8 @@ def test_recovery_training_journal_is_a_recoverable_combat_publication(
     assert records[0]["curriculum"] == "verified-win-terminal-nearest"
     assert records[0]["teacher_replicate_index"] == 1
     assert records[0]["root_count"] == 2
+    assert records[0]["policy_update_rule"] == "PPO_CLIP"
+    assert 1 <= records[1]["optimizer_steps_applied"] <= 4
     assert records[-1]["final_manifest_id"] == summary["final_manifest_id"]
     assert summary["source_wins"] == 1
     assert summary["teacher_final_hp"] == 30

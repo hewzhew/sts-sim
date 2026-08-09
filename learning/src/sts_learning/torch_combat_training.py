@@ -44,7 +44,11 @@ class CombatWinTrainingResult:
     replicate_count: int
     decision_count: int
     loss: float
+    optimizer_steps_applied: int
     optimizer_steps_after: int
+    approximate_kl: float
+    clip_fraction: float
+    entropy: float
 
     @property
     def updated(self) -> bool:
@@ -72,7 +76,7 @@ class SynchronousCombatWinTrainerSnapshot:
 
 
 class SynchronousCombatWinTrainer:
-    """Attempt one exact on-policy update and retain no combat payload."""
+    """Optimize one frozen-behavior batch and retain no combat payload."""
 
     def __init__(
         self,
@@ -183,45 +187,94 @@ class SynchronousCombatWinTrainer:
                 loss,
                 CombatWinTrainingStatus.NO_OBJECTIVE_SIGNAL,
                 started,
+                optimizer_steps_applied=0,
             )
 
+        optimizer_steps_applied = 0
         try:
-            self.optimizer.zero_grad(set_to_none=True)
-            objective.value.backward()
-            gradients = tuple(
-                parameter.grad
-                for group in self.optimizer.param_groups
-                for parameter in group["params"]
-                if parameter.grad is not None
-            )
-            if not gradients:
-                raise TorchCombatTrainingError("optimizer received no gradients")
-            if not all(
-                bool(torch.all(torch.isfinite(gradient)))
-                for gradient in gradients
-            ):
-                raise TorchCombatTrainingError("optimizer gradients must be finite")
-            if not any(bool(torch.any(gradient != 0)) for gradient in gradients):
+            for epoch in range(self.objective_config.policy_update.epochs):
+                if epoch > 0:
+                    objective = on_policy_combat_win_loss(
+                        self.scorer,
+                        normalized,
+                        self.registry,
+                        self.concat_limits,
+                        self.policy_config,
+                        self.objective_config,
+                        require_matching_propensities=False,
+                    )
+                    loss = float(objective.value.detach().item())
+                    if not math.isfinite(loss):
+                        raise TorchCombatTrainingError(
+                            "combat win-first loss must be finite"
+                        )
+                    target_kl = self.objective_config.policy_update.target_kl
+                    if (
+                        target_kl is not None
+                        and objective.approximate_kl > target_kl
+                    ):
+                        break
+
                 self.optimizer.zero_grad(set_to_none=True)
-                return self._finish(
-                    objective,
-                    loss,
-                    CombatWinTrainingStatus.ZERO_POLICY_GRADIENT,
-                    started,
+                objective.value.backward()
+                gradients = tuple(
+                    parameter.grad
+                    for group in self.optimizer.param_groups
+                    for parameter in group["params"]
+                    if parameter.grad is not None
                 )
-            self.optimizer.step()
+                if not gradients:
+                    raise TorchCombatTrainingError("optimizer received no gradients")
+                if not all(
+                    bool(torch.all(torch.isfinite(gradient)))
+                    for gradient in gradients
+                ):
+                    raise TorchCombatTrainingError(
+                        "optimizer gradients must be finite"
+                    )
+                if not any(bool(torch.any(gradient != 0)) for gradient in gradients):
+                    self.optimizer.zero_grad(set_to_none=True)
+                    if optimizer_steps_applied == 0:
+                        return self._finish(
+                            objective,
+                            loss,
+                            CombatWinTrainingStatus.ZERO_POLICY_GRADIENT,
+                            started,
+                            optimizer_steps_applied=0,
+                        )
+                    break
+                max_grad_norm = self.objective_config.policy_update.max_grad_norm
+                if max_grad_norm is not None:
+                    gradient_norm = torch.nn.utils.clip_grad_norm_(
+                        tuple(
+                            parameter
+                            for group in self.optimizer.param_groups
+                            for parameter in group["params"]
+                            if parameter.grad is not None
+                        ),
+                        max_grad_norm,
+                    )
+                    if not bool(torch.isfinite(gradient_norm)):
+                        raise TorchCombatTrainingError(
+                            "optimizer gradient norm must be finite"
+                        )
+                self.optimizer.step()
+                optimizer_steps_applied += 1
+                self._optimizer_steps += 1
         except Exception:
             self._poisoned = True
             raise
 
-        self._optimizer_steps += 1
-        self._trained_replicates += objective.replicate_count
-        self._trained_decisions += objective.decision_count
+        self._trained_replicates += (
+            objective.replicate_count * optimizer_steps_applied
+        )
+        self._trained_decisions += objective.decision_count * optimizer_steps_applied
         return self._finish(
             objective,
             loss,
             CombatWinTrainingStatus.OPTIMIZER_STEP,
             started,
+            optimizer_steps_applied=optimizer_steps_applied,
         )
 
     def _finish(
@@ -230,6 +283,8 @@ class SynchronousCombatWinTrainer:
         loss: float,
         status: CombatWinTrainingStatus,
         started: float,
+        *,
+        optimizer_steps_applied: int,
     ) -> CombatWinTrainingResult:
         elapsed = time.perf_counter() - started
         self._deliveries += 1
@@ -255,5 +310,9 @@ class SynchronousCombatWinTrainer:
             replicate_count=objective.replicate_count,
             decision_count=objective.decision_count,
             loss=loss,
+            optimizer_steps_applied=optimizer_steps_applied,
             optimizer_steps_after=self._optimizer_steps,
+            approximate_kl=objective.approximate_kl,
+            clip_fraction=objective.clip_fraction,
+            entropy=objective.entropy,
         )

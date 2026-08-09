@@ -11,7 +11,11 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Protocol, TextIO
 
-from .combat_objective import CombatWinObjectiveConfig
+from .combat_objective import (
+    CombatPolicyUpdateConfig,
+    CombatPolicyUpdateRule,
+    CombatWinObjectiveConfig,
+)
 from .combat_potion_lane import (
     CombatPotionLane,
     CombatPotionLaneError,
@@ -32,7 +36,8 @@ from .torch_combat_session_config import (
 )
 
 
-COMBAT_TRAINING_SCHEMA = "sts-learning-combat-training-v3"
+LEGACY_COMBAT_TRAINING_SCHEMA = "sts-learning-combat-training-v3"
+COMBAT_TRAINING_SCHEMA = "sts-learning-combat-training-v4"
 
 
 class CombatTrainingCommandError(RuntimeError):
@@ -60,6 +65,7 @@ class CombatTrainingCommandConfig:
     potion_lane: CombatPotionLane = CombatPotionLane.ALL
     potion_slots: tuple[int, ...] = ()
     warm_start_behavior: Path | None = None
+    policy_update: CombatPolicyUpdateConfig = CombatPolicyUpdateConfig()
 
     def __post_init__(self) -> None:
         artifact = Path(self.artifact).resolve()
@@ -102,6 +108,10 @@ class CombatTrainingCommandConfig:
             )
         except CombatPotionLaneError as error:
             raise CombatTrainingCommandError(str(error)) from error
+        if not isinstance(self.policy_update, CombatPolicyUpdateConfig):
+            raise CombatTrainingCommandError(
+                "combat training policy_update must be typed"
+            )
         if root_count < 2:
             raise CombatTrainingCommandError(
                 "multi-root training requires at least two roots"
@@ -144,7 +154,10 @@ def run_combat_training(
         raise CombatTrainingCommandError("combat training bridge must be typed")
     profile = replace(
         CombatWinSessionProfile(),
-        objective=CombatWinObjectiveConfig(groups_per_update=config.root_count),
+        objective=CombatWinObjectiveConfig(
+            groups_per_update=config.root_count,
+            policy_update=config.policy_update,
+        ),
     )
     limits = replace(
         CombatWinSessionLimits(),
@@ -224,6 +237,16 @@ def _run_combat_training_session(
         "model_seed": config.model_seed,
         "behavior_seeds": behavior_seeds,
         "all_win_axis": profile.objective.all_win_axis.name,
+        "policy_update_rule": profile.objective.policy_update.rule.name,
+        "policy_update_epochs": profile.objective.policy_update.epochs,
+        "policy_clip_coefficient": (
+            profile.objective.policy_update.clip_coefficient
+        ),
+        "policy_entropy_coefficient": (
+            profile.objective.policy_update.entropy_coefficient
+        ),
+        "policy_max_grad_norm": profile.objective.policy_update.max_grad_norm,
+        "policy_target_kl": profile.objective.policy_update.target_kl,
         "potion_lane": config.potion_lane.value,
         "potion_slots": config.potion_slots,
         "initialization": (
@@ -272,7 +295,11 @@ def _run_combat_training_session(
                 f"status={result.training.status.name} "
                 f"promoted={str(result.promoted).lower()} "
                 f"decisions={result.training.decision_count} "
+                f"optimizer_steps={result.training.optimizer_steps_applied} "
                 f"loss={result.training.loss:.8g} "
+                f"approx_kl={result.training.approximate_kl:.6g} "
+                f"clip_fraction={result.training.clip_fraction:.6g} "
+                f"entropy={result.training.entropy:.6g} "
                 f"root_wins={root_wins} root_objectives={root_objectives} "
                 f"seconds={elapsed:.3f}",
                 flush=True,
@@ -339,6 +366,10 @@ def _generation(
         ),
         "decision_count": result.training.decision_count,
         "optimizer_steps_after": result.training.optimizer_steps_after,
+        "optimizer_steps_applied": result.training.optimizer_steps_applied,
+        "approximate_kl": result.training.approximate_kl,
+        "clip_fraction": result.training.clip_fraction,
+        "entropy": result.training.entropy,
         "roots": tuple(
             _root(slot_index, root)
             for slot_index, root in enumerate(result.roots)
@@ -412,6 +443,16 @@ def _potion_slots_text(arguments: argparse.Namespace) -> str:
     return "+".join(str(slot) for slot in arguments.potion_slot)
 
 
+def _policy_update(name: str) -> CombatPolicyUpdateConfig:
+    if name == "reinforce":
+        return CombatPolicyUpdateConfig(
+            rule=CombatPolicyUpdateRule.REINFORCE,
+        )
+    if name == "ppo-clip":
+        return CombatPolicyUpdateConfig.ppo_clip()
+    raise CombatTrainingCommandError("unsupported combat policy update")
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Train one shared behavior from an opaque combat-root batch.",
@@ -424,6 +465,11 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--model-seed", type=int, default=0)
     parser.add_argument("--behavior-seed-base", type=int, default=1_000)
     parser.add_argument("--warm-start-behavior", type=Path)
+    parser.add_argument(
+        "--policy-update",
+        choices=("reinforce", "ppo-clip"),
+        default="reinforce",
+    )
     parser.add_argument(
         "--potion-lane",
         choices=tuple(lane.value for lane in CombatPotionLane),
@@ -447,11 +493,13 @@ def main() -> int:
             potion_lane=CombatPotionLane(arguments.potion_lane),
             potion_slots=tuple(arguments.potion_slot),
             warm_start_behavior=arguments.warm_start_behavior,
+            policy_update=_policy_update(arguments.policy_update),
         )
     )
     print(
         "training_complete=true "
         f"optimizer_steps={summary['optimizer_steps']} "
+        f"policy_update={arguments.policy_update} "
         f"potion_lane={arguments.potion_lane} "
         f"potion_slots={_potion_slots_text(arguments)} "
         f"wins={summary['total_wins']} losses={summary['total_losses']} "

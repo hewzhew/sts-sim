@@ -10,6 +10,8 @@ param(
     [int]$Roots,
     [int]$Replicates = 8,
     [int]$Updates,
+    [ValidateSet("reinforce", "ppo-clip")]
+    [string]$CombatPolicyUpdate = "reinforce",
     [long]$ModelSeed = 0,
     [long]$BehaviorSeedBase = 1000,
     [int]$Slots = 4,
@@ -247,6 +249,7 @@ switch ($Command) {
                 --updates $Updates `
                 --model-seed $ModelSeed `
                 --behavior-seed-base $BehaviorSeedBase `
+                --policy-update $CombatPolicyUpdate `
                 @warmStartArguments `
                 @potionArguments
             if ($LASTEXITCODE -ne 0) {
@@ -270,6 +273,7 @@ switch ($Command) {
                 --updates $Updates `
                 --model-seed $ModelSeed `
                 --behavior-seed-base $BehaviorSeedBase `
+                --policy-update $CombatPolicyUpdate `
                 @warmStartArguments `
                 @potionArguments
             if ($LASTEXITCODE -ne 0) {

@@ -7,6 +7,7 @@ from dataclasses import replace
 from learning.tests.semantic_fixtures import semantic_schema_fixture
 from sts_learning import (
     CombatAllWinAxis,
+    CombatPolicyUpdateConfig,
     CombatWinObjectiveConfig,
     FloorProgressReturnConfig,
     OnPolicyObjectiveConfig,
@@ -71,6 +72,16 @@ class TorchProvenanceTests(unittest.TestCase):
             CombatWinObjectiveConfig(all_win_axis=CombatAllWinAxis.NONE),
             device_type="cpu",
         )
+        ppo = combat_win_training_manifest_template(
+            schema,
+            scorer,
+            behavior,
+            optimizer,
+            CombatWinObjectiveConfig(
+                policy_update=CombatPolicyUpdateConfig.ppo_clip(),
+            ),
+            device_type="cpu",
+        )
         terminal_template = categorical_training_manifest_template(
             schema,
             scorer,
@@ -112,6 +123,10 @@ class TorchProvenanceTests(unittest.TestCase):
         )
         self.assertNotEqual(
             win_only.trainer_implementation,
+            combat_template.trainer_implementation,
+        )
+        self.assertNotEqual(
+            ppo.trainer_implementation,
             combat_template.trainer_implementation,
         )
 

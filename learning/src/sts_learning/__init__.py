@@ -44,6 +44,8 @@ from .combat_outcomes import (
 from .combat_objective import (
     CombatAllWinAxis,
     CombatObjectiveError,
+    CombatPolicyUpdateConfig,
+    CombatPolicyUpdateRule,
     CombatWinObjectiveConfig,
 )
 from .combat_recovery import (
@@ -261,6 +263,8 @@ __all__ = [
     "CombatOutcomeError",
     "CombatAllWinAxis",
     "CombatObjectiveError",
+    "CombatPolicyUpdateConfig",
+    "CombatPolicyUpdateRule",
     "CombatRecoveryError",
     "CombatRecoveryPlan",
     "CombatRecoveryRoot",

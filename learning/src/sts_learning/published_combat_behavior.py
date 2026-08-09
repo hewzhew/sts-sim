@@ -3,14 +3,20 @@
 from __future__ import annotations
 
 import json
+import math
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
+from numbers import Real
 from pathlib import Path
 from typing import Mapping
 
 import torch
 
-from .combat_objective import CombatWinObjectiveConfig
+from .combat_objective import (
+    CombatPolicyUpdateConfig,
+    CombatPolicyUpdateRule,
+    CombatWinObjectiveConfig,
+)
 from .combat_potion_lane import (
     CombatPotionLane,
     CombatPotionLaneError,
@@ -35,7 +41,7 @@ from .torch_combat_session_config import (
 )
 from .torch_policy import RaggedCandidateScorer
 from .torch_provenance import combat_win_training_manifest_template
-from .train_combat import COMBAT_TRAINING_SCHEMA
+from .train_combat import COMBAT_TRAINING_SCHEMA, LEGACY_COMBAT_TRAINING_SCHEMA
 
 
 _MAX_TRAINING_JOURNAL_BYTES = 16 * 1024 * 1024
@@ -171,7 +177,8 @@ def recover_published_combat_behavior(
     profile = replace(
         CombatWinSessionProfile(),
         objective=CombatWinObjectiveConfig(
-            groups_per_update=training_root_count
+            groups_per_update=training_root_count,
+            policy_update=_policy_update(configuration),
         ),
     )
     if configuration.get("all_win_axis") != profile.objective.all_win_axis.name:
@@ -295,10 +302,11 @@ def _training_boundary_records(
         raise PublishedCombatBehaviorError("training journal is empty")
     first = _journal_record(*first_line)
     last = _journal_record(*last_line)
+    schemas = {COMBAT_TRAINING_SCHEMA, LEGACY_COMBAT_TRAINING_SCHEMA}
     if (
-        first.get("schema") != COMBAT_TRAINING_SCHEMA
+        first.get("schema") not in schemas
         or first.get("kind") != "configuration"
-        or last.get("schema") != COMBAT_TRAINING_SCHEMA
+        or last.get("schema") != first.get("schema")
         or last.get("kind") != "completed"
     ):
         raise PublishedCombatBehaviorError(
@@ -355,6 +363,41 @@ def _potion_lane(value: object) -> CombatPotionLane:
         ) from error
 
 
+def _policy_update(
+    configuration: Mapping[str, object],
+) -> CombatPolicyUpdateConfig:
+    raw_rule = configuration.get("policy_update_rule")
+    if raw_rule is None or raw_rule == CombatPolicyUpdateRule.REINFORCE.name:
+        return CombatPolicyUpdateConfig()
+    if raw_rule != CombatPolicyUpdateRule.PPO_CLIP.name:
+        raise PublishedCombatBehaviorError(
+            "training policy_update_rule is unsupported"
+        )
+    return CombatPolicyUpdateConfig(
+        rule=CombatPolicyUpdateRule.PPO_CLIP,
+        epochs=_positive(
+            configuration.get("policy_update_epochs"),
+            "policy_update_epochs",
+        ),
+        clip_coefficient=_finite_float(
+            configuration.get("policy_clip_coefficient"),
+            "policy_clip_coefficient",
+        ),
+        entropy_coefficient=_finite_float(
+            configuration.get("policy_entropy_coefficient"),
+            "policy_entropy_coefficient",
+        ),
+        max_grad_norm=_optional_finite_float(
+            configuration.get("policy_max_grad_norm"),
+            "policy_max_grad_norm",
+        ),
+        target_kl=_optional_finite_float(
+            configuration.get("policy_target_kl"),
+            "policy_target_kl",
+        ),
+    )
+
+
 def _potion_slots(
     value: object,
     lane: CombatPotionLane,
@@ -376,6 +419,21 @@ def _positive(value: object, name: str) -> int:
             f"{name} must be a positive integer"
         )
     return normalized
+
+
+def _finite_float(value: object, name: str) -> float:
+    if isinstance(value, bool) or not isinstance(value, Real):
+        raise PublishedCombatBehaviorError(f"{name} must be a real number")
+    normalized = float(value)
+    if not math.isfinite(normalized):
+        raise PublishedCombatBehaviorError(f"{name} must be finite")
+    return normalized
+
+
+def _optional_finite_float(value: object, name: str) -> float | None:
+    if value is None:
+        return None
+    return _finite_float(value, name)
 
 
 def _nonnegative(value: object, name: str) -> int:

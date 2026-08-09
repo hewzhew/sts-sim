@@ -159,6 +159,7 @@ class CombatFrontierPlan:
         return CombatWinObjectiveConfig(
             groups_per_update=len(self.training_slots),
             all_win_axis=self.objective_config.all_win_axis,
+            policy_update=self.objective_config.policy_update,
         )
 
     def evidence_for_slot(self, source_slot: int) -> CombatRootCompetenceEvidence:

@@ -187,9 +187,13 @@ class BoundedCombatWinGenerationRunner:
         if not training.updated:
             return _generation_result(pending, promotion=None)
 
-        if training.optimizer_steps_after != training_step + 1:
+        if (
+            training.optimizer_steps_applied <= 0
+            or training.optimizer_steps_after
+            != training_step + training.optimizer_steps_applied
+        ):
             raise TorchCombatGenerationError(
-                "combat trainer did not advance exactly one generation"
+                "combat trainer optimizer-step accounting is inconsistent"
             )
         self._pending_promotion = pending
         return self._promote_pending()

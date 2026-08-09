@@ -21,7 +21,12 @@ from .combat_experience import (
     CombatDecisionExperienceBatch,
     CompletedCombatGroupExperience,
 )
-from .combat_objective import CombatAllWinAxis, CombatWinObjectiveConfig
+from .combat_objective import (
+    CombatAllWinAxis,
+    CombatPolicyUpdateConfig,
+    CombatPolicyUpdateRule,
+    CombatWinObjectiveConfig,
+)
 from .experience import DecisionExperienceBatch, ExperienceError
 from .manifests import BehaviorManifestRegistry
 from .policy import BehaviorManifestId, SelectionProbability
@@ -77,6 +82,17 @@ class OnPolicyCombatWinLoss:
     decision_count: int
     behavior_manifest_ids: tuple[BehaviorManifestId, ...]
     selection_probabilities: tuple[tuple[SelectionProbability, ...], ...]
+    approximate_kl: float
+    clip_fraction: float
+    entropy: float
+
+
+@dataclass(frozen=True)
+class _CombatPolicyLoss:
+    value: Tensor
+    approximate_kl: float
+    clip_fraction: float
+    entropy: float
 
 
 def on_policy_terminal_loss(
@@ -259,6 +275,8 @@ def on_policy_combat_win_loss(
     concat_limits: SemanticBatchConcatLimits,
     policy_config: RaggedCategoricalPolicyConfig,
     objective_config: CombatWinObjectiveConfig,
+    *,
+    require_matching_propensities: bool = True,
 ) -> OnPolicyCombatWinLoss:
     """Apply same-root win-first advantages with a typed all-win fallback.
 
@@ -286,6 +304,10 @@ def on_policy_combat_win_loss(
         )
     if not isinstance(objective_config, CombatWinObjectiveConfig):
         raise TorchOutcomeError("combat win objective requires typed objective config")
+    if type(require_matching_propensities) is not bool:
+        raise TorchOutcomeError(
+            "combat win objective propensity check must be bool"
+        )
     normalized = tuple(groups)
     if not normalized:
         raise TorchOutcomeError(
@@ -366,7 +388,7 @@ def on_policy_combat_win_loss(
         total_replicates += replicate_count
         total_decisions += group.decision_count
 
-    value = _on_policy_weighted_loss(
+    policy_loss = _combat_policy_weighted_loss(
         scorer=scorer,
         payloads=payloads,
         selected_ordinals=selected_ordinals,
@@ -379,10 +401,11 @@ def on_policy_combat_win_loss(
         weights=weights,
         concat_limits=concat_limits,
         policy_config=policy_config,
-        objective_name="combat win-first",
+        update_config=objective_config.policy_update,
+        require_matching_propensities=require_matching_propensities,
     )
     return OnPolicyCombatWinLoss(
-        value=value,
+        value=policy_loss.value,
         group_count=len(normalized),
         signal_group_count=win_signal_groups + terminal_hp_signal_groups,
         win_signal_group_count=win_signal_groups,
@@ -391,6 +414,9 @@ def on_policy_combat_win_loss(
         decision_count=total_decisions,
         behavior_manifest_ids=tuple(behavior_ids),
         selection_probabilities=tuple(probability_evidence),
+        approximate_kl=policy_loss.approximate_kl,
+        clip_fraction=policy_loss.clip_fraction,
+        entropy=policy_loss.entropy,
     )
 
 
@@ -514,6 +540,138 @@ def _on_policy_weighted_loss(
     return torch.sum(terms * weight_tensor)
 
 
+def _combat_policy_weighted_loss(
+    *,
+    scorer: CandidatePolicyScorer,
+    payloads: Sequence[Mapping[str, object]],
+    selected_ordinals: Sequence[int],
+    selection_probabilities: Sequence[SelectionProbability],
+    targets: Sequence[float],
+    weights: Sequence[float],
+    concat_limits: SemanticBatchConcatLimits,
+    policy_config: RaggedCategoricalPolicyConfig,
+    update_config: CombatPolicyUpdateConfig,
+    require_matching_propensities: bool,
+) -> _CombatPolicyLoss:
+    if not isinstance(update_config, CombatPolicyUpdateConfig):
+        raise TorchOutcomeError("combat policy update config must be typed")
+    if update_config.rule is CombatPolicyUpdateRule.REINFORCE:
+        if not require_matching_propensities:
+            raise TorchOutcomeError("REINFORCE cannot reuse an updated policy batch")
+        return _CombatPolicyLoss(
+            value=_on_policy_weighted_loss(
+                scorer=scorer,
+                payloads=payloads,
+                selected_ordinals=selected_ordinals,
+                selection_probabilities=selection_probabilities,
+                targets=targets,
+                weights=weights,
+                concat_limits=concat_limits,
+                policy_config=policy_config,
+                objective_name="combat win-first",
+            ),
+            approximate_kl=0.0,
+            clip_fraction=0.0,
+            entropy=0.0,
+        )
+
+    decision_count = len(selected_ordinals)
+    if not (
+        len(selection_probabilities)
+        == len(targets)
+        == len(weights)
+        == decision_count
+        > 0
+    ):
+        raise TorchOutcomeError("combat PPO objective rows are misaligned")
+    if not all(math.isfinite(target) for target in targets):
+        raise TorchOutcomeError("combat PPO objective targets must be finite")
+    if not all(math.isfinite(weight) and weight > 0.0 for weight in weights):
+        raise TorchOutcomeError("combat PPO objective weights must be positive")
+    recorded_log_probabilities: list[float] = []
+    for evidence in selection_probabilities:
+        if not isinstance(evidence, SelectionProbability):
+            raise TorchOutcomeError(
+                "combat PPO objective probabilities must be typed"
+            )
+        value = evidence.value
+        if value is None or not math.isfinite(value) or not 0.0 < value <= 1.0:
+            raise TorchOutcomeError(
+                "combat PPO objective requires positive recorded probabilities"
+            )
+        recorded_log_probabilities.append(math.log(value))
+
+    combined = concatenate_semantic_decision_batches(payloads, concat_limits)
+    logits = scorer(combined)
+    if not isinstance(logits, RaggedCandidateLogits):
+        raise TorchOutcomeError(
+            "candidate policy scorer must return RaggedCandidateLogits"
+        )
+    selected_log_probabilities = _selected_log_probabilities(
+        logits,
+        selected_ordinals,
+        policy_config,
+    )
+    if require_matching_propensities:
+        _require_matching_propensities(
+            logits,
+            selected_ordinals,
+            selection_probabilities,
+            policy_config,
+        )
+    old_log_probability_tensor = torch.as_tensor(
+        recorded_log_probabilities,
+        dtype=selected_log_probabilities.dtype,
+        device=selected_log_probabilities.device,
+    )
+    target_tensor = torch.as_tensor(
+        targets,
+        dtype=selected_log_probabilities.dtype,
+        device=selected_log_probabilities.device,
+    )
+    weight_tensor = torch.as_tensor(
+        weights,
+        dtype=selected_log_probabilities.dtype,
+        device=selected_log_probabilities.device,
+    )
+    log_ratio = selected_log_probabilities - old_log_probability_tensor
+    ratio = torch.exp(log_ratio)
+    clipped_ratio = torch.clamp(
+        ratio,
+        1.0 - update_config.clip_coefficient,
+        1.0 + update_config.clip_coefficient,
+    )
+    policy_terms = torch.maximum(
+        -target_tensor * ratio,
+        -target_tensor * clipped_ratio,
+    )
+    entropies = _ragged_entropies(logits, policy_config)
+    loss = torch.sum(policy_terms * weight_tensor) - (
+        update_config.entropy_coefficient
+        * torch.sum(entropies * weight_tensor)
+    )
+    diagnostic_weight = torch.sum(weight_tensor)
+    approximate_kl = torch.sum(
+        ((ratio - 1.0) - log_ratio) * weight_tensor
+    ) / diagnostic_weight
+    clip_fraction = torch.sum(
+        ((ratio - 1.0).abs() > update_config.clip_coefficient).to(
+            weight_tensor.dtype
+        )
+        * weight_tensor
+    ) / diagnostic_weight
+    mean_entropy = torch.sum(entropies * weight_tensor) / diagnostic_weight
+    diagnostics = (loss, approximate_kl, clip_fraction, mean_entropy)
+    if not all(bool(torch.all(torch.isfinite(value))) for value in diagnostics):
+        raise TorchOutcomeError("combat PPO objective must be finite")
+    return _CombatPolicyLoss(
+        value=loss,
+        approximate_kl=float(approximate_kl.detach().item()),
+        clip_fraction=float(clip_fraction.detach().item()),
+        entropy=float(mean_entropy.detach().item()),
+    )
+
+
 def _selected_log_probabilities(
     logits: RaggedCandidateLogits,
     selected_ordinals: Sequence[int],
@@ -554,6 +712,45 @@ def _selected_log_probabilities(
     row_sum.index_add_(0, row_ids, torch.exp(shifted))
     log_probabilities = shifted - torch.log(row_sum[row_ids])
     return log_probabilities[logits.row_splits[:-1] + ordinals]
+
+
+def _ragged_entropies(
+    logits: RaggedCandidateLogits,
+    config: RaggedCategoricalPolicyConfig,
+) -> Tensor:
+    lengths = logits.row_splits[1:] - logits.row_splits[:-1]
+    row_ids = torch.repeat_interleave(
+        torch.arange(
+            logits.row_count,
+            dtype=torch.long,
+            device=logits.values.device,
+        ),
+        lengths,
+    )
+    scaled = logits.values / config.temperature
+    row_max = torch.full(
+        (logits.row_count,),
+        -torch.inf,
+        dtype=scaled.dtype,
+        device=scaled.device,
+    )
+    row_max.scatter_reduce_(0, row_ids, scaled.detach(), reduce="amax")
+    shifted = scaled - row_max[row_ids]
+    row_sum = torch.zeros(
+        logits.row_count,
+        dtype=scaled.dtype,
+        device=scaled.device,
+    )
+    row_sum.index_add_(0, row_ids, torch.exp(shifted))
+    log_probabilities = shifted - torch.log(row_sum[row_ids])
+    probabilities = torch.exp(log_probabilities)
+    entropies = torch.zeros_like(row_sum)
+    entropies.index_add_(
+        0,
+        row_ids,
+        -(probabilities * log_probabilities),
+    )
+    return entropies
 
 
 def _require_matching_propensities(
