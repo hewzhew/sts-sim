@@ -148,8 +148,12 @@ the bridge for semantic candidates and production ordinals in the same frame,
 retains only exactly labeled strategic-root rows, and records seed, act, floor,
 and strategic context without writing a corpus artifact. Combat remains fixed
 to one immutable scorer; symbolic selection and unlabeled strategic rows are
-explicit fallback traffic and never become demonstrations. The default combat
-anchor requires an exact current publication. Historical weights are admitted
+explicit fallback traffic and never become demonstrations. Every completed run
+also retains
+its seed-aligned terminal reward, act, floor, HP, and max HP as compact scalar
+columns, so coverage and future continuation targets do not have to be inferred
+from aggregate win counts or display logs. The default combat anchor requires
+an exact current publication. Historical weights are admitted
 only through the separately selected `COMPATIBLE_WEIGHT_IMPORT` mode, which
 still verifies the complete journal, unique durable identities, checkpoint
 hash, semantic schema, behavior/model configuration, and strict tensor

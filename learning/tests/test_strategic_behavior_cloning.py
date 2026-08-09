@@ -61,6 +61,12 @@ def test_behavior_clone_splits_by_seed_and_does_not_mutate_combat_anchor() -> No
         stop_reason="completed_runs",
         combat_anchor_mode=CombatAnchorMode.STRICT_PUBLICATION,
         combat_anchor_provenance_mismatches=(),
+        terminal_episode_seeds=(40_000, 40_004),
+        terminal_rewards=(-1, -1),
+        terminal_acts=(1, 1),
+        terminal_floors=(3, 3),
+        terminal_hps=(0, 0),
+        terminal_max_hps=(80, 80),
     )
     split = split_strategic_demonstrations(
         corpus,

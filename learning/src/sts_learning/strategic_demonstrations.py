@@ -121,6 +121,34 @@ class StrategicDemonstrationCorpus:
     stop_reason: str
     combat_anchor_mode: CombatAnchorMode
     combat_anchor_provenance_mismatches: tuple[str, ...]
+    terminal_episode_seeds: tuple[int, ...]
+    terminal_rewards: tuple[int, ...]
+    terminal_acts: tuple[int, ...]
+    terminal_floors: tuple[int, ...]
+    terminal_hps: tuple[int, ...]
+    terminal_max_hps: tuple[int, ...]
+
+    def __post_init__(self) -> None:
+        terminal_columns = (
+            self.terminal_episode_seeds,
+            self.terminal_rewards,
+            self.terminal_acts,
+            self.terminal_floors,
+            self.terminal_hps,
+            self.terminal_max_hps,
+        )
+        if any(len(column) != self.completed_runs for column in terminal_columns):
+            raise StrategicDemonstrationError(
+                "terminal outcome columns are misaligned with completed runs"
+            )
+        if len(set(self.terminal_episode_seeds)) != self.completed_runs:
+            raise StrategicDemonstrationError("terminal run seeds are not unique")
+        if any(reward not in {-1, 1} for reward in self.terminal_rewards):
+            raise StrategicDemonstrationError("terminal rewards must be exact outcomes")
+        if self.victories != sum(reward > 0 for reward in self.terminal_rewards):
+            raise StrategicDemonstrationError("terminal victory accounting disagrees")
+        if self.defeats != sum(reward < 0 for reward in self.terminal_rewards):
+            raise StrategicDemonstrationError("terminal defeat accounting disagrees")
 
     @property
     def context_counts(self) -> dict[int, int]:
@@ -136,6 +164,10 @@ class StrategicDemonstrationCorpus:
         if self.elapsed_seconds <= 0.0:
             return 0.0
         return self.decision_rounds / self.elapsed_seconds
+
+    @property
+    def terminal_floor_counts(self) -> dict[tuple[int, int], int]:
+        return dict(sorted(Counter(zip(self.terminal_acts, self.terminal_floors)).items()))
 
 
 def collect_strategic_demonstrations(
@@ -201,6 +233,12 @@ def collect_strategic_demonstrations(
     strategic_selection_rows = 0
     unavailable_strategic_root_rows = 0
     array_bytes = 0
+    terminal_episode_seeds: list[int] = []
+    terminal_rewards: list[int] = []
+    terminal_acts: list[int] = []
+    terminal_floors: list[int] = []
+    terminal_hps: list[int] = []
+    terminal_max_hps: list[int] = []
     stop_reason = "completed_runs"
     started = time.perf_counter()
     next_seed = config.training_seed_start
@@ -296,7 +334,33 @@ def collect_strategic_demonstrations(
             cohort_rounds += slots.size
             if env.ready:
                 step = env.step()
+                terminal_slots = _integer_vector(step, "terminal_slot_indices")
                 rewards = _integer_vector(step, "terminal_reward")
+                acts = _integer_vector(step, "terminal_act")
+                floors = _integer_vector(step, "terminal_floor")
+                hps = _integer_vector(step, "terminal_hp")
+                max_hps = _integer_vector(step, "terminal_max_hp")
+                if not (
+                    terminal_slots.shape
+                    == rewards.shape
+                    == acts.shape
+                    == floors.shape
+                    == hps.shape
+                    == max_hps.shape
+                ):
+                    raise StrategicDemonstrationError(
+                        "terminal outcome columns are misaligned"
+                    )
+                if any(int(slot) >= len(seeds) for slot in terminal_slots):
+                    raise StrategicDemonstrationError(
+                        "terminal outcome references an unknown cohort slot"
+                    )
+                terminal_episode_seeds.extend(seeds[int(slot)] for slot in terminal_slots)
+                terminal_rewards.extend(map(int, rewards))
+                terminal_acts.extend(map(int, acts))
+                terminal_floors.extend(map(int, floors))
+                terminal_hps.extend(map(int, hps))
+                terminal_max_hps.extend(map(int, max_hps))
                 completed_runs += rewards.size
                 victories += int(np.count_nonzero(rewards > 0))
                 defeats += int(np.count_nonzero(rewards < 0))
@@ -325,6 +389,12 @@ def collect_strategic_demonstrations(
         stop_reason=stop_reason,
         combat_anchor_mode=config.combat_anchor_mode,
         combat_anchor_provenance_mismatches=anchor_mismatches,
+        terminal_episode_seeds=tuple(terminal_episode_seeds),
+        terminal_rewards=tuple(terminal_rewards),
+        terminal_acts=tuple(terminal_acts),
+        terminal_floors=tuple(terminal_floors),
+        terminal_hps=tuple(terminal_hps),
+        terminal_max_hps=tuple(terminal_max_hps),
     )
 
 

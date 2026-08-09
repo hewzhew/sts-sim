@@ -55,10 +55,15 @@ class _ProductionStrategicWinningEnv(NumpyWinningBatchEnv):
 
     def step(self) -> dict[str, object]:
         step = super().step()
-        step["terminal_reward"] = np.asarray(
-            step["terminal_reward"],
-            dtype=np.int64,
-        )
+        for key in (
+            "terminal_slot_indices",
+            "terminal_reward",
+            "terminal_act",
+            "terminal_floor",
+            "terminal_hp",
+            "terminal_max_hp",
+        ):
+            step[key] = np.asarray(step[key], dtype=np.int64)
         return step
 
 
@@ -103,5 +108,8 @@ def test_collector_retains_only_same_frame_production_teacher_rows(
     assert corpus.unavailable_strategic_root_rows == 0
     assert corpus.combat_anchor_mode is CombatAnchorMode.STRICT_PUBLICATION
     assert corpus.combat_anchor_provenance_mismatches == ()
+    assert corpus.terminal_episode_seeds == (40_000, 40_001)
+    assert corpus.terminal_rewards == (1, 1)
+    assert corpus.terminal_floor_counts == {(3, 40): 2}
     assert len(environments) == 1
     assert environments[0].choose_calls == [[1, 1], [1, 1]]
