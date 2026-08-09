@@ -293,6 +293,9 @@ def _summary(
                 "normalize_advantage": (
                     recovered.objective.policy_update.normalize_advantage
                 ),
+                "value_clip_coefficient": (
+                    recovered.objective.policy_update.value_clip_coefficient
+                ),
             }
         ),
         "behavior_seed": config.behavior_seed,

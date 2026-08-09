@@ -631,7 +631,7 @@ Configure one stable Python 3.12 training runtime once, then use the small
 .\learning\dev.ps1 evaluate-run -Behavior <training-dir> -Output <fresh-dir> -Attempts 8 -MaxBatchSteps 4096 -BehaviorSeed 10000 -HeldOutSeedStart 0 -RunPotionLane trained
 .\learning\dev.ps1 evaluate-run-potions -Behavior <training-dir> -Output <fresh-dir> -Attempts 8 -MaxBatchSteps 4096 -BehaviorSeed 10000 -HeldOutSeedStart 0
 .\learning\dev.ps1 collect-run-roots -Behavior <training-dir> -Output <fresh.bin> -Roots 2 -MaxBatchSteps 4096 -WallMs 60000 -BehaviorSeed 120000 -TrainingSeedStart 10000000 -MinFloor 2 -MinUsablePotions 1 -RunPotionLane trained
-.\learning\dev.ps1 train-run -Behavior <combat-training-dir> -Output <fresh-dir> -Slots 4 -Generations 1 -AttemptsPerUpdate 32 -MaxBatchSteps 4096 -EvaluationAttempts 16 -HeldOutSeedStart 1000000 -AdvantageMode raw-return -DecisionScope all -SamplingMode independent-cohorts -RunPolicyUpdate ppo-clip-value -RunPotionLane trained
+.\learning\dev.ps1 train-run -Behavior <combat-training-dir> -Output <fresh-dir> -Slots 4 -Generations 1 -AttemptsPerUpdate 32 -MaxBatchSteps 4096 -EvaluationAttempts 16 -HeldOutSeedStart 1000000 -AdvantageMode decision-local-gae -DecisionScope all -SamplingMode independent-cohorts -RunPolicyUpdate ppo-clip-value -RunPotionLane trained
 ```
 
 `configure` installs the tool requirements declared by the local
@@ -920,8 +920,9 @@ aggregates. Context rows include their strategic-scope attempt-equal weight and 
 non-authoritative floor-plus-context leave-one-out comparison; unsupported
 context groups remain zero. The overall diagnostic also reports an episode-plus-
 floor-plus-context comparison. This is a target-distribution comparison only;
-training still uses the configured terminal objective and the diagnostic does
-not price HP, gold, or potions.
+it never selects the optimizer target. REINFORCE uses its configured terminal
+advantage, while value PPO uses the decision-local target described below. The
+diagnostic does not price HP, gold, or potions.
 A generation that
 hits `-MaxBatchSteps` before an optimizer step fails without publishing its
 partial live update.
@@ -930,7 +931,8 @@ potion candidate surface for both training and held-out evaluation. This avoids
 injecting untrained potion actions at the handoff. No-potion run sessions do
 not yet support cross-process resume; this command publishes only the frozen
 behavior and fails explicitly if resume serialization is requested elsewhere.
-`-AdvantageMode raw-return` is the maintained default. The explicit
+`-AdvantageMode auto` is the command default: it resolves to `raw-return` for
+REINFORCE and `decision-local-gae` for value PPO. The explicit
 `leave-one-out` ablation subtracts, for each attempt, the mean return of the
 other attempts in that update; it requires at least two attempts and is bound
 into trainer provenance. Compare modes on identical training and held-out seed
@@ -963,30 +965,28 @@ Use it only with decision-time progress capture and compare it on the same
 training and held-out seed blocks.
 `-RunPolicyUpdate reinforce` preserves the compatibility whole-run update and
 remains the default. The opt-in `ppo-clip-value` profile adds a zero-initialized
-value head, predicts the attempt's final floor-progress return at every retained
-decision state, freezes attempt-equal centered and scaled rollout advantages,
-and applies at most four clipped
-epochs with KL stop, entropy regularization, and gradient clipping. It requires
-`-AdvantageMode raw-return` while the first contract is evaluated. The training
-journal records optimizer epochs, KL, clip fraction, entropy, value loss, and
-gradient norm. Its per-generation `rollout_value_diagnostics` freezes the
-pre-update actor advantage, critic prediction, terminal target, and
-target-minus-prediction residual. Raw sign counts remain distinguishable from
-attempt-equal sign weight and weighted moments, so a long attempt cannot
-silently dominate the diagnostic. It also aggregates the first four completed
+value head and requires `-AdvantageMode decision-local-gae`. It predicts the
+typed continuation return after each decision, freezes attempt-equal normalized
+GAE advantages and pre-update value predictions, and applies at most four PPO
+epochs with separate actor/value clipping, target-KL stop, entropy
+regularization, and gradient clipping. Forced single-candidate rows train the
+critic but contribute no actor, entropy, KL, or normalization weight. The
+training journal records optimizer epochs, KL, actor/value clip fractions,
+entropy, value loss, gradient norm, and attempt-weighted explained variance.
+Its per-generation `rollout_value_diagnostics` identifies the active target as
+`decision_local_return_to_go`; there is no terminal-broadcast shadow optimizer.
+Raw sign counts remain distinguishable from attempt-equal sign weight and
+weighted moments, so a long attempt cannot silently dominate the diagnostic.
+It also aggregates the first four completed
 combats by ordinal:
 net post-combat HP already includes relic recovery such as Burning Blood, so
 these rows diagnose premature low-HP state occupancy without inventing an HP
 reward or declaring one combat result sufficient evidence of improvement.
-When decision-time progress is complete, the same rollout diagnostic also
-contains `return_to_go_target` and `return_to_go_residual`. These are produced
-by the typed additive floor-transition/terminal-reward rollout with fixed
-`gamma=1` and `lambda=1`. The record explicitly says
-`optimization_target=terminal_broadcast` and
-`shadow_target=decision_local_return_to_go`: the new column is a migration
-comparison, not yet a second optimizer objective. A missing progress column
-leaves the shadow summaries unavailable rather than reconstructing floors from
-semantic tensors.
+Missing or malformed decision-time progress fails value PPO before optimizer
+mutation; the caller never reconstructs rollout floors from semantic tensors.
+Whole-run publication schema V3 is intentionally incompatible with V2, which
+did not bind the decision-local optimizer contract and used terminal-broadcast
+targets for value PPO.
 
 `test` requires PyTorch and the installed bridge and runs the complete learning
 suite; missing training dependencies are failures, not skips. `verify` runs

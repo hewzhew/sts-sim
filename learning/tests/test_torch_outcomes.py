@@ -351,7 +351,74 @@ class OnPolicyTerminalLossTests(unittest.TestCase):
         self.assertNotEqual(values.grad[1].item(), 0.0)
         self.assertNotEqual(values.grad[2].item(), 0.0)
 
-    def test_run_value_ppo_trains_terminal_value_and_freezes_rollout_advantage(
+    def test_forced_only_value_ppo_batch_still_trains_the_critic(self) -> None:
+        torch.manual_seed(42)
+        scorer = RaggedCandidateScorer.from_bridge_schema(
+            semantic_schema_fixture(),
+            RaggedScorerConfig(
+                hidden_dim=10,
+                relation_layers=1,
+                value_head=True,
+            ),
+        )
+        batch = decision_batch_fixture(
+            slot=1,
+            semantic_row=0,
+            selected_ordinal=0,
+            manifest_id=self.manifest_id,
+            selection_probability=SelectionProbability.known(1.0),
+        )
+        payload = dict(batch.payload)
+        candidate_counts = payload["candidate_counts"].copy()
+        candidate_counts[0] = 1
+        candidate_splits = payload["candidate_row_splits"].copy()
+        candidate_splits[1] = 1
+        semantic = dict(payload["semantic"])
+        semantic["candidate_token_indices"] = semantic[
+            "candidate_token_indices"
+        ][:1].copy()
+        payload["candidate_counts"] = candidate_counts
+        payload["candidate_row_splits"] = candidate_splits
+        payload["semantic"] = semantic
+        batch = self._with_run_progress(replace(batch, payload=payload), floor=0)
+        attempt = completed_attempt_fixture(
+            slot=1,
+            batches=(batch,),
+            reward=1,
+        )
+
+        result = on_policy_terminal_loss(
+            scorer,
+            (attempt,),
+            self.registry,
+            CONCAT_LIMITS,
+            self.config,
+            self.return_config,
+            TerminalAdvantageMode.DECISION_LOCAL_GAE,
+            update_config=RunPolicyUpdateConfig.ppo_clip_value(),
+        )
+        result.value.backward()
+
+        diagnostics = result.value_diagnostics
+        assert diagnostics is not None
+        assert scorer.value_head is not None
+        self.assertEqual(result.actor_decision_count, 0)
+        self.assertEqual(result.actor_advantages, (0.0,))
+        self.assertEqual(result.approximate_kl, 0.0)
+        self.assertEqual(result.clip_fraction, 0.0)
+        self.assertEqual(result.entropy, 0.0)
+        self.assertIsNone(diagnostics.actor_advantage)
+        self.assertEqual(diagnostics.actor_decision_count, 0)
+        self.assertEqual(diagnostics.forced_decision_count, 1)
+        self.assertTrue(
+            any(
+                parameter.grad is not None
+                and bool(torch.any(parameter.grad != 0))
+                for parameter in scorer.value_head.parameters()
+            )
+        )
+
+    def test_run_value_ppo_trains_local_value_and_freezes_rollout_columns(
         self,
     ) -> None:
         torch.manual_seed(43)
@@ -367,14 +434,30 @@ class OnPolicyTerminalLossTests(unittest.TestCase):
             completed_attempt_fixture(
                 slot=1,
                 batches=(
-                    self._on_policy_batch(scorer, slot=1, row=0, ordinal=1),
+                    self._with_run_progress(
+                        self._on_policy_batch(
+                            scorer,
+                            slot=1,
+                            row=0,
+                            ordinal=1,
+                        ),
+                        floor=0,
+                    ),
                 ),
                 reward=1,
             ),
             completed_attempt_fixture(
                 slot=2,
                 batches=(
-                    self._on_policy_batch(scorer, slot=2, row=1, ordinal=2),
+                    self._with_run_progress(
+                        self._on_policy_batch(
+                            scorer,
+                            slot=2,
+                            row=1,
+                            ordinal=2,
+                        ),
+                        floor=0,
+                    ),
                 ),
                 reward=-1,
             ),
@@ -388,10 +471,12 @@ class OnPolicyTerminalLossTests(unittest.TestCase):
             CONCAT_LIMITS,
             self.config,
             self.return_config,
-            TerminalAdvantageMode.RAW_RETURN,
+            TerminalAdvantageMode.DECISION_LOCAL_GAE,
             update_config=update,
         )
         frozen = first.actor_advantages
+        frozen_values = first.critic_predictions
+        assert frozen_values is not None
         self.assertAlmostEqual(frozen[0], 1.0)
         self.assertAlmostEqual(frozen[1], -1.0)
         self.assertGreater(first.value_loss, 0.0)
@@ -408,6 +493,8 @@ class OnPolicyTerminalLossTests(unittest.TestCase):
             )
         )
         optimizer.step()
+        with torch.no_grad():
+            scorer.value_head[-1].bias.add_(1.0)
 
         second = on_policy_terminal_loss(
             scorer,
@@ -416,14 +503,16 @@ class OnPolicyTerminalLossTests(unittest.TestCase):
             CONCAT_LIMITS,
             self.config,
             self.return_config,
-            TerminalAdvantageMode.RAW_RETURN,
+            TerminalAdvantageMode.DECISION_LOCAL_GAE,
             update_config=update,
             require_matching_propensities=False,
             fixed_actor_advantages=frozen,
+            fixed_value_predictions=frozen_values,
         )
 
         self.assertEqual(second.actor_advantages, frozen)
         self.assertGreaterEqual(second.approximate_kl, 0.0)
+        self.assertGreater(second.value_clip_fraction, 0.0)
         self.assertIsNone(second.value_diagnostics)
 
     def test_run_value_diagnostics_keep_attempt_equal_weight_for_unequal_lengths(
@@ -440,15 +529,29 @@ class OnPolicyTerminalLossTests(unittest.TestCase):
         )
         short = completed_attempt_fixture(
             slot=1,
-            batches=(self._on_policy_batch(scorer, slot=1, row=0, ordinal=1),),
+            batches=(
+                self._with_run_progress(
+                    self._on_policy_batch(scorer, slot=1, row=0, ordinal=1),
+                    floor=0,
+                ),
+            ),
             reward=1,
         )
         long = completed_attempt_fixture(
             slot=2,
             batches=(
-                self._on_policy_batch(scorer, slot=2, row=1, ordinal=2),
-                self._on_policy_batch(scorer, slot=2, row=0, ordinal=0),
-                self._on_policy_batch(scorer, slot=2, row=1, ordinal=1),
+                self._with_run_progress(
+                    self._on_policy_batch(scorer, slot=2, row=1, ordinal=2),
+                    floor=0,
+                ),
+                self._with_run_progress(
+                    self._on_policy_batch(scorer, slot=2, row=0, ordinal=0),
+                    floor=10,
+                ),
+                self._with_run_progress(
+                    self._on_policy_batch(scorer, slot=2, row=1, ordinal=1),
+                    floor=20,
+                ),
             ),
             reward=-1,
         )
@@ -460,13 +563,14 @@ class OnPolicyTerminalLossTests(unittest.TestCase):
             CONCAT_LIMITS,
             self.config,
             self.return_config,
-            TerminalAdvantageMode.RAW_RETURN,
+            TerminalAdvantageMode.DECISION_LOCAL_GAE,
             update_config=RunPolicyUpdateConfig.ppo_clip_value(),
         )
 
         diagnostics = result.value_diagnostics
         assert diagnostics is not None
         advantage = diagnostics.actor_advantage
+        assert advantage is not None
         self.assertEqual(advantage.decision_count, 4)
         self.assertEqual(advantage.positive_decisions, 1)
         self.assertEqual(advantage.negative_decisions, 3)
@@ -475,13 +579,13 @@ class OnPolicyTerminalLossTests(unittest.TestCase):
         self.assertAlmostEqual(advantage.weighted_mean, 0.0)
         self.assertAlmostEqual(advantage.weighted_standard_deviation, 1.0)
         self.assertAlmostEqual(diagnostics.critic_prediction.weighted_mean, 0.0)
-        self.assertAlmostEqual(diagnostics.critic_residual.weighted_mean, 0.4)
-        self.assertAlmostEqual(
-            diagnostics.critic_residual.weighted_standard_deviation,
-            0.6,
-        )
+        self.assertAlmostEqual(diagnostics.return_to_go_target.weighted_mean, 0.3)
+        self.assertAlmostEqual(diagnostics.critic_residual.weighted_mean, 0.3)
+        self.assertEqual(diagnostics.actor_decision_count, 4)
+        self.assertEqual(diagnostics.forced_decision_count, 0)
+        self.assertAlmostEqual(diagnostics.explained_variance, 0.0)
 
-    def test_value_ppo_reports_decision_local_returns_without_training_on_them(
+    def test_value_ppo_optimizes_decision_local_returns(
         self,
     ) -> None:
         scorer = RaggedCandidateScorer.from_bridge_schema(
@@ -525,20 +629,16 @@ class OnPolicyTerminalLossTests(unittest.TestCase):
             CONCAT_LIMITS,
             self.config,
             self.return_config,
-            TerminalAdvantageMode.RAW_RETURN,
+            TerminalAdvantageMode.DECISION_LOCAL_GAE,
             update_config=RunPolicyUpdateConfig.ppo_clip_value(),
         )
 
         diagnostics = result.value_diagnostics
         assert diagnostics is not None
-        assert diagnostics.return_to_go_target is not None
-        assert diagnostics.return_to_go_residual is not None
-        self.assertAlmostEqual(diagnostics.terminal_target.minimum, -0.2)
-        self.assertAlmostEqual(diagnostics.terminal_target.maximum, -0.2)
         self.assertAlmostEqual(diagnostics.return_to_go_target.minimum, -0.4)
         self.assertAlmostEqual(diagnostics.return_to_go_target.maximum, -0.2)
-        self.assertAlmostEqual(diagnostics.return_to_go_residual.minimum, -0.4)
-        self.assertAlmostEqual(diagnostics.return_to_go_residual.maximum, -0.2)
+        self.assertAlmostEqual(diagnostics.critic_residual.minimum, -0.4)
+        self.assertAlmostEqual(diagnostics.critic_residual.maximum, -0.2)
 
     def test_unknown_or_mismatched_propensity_is_rejected(self) -> None:
         values = torch.nn.Parameter(torch.zeros(2))
@@ -654,6 +754,20 @@ class OnPolicyTerminalLossTests(unittest.TestCase):
             selected_ordinal=0,
             manifest_id=self.manifest_id,
             selection_probability=SelectionProbability.known(0.5),
+        )
+
+    def _with_run_progress(self, batch, *, floor: int):
+        return replace(
+            batch,
+            run_progress=(
+                DecisionRunProgress(
+                    episode_seed=batch.lineages[0].key.episode_seed,
+                    act=1,
+                    floor=floor,
+                    is_combat=True,
+                    strategic_context_kind=None,
+                ),
+            ),
         )
 
 

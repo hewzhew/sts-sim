@@ -850,9 +850,10 @@ or shaped reward. The maintained floor-progress return reserves `+1` for
 victory and maps defeat floor
 `f` to `-1 + 2 * min(f, target_floor - 1) / target_floor`. Deeper failed runs
 therefore carry ordered progress evidence but never tie a victory. Negative
-returns decrease the sampled action's relative probability, positive returns
-increase it, and a forced single-candidate row has exactly zero gradient. Terms are averaged
-within each attempt before attempts are averaged, so longer attempts do not gain
+returns decrease the sampled action's relative probability and positive returns
+increase it. A forced single-candidate row has exactly zero policy gradient;
+under value PPO its critic row still trains. Terms are averaged within each
+attempt before attempts are averaged, so longer attempts do not gain
 more weight merely by containing more decisions. Censored and dropped attempts
 cannot enter through its input type. The objective requires the manifest's
 categorical rule to match its typed configuration and recomputes every recorded
@@ -860,17 +861,7 @@ selection propensity from the current shadow scorer before mutation. Unknown
 or mismatched propensity is explicitly off-policy and rejected. Any future
 off-policy correction requires a separate objective with declared assumptions.
 The whole-run PPO-clip-value rule adds a scalar critic over the same decision
-state. Before the first optimizer step it subtracts the critic prediction from
-the raw terminal target, then centers and scales the resulting actor advantage
-with the same attempt-equal weights used by the loss. The critic continues to
-fit the unnormalized terminal target. Actor advantages and behavior
-probabilities remain frozen across the bounded PPO epochs. A compact rollout
-diagnostic retains raw row sign counts plus attempt-equal sign weight and
-weighted moments for actor advantage, critic prediction, target, and
-target-minus-prediction residual; it retains no experience rows and later
-epochs cannot rewrite it.
-Alongside that still-authoritative terminal-broadcast objective, the caller now
-builds one typed decision-local rollout as shadow evidence. Complete-attempt
+state and requires the explicit decision-local GAE advantage mode. Complete-attempt
 batches are chronological environment steps; one attempt contributes at most
 one row to a batch, decision floors and acts cannot move backward, and the
 terminal row must match the exact lineage. Floor advancement is an additive
@@ -885,23 +876,30 @@ Stable-Baselines3 recurrence under the deliberately fixed `gamma = 1` and
 complete attempt is bootstrapped, and each value target is the exact
 Monte-Carlo continuation return. Value rows retain equal total attempt weight;
 actor weights are renormalized only across multi-candidate rows inside each
-attempt, so a forced action is not counted as an effective actor sample. The
-training journal labels terminal broadcast as the optimization target and the
-decision-local return-to-go as shadow evidence. This first migration does not
-feed the new return, GAE advantage, or actor mask into the optimizer.
+attempt, so a forced action contributes neither actor loss, entropy, KL, nor
+advantage normalization weight. The critic fits the unnormalized decision-local
+return-to-go under equal total attempt weight. Actor advantages, behavior
+probabilities, and pre-update value predictions remain frozen across bounded
+PPO epochs. Actor probability ratios and value changes are clipped separately;
+target KL may stop later epochs, and diagnostics include actor/value clip
+fractions plus attempt-weighted explained variance. The V3 whole-run
+publication and trainer identity bind this return, GAE, actor-mask, and
+value-clipping contract. Earlier V2 publications do not bind that contract;
+in particular, their value PPO optimized a terminal-broadcast target. They are
+deliberately not recovered as the new algorithm.
 For whole-run batches that carry decision-time progress, the trainer also emits
 a bounded non-authoritative comparison against a remaining-horizon target. A
 defeat observed from decision floor `d` maps its later terminal floor `f` to
 `-1 + 2 * (min(f, target_floor - 1) - min(d, target_floor - 1)) /
 (target_floor - min(d, target_floor - 1))`; victory remains `+1`. The comparison
 reports only counts, signs, ranges, means, and decision-floor groups. It does
-not change the maintained terminal-broadcast loss, add HP or potion prices, or
-survive as experience payload. The same diagnostic also reports a matched-floor
+not change the decision-local PPO loss, add HP or potion prices, or survive as
+experience payload. The same diagnostic also reports a matched-floor
 leave-one-out advantage: each attempt's remaining-progress target is centered
 only against other independent attempts that reached that decision floor. A
 floor reached by only one attempt has zero comparison signal. Selecting the
-provenance-bound matched-floor advantage mode applies those aligned values to
-the loss; raw terminal return remains the maintained default. This avoids
+provenance-bound matched-floor advantage modes remain explicit REINFORCE
+ablations; value PPO accepts only decision-local GAE. This avoids
 calling an unmatched state better or worse merely because it occurred later in
 the run, but remains an explicit ablation rather than an assumed improvement.
 Combat and strategic decision rows are additionally counted as separate typed

@@ -42,6 +42,7 @@ class TerminalAdvantageMode(IntEnum):
     MATCHED_FLOOR_LEAVE_ONE_OUT = 2
     MATCHED_FLOOR_CONTEXT_LEAVE_ONE_OUT = 3
     MATCHED_EPISODE_FLOOR_CONTEXT_LEAVE_ONE_OUT = 4
+    DECISION_LOCAL_GAE = 5
 
 
 class RunDecisionScope(IntEnum):
@@ -70,6 +71,7 @@ class RunPolicyUpdateConfig:
     target_kl: float | None = None
     value_loss_coefficient: float = 0.0
     normalize_advantage: bool = False
+    value_clip_coefficient: float | None = None
 
     @classmethod
     def ppo_clip_value(cls) -> RunPolicyUpdateConfig:
@@ -81,6 +83,7 @@ class RunPolicyUpdateConfig:
             target_kl=0.02,
             value_loss_coefficient=0.5,
             normalize_advantage=True,
+            value_clip_coefficient=0.2,
         )
 
     @property
@@ -120,6 +123,10 @@ class RunPolicyUpdateConfig:
             "max_grad_norm",
         )
         target_kl = _optional_positive_float(self.target_kl, "target_kl")
+        value_clip = _optional_positive_float(
+            self.value_clip_coefficient,
+            "value_clip_coefficient",
+        )
         if not 0.0 < clip < 1.0:
             raise TerminalReturnError("clip_coefficient must be in (0, 1)")
         if entropy < 0.0:
@@ -133,6 +140,7 @@ class RunPolicyUpdateConfig:
             or target_kl is not None
             or value_loss != 0.0
             or self.normalize_advantage
+            or value_clip is not None
         ):
             raise TerminalReturnError(
                 "run REINFORCE requires one epoch and no PPO regularization"
@@ -150,6 +158,7 @@ class RunPolicyUpdateConfig:
         object.__setattr__(self, "max_grad_norm", max_grad_norm)
         object.__setattr__(self, "target_kl", target_kl)
         object.__setattr__(self, "value_loss_coefficient", value_loss)
+        object.__setattr__(self, "value_clip_coefficient", value_clip)
 
 
 @dataclass(frozen=True)
@@ -205,10 +214,17 @@ class OnPolicyObjectiveConfig:
             raise TerminalReturnError("policy_update must be RunPolicyUpdateConfig")
         if (
             self.policy_update.uses_value_baseline
-            and self.advantage_mode is not TerminalAdvantageMode.RAW_RETURN
+            and self.advantage_mode is not TerminalAdvantageMode.DECISION_LOCAL_GAE
         ):
             raise TerminalReturnError(
-                "run value PPO currently requires raw-return advantage"
+                "run value PPO requires decision-local GAE advantage"
+            )
+        if (
+            not self.policy_update.uses_value_baseline
+            and self.advantage_mode is TerminalAdvantageMode.DECISION_LOCAL_GAE
+        ):
+            raise TerminalReturnError(
+                "decision-local GAE advantage requires run value PPO"
             )
         if (
             self.advantage_mode
@@ -250,9 +266,10 @@ def terminal_return_advantages(
         TerminalAdvantageMode.MATCHED_FLOOR_LEAVE_ONE_OUT,
         TerminalAdvantageMode.MATCHED_FLOOR_CONTEXT_LEAVE_ONE_OUT,
         TerminalAdvantageMode.MATCHED_EPISODE_FLOOR_CONTEXT_LEAVE_ONE_OUT,
+        TerminalAdvantageMode.DECISION_LOCAL_GAE,
     ):
         raise TerminalReturnError(
-            "matched advantage requires decision-time run progress"
+            "selected advantage requires complete decision-time rollout data"
         )
     if len(normalized) < 2:
         raise TerminalReturnError(

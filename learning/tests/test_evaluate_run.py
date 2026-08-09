@@ -22,13 +22,14 @@ from sts_learning.evaluate_run_potions import (
 from sts_learning.combat_potion_lane import CombatPotionLane
 from sts_learning.published_run_behavior import (
     PublishedRunBehaviorError,
+    is_run_training_publication,
     recover_published_run_behavior,
 )
 from sts_learning.train_run import (
     RunTrainingCommandConfig,
     run_run_training,
 )
-from sts_learning import RunPolicyUpdateConfig
+from sts_learning import RunPolicyUpdateConfig, TerminalAdvantageMode
 
 
 def test_run_evaluation_uses_frozen_combat_behavior_without_recovery(
@@ -249,9 +250,38 @@ def test_run_training_warm_starts_publishes_and_evaluates(
         "decision_scope": "all",
         "policy_update": "reinforce",
         "normalize_advantage": False,
+        "value_clip_coefficient": None,
     }
     assert reevaluation["terminal_attempts"] == 2
+    assert is_run_training_publication(output)
 
+    v2_records = tuple(
+        record | {"schema": "sts-learning-run-training-v2"}
+        for record in records
+    )
+    (output / "training.jsonl").write_text(
+        "".join(
+            json.dumps(record, separators=(",", ":"), sort_keys=True) + "\n"
+            for record in v2_records
+        ),
+        encoding="utf-8",
+        newline="\n",
+    )
+    assert not is_run_training_publication(output)
+    with pytest.raises(
+        PublishedRunBehaviorError,
+        match="exact configuration/completion",
+    ):
+        recover_published_run_behavior(output, run_bridge, (777,))
+
+    (output / "training.jsonl").write_text(
+        "".join(
+            json.dumps(record, separators=(",", ":"), sort_keys=True) + "\n"
+            for record in records
+        ),
+        encoding="utf-8",
+        newline="\n",
+    )
     records[-1]["sampling_mode"] = "episode-root-retries"
     (output / "training.jsonl").write_text(
         "".join(
@@ -304,24 +334,37 @@ def test_run_value_ppo_warm_starts_actor_and_publishes_diagnostics(
     assert 1 <= summary["optimizer_steps"] <= 4
     assert generation["optimizer_steps_applied"] == summary["optimizer_steps"]
     assert generation["value_loss"] > 0.0
+    assert generation["value_clip_fraction"] >= 0.0
     assert generation["gradient_norm"] > 0.0
     assert generation["approximate_kl"] >= 0.0
     rollout = generation["rollout_value_diagnostics"]
     assert rollout["weighting"] == "attempt_equal"
-    assert rollout["optimization_target"] == "terminal_broadcast"
-    assert rollout["shadow_target"] == "decision_local_return_to_go"
+    assert rollout["optimization_target"] == "decision_local_return_to_go"
+    assert rollout["advantage_estimator"] == "gae"
+    assert rollout["gamma"] == 1.0
+    assert rollout["gae_lambda"] == 1.0
+    assert rollout["actor_mask"] == "multiple_candidates"
     assert (
         rollout["critic_residual_convention"]
-        == "terminal_target_minus_prediction"
+        == "return_to_go_target_minus_prediction"
     )
     assert rollout["critic_prediction"]["weighted_mean"] == pytest.approx(0.0)
     assert rollout["actor_advantage"]["zero_weight"] == pytest.approx(1.0)
-    assert rollout["critic_residual"]["weighted_mean"] == pytest.approx(1.0)
-    assert rollout["return_to_go_target"] is not None
-    assert rollout["return_to_go_residual"] is not None
+    assert rollout["critic_residual"]["weighted_mean"] == pytest.approx(
+        rollout["return_to_go_target"]["weighted_mean"]
+    )
+    assert rollout["return_to_go_target"]["weighted_mean"] == pytest.approx(
+        -7.0 / 13.0
+    )
+    assert rollout["actor_decisions"] == generation["actor_decisions"]
+    assert rollout["forced_decisions"] == 0
 
     recovered = recover_published_run_behavior(output, run_bridge, (777,))
     assert recovered.objective.policy_update.uses_value_baseline
+    assert (
+        recovered.objective.advantage_mode
+        is TerminalAdvantageMode.DECISION_LOCAL_GAE
+    )
     assert recovered.policies[0].frozen_scorer.config.value_head
 
 

@@ -35,8 +35,8 @@ param(
     [int]$MaxArtifactBytes = 16777216,
     [string]$RequiredPotionId,
     [Nullable[int]]$RequiredPotionSlot,
-    [ValidateSet("raw-return", "leave-one-out", "matched-floor", "matched-floor-context", "matched-episode-floor-context")]
-    [string]$AdvantageMode = "raw-return",
+    [ValidateSet("auto", "raw-return", "leave-one-out", "matched-floor", "matched-floor-context", "matched-episode-floor-context", "decision-local-gae")]
+    [string]$AdvantageMode = "auto",
     [ValidateSet("independent-cohorts", "episode-root-retries")]
     [string]$SamplingMode = "independent-cohorts",
     [Nullable[int]]$EpisodeRootAttempts,

@@ -138,6 +138,7 @@ class TorchProvenanceTests(unittest.TestCase):
         reinforce = OnPolicyObjectiveConfig(attempts_per_update=2)
         value = replace(
             reinforce,
+            advantage_mode=TerminalAdvantageMode.DECISION_LOCAL_GAE,
             policy_update=RunPolicyUpdateConfig.ppo_clip_value(),
         )
         unnormalized_value = replace(
@@ -145,6 +146,13 @@ class TorchProvenanceTests(unittest.TestCase):
             policy_update=replace(
                 value.policy_update,
                 normalize_advantage=False,
+            ),
+        )
+        unclipped_value = replace(
+            value,
+            policy_update=replace(
+                value.policy_update,
+                value_clip_coefficient=None,
             ),
         )
 
@@ -180,6 +188,18 @@ class TorchProvenanceTests(unittest.TestCase):
             unnormalized_value,
             device_type="cpu",
         )
+        unclipped_value_template = categorical_training_manifest_template(
+            schema,
+            RaggedScorerConfig(
+                hidden_dim=4,
+                relation_layers=1,
+                value_head=True,
+            ),
+            behavior,
+            optimizer,
+            unclipped_value,
+            device_type="cpu",
+        )
 
         self.assertNotEqual(
             value_template.model_definition,
@@ -195,6 +215,10 @@ class TorchProvenanceTests(unittest.TestCase):
         )
         self.assertNotEqual(
             unnormalized_value_template.trainer_implementation,
+            value_template.trainer_implementation,
+        )
+        self.assertNotEqual(
+            unclipped_value_template.trainer_implementation,
             value_template.trainer_implementation,
         )
 

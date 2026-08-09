@@ -32,7 +32,7 @@ from .torch_session_config import (
 from .torch_policy import RaggedScorerConfig
 
 
-RUN_TRAINING_SCHEMA = "sts-learning-run-training-v2"
+RUN_TRAINING_SCHEMA = "sts-learning-run-training-v3"
 _MAX_TRAINING_JOURNAL_BYTES = 16 * 1024 * 1024
 
 
@@ -384,6 +384,10 @@ def _run_policy_update(configuration: Mapping[str, object]) -> RunPolicyUpdateCo
         normalize_advantage=_boolean(
             configuration.get("run_policy_normalize_advantage", False),
             "run_policy_normalize_advantage",
+        ),
+        value_clip_coefficient=_optional_float(
+            configuration.get("run_policy_value_clip_coefficient"),
+            "run_policy_value_clip_coefficient",
         ),
     )
 

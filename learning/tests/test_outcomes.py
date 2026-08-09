@@ -162,13 +162,17 @@ class OnPolicyObjectiveConfigTests(unittest.TestCase):
     def test_value_ppo_is_explicit_and_rejects_ambiguous_advantage_modes(self) -> None:
         update = RunPolicyUpdateConfig.ppo_clip_value()
 
-        objective = OnPolicyObjectiveConfig(policy_update=update)
+        objective = OnPolicyObjectiveConfig(
+            advantage_mode=TerminalAdvantageMode.DECISION_LOCAL_GAE,
+            policy_update=update,
+        )
 
         self.assertIs(objective.policy_update, update)
         self.assertTrue(objective.policy_update.uses_value_baseline)
         self.assertEqual(objective.policy_update.epochs, 4)
         self.assertTrue(objective.policy_update.normalize_advantage)
-        with self.assertRaisesRegex(TerminalReturnError, "raw-return"):
+        self.assertEqual(objective.policy_update.value_clip_coefficient, 0.2)
+        with self.assertRaisesRegex(TerminalReturnError, "decision-local"):
             OnPolicyObjectiveConfig(
                 attempts_per_update=2,
                 advantage_mode=TerminalAdvantageMode.LEAVE_ONE_OUT,

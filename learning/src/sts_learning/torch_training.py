@@ -55,10 +55,13 @@ class RunPolicyTrainingResult:
     optimizer_steps_applied: int
     optimizer_steps_after: int
     decision_count: int
+    actor_decision_count: int
     approximate_kl: float
     clip_fraction: float
     entropy: float
     value_loss: float
+    value_clip_fraction: float
+    explained_variance: float | None
     gradient_norm: float
     rollout_value_diagnostics: RunValueDiagnostics | None
 
@@ -205,6 +208,11 @@ class SynchronousPolicyTrainer:
             if self.objective_config.policy_update.uses_value_baseline
             else None
         )
+        fixed_value_predictions = (
+            objective.critic_predictions
+            if self.objective_config.policy_update.uses_value_baseline
+            else None
+        )
         rollout_value_diagnostics = objective.value_diagnostics
         try:
             for epoch in range(self.objective_config.policy_update.epochs):
@@ -221,6 +229,7 @@ class SynchronousPolicyTrainer:
                         update_config=self.objective_config.policy_update,
                         require_matching_propensities=False,
                         fixed_actor_advantages=fixed_actor_advantages,
+                        fixed_value_predictions=fixed_value_predictions,
                     )
                     target_kl = self.objective_config.policy_update.target_kl
                     if target_kl is not None and objective.approximate_kl > target_kl:
@@ -269,7 +278,9 @@ class SynchronousPolicyTrainer:
         self._deliveries += 1
         self._completed_attempts += completed_count
         self._dropped_attempts += dropped_count
-        self._trained_decisions += objective.decision_count * optimizer_steps_applied
+        self._trained_decisions += (
+            objective.actor_decision_count * optimizer_steps_applied
+        )
         self._last_loss = loss
         self._last_behavior_manifest_ids = objective.behavior_manifest_ids
         self._last_selection_probabilities = objective.selection_probabilities
@@ -279,10 +290,13 @@ class SynchronousPolicyTrainer:
             optimizer_steps_applied=optimizer_steps_applied,
             optimizer_steps_after=self._optimizer_steps,
             decision_count=objective.decision_count,
+            actor_decision_count=objective.actor_decision_count,
             approximate_kl=objective.approximate_kl,
             clip_fraction=objective.clip_fraction,
             entropy=objective.entropy,
             value_loss=objective.value_loss,
+            value_clip_fraction=objective.value_clip_fraction,
+            explained_variance=objective.explained_variance,
             gradient_norm=gradient_norm,
             rollout_value_diagnostics=rollout_value_diagnostics,
         )

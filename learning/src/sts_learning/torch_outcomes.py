@@ -66,13 +66,17 @@ class OnPolicyTerminalLoss:
     value: Tensor
     attempt_count: int
     decision_count: int
+    actor_decision_count: int
     behavior_manifest_ids: tuple[tuple[BehaviorManifestId, ...], ...]
     selection_probabilities: tuple[tuple[SelectionProbability, ...], ...]
     approximate_kl: float
     clip_fraction: float
     entropy: float
     value_loss: float
+    value_clip_fraction: float
+    explained_variance: float | None
     actor_advantages: tuple[float, ...]
+    critic_predictions: tuple[float, ...] | None
     value_diagnostics: RunValueDiagnostics | None
 
 
@@ -97,12 +101,13 @@ class AttemptEqualSignalSummary:
 class RunValueDiagnostics:
     """Frozen rollout diagnostics for one whole-run actor-critic objective."""
 
-    actor_advantage: AttemptEqualSignalSummary
+    actor_advantage: AttemptEqualSignalSummary | None
     critic_prediction: AttemptEqualSignalSummary
-    terminal_target: AttemptEqualSignalSummary
+    return_to_go_target: AttemptEqualSignalSummary
     critic_residual: AttemptEqualSignalSummary
-    return_to_go_target: AttemptEqualSignalSummary | None
-    return_to_go_residual: AttemptEqualSignalSummary | None
+    actor_decision_count: int
+    forced_decision_count: int
+    explained_variance: float | None
 
 
 @dataclass(frozen=True)
@@ -148,7 +153,11 @@ class _RunPolicyLoss:
     clip_fraction: float
     entropy: float
     value_loss: float
+    value_clip_fraction: float
+    explained_variance: float | None
+    actor_decision_count: int
     actor_advantages: tuple[float, ...]
+    critic_predictions: tuple[float, ...] | None
     value_diagnostics: RunValueDiagnostics | None
 
 
@@ -165,12 +174,14 @@ def on_policy_terminal_loss(
     update_config: RunPolicyUpdateConfig = RunPolicyUpdateConfig(),
     require_matching_propensities: bool = True,
     fixed_actor_advantages: Sequence[float] | None = None,
+    fixed_value_predictions: Sequence[float] | None = None,
 ) -> OnPolicyTerminalLoss:
-    """Apply progress-return REINFORCE to exact sampled categorical behavior.
+    """Apply one exact REINFORCE or decision-local GAE-PPO objective.
 
     Every complete attempt contributes equal total weight regardless of its
-    length. Return sign controls the relative probability direction, and
-    single-candidate decisions always have zero gradient.
+    length. Return sign controls the relative probability direction. A
+    single-candidate decision has no actor gradient; value PPO still trains
+    its critic row.
     """
 
     if not callable(scorer):
@@ -193,11 +204,13 @@ def on_policy_terminal_loss(
         raise TorchOutcomeError("run policy propensity check must be bool")
     if (
         update_config.uses_value_baseline
-        and advantage_mode is not TerminalAdvantageMode.RAW_RETURN
+        and advantage_mode is not TerminalAdvantageMode.DECISION_LOCAL_GAE
     ):
-        raise TorchOutcomeError("run value PPO currently requires raw-return advantage")
+        raise TorchOutcomeError("run value PPO requires decision-local GAE advantage")
     if fixed_actor_advantages is not None and not update_config.uses_value_baseline:
         raise TorchOutcomeError("fixed run advantages require a value baseline")
+    if fixed_value_predictions is not None and not update_config.uses_value_baseline:
+        raise TorchOutcomeError("fixed run values require a value baseline")
     normalized = tuple(attempts)
     if not normalized:
         raise TorchOutcomeError("policy objective requires at least one complete attempt")
@@ -208,15 +221,21 @@ def on_policy_terminal_loss(
         for attempt in normalized
         for batch in attempt.batches
     }
-    shadow_rollout = None
-    if progress_presence == {True}:
+    rollout = None
+    if update_config.uses_value_baseline:
+        if progress_presence != {True}:
+            raise TorchOutcomeError(
+                "run value PPO requires complete decision-time progress"
+            )
         try:
-            shadow_rollout = build_complete_run_rollout(normalized, return_config)
+            rollout = build_complete_run_rollout(normalized, return_config)
         except RunRolloutError as error:
             raise TorchOutcomeError(str(error)) from error
     matched_advantages = None
     advantages = None
-    if advantage_mode in (
+    if update_config.uses_value_baseline:
+        pass
+    elif advantage_mode in (
         TerminalAdvantageMode.MATCHED_FLOOR_LEAVE_ONE_OUT,
         TerminalAdvantageMode.MATCHED_FLOOR_CONTEXT_LEAVE_ONE_OUT,
         TerminalAdvantageMode.MATCHED_EPISODE_FLOOR_CONTEXT_LEAVE_ONE_OUT,
@@ -258,8 +277,8 @@ def on_policy_terminal_loss(
     payloads: list[Mapping[str, object]] = []
     selected_ordinals: list[int] = []
     targets: list[float] = []
-    rollout_return_targets: list[float] = []
-    weights: list[float] = []
+    value_weights: list[float] = []
+    actor_weights: list[float] = []
     total_decisions = 0
     for attempt_index, attempt in enumerate(normalized):
         retained_decisions = sum(batch.decision_count for batch in attempt.batches)
@@ -291,6 +310,19 @@ def on_policy_terminal_loss(
             raise TorchOutcomeError(
                 "complete attempt has no decisions in the configured scope"
             )
+        scoped_actor_decisions = scoped_decisions
+        if rollout is not None:
+            scoped_actor_decisions = 0
+            for batch_index, _batch, row_indices in scoped_batches:
+                if row_indices != (0,):
+                    raise TorchOutcomeError(
+                        "typed run rollout scope is not one-row batch aligned"
+                    )
+                scoped_actor_decisions += int(
+                    rollout.attempts[attempt_index]
+                    .rows[batch_index]
+                    .actor_eligible
+                )
 
         attempt_behavior_ids: list[BehaviorManifestId] = []
         attempt_probabilities: list[SelectionProbability] = []
@@ -309,7 +341,10 @@ def on_policy_terminal_loss(
             payloads.append(batch.payload)
             selected_ordinals.extend(batch.selected_ordinals)
             attempt_probabilities.extend(batch.selection_probabilities)
-            if matched_advantages is None:
+            if rollout is not None:
+                rollout_row = rollout.attempts[attempt_index].rows[batch_index]
+                batch_targets = (rollout_row.return_to_go,)
+            elif matched_advantages is None:
                 assert advantages is not None
                 batch_targets = (advantages[attempt_index],) * batch.decision_count
             else:
@@ -320,19 +355,23 @@ def on_policy_terminal_loss(
                         "matched targets are misaligned with decision rows"
                     )
             targets.extend(batch_targets)
-            if shadow_rollout is not None:
-                rollout_rows = shadow_rollout.attempts[attempt_index].rows
-                if row_indices != (0,):
-                    raise TorchOutcomeError(
-                        "typed run rollout scope is not one-row batch aligned"
-                    )
-                rollout_return_targets.append(
-                    rollout_rows[batch_index].return_to_go
-                )
-            weights.extend(
+            value_weights.extend(
                 [1.0 / (len(normalized) * scoped_decisions)]
                 * batch.decision_count
             )
+            if rollout is None:
+                actor_weights.extend(
+                    [1.0 / (len(normalized) * scoped_decisions)]
+                    * batch.decision_count
+                )
+            else:
+                actor_weights.append(
+                    0.0
+                    if not rollout_row.actor_eligible
+                    or scoped_actor_decisions == 0
+                    else 1.0
+                    / (len(normalized) * scoped_actor_decisions)
+                )
         behavior_ids.append(tuple(attempt_behavior_ids))
         probability_evidence.append(tuple(attempt_probabilities))
         total_decisions += scoped_decisions
@@ -347,27 +386,30 @@ def on_policy_terminal_loss(
             for probability in attempt_probabilities
         ),
         targets=targets,
-        weights=weights,
+        value_weights=value_weights,
+        actor_weights=actor_weights,
         concat_limits=concat_limits,
         policy_config=policy_config,
         update_config=update_config,
         require_matching_propensities=require_matching_propensities,
         fixed_actor_advantages=fixed_actor_advantages,
-        rollout_return_targets=(
-            None if shadow_rollout is None else rollout_return_targets
-        ),
+        fixed_value_predictions=fixed_value_predictions,
     )
     return OnPolicyTerminalLoss(
         value=policy_loss.value,
         attempt_count=len(normalized),
         decision_count=total_decisions,
+        actor_decision_count=policy_loss.actor_decision_count,
         behavior_manifest_ids=tuple(behavior_ids),
         selection_probabilities=tuple(probability_evidence),
         approximate_kl=policy_loss.approximate_kl,
         clip_fraction=policy_loss.clip_fraction,
         entropy=policy_loss.entropy,
         value_loss=policy_loss.value_loss,
+        value_clip_fraction=policy_loss.value_clip_fraction,
+        explained_variance=policy_loss.explained_variance,
         actor_advantages=policy_loss.actor_advantages,
+        critic_predictions=policy_loss.critic_predictions,
         value_diagnostics=policy_loss.value_diagnostics,
     )
 
@@ -687,13 +729,14 @@ def _run_policy_weighted_loss(
     selected_ordinals: Sequence[int],
     selection_probabilities: Sequence[SelectionProbability],
     targets: Sequence[float],
-    weights: Sequence[float],
+    value_weights: Sequence[float],
+    actor_weights: Sequence[float],
     concat_limits: SemanticBatchConcatLimits,
     policy_config: RaggedCategoricalPolicyConfig,
     update_config: RunPolicyUpdateConfig,
     require_matching_propensities: bool,
     fixed_actor_advantages: Sequence[float] | None,
-    rollout_return_targets: Sequence[float] | None,
+    fixed_value_predictions: Sequence[float] | None,
 ) -> _RunPolicyLoss:
     if update_config.rule is RunPolicyUpdateRule.REINFORCE:
         if not require_matching_propensities:
@@ -705,7 +748,7 @@ def _run_policy_weighted_loss(
                 selected_ordinals=selected_ordinals,
                 selection_probabilities=selection_probabilities,
                 targets=targets,
-                weights=weights,
+                weights=value_weights,
                 concat_limits=concat_limits,
                 policy_config=policy_config,
                 objective_name="terminal",
@@ -714,7 +757,11 @@ def _run_policy_weighted_loss(
             clip_fraction=0.0,
             entropy=0.0,
             value_loss=0.0,
+            value_clip_fraction=0.0,
+            explained_variance=None,
+            actor_decision_count=len(selected_ordinals),
             actor_advantages=tuple(float(target) for target in targets),
+            critic_predictions=None,
             value_diagnostics=None,
         )
 
@@ -722,22 +769,22 @@ def _run_policy_weighted_loss(
     if not (
         len(selection_probabilities)
         == len(targets)
-        == len(weights)
+        == len(value_weights)
+        == len(actor_weights)
         == decision_count
         > 0
     ):
         raise TorchOutcomeError("run PPO objective rows are misaligned")
     if not all(math.isfinite(target) for target in targets):
         raise TorchOutcomeError("run PPO objective targets must be finite")
-    if not all(math.isfinite(weight) and weight > 0.0 for weight in weights):
-        raise TorchOutcomeError("run PPO objective weights must be positive")
-    if rollout_return_targets is not None and (
-        len(rollout_return_targets) != decision_count
-        or not all(math.isfinite(value) for value in rollout_return_targets)
+    if not all(
+        math.isfinite(weight) and weight > 0.0 for weight in value_weights
     ):
-        raise TorchOutcomeError(
-            "run rollout return-to-go targets are misaligned or non-finite"
-        )
+        raise TorchOutcomeError("run PPO value weights must be positive")
+    if not all(
+        math.isfinite(weight) and weight >= 0.0 for weight in actor_weights
+    ):
+        raise TorchOutcomeError("run PPO actor weights must be non-negative")
     recorded_log_probabilities: list[float] = []
     for evidence in selection_probabilities:
         if not isinstance(evidence, SelectionProbability):
@@ -780,8 +827,13 @@ def _run_policy_weighted_loss(
         dtype=selected_log_probabilities.dtype,
         device=selected_log_probabilities.device,
     )
-    weight_tensor = torch.as_tensor(
-        weights,
+    value_weight_tensor = torch.as_tensor(
+        value_weights,
+        dtype=selected_log_probabilities.dtype,
+        device=selected_log_probabilities.device,
+    )
+    actor_weight_tensor = torch.as_tensor(
+        actor_weights,
         dtype=selected_log_probabilities.dtype,
         device=selected_log_probabilities.device,
     )
@@ -789,18 +841,24 @@ def _run_policy_weighted_loss(
         raise TorchOutcomeError("run critic values are misaligned")
     if fixed_actor_advantages is None:
         actor_advantages = target_tensor - predicted_values.detach()
+        actor_weight = torch.sum(actor_weight_tensor)
         if update_config.normalize_advantage:
-            advantage_weight = torch.sum(weight_tensor)
-            advantage_mean = (
-                torch.sum(actor_advantages * weight_tensor) / advantage_weight
-            )
-            advantage_variance = torch.sum(
-                (actor_advantages - advantage_mean).square() * weight_tensor
-            ) / advantage_weight
-            actor_advantages = (actor_advantages - advantage_mean) / torch.clamp_min(
-                torch.sqrt(advantage_variance),
-                1e-8,
-            )
+            if bool(actor_weight > 0.0):
+                advantage_mean = (
+                    torch.sum(actor_advantages * actor_weight_tensor) / actor_weight
+                )
+                advantage_variance = torch.sum(
+                    (actor_advantages - advantage_mean).square()
+                    * actor_weight_tensor
+                ) / actor_weight
+                actor_advantages = (
+                    actor_advantages - advantage_mean
+                ) / torch.clamp_min(torch.sqrt(advantage_variance), 1e-8)
+        actor_advantages = torch.where(
+            actor_weight_tensor > 0.0,
+            actor_advantages,
+            torch.zeros_like(actor_advantages),
+        )
     else:
         if (
             len(fixed_actor_advantages) != decision_count
@@ -814,8 +872,52 @@ def _run_policy_weighted_loss(
             dtype=target_tensor.dtype,
             device=target_tensor.device,
         )
+        if bool(
+            torch.any(
+                (actor_weight_tensor == 0.0) & (actor_advantages != 0.0)
+            )
+        ):
+            raise TorchOutcomeError("forced run rows must have zero fixed advantage")
+    if fixed_value_predictions is None:
+        old_values = predicted_values.detach()
+    else:
+        if (
+            len(fixed_value_predictions) != decision_count
+            or not all(math.isfinite(value) for value in fixed_value_predictions)
+        ):
+            raise TorchOutcomeError(
+                "fixed run value predictions are misaligned or non-finite"
+            )
+        old_values = torch.as_tensor(
+            fixed_value_predictions,
+            dtype=target_tensor.dtype,
+            device=target_tensor.device,
+        )
     value_error = predicted_values - target_tensor
-    value_loss = 0.5 * torch.sum(value_error.square() * weight_tensor)
+    value_losses = value_error.square()
+    value_clip_fraction = torch.zeros(
+        (),
+        dtype=target_tensor.dtype,
+        device=target_tensor.device,
+    )
+    value_clip = update_config.value_clip_coefficient
+    if value_clip is not None:
+        clipped_values = old_values + torch.clamp(
+            predicted_values - old_values,
+            -value_clip,
+            value_clip,
+        )
+        value_losses = torch.maximum(
+            value_losses,
+            (clipped_values - target_tensor).square(),
+        )
+        value_clip_fraction = torch.sum(
+            ((predicted_values - old_values).abs() > value_clip).to(
+                value_weight_tensor.dtype
+            )
+            * value_weight_tensor
+        ) / torch.sum(value_weight_tensor)
+    value_loss = 0.5 * torch.sum(value_losses * value_weight_tensor)
     log_ratio = selected_log_probabilities - old_log_probability_tensor
     ratio = torch.exp(log_ratio)
     clipped_ratio = torch.clamp(
@@ -828,38 +930,49 @@ def _run_policy_weighted_loss(
         -actor_advantages * clipped_ratio,
     )
     entropies = _ragged_entropies(logits, policy_config)
-    loss = torch.sum(policy_terms * weight_tensor) - (
+    loss = torch.sum(policy_terms * actor_weight_tensor) - (
         update_config.entropy_coefficient
-        * torch.sum(entropies * weight_tensor)
+        * torch.sum(entropies * actor_weight_tensor)
     ) + update_config.value_loss_coefficient * value_loss
-    diagnostic_weight = torch.sum(weight_tensor)
-    approximate_kl = torch.sum(
-        ((ratio - 1.0) - log_ratio) * weight_tensor
-    ) / diagnostic_weight
-    clip_fraction = torch.sum(
-        ((ratio - 1.0).abs() > update_config.clip_coefficient).to(
-            weight_tensor.dtype
-        )
-        * weight_tensor
-    ) / diagnostic_weight
-    mean_entropy = torch.sum(entropies * weight_tensor) / diagnostic_weight
+    actor_weight = torch.sum(actor_weight_tensor)
+    if bool(actor_weight > 0.0):
+        approximate_kl = torch.sum(
+            ((ratio - 1.0) - log_ratio) * actor_weight_tensor
+        ) / actor_weight
+        clip_fraction = torch.sum(
+            ((ratio - 1.0).abs() > update_config.clip_coefficient).to(
+                actor_weight_tensor.dtype
+            )
+            * actor_weight_tensor
+        ) / actor_weight
+        mean_entropy = torch.sum(entropies * actor_weight_tensor) / actor_weight
+    else:
+        approximate_kl = torch.zeros_like(loss)
+        clip_fraction = torch.zeros_like(loss)
+        mean_entropy = torch.zeros_like(loss)
+    explained_variance = _weighted_explained_variance(
+        target_tensor.detach(),
+        predicted_values.detach(),
+        value_weight_tensor,
+    )
     diagnostics = (
         loss,
         approximate_kl,
         clip_fraction,
         mean_entropy,
         value_loss,
+        value_clip_fraction,
     )
     if not all(bool(torch.all(torch.isfinite(value))) for value in diagnostics):
         raise TorchOutcomeError("run PPO objective must be finite")
     detached_advantages = tuple(
         float(value) for value in actor_advantages.detach().cpu().tolist()
     )
+    detached_predictions = tuple(
+        float(value) for value in predicted_values.detach().cpu().tolist()
+    )
     value_diagnostics = None
     if fixed_actor_advantages is None:
-        detached_predictions = tuple(
-            float(value) for value in predicted_values.detach().cpu().tolist()
-        )
         detached_targets = tuple(
             float(value) for value in target_tensor.detach().cpu().tolist()
         )
@@ -871,56 +984,26 @@ def _run_policy_weighted_loss(
                 strict=True,
             )
         )
-        detached_return_to_go = (
-            None
-            if rollout_return_targets is None
-            else tuple(float(value) for value in rollout_return_targets)
-        )
-        detached_return_to_go_residuals = (
-            None
-            if detached_return_to_go is None
-            else tuple(
-                target - prediction
-                for target, prediction in zip(
-                    detached_return_to_go,
-                    detached_predictions,
-                    strict=True,
-                )
-            )
-        )
         value_diagnostics = RunValueDiagnostics(
-            actor_advantage=_attempt_equal_signal_summary(
+            actor_advantage=_optional_actor_signal_summary(
                 detached_advantages,
-                weights,
+                actor_weights,
             ),
             critic_prediction=_attempt_equal_signal_summary(
                 detached_predictions,
-                weights,
+                value_weights,
             ),
-            terminal_target=_attempt_equal_signal_summary(
+            return_to_go_target=_attempt_equal_signal_summary(
                 detached_targets,
-                weights,
+                value_weights,
             ),
             critic_residual=_attempt_equal_signal_summary(
                 detached_residuals,
-                weights,
+                value_weights,
             ),
-            return_to_go_target=(
-                None
-                if detached_return_to_go is None
-                else _attempt_equal_signal_summary(
-                    detached_return_to_go,
-                    weights,
-                )
-            ),
-            return_to_go_residual=(
-                None
-                if detached_return_to_go_residuals is None
-                else _attempt_equal_signal_summary(
-                    detached_return_to_go_residuals,
-                    weights,
-                )
-            ),
+            actor_decision_count=sum(weight > 0.0 for weight in actor_weights),
+            forced_decision_count=sum(weight == 0.0 for weight in actor_weights),
+            explained_variance=explained_variance,
         )
     return _RunPolicyLoss(
         value=loss,
@@ -928,7 +1011,11 @@ def _run_policy_weighted_loss(
         clip_fraction=float(clip_fraction.detach().item()),
         entropy=float(mean_entropy.detach().item()),
         value_loss=float(value_loss.detach().item()),
+        value_clip_fraction=float(value_clip_fraction.detach().item()),
+        explained_variance=explained_variance,
+        actor_decision_count=sum(weight > 0.0 for weight in actor_weights),
         actor_advantages=detached_advantages,
+        critic_predictions=detached_predictions,
         value_diagnostics=value_diagnostics,
     )
 
@@ -999,6 +1086,48 @@ def _attempt_equal_signal_summary(
         minimum=min(normalized_values),
         maximum=max(normalized_values),
     )
+
+
+def _optional_actor_signal_summary(
+    values: Sequence[float],
+    weights: Sequence[float],
+) -> AttemptEqualSignalSummary | None:
+    eligible = tuple(
+        (value, weight)
+        for value, weight in zip(values, weights, strict=True)
+        if weight > 0.0
+    )
+    if not eligible:
+        return None
+    return _attempt_equal_signal_summary(
+        tuple(value for value, _weight in eligible),
+        tuple(weight for _value, weight in eligible),
+    )
+
+
+def _weighted_explained_variance(
+    targets: Tensor,
+    predictions: Tensor,
+    weights: Tensor,
+) -> float | None:
+    """Return SB3-style explained variance under attempt-equal row weights."""
+
+    total_weight = torch.sum(weights)
+    target_mean = torch.sum(targets * weights) / total_weight
+    target_variance = (
+        torch.sum((targets - target_mean).square() * weights) / total_weight
+    )
+    if bool(target_variance <= 1e-12):
+        return None
+    residual = targets - predictions
+    residual_mean = torch.sum(residual * weights) / total_weight
+    residual_variance = (
+        torch.sum((residual - residual_mean).square() * weights) / total_weight
+    )
+    explained = 1.0 - residual_variance / target_variance
+    if not bool(torch.isfinite(explained)):
+        raise TorchOutcomeError("run explained variance must be finite")
+    return float(explained.detach().item())
 
 
 def _combat_policy_weighted_loss(

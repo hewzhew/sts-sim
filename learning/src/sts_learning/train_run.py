@@ -68,6 +68,7 @@ class RunTrainingCommandError(RuntimeError):
 
 
 _ADVANTAGE_MODE_ARGUMENTS = {
+    "auto": None,
     "raw-return": TerminalAdvantageMode.RAW_RETURN,
     "leave-one-out": TerminalAdvantageMode.LEAVE_ONE_OUT,
     "matched-floor": TerminalAdvantageMode.MATCHED_FLOOR_LEAVE_ONE_OUT,
@@ -77,6 +78,7 @@ _ADVANTAGE_MODE_ARGUMENTS = {
     "matched-episode-floor-context": (
         TerminalAdvantageMode.MATCHED_EPISODE_FLOOR_CONTEXT_LEAVE_ONE_OUT
     ),
+    "decision-local-gae": TerminalAdvantageMode.DECISION_LOCAL_GAE,
 }
 
 _RUN_POLICY_UPDATE_ARGUMENTS = {
@@ -100,7 +102,7 @@ class RunTrainingCommandConfig:
     evaluation_max_batch_steps: int
     evaluation_behavior_seed: int
     held_out_seed_start: int
-    advantage_mode: TerminalAdvantageMode = TerminalAdvantageMode.RAW_RETURN
+    advantage_mode: TerminalAdvantageMode | None = None
     decision_scope: RunDecisionScope = RunDecisionScope.ALL
     policy_update: RunPolicyUpdateConfig = RunPolicyUpdateConfig()
     sampling_mode: RunSamplingMode = RunSamplingMode.INDEPENDENT_COHORTS
@@ -126,17 +128,25 @@ class RunTrainingCommandConfig:
             )
         object.__setattr__(self, "warm_start_behavior", behavior)
         object.__setattr__(self, "output", output)
-        if not isinstance(self.advantage_mode, TerminalAdvantageMode):
+        if not isinstance(self.policy_update, RunPolicyUpdateConfig):
+            raise RunTrainingCommandError(
+                "run training policy update must be typed"
+            )
+        advantage_mode = self.advantage_mode
+        if advantage_mode is None:
+            advantage_mode = (
+                TerminalAdvantageMode.DECISION_LOCAL_GAE
+                if self.policy_update.uses_value_baseline
+                else TerminalAdvantageMode.RAW_RETURN
+            )
+            object.__setattr__(self, "advantage_mode", advantage_mode)
+        if not isinstance(advantage_mode, TerminalAdvantageMode):
             raise RunTrainingCommandError(
                 "run training advantage mode must be typed"
             )
         if not isinstance(self.decision_scope, RunDecisionScope):
             raise RunTrainingCommandError(
                 "run training decision scope must be typed"
-            )
-        if not isinstance(self.policy_update, RunPolicyUpdateConfig):
-            raise RunTrainingCommandError(
-                "run training policy update must be typed"
             )
         if not isinstance(self.sampling_mode, RunSamplingMode):
             raise RunTrainingCommandError(
@@ -463,6 +473,9 @@ def _configuration(
         "run_policy_value_loss_coefficient": (
             config.policy_update.value_loss_coefficient
         ),
+        "run_policy_value_clip_coefficient": (
+            config.policy_update.value_clip_coefficient
+        ),
         "run_policy_normalize_advantage": (
             config.policy_update.normalize_advantage
         ),
@@ -515,6 +528,15 @@ def _generation(
         "clip_fraction": None if training is None else training.clip_fraction,
         "entropy": None if training is None else training.entropy,
         "value_loss": None if training is None else training.value_loss,
+        "value_clip_fraction": (
+            None if training is None else training.value_clip_fraction
+        ),
+        "explained_variance": (
+            None if training is None else training.explained_variance
+        ),
+        "actor_decisions": (
+            None if training is None else training.actor_decision_count
+        ),
         "gradient_norm": None if training is None else training.gradient_norm,
         "rollout_value_diagnostics": _rollout_value_diagnostics(training),
         "trained_decisions": trainer.trained_decisions,
@@ -552,24 +574,23 @@ def _rollout_value_diagnostics(
 
     return {
         "weighting": "attempt_equal",
-        "optimization_target": "terminal_broadcast",
-        "shadow_target": "decision_local_return_to_go",
-        "critic_residual_convention": "terminal_target_minus_prediction",
-        "shadow_residual_convention": "return_to_go_target_minus_prediction",
-        "actor_advantage": signal(diagnostics.actor_advantage),
+        "optimization_target": "decision_local_return_to_go",
+        "advantage_estimator": "gae",
+        "gamma": 1.0,
+        "gae_lambda": 1.0,
+        "actor_mask": "multiple_candidates",
+        "critic_residual_convention": "return_to_go_target_minus_prediction",
+        "actor_advantage": (
+            None
+            if diagnostics.actor_advantage is None
+            else signal(diagnostics.actor_advantage)
+        ),
         "critic_prediction": signal(diagnostics.critic_prediction),
-        "terminal_target": signal(diagnostics.terminal_target),
+        "return_to_go_target": signal(diagnostics.return_to_go_target),
         "critic_residual": signal(diagnostics.critic_residual),
-        "return_to_go_target": (
-            None
-            if diagnostics.return_to_go_target is None
-            else signal(diagnostics.return_to_go_target)
-        ),
-        "return_to_go_residual": (
-            None
-            if diagnostics.return_to_go_residual is None
-            else signal(diagnostics.return_to_go_residual)
-        ),
+        "actor_decisions": diagnostics.actor_decision_count,
+        "forced_decisions": diagnostics.forced_decision_count,
+        "explained_variance": diagnostics.explained_variance,
     }
 
 
@@ -691,6 +712,7 @@ def _training_result_line(session: CategoricalOnlineSession) -> str:
         f"steps:{result.optimizer_steps_applied};"
         f"kl:{result.approximate_kl:.4g};"
         f"clip:{result.clip_fraction:.4g};"
+        f"value_clip:{result.value_clip_fraction:.4g};"
         f"entropy:{result.entropy:.4g};"
         f"value:{result.value_loss:.4g};"
         f"grad:{result.gradient_norm:.4g}"
@@ -940,7 +962,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--advantage-mode",
         choices=tuple(_ADVANTAGE_MODE_ARGUMENTS),
-        default="raw-return",
+        default="auto",
     )
     parser.add_argument(
         "--decision-scope",
