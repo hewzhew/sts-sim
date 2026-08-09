@@ -15,6 +15,7 @@ from learning.tests.run_training_fixtures import published_behavior
 from learning.tests.torch_combat_fixtures import OneRoundCombatGroup
 from sts_learning.combat_evaluation import combat_observed_resource_frontier
 from sts_learning.combat_outcomes import CombatTerminalOutcome
+from sts_learning import RunDecisionScope
 from sts_learning.evaluate_combat import (
     CombatEvaluationCommandConfig,
     CombatEvaluationCommandError,
@@ -166,7 +167,7 @@ def test_evaluation_recovers_published_behavior_without_training_or_experience(
         bridge=bridge,
     )
 
-    assert summary["schema"] == "sts-learning-combat-held-out-evaluation-v13"
+    assert summary["schema"] == "sts-learning-combat-held-out-evaluation-v14"
     assert summary["decision_rule"] == "sampled"
     assert summary["evaluation_manifest_id"] == summary["behavior_manifest_id"]
     assert summary["behavior_training_kind"] == "combat"
@@ -444,6 +445,58 @@ def test_evaluation_accepts_a_verified_run_trained_behavior(tmp_path: Path) -> N
     assert summary["behavior_run_objective"]["attempts_per_update"] == 2
     assert summary["wins"] == 3
     assert summary["losses"] == 1
+
+
+def test_evaluation_recovers_an_anchored_run_combat_policy(tmp_path: Path) -> None:
+    combat_behavior, combat_bridge, run_bridge = published_behavior(tmp_path)
+    run_behavior = tmp_path / "anchored-run-behavior"
+    run_run_training(
+        RunTrainingCommandConfig(
+            warm_start_behavior=combat_behavior,
+            output=run_behavior,
+            slot_count=1,
+            generations=0,
+            attempts_per_update=1,
+            max_batch_steps_per_generation=1,
+            model_seed=43,
+            behavior_seed=94,
+            training_seed_start=0,
+            evaluation_attempts=1,
+            evaluation_max_batch_steps=1,
+            evaluation_behavior_seed=501,
+            held_out_seed_start=1000,
+            ascension_level=20,
+            decision_scope=RunDecisionScope.STRATEGIC,
+            combat_decision_rule=FrozenDecisionRule.GREEDY,
+        ),
+        combat_bridge=combat_bridge,
+        run_bridge=run_bridge,
+    )
+    artifact = tmp_path / "anchored-run-held-out-roots.bin"
+    artifact.write_bytes(b"distinct-anchored-run-held-out-roots")
+
+    summary = run_combat_evaluation(
+        CombatEvaluationCommandConfig(
+            artifact=artifact,
+            behavior=run_behavior,
+            output=tmp_path / "anchored-run-held-out",
+            root_count=2,
+            replicate_count=2,
+            behavior_seed_base=1_000,
+        ),
+        bridge=combat_bridge,
+        run_bridge=run_bridge,
+    )
+
+    assert summary["schema"] == "sts-learning-combat-held-out-evaluation-v14"
+    assert summary["behavior_run_combat_decision_rule"] == "greedy"
+    assert summary["behavior_run_combat_anchor_manifest_id"] is not None
+    assert summary["behavior_run_combat_anchor_checkpoint_id"] is not None
+    assert summary["behavior_run_combat_anchor_scorer"] == {
+        "hidden_dim": 64,
+        "relation_layers": 2,
+        "value_head": False,
+    }
 
 
 def test_observed_resource_frontier_keeps_hp_potion_tradeoffs_incomparable() -> None:

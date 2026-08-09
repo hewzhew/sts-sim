@@ -97,6 +97,13 @@ _COMBAT_GREEDY_STRATEGIC_SAMPLED_RULE_V1 = ManifestArtifactId.from_content(
     b"sts_learning.combat_greedy_strategic_sampled\x00v1",
 )
 
+_COMBAT_ANCHORED_GREEDY_STRATEGIC_SAMPLED_RULE_V1 = (
+    ManifestArtifactId.from_content(
+        ManifestArtifactKind.BEHAVIOR_RULE,
+        b"sts_learning.combat_anchored_greedy_strategic_sampled\x00v1",
+    )
+)
+
 
 def combat_greedy_strategic_sampled_rule_v1(
     sampled_rule: BehaviorRuleBinding,
@@ -114,6 +121,37 @@ def combat_greedy_strategic_sampled_rule_v1(
     )
     return BehaviorRuleBinding(
         implementation=_COMBAT_GREEDY_STRATEGIC_SAMPLED_RULE_V1,
+        configuration=ManifestArtifactId.from_content(
+            ManifestArtifactKind.BEHAVIOR_RULE_CONFIG,
+            configuration,
+        ),
+    )
+
+
+def combat_anchored_greedy_strategic_sampled_rule_v1(
+    sampled_rule: BehaviorRuleBinding,
+    combat_anchor_manifest_id: BehaviorManifestId,
+) -> BehaviorRuleBinding:
+    """Bind strategic sampling to one immutable combat scorer manifest."""
+
+    if not isinstance(sampled_rule, BehaviorRuleBinding):
+        raise BehaviorManifestError(
+            "anchored combat behavior requires a sampled rule binding"
+        )
+    if not isinstance(combat_anchor_manifest_id, BehaviorManifestId):
+        raise BehaviorManifestError(
+            "anchored combat behavior requires a combat manifest identity"
+        )
+    configuration = (
+        b"sts_learning.combat_anchored_greedy_strategic_sampled.config\x00v1"
+        + sampled_rule.implementation.digest
+        + sampled_rule.configuration.digest
+        + combat_anchor_manifest_id.digest
+    )
+    return BehaviorRuleBinding(
+        implementation=(
+            _COMBAT_ANCHORED_GREEDY_STRATEGIC_SAMPLED_RULE_V1
+        ),
         configuration=ManifestArtifactId.from_content(
             ManifestArtifactKind.BEHAVIOR_RULE_CONFIG,
             configuration,

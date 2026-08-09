@@ -57,13 +57,16 @@ def test_run_evaluation_uses_frozen_combat_behavior_without_recovery(
         run_bridge=run_bridge,
     )
 
-    assert summary["schema"] == "sts-learning-run-held-out-evaluation-v7"
+    assert summary["schema"] == "sts-learning-run-held-out-evaluation-v8"
     assert summary["ascension_level"] == 20
     assert summary["behavior_training_kind"] == "combat"
     assert summary["behavior_training_all_loss_axis"] == "none"
     assert summary["behavior_run_sampling_mode"] is None
     assert summary["behavior_run_episode_root_attempts"] is None
     assert summary["behavior_run_combat_decision_rule"] is None
+    assert summary["behavior_run_combat_anchor_manifest_id"] is None
+    assert summary["behavior_run_combat_anchor_checkpoint_id"] is None
+    assert summary["behavior_run_combat_anchor_scorer"] is None
     assert summary["combat_potion_lane"] == "all"
     assert summary["requested_combat_potion_lane"] == "trained"
     assert summary["kind"] == "completed"
@@ -294,14 +297,14 @@ def test_run_training_warm_starts_publishes_and_evaluates(
     ):
         recover_published_run_behavior(output, run_bridge, (777,))
 
-    v4_records = tuple(
-        record | {"schema": "sts-learning-run-training-v4"}
+    v5_records = tuple(
+        record | {"schema": "sts-learning-run-training-v5"}
         for record in records
     )
     (output / "training.jsonl").write_text(
         "".join(
             json.dumps(record, separators=(",", ":"), sort_keys=True) + "\n"
-            for record in v4_records
+            for record in v5_records
         ),
         encoding="utf-8",
         newline="\n",

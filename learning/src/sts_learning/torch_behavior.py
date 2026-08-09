@@ -16,6 +16,7 @@ from .manifests import (
     BehaviorRuleBinding,
     GREEDY_BEHAVIOR_RULE_V1,
     ManifestArtifactId,
+    combat_anchored_greedy_strategic_sampled_rule_v1,
     combat_greedy_strategic_sampled_rule_v1,
 )
 from .manifest_catalog import (
@@ -490,6 +491,76 @@ class CheckpointedCategoricalTorchPolicy(FrozenCategoricalTorchPolicy):
     """Frozen behavior whose binding was verified through durable stores."""
 
 
+@dataclass(frozen=True)
+class FrozenCombatAnchor:
+    """One immutable scorer used only for combat argmax decisions."""
+
+    scorer: RaggedCandidateScorer
+    binding: TorchBehaviorBinding
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.scorer, RaggedCandidateScorer):
+            raise TorchBehaviorError("combat anchor requires a frozen scorer")
+        if not isinstance(self.binding, TorchBehaviorBinding):
+            raise TorchBehaviorError("combat anchor requires an exact binding")
+        if self.scorer.schema.version != self.binding.manifest.semantic_schema_version:
+            raise TorchBehaviorError("combat anchor semantic schema changed")
+        if self.scorer.training or any(
+            parameter.requires_grad for parameter in self.scorer.parameters()
+        ):
+            raise TorchBehaviorError("combat anchor scorer must be immutable")
+
+    @classmethod
+    def from_behavior(
+        cls,
+        policy: FrozenCategoricalTorchPolicy,
+    ) -> FrozenCombatAnchor:
+        if not isinstance(policy, FrozenCategoricalTorchPolicy):
+            raise TorchBehaviorError(
+                "combat anchor requires frozen categorical behavior"
+            )
+        return cls(policy.frozen_scorer, policy.binding)
+
+    @classmethod
+    def recover(
+        cls,
+        manifest_id: BehaviorManifestId,
+        store: BoundedTorchCheckpointStore,
+        catalog: BoundedBehaviorManifestCatalog,
+        scorer_factory: Callable[[], RaggedCandidateScorer],
+    ) -> FrozenCombatAnchor:
+        if not isinstance(manifest_id, BehaviorManifestId):
+            raise TorchBehaviorError("combat anchor manifest id must be typed")
+        if not isinstance(store, BoundedTorchCheckpointStore):
+            raise TorchBehaviorError("combat anchor requires a checkpoint store")
+        if not isinstance(catalog, BoundedBehaviorManifestCatalog):
+            raise TorchBehaviorError("combat anchor requires a manifest catalog")
+        try:
+            manifest = catalog.resolve(manifest_id)
+        except RuntimeError as error:
+            raise TorchBehaviorError(
+                "durable combat anchor manifest is unavailable"
+            ) from error
+        publication = TorchBehaviorPublication(
+            manifest_id,
+            manifest,
+            manifest.model_checkpoint,
+        )
+        model = store.materialize(publication.checkpoint_id, scorer_factory)
+        return cls(
+            _freeze_scorer(model, publication, None),
+            publication,
+        )
+
+    @property
+    def manifest_id(self) -> BehaviorManifestId:
+        return self.binding.manifest_id
+
+    @property
+    def checkpoint_id(self) -> ManifestArtifactId:
+        return self.binding.checkpoint_id
+
+
 class FrozenGreedyTorchPolicy:
     """Exact greedy decision rule derived from a frozen categorical scorer."""
 
@@ -543,17 +614,25 @@ class FrozenGreedyTorchPolicy:
             raise TorchBehaviorError(
                 "greedy evaluation requires frozen torch behavior"
             )
+        source_scorer = policy.frozen_scorer
+        source_binding = policy.binding
+        if (
+            isinstance(policy, FrozenCombatGreedyTorchPolicy)
+            and policy.combat_anchor is not None
+        ):
+            source_scorer = policy.combat_anchor.scorer
+            source_binding = policy.combat_anchor.binding
         manifest = replace(
-            policy.binding.manifest,
+            source_binding.manifest,
             behavior_rule=GREEDY_BEHAVIOR_RULE_V1,
         )
         binding = TorchBehaviorBinding(
             manifest.identity,
             manifest,
-            policy.binding.checkpoint_id,
+            source_binding.checkpoint_id,
         )
         return cls(
-            policy.frozen_scorer,
+            source_scorer,
             binding,
             policy.behavior_manifest_id,
             _token=_PROMOTION_TOKEN,
@@ -586,6 +665,7 @@ class FrozenCombatGreedyTorchPolicy:
         generator: torch.Generator,
         progress_provider: DecisionProgressProvider | None,
         source_manifest_id: BehaviorManifestId,
+        combat_anchor: FrozenCombatAnchor | None = None,
         *,
         _token: object,
     ) -> None:
@@ -609,8 +689,14 @@ class FrozenCombatGreedyTorchPolicy:
             raise TorchBehaviorError(
                 "combat-scoped greedy policy requires typed decision progress"
             )
-        expected_rule = combat_greedy_strategic_sampled_rule_v1(
-            config.behavior_rule
+        if combat_anchor is not None and not isinstance(
+            combat_anchor,
+            FrozenCombatAnchor,
+        ):
+            raise TorchBehaviorError("combat anchor must be typed")
+        expected_rule = _combat_scoped_behavior_rule(
+            config.behavior_rule,
+            combat_anchor,
         )
         _require_behavior_rule(
             binding.manifest,
@@ -635,6 +721,7 @@ class FrozenCombatGreedyTorchPolicy:
         self.generator = generator
         self.progress_provider = progress_provider
         self.source_manifest_id = source_manifest_id
+        self.combat_anchor = combat_anchor
 
     @classmethod
     def from_categorical(
@@ -668,6 +755,7 @@ class FrozenCombatGreedyTorchPolicy:
             policy.generator,
             progress_provider,
             policy.behavior_manifest_id,
+            None,
             _token=_PROMOTION_TOKEN,
         )
 
@@ -682,12 +770,14 @@ class FrozenCombatGreedyTorchPolicy:
         config: RaggedCategoricalPolicyConfig,
         generator: torch.Generator,
         progress_provider: DecisionProgressProvider | None = None,
+        combat_anchor: FrozenCombatAnchor | None = None,
     ) -> FrozenCombatGreedyTorchPolicy:
         """Recover the exact mixed rule; progress may be bound by its run env."""
 
         _validate_categorical_inputs(config, generator)
-        expected_rule = combat_greedy_strategic_sampled_rule_v1(
-            config.behavior_rule
+        expected_rule = _combat_scoped_behavior_rule(
+            config.behavior_rule,
+            combat_anchor,
         )
         model, publication = _recover_frozen_scorer(
             manifest_id,
@@ -713,6 +803,7 @@ class FrozenCombatGreedyTorchPolicy:
             generator,
             progress_provider,
             source_manifest.identity,
+            combat_anchor,
             _token=_PROMOTION_TOKEN,
         )
 
@@ -744,6 +835,7 @@ class FrozenCombatGreedyTorchPolicy:
             generator,
             provider,
             self.source_manifest_id,
+            self.combat_anchor,
             _token=_PROMOTION_TOKEN,
         )
 
@@ -760,6 +852,7 @@ class FrozenCombatGreedyTorchPolicy:
             self.generator,
             progress_provider,
             self.source_manifest_id,
+            self.combat_anchor,
             _token=_PROMOTION_TOKEN,
         )
 
@@ -767,6 +860,13 @@ class FrozenCombatGreedyTorchPolicy:
         """Bind an explicit combat-episode domain with no strategic rows."""
 
         return self.bind_progress_provider(_AllCombatDecisionProgressProvider())
+
+    @property
+    def is_combat_only(self) -> bool:
+        return isinstance(
+            self.progress_provider,
+            _AllCombatDecisionProgressProvider,
+        )
 
     def score(self, decision_batch: Mapping[str, object]) -> RaggedCandidateLogits:
         with torch.inference_mode():
@@ -783,17 +883,43 @@ class FrozenCombatGreedyTorchPolicy:
             raise TorchBehaviorError(
                 "combat-scoped greedy progress rows are misaligned"
             )
-        logits = self.score(decision_batch)
-        greedy_ordinals = logits.greedy_ordinals()
-        if len(greedy_ordinals) != len(progress):
+        has_combat = any(row.is_combat for row in progress)
+        has_strategic = any(not row.is_combat for row in progress)
+        shared_logits = (
+            self.score(decision_batch)
+            if self.combat_anchor is None
+            else None
+        )
+        combat_logits = (
+            shared_logits
+            if self.combat_anchor is None
+            else (
+                _score_frozen(self.combat_anchor.scorer, decision_batch)
+                if has_combat
+                else None
+            )
+        )
+        greedy_ordinals = (
+            None if combat_logits is None else combat_logits.greedy_ordinals()
+        )
+        if greedy_ordinals is not None and len(greedy_ordinals) != len(progress):
             raise TorchBehaviorError(
                 "combat-scoped greedy logits are misaligned"
             )
+        strategic_logits = (
+            shared_logits
+            if self.combat_anchor is None
+            else (
+                self.score(decision_batch)
+                if has_strategic
+                else None
+            )
+        )
         sampled = (
             None
-            if all(row.is_combat for row in progress)
+            if strategic_logits is None
             else sample_ragged_categorical(
-                logits,
+                strategic_logits,
                 self.config,
                 self.generator,
             )
@@ -802,6 +928,8 @@ class FrozenCombatGreedyTorchPolicy:
         probabilities = []
         for index, row in enumerate(progress):
             if row.is_combat:
+                if greedy_ordinals is None:
+                    raise AssertionError("combat argmax result is missing")
                 ordinals.append(greedy_ordinals[index])
                 probabilities.append(DETERMINISTIC_SELECTION)
             else:
@@ -826,6 +954,26 @@ class _AllCombatDecisionProgressProvider:
         )
 
 
+def _score_frozen(
+    scorer: RaggedCandidateScorer,
+    decision_batch: Mapping[str, object],
+) -> RaggedCandidateLogits:
+    with torch.inference_mode():
+        return scorer(decision_batch)
+
+
+def _combat_scoped_behavior_rule(
+    sampled_rule: BehaviorRuleBinding,
+    combat_anchor: FrozenCombatAnchor | None,
+) -> BehaviorRuleBinding:
+    if combat_anchor is None:
+        return combat_greedy_strategic_sampled_rule_v1(sampled_rule)
+    return combat_anchored_greedy_strategic_sampled_rule_v1(
+        sampled_rule,
+        combat_anchor.manifest_id,
+    )
+
+
 @dataclass(frozen=True)
 class CategoricalTorchBehaviorControllerSnapshot:
     active_manifest_id: BehaviorManifestId | None
@@ -845,6 +993,7 @@ class CategoricalTorchBehaviorController:
         *,
         combat_decision_rule: FrozenDecisionRule = FrozenDecisionRule.SAMPLED,
         progress_provider: DecisionProgressProvider | None = None,
+        combat_anchor: FrozenCombatAnchor | None = None,
     ) -> None:
         if not isinstance(publisher, TorchBehaviorPublisher):
             raise TorchBehaviorError("controller requires a behavior publisher")
@@ -861,11 +1010,24 @@ class CategoricalTorchBehaviorController:
             raise TorchBehaviorError(
                 "controller decision progress provider must be typed"
             )
+        if combat_anchor is not None and not isinstance(
+            combat_anchor,
+            FrozenCombatAnchor,
+        ):
+            raise TorchBehaviorError("controller combat anchor must be typed")
+        if (
+            combat_anchor is not None
+            and combat_decision_rule is not FrozenDecisionRule.GREEDY
+        ):
+            raise TorchBehaviorError(
+                "controller combat anchor requires greedy combat decisions"
+            )
         behavior_rule = (
             config.behavior_rule
             if combat_decision_rule is FrozenDecisionRule.SAMPLED
-            else combat_greedy_strategic_sampled_rule_v1(
-                config.behavior_rule
+            else _combat_scoped_behavior_rule(
+                config.behavior_rule,
+                combat_anchor,
             )
         )
         if publisher.template.behavior_rule != behavior_rule:
@@ -878,6 +1040,7 @@ class CategoricalTorchBehaviorController:
         self.generator = generator
         self.combat_decision_rule = combat_decision_rule
         self.behavior_rule = behavior_rule
+        self.combat_anchor = combat_anchor
         self._progress_provider = progress_provider
         self._policy: (
             FrozenCategoricalTorchPolicy
@@ -1013,6 +1176,7 @@ class CategoricalTorchBehaviorController:
                 self.config,
                 self.generator,
                 self._progress_provider,
+                self.combat_anchor,
             )
         self._policy = policy
         self._successful_promotions = promotion_count
@@ -1054,6 +1218,7 @@ class CategoricalTorchBehaviorController:
             generator,
             self._progress_provider,
             source_manifest.identity,
+            self.combat_anchor,
             _token=_PROMOTION_TOKEN,
         )
 

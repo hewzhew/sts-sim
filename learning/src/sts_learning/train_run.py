@@ -48,7 +48,7 @@ from .torch_combat_session_config import (
     CombatWinSessionLimits,
 )
 from .torch_generation import CategoricalGenerationAdvanceResult
-from .torch_behavior import FrozenDecisionRule
+from .torch_behavior import FrozenCombatAnchor, FrozenDecisionRule
 from .torch_outcomes import AttemptEqualSignalSummary
 from .torch_session import (
     CategoricalOnlineSession,
@@ -280,6 +280,11 @@ def run_run_training(
         CombatWinSessionLimits(),
         (config.behavior_seed,),
     )
+    combat_anchor = (
+        FrozenCombatAnchor.from_behavior(warm_start.policies[0])
+        if config.combat_decision_rule is FrozenDecisionRule.GREEDY
+        else None
+    )
     potion_lane = resolve_run_potion_lane(config.potion_lane, warm_start)
     base_training_run_bridge = _bridge_for_potion_lane(
         active_run_bridge,
@@ -318,6 +323,12 @@ def run_run_training(
             policy_update=config.policy_update,
         ),
         combat_decision_rule=config.combat_decision_rule,
+        combat_anchor_manifest_id=(
+            None if combat_anchor is None else combat_anchor.manifest_id
+        ),
+        combat_anchor_scorer=(
+            None if combat_anchor is None else combat_anchor.scorer.config
+        ),
     )
     limits = replace(
         CategoricalSessionLimits(),
@@ -360,11 +371,15 @@ def run_run_training(
         behavior_seed=config.behavior_seed,
         initial_scorer=warm_start.policies[0].frozen_scorer,
         initial_scorer_actor_only=True,
+        combat_anchor=combat_anchor,
     )
     config.output.mkdir(parents=True, exist_ok=True)
     journal_path = config.output / "training.jsonl"
     with journal_path.open("x", encoding="utf-8", newline="\n") as journal:
-        _write(journal, _configuration(config, warm_start, potion_lane))
+        _write(
+            journal,
+            _configuration(config, warm_start, combat_anchor, potion_lane),
+        )
         for generation in range(config.generations):
             started = time.perf_counter()
             result = session.advance_generation(
@@ -442,6 +457,7 @@ def run_run_training(
         summary = _summary(
             config,
             warm_start,
+            combat_anchor,
             session,
             publication.checkpoint_id.digest.hex(),
             evaluation,
@@ -485,6 +501,7 @@ def run_run_training(
 def _configuration(
     config: RunTrainingCommandConfig,
     warm_start: PublishedCombatBehavior,
+    combat_anchor: FrozenCombatAnchor | None,
     potion_lane: CombatPotionLane,
 ) -> dict[str, object]:
     return {
@@ -507,6 +524,21 @@ def _configuration(
         "advantage_mode": config.advantage_mode.name.lower(),
         "decision_scope": config.decision_scope.name.lower(),
         "combat_decision_rule": config.combat_decision_rule.value,
+        "combat_anchor_manifest_id": (
+            None
+            if combat_anchor is None
+            else combat_anchor.manifest_id.digest.hex()
+        ),
+        "combat_anchor_checkpoint_id": (
+            None
+            if combat_anchor is None
+            else combat_anchor.checkpoint_id.digest.hex()
+        ),
+        "combat_anchor_scorer": (
+            None
+            if combat_anchor is None
+            else _scorer_config(combat_anchor.scorer.config)
+        ),
         "run_policy_update": config.policy_update.rule.name.lower(),
         "run_policy_epochs": config.policy_update.epochs,
         "run_policy_clip_coefficient": config.policy_update.clip_coefficient,
@@ -642,6 +674,7 @@ def _rollout_value_diagnostics(
 def _summary(
     config: RunTrainingCommandConfig,
     warm_start: PublishedCombatBehavior,
+    combat_anchor: FrozenCombatAnchor | None,
     session: CategoricalOnlineSession,
     checkpoint_id: str,
     evaluation: HeldOutEvaluationResult,
@@ -666,6 +699,21 @@ def _summary(
         "episode_root_attempts": config.episode_root_attempts,
         "ascension_level": config.ascension_level,
         "combat_decision_rule": config.combat_decision_rule.value,
+        "combat_anchor_manifest_id": (
+            None
+            if combat_anchor is None
+            else combat_anchor.manifest_id.digest.hex()
+        ),
+        "combat_anchor_checkpoint_id": (
+            None
+            if combat_anchor is None
+            else combat_anchor.checkpoint_id.digest.hex()
+        ),
+        "combat_anchor_scorer": (
+            None
+            if combat_anchor is None
+            else _scorer_config(combat_anchor.scorer.config)
+        ),
         "run_policy_update": config.policy_update.rule.name.lower(),
         "run_policy_normalize_advantage": (
             config.policy_update.normalize_advantage
@@ -685,6 +733,14 @@ def _summary(
         "held_out_batch_steps": run.batch_steps,
         "held_out_slot_count": 1,
         "held_out_seed_end": evaluation.schedule_end.next_candidate,
+    }
+
+
+def _scorer_config(config: RaggedScorerConfig) -> dict[str, object]:
+    return {
+        "hidden_dim": config.hidden_dim,
+        "relation_layers": config.relation_layers,
+        "value_head": config.value_head,
     }
 
 

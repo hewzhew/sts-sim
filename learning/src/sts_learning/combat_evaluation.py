@@ -23,11 +23,16 @@ from .combat_potion_lane import (
 from .policy import BehaviorManifestId
 from .torch_behavior import (
     FrozenCategoricalTorchPolicy,
+    FrozenCombatGreedyTorchPolicy,
     FrozenGreedyTorchPolicy,
 )
 
 
-CombatEvaluationPolicy = FrozenCategoricalTorchPolicy | FrozenGreedyTorchPolicy
+CombatEvaluationPolicy = (
+    FrozenCategoricalTorchPolicy
+    | FrozenCombatGreedyTorchPolicy
+    | FrozenGreedyTorchPolicy
+)
 
 
 class CombatEvaluationError(RuntimeError):
@@ -517,15 +522,30 @@ class CombatHeldOutEvaluator:
         if len(frozen_policies) != len(slots) or not all(
             isinstance(
                 policy,
-                (FrozenCategoricalTorchPolicy, FrozenGreedyTorchPolicy),
+                (
+                    FrozenCategoricalTorchPolicy,
+                    FrozenCombatGreedyTorchPolicy,
+                    FrozenGreedyTorchPolicy,
+                ),
             )
             for policy in frozen_policies
         ):
             raise CombatEvaluationError(
                 "combat evaluation requires one frozen policy per root"
             )
+        if any(
+            isinstance(policy, FrozenCombatGreedyTorchPolicy)
+            and not policy.is_combat_only
+            for policy in frozen_policies
+        ):
+            raise CombatEvaluationError(
+                "mixed combat evaluation policies must be combat-only"
+            )
         greedy_modes = {
-            isinstance(policy, FrozenGreedyTorchPolicy)
+            isinstance(
+                policy,
+                (FrozenCombatGreedyTorchPolicy, FrozenGreedyTorchPolicy),
+            )
             for policy in frozen_policies
         }
         if len(greedy_modes) != 1:

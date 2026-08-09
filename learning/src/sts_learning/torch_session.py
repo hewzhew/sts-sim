@@ -27,6 +27,7 @@ from .resume_store import BoundedResumeStore, ResumeManifestId
 from .torch_behavior import (
     CategoricalTorchBehaviorController,
     CheckpointedCategoricalTorchPolicy,
+    FrozenCombatAnchor,
     FrozenCombatGreedyTorchPolicy,
     FrozenDecisionRule,
     TorchBehaviorPublisher,
@@ -237,6 +238,7 @@ class CategoricalOnlineSessionFactory:
         behavior_seed: int,
         initial_scorer: RaggedCandidateScorer | None = None,
         initial_scorer_actor_only: bool = False,
+        combat_anchor: FrozenCombatAnchor | None = None,
     ) -> CategoricalOnlineSession:
         """Create generation zero only in an unused experiment root."""
 
@@ -253,6 +255,25 @@ class CategoricalOnlineSessionFactory:
             )
         if type(initial_scorer_actor_only) is not bool:
             raise TorchSessionError("initial_scorer_actor_only must be bool")
+        expected_anchor_id = self.config.profile.combat_anchor_manifest_id
+        if (combat_anchor is None) != (expected_anchor_id is None):
+            raise TorchSessionError(
+                "session combat anchor conflicts with its profile"
+            )
+        if combat_anchor is not None:
+            if not isinstance(combat_anchor, FrozenCombatAnchor):
+                raise TorchSessionError("session combat anchor must be typed")
+            if combat_anchor.manifest_id != expected_anchor_id:
+                raise TorchSessionError(
+                    "session combat anchor manifest identity changed"
+                )
+            if (
+                combat_anchor.scorer.config
+                != self.config.profile.combat_anchor_scorer
+            ):
+                raise TorchSessionError(
+                    "session combat anchor scorer configuration changed"
+                )
         checkpoint_store, catalog = self._behavior_stores()
         resume_store = self._resume_store()
         if (
@@ -262,7 +283,6 @@ class CategoricalOnlineSessionFactory:
             or resume_store.snapshot.manifests != 0
         ):
             raise TorchSessionError("new session requires an unused experiment root")
-
         with torch.random.fork_rng(devices=[]):
             torch.manual_seed(model_seed)
             shadow = self._scorer()
@@ -296,6 +316,7 @@ class CategoricalOnlineSessionFactory:
             checkpoint_store,
             catalog,
             registry,
+            combat_anchor=combat_anchor,
         )
         controller.bind_progress_provider(
             BridgeDecisionProgressProvider(population.env)
@@ -346,6 +367,12 @@ class CategoricalOnlineSessionFactory:
                 self.config.profile.optimizer_steps_per_generation
             ),
         )
+        if combat_anchor is not None:
+            self._import_combat_anchor(
+                combat_anchor,
+                checkpoint_store,
+                catalog,
+            )
         return self._session(runner, resume_store)
 
     def restore(self, manifest_id: ResumeManifestId) -> CategoricalOnlineSession:
@@ -436,6 +463,10 @@ class CategoricalOnlineSessionFactory:
             self._scorer,
             self.config.profile.behavior,
             generator,
+            combat_anchor=self._recover_combat_anchor(
+                checkpoint_store,
+                catalog,
+            ),
         )
 
     def _scorer(self) -> RaggedCandidateScorer:
@@ -457,6 +488,10 @@ class CategoricalOnlineSessionFactory:
             checkpoint_store,
             catalog,
             registry,
+            combat_anchor=self._recover_combat_anchor(
+                checkpoint_store,
+                catalog,
+            ),
         )
 
     def _controller(
@@ -465,6 +500,8 @@ class CategoricalOnlineSessionFactory:
         checkpoint_store: BoundedTorchCheckpointStore,
         catalog: BoundedBehaviorManifestCatalog,
         registry: BehaviorManifestRegistry,
+        *,
+        combat_anchor: FrozenCombatAnchor | None = None,
     ) -> CategoricalTorchBehaviorController:
         return CategoricalTorchBehaviorController(
             TorchBehaviorPublisher(
@@ -479,7 +516,54 @@ class CategoricalOnlineSessionFactory:
             combat_decision_rule=(
                 self.config.profile.combat_decision_rule
             ),
+            combat_anchor=combat_anchor,
         )
+
+    def _import_combat_anchor(
+        self,
+        combat_anchor: FrozenCombatAnchor,
+        checkpoint_store: BoundedTorchCheckpointStore,
+        catalog: BoundedBehaviorManifestCatalog,
+    ) -> None:
+        prepared_checkpoint = checkpoint_store.prepare(combat_anchor.scorer)
+        if prepared_checkpoint.artifact_id != combat_anchor.checkpoint_id:
+            raise TorchSessionError("combat anchor checkpoint identity changed")
+        prepared_manifest = catalog.prepare(combat_anchor.binding.manifest)
+        if prepared_manifest.manifest_id != combat_anchor.manifest_id:
+            raise TorchSessionError("combat anchor manifest identity changed")
+        checkpoint_store.preview_commit(prepared_checkpoint)
+        catalog.preview_commit(prepared_manifest)
+        if (
+            checkpoint_store.commit(prepared_checkpoint)
+            != combat_anchor.checkpoint_id
+        ):
+            raise TorchSessionError("combat anchor checkpoint commit changed identity")
+        if catalog.commit(prepared_manifest) != combat_anchor.manifest_id:
+            raise TorchSessionError("combat anchor manifest commit changed identity")
+
+    def _recover_combat_anchor(
+        self,
+        checkpoint_store: BoundedTorchCheckpointStore,
+        catalog: BoundedBehaviorManifestCatalog,
+    ) -> FrozenCombatAnchor | None:
+        manifest_id = self.config.profile.combat_anchor_manifest_id
+        if manifest_id is None:
+            return None
+        return FrozenCombatAnchor.recover(
+            manifest_id,
+            checkpoint_store,
+            catalog,
+            self._combat_anchor_scorer,
+        )
+
+    def _combat_anchor_scorer(self) -> RaggedCandidateScorer:
+        config = self.config.profile.combat_anchor_scorer
+        if config is None:
+            raise TorchSessionError("session has no combat anchor scorer config")
+        return RaggedCandidateScorer.from_bridge_schema(
+            self.bridge.semantic_schema,
+            config,
+        ).to(self.config.profile.device_type)
 
     def _behavior_stores(
         self,

@@ -32,6 +32,7 @@ if _TORCH_AVAILABLE:
         CategoricalTorchBehaviorController,
         CheckpointedCategoricalTorchPolicy,
         CheckpointedGreedyTorchPolicy,
+        FrozenCombatAnchor,
         FrozenCombatGreedyTorchPolicy,
         FrozenDecisionRule,
         FrozenGreedyTorchPolicy,
@@ -39,6 +40,7 @@ if _TORCH_AVAILABLE:
         TorchBehaviorPublisher,
     )
     from sts_learning.manifests import (
+        combat_anchored_greedy_strategic_sampled_rule_v1,
         combat_greedy_strategic_sampled_rule_v1,
     )
     from sts_learning.torch_checkpoints import (
@@ -427,6 +429,9 @@ class TorchBehaviorPublicationTests(unittest.TestCase):
 
         provider = _ProgressProvider()
         batch = semantic_batch_fixture()
+        # This scenario must cross source publication, two strategic promotions,
+        # durable mixed recovery, and greedy combat derivation to protect the
+        # anchor identity chain rather than one wrapper in isolation.
         with tempfile.TemporaryDirectory() as root:
             store = _store(Path(root, "checkpoints"))
             catalog = _catalog(Path(root, "manifests"))
@@ -497,6 +502,140 @@ class TorchBehaviorPublicationTests(unittest.TestCase):
                         batch
                     ).selection_probabilities
                 )
+            )
+
+    def test_combat_anchor_survives_strategic_promotion_and_recovery(self) -> None:
+        config = RaggedCategoricalPolicyConfig(temperature=0.75)
+
+        class _ProgressProvider:
+            def capture(self, slots):
+                assert tuple(slots) == (4, 9)
+                return (
+                    DecisionRunProgress(100, 1, 3, True, None),
+                    DecisionRunProgress(101, 1, 4, False, 2),
+                )
+
+        provider = _ProgressProvider()
+        batch = semantic_batch_fixture()
+        with tempfile.TemporaryDirectory() as root:
+            store = _store(Path(root, "checkpoints"))
+            catalog = _catalog(Path(root, "manifests"))
+            with torch.random.fork_rng(devices=[]):
+                torch.manual_seed(1)
+                anchor_scorer = _scorer()
+            anchor_registry = BehaviorManifestRegistry(capacity=1)
+            anchor_publication = TorchBehaviorPublisher(
+                store,
+                catalog,
+                anchor_registry,
+                behavior_manifest_template_fixture(
+                    behavior_rule=config.behavior_rule,
+                ),
+            ).publish(anchor_scorer, training_step=0)
+            anchor_policy = CheckpointedCategoricalTorchPolicy.promote(
+                anchor_publication,
+                store,
+                catalog,
+                anchor_registry,
+                _scorer,
+                config,
+                torch.Generator().manual_seed(19),
+            )
+            anchor = FrozenCombatAnchor.from_behavior(anchor_policy)
+            anchored_rule = combat_anchored_greedy_strategic_sampled_rule_v1(
+                config.behavior_rule,
+                anchor.manifest_id,
+            )
+            controller = CategoricalTorchBehaviorController(
+                TorchBehaviorPublisher(
+                    store,
+                    catalog,
+                    BehaviorManifestRegistry(capacity=3),
+                    behavior_manifest_template_fixture(
+                        behavior_rule=anchored_rule,
+                    ),
+                ),
+                _scorer,
+                config,
+                torch.Generator().manual_seed(55),
+                combat_decision_rule=FrozenDecisionRule.GREEDY,
+                progress_provider=provider,
+                combat_anchor=anchor,
+            )
+            with torch.random.fork_rng(devices=[]):
+                torch.manual_seed(2)
+                first_strategic = _scorer()
+            first_binding = controller.promote_live(
+                first_strategic,
+                training_step=0,
+            )
+            first_policy = controller.fork_active(
+                torch.Generator().manual_seed(71)
+            )
+            anchor_ordinals = anchor.scorer(batch).greedy_ordinals()
+            strategic_ordinals = first_policy.score(batch).greedy_ordinals()
+            self.assertNotEqual(anchor_ordinals[0], strategic_ordinals[0])
+            self.assertEqual(
+                controller.choose(batch).ordinals[0],
+                anchor_ordinals[0],
+            )
+
+            with torch.random.fork_rng(devices=[]):
+                torch.manual_seed(3)
+                second_strategic = _scorer()
+            second_binding = controller.promote_live(
+                second_strategic,
+                training_step=1,
+            )
+            second_policy = controller.fork_active(
+                torch.Generator().manual_seed(71)
+            )
+            self.assertNotEqual(
+                first_binding.manifest_id,
+                second_binding.manifest_id,
+            )
+            self.assertFalse(
+                torch.equal(
+                    first_policy.score(batch).values,
+                    second_policy.score(batch).values,
+                )
+            )
+            self.assertEqual(
+                controller.choose(batch).ordinals[0],
+                anchor_ordinals[0],
+            )
+
+            publication = controller.publish_active()
+            recovered_anchor = FrozenCombatAnchor.recover(
+                anchor.manifest_id,
+                store,
+                catalog,
+                _scorer,
+            )
+            recovered = FrozenCombatGreedyTorchPolicy.recover(
+                publication.manifest_id,
+                store,
+                catalog,
+                BehaviorManifestRegistry(capacity=1),
+                _scorer,
+                config,
+                torch.Generator().manual_seed(91),
+                provider,
+                recovered_anchor,
+            )
+            self.assertEqual(
+                recovered.combat_anchor.manifest_id,
+                anchor.manifest_id,
+            )
+            self.assertEqual(
+                recovered.choose(batch).ordinals[0],
+                anchor_ordinals[0],
+            )
+            self.assertEqual(
+                FrozenGreedyTorchPolicy.from_behavior(recovered)
+                .choose(batch)
+                .ordinals,
+                tuple(anchor_ordinals),
             )
 
     def test_categorical_controller_rotates_live_behavior_then_publishes_explicitly(self) -> None:

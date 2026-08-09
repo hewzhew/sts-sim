@@ -598,16 +598,25 @@ sampling rule; it neither relabels the publication nor treats untrained
 strategic argmax as competence. Its purpose is to prevent exploratory combat
 mistakes from defining the HP distribution of later training roots.
 
-Whole-run training may opt into that same scoped behavior only together with
-the strategic decision scope. The mixed selector is the actual on-policy
-behavior: it owns a distinct manifest, records deterministic probability
-`1.0` for combat rows, and records the exact categorical propensity for
-strategic rows. Combat decisions remain in complete-attempt transition and
-return-to-go evidence, but they do not enter the strategic actor/value loss.
-Every promotion freezes the newly updated scorer and reconstructs the mixed
-selector under a new manifest before another environment step. Recovery binds
-typed run progress from the restored environment before the first choice; an
-unbound mixed publication cannot silently guess whether a row is combat.
+Whole-run training may use the strategic decision scope with an anchored
+version of that mixed behavior. It imports the fully verified warm-start combat
+scorer as an immutable combat anchor and separately copies its actor parameters
+into the trainable strategic scorer. The mixed rule binds both the strategic
+sampling rule and the exact combat-anchor manifest identity: combat rows use
+anchor argmax with deterministic probability `1.0`, while strategic rows use
+the trainable scorer and retain their exact categorical propensity. Combat
+decisions remain in complete-attempt transition and return-to-go evidence, but
+they do not enter the strategic actor/value loss.
+
+Every promotion freezes only the updated strategic scorer. Its mixed manifest
+changes while the combat-anchor manifest and checkpoint remain unchanged. A
+durable run publication owns both scorers in its local immutable stores, and
+its journal binds the anchor manifest, checkpoint, and scorer configuration.
+Recovery must reconstruct and validate both scorers before the first choice,
+then bind typed run progress from the restored environment. An unbound mixed
+publication cannot silently guess whether a row is combat. The earlier
+same-scorer mixed rule remains valid for bounded collector diagnostics, but it
+is not the production whole-run strategic-training rule.
 
 A fresh whole-run on-policy session may also copy that compatible frozen scorer
 as generation zero. The copy shares no mutable parameters; the new run trainer

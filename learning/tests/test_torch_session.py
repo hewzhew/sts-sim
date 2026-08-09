@@ -21,6 +21,8 @@ from sts_learning import (
 _TORCH_AVAILABLE = importlib.util.find_spec("torch") is not None
 
 if _TORCH_AVAILABLE:
+    import torch
+
     from sts_learning.torch_policy import (
         RaggedCategoricalPolicyConfig,
         RaggedScorerConfig,
@@ -37,7 +39,11 @@ if _TORCH_AVAILABLE:
         CategoricalSessionLimits,
     )
     from sts_learning.torch_generation import TorchGenerationError
-    from sts_learning.torch_behavior import FrozenDecisionRule
+    from sts_learning.torch_behavior import (
+        FrozenCombatAnchor,
+        FrozenCombatGreedyTorchPolicy,
+        FrozenDecisionRule,
+    )
 
 
 @unittest.skipUnless(_TORCH_AVAILABLE, "optional PyTorch dependency is not installed")
@@ -173,6 +179,71 @@ class CategoricalOnlineSessionTests(unittest.TestCase):
                     probability.value == 1.0
                     for probability in after.selection_probabilities
                 )
+            )
+
+    def test_anchored_combat_choice_is_stable_across_resume(
+        self,
+    ) -> None:
+        # This crosses two experiment stores and the full resume publisher so
+        # recovery cannot accidentally fall back to the trainable scorer.
+        with tempfile.TemporaryDirectory() as root:
+            root_path = Path(root)
+            source_factory = _factory(root_path / "source")
+            source_session = source_factory.new(
+                model_seed=11,
+                behavior_seed=12,
+            )
+            source_publication = (
+                source_session.runner.controller.publish_active()
+            )
+            source_policy = source_factory.recover_behavior(
+                source_publication.manifest_id,
+                behavior_seed=13,
+            )
+            anchor = FrozenCombatAnchor.from_behavior(source_policy)
+
+            baseline = _factory(root_path / "anchored")
+            profile = replace(
+                baseline.config.profile,
+                objective=replace(
+                    baseline.config.profile.objective,
+                    decision_scope=RunDecisionScope.STRATEGIC,
+                ),
+                combat_decision_rule=FrozenDecisionRule.GREEDY,
+                combat_anchor_manifest_id=anchor.manifest_id,
+                combat_anchor_scorer=anchor.scorer.config,
+            )
+            factory = CategoricalOnlineSessionFactory(
+                baseline.root,
+                baseline.bridge,
+                replace(baseline.config, profile=profile),
+                baseline.curriculum,
+            )
+            session = factory.new(
+                model_seed=43,
+                behavior_seed=94,
+                combat_anchor=anchor,
+            )
+            decision = session.runner.driver.env.decision_batch(semantic=True)
+            policy_before = session.runner.controller.fork_active(
+                torch.Generator().manual_seed(501)
+            )
+            self.assertIsInstance(
+                policy_before,
+                FrozenCombatGreedyTorchPolicy,
+            )
+            combat_before = policy_before.bind_combat_only().choose(decision)
+
+            resume = session.publish()
+            restored = factory.restore(resume.manifest_id)
+            restored_policy = restored.runner.controller.fork_active(
+                torch.Generator().manual_seed(503)
+            )
+            restored_combat = restored_policy.bind_combat_only().choose(decision)
+            self.assertEqual(combat_before.ordinals, restored_combat.ordinals)
+            self.assertEqual(
+                restored_policy.combat_anchor.manifest_id,
+                anchor.manifest_id,
             )
 
     def test_multi_generation_advance_stops_at_first_incomplete_generation(self) -> None:

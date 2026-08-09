@@ -36,11 +36,12 @@ from .torch_session_config import (
 from .torch_policy import RaggedScorerConfig
 
 
-RUN_TRAINING_SCHEMA = "sts-learning-run-training-v5"
+RUN_TRAINING_SCHEMA = "sts-learning-run-training-v6"
 _LEGACY_RUN_TRAINING_SCHEMAS = frozenset(
     {
         "sts-learning-run-training-v3",
         "sts-learning-run-training-v4",
+        "sts-learning-run-training-v5",
     }
 )
 _MAX_TRAINING_JOURNAL_BYTES = 16 * 1024 * 1024
@@ -62,6 +63,9 @@ class PublishedRunBehavior:
     training_sampling_mode: RunSamplingMode
     training_episode_root_attempts: int | None
     training_combat_decision_rule: FrozenDecisionRule
+    combat_anchor_manifest_id: BehaviorManifestId | None
+    combat_anchor_checkpoint_id: ManifestArtifactId | None
+    combat_anchor_scorer: RaggedScorerConfig | None
     objective: OnPolicyObjectiveConfig
     policies: tuple[
         CheckpointedCategoricalTorchPolicy | FrozenCombatGreedyTorchPolicy,
@@ -89,6 +93,52 @@ class PublishedRunBehavior:
         ):
             raise PublishedRunBehaviorError(
                 "run behavior combat decision rule must be typed"
+            )
+        anchor_values = (
+            self.combat_anchor_manifest_id,
+            self.combat_anchor_checkpoint_id,
+            self.combat_anchor_scorer,
+        )
+        if self.training_combat_decision_rule is FrozenDecisionRule.GREEDY:
+            if any(value is None for value in anchor_values):
+                raise PublishedRunBehaviorError(
+                    "greedy run behavior requires a complete combat anchor"
+                )
+        elif any(value is not None for value in anchor_values):
+            raise PublishedRunBehaviorError(
+                "sampled run behavior cannot publish a combat anchor"
+            )
+        if (
+            self.combat_anchor_manifest_id is not None
+            and not isinstance(
+                self.combat_anchor_manifest_id,
+                BehaviorManifestId,
+            )
+        ):
+            raise PublishedRunBehaviorError(
+                "run combat anchor manifest id must be typed"
+            )
+        if self.combat_anchor_checkpoint_id is not None:
+            if not isinstance(
+                self.combat_anchor_checkpoint_id,
+                ManifestArtifactId,
+            ):
+                raise PublishedRunBehaviorError(
+                    "run combat anchor checkpoint id must be typed"
+                )
+            if (
+                self.combat_anchor_checkpoint_id.kind
+                is not ManifestArtifactKind.MODEL_CHECKPOINT
+            ):
+                raise PublishedRunBehaviorError(
+                    "run combat anchor checkpoint has the wrong kind"
+                )
+        if (
+            self.combat_anchor_scorer is not None
+            and not isinstance(self.combat_anchor_scorer, RaggedScorerConfig)
+        ):
+            raise PublishedRunBehaviorError(
+                "run combat anchor scorer must be typed"
             )
         if not isinstance(self.objective, OnPolicyObjectiveConfig):
             raise PublishedRunBehaviorError("run behavior objective must be typed")
@@ -121,6 +171,20 @@ class PublishedRunBehavior:
             for policy in self.policies
         ):
             raise PublishedRunBehaviorError("run behavior policy identity changed")
+        if self.combat_anchor_manifest_id is not None and any(
+            not isinstance(policy, FrozenCombatGreedyTorchPolicy)
+            or policy.combat_anchor is None
+            or policy.combat_anchor.manifest_id
+            != self.combat_anchor_manifest_id
+            or policy.combat_anchor.checkpoint_id
+            != self.combat_anchor_checkpoint_id
+            or policy.combat_anchor.scorer.config
+            != self.combat_anchor_scorer
+            for policy in self.policies
+        ):
+            raise PublishedRunBehaviorError(
+                "run behavior policy combat anchor changed"
+            )
 
 
 def recover_published_run_behavior(
@@ -243,6 +307,40 @@ def recover_published_run_behavior(
         raise PublishedRunBehaviorError(
             "combat decision rule changed across publication"
         )
+    combat_anchor = _combat_anchor(
+        configuration,
+        combat_decision_rule,
+        "configuration",
+    )
+    if (
+        _combat_anchor(completed, combat_decision_rule, "completed")
+        != combat_anchor
+    ):
+        raise PublishedRunBehaviorError(
+            "combat anchor changed across publication"
+        )
+    (
+        combat_anchor_manifest_id,
+        combat_anchor_checkpoint_id,
+        combat_anchor_scorer,
+    ) = combat_anchor
+    if combat_anchor_manifest_id is not None:
+        if combat_anchor_manifest_id.digest != _digest(
+            configuration.get("warm_start_manifest_id"),
+            "warm_start_manifest_id",
+        ):
+            raise PublishedRunBehaviorError(
+                "run combat anchor is not the verified warm-start manifest"
+            )
+        if combat_anchor_checkpoint_id is None:
+            raise AssertionError("complete combat anchor lost its checkpoint")
+        if combat_anchor_checkpoint_id.digest != _digest(
+            configuration.get("warm_start_checkpoint_id"),
+            "warm_start_checkpoint_id",
+        ):
+            raise PublishedRunBehaviorError(
+                "run combat anchor is not the verified warm-start checkpoint"
+            )
 
     profile = replace(
         CategoricalOnlineProfile(),
@@ -251,10 +349,16 @@ def recover_published_run_behavior(
         ),
         objective=objective,
         combat_decision_rule=combat_decision_rule,
+        combat_anchor_manifest_id=combat_anchor_manifest_id,
+        combat_anchor_scorer=combat_anchor_scorer,
     )
     limits = replace(
         CategoricalSessionLimits(),
-        owner_capacity=max(16, _nonnegative(configuration.get("generations"), "generations") + 2),
+        owner_capacity=max(
+            16,
+            _nonnegative(configuration.get("generations"), "generations")
+            + 2,
+        ),
     )
     session_config = CategoricalOnlineSessionConfig(
         ascension_level=training_ascension_level,
@@ -300,6 +404,9 @@ def recover_published_run_behavior(
             configuration_episode_root_attempts
         ),
         training_combat_decision_rule=combat_decision_rule,
+        combat_anchor_manifest_id=combat_anchor_manifest_id,
+        combat_anchor_checkpoint_id=combat_anchor_checkpoint_id,
+        combat_anchor_scorer=combat_anchor_scorer,
         objective=objective,
         policies=policies,
     )
@@ -421,6 +528,60 @@ def _combat_decision_rule(value: object) -> FrozenDecisionRule:
         raise PublishedRunBehaviorError(
             "combat decision rule is unsupported"
         ) from error
+
+
+def _combat_anchor(
+    record: Mapping[str, object],
+    decision_rule: FrozenDecisionRule,
+    name: str,
+) -> tuple[
+    BehaviorManifestId | None,
+    ManifestArtifactId | None,
+    RaggedScorerConfig | None,
+]:
+    raw_manifest = record.get("combat_anchor_manifest_id")
+    raw_checkpoint = record.get("combat_anchor_checkpoint_id")
+    raw_scorer = record.get("combat_anchor_scorer")
+    raw_values = (raw_manifest, raw_checkpoint, raw_scorer)
+    if decision_rule is FrozenDecisionRule.SAMPLED:
+        if any(value is not None for value in raw_values):
+            raise PublishedRunBehaviorError(
+                f"{name} sampled behavior cannot contain a combat anchor"
+            )
+        return None, None, None
+    if any(value is None for value in raw_values):
+        raise PublishedRunBehaviorError(
+            f"{name} greedy behavior requires a complete combat anchor"
+        )
+    return (
+        BehaviorManifestId(
+            _digest(raw_manifest, f"{name} combat_anchor_manifest_id")
+        ),
+        ManifestArtifactId(
+            ManifestArtifactKind.MODEL_CHECKPOINT,
+            _digest(raw_checkpoint, f"{name} combat_anchor_checkpoint_id"),
+        ),
+        _scorer_config(raw_scorer, f"{name} combat_anchor_scorer"),
+    )
+
+
+def _scorer_config(value: object, name: str) -> RaggedScorerConfig:
+    if not isinstance(value, Mapping):
+        raise PublishedRunBehaviorError(f"{name} must be an object")
+    expected = {"hidden_dim", "relation_layers", "value_head"}
+    if set(value) != expected:
+        raise PublishedRunBehaviorError(f"{name} fields changed")
+    value_head = value.get("value_head")
+    if type(value_head) is not bool:
+        raise PublishedRunBehaviorError(f"{name}.value_head must be bool")
+    return RaggedScorerConfig(
+        hidden_dim=_positive(value.get("hidden_dim"), f"{name}.hidden_dim"),
+        relation_layers=_nonnegative(
+            value.get("relation_layers"),
+            f"{name}.relation_layers",
+        ),
+        value_head=value_head,
+    )
 
 
 def _run_policy_update(configuration: Mapping[str, object]) -> RunPolicyUpdateConfig:

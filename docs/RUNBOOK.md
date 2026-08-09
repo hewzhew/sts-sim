@@ -868,11 +868,14 @@ later replacement in that slot remains unavailable.
 
 Use `evaluate-combat` on a distinct opaque root artifact after publication. The
 behavior directory may be an exact completed combat- or run-training output
-containing one durable checkpoint and manifest. The evaluator verifies its
-complete provenance and records the training kind. For a combat-trained source
+containing its bounded durable behavior stores. A combat publication owns one
+checkpoint and manifest; an anchored run publication additionally owns its
+immutable combat anchor. The evaluator verifies complete provenance and records
+the training kind. For a combat-trained source
 it also recovers the training artifact digest and rejects an evaluation artifact
 with the same digest before constructing combat groups; a run-trained source
-instead records its run objective and sampling contract.
+instead records its run objective, sampling contract, and combat-anchor
+identity. Combat evaluation output V14 carries those anchor fields explicitly.
 It gives every root an independent explicit behavior RNG stream and, by
 default, writes only `evaluation.json` with per-replicate win, HP/max HP, gold, turn,
 concrete starting/final/lost/gained potion identities, potion use/discard
@@ -892,10 +895,12 @@ comparable baseline using the same roots and RNG streams.
 The default `-CombatDecisionRule sampled` evaluates the exact published
 temperature-scaled behavior and retains its independent RNG streams. Use
 `-CombatDecisionRule greedy` only as a paired ranking diagnostic. It derives a
-separate in-memory behavior manifest over the same immutable checkpoint with
-the explicit greedy rule, records both source and evaluation manifest ids, and
-uses deterministic selection probabilities. It does not relabel the published
-sampled behavior or silently promote a deployment policy.
+separate in-memory behavior manifest over the effective immutable combat
+checkpoint with the explicit greedy rule. For an anchored run publication this
+is the combat anchor, not the promoted strategic scorer. The result records both
+source and evaluation manifest ids and uses deterministic selection
+probabilities. It does not relabel the published sampled behavior or silently
+promote a deployment policy.
 
 For one bounded diagnosis, pass `-TraceReplicatesPerRoot <count>`. The count
 cannot exceed `-Replicates`; zero is the default. The evaluator then writes
@@ -969,10 +974,11 @@ bounded end-to-end diagnostic of that complete policy surface, not a claim that
 all decisions were trained.
 Run-trained publications are recovered directly from their completed V2
 training journal and durable behavior stores, so a new held-out seed block does
-not require repeating the optimizer update. Evaluation output V7 records
+not require repeating the optimizer update. Evaluation output V8 records
 whether the source behavior was combat- or run-trained, includes the run
-objective when applicable, and preserves each combat's typed encounter and
-monster identities for encounter-level resource analysis.
+objective when applicable, records the immutable combat-anchor provenance for
+anchored run policies, and preserves each combat's typed encounter and monster
+identities for encounter-level resource analysis.
 Use `train-run` for the first whole-run on-policy handoff. `-Behavior` is a
 verified completed `train-combat` directory whose scorer becomes an independent
 generation-zero parameter copy. Training uses the `TRAINING` seed partition,
@@ -1037,13 +1043,16 @@ defaults. The explicit `strategic` scope removes combat-boundary rows from the
 whole-run loss and renormalizes each attempt over its remaining strategic
 decisions; it does not erase combat actions or their state transitions from
 complete-attempt evidence. Pairing it with `-CombatDecisionRule greedy` uses
-argmax only for typed combat rows while strategic rows retain categorical
-sampling. That pairing has its own behavior manifest, records combat
-propensity as `1.0`, records the real strategic propensity, and is reconstructed
-after every promotion and durable recovery. `greedy` is rejected with the
-`all` scope because categorical PPO cannot claim deterministic combat choices
-as on-policy samples. Compare the explicit pair on the same training and
-held-out seed blocks.
+the verified warm-start scorer as an immutable combat argmax anchor while the
+separate run scorer supplies categorical strategic choices. That pairing has
+its own behavior manifest bound to the anchor manifest identity, records combat
+propensity as `1.0`, records the real strategic propensity, and keeps the same
+anchor across every strategic promotion. Publication copies both the anchor
+and the final strategic scorer into the run directory; durable recovery rejects
+missing or mismatched anchor manifest, checkpoint, or scorer configuration.
+`greedy` is rejected with the `all` scope because categorical PPO cannot claim
+deterministic combat choices as on-policy samples. Compare the explicit pair on
+the same training and held-out seed blocks.
 `-RunPolicyUpdate reinforce` preserves the compatibility whole-run update and
 remains the default. The opt-in `ppo-clip-value` profile adds a zero-initialized
 value head and requires `-AdvantageMode decision-local-gae`. It predicts the
@@ -1065,10 +1074,12 @@ these rows diagnose premature low-HP state occupancy without inventing an HP
 reward or declaring one combat result sufficient evidence of improvement.
 Missing or malformed decision-time progress fails value PPO before optimizer
 mutation; the caller never reconstructs rollout floors from semantic tensors.
-Whole-run publication schema V5 is intentionally incompatible with V4, which
-did not record the combat/strategic selection rule. V4 already replaced V3 to
-require explicit ascension provenance; V3 in turn replaced the older
-terminal-broadcast value-PPO contract.
+Whole-run publication schema V6 is intentionally incompatible with V5, whose
+strategic-only update still shared one mutable scorer with combat argmax. V6
+binds the immutable combat anchor in both journal boundaries and durable local
+stores. V5 had already replaced V4 to record the combat/strategic selection
+rule; V4 replaced V3 to require explicit ascension provenance, and V3 replaced
+the older terminal-broadcast value-PPO contract.
 
 `test` requires PyTorch and the installed bridge and runs the complete learning
 suite; missing training dependencies are failures, not skips. `verify` runs

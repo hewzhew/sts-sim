@@ -38,7 +38,7 @@ from .torch_combat_session_config import (
 from .torch_session_config import CategoricalSessionBridge
 
 
-RUN_EVALUATION_SCHEMA = "sts-learning-run-held-out-evaluation-v7"
+RUN_EVALUATION_SCHEMA = "sts-learning-run-held-out-evaluation-v8"
 
 
 class RunEvaluationCommandError(RuntimeError):
@@ -300,6 +300,27 @@ def _summary(
             None
             if combat_trained
             else recovered.training_combat_decision_rule.value
+        ),
+        "behavior_run_combat_anchor_manifest_id": (
+            None
+            if combat_trained or recovered.combat_anchor_manifest_id is None
+            else recovered.combat_anchor_manifest_id.digest.hex()
+        ),
+        "behavior_run_combat_anchor_checkpoint_id": (
+            None
+            if combat_trained or recovered.combat_anchor_checkpoint_id is None
+            else recovered.combat_anchor_checkpoint_id.digest.hex()
+        ),
+        "behavior_run_combat_anchor_scorer": (
+            None
+            if combat_trained or recovered.combat_anchor_scorer is None
+            else {
+                "hidden_dim": recovered.combat_anchor_scorer.hidden_dim,
+                "relation_layers": (
+                    recovered.combat_anchor_scorer.relation_layers
+                ),
+                "value_head": recovered.combat_anchor_scorer.value_head,
+            }
         ),
         "behavior_run_objective": (
             None

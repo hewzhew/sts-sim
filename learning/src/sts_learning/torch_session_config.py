@@ -18,8 +18,10 @@ from .semantic_concat import SemanticBatchConcatLimits
 from .terminal_returns import OnPolicyObjectiveConfig, RunDecisionScope
 from .manifests import (
     BehaviorRuleBinding,
+    combat_anchored_greedy_strategic_sampled_rule_v1,
     combat_greedy_strategic_sampled_rule_v1,
 )
+from .policy import BehaviorManifestId
 from .torch_behavior import FrozenDecisionRule
 from .torch_checkpoints import TorchCheckpointLimits
 from .torch_policy import RaggedCategoricalPolicyConfig, RaggedScorerConfig
@@ -97,6 +99,8 @@ class CategoricalOnlineProfile:
     optimizer: AdamTrainingConfig = AdamTrainingConfig()
     objective: OnPolicyObjectiveConfig = OnPolicyObjectiveConfig()
     combat_decision_rule: FrozenDecisionRule = FrozenDecisionRule.SAMPLED
+    combat_anchor_manifest_id: BehaviorManifestId | None = None
+    combat_anchor_scorer: RaggedScorerConfig | None = None
     optimizer_steps_per_generation: int = 1
     device_type: str = "cpu"
 
@@ -116,6 +120,29 @@ class CategoricalOnlineProfile:
         if not isinstance(self.combat_decision_rule, FrozenDecisionRule):
             raise TorchSessionError(
                 "session combat decision rule must be typed"
+            )
+        anchor_id = self.combat_anchor_manifest_id
+        anchor_scorer = self.combat_anchor_scorer
+        if (anchor_id is None) != (anchor_scorer is None):
+            raise TorchSessionError(
+                "session combat anchor identity and scorer must appear together"
+            )
+        if anchor_id is not None and not isinstance(
+            anchor_id,
+            BehaviorManifestId,
+        ):
+            raise TorchSessionError("session combat anchor id must be typed")
+        if anchor_scorer is not None and not isinstance(
+            anchor_scorer,
+            RaggedScorerConfig,
+        ):
+            raise TorchSessionError("session combat anchor scorer must be typed")
+        if (
+            anchor_id is not None
+            and self.combat_decision_rule is not FrozenDecisionRule.GREEDY
+        ):
+            raise TorchSessionError(
+                "session combat anchor requires greedy combat decisions"
             )
         if (
             self.combat_decision_rule is FrozenDecisionRule.GREEDY
@@ -149,6 +176,11 @@ class CategoricalOnlineProfile:
     def behavior_rule(self) -> BehaviorRuleBinding:
         if self.combat_decision_rule is FrozenDecisionRule.SAMPLED:
             return self.behavior.behavior_rule
+        if self.combat_anchor_manifest_id is not None:
+            return combat_anchored_greedy_strategic_sampled_rule_v1(
+                self.behavior.behavior_rule,
+                self.combat_anchor_manifest_id,
+            )
         return combat_greedy_strategic_sampled_rule_v1(
             self.behavior.behavior_rule
         )
