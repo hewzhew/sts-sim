@@ -869,6 +869,26 @@ diagnostic retains raw row sign counts plus attempt-equal sign weight and
 weighted moments for actor advantage, critic prediction, target, and
 target-minus-prediction residual; it retains no experience rows and later
 epochs cannot rewrite it.
+Alongside that still-authoritative terminal-broadcast objective, the caller now
+builds one typed decision-local rollout as shadow evidence. Complete-attempt
+batches are chronological environment steps; one attempt contributes at most
+one row to a batch, decision floors and acts cannot move backward, and the
+terminal row must match the exact lineage. Floor advancement is an additive
+transition reward of `2 * delta_floor / target_floor`, capped at
+`target_floor - 1`. Defeat adds `-1` on the final transition. Victory adds the
+exact terminal adjustment that makes the complete reward sum remain the
+historical reserved `+1`. Progress before the first retained decision is kept
+as a separate non-trainable prefix reward, so it is conserved without being
+credited to a later action. Reverse return/GAE calculation follows the
+Stable-Baselines3 recurrence under the deliberately fixed `gamma = 1` and
+`lambda = 1` profile: decision count is not treated as elapsed game time, no
+complete attempt is bootstrapped, and each value target is the exact
+Monte-Carlo continuation return. Value rows retain equal total attempt weight;
+actor weights are renormalized only across multi-candidate rows inside each
+attempt, so a forced action is not counted as an effective actor sample. The
+training journal labels terminal broadcast as the optimization target and the
+decision-local return-to-go as shadow evidence. This first migration does not
+feed the new return, GAE advantage, or actor mask into the optimizer.
 For whole-run batches that carry decision-time progress, the trainer also emits
 a bounded non-authoritative comparison against a remaining-horizon target. A
 defeat observed from decision floor `d` maps its later terminal floor `f` to

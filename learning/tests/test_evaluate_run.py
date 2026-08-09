@@ -308,6 +308,8 @@ def test_run_value_ppo_warm_starts_actor_and_publishes_diagnostics(
     assert generation["approximate_kl"] >= 0.0
     rollout = generation["rollout_value_diagnostics"]
     assert rollout["weighting"] == "attempt_equal"
+    assert rollout["optimization_target"] == "terminal_broadcast"
+    assert rollout["shadow_target"] == "decision_local_return_to_go"
     assert (
         rollout["critic_residual_convention"]
         == "terminal_target_minus_prediction"
@@ -315,6 +317,8 @@ def test_run_value_ppo_warm_starts_actor_and_publishes_diagnostics(
     assert rollout["critic_prediction"]["weighted_mean"] == pytest.approx(0.0)
     assert rollout["actor_advantage"]["zero_weight"] == pytest.approx(1.0)
     assert rollout["critic_residual"]["weighted_mean"] == pytest.approx(1.0)
+    assert rollout["return_to_go_target"] is not None
+    assert rollout["return_to_go_residual"] is not None
 
     recovered = recover_published_run_behavior(output, run_bridge, (777,))
     assert recovered.objective.policy_update.uses_value_baseline

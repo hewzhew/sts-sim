@@ -481,6 +481,65 @@ class OnPolicyTerminalLossTests(unittest.TestCase):
             0.6,
         )
 
+    def test_value_ppo_reports_decision_local_returns_without_training_on_them(
+        self,
+    ) -> None:
+        scorer = RaggedCandidateScorer.from_bridge_schema(
+            semantic_schema_fixture(),
+            RaggedScorerConfig(
+                hidden_dim=10,
+                relation_layers=1,
+                value_head=True,
+            ),
+        )
+        batches = tuple(
+            replace(
+                self._on_policy_batch(
+                    scorer,
+                    slot=1,
+                    row=index,
+                    ordinal=0,
+                ),
+                run_progress=(
+                    DecisionRunProgress(
+                        episode_seed=101,
+                        act=1,
+                        floor=floor,
+                        is_combat=True,
+                        strategic_context_kind=None,
+                    ),
+                ),
+            )
+            for index, floor in ((0, 0), (1, 10))
+        )
+        attempt = completed_attempt_fixture(
+            slot=1,
+            batches=batches,
+            reward=-1,
+        )
+
+        result = on_policy_terminal_loss(
+            scorer,
+            (attempt,),
+            self.registry,
+            CONCAT_LIMITS,
+            self.config,
+            self.return_config,
+            TerminalAdvantageMode.RAW_RETURN,
+            update_config=RunPolicyUpdateConfig.ppo_clip_value(),
+        )
+
+        diagnostics = result.value_diagnostics
+        assert diagnostics is not None
+        assert diagnostics.return_to_go_target is not None
+        assert diagnostics.return_to_go_residual is not None
+        self.assertAlmostEqual(diagnostics.terminal_target.minimum, -0.2)
+        self.assertAlmostEqual(diagnostics.terminal_target.maximum, -0.2)
+        self.assertAlmostEqual(diagnostics.return_to_go_target.minimum, -0.4)
+        self.assertAlmostEqual(diagnostics.return_to_go_target.maximum, -0.2)
+        self.assertAlmostEqual(diagnostics.return_to_go_residual.minimum, -0.4)
+        self.assertAlmostEqual(diagnostics.return_to_go_residual.maximum, -0.2)
+
     def test_unknown_or_mismatched_propensity_is_rejected(self) -> None:
         values = torch.nn.Parameter(torch.zeros(2))
 

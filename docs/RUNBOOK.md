@@ -978,6 +978,15 @@ combats by ordinal:
 net post-combat HP already includes relic recovery such as Burning Blood, so
 these rows diagnose premature low-HP state occupancy without inventing an HP
 reward or declaring one combat result sufficient evidence of improvement.
+When decision-time progress is complete, the same rollout diagnostic also
+contains `return_to_go_target` and `return_to_go_residual`. These are produced
+by the typed additive floor-transition/terminal-reward rollout with fixed
+`gamma=1` and `lambda=1`. The record explicitly says
+`optimization_target=terminal_broadcast` and
+`shadow_target=decision_local_return_to_go`: the new column is a migration
+comparison, not yet a second optimizer objective. A missing progress column
+leaves the shadow summaries unavailable rather than reconstructing floors from
+semantic tensors.
 
 `test` requires PyTorch and the installed bridge and runs the complete learning
 suite; missing training dependencies are failures, not skips. `verify` runs

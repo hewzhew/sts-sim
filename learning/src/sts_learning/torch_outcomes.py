@@ -30,6 +30,7 @@ from .combat_objective import (
 from .experience import DecisionExperienceBatch, ExperienceError
 from .manifests import BehaviorManifestRegistry
 from .policy import BehaviorManifestId, SelectionProbability
+from .run_rollout import RunRolloutError, build_complete_run_rollout
 from .semantic_concat import (
     SemanticBatchConcatLimits,
     concatenate_semantic_decision_batches,
@@ -100,6 +101,8 @@ class RunValueDiagnostics:
     critic_prediction: AttemptEqualSignalSummary
     terminal_target: AttemptEqualSignalSummary
     critic_residual: AttemptEqualSignalSummary
+    return_to_go_target: AttemptEqualSignalSummary | None
+    return_to_go_residual: AttemptEqualSignalSummary | None
 
 
 @dataclass(frozen=True)
@@ -200,6 +203,17 @@ def on_policy_terminal_loss(
         raise TorchOutcomeError("policy objective requires at least one complete attempt")
     if not all(isinstance(attempt, CompletedAttemptExperience) for attempt in normalized):
         raise TorchOutcomeError("policy objective accepts only complete attempts")
+    progress_presence = {
+        batch.run_progress is not None
+        for attempt in normalized
+        for batch in attempt.batches
+    }
+    shadow_rollout = None
+    if progress_presence == {True}:
+        try:
+            shadow_rollout = build_complete_run_rollout(normalized, return_config)
+        except RunRolloutError as error:
+            raise TorchOutcomeError(str(error)) from error
     matched_advantages = None
     advantages = None
     if advantage_mode in (
@@ -244,6 +258,7 @@ def on_policy_terminal_loss(
     payloads: list[Mapping[str, object]] = []
     selected_ordinals: list[int] = []
     targets: list[float] = []
+    rollout_return_targets: list[float] = []
     weights: list[float] = []
     total_decisions = 0
     for attempt_index, attempt in enumerate(normalized):
@@ -305,6 +320,15 @@ def on_policy_terminal_loss(
                         "matched targets are misaligned with decision rows"
                     )
             targets.extend(batch_targets)
+            if shadow_rollout is not None:
+                rollout_rows = shadow_rollout.attempts[attempt_index].rows
+                if row_indices != (0,):
+                    raise TorchOutcomeError(
+                        "typed run rollout scope is not one-row batch aligned"
+                    )
+                rollout_return_targets.append(
+                    rollout_rows[batch_index].return_to_go
+                )
             weights.extend(
                 [1.0 / (len(normalized) * scoped_decisions)]
                 * batch.decision_count
@@ -329,6 +353,9 @@ def on_policy_terminal_loss(
         update_config=update_config,
         require_matching_propensities=require_matching_propensities,
         fixed_actor_advantages=fixed_actor_advantages,
+        rollout_return_targets=(
+            None if shadow_rollout is None else rollout_return_targets
+        ),
     )
     return OnPolicyTerminalLoss(
         value=policy_loss.value,
@@ -666,6 +693,7 @@ def _run_policy_weighted_loss(
     update_config: RunPolicyUpdateConfig,
     require_matching_propensities: bool,
     fixed_actor_advantages: Sequence[float] | None,
+    rollout_return_targets: Sequence[float] | None,
 ) -> _RunPolicyLoss:
     if update_config.rule is RunPolicyUpdateRule.REINFORCE:
         if not require_matching_propensities:
@@ -703,6 +731,13 @@ def _run_policy_weighted_loss(
         raise TorchOutcomeError("run PPO objective targets must be finite")
     if not all(math.isfinite(weight) and weight > 0.0 for weight in weights):
         raise TorchOutcomeError("run PPO objective weights must be positive")
+    if rollout_return_targets is not None and (
+        len(rollout_return_targets) != decision_count
+        or not all(math.isfinite(value) for value in rollout_return_targets)
+    ):
+        raise TorchOutcomeError(
+            "run rollout return-to-go targets are misaligned or non-finite"
+        )
     recorded_log_probabilities: list[float] = []
     for evidence in selection_probabilities:
         if not isinstance(evidence, SelectionProbability):
@@ -836,6 +871,23 @@ def _run_policy_weighted_loss(
                 strict=True,
             )
         )
+        detached_return_to_go = (
+            None
+            if rollout_return_targets is None
+            else tuple(float(value) for value in rollout_return_targets)
+        )
+        detached_return_to_go_residuals = (
+            None
+            if detached_return_to_go is None
+            else tuple(
+                target - prediction
+                for target, prediction in zip(
+                    detached_return_to_go,
+                    detached_predictions,
+                    strict=True,
+                )
+            )
+        )
         value_diagnostics = RunValueDiagnostics(
             actor_advantage=_attempt_equal_signal_summary(
                 detached_advantages,
@@ -852,6 +904,22 @@ def _run_policy_weighted_loss(
             critic_residual=_attempt_equal_signal_summary(
                 detached_residuals,
                 weights,
+            ),
+            return_to_go_target=(
+                None
+                if detached_return_to_go is None
+                else _attempt_equal_signal_summary(
+                    detached_return_to_go,
+                    weights,
+                )
+            ),
+            return_to_go_residual=(
+                None
+                if detached_return_to_go_residuals is None
+                else _attempt_equal_signal_summary(
+                    detached_return_to_go_residuals,
+                    weights,
+                )
             ),
         )
     return _RunPolicyLoss(

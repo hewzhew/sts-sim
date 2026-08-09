@@ -119,4 +119,7 @@ git diff --check
 
 当前还没有声明 license。
 
+所移植依赖代码的许可证与固定上游版本见
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
+
 这是一个非官方研究项目。Slay the Spire 由 Mega Crit 开发；本仓库不隶属于 Mega Crit，也未获得其背书。

@@ -56,13 +56,14 @@ def _attempt(
             ),
         ),
     )
+    lineage = replace(
+        batch.lineages[0],
+        key=replace(batch.lineages[0].key, episode_seed=seed),
+    )
+    batch = replace(batch, lineages=(lineage,))
     attempt = completed_attempt_fixture(slot=slot, batches=(batch,), reward=-1)
     return replace(
         attempt,
-        lineage=replace(
-            attempt.lineage,
-            key=replace(attempt.lineage.key, episode_seed=seed),
-        ),
         terminal=replace(
             attempt.terminal,
             terminal=replace(

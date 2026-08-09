@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import numpy as np
+
 from learning.tests.semantic_fixtures import semantic_batch_fixture
 from sts_learning import (
     AttemptKey,
@@ -75,11 +77,15 @@ def decision_batch_fixture(
         ),
         recoveries_used=0,
     )
-    return DecisionExperienceBatch(
-        payload=select_semantic_decision_rows(
+    payload = dict(
+        select_semantic_decision_rows(
             semantic_batch_fixture(),
             [semantic_row],
-        ),
+        )
+    )
+    payload["slot_indices"] = np.array([slot], dtype=np.uint64)
+    return DecisionExperienceBatch(
+        payload=payload,
         lineages=(lineage,),
         selected_ordinals=(selected_ordinal,),
         selection_probabilities=(selection_probability,),

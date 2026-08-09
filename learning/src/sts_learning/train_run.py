@@ -552,11 +552,24 @@ def _rollout_value_diagnostics(
 
     return {
         "weighting": "attempt_equal",
+        "optimization_target": "terminal_broadcast",
+        "shadow_target": "decision_local_return_to_go",
         "critic_residual_convention": "terminal_target_minus_prediction",
+        "shadow_residual_convention": "return_to_go_target_minus_prediction",
         "actor_advantage": signal(diagnostics.actor_advantage),
         "critic_prediction": signal(diagnostics.critic_prediction),
         "terminal_target": signal(diagnostics.terminal_target),
         "critic_residual": signal(diagnostics.critic_residual),
+        "return_to_go_target": (
+            None
+            if diagnostics.return_to_go_target is None
+            else signal(diagnostics.return_to_go_target)
+        ),
+        "return_to_go_residual": (
+            None
+            if diagnostics.return_to_go_residual is None
+            else signal(diagnostics.return_to_go_residual)
+        ),
     }
 
 
