@@ -15,6 +15,7 @@ from sts_learning import (
     DecisionRunProgress,
     FloorProgressReturnConfig,
     RunDecisionScope,
+    RunPolicyUpdateConfig,
     SelectionProbability,
     SemanticBatchConcatLimits,
     TerminalAdvantageMode,
@@ -349,6 +350,80 @@ class OnPolicyTerminalLossTests(unittest.TestCase):
         self.assertEqual(values.grad[0].item(), 0.0)
         self.assertNotEqual(values.grad[1].item(), 0.0)
         self.assertNotEqual(values.grad[2].item(), 0.0)
+
+    def test_run_value_ppo_trains_terminal_value_and_freezes_rollout_advantage(
+        self,
+    ) -> None:
+        torch.manual_seed(43)
+        scorer = RaggedCandidateScorer.from_bridge_schema(
+            semantic_schema_fixture(),
+            RaggedScorerConfig(
+                hidden_dim=10,
+                relation_layers=1,
+                value_head=True,
+            ),
+        )
+        attempts = (
+            completed_attempt_fixture(
+                slot=1,
+                batches=(
+                    self._on_policy_batch(scorer, slot=1, row=0, ordinal=1),
+                ),
+                reward=1,
+            ),
+            completed_attempt_fixture(
+                slot=2,
+                batches=(
+                    self._on_policy_batch(scorer, slot=2, row=1, ordinal=2),
+                ),
+                reward=-1,
+            ),
+        )
+        update = RunPolicyUpdateConfig.ppo_clip_value()
+
+        first = on_policy_terminal_loss(
+            scorer,
+            attempts,
+            self.registry,
+            CONCAT_LIMITS,
+            self.config,
+            self.return_config,
+            TerminalAdvantageMode.RAW_RETURN,
+            update_config=update,
+        )
+        frozen = first.actor_advantages
+        self.assertAlmostEqual(frozen[0], 1.0)
+        self.assertAlmostEqual(frozen[1], -0.2)
+        self.assertGreater(first.value_loss, 0.0)
+        self.assertEqual(first.approximate_kl, 0.0)
+        optimizer = torch.optim.SGD(scorer.parameters(), lr=0.01)
+        optimizer.zero_grad(set_to_none=True)
+        first.value.backward()
+        assert scorer.value_head is not None
+        self.assertTrue(
+            any(
+                parameter.grad is not None
+                and bool(torch.any(parameter.grad != 0))
+                for parameter in scorer.value_head.parameters()
+            )
+        )
+        optimizer.step()
+
+        second = on_policy_terminal_loss(
+            scorer,
+            attempts,
+            self.registry,
+            CONCAT_LIMITS,
+            self.config,
+            self.return_config,
+            TerminalAdvantageMode.RAW_RETURN,
+            update_config=update,
+            require_matching_propensities=False,
+            fixed_actor_advantages=frozen,
+        )
+
+        self.assertEqual(second.actor_advantages, frozen)
+        self.assertGreaterEqual(second.approximate_kl, 0.0)
 
     def test_unknown_or_mismatched_propensity_is_rejected(self) -> None:
         values = torch.nn.Parameter(torch.zeros(2))

@@ -549,12 +549,21 @@ All validated decision payloads in one delivery are concatenated and scored in
 one model call. Per-row weights preserve the exact attempt-equal loss, while
 eliminating one small PyTorch forward per historical decision. The caller must
 inject semantic concat row and input-array-byte limits; batching is never an
-excuse for unbounded replay memory.
+excuse for unbounded replay memory. The opt-in whole-run `ppo-clip-value`
+profile keeps that exact attempt-equal weighting, trains one state-value row
+against the attempt's final floor-progress return, and freezes the resulting
+rollout advantage across its bounded PPO epochs. This is long-horizon credit,
+not a static HP reward: early combat HP, Burning Blood recovery, potions, and
+later route consequences remain part of the observed state and final outcome
+rather than receiving a hand-written exchange rate.
 
 `sts_learning.torch_training.SynchronousPolicyTrainer` is the synchronous
 shadow-policy sink behind the update batcher. A non-empty training delivery
-must contain exactly the configured attempts per update and causes exactly one
-optimizer step; a dropped-only delivery only updates accounting. The trainer
+must contain exactly the configured attempts per update. The compatibility
+REINFORCE profile causes exactly one optimizer step; opt-in value PPO may apply
+up to four clipped epochs, with KL early stop, entropy regularization, gradient
+clipping, and explicit value-loss diagnostics. A dropped-only delivery only
+updates accounting. The trainer
 retains no attempt queue and no semantic arrays, only scalar totals and the
 latest bounded manifest-id and selection-probability sequences. Its required
 concat limits bound the one-forward replay batch.
@@ -596,7 +605,9 @@ counters and bounded last-evidence fields, controller identity, promotion
 count, and generation target as one canonical scalar component. The live-only
 update batcher contributes no metadata: admission first requires it to be empty
 and healthy, and restore constructs a fresh empty owner from the typed objective
-configuration. Fresh ledger, empty buffer, empty assembler, trainer, and
+configuration. A generation still owns exactly one frozen-behavior delivery;
+its published training step advances by the number of optimizer epochs that
+actually committed. Fresh ledger, empty buffer, empty assembler, trainer, and
 controller owners have explicit restore constructors; terminal half-states,
 open attempts, poisoned trainers, and inconsistent sequence or parameter
 lineage remain unrepresentable. This metadata is the scalar member of the final

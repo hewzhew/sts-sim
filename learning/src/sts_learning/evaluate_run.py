@@ -287,6 +287,9 @@ def _summary(
                 "attempts_per_update": recovered.objective.attempts_per_update,
                 "advantage_mode": recovered.objective.advantage_mode.name.lower(),
                 "decision_scope": recovered.objective.decision_scope.name.lower(),
+                "policy_update": (
+                    recovered.objective.policy_update.rule.name.lower()
+                ),
             }
         ),
         "behavior_seed": config.behavior_seed,

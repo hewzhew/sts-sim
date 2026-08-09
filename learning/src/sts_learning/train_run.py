@@ -30,10 +30,16 @@ from .run_sampling import (
     EpisodeRootRetryCurriculum,
     RunSamplingMode,
 )
+from .run_resource_trace import (
+    ResourceTracingEnvironmentFactory,
+    RunCombatResourceTransition,
+    RunResourceTrace,
+)
 from .seeds import SeedPartition, SeedSchedule
 from .terminal_returns import (
     OnPolicyObjectiveConfig,
     RunDecisionScope,
+    RunPolicyUpdateConfig,
     TerminalAdvantageMode,
 )
 from .torch_combat_session_config import (
@@ -52,6 +58,7 @@ from .torch_session_config import (
     CategoricalSessionBridge,
     CategoricalSessionLimits,
 )
+from .torch_policy import RaggedScorerConfig
 
 
 class RunTrainingCommandError(RuntimeError):
@@ -68,6 +75,11 @@ _ADVANTAGE_MODE_ARGUMENTS = {
     "matched-episode-floor-context": (
         TerminalAdvantageMode.MATCHED_EPISODE_FLOOR_CONTEXT_LEAVE_ONE_OUT
     ),
+}
+
+_RUN_POLICY_UPDATE_ARGUMENTS = {
+    "reinforce": RunPolicyUpdateConfig(),
+    "ppo-clip-value": RunPolicyUpdateConfig.ppo_clip_value(),
 }
 
 
@@ -88,6 +100,7 @@ class RunTrainingCommandConfig:
     held_out_seed_start: int
     advantage_mode: TerminalAdvantageMode = TerminalAdvantageMode.RAW_RETURN
     decision_scope: RunDecisionScope = RunDecisionScope.ALL
+    policy_update: RunPolicyUpdateConfig = RunPolicyUpdateConfig()
     sampling_mode: RunSamplingMode = RunSamplingMode.INDEPENDENT_COHORTS
     episode_root_attempts: int | None = None
     potion_lane: RunPotionLane = RunPotionLane.TRAINED
@@ -118,6 +131,10 @@ class RunTrainingCommandConfig:
         if not isinstance(self.decision_scope, RunDecisionScope):
             raise RunTrainingCommandError(
                 "run training decision scope must be typed"
+            )
+        if not isinstance(self.policy_update, RunPolicyUpdateConfig):
+            raise RunTrainingCommandError(
+                "run training policy update must be typed"
             )
         if not isinstance(self.sampling_mode, RunSamplingMode):
             raise RunTrainingCommandError(
@@ -233,16 +250,27 @@ def run_run_training(
         (config.behavior_seed,),
     )
     potion_lane = resolve_run_potion_lane(config.potion_lane, warm_start)
-    training_run_bridge = _bridge_for_potion_lane(
+    base_training_run_bridge = _bridge_for_potion_lane(
         active_run_bridge,
         potion_lane,
     )
+    training_resource_factory = ResourceTracingEnvironmentFactory(
+        base_training_run_bridge.environment
+    )
+    training_run_bridge = replace(
+        base_training_run_bridge,
+        environment=training_resource_factory,
+    )
     profile = replace(
         CategoricalOnlineProfile(),
+        scorer=RaggedScorerConfig(
+            value_head=config.policy_update.uses_value_baseline,
+        ),
         objective=OnPolicyObjectiveConfig(
             attempts_per_update=config.attempts_per_update,
             advantage_mode=config.advantage_mode,
             decision_scope=config.decision_scope,
+            policy_update=config.policy_update,
         ),
     )
     limits = replace(
@@ -295,7 +323,17 @@ def run_run_training(
                 max_batch_steps=config.max_batch_steps_per_generation
             )
             elapsed = time.perf_counter() - started
-            _write(journal, _generation(generation, result, session, elapsed))
+            training_resources = training_resource_factory.trace
+            _write(
+                journal,
+                _generation(
+                    generation,
+                    result,
+                    session,
+                    elapsed,
+                    training_resources,
+                ),
+            )
             progress = result.terminal_progress
             credit = session.runner.trainer.last_credit_assignment
             print(
@@ -310,6 +348,9 @@ def run_run_training(
                 f"batch_steps={result.batch_steps}/"
                 f"{config.max_batch_steps_per_generation} "
                 f"loss={_optional_float(session.runner.trainer.snapshot.last_loss)} "
+                f"update={_training_result_line(session)} "
+                "early_resources_cumulative="
+                f"{_early_resource_line(training_resources)} "
                 f"credit={_credit_line(credit)} "
                 f"credit_floors={_credit_floor_line(credit)} "
                 f"credit_scopes={_credit_scope_line(credit)} "
@@ -329,8 +370,11 @@ def run_run_training(
             active_manifest_id,
             behavior_seed=config.evaluation_behavior_seed,
         )
+        held_out_resource_factory = ResourceTracingEnvironmentFactory(
+            base_training_run_bridge.environment
+        )
         evaluation = evaluate_held_out_behavior(
-            training_run_bridge.environment,
+            held_out_resource_factory,
             evaluation_policy,
             schedule=SeedSchedule(
                 SeedPartition.HELD_OUT,
@@ -349,6 +393,8 @@ def run_run_training(
             publication.checkpoint_id.digest.hex(),
             evaluation,
             potion_lane,
+            training_resource_factory.trace,
+            held_out_resource_factory.trace,
         )
         _write(journal, summary)
 
@@ -373,6 +419,8 @@ def run_run_training(
         f"held_out_victories={run.victories} "
         f"held_out_floor_sum={run.terminal_progress.floor_sum} "
         f"held_out_floor_counts={_counts(run.terminal_progress.floor_counts)} "
+        f"held_out_early={_early_resource_line(held_out_resource_factory.trace)} "
+        f"run_policy_update={config.policy_update.rule.name.lower()} "
         f"output={config.output}",
         flush=True,
     )
@@ -402,6 +450,17 @@ def _configuration(
         "attempts_per_update": config.attempts_per_update,
         "advantage_mode": config.advantage_mode.name.lower(),
         "decision_scope": config.decision_scope.name.lower(),
+        "run_policy_update": config.policy_update.rule.name.lower(),
+        "run_policy_epochs": config.policy_update.epochs,
+        "run_policy_clip_coefficient": config.policy_update.clip_coefficient,
+        "run_policy_entropy_coefficient": (
+            config.policy_update.entropy_coefficient
+        ),
+        "run_policy_max_grad_norm": config.policy_update.max_grad_norm,
+        "run_policy_target_kl": config.policy_update.target_kl,
+        "run_policy_value_loss_coefficient": (
+            config.policy_update.value_loss_coefficient
+        ),
         "max_batch_steps_per_generation": (
             config.max_batch_steps_per_generation
         ),
@@ -420,9 +479,11 @@ def _generation(
     result: CategoricalGenerationAdvanceResult,
     session: CategoricalOnlineSession,
     elapsed: float,
+    resources: RunResourceTrace,
 ) -> dict[str, object]:
     progress = result.terminal_progress
     trainer = session.runner.trainer.snapshot
+    training = session.runner.trainer.last_result
     return {
         "schema": RUN_TRAINING_SCHEMA,
         "kind": "generation",
@@ -440,7 +501,18 @@ def _generation(
         "terminal_floor_counts": progress.floor_counts,
         "terminal_act_counts": progress.act_counts,
         "loss": trainer.last_loss,
+        "optimizer_steps_applied": (
+            None if training is None else training.optimizer_steps_applied
+        ),
+        "approximate_kl": (
+            None if training is None else training.approximate_kl
+        ),
+        "clip_fraction": None if training is None else training.clip_fraction,
+        "entropy": None if training is None else training.entropy,
+        "value_loss": None if training is None else training.value_loss,
+        "gradient_norm": None if training is None else training.gradient_norm,
         "trained_decisions": trainer.trained_decisions,
+        "training_resources_cumulative": _resource_aggregate(resources),
         "credit_assignment": _credit_assignment(
             session.runner.trainer.last_credit_assignment
         ),
@@ -455,6 +527,8 @@ def _summary(
     checkpoint_id: str,
     evaluation: HeldOutEvaluationResult,
     potion_lane: CombatPotionLane,
+    training_resources: RunResourceTrace,
+    held_out_resources: RunResourceTrace,
 ) -> dict[str, object]:
     run = evaluation.run.summary
     progress = run.terminal_progress
@@ -471,8 +545,11 @@ def _summary(
         "run_potion_lane": potion_lane.value,
         "sampling_mode": config.sampling_mode.value,
         "episode_root_attempts": config.episode_root_attempts,
+        "run_policy_update": config.policy_update.rule.name.lower(),
         "generations": config.generations,
         "optimizer_steps": session.runner.trainer.snapshot.optimizer_steps,
+        "training_resources_cumulative": _resource_aggregate(training_resources),
+        "held_out_resources": _resource_aggregate(held_out_resources),
         "held_out_target_reached": evaluation.complete,
         "held_out_step_limit_reached": evaluation.step_limit_reached,
         "held_out_attempts": run.terminal_attempts,
@@ -548,6 +625,80 @@ def _counts(values: tuple[tuple[int, int], ...]) -> str:
 
 def _optional_float(value: float | None) -> str:
     return "none" if value is None else f"{value:.9g}"
+
+
+def _training_result_line(session: CategoricalOnlineSession) -> str:
+    result = session.runner.trainer.last_result
+    if result is None:
+        return "none"
+    return (
+        f"steps:{result.optimizer_steps_applied};"
+        f"kl:{result.approximate_kl:.4g};"
+        f"clip:{result.clip_fraction:.4g};"
+        f"entropy:{result.entropy:.4g};"
+        f"value:{result.value_loss:.4g};"
+        f"grad:{result.gradient_norm:.4g}"
+    )
+
+
+def _early_resource_line(trace: RunResourceTrace) -> str:
+    rows = _resource_aggregate(trace)["early_combat_ordinals"]
+    assert isinstance(rows, list)
+    if not rows:
+        return "none"
+    return ",".join(
+        f"{row['ordinal']}:{row['count']}@"
+        f"{row['end_hp_sum']}/{row['end_max_hp_sum']}"
+        f"#{row['below_75_percent_count']}/{row['below_50_percent_count']}"
+        for row in rows
+    )
+
+
+def _resource_aggregate(trace: RunResourceTrace) -> dict[str, object]:
+    by_seed: dict[int, list[RunCombatResourceTransition]] = {}
+    for transition in trace.combat_transitions:
+        by_seed.setdefault(transition.start.seed, []).append(transition)
+    ordinal_rows: list[dict[str, int]] = []
+    for ordinal in range(1, 5):
+        selected = tuple(
+            transitions[ordinal - 1]
+            for transitions in by_seed.values()
+            if len(transitions) >= ordinal
+        )
+        if not selected:
+            continue
+        ordinal_rows.append(
+            {
+                "ordinal": ordinal,
+                "count": len(selected),
+                "start_hp_sum": sum(row.start.hp for row in selected),
+                "start_max_hp_sum": sum(row.start.max_hp for row in selected),
+                "end_hp_sum": sum(row.end.hp for row in selected),
+                "end_max_hp_sum": sum(row.end.max_hp for row in selected),
+                "net_hp_loss_sum": sum(row.hp_loss for row in selected),
+                "below_75_percent_count": sum(
+                    row.end.hp * 4 < row.end.max_hp * 3 for row in selected
+                ),
+                "below_50_percent_count": sum(
+                    row.end.hp * 2 < row.end.max_hp for row in selected
+                ),
+            }
+        )
+    act_one = tuple(
+        transition
+        for transition in trace.combat_transitions
+        if transition.start.act == 1
+    )
+    return {
+        "attempt_count": len(trace.episode_endpoints),
+        "combat_count": len(trace.combat_transitions),
+        "net_combat_hp_loss_sum": trace.hp_loss_sum,
+        "act_one_combat_count": len(act_one),
+        "act_one_net_hp_loss_sum": sum(row.hp_loss for row in act_one),
+        "potion_identity_losses": trace.potion_identity_losses,
+        "potion_identity_gains": trace.potion_identity_gains,
+        "early_combat_ordinals": ordinal_rows,
+    }
 
 
 def _credit_line(comparison: CreditAssignmentComparison | None) -> str:
@@ -741,6 +892,11 @@ def _parser() -> argparse.ArgumentParser:
         default="all",
     )
     parser.add_argument(
+        "--run-policy-update",
+        choices=tuple(_RUN_POLICY_UPDATE_ARGUMENTS),
+        default="reinforce",
+    )
+    parser.add_argument(
         "--sampling-mode",
         choices=tuple(mode.value for mode in RunSamplingMode),
         default=RunSamplingMode.INDEPENDENT_COHORTS.value,
@@ -777,6 +933,9 @@ def main() -> int:
                 if arguments.decision_scope == "all"
                 else RunDecisionScope.STRATEGIC
             ),
+            policy_update=_RUN_POLICY_UPDATE_ARGUMENTS[
+                arguments.run_policy_update
+            ],
             sampling_mode=RunSamplingMode(arguments.sampling_mode),
             episode_root_attempts=arguments.episode_root_attempts,
             potion_lane=RunPotionLane(arguments.potion_lane),

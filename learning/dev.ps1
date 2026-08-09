@@ -12,6 +12,8 @@ param(
     [int]$Updates,
     [ValidateSet("reinforce", "ppo-clip", "ppo-clip-value")]
     [string]$CombatPolicyUpdate = "reinforce",
+    [ValidateSet("reinforce", "ppo-clip-value")]
+    [string]$RunPolicyUpdate = "reinforce",
     [long]$ModelSeed = 0,
     [long]$BehaviorSeedBase = 1000,
     [int]$SourceExpectedRoots = 1,
@@ -419,6 +421,7 @@ switch ($Command) {
                 --held-out-seed-start $HeldOutSeedStart `
                 --advantage-mode $AdvantageMode `
                 --decision-scope $DecisionScope `
+                --run-policy-update $RunPolicyUpdate `
                 --sampling-mode $SamplingMode `
                 @episodeRootArguments `
                 --potion-lane $RunPotionLane

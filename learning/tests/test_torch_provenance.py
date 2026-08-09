@@ -12,6 +12,7 @@ from sts_learning import (
     FloorProgressReturnConfig,
     OnPolicyObjectiveConfig,
     RunDecisionScope,
+    RunPolicyUpdateConfig,
     TerminalAdvantageMode,
 )
 
@@ -128,6 +129,50 @@ class TorchProvenanceTests(unittest.TestCase):
         self.assertNotEqual(
             ppo.trainer_implementation,
             combat_template.trainer_implementation,
+        )
+
+    def test_run_value_ppo_has_distinct_model_and_trainer_identity(self) -> None:
+        schema = semantic_schema_fixture()
+        behavior = RaggedCategoricalPolicyConfig()
+        optimizer = AdamTrainingConfig()
+        reinforce = OnPolicyObjectiveConfig(attempts_per_update=2)
+        value = replace(
+            reinforce,
+            policy_update=RunPolicyUpdateConfig.ppo_clip_value(),
+        )
+
+        policy_template = categorical_training_manifest_template(
+            schema,
+            RaggedScorerConfig(hidden_dim=4, relation_layers=1),
+            behavior,
+            optimizer,
+            reinforce,
+            device_type="cpu",
+        )
+        value_template = categorical_training_manifest_template(
+            schema,
+            RaggedScorerConfig(
+                hidden_dim=4,
+                relation_layers=1,
+                value_head=True,
+            ),
+            behavior,
+            optimizer,
+            value,
+            device_type="cpu",
+        )
+
+        self.assertNotEqual(
+            value_template.model_definition,
+            policy_template.model_definition,
+        )
+        self.assertNotEqual(
+            value_template.model_config,
+            policy_template.model_config,
+        )
+        self.assertNotEqual(
+            value_template.trainer_implementation,
+            policy_template.trainer_implementation,
         )
 
     def test_template_is_canonical_and_changes_with_runtime_profile(self) -> None:

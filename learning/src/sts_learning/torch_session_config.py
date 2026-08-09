@@ -107,6 +107,13 @@ class CategoricalOnlineProfile:
             raise TorchSessionError("session optimizer config must be typed")
         if not isinstance(self.objective, OnPolicyObjectiveConfig):
             raise TorchSessionError("session objective config must be typed")
+        if (
+            self.scorer.value_head
+            != self.objective.policy_update.uses_value_baseline
+        ):
+            raise TorchSessionError(
+                "session scorer value head disagrees with the run update rule"
+            )
         optimizer_steps = _positive_integer(
             self.optimizer_steps_per_generation,
             "optimizer_steps_per_generation",

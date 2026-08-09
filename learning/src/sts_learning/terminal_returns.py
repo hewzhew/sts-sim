@@ -16,6 +16,24 @@ class TerminalReturnError(ValueError):
     """A terminal outcome or return profile is malformed."""
 
 
+def _finite_float(value: object, name: str) -> float:
+    if isinstance(value, bool) or not isinstance(value, Real):
+        raise TerminalReturnError(f"{name} must be a real number")
+    normalized = float(value)
+    if not math.isfinite(normalized):
+        raise TerminalReturnError(f"{name} must be finite")
+    return normalized
+
+
+def _optional_positive_float(value: object, name: str) -> float | None:
+    if value is None:
+        return None
+    normalized = _finite_float(value, name)
+    if normalized <= 0.0:
+        raise TerminalReturnError(f"{name} must be positive when present")
+    return normalized
+
+
 class TerminalAdvantageMode(IntEnum):
     """How one complete-attempt batch turns terminal returns into advantages."""
 
@@ -31,6 +49,102 @@ class RunDecisionScope(IntEnum):
 
     ALL = 0
     STRATEGIC = 1
+
+
+class RunPolicyUpdateRule(IntEnum):
+    """How one frozen whole-run attempt batch changes the policy."""
+
+    REINFORCE = 0
+    PPO_CLIP_VALUE = 1
+
+
+@dataclass(frozen=True)
+class RunPolicyUpdateConfig:
+    """Bounded policy optimization over one frozen whole-run batch."""
+
+    rule: RunPolicyUpdateRule = RunPolicyUpdateRule.REINFORCE
+    epochs: int = 1
+    clip_coefficient: float = 0.2
+    entropy_coefficient: float = 0.0
+    max_grad_norm: float | None = None
+    target_kl: float | None = None
+    value_loss_coefficient: float = 0.0
+
+    @classmethod
+    def ppo_clip_value(cls) -> RunPolicyUpdateConfig:
+        return cls(
+            rule=RunPolicyUpdateRule.PPO_CLIP_VALUE,
+            epochs=4,
+            entropy_coefficient=0.01,
+            max_grad_norm=0.5,
+            target_kl=0.02,
+            value_loss_coefficient=0.5,
+        )
+
+    @property
+    def uses_value_baseline(self) -> bool:
+        return self.rule is RunPolicyUpdateRule.PPO_CLIP_VALUE
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.rule, RunPolicyUpdateRule):
+            raise TerminalReturnError("run policy update rule must be typed")
+        if isinstance(self.epochs, bool):
+            raise TerminalReturnError("run policy update epochs must be an integer")
+        try:
+            epochs = operator.index(self.epochs)
+        except TypeError as error:
+            raise TerminalReturnError(
+                "run policy update epochs must be an integer"
+            ) from error
+        if epochs <= 0:
+            raise TerminalReturnError("run policy update epochs must be positive")
+        if epochs > 64:
+            raise TerminalReturnError(
+                "run policy update epochs must not exceed 64"
+            )
+        clip = _finite_float(self.clip_coefficient, "clip_coefficient")
+        entropy = _finite_float(
+            self.entropy_coefficient,
+            "entropy_coefficient",
+        )
+        value_loss = _finite_float(
+            self.value_loss_coefficient,
+            "value_loss_coefficient",
+        )
+        max_grad_norm = _optional_positive_float(
+            self.max_grad_norm,
+            "max_grad_norm",
+        )
+        target_kl = _optional_positive_float(self.target_kl, "target_kl")
+        if not 0.0 < clip < 1.0:
+            raise TerminalReturnError("clip_coefficient must be in (0, 1)")
+        if entropy < 0.0:
+            raise TerminalReturnError("entropy_coefficient must be non-negative")
+        if value_loss < 0.0:
+            raise TerminalReturnError("value_loss_coefficient must be non-negative")
+        if self.rule is RunPolicyUpdateRule.REINFORCE and (
+            epochs != 1
+            or entropy != 0.0
+            or max_grad_norm is not None
+            or target_kl is not None
+            or value_loss != 0.0
+        ):
+            raise TerminalReturnError(
+                "run REINFORCE requires one epoch and no PPO regularization"
+            )
+        if (
+            self.rule is RunPolicyUpdateRule.PPO_CLIP_VALUE
+            and value_loss <= 0.0
+        ):
+            raise TerminalReturnError(
+                "run value PPO requires a positive value_loss_coefficient"
+            )
+        object.__setattr__(self, "epochs", epochs)
+        object.__setattr__(self, "clip_coefficient", clip)
+        object.__setattr__(self, "entropy_coefficient", entropy)
+        object.__setattr__(self, "max_grad_norm", max_grad_norm)
+        object.__setattr__(self, "target_kl", target_kl)
+        object.__setattr__(self, "value_loss_coefficient", value_loss)
 
 
 @dataclass(frozen=True)
@@ -59,6 +173,7 @@ class OnPolicyObjectiveConfig:
     attempts_per_update: int = 8
     advantage_mode: TerminalAdvantageMode = TerminalAdvantageMode.RAW_RETURN
     decision_scope: RunDecisionScope = RunDecisionScope.ALL
+    policy_update: RunPolicyUpdateConfig = RunPolicyUpdateConfig()
 
     def __post_init__(self) -> None:
         if not isinstance(self.terminal_return, FloorProgressReturnConfig):
@@ -81,6 +196,15 @@ class OnPolicyObjectiveConfig:
             )
         if not isinstance(self.decision_scope, RunDecisionScope):
             raise TerminalReturnError("decision_scope must be RunDecisionScope")
+        if not isinstance(self.policy_update, RunPolicyUpdateConfig):
+            raise TerminalReturnError("policy_update must be RunPolicyUpdateConfig")
+        if (
+            self.policy_update.uses_value_baseline
+            and self.advantage_mode is not TerminalAdvantageMode.RAW_RETURN
+        ):
+            raise TerminalReturnError(
+                "run value PPO currently requires raw-return advantage"
+            )
         if (
             self.advantage_mode
             in (

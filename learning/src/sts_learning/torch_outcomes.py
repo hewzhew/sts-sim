@@ -37,6 +37,8 @@ from .semantic_concat import (
 from .terminal_returns import (
     FloorProgressReturnConfig,
     RunDecisionScope,
+    RunPolicyUpdateConfig,
+    RunPolicyUpdateRule,
     TerminalAdvantageMode,
     floor_progress_terminal_return,
     terminal_return_advantages,
@@ -65,6 +67,11 @@ class OnPolicyTerminalLoss:
     decision_count: int
     behavior_manifest_ids: tuple[tuple[BehaviorManifestId, ...], ...]
     selection_probabilities: tuple[tuple[SelectionProbability, ...], ...]
+    approximate_kl: float
+    clip_fraction: float
+    entropy: float
+    value_loss: float
+    actor_advantages: tuple[float, ...]
 
 
 @dataclass(frozen=True)
@@ -103,6 +110,16 @@ class _CombatPolicyLoss:
     actor_advantages: tuple[float, ...]
 
 
+@dataclass(frozen=True)
+class _RunPolicyLoss:
+    value: Tensor
+    approximate_kl: float
+    clip_fraction: float
+    entropy: float
+    value_loss: float
+    actor_advantages: tuple[float, ...]
+
+
 def on_policy_terminal_loss(
     scorer: CandidatePolicyScorer,
     attempts: Sequence[CompletedAttemptExperience],
@@ -112,6 +129,10 @@ def on_policy_terminal_loss(
     return_config: FloorProgressReturnConfig,
     advantage_mode: TerminalAdvantageMode,
     decision_scope: RunDecisionScope = RunDecisionScope.ALL,
+    *,
+    update_config: RunPolicyUpdateConfig = RunPolicyUpdateConfig(),
+    require_matching_propensities: bool = True,
+    fixed_actor_advantages: Sequence[float] | None = None,
 ) -> OnPolicyTerminalLoss:
     """Apply progress-return REINFORCE to exact sampled categorical behavior.
 
@@ -134,6 +155,17 @@ def on_policy_terminal_loss(
         raise TorchOutcomeError("policy objective requires typed advantage mode")
     if not isinstance(decision_scope, RunDecisionScope):
         raise TorchOutcomeError("policy objective requires typed decision scope")
+    if not isinstance(update_config, RunPolicyUpdateConfig):
+        raise TorchOutcomeError("policy objective requires typed run update config")
+    if type(require_matching_propensities) is not bool:
+        raise TorchOutcomeError("run policy propensity check must be bool")
+    if (
+        update_config.uses_value_baseline
+        and advantage_mode is not TerminalAdvantageMode.RAW_RETURN
+    ):
+        raise TorchOutcomeError("run value PPO currently requires raw-return advantage")
+    if fixed_actor_advantages is not None and not update_config.uses_value_baseline:
+        raise TorchOutcomeError("fixed run advantages require a value baseline")
     normalized = tuple(attempts)
     if not normalized:
         raise TorchOutcomeError("policy objective requires at least one complete attempt")
@@ -252,7 +284,7 @@ def on_policy_terminal_loss(
         probability_evidence.append(tuple(attempt_probabilities))
         total_decisions += scoped_decisions
 
-    value = _on_policy_weighted_loss(
+    policy_loss = _run_policy_weighted_loss(
         scorer=scorer,
         payloads=payloads,
         selected_ordinals=selected_ordinals,
@@ -265,14 +297,21 @@ def on_policy_terminal_loss(
         weights=weights,
         concat_limits=concat_limits,
         policy_config=policy_config,
-        objective_name="terminal",
+        update_config=update_config,
+        require_matching_propensities=require_matching_propensities,
+        fixed_actor_advantages=fixed_actor_advantages,
     )
     return OnPolicyTerminalLoss(
-        value=value,
+        value=policy_loss.value,
         attempt_count=len(normalized),
         decision_count=total_decisions,
         behavior_manifest_ids=tuple(behavior_ids),
         selection_probabilities=tuple(probability_evidence),
+        approximate_kl=policy_loss.approximate_kl,
+        clip_fraction=policy_loss.clip_fraction,
+        entropy=policy_loss.entropy,
+        value_loss=policy_loss.value_loss,
+        actor_advantages=policy_loss.actor_advantages,
     )
 
 
@@ -582,6 +621,169 @@ def _on_policy_weighted_loss(
     if not bool(torch.all(torch.isfinite(terms))):
         raise TorchOutcomeError(f"{objective_name} policy loss terms must be finite")
     return torch.sum(terms * weight_tensor)
+
+
+def _run_policy_weighted_loss(
+    *,
+    scorer: CandidatePolicyScorer,
+    payloads: Sequence[Mapping[str, object]],
+    selected_ordinals: Sequence[int],
+    selection_probabilities: Sequence[SelectionProbability],
+    targets: Sequence[float],
+    weights: Sequence[float],
+    concat_limits: SemanticBatchConcatLimits,
+    policy_config: RaggedCategoricalPolicyConfig,
+    update_config: RunPolicyUpdateConfig,
+    require_matching_propensities: bool,
+    fixed_actor_advantages: Sequence[float] | None,
+) -> _RunPolicyLoss:
+    if update_config.rule is RunPolicyUpdateRule.REINFORCE:
+        if not require_matching_propensities:
+            raise TorchOutcomeError("run REINFORCE cannot reuse an updated batch")
+        return _RunPolicyLoss(
+            value=_on_policy_weighted_loss(
+                scorer=scorer,
+                payloads=payloads,
+                selected_ordinals=selected_ordinals,
+                selection_probabilities=selection_probabilities,
+                targets=targets,
+                weights=weights,
+                concat_limits=concat_limits,
+                policy_config=policy_config,
+                objective_name="terminal",
+            ),
+            approximate_kl=0.0,
+            clip_fraction=0.0,
+            entropy=0.0,
+            value_loss=0.0,
+            actor_advantages=tuple(float(target) for target in targets),
+        )
+
+    decision_count = len(selected_ordinals)
+    if not (
+        len(selection_probabilities)
+        == len(targets)
+        == len(weights)
+        == decision_count
+        > 0
+    ):
+        raise TorchOutcomeError("run PPO objective rows are misaligned")
+    if not all(math.isfinite(target) for target in targets):
+        raise TorchOutcomeError("run PPO objective targets must be finite")
+    if not all(math.isfinite(weight) and weight > 0.0 for weight in weights):
+        raise TorchOutcomeError("run PPO objective weights must be positive")
+    recorded_log_probabilities: list[float] = []
+    for evidence in selection_probabilities:
+        if not isinstance(evidence, SelectionProbability):
+            raise TorchOutcomeError("run PPO probabilities must be typed")
+        value = evidence.value
+        if value is None or not math.isfinite(value) or not 0.0 < value <= 1.0:
+            raise TorchOutcomeError(
+                "run PPO requires positive recorded probabilities"
+            )
+        recorded_log_probabilities.append(math.log(value))
+
+    combined = concatenate_semantic_decision_batches(payloads, concat_limits)
+    actor_critic = getattr(scorer, "actor_critic", None)
+    if not callable(actor_critic):
+        raise TorchOutcomeError("run value PPO requires an actor-critic scorer")
+    actor_critic_output = actor_critic(combined)
+    if not isinstance(actor_critic_output, RaggedActorCriticOutput):
+        raise TorchOutcomeError("actor-critic scorer returned an invalid output")
+    logits = actor_critic_output.logits
+    predicted_values = actor_critic_output.row_values
+    selected_log_probabilities = _selected_log_probabilities(
+        logits,
+        selected_ordinals,
+        policy_config,
+    )
+    if require_matching_propensities:
+        _require_matching_propensities(
+            logits,
+            selected_ordinals,
+            selection_probabilities,
+            policy_config,
+        )
+    old_log_probability_tensor = torch.as_tensor(
+        recorded_log_probabilities,
+        dtype=selected_log_probabilities.dtype,
+        device=selected_log_probabilities.device,
+    )
+    target_tensor = torch.as_tensor(
+        targets,
+        dtype=selected_log_probabilities.dtype,
+        device=selected_log_probabilities.device,
+    )
+    weight_tensor = torch.as_tensor(
+        weights,
+        dtype=selected_log_probabilities.dtype,
+        device=selected_log_probabilities.device,
+    )
+    if predicted_values.shape != target_tensor.shape:
+        raise TorchOutcomeError("run critic values are misaligned")
+    if fixed_actor_advantages is None:
+        actor_advantages = target_tensor - predicted_values.detach()
+    else:
+        if (
+            len(fixed_actor_advantages) != decision_count
+            or not all(math.isfinite(value) for value in fixed_actor_advantages)
+        ):
+            raise TorchOutcomeError(
+                "fixed run advantages are misaligned or non-finite"
+            )
+        actor_advantages = torch.as_tensor(
+            fixed_actor_advantages,
+            dtype=target_tensor.dtype,
+            device=target_tensor.device,
+        )
+    value_error = predicted_values - target_tensor
+    value_loss = 0.5 * torch.sum(value_error.square() * weight_tensor)
+    log_ratio = selected_log_probabilities - old_log_probability_tensor
+    ratio = torch.exp(log_ratio)
+    clipped_ratio = torch.clamp(
+        ratio,
+        1.0 - update_config.clip_coefficient,
+        1.0 + update_config.clip_coefficient,
+    )
+    policy_terms = torch.maximum(
+        -actor_advantages * ratio,
+        -actor_advantages * clipped_ratio,
+    )
+    entropies = _ragged_entropies(logits, policy_config)
+    loss = torch.sum(policy_terms * weight_tensor) - (
+        update_config.entropy_coefficient
+        * torch.sum(entropies * weight_tensor)
+    ) + update_config.value_loss_coefficient * value_loss
+    diagnostic_weight = torch.sum(weight_tensor)
+    approximate_kl = torch.sum(
+        ((ratio - 1.0) - log_ratio) * weight_tensor
+    ) / diagnostic_weight
+    clip_fraction = torch.sum(
+        ((ratio - 1.0).abs() > update_config.clip_coefficient).to(
+            weight_tensor.dtype
+        )
+        * weight_tensor
+    ) / diagnostic_weight
+    mean_entropy = torch.sum(entropies * weight_tensor) / diagnostic_weight
+    diagnostics = (
+        loss,
+        approximate_kl,
+        clip_fraction,
+        mean_entropy,
+        value_loss,
+    )
+    if not all(bool(torch.all(torch.isfinite(value))) for value in diagnostics):
+        raise TorchOutcomeError("run PPO objective must be finite")
+    return _RunPolicyLoss(
+        value=loss,
+        approximate_kl=float(approximate_kl.detach().item()),
+        clip_fraction=float(clip_fraction.detach().item()),
+        entropy=float(mean_entropy.detach().item()),
+        value_loss=float(value_loss.detach().item()),
+        actor_advantages=tuple(
+            float(value) for value in actor_advantages.detach().cpu().tolist()
+        ),
+    )
 
 
 def _combat_policy_weighted_loss(

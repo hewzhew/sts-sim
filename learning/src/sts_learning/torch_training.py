@@ -18,7 +18,10 @@ from .manifests import BehaviorManifestRegistry
 from .policy import BehaviorManifestId, SelectionProbability
 from .semantic_concat import SemanticBatchConcatLimits
 from .terminal_returns import OnPolicyObjectiveConfig
-from .torch_outcomes import CandidatePolicyScorer, on_policy_terminal_loss
+from .torch_outcomes import (
+    CandidatePolicyScorer,
+    on_policy_terminal_loss,
+)
 from .torch_policy import RaggedCategoricalPolicyConfig
 
 
@@ -41,6 +44,21 @@ class SynchronousPolicyTrainerSnapshot:
     total_training_seconds: float
     last_training_seconds: float | None
     poisoned: bool
+
+
+@dataclass(frozen=True)
+class RunPolicyTrainingResult:
+    """Diagnostics for one committed complete-attempt policy update."""
+
+    loss: float
+    optimizer_steps_applied: int
+    optimizer_steps_after: int
+    decision_count: int
+    approximate_kl: float
+    clip_fraction: float
+    entropy: float
+    value_loss: float
+    gradient_norm: float
 
 
 class SynchronousPolicyTrainer:
@@ -87,6 +105,7 @@ class SynchronousPolicyTrainer:
         self._total_training_seconds = restored.total_training_seconds
         self._last_training_seconds = restored.last_training_seconds
         self._last_credit_assignment: CreditAssignmentComparison | None = None
+        self._last_result: RunPolicyTrainingResult | None = None
         self._poisoned = False
 
     @property
@@ -111,6 +130,12 @@ class SynchronousPolicyTrainer:
 
         return self._last_credit_assignment
 
+    @property
+    def last_result(self) -> RunPolicyTrainingResult | None:
+        """Return diagnostics for the latest live update, if one occurred."""
+
+        return self._last_result
+
     def __call__(self, delivery: AttemptAssemblyDelivery) -> None:
         if self._poisoned:
             raise TorchTrainingError("trainer is poisoned after an optimizer failure")
@@ -127,6 +152,7 @@ class SynchronousPolicyTrainer:
         if completed_count == 0:
             self._deliveries += 1
             self._dropped_attempts += dropped_count
+            self._last_result = None
             return
         if completed_count != self.objective_config.attempts_per_update:
             raise TorchTrainingError(
@@ -163,43 +189,99 @@ class SynchronousPolicyTrainer:
             self.objective_config.terminal_return,
             self.objective_config.advantage_mode,
             self.objective_config.decision_scope,
+            update_config=self.objective_config.policy_update,
         )
         if objective.value.ndim != 0 or not objective.value.requires_grad:
             raise TorchTrainingError(
                 "realized outcome objective must be a differentiable scalar"
             )
 
+        optimizer_steps_applied = 0
+        gradient_norm = 0.0
+        fixed_actor_advantages = (
+            objective.actor_advantages
+            if self.objective_config.policy_update.uses_value_baseline
+            else None
+        )
         try:
-            self.optimizer.zero_grad(set_to_none=True)
-            objective.value.backward()
-            gradients = tuple(
-                parameter.grad
-                for group in self.optimizer.param_groups
-                for parameter in group["params"]
-                if parameter.grad is not None
-            )
-            if not gradients:
-                raise TorchTrainingError("optimizer received no gradients")
-            if not all(bool(torch.all(torch.isfinite(gradient))) for gradient in gradients):
-                raise TorchTrainingError("optimizer gradients must be finite")
-            self.optimizer.step()
+            for epoch in range(self.objective_config.policy_update.epochs):
+                if epoch > 0:
+                    objective = on_policy_terminal_loss(
+                        self.scorer,
+                        delivery.completed,
+                        self.registry,
+                        self.concat_limits,
+                        self.policy_config,
+                        self.objective_config.terminal_return,
+                        self.objective_config.advantage_mode,
+                        self.objective_config.decision_scope,
+                        update_config=self.objective_config.policy_update,
+                        require_matching_propensities=False,
+                        fixed_actor_advantages=fixed_actor_advantages,
+                    )
+                    target_kl = self.objective_config.policy_update.target_kl
+                    if target_kl is not None and objective.approximate_kl > target_kl:
+                        break
+
+                self.optimizer.zero_grad(set_to_none=True)
+                objective.value.backward()
+                parameters = tuple(
+                    parameter
+                    for group in self.optimizer.param_groups
+                    for parameter in group["params"]
+                    if parameter.grad is not None
+                )
+                if not parameters:
+                    raise TorchTrainingError("optimizer received no gradients")
+                gradients = tuple(parameter.grad for parameter in parameters)
+                if not all(
+                    gradient is not None
+                    and bool(torch.all(torch.isfinite(gradient)))
+                    for gradient in gradients
+                ):
+                    raise TorchTrainingError("optimizer gradients must be finite")
+                max_grad_norm = self.objective_config.policy_update.max_grad_norm
+                measured_norm = torch.nn.utils.clip_grad_norm_(
+                    parameters,
+                    float("inf") if max_grad_norm is None else max_grad_norm,
+                )
+                if not bool(torch.isfinite(measured_norm)):
+                    raise TorchTrainingError("optimizer gradient norm must be finite")
+                gradient_norm = float(measured_norm.detach().item())
+                self.optimizer.step()
+                optimizer_steps_applied += 1
+                self._optimizer_steps += 1
         except Exception:
             self._poisoned = True
             raise
+
+        if optimizer_steps_applied <= 0:
+            self._poisoned = True
+            raise TorchTrainingError("policy update committed no optimizer step")
 
         loss = float(objective.value.detach().item())
         if not math.isfinite(loss):
             self._poisoned = True
             raise TorchTrainingError("committed optimizer loss must be finite")
         self._deliveries += 1
-        self._optimizer_steps += 1
         self._completed_attempts += completed_count
         self._dropped_attempts += dropped_count
-        self._trained_decisions += objective.decision_count
+        self._trained_decisions += objective.decision_count * optimizer_steps_applied
         self._last_loss = loss
         self._last_behavior_manifest_ids = objective.behavior_manifest_ids
         self._last_selection_probabilities = objective.selection_probabilities
         self._last_credit_assignment = credit_assignment
+        self._last_result = RunPolicyTrainingResult(
+            loss=loss,
+            optimizer_steps_applied=optimizer_steps_applied,
+            optimizer_steps_after=self._optimizer_steps,
+            decision_count=objective.decision_count,
+            approximate_kl=objective.approximate_kl,
+            clip_fraction=objective.clip_fraction,
+            entropy=objective.entropy,
+            value_loss=objective.value_loss,
+            gradient_norm=gradient_norm,
+        )
         elapsed = time.perf_counter() - training_started
         self._total_training_seconds += elapsed
         self._last_training_seconds = elapsed

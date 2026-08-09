@@ -631,7 +631,7 @@ Configure one stable Python 3.12 training runtime once, then use the small
 .\learning\dev.ps1 evaluate-run -Behavior <training-dir> -Output <fresh-dir> -Attempts 8 -MaxBatchSteps 4096 -BehaviorSeed 10000 -HeldOutSeedStart 0 -RunPotionLane trained
 .\learning\dev.ps1 evaluate-run-potions -Behavior <training-dir> -Output <fresh-dir> -Attempts 8 -MaxBatchSteps 4096 -BehaviorSeed 10000 -HeldOutSeedStart 0
 .\learning\dev.ps1 collect-run-roots -Behavior <training-dir> -Output <fresh.bin> -Roots 2 -MaxBatchSteps 4096 -WallMs 60000 -BehaviorSeed 120000 -TrainingSeedStart 10000000 -MinFloor 2 -MinUsablePotions 1 -RunPotionLane trained
-.\learning\dev.ps1 train-run -Behavior <combat-training-dir> -Output <fresh-dir> -Slots 4 -Generations 1 -AttemptsPerUpdate 8 -MaxBatchSteps 4096 -EvaluationAttempts 16 -HeldOutSeedStart 1000000 -AdvantageMode raw-return -DecisionScope all -SamplingMode independent-cohorts -RunPotionLane trained
+.\learning\dev.ps1 train-run -Behavior <combat-training-dir> -Output <fresh-dir> -Slots 4 -Generations 1 -AttemptsPerUpdate 8 -MaxBatchSteps 4096 -EvaluationAttempts 16 -HeldOutSeedStart 1000000 -AdvantageMode raw-return -DecisionScope all -SamplingMode independent-cohorts -RunPolicyUpdate ppo-clip-value -RunPotionLane trained
 ```
 
 `configure` installs the tool requirements declared by the local
@@ -961,6 +961,17 @@ each attempt over its remaining strategic decisions; it does not change the
 behavior candidate surface or erase combat actions from experience evidence.
 Use it only with decision-time progress capture and compare it on the same
 training and held-out seed blocks.
+`-RunPolicyUpdate reinforce` preserves the compatibility whole-run update and
+remains the default. The opt-in `ppo-clip-value` profile adds a zero-initialized
+value head, predicts the attempt's final floor-progress return at every retained
+decision state, freezes rollout advantages, and applies at most four clipped
+epochs with KL stop, entropy regularization, and gradient clipping. It requires
+`-AdvantageMode raw-return` while the first contract is evaluated. The training
+journal records optimizer epochs, KL, clip fraction, entropy, value loss, and
+gradient norm. It also aggregates the first four completed combats by ordinal:
+net post-combat HP already includes relic recovery such as Burning Blood, so
+these rows diagnose premature low-HP state occupancy without inventing an HP
+reward or declaring one combat result sufficient evidence of improvement.
 
 `test` requires PyTorch and the installed bridge and runs the complete learning
 suite; missing training dependencies are failures, not skips. `verify` runs

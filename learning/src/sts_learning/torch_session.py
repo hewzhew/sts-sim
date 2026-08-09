@@ -159,9 +159,13 @@ class CategoricalOnlineSession:
         training_step_after = controller_after.active_training_step
         if manifest_after is None or training_step_after is None:
             raise TorchSessionError("session lost its active behavior")
-        if training_step_after - training_step_before != completed:
+        if (
+            controller_after.successful_promotions
+            - controller_before.successful_promotions
+            != completed
+        ):
             raise TorchSessionError(
-                "multi-generation promotion count disagrees with active training step"
+                "multi-generation promotion count disagrees with completed generations"
             )
         return CategoricalTrainingAdvanceResult(
             active_manifest_id_before=manifest_before,
@@ -254,7 +258,31 @@ class CategoricalOnlineSessionFactory:
             shadow = self._scorer()
         if initial_scorer is not None:
             try:
-                shadow.load_state_dict(initial_scorer.state_dict(), strict=True)
+                if shadow.config.value_head == initial_scorer.config.value_head:
+                    shadow.load_state_dict(initial_scorer.state_dict(), strict=True)
+                else:
+                    actor_state = {
+                        key: value
+                        for key, value in initial_scorer.state_dict().items()
+                        if not key.startswith("value_head.")
+                    }
+                    incompatible = shadow.load_state_dict(actor_state, strict=False)
+                    expected_missing = (
+                        {
+                            key
+                            for key in shadow.state_dict()
+                            if key.startswith("value_head.")
+                        }
+                        if shadow.config.value_head
+                        else set()
+                    )
+                    if (
+                        incompatible.unexpected_keys
+                        or set(incompatible.missing_keys) != expected_missing
+                    ):
+                        raise RuntimeError(
+                            "actor-only warm start changed shared policy keys"
+                        )
             except RuntimeError as error:
                 raise TorchSessionError(
                     "session initial scorer is incompatible with the maintained profile"

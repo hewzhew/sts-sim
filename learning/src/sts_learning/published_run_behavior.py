@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import json
+import math
 import operator
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
+from numbers import Real
 from pathlib import Path
 
 from .combat_potion_lane import CombatPotionLane
@@ -15,6 +17,8 @@ from .seeds import SeedPartition, SeedSchedule
 from .terminal_returns import (
     OnPolicyObjectiveConfig,
     RunDecisionScope,
+    RunPolicyUpdateConfig,
+    RunPolicyUpdateRule,
     TerminalAdvantageMode,
 )
 from .torch_behavior import CheckpointedCategoricalTorchPolicy
@@ -25,6 +29,7 @@ from .torch_session_config import (
     CategoricalSessionBridge,
     CategoricalSessionLimits,
 )
+from .torch_policy import RaggedScorerConfig
 
 
 RUN_TRAINING_SCHEMA = "sts-learning-run-training-v2"
@@ -109,6 +114,7 @@ def recover_published_run_behavior(
         raise PublishedRunBehaviorError("run behavior requires distinct RNG seeds")
 
     configuration, completed = _training_boundary_records(root / "training.jsonl")
+    policy_update = _run_policy_update(configuration)
     objective = OnPolicyObjectiveConfig(
         attempts_per_update=_positive(
             configuration.get("attempts_per_update"),
@@ -124,7 +130,13 @@ def recover_published_run_behavior(
             configuration.get("decision_scope", "all"),
             "decision_scope",
         ),
+        policy_update=policy_update,
     )
+    completed_update = completed.get("run_policy_update", "reinforce")
+    if completed_update != policy_update.rule.name.lower():
+        raise PublishedRunBehaviorError(
+            "run policy update changed across publication"
+        )
     training_step = _nonnegative(
         completed.get("optimizer_steps"),
         "optimizer_steps",
@@ -174,7 +186,13 @@ def recover_published_run_behavior(
             "episode-root attempt cap changed across publication"
         )
 
-    profile = replace(CategoricalOnlineProfile(), objective=objective)
+    profile = replace(
+        CategoricalOnlineProfile(),
+        scorer=RaggedScorerConfig(
+            value_head=policy_update.uses_value_baseline,
+        ),
+        objective=objective,
+    )
     limits = replace(
         CategoricalSessionLimits(),
         owner_capacity=max(16, _nonnegative(configuration.get("generations"), "generations") + 2),
@@ -326,6 +344,38 @@ def _sampling_mode(value: object) -> RunSamplingMode:
         ) from error
 
 
+def _run_policy_update(configuration: Mapping[str, object]) -> RunPolicyUpdateConfig:
+    value = configuration.get("run_policy_update", "reinforce")
+    if value == "reinforce":
+        return RunPolicyUpdateConfig()
+    if value != "ppo_clip_value":
+        raise PublishedRunBehaviorError("run policy update is unsupported")
+    return RunPolicyUpdateConfig(
+        rule=RunPolicyUpdateRule.PPO_CLIP_VALUE,
+        epochs=_positive(configuration.get("run_policy_epochs"), "run_policy_epochs"),
+        clip_coefficient=_finite_float(
+            configuration.get("run_policy_clip_coefficient"),
+            "run_policy_clip_coefficient",
+        ),
+        entropy_coefficient=_finite_float(
+            configuration.get("run_policy_entropy_coefficient"),
+            "run_policy_entropy_coefficient",
+        ),
+        max_grad_norm=_optional_float(
+            configuration.get("run_policy_max_grad_norm"),
+            "run_policy_max_grad_norm",
+        ),
+        target_kl=_optional_float(
+            configuration.get("run_policy_target_kl"),
+            "run_policy_target_kl",
+        ),
+        value_loss_coefficient=_finite_float(
+            configuration.get("run_policy_value_loss_coefficient"),
+            "run_policy_value_loss_coefficient",
+        ),
+    )
+
+
 def _episode_root_attempts(
     value: object,
     mode: RunSamplingMode,
@@ -377,3 +427,18 @@ def _seed(value: object, name: str) -> int:
     if normalized >= 1 << 63:
         raise PublishedRunBehaviorError(f"{name} must be below 2^63")
     return normalized
+
+
+def _finite_float(value: object, name: str) -> float:
+    if isinstance(value, bool) or not isinstance(value, Real):
+        raise PublishedRunBehaviorError(f"{name} must be a real number")
+    normalized = float(value)
+    if not math.isfinite(normalized):
+        raise PublishedRunBehaviorError(f"{name} must be finite")
+    return normalized
+
+
+def _optional_float(value: object, name: str) -> float | None:
+    if value is None:
+        return None
+    return _finite_float(value, name)

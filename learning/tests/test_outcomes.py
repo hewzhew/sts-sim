@@ -7,6 +7,8 @@ import numpy as np
 from sts_learning import (
     FloorProgressReturnConfig,
     OnPolicyObjectiveConfig,
+    RunPolicyUpdateConfig,
+    RunPolicyUpdateRule,
     TerminalAdvantageMode,
     TerminalAttemptOutcome,
     TerminalBatchError,
@@ -108,6 +110,10 @@ class OnPolicyObjectiveConfigTests(unittest.TestCase):
         self.assertIs(objective.terminal_return, terminal_return)
         self.assertEqual(objective.attempts_per_update, 4)
         self.assertIs(
+            objective.policy_update.rule,
+            RunPolicyUpdateRule.REINFORCE,
+        )
+        self.assertIs(
             objective.advantage_mode,
             TerminalAdvantageMode.RAW_RETURN,
         )
@@ -152,6 +158,21 @@ class OnPolicyObjectiveConfigTests(unittest.TestCase):
                         attempts_per_update=1,
                         advantage_mode=matched_mode,
                     )
+
+    def test_value_ppo_is_explicit_and_rejects_ambiguous_advantage_modes(self) -> None:
+        update = RunPolicyUpdateConfig.ppo_clip_value()
+
+        objective = OnPolicyObjectiveConfig(policy_update=update)
+
+        self.assertIs(objective.policy_update, update)
+        self.assertTrue(objective.policy_update.uses_value_baseline)
+        self.assertEqual(objective.policy_update.epochs, 4)
+        with self.assertRaisesRegex(TerminalReturnError, "raw-return"):
+            OnPolicyObjectiveConfig(
+                attempts_per_update=2,
+                advantage_mode=TerminalAdvantageMode.LEAVE_ONE_OUT,
+                policy_update=update,
+            )
 
 
 if __name__ == "__main__":

@@ -28,6 +28,7 @@ from sts_learning.train_run import (
     RunTrainingCommandConfig,
     run_run_training,
 )
+from sts_learning import RunPolicyUpdateConfig
 
 
 def test_run_evaluation_uses_frozen_combat_behavior_without_recovery(
@@ -189,6 +190,11 @@ def test_run_training_warm_starts_publishes_and_evaluates(
     assert summary["held_out_victories"] == 2
     assert summary["held_out_floor_sum"] == 80
     assert summary["held_out_floor_counts"] == ((40, 2),)
+    assert summary["training_resources_cumulative"]["combat_count"] == 2
+    assert summary["training_resources_cumulative"]["early_combat_ordinals"][0][
+        "count"
+    ] == 2
+    assert summary["held_out_resources"]["combat_count"] == 2
     assert (output / "summary.json").is_file()
     records = tuple(
         json.loads(line)
@@ -241,6 +247,7 @@ def test_run_training_warm_starts_publishes_and_evaluates(
         "attempts_per_update": 2,
         "advantage_mode": "raw_return",
         "decision_scope": "all",
+        "policy_update": "reinforce",
     }
     assert reevaluation["terminal_attempts"] == 2
 
@@ -255,6 +262,52 @@ def test_run_training_warm_starts_publishes_and_evaluates(
     )
     with pytest.raises(PublishedRunBehaviorError, match="sampling mode changed"):
         recover_published_run_behavior(output, run_bridge, (777,))
+
+
+def test_run_value_ppo_warm_starts_actor_and_publishes_diagnostics(
+    tmp_path: Path,
+) -> None:
+    behavior, combat_bridge, run_bridge = published_behavior(tmp_path)
+    output = tmp_path / "run-value-training"
+
+    summary = run_run_training(
+        RunTrainingCommandConfig(
+            warm_start_behavior=behavior,
+            output=output,
+            slot_count=2,
+            generations=1,
+            attempts_per_update=2,
+            max_batch_steps_per_generation=1,
+            model_seed=43,
+            behavior_seed=94,
+            training_seed_start=0,
+            evaluation_attempts=2,
+            evaluation_max_batch_steps=2,
+            evaluation_behavior_seed=501,
+            held_out_seed_start=1000,
+            policy_update=RunPolicyUpdateConfig.ppo_clip_value(),
+        ),
+        combat_bridge=combat_bridge,
+        run_bridge=run_bridge,
+    )
+
+    records = tuple(
+        json.loads(line)
+        for line in (output / "training.jsonl").read_text(
+            encoding="utf-8"
+        ).splitlines()
+    )
+    generation = records[1]
+    assert summary["run_policy_update"] == "ppo_clip_value"
+    assert 1 <= summary["optimizer_steps"] <= 4
+    assert generation["optimizer_steps_applied"] == summary["optimizer_steps"]
+    assert generation["value_loss"] > 0.0
+    assert generation["gradient_norm"] > 0.0
+    assert generation["approximate_kl"] >= 0.0
+
+    recovered = recover_published_run_behavior(output, run_bridge, (777,))
+    assert recovered.objective.policy_update.uses_value_baseline
+    assert recovered.policies[0].frozen_scorer.config.value_head
 
 
 def test_run_training_inherits_the_warm_start_potion_lane(
