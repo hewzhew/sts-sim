@@ -15,5 +15,6 @@ rmp-serde = "1.3"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 sts_oracle_eval = { path = "../../crates/sts_oracle_eval", default-features = false }
+sts_oracle_runtime = { path = "../../crates/sts_oracle_runtime", default-features = false }
 
 [workspace]

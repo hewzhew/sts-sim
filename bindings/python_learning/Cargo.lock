@@ -305,6 +305,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "384b8ab6d37215f3c5301a95a4accb5d64aa607f1fcb26a11b5303878451b4fe"
 
 [[package]]
+name = "oracle_lab_protocol"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "portable-atomic"
 version = "1.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -537,6 +545,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sts_oracle_eval",
+ "sts_oracle_runtime",
 ]
 
 [[package]]
@@ -552,6 +561,19 @@ dependencies = [
  "sts_combat_planner",
  "sts_simulator",
  "windows-sys",
+]
+
+[[package]]
+name = "sts_oracle_runtime"
+version = "0.1.0"
+dependencies = [
+ "blake2",
+ "oracle_lab_protocol",
+ "serde",
+ "serde_json",
+ "sts_combat_planner",
+ "sts_oracle_eval",
+ "sts_simulator",
 ]
 
 [[package]]

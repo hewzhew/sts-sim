@@ -16,6 +16,15 @@ as five sparse, columnar NumPy table families:
 - `candidate_token_indices`: direct alignment with the flattened candidate
   rows already described by `candidate_row_splits`.
 
+`decision_batch(production_behavior=True)` obtains the current production
+oracle ordering in the same atomic frame. The aligned
+`production_behavior_available` Boolean column is true only when the current
+row is a represented strategic root and the production choice maps exactly to
+one exposed candidate. Its paired ordinal is meaningful only on those rows.
+Combat rows, bridge-local symbolic-selection rows, owner gaps, and mapping gaps
+remain explicitly unavailable; the bridge never substitutes ordinal zero or a
+random choice as a teacher label.
+
 `semantic_schema()` returns the numeric enum dictionaries and categorical
 vocabulary sizes from the same Rust definitions that produce the arrays. A
 trainer therefore does not need a duplicate Python feature dictionary or a

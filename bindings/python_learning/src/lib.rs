@@ -8,9 +8,10 @@ use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyDict, PyList};
 use serde::{Deserialize, Serialize};
 use sts_oracle_eval::eval::run_control::{
+    capture_planner_boundary_yield_v1, CombatLearningPotionPolicyV1,
     CombatLearningRootBatchArtifactV1, CombatLearningRootV1, LearningActionV1,
-    CombatLearningPotionPolicyV1, LearningBoundaryKindV1, LearningBoundaryV1,
-    LearningEnvPoolV1, LearningEnvV1, LearningPublicRunContextV1, LearningSelectionDraftV1,
+    LearningBoundaryKindV1, LearningBoundaryV1, LearningEnvPoolV1, LearningEnvV1,
+    LearningPublicRunContextV1, LearningSelectionDraftV1, PlannerBoundaryYieldKindV1,
     RunControlConfig, RunControlSessionCheckpointV1,
 };
 
@@ -311,6 +312,12 @@ struct DecisionSnapshot {
     candidate_row_splits: Vec<usize>,
 }
 
+#[derive(Debug)]
+struct ProductionBehaviorSnapshot {
+    available: Vec<bool>,
+    ordinals: Vec<usize>,
+}
+
 #[pyclass(frozen, name = "LearningPublicRunContextV1")]
 struct PyLearningPublicRunContextV1 {
     inner: LearningPublicRunContextV1,
@@ -532,16 +539,26 @@ impl LearningBatchEnv {
         Ok(PyBytes::new(py, &payload))
     }
 
-    #[pyo3(signature = (dense_mask=false, semantic=false))]
+    #[pyo3(signature = (dense_mask=false, semantic=false, production_behavior=false))]
     fn decision_batch<'py>(
         &self,
         py: Python<'py>,
         dense_mask: bool,
         semantic: bool,
+        production_behavior: bool,
     ) -> PyResult<Bound<'py, PyDict>> {
         let snapshot = self.decision_snapshot()?;
         let semantic = semantic.then(|| self.semantic_snapshot()).transpose()?;
-        decision_batch_dict(py, snapshot, dense_mask, semantic)
+        let production_behavior = production_behavior
+            .then(|| self.production_behavior_snapshot(&snapshot))
+            .transpose()?;
+        decision_batch_dict(
+            py,
+            snapshot,
+            dense_mask,
+            semantic,
+            production_behavior,
+        )
     }
 
     fn choose(&mut self, ordinals: Vec<usize>) -> PyResult<()> {
@@ -1082,6 +1099,28 @@ impl LearningBatchEnv {
         let source = LearningBatchDecisionSource::new(&self.pool, &self.potion_policy);
         semantic_snapshot_from_source(&source, &self.states).map_err(runtime_error)
     }
+
+    fn production_behavior_snapshot(
+        &self,
+        snapshot: &DecisionSnapshot,
+    ) -> PyResult<ProductionBehaviorSnapshot> {
+        let mut available = Vec::with_capacity(snapshot.slot_indices.len());
+        let mut ordinals = Vec::with_capacity(snapshot.slot_indices.len());
+        for &slot_index in &snapshot.slot_indices {
+            let ordinal = production_behavior_ordinal(
+                &self.pool,
+                &self.states[slot_index],
+                slot_index,
+            )
+            .map_err(runtime_error)?;
+            available.push(ordinal.is_some());
+            ordinals.push(ordinal.unwrap_or(0));
+        }
+        Ok(ProductionBehaviorSnapshot {
+            available,
+            ordinals,
+        })
+    }
 }
 
 fn encode_serialized_checkpoint(
@@ -1138,6 +1177,7 @@ fn decision_batch_dict<'py>(
     snapshot: DecisionSnapshot,
     dense_mask: bool,
     semantic: Option<SemanticBatch>,
+    production_behavior: Option<ProductionBehaviorSnapshot>,
 ) -> PyResult<Bound<'py, PyDict>> {
     let result = PyDict::new(py);
     result.set_item(
@@ -1166,7 +1206,60 @@ fn decision_batch_dict<'py>(
     if let Some(semantic) = semantic {
         result.set_item("semantic", semantic_dict(py, semantic)?)?;
     }
+    if let Some(production_behavior) = production_behavior {
+        result.set_item(
+            "production_behavior_available",
+            PyArray1::from_vec(py, production_behavior.available),
+        )?;
+        result.set_item(
+            "production_behavior_ordinals",
+            usize_array(py, production_behavior.ordinals),
+        )?;
+    }
     Ok(result)
+}
+
+fn production_behavior_ordinal(
+    pool: &LearningEnvPoolV1,
+    state: &BridgeSlotState,
+    slot_index: usize,
+) -> Result<Option<usize>, String> {
+    if !matches!(state, BridgeSlotState::Root) {
+        return Ok(None);
+    }
+    let Some(LearningBoundaryV1::Strategic { boundary }) = pool.boundary(slot_index) else {
+        return Ok(None);
+    };
+    let session = pool
+        .checkpoint_slot(slot_index)
+        .map_err(|error| error.to_string())?
+        .into_session()?;
+    let Some(run_candidate_id) =
+        sts_oracle_runtime::runtime::branch::current_oracle_candidate_order_v1(&session)
+            .into_iter()
+            .next()
+    else {
+        return Ok(None);
+    };
+    let segment = capture_planner_boundary_yield_v1(
+        &session,
+        PlannerBoundaryYieldKindV1::CallbackStop,
+    )?;
+    let [visit] = segment.visits.as_slice() else {
+        return Ok(None);
+    };
+    let Some(link) = visit
+        .candidate_links
+        .iter()
+        .find(|link| link.run_candidate_id == run_candidate_id)
+    else {
+        return Ok(None);
+    };
+    Ok(boundary
+        .legal_candidates
+        .candidates
+        .iter()
+        .position(|candidate| candidate.candidate_id == link.planner_candidate_id))
 }
 
 fn usize_array(py: Python<'_>, values: Vec<usize>) -> Bound<'_, PyArray1<u64>> {
@@ -1388,6 +1481,23 @@ mod checkpoint_tests {
     use super::*;
 
     #[test]
+    fn production_behavior_labels_only_represented_strategic_roots() {
+        let env = LearningBatchEnv::from_seeds_with_potion_policy(
+            vec![0],
+            20,
+            CombatLearningPotionPolicyV1::All,
+        )
+        .expect("create strategic learning batch");
+        let snapshot = env.decision_snapshot().expect("strategic decision");
+        let behavior = env
+            .production_behavior_snapshot(&snapshot)
+            .expect("production behavior");
+
+        assert_eq!(behavior.available, vec![true]);
+        assert!(behavior.ordinals[0] < snapshot.candidate_counts[0]);
+    }
+
+    #[test]
     fn no_potion_batch_changes_the_native_combat_candidate_surface() {
         let mut session = RunControlSession::new(RunControlConfig::default());
         let mut combat = sts_oracle_eval::test_support::blank_test_combat();
@@ -1417,6 +1527,11 @@ mod checkpoint_tests {
             .decision_snapshot()
             .expect("all-potion decision")
             .candidate_counts[0];
+        let snapshot = env.decision_snapshot().expect("combat decision");
+        let behavior = env
+            .production_behavior_snapshot(&snapshot)
+            .expect("combat behavior availability");
+        assert_eq!(behavior.available, vec![false]);
         env.potion_policy = CombatLearningPotionPolicyV1::never();
         let never_candidates = env
             .decision_snapshot()

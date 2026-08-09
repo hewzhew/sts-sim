@@ -312,7 +312,7 @@ impl CombatLearningBatchEnv {
             .then(|| semantic_snapshot_from_source(&self.pool, &self.states))
             .transpose()
             .map_err(runtime_error)?;
-        decision_batch_dict(py, snapshot, dense_mask, semantic)
+        decision_batch_dict(py, snapshot, dense_mask, semantic, None)
     }
 
     fn choose(&mut self, ordinals: Vec<usize>) -> PyResult<()> {

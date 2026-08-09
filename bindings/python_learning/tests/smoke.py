@@ -147,6 +147,18 @@ def _assert_semantic(batch: dict) -> tuple[bool, bool, bool, bool]:
     )
 
 
+def _assert_production_behavior(batch: dict) -> int:
+    available = batch["production_behavior_available"]
+    ordinals = batch["production_behavior_ordinals"]
+    assert available.dtype == np.bool_
+    assert ordinals.dtype == np.uint64
+    assert available.shape == batch["slot_indices"].shape
+    assert ordinals.shape == available.shape
+    assert not np.any(available[batch["phase"] != PHASE_STRATEGIC_ROOT])
+    assert np.all(ordinals[available] < batch["candidate_counts"][available])
+    return int(np.count_nonzero(available))
+
+
 def _assert_semantic_equal(left: dict, right: dict) -> None:
     assert left["schema_version"] == right["schema_version"]
     assert np.array_equal(left["completeness"], right["completeness"])
@@ -631,7 +643,12 @@ def main() -> None:
     assert all(context.gold >= 0 for _, context in initial_contexts)
     assert all(isinstance(context.potion_ids, list) for _, context in initial_contexts)
 
-    initial = env.decision_batch(dense_mask=True, semantic=True)
+    initial = env.decision_batch(
+        dense_mask=True,
+        semantic=True,
+        production_behavior=True,
+    )
+    assert _assert_production_behavior(initial) == len(seeds)
     initial_combat, initial_selection, _, initial_combat_target = _assert_semantic(
         initial
     )
@@ -665,7 +682,12 @@ def main() -> None:
 
     while env.terminal_count < env.slot_count:
         while not env.ready:
-            batch = env.decision_batch(dense_mask=True, semantic=True)
+            batch = env.decision_batch(
+                dense_mask=True,
+                semantic=True,
+                production_behavior=True,
+            )
+            _assert_production_behavior(batch)
             slots = batch["slot_indices"]
             counts = batch["candidate_counts"]
             row_splits = batch["candidate_row_splits"]
