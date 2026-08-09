@@ -366,10 +366,11 @@ impl MonsterTurnPlan {
             steps.len() <= 1,
             "MonsterTurnPlan::new no longer permits multi-step plans; use with_visible_spec instead"
         );
+        let visible_spec = steps.first().map(summary_spec_from_single_step);
         Self {
             move_id,
             steps,
-            visible_spec: None,
+            visible_spec,
         }
     }
 
@@ -402,10 +403,11 @@ impl MonsterTurnPlan {
     }
 
     pub fn single(move_id: u8, step: MoveStep) -> Self {
+        let visible_spec = summary_spec_from_single_step(&step);
         Self {
             move_id,
             steps: smallvec![step],
-            visible_spec: None,
+            visible_spec: Some(visible_spec),
         }
     }
 

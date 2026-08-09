@@ -348,6 +348,13 @@ selection-domain token to its eligible master-deck card. Opaque
 observation/candidate ids and entity UUIDs are not features;
 internal identities may only resolve graph relationships. An unexpected
 out-of-surface combat input fails closed rather than emitting a partial row.
+Monster intent follows the game's information boundary. Single-step monster
+plans materialize their unambiguous `visible_spec`; multi-step plans must
+declare one explicitly. A public observation uses an explicit protocol mirror
+when available and otherwise falls back only to that visible spec, never to
+private move RNG or arbitrary execution steps. Current damage preview is
+projected through the simulator damage pipeline. Runic Dome hides both intent
+and preview before either source is consulted.
 `semantic_schema()` exposes enum dictionaries and categorical vocabulary sizes
 from the same Rust definitions, avoiding a second Python feature dictionary.
 The bridge still owns no policy, optimizer, automatic reset, or PyTorch

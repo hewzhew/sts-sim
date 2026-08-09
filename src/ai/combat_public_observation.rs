@@ -273,17 +273,39 @@ pub(crate) fn combat_public_intent_facts_v1(
         .monster_protocol
         .get(&monster_id)
         .map(|protocol| &protocol.observation);
-    let Some(observation) = observation else {
+    if let Some(observation) = observation {
+        if observation.visible_intent != Intent::Unknown {
+            return CombatPublicIntentFactsV1 {
+                evidence: ObservationEvidenceKindV1::VisibleExact,
+                intent: Some(observation.visible_intent.clone()),
+                preview_damage_per_hit: (observation.preview_damage_per_hit > 0)
+                    .then_some(observation.preview_damage_per_hit),
+                hidden_reason: None,
+            };
+        }
+    }
+
+    let Some(monster) = combat
+        .entities
+        .monsters
+        .iter()
+        .find(|monster| monster.id == monster_id)
+    else {
         return hidden_intent_facts(HiddenInformationReasonV1::IntentNotVisible);
     };
-    if observation.visible_intent == Intent::Unknown {
+    let Some(visible_spec) = monster.move_state.planned_visible_spec.as_ref() else {
+        return hidden_intent_facts(HiddenInformationReasonV1::IntentNotVisible);
+    };
+    let intent = Intent::from_visible_move_spec(visible_spec);
+    if intent == Intent::Unknown {
         return hidden_intent_facts(HiddenInformationReasonV1::IntentNotVisible);
     }
+    let preview =
+        crate::sim::combat_projection::project_monster_move_preview_in_combat(combat, monster);
     CombatPublicIntentFactsV1 {
         evidence: ObservationEvidenceKindV1::VisibleExact,
-        intent: Some(observation.visible_intent.clone()),
-        preview_damage_per_hit: (observation.preview_damage_per_hit > 0)
-            .then_some(observation.preview_damage_per_hit),
+        intent: Some(intent),
+        preview_damage_per_hit: preview.damage_per_hit,
         hidden_reason: None,
     }
 }
@@ -312,6 +334,37 @@ mod tests {
     use crate::content::monsters::EnemyId;
     use crate::content::relics::RelicState;
     use crate::runtime::combat::CombatCard;
+    use crate::runtime::monster_move::{AttackSpec, DamageKind, MonsterMoveSpec};
+
+    #[test]
+    fn planned_visible_spec_is_public_without_a_protocol_mirror() {
+        let mut combat = crate::test_support::blank_test_combat();
+        let mut monster = crate::test_support::test_monster(EnemyId::JawWorm);
+        monster.id = 7;
+        monster.slot = 0;
+        let spec = MonsterMoveSpec::Attack(AttackSpec {
+            base_damage: 11,
+            hits: 1,
+            damage_kind: DamageKind::Normal,
+        });
+        monster.set_planned_move_id(1);
+        monster.set_planned_steps(spec.to_steps());
+        monster.set_planned_visible_spec(Some(spec));
+        combat.entities.monsters.push(monster);
+
+        let facts = combat_public_intent_facts_v1(&combat, 7);
+
+        assert_eq!(facts.evidence, ObservationEvidenceKindV1::VisibleExact);
+        assert_eq!(
+            facts.intent,
+            Some(Intent::Attack {
+                damage: 11,
+                hits: 1,
+            })
+        );
+        assert_eq!(facts.preview_damage_per_hit, Some(11));
+        assert_eq!(facts.hidden_reason, None);
+    }
 
     #[test]
     fn runic_dome_public_observation_hides_intent_and_damage_preview() {

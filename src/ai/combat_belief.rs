@@ -1,7 +1,7 @@
 use crate::content::monsters::{resolve_monster_turn_plan, EnemyId};
 use crate::content::relics::RelicId;
 use crate::runtime::combat::{CombatState, Intent, MonsterEntity};
-use crate::runtime::monster_move::{EffectStrength, MonsterMoveSpec};
+use crate::runtime::monster_move::MonsterMoveSpec;
 use crate::sim::combat_projection::MonsterMovePreview;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -164,7 +164,7 @@ fn build_monster_belief_state(combat: &CombatState, monster: &MonsterEntity) -> 
     let intent = if is_public {
         combat.monster_protocol_visible_intent(monster.id).clone()
     } else {
-        intent_from_spec(&spec)
+        Intent::from_visible_move_spec(&spec)
     };
     let (base_damage, hits) = intent_damage_and_hits(&intent);
     let total_damage = preview
@@ -233,57 +233,6 @@ fn preview_for_plan(
     };
     let semantic_damage = plan.attack().map(|attack| attack.base_damage.max(0));
     MonsterMovePreview::from_plan(plan, visible_damage.or(semantic_damage))
-}
-
-fn intent_from_spec(spec: &MonsterMoveSpec) -> Intent {
-    match spec {
-        MonsterMoveSpec::Attack(attack) => Intent::Attack {
-            damage: attack.base_damage,
-            hits: attack.hits,
-        },
-        MonsterMoveSpec::AttackAddCard(attack, _) => Intent::AttackDebuff {
-            damage: attack.base_damage,
-            hits: attack.hits,
-        },
-        MonsterMoveSpec::AttackUpgradeCards(attack, _) => Intent::AttackDebuff {
-            damage: attack.base_damage,
-            hits: attack.hits,
-        },
-        MonsterMoveSpec::AttackBuff(attack, _) => Intent::AttackBuff {
-            damage: attack.base_damage,
-            hits: attack.hits,
-        },
-        MonsterMoveSpec::AttackSustain(attack) => Intent::AttackBuff {
-            damage: attack.base_damage,
-            hits: attack.hits,
-        },
-        MonsterMoveSpec::AttackDebuff(attack, _) => Intent::AttackDebuff {
-            damage: attack.base_damage,
-            hits: attack.hits,
-        },
-        MonsterMoveSpec::AttackDefend(attack, _) => Intent::AttackDefend {
-            damage: attack.base_damage,
-            hits: attack.hits,
-        },
-        MonsterMoveSpec::AddCard(add_card) => match add_card.visible_strength {
-            EffectStrength::Strong => Intent::StrongDebuff,
-            EffectStrength::Normal => Intent::Debuff,
-        },
-        MonsterMoveSpec::Buff(_) => Intent::Buff,
-        MonsterMoveSpec::Heal(_) => Intent::Buff,
-        MonsterMoveSpec::Debuff(_) => Intent::Debuff,
-        MonsterMoveSpec::StrongDebuff(_) => Intent::StrongDebuff,
-        MonsterMoveSpec::Defend(_) => Intent::Defend,
-        MonsterMoveSpec::DefendDebuff(_, _) => Intent::DefendDebuff,
-        MonsterMoveSpec::DefendBuff(_, _) => Intent::DefendBuff,
-        MonsterMoveSpec::Escape => Intent::Escape,
-        MonsterMoveSpec::Magic => Intent::Magic,
-        MonsterMoveSpec::Sleep => Intent::Sleep,
-        MonsterMoveSpec::Stun => Intent::Stun,
-        MonsterMoveSpec::Debug => Intent::Debug,
-        MonsterMoveSpec::None => Intent::None,
-        MonsterMoveSpec::Unknown => Intent::Unknown,
-    }
 }
 
 fn intent_damage_and_hits(intent: &Intent) -> (i32, u8) {

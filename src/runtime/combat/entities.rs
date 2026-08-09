@@ -218,6 +218,51 @@ pub enum Intent {
 }
 
 impl Intent {
+    /// Project one explicitly visible semantic move spec into the public
+    /// protocol intent shape. This is observation data only; combat execution
+    /// continues to use `MonsterTurnPlan`.
+    pub fn from_visible_move_spec(spec: &MonsterMoveSpec) -> Self {
+        match spec {
+            MonsterMoveSpec::Attack(attack) => Intent::Attack {
+                damage: attack.base_damage,
+                hits: attack.hits,
+            },
+            MonsterMoveSpec::AttackAddCard(attack, _)
+            | MonsterMoveSpec::AttackUpgradeCards(attack, _)
+            | MonsterMoveSpec::AttackDebuff(attack, _) => Intent::AttackDebuff {
+                damage: attack.base_damage,
+                hits: attack.hits,
+            },
+            MonsterMoveSpec::AttackBuff(attack, _) | MonsterMoveSpec::AttackSustain(attack) => {
+                Intent::AttackBuff {
+                    damage: attack.base_damage,
+                    hits: attack.hits,
+                }
+            }
+            MonsterMoveSpec::AttackDefend(attack, _) => Intent::AttackDefend {
+                damage: attack.base_damage,
+                hits: attack.hits,
+            },
+            MonsterMoveSpec::AddCard(add_card) => match add_card.visible_strength {
+                crate::runtime::monster_move::EffectStrength::Strong => Intent::StrongDebuff,
+                crate::runtime::monster_move::EffectStrength::Normal => Intent::Debuff,
+            },
+            MonsterMoveSpec::Buff(_) | MonsterMoveSpec::Heal(_) => Intent::Buff,
+            MonsterMoveSpec::Debuff(_) => Intent::Debuff,
+            MonsterMoveSpec::StrongDebuff(_) => Intent::StrongDebuff,
+            MonsterMoveSpec::Defend(_) => Intent::Defend,
+            MonsterMoveSpec::DefendDebuff(_, _) => Intent::DefendDebuff,
+            MonsterMoveSpec::DefendBuff(_, _) => Intent::DefendBuff,
+            MonsterMoveSpec::Escape => Intent::Escape,
+            MonsterMoveSpec::Magic => Intent::Magic,
+            MonsterMoveSpec::Sleep => Intent::Sleep,
+            MonsterMoveSpec::Stun => Intent::Stun,
+            MonsterMoveSpec::Debug => Intent::Debug,
+            MonsterMoveSpec::None => Intent::None,
+            MonsterMoveSpec::Unknown => Intent::Unknown,
+        }
+    }
+
     pub fn is_java_attack_intent(&self) -> bool {
         matches!(
             self,
