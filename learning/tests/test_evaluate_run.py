@@ -53,7 +53,7 @@ def test_run_evaluation_uses_frozen_combat_behavior_without_recovery(
         run_bridge=run_bridge,
     )
 
-    assert summary["schema"] == "sts-learning-run-held-out-evaluation-v3"
+    assert summary["schema"] == "sts-learning-run-held-out-evaluation-v4"
     assert summary["behavior_training_kind"] == "combat"
     assert summary["behavior_run_sampling_mode"] is None
     assert summary["behavior_run_episode_root_attempts"] is None
@@ -71,6 +71,10 @@ def test_run_evaluation_uses_frozen_combat_behavior_without_recovery(
     assert summary["terminal_floor_counts"] == ((40, 2),)
     assert summary["terminal_act_counts"] == ((3, 2),)
     assert summary["combat_transition_count"] == 2
+    assert {
+        (transition["encounter_id"], transition["monster_ids"])
+        for transition in summary["combat_transitions"]
+    } == {("JawWorm", ("JawWorm",))}
     assert summary["combat_hp_loss_sum"] == 120
     assert summary["combat_potion_identity_losses"] == ()
     assert summary["combat_potion_identity_gains"] == ()

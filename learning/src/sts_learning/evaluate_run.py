@@ -38,7 +38,7 @@ from .torch_combat_session_config import (
 from .torch_session_config import CategoricalSessionBridge
 
 
-RUN_EVALUATION_SCHEMA = "sts-learning-run-held-out-evaluation-v3"
+RUN_EVALUATION_SCHEMA = "sts-learning-run-held-out-evaluation-v4"
 
 
 class RunEvaluationCommandError(RuntimeError):
@@ -344,6 +344,8 @@ def _combat_transition(
     return {
         "slot_index": transition.start.slot_index,
         "seed": transition.start.seed,
+        "encounter_id": transition.start.encounter_id,
+        "monster_ids": transition.start.monster_ids,
         "start_act": transition.start.act,
         "start_floor": transition.start.floor,
         "end_act": transition.end.act,

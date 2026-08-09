@@ -888,16 +888,17 @@ It measures how much observed progress depends on combat potion access; it
 does not establish the value of a consumed identity. Root-slot lanes are not
 defined for complete runs. For the routine comparison, use
 `evaluate-run-potions`: it deliberately uses one environment slot so both
-lanes finish the exact same ordered episode seeds, retains both complete V3
+lanes finish the exact same ordered episode seeds, retains both complete V4
 evaluations, and writes a compact per-seed `potion-comparison.json`. A combat-
 trained scorer has not thereby learned non-combat strategy; the command is a
 bounded end-to-end diagnostic of that complete policy surface, not a claim that
 all decisions were trained.
 Run-trained publications are recovered directly from their completed V2
 training journal and durable behavior stores, so a new held-out seed block does
-not require repeating the optimizer update. Evaluation output V3 records
-whether the source behavior was combat- or run-trained and includes the run
-objective when applicable.
+not require repeating the optimizer update. Evaluation output V4 records
+whether the source behavior was combat- or run-trained, includes the run
+objective when applicable, and preserves each combat's typed encounter and
+monster identities for encounter-level resource analysis.
 Use `train-run` for the first whole-run on-policy handoff. `-Behavior` is a
 verified completed `train-combat` directory whose scorer becomes an independent
 generation-zero parameter copy. Training uses the `TRAINING` seed partition,
