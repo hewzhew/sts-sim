@@ -140,6 +140,50 @@ def test_training_command_runs_updates_journals_and_publishes(
     assert "root_wins=1,2 root_objectives=win,hp" in stdout
 
 
+def test_training_command_can_publish_an_untrained_baseline(tmp_path: Path) -> None:
+    artifact = tmp_path / "roots.bin"
+    artifact.write_bytes(b"opaque-combat-roots")
+    output = tmp_path / "baseline"
+    bridge = CombatSessionBridge(
+        combat_roots_from_artifact=lambda payload, **_: _RootSource(),
+        semantic_schema=semantic_schema_fixture(),
+    )
+
+    summary = run_combat_training(
+        CombatTrainingCommandConfig(
+            artifact=artifact,
+            output=output,
+            root_count=2,
+            replicate_count=2,
+            updates=0,
+            model_seed=41,
+            behavior_seed_base=92,
+            potion_lane=CombatPotionLane.NEVER,
+        ),
+        bridge=bridge,
+    )
+
+    records = tuple(
+        json.loads(line)
+        for line in (output / "training.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
+    )
+    assert tuple(record["kind"] for record in records) == (
+        "configuration",
+        "completed",
+    )
+    assert summary["optimizer_steps"] == 0
+    assert summary["total_wins"] == 0
+    recovered = recover_published_combat_behavior(
+        output,
+        bridge,
+        CombatWinSessionLimits(),
+        (701,),
+    )
+    assert recovered.training_step == 0
+
+
 def test_training_command_warm_starts_from_a_verified_published_behavior(
     tmp_path: Path,
 ) -> None:

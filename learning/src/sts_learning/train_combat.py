@@ -101,7 +101,7 @@ class CombatTrainingCommandConfig:
                 )
         root_count = _positive(self.root_count, "root_count")
         replicate_count = _positive(self.replicate_count, "replicate_count")
-        updates = _positive(self.updates, "updates")
+        updates = _nonnegative(self.updates, "updates")
         model_seed = _seed(self.model_seed, "model_seed")
         behavior_seed_base = _seed(
             self.behavior_seed_base,
@@ -535,6 +535,12 @@ def _sha256(path: Path) -> str:
 def _positive(value: int, name: str) -> int:
     if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
         raise CombatTrainingCommandError(f"{name} must be a positive integer")
+    return value
+
+
+def _nonnegative(value: int, name: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        raise CombatTrainingCommandError(f"{name} must be a nonnegative integer")
     return value
 
 

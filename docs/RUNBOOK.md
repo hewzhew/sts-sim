@@ -638,6 +638,10 @@ Configure one stable Python 3.12 training runtime once, then use the small
 combat- or run-training publication. Cross-objective handoffs copy only actor
 parameters: a run continuation critic is never reused as a combat outcome
 critic, and a combat critic is never reused as a run continuation critic.
+`train-combat -Updates 0` publishes the seeded initialization without collecting
+experience or applying an optimizer step. Use it for a paired untrained
+baseline under the same schema, model seed, evaluation roots, and behavior RNG;
+it is not a training result.
 
 `configure` installs the tool requirements declared by the local
 `sts-learning[test]` extra into the selected runtime, then verifies Python,
