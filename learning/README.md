@@ -142,6 +142,21 @@ final held-out evaluation. The publication is the frozen behavior only; the
 command deliberately does not claim resumable optimizer/environment state when
 other asynchronous slots still contain open attempts.
 
+`sts_learning.strategic_demonstrations` is the bounded in-memory path for
+bootstrapping a strategic scorer from the maintained production owner. It asks
+the bridge for semantic candidates and production ordinals in the same frame,
+retains only exactly labeled strategic-root rows, and records seed, act, floor,
+and strategic context without writing a corpus artifact. Combat remains fixed
+to one immutable scorer; symbolic selection and unlabeled strategic rows are
+explicit fallback traffic and never become demonstrations. The default combat
+anchor requires an exact current publication. Historical weights are admitted
+only through the separately selected `COMPATIBLE_WEIGHT_IMPORT` mode, which
+still verifies the complete journal, unique durable identities, checkpoint
+hash, semantic schema, behavior/model configuration, and strict tensor
+compatibility. It records any allowed historical model-definition, optimizer,
+or trainer provenance digest difference instead of treating the source as a
+current publication.
+
 `sts_learning.experience` provides the optional bounded training handoff. Each
 decision batch is copied before policy inference into a recursively frozen,
 read-only view of the bridge-owned semantic schema; it does not define another

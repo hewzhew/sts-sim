@@ -25,6 +25,7 @@ from .combat_potion_lane import (
 )
 from .manifest_catalog import BoundedBehaviorManifestCatalog
 from .manifests import (
+    BehaviorManifest,
     BehaviorManifestRegistry,
     ManifestArtifactId,
     ManifestArtifactKind,
@@ -136,6 +137,101 @@ class PublishedCombatBehavior:
         object.__setattr__(self, "policies", policies)
 
 
+@dataclass(frozen=True)
+class CompatibleCombatScorerWarmStart:
+    """Verified historical publication whose scorer still loads exactly."""
+
+    source_manifest_id: BehaviorManifestId
+    checkpoint_id: ManifestArtifactId
+    training_step: int
+    training_root_count: int
+    training_artifact_sha256: str
+    training_all_loss_axis: CombatAllLossAxis
+    training_potion_lane: CombatPotionLane
+    training_potion_slots: tuple[int, ...]
+    provenance_mismatches: tuple[str, ...]
+    scorer: RaggedCandidateScorer
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.source_manifest_id, BehaviorManifestId):
+            raise PublishedCombatBehaviorError(
+                "compatible combat scorer requires a typed source manifest id"
+            )
+        if (
+            not isinstance(self.checkpoint_id, ManifestArtifactId)
+            or self.checkpoint_id.kind is not ManifestArtifactKind.MODEL_CHECKPOINT
+        ):
+            raise PublishedCombatBehaviorError(
+                "compatible combat scorer requires a model checkpoint id"
+            )
+        object.__setattr__(
+            self,
+            "training_step",
+            _nonnegative(self.training_step, "training_step"),
+        )
+        object.__setattr__(
+            self,
+            "training_root_count",
+            _positive(self.training_root_count, "training_root_count"),
+        )
+        object.__setattr__(
+            self,
+            "training_artifact_sha256",
+            _sha256(self.training_artifact_sha256, "training_artifact_sha256"),
+        )
+        if not isinstance(self.training_all_loss_axis, CombatAllLossAxis):
+            raise PublishedCombatBehaviorError(
+                "compatible combat scorer requires a typed all-loss axis"
+            )
+        if not isinstance(self.training_potion_lane, CombatPotionLane):
+            raise PublishedCombatBehaviorError(
+                "compatible combat scorer requires a typed potion lane"
+            )
+        try:
+            potion_slots = normalize_combat_potion_slots(
+                self.training_potion_lane,
+                self.training_potion_slots,
+            )
+        except CombatPotionLaneError as error:
+            raise PublishedCombatBehaviorError(str(error)) from error
+        object.__setattr__(self, "training_potion_slots", potion_slots)
+        mismatches = tuple(self.provenance_mismatches)
+        if len(set(mismatches)) != len(mismatches) or any(
+            name
+            not in {"model_definition", "optimizer_config", "trainer_implementation"}
+            for name in mismatches
+        ):
+            raise PublishedCombatBehaviorError(
+                "compatible combat scorer has invalid provenance mismatch evidence"
+            )
+        object.__setattr__(self, "provenance_mismatches", mismatches)
+        if not isinstance(self.scorer, RaggedCandidateScorer):
+            raise PublishedCombatBehaviorError(
+                "compatible combat scorer did not materialize the maintained model"
+            )
+        if self.scorer.training or any(
+            parameter.requires_grad for parameter in self.scorer.parameters()
+        ):
+            raise PublishedCombatBehaviorError(
+                "compatible combat scorer must be frozen"
+            )
+
+
+@dataclass(frozen=True)
+class _VerifiedCombatPublication:
+    store: BoundedTorchCheckpointStore
+    catalog: BoundedBehaviorManifestCatalog
+    manifest_id: BehaviorManifestId
+    manifest: BehaviorManifest
+    profile: CombatWinSessionProfile
+    training_step: int
+    training_root_count: int
+    training_artifact_sha256: str
+    training_all_loss_axis: CombatAllLossAxis
+    training_potion_lane: CombatPotionLane
+    training_potion_slots: tuple[int, ...]
+
+
 def recover_published_combat_behavior(
     behavior_root: str | Path,
     bridge: CombatSessionBridge,
@@ -144,6 +240,138 @@ def recover_published_combat_behavior(
 ) -> PublishedCombatBehavior:
     """Verify complete provenance and materialize one immutable scorer."""
 
+    seeds = tuple(
+        _seed(seed, f"behavior_seeds[{index}]")
+        for index, seed in enumerate(behavior_seeds)
+    )
+    if not seeds or len(set(seeds)) != len(seeds):
+        raise PublishedCombatBehaviorError(
+            "published combat behavior requires distinct RNG seeds"
+        )
+
+    recovered = _verified_combat_publication(behavior_root, bridge, limits)
+    expected = _expected_combat_manifest(recovered, bridge)
+    if recovered.manifest.semantic_schema_version != expected.semantic_schema_version:
+        raise PublishedCombatBehaviorError(
+            "published behavior semantic schema version "
+            f"{recovered.manifest.semantic_schema_version} does not match installed "
+            f"version {expected.semantic_schema_version}"
+        )
+    if recovered.manifest != expected:
+        raise PublishedCombatBehaviorError(
+            "published behavior does not match the maintained combat profile"
+        )
+
+    def scorer_factory() -> RaggedCandidateScorer:
+        return RaggedCandidateScorer.from_bridge_schema(
+            bridge.semantic_schema,
+            recovered.profile.scorer,
+        ).to(recovered.profile.device_type)
+
+    generators = tuple(
+        torch.Generator(device="cpu").manual_seed(seed) for seed in seeds
+    )
+    registry = BehaviorManifestRegistry(capacity=1)
+    first = CheckpointedCategoricalTorchPolicy.recover(
+        recovered.manifest_id,
+        recovered.store,
+        recovered.catalog,
+        registry,
+        scorer_factory,
+        recovered.profile.behavior,
+        generators[0],
+    )
+    return PublishedCombatBehavior(
+        manifest_id=recovered.manifest_id,
+        checkpoint_id=recovered.manifest.model_checkpoint,
+        training_step=recovered.training_step,
+        training_root_count=recovered.training_root_count,
+        training_artifact_sha256=recovered.training_artifact_sha256,
+        training_all_loss_axis=recovered.training_all_loss_axis,
+        training_potion_lane=recovered.training_potion_lane,
+        training_potion_slots=recovered.training_potion_slots,
+        policies=(first,) + tuple(
+            first.fork(generator) for generator in generators[1:]
+        ),
+    )
+
+
+def recover_compatible_combat_scorer(
+    behavior_root: str | Path,
+    bridge: CombatSessionBridge,
+    limits: CombatWinSessionLimits,
+) -> CompatibleCombatScorerWarmStart:
+    """Import only weights after exact publication and shape compatibility checks."""
+
+    recovered = _verified_combat_publication(behavior_root, bridge, limits)
+    expected = _expected_combat_manifest(recovered, bridge)
+    if recovered.manifest.semantic_schema_version != expected.semantic_schema_version:
+        raise PublishedCombatBehaviorError(
+            "compatible combat scorer semantic schema version "
+            f"{recovered.manifest.semantic_schema_version} does not match installed "
+            f"version {expected.semantic_schema_version}"
+        )
+    compared_fields = (
+        "model_definition",
+        "model_config",
+        "behavior_rule",
+        "semantic_schema",
+        "optimizer_config",
+        "trainer_implementation",
+    )
+    mismatches = tuple(
+        name
+        for name in compared_fields
+        if getattr(recovered.manifest, name) != getattr(expected, name)
+    )
+    allowed = {"model_definition", "optimizer_config", "trainer_implementation"}
+    unsupported = tuple(name for name in mismatches if name not in allowed)
+    if unsupported:
+        raise PublishedCombatBehaviorError(
+            "published combat weights are incompatible with the maintained profile: "
+            + ", ".join(unsupported)
+        )
+
+    def scorer_factory() -> RaggedCandidateScorer:
+        return RaggedCandidateScorer.from_bridge_schema(
+            bridge.semantic_schema,
+            recovered.profile.scorer,
+        ).to(recovered.profile.device_type)
+
+    try:
+        scorer = recovered.store.materialize(
+            recovered.manifest.model_checkpoint,
+            scorer_factory,
+        )
+    except RuntimeError as error:
+        raise PublishedCombatBehaviorError(
+            "published combat checkpoint cannot initialize the maintained scorer"
+        ) from error
+    if not isinstance(scorer, RaggedCandidateScorer):
+        raise PublishedCombatBehaviorError(
+            "compatible combat scorer factory returned the wrong model type"
+        )
+    scorer.eval()
+    scorer.requires_grad_(False)
+    return CompatibleCombatScorerWarmStart(
+        source_manifest_id=recovered.manifest_id,
+        checkpoint_id=recovered.manifest.model_checkpoint,
+        training_step=recovered.training_step,
+        training_root_count=recovered.training_root_count,
+        training_artifact_sha256=recovered.training_artifact_sha256,
+        training_all_loss_axis=recovered.training_all_loss_axis,
+        training_potion_lane=recovered.training_potion_lane,
+        training_potion_slots=recovered.training_potion_slots,
+        provenance_mismatches=mismatches,
+        scorer=scorer,
+    )
+
+
+def _verified_combat_publication(
+    behavior_root: str | Path,
+    bridge: CombatSessionBridge,
+    limits: CombatWinSessionLimits,
+) -> _VerifiedCombatPublication:
     root = Path(behavior_root).resolve()
     if not root.is_dir():
         raise PublishedCombatBehaviorError(
@@ -157,18 +385,7 @@ def recover_published_combat_behavior(
         raise PublishedCombatBehaviorError(
             "published combat behavior recovery requires typed limits"
         )
-    seeds = tuple(
-        _seed(seed, f"behavior_seeds[{index}]")
-        for index, seed in enumerate(behavior_seeds)
-    )
-    if not seeds or len(set(seeds)) != len(seeds):
-        raise PublishedCombatBehaviorError(
-            "published combat behavior requires distinct RNG seeds"
-        )
-
-    configuration, completed = _training_boundary_records(
-        root / "training.jsonl"
-    )
+    configuration, completed = _training_boundary_records(root / "training.jsonl")
     training_root_count = _positive(
         configuration.get("root_count"),
         "training root_count",
@@ -234,59 +451,35 @@ def recover_published_combat_behavior(
         raise PublishedCombatBehaviorError(
             "training journal and manifest training step disagree"
         )
-    expected = combat_win_training_manifest_template(
-        bridge.semantic_schema,
-        profile.scorer,
-        profile.behavior,
-        profile.optimizer,
-        profile.objective,
-        device_type=profile.device_type,
-    ).bind(
-        manifest.model_checkpoint,
-        training_step=manifest.training_step,
-    )
-    if manifest.semantic_schema_version != expected.semantic_schema_version:
-        raise PublishedCombatBehaviorError(
-            "published behavior semantic schema version "
-            f"{manifest.semantic_schema_version} does not match installed version "
-            f"{expected.semantic_schema_version}"
-        )
-    if manifest != expected:
-        raise PublishedCombatBehaviorError(
-            "published behavior does not match the maintained combat profile"
-        )
-
-    def scorer_factory() -> RaggedCandidateScorer:
-        return RaggedCandidateScorer.from_bridge_schema(
-            bridge.semantic_schema,
-            profile.scorer,
-        ).to(profile.device_type)
-
-    generators = tuple(
-        torch.Generator(device="cpu").manual_seed(seed) for seed in seeds
-    )
-    registry = BehaviorManifestRegistry(capacity=1)
-    first = CheckpointedCategoricalTorchPolicy.recover(
-        manifest_id,
-        store,
-        catalog,
-        registry,
-        scorer_factory,
-        profile.behavior,
-        generators[0],
-    )
-    return PublishedCombatBehavior(
+    return _VerifiedCombatPublication(
+        store=store,
+        catalog=catalog,
         manifest_id=manifest_id,
-        checkpoint_id=manifest.model_checkpoint,
+        manifest=manifest,
+        profile=profile,
         training_step=training_step,
         training_root_count=training_root_count,
         training_artifact_sha256=training_artifact_sha256,
         training_all_loss_axis=all_loss_axis,
         training_potion_lane=training_potion_lane,
         training_potion_slots=training_potion_slots,
-        policies=(first,) + tuple(
-            first.fork(generator) for generator in generators[1:]
-        ),
+    )
+
+
+def _expected_combat_manifest(
+    recovered: _VerifiedCombatPublication,
+    bridge: CombatSessionBridge,
+) -> BehaviorManifest:
+    return combat_win_training_manifest_template(
+        bridge.semantic_schema,
+        recovered.profile.scorer,
+        recovered.profile.behavior,
+        recovered.profile.optimizer,
+        recovered.profile.objective,
+        device_type=recovered.profile.device_type,
+    ).bind(
+        recovered.manifest.model_checkpoint,
+        training_step=recovered.manifest.training_step,
     )
 
 

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Sequence
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -16,8 +17,11 @@ from sts_learning.combat_potion_lane import CombatPotionLane
 from sts_learning import RunPolicyUpdateConfig
 from sts_learning.published_combat_behavior import (
     PublishedCombatBehaviorError,
+    recover_compatible_combat_scorer,
     recover_published_combat_behavior,
 )
+from sts_learning.manifests import ManifestArtifactId
+import sts_learning.published_combat_behavior as published_combat_behavior_module
 from sts_learning.torch_combat_session_config import CombatSessionBridge
 from sts_learning.torch_combat_session_config import CombatWinSessionLimits
 from sts_learning.train_combat import (
@@ -292,6 +296,68 @@ def test_recovery_reports_semantic_schema_version_mismatch(tmp_path: Path) -> No
             mismatched_bridge,
             CombatWinSessionLimits(),
             (701,),
+        )
+
+
+def test_compatible_scorer_import_allows_only_weight_compatible_provenance(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    behavior, bridge, _ = published_behavior(tmp_path)
+    original_template = (
+        published_combat_behavior_module.combat_win_training_manifest_template
+    )
+
+    def shifted_template(field: str):
+        def build(*args, **kwargs):
+            template = original_template(*args, **kwargs)
+            current = getattr(template, field)
+            return replace(
+                template,
+                **{
+                    field: ManifestArtifactId(
+                        current.kind,
+                        bytes([current.digest[0] ^ 0xFF]) + current.digest[1:],
+                    )
+                },
+            )
+
+        return build
+
+    monkeypatch.setattr(
+        published_combat_behavior_module,
+        "combat_win_training_manifest_template",
+        shifted_template("model_definition"),
+    )
+    with pytest.raises(
+        PublishedCombatBehaviorError,
+        match="does not match the maintained combat profile",
+    ):
+        recover_published_combat_behavior(
+            behavior,
+            bridge,
+            CombatWinSessionLimits(),
+            (701,),
+        )
+    imported = recover_compatible_combat_scorer(
+        behavior,
+        bridge,
+        CombatWinSessionLimits(),
+    )
+    assert imported.provenance_mismatches == ("model_definition",)
+    assert not imported.scorer.training
+    assert not any(parameter.requires_grad for parameter in imported.scorer.parameters())
+
+    monkeypatch.setattr(
+        published_combat_behavior_module,
+        "combat_win_training_manifest_template",
+        shifted_template("model_config"),
+    )
+    with pytest.raises(PublishedCombatBehaviorError, match="model_config"):
+        recover_compatible_combat_scorer(
+            behavior,
+            bridge,
+            CombatWinSessionLimits(),
         )
 
 
