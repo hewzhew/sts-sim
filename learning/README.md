@@ -157,6 +157,16 @@ compatibility. It records any allowed historical model-definition, optimizer,
 or trainer provenance digest difference instead of treating the source as a
 current publication.
 
+`sts_learning.strategic_behavior_cloning` consumes that in-memory corpus
+without inventing a second feature schema. It classifies each original run seed
+through the stable `SeedPartitionSpec` before concatenation, rejects an empty or
+overlapping train/held-out side, and trains only a deep copy of the frozen
+combat anchor. The result reports fixed-epoch train and held-out cross-entropy,
+overall agreement, and per-strategic-context agreement; it does not promote or
+publish a policy. A later mixed policy must continue routing combat through the
+unchanged anchor rather than assuming supervised strategic updates preserved
+combat competence.
+
 `sts_learning.experience` provides the optional bounded training handoff. Each
 decision batch is copied before policy inference into a recursively frozen,
 read-only view of the bridge-owned semantic schema; it does not define another
