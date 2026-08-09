@@ -416,6 +416,7 @@ def test_evaluation_accepts_a_verified_run_trained_behavior(tmp_path: Path) -> N
             evaluation_max_batch_steps=2,
             evaluation_behavior_seed=501,
             held_out_seed_start=1000,
+            ascension_level=20,
         ),
         combat_bridge=combat_bridge,
         run_bridge=run_bridge,

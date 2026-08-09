@@ -31,8 +31,8 @@ class TorchSessionError(RuntimeError):
 class CategoricalSessionBridge:
     """The bridge callables and exact semantic schema used by a session."""
 
-    environment: Callable[[list[int]], BatchEnvironment]
-    environment_without_combat_potions: Callable[[list[int]], BatchEnvironment]
+    environment: Callable[[list[int], int], BatchEnvironment]
+    environment_without_combat_potions: Callable[[list[int], int], BatchEnvironment]
     environment_from_checkpoint: EnvironmentCheckpointDecoder
     checkpoint_bank_from_checkpoint: CheckpointBankDecoder
     semantic_schema: Mapping[str, object]
@@ -224,6 +224,7 @@ class CategoricalSessionLimits:
 class CategoricalOnlineSessionConfig:
     """Population, algorithm, and bounded-resource configuration."""
 
+    ascension_level: int
     schedule: SeedSchedule = field(
         default_factory=lambda: SeedSchedule(SeedPartition.TRAINING)
     )
@@ -238,6 +239,13 @@ class CategoricalOnlineSessionConfig:
     )
 
     def __post_init__(self) -> None:
+        ascension_level = _non_negative_integer(
+            self.ascension_level,
+            "ascension_level",
+        )
+        if ascension_level > 20:
+            raise TorchSessionError("ascension_level must be at most 20")
+        object.__setattr__(self, "ascension_level", ascension_level)
         if not isinstance(self.schedule, SeedSchedule):
             raise TorchSessionError("session schedule must be typed")
         if self.schedule.partition is not SeedPartition.TRAINING:

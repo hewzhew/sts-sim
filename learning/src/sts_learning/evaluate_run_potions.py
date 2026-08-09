@@ -18,7 +18,7 @@ from .torch_combat_session_config import CombatSessionBridge
 from .torch_session_config import CategoricalSessionBridge
 
 
-RUN_POTION_COMPARISON_SCHEMA = "sts-learning-run-potion-comparison-v1"
+RUN_POTION_COMPARISON_SCHEMA = "sts-learning-run-potion-comparison-v2"
 
 
 @dataclass(frozen=True)
@@ -28,6 +28,7 @@ class RunPotionComparisonCommandConfig:
     terminal_attempts: int
     max_batch_steps: int
     behavior_seed: int
+    ascension_level: int
     held_out_seed_start: int = 0
 
     def __post_init__(self) -> None:
@@ -45,6 +46,7 @@ class RunPotionComparisonCommandConfig:
             terminal_attempts=self.terminal_attempts,
             max_batch_steps=self.max_batch_steps,
             behavior_seed=self.behavior_seed,
+            ascension_level=self.ascension_level,
             held_out_seed_start=self.held_out_seed_start,
             potion_lane=RunPotionLane.ALL,
         )
@@ -53,6 +55,7 @@ class RunPotionComparisonCommandConfig:
         object.__setattr__(self, "terminal_attempts", probe.terminal_attempts)
         object.__setattr__(self, "max_batch_steps", probe.max_batch_steps)
         object.__setattr__(self, "behavior_seed", probe.behavior_seed)
+        object.__setattr__(self, "ascension_level", probe.ascension_level)
         object.__setattr__(
             self,
             "held_out_seed_start",
@@ -100,6 +103,7 @@ def run_run_potion_comparison(
     comparison = summary["comparison"]
     print(
         "run_potion_comparison_complete=true "
+        f"ascension={config.ascension_level} "
         f"all_floor_sum={lanes[0][1]['terminal_floor_sum']} "
         f"never_floor_sum={lanes[1][1]['terminal_floor_sum']} "
         f"paired={comparison['paired_terminal_seeds']} "
@@ -138,6 +142,7 @@ def _run_lane(
             terminal_attempts=config.terminal_attempts,
             max_batch_steps=config.max_batch_steps,
             behavior_seed=config.behavior_seed,
+            ascension_level=config.ascension_level,
             held_out_seed_start=config.held_out_seed_start,
             potion_lane=RunPotionLane(lane.value),
         ),
@@ -155,6 +160,7 @@ def _validate_identity(
         first["behavior_manifest_id"],
         first["behavior_checkpoint_id"],
         first["behavior_seed"],
+        first["ascension_level"],
         first["held_out_seed_start"],
         first["slot_count"],
         first["terminal_attempt_target"],
@@ -165,6 +171,7 @@ def _validate_identity(
             result["behavior_manifest_id"],
             result["behavior_checkpoint_id"],
             result["behavior_seed"],
+            result["ascension_level"],
             result["held_out_seed_start"],
             result["slot_count"],
             result["terminal_attempt_target"],
@@ -202,6 +209,7 @@ def _summary(
         "behavior_manifest_id": first["behavior_manifest_id"],
         "behavior_checkpoint_id": first["behavior_checkpoint_id"],
         "behavior_seed": config.behavior_seed,
+        "ascension_level": config.ascension_level,
         "held_out_seed_start": config.held_out_seed_start,
         "terminal_attempt_target": config.terminal_attempts,
         "max_batch_steps": config.max_batch_steps,
@@ -300,6 +308,12 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--attempts", type=int, default=8)
     parser.add_argument("--max-batch-steps", type=int, default=4096)
     parser.add_argument("--behavior-seed", type=int, default=10_000)
+    parser.add_argument(
+        "--ascension",
+        type=int,
+        choices=range(21),
+        required=True,
+    )
     parser.add_argument("--held-out-seed-start", type=int, default=0)
     return parser
 
@@ -313,6 +327,7 @@ def main() -> int:
             terminal_attempts=arguments.attempts,
             max_batch_steps=arguments.max_batch_steps,
             behavior_seed=arguments.behavior_seed,
+            ascension_level=arguments.ascension,
             held_out_seed_start=arguments.held_out_seed_start,
         )
     )

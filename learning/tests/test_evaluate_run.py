@@ -48,12 +48,14 @@ def test_run_evaluation_uses_frozen_combat_behavior_without_recovery(
             terminal_attempts=2,
             max_batch_steps=2,
             behavior_seed=501,
+            ascension_level=20,
         ),
         combat_bridge=combat_bridge,
         run_bridge=run_bridge,
     )
 
-    assert summary["schema"] == "sts-learning-run-held-out-evaluation-v5"
+    assert summary["schema"] == "sts-learning-run-held-out-evaluation-v6"
+    assert summary["ascension_level"] == 20
     assert summary["behavior_training_kind"] == "combat"
     assert summary["behavior_training_all_loss_axis"] == "none"
     assert summary["behavior_run_sampling_mode"] is None
@@ -85,7 +87,7 @@ def test_run_evaluation_uses_frozen_combat_behavior_without_recovery(
     assert (output / "evaluation.json").is_file()
     stdout = capsys.readouterr().out
     assert (
-        "run_evaluation_complete=true potion_lane=all "
+        "run_evaluation_complete=true ascension=20 potion_lane=all "
         "potion_lane_request=trained "
         "target_reached=true attempts=2/2 "
         "victories=2 defeats=0 floor_sum=80 floor_min=40 floor_max=40 "
@@ -99,7 +101,11 @@ def test_run_evaluation_selects_the_no_combat_potion_environment(
     behavior, combat_bridge, run_bridge = published_behavior(tmp_path)
     created: list[tuple[int, ...]] = []
 
-    def without_combat_potions(seeds: list[int]) -> NumpyWinningBatchEnv:
+    def without_combat_potions(
+        seeds: list[int],
+        ascension_level: int,
+    ) -> NumpyWinningBatchEnv:
+        assert ascension_level == 20
         created.append(tuple(seeds))
         return NumpyWinningBatchEnv(seeds)
 
@@ -115,6 +121,7 @@ def test_run_evaluation_selects_the_no_combat_potion_environment(
             terminal_attempts=2,
             max_batch_steps=2,
             behavior_seed=501,
+            ascension_level=20,
             potion_lane=RunPotionLane.NEVER,
         ),
         combat_bridge=combat_bridge,
@@ -139,6 +146,7 @@ def test_run_potion_comparison_pairs_terminal_seeds(
             terminal_attempts=2,
             max_batch_steps=2,
             behavior_seed=501,
+            ascension_level=20,
         ),
         combat_bridge=combat_bridge,
         run_bridge=run_bridge,
@@ -182,6 +190,7 @@ def test_run_training_warm_starts_publishes_and_evaluates(
             evaluation_max_batch_steps=2,
             evaluation_behavior_seed=501,
             held_out_seed_start=1000,
+            ascension_level=20,
         ),
         combat_bridge=combat_bridge,
         run_bridge=run_bridge,
@@ -225,7 +234,7 @@ def test_run_training_warm_starts_publishes_and_evaluates(
         "episodes=2 recoveries=0 floor_sum=80 floor_counts=40:2"
     ) in stdout
     assert (
-        "run_training_complete=true potion_lane=all "
+        "run_training_complete=true ascension=20 potion_lane=all "
         "potion_lane_request=trained sampling_mode=independent-cohorts "
         "episode_root_attempts=none "
         "generations=1 optimizer_steps=1 "
@@ -241,6 +250,7 @@ def test_run_training_warm_starts_publishes_and_evaluates(
             terminal_attempts=2,
             max_batch_steps=2,
             behavior_seed=777,
+            ascension_level=20,
             held_out_seed_start=2000,
         ),
         combat_bridge=combat_bridge,
@@ -321,6 +331,7 @@ def test_run_value_ppo_warm_starts_actor_and_publishes_diagnostics(
             evaluation_max_batch_steps=2,
             evaluation_behavior_seed=501,
             held_out_seed_start=1000,
+            ascension_level=20,
             policy_update=RunPolicyUpdateConfig.ppo_clip_value(),
         ),
         combat_bridge=combat_bridge,
@@ -382,7 +393,11 @@ def test_run_training_inherits_the_warm_start_potion_lane(
     )
     no_potion_populations: list[tuple[int, ...]] = []
 
-    def without_combat_potions(seeds: list[int]) -> NumpyWinningBatchEnv:
+    def without_combat_potions(
+        seeds: list[int],
+        ascension_level: int,
+    ) -> NumpyWinningBatchEnv:
+        assert ascension_level == 20
         no_potion_populations.append(tuple(seeds))
         return NumpyWinningBatchEnv(seeds)
 
@@ -405,6 +420,7 @@ def test_run_training_inherits_the_warm_start_potion_lane(
             evaluation_max_batch_steps=1,
             evaluation_behavior_seed=501,
             held_out_seed_start=1000,
+            ascension_level=20,
         ),
         combat_bridge=combat_bridge,
         run_bridge=run_bridge,

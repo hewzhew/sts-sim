@@ -275,7 +275,10 @@ class CategoricalOnlineSessionFactory:
                     "session initial scorer is incompatible with the maintained profile"
                 ) from error
         population = initialize_population(
-            self.bridge.environment,
+            lambda seeds: self.bridge.environment(
+                seeds,
+                self.config.ascension_level,
+            ),
             slot_count=self.config.slot_count,
             schedule=self.config.schedule,
             max_recoveries_per_episode=(

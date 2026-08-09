@@ -102,13 +102,13 @@ class BridgeDriverIntegrationTests(unittest.TestCase):
         )
 
         first = evaluate_held_out_behavior(
-            LearningBatchEnv,
+            lambda seeds: LearningBatchEnv(seeds, 20),
             FirstLegalPolicy(),
             schedule=schedule,
             spec=spec,
         )
         second = evaluate_held_out_behavior(
-            LearningBatchEnv,
+            lambda seeds: LearningBatchEnv(seeds, 20),
             FirstLegalPolicy(),
             schedule=schedule,
             spec=spec,
@@ -124,7 +124,7 @@ class BridgeDriverIntegrationTests(unittest.TestCase):
     def test_real_bridge_runs_bounded_continuous_population(self) -> None:
         assert LearningBatchEnv is not None
         population = initialize_population(
-            LearningBatchEnv,
+            lambda seeds: LearningBatchEnv(seeds, 20),
             slot_count=3,
             schedule=SeedSchedule(SeedPartition.HELD_OUT),
             max_recoveries_per_episode=0,

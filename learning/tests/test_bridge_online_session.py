@@ -39,6 +39,7 @@ class RealBridgeCategoricalOnlineSessionTests(unittest.TestCase):
                 Path(root),
                 CategoricalSessionBridge.installed(),
                 CategoricalOnlineSessionConfig(
+                    ascension_level=20,
                     profile=CategoricalOnlineProfile(
                         scorer=RaggedScorerConfig(
                             hidden_dim=8,

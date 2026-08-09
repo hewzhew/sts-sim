@@ -215,7 +215,7 @@ class RealBridgeTorchPolicyTests(unittest.TestCase):
     def test_real_semantic_batch_trains_without_padding(self) -> None:
         assert LearningBatchEnv is not None
         assert semantic_schema is not None
-        env = LearningBatchEnv([11, 12, 13])
+        env = LearningBatchEnv([11, 12, 13], 20)
         batch = env.decision_batch(semantic=True)
         scorer = RaggedCandidateScorer.from_bridge_schema(
             semantic_schema(),

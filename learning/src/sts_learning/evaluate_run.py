@@ -38,7 +38,7 @@ from .torch_combat_session_config import (
 from .torch_session_config import CategoricalSessionBridge
 
 
-RUN_EVALUATION_SCHEMA = "sts-learning-run-held-out-evaluation-v5"
+RUN_EVALUATION_SCHEMA = "sts-learning-run-held-out-evaluation-v6"
 
 
 class RunEvaluationCommandError(RuntimeError):
@@ -61,6 +61,7 @@ class RunEvaluationCommandConfig:
     terminal_attempts: int
     max_batch_steps: int
     behavior_seed: int
+    ascension_level: int
     held_out_seed_start: int = 0
     potion_lane: RunPotionLane = RunPotionLane.TRAINED
 
@@ -107,6 +108,10 @@ class RunEvaluationCommandConfig:
             "behavior_seed",
             _seed(self.behavior_seed, "behavior_seed"),
         )
+        ascension_level = _seed(self.ascension_level, "ascension_level")
+        if ascension_level > 20:
+            raise RunEvaluationCommandError("ascension_level must be at most 20")
+        object.__setattr__(self, "ascension_level", ascension_level)
         object.__setattr__(
             self,
             "held_out_seed_start",
@@ -172,12 +177,14 @@ def run_run_evaluation(
         SeedPartition.HELD_OUT,
         next_candidate=config.held_out_seed_start,
     )
-    environment = (
+    environment_constructor = (
         active_run_bridge.environment
         if potion_lane is CombatPotionLane.ALL
         else active_run_bridge.environment_without_combat_potions
     )
-    resource_factory = ResourceTracingEnvironmentFactory(environment)
+    resource_factory = ResourceTracingEnvironmentFactory(
+        lambda seeds: environment_constructor(seeds, config.ascension_level)
+    )
     result = evaluate_held_out_behavior(
         resource_factory,
         recovered.policies[0],
@@ -207,6 +214,7 @@ def run_run_evaluation(
     run = result.run.summary
     print(
         "run_evaluation_complete=true "
+        f"ascension={config.ascension_level} "
         f"potion_lane={potion_lane.value} "
         f"potion_lane_request={config.potion_lane.value} "
         f"target_reached={str(result.complete).lower()} "
@@ -260,6 +268,9 @@ def _summary(
         "behavior_checkpoint_id": recovered.checkpoint_id.digest.hex(),
         "behavior_training_step": recovered.training_step,
         "behavior_training_kind": "combat" if combat_trained else "run",
+        "behavior_training_ascension_level": (
+            None if combat_trained else recovered.training_ascension_level
+        ),
         "behavior_training_root_count": (
             recovered.training_root_count if combat_trained else None
         ),
@@ -304,6 +315,7 @@ def _summary(
             }
         ),
         "behavior_seed": config.behavior_seed,
+        "ascension_level": config.ascension_level,
         "held_out_seed_start": config.held_out_seed_start,
         "requested_combat_potion_lane": config.potion_lane.value,
         "combat_potion_lane": potion_lane.value,
@@ -456,6 +468,12 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--attempts", type=int, default=8)
     parser.add_argument("--max-batch-steps", type=int, default=4096)
     parser.add_argument("--behavior-seed", type=int, default=10_000)
+    parser.add_argument(
+        "--ascension",
+        type=int,
+        choices=range(21),
+        required=True,
+    )
     parser.add_argument("--held-out-seed-start", type=int, default=0)
     parser.add_argument(
         "--potion-lane",
@@ -475,6 +493,7 @@ def main() -> int:
             terminal_attempts=arguments.attempts,
             max_batch_steps=arguments.max_batch_steps,
             behavior_seed=arguments.behavior_seed,
+            ascension_level=arguments.ascension,
             held_out_seed_start=arguments.held_out_seed_start,
             potion_lane=RunPotionLane(arguments.potion_lane),
         )

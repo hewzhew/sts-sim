@@ -57,7 +57,7 @@ class RealBridgeBehaviorPublicationTests(unittest.TestCase):
 
         torch.manual_seed(31)
         shadow = scorer_factory()
-        env = LearningBatchEnv([991])
+        env = LearningBatchEnv([991], 20)
         batch = env.decision_batch(semantic=True)
         expected = shadow(batch).values.detach().clone()
         registry = BehaviorManifestRegistry(capacity=1)
@@ -128,7 +128,7 @@ class RealBridgeBehaviorPublicationTests(unittest.TestCase):
 
         torch.manual_seed(32)
         shadow = scorer_factory()
-        env = LearningBatchEnv([992])
+        env = LearningBatchEnv([992], 20)
         batch = env.decision_batch(semantic=True)
         limits = TorchCheckpointLimits(
             max_checkpoints=1,

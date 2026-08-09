@@ -115,6 +115,12 @@ typed combat action surface, exact checkpoint/restore, and only sparse terminal
 reward. A curriculum or recovery controller stays outside the environment and
 must not change RNG when restoring a checkpoint.
 
+Every fresh learning run is constructed with an explicit ascension level in
+`0..=20`; the bridge has no default ascension. Run training, run evaluation,
+and run-derived combat-root collection preserve that configuration in their
+durable provenance. Exact combat-root consumers inherit ascension from the
+root and never accept a filename-derived or caller-overridden replacement.
+
 The combat learning branch does not serialize raw combat state. Its explicit
 projection uses domain card, potion, enemy, power, relic, orb, stance, and
 intent identities rather than display labels. It includes turn/phase counters,

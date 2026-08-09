@@ -27,6 +27,8 @@ param(
     [int]$Attempts = 8,
     [int]$MaxBatchSteps = 4096,
     [long]$BehaviorSeed = 10000,
+    [ValidateRange(0, 20)]
+    [Nullable[int]]$Ascension,
     [long]$HeldOutSeedStart = 1000000,
     [int]$Generations = 1,
     [int]$AttemptsPerUpdate = 8,
@@ -330,6 +332,9 @@ switch ($Command) {
         }
     }
     "evaluate-run" {
+        if ($null -eq $Ascension) {
+            throw "evaluate-run requires -Ascension 0..20"
+        }
         $pythonPath = Get-ConfiguredPython
         Invoke-Doctor $pythonPath
         Invoke-WithLearningPath {
@@ -340,6 +345,7 @@ switch ($Command) {
                 --attempts $Attempts `
                 --max-batch-steps $MaxBatchSteps `
                 --behavior-seed $BehaviorSeed `
+                --ascension $Ascension `
                 --held-out-seed-start $HeldOutSeedStart `
                 --potion-lane $RunPotionLane
             if ($LASTEXITCODE -ne 0) {
@@ -348,6 +354,9 @@ switch ($Command) {
         }
     }
     "evaluate-run-potions" {
+        if ($null -eq $Ascension) {
+            throw "evaluate-run-potions requires -Ascension 0..20"
+        }
         $pythonPath = Get-ConfiguredPython
         Invoke-Doctor $pythonPath
         Invoke-WithLearningPath {
@@ -357,6 +366,7 @@ switch ($Command) {
                 --attempts $Attempts `
                 --max-batch-steps $MaxBatchSteps `
                 --behavior-seed $BehaviorSeed `
+                --ascension $Ascension `
                 --held-out-seed-start $HeldOutSeedStart
             if ($LASTEXITCODE -ne 0) {
                 throw "run potion comparison command failed"
@@ -364,6 +374,9 @@ switch ($Command) {
         }
     }
     "collect-run-roots" {
+        if ($null -eq $Ascension) {
+            throw "collect-run-roots requires -Ascension 0..20"
+        }
         $pythonPath = Get-ConfiguredPython
         $selectorArguments = @()
         $rootArguments = @()
@@ -410,6 +423,7 @@ switch ($Command) {
                 --wall-ms $WallMs `
                 --behavior-seed $BehaviorSeed `
                 --training-seed-start $TrainingSeedStart `
+                --ascension $Ascension `
                 --combat-decision-rule $CombatDecisionRule `
                 --min-floor $MinFloor `
                 --min-usable-potions $MinUsablePotions `
@@ -422,6 +436,9 @@ switch ($Command) {
         }
     }
     "train-run" {
+        if ($null -eq $Ascension) {
+            throw "train-run requires -Ascension 0..20"
+        }
         $pythonPath = Get-ConfiguredPython
         $episodeRootArguments = @()
         if ($null -ne $EpisodeRootAttempts) {
@@ -446,6 +463,7 @@ switch ($Command) {
                 --evaluation-max-batch-steps $EvaluationMaxBatchSteps `
                 --evaluation-behavior-seed $EvaluationBehaviorSeed `
                 --held-out-seed-start $HeldOutSeedStart `
+                --ascension $Ascension `
                 --advantage-mode $AdvantageMode `
                 --decision-scope $DecisionScope `
                 --run-policy-update $RunPolicyUpdate `

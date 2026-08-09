@@ -241,7 +241,7 @@ def _assert_same_root_combat_group(env: LearningBatchEnv, slot: int) -> None:
     assert len(group.root_potion_ids) == context.potion_slot_count
     assert all(potion is None or isinstance(potion, str) for potion in group.root_potion_ids)
     assert context.floor >= 0
-    assert context.ascension_level >= 0
+    assert context.ascension_level == 20
     assert context.turn >= 0
     assert isinstance(context.is_boss_fight, bool)
     assert isinstance(context.is_elite_fight, bool)
@@ -356,7 +356,7 @@ def _assert_same_root_combat_group(env: LearningBatchEnv, slot: int) -> None:
 
 
 def _assert_explicit_checkpoint_replays_exactly() -> None:
-    env = LearningBatchEnv([37])
+    env = LearningBatchEnv([37], 20)
     root = env.decision_batch(dense_mask=True, semantic=True)
     root_checkpoint = env.checkpoint_slot(0)
     try:
@@ -382,7 +382,7 @@ def _assert_explicit_checkpoint_replays_exactly() -> None:
     restored_root = env.decision_batch(dense_mask=True, semantic=True)
     _assert_decision_batch_equal(root, restored_root)
 
-    batch_env = LearningBatchEnv([41, 42])
+    batch_env = LearningBatchEnv([41, 42], 20)
     batch_root = batch_env.decision_batch(dense_mask=True, semantic=True)
     checkpoint_batch = batch_env.checkpoint_slots([0, 1])
     assert len(checkpoint_batch) == 2
@@ -441,7 +441,7 @@ def _assert_explicit_checkpoint_replays_exactly() -> None:
         restored_after_update["slot_indices"],
         np.array([0, 1], dtype=np.uint64),
     )
-    foreign = LearningBatchEnv([44, 45, 46]).checkpoint_slots([2])
+    foreign = LearningBatchEnv([44, 45, 46], 20).checkpoint_slots([2])
     try:
         checkpoint_batch.updated(foreign)
     except ValueError:
@@ -452,7 +452,7 @@ def _assert_explicit_checkpoint_replays_exactly() -> None:
 
 def _assert_cross_process_checkpoint_replays_exactly() -> None:
     max_bytes = 16 * 1024 * 1024
-    env = LearningBatchEnv([37])
+    env = LearningBatchEnv([37], 20)
     root = env.decision_batch(dense_mask=True, semantic=True)
     root_payload = bytes(env.checkpoint_bytes(max_bytes=max_bytes))
     assert root_payload == bytes(env.checkpoint_bytes(max_bytes=max_bytes))
@@ -508,7 +508,7 @@ def _assert_cross_process_checkpoint_replays_exactly() -> None:
 
 def _assert_cross_process_checkpoint_bank_replays_episode_roots() -> None:
     max_bytes = 32 * 1024 * 1024
-    source_env = LearningBatchEnv([37, 38])
+    source_env = LearningBatchEnv([37, 38], 20)
     source_root = source_env.decision_batch(dense_mask=True, semantic=True)
     bank = source_env.checkpoint_slots([0, 1])
     payload = bytes(bank.checkpoint_bytes(max_bytes=max_bytes))
@@ -520,7 +520,7 @@ def _assert_cross_process_checkpoint_bank_replays_episode_roots() -> None:
         max_bytes=max_bytes,
     )
     assert len(restored_bank) == 2
-    target_env = LearningBatchEnv([99, 100])
+    target_env = LearningBatchEnv([99, 100], 20)
     target_env.restore_slots([0, 1], restored_bank)
     _assert_decision_batch_equal(
         source_root,
@@ -594,7 +594,7 @@ def main() -> None:
 
     seeds = list(range(1, 6))
     random_states = [seed ^ _SEED_XOR for seed in seeds]
-    env = LearningBatchEnv(seeds)
+    env = LearningBatchEnv(seeds, 20)
     total_steps = 0
     terminal_slots_seen: set[int] = set()
     started = time.perf_counter()
@@ -624,7 +624,10 @@ def main() -> None:
         for _, context in initial_contexts
     )
     assert [context.seed for _, context in initial_contexts] == seeds
-    assert all(context.hp == context.max_hp for _, context in initial_contexts)
+    assert all(
+        (context.hp, context.max_hp) == (68, 75)
+        for _, context in initial_contexts
+    )
     assert all(context.gold >= 0 for _, context in initial_contexts)
     assert all(isinstance(context.potion_ids, list) for _, context in initial_contexts)
 

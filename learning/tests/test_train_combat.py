@@ -315,6 +315,7 @@ def test_training_command_warm_starts_actor_only_from_run_value_behavior(
             evaluation_max_batch_steps=2,
             evaluation_behavior_seed=501,
             held_out_seed_start=1000,
+            ascension_level=20,
             policy_update=RunPolicyUpdateConfig.ppo_clip_value(),
         ),
         combat_bridge=combat_bridge,

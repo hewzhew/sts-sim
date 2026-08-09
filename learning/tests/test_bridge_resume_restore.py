@@ -175,7 +175,7 @@ class RealBridgeCategoricalResumeRestorerTests(unittest.TestCase):
             )
             assembler = BoundedAttemptAssembler(attempt_limits, update_batcher)
             population = initialize_population(
-                LearningBatchEnv,
+                lambda seeds: LearningBatchEnv(seeds, 20),
                 slot_count=1,
                 schedule=SeedSchedule(SeedPartition.TRAINING),
                 max_recoveries_per_episode=0,

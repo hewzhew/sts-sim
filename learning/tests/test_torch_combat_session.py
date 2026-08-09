@@ -284,7 +284,7 @@ if _TORCH_AVAILABLE and _BRIDGE_AVAILABLE:
     def _first_real_combat_root():
         from sts_learning_bridge import LearningBatchEnv, PHASE_COMBAT_ROOT
 
-        source = LearningBatchEnv([11])
+        source = LearningBatchEnv([11], 20)
         for _ in range(32):
             if not source.ready:
                 batch = source.decision_batch(semantic=False)

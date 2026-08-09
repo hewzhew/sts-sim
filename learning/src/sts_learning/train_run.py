@@ -14,6 +14,7 @@ from .credit_assignment import (
     CreditAssignmentComparison,
     DecisionCreditDistribution,
 )
+from .driver import BatchEnvironment
 from .evaluation import (
     HeldOutEvaluationResult,
     HeldOutEvaluationSpec,
@@ -102,6 +103,7 @@ class RunTrainingCommandConfig:
     evaluation_max_batch_steps: int
     evaluation_behavior_seed: int
     held_out_seed_start: int
+    ascension_level: int
     advantage_mode: TerminalAdvantageMode | None = None
     decision_scope: RunDecisionScope = RunDecisionScope.ALL
     policy_update: RunPolicyUpdateConfig = RunPolicyUpdateConfig()
@@ -223,6 +225,10 @@ class RunTrainingCommandConfig:
             "held_out_seed_start",
         ):
             object.__setattr__(self, name, _seed(getattr(self, name), name))
+        ascension_level = _nonnegative(self.ascension_level, "ascension_level")
+        if ascension_level > 20:
+            raise RunTrainingCommandError("ascension_level must be at most 20")
+        object.__setattr__(self, "ascension_level", ascension_level)
 
 
 def run_run_training(
@@ -267,11 +273,25 @@ def run_run_training(
         potion_lane,
     )
     training_resource_factory = ResourceTracingEnvironmentFactory(
-        base_training_run_bridge.environment
+        lambda seeds: base_training_run_bridge.environment(
+            seeds,
+            config.ascension_level,
+        )
     )
+
+    def traced_training_environment(
+        seeds: list[int],
+        ascension_level: int,
+    ) -> BatchEnvironment:
+        if ascension_level != config.ascension_level:
+            raise RunTrainingCommandError(
+                "training environment ascension changed after configuration"
+            )
+        return training_resource_factory(seeds)
+
     training_run_bridge = replace(
         base_training_run_bridge,
-        environment=training_resource_factory,
+        environment=traced_training_environment,
     )
     profile = replace(
         CategoricalOnlineProfile(),
@@ -305,6 +325,7 @@ def run_run_training(
         recovery_budget = 0
         curriculum = NoRecoveryCurriculum()
     session_config = CategoricalOnlineSessionConfig(
+        ascension_level=config.ascension_level,
         schedule=SeedSchedule(
             SeedPartition.TRAINING,
             next_candidate=config.training_seed_start,
@@ -385,7 +406,10 @@ def run_run_training(
             behavior_seed=config.evaluation_behavior_seed,
         )
         held_out_resource_factory = ResourceTracingEnvironmentFactory(
-            base_training_run_bridge.environment
+            lambda seeds: base_training_run_bridge.environment(
+                seeds,
+                config.ascension_level,
+            )
         )
         evaluation = evaluate_held_out_behavior(
             held_out_resource_factory,
@@ -422,6 +446,7 @@ def run_run_training(
     run = evaluation.run.summary
     print(
         "run_training_complete=true "
+        f"ascension={config.ascension_level} "
         f"potion_lane={potion_lane.value} "
         f"potion_lane_request={config.potion_lane.value} "
         f"sampling_mode={config.sampling_mode.value} "
@@ -460,6 +485,7 @@ def _configuration(
         "sampling_mode": config.sampling_mode.value,
         "episode_root_attempts": config.episode_root_attempts,
         "slot_count": config.slot_count,
+        "ascension_level": config.ascension_level,
         "generations": config.generations,
         "attempts_per_update": config.attempts_per_update,
         "advantage_mode": config.advantage_mode.name.lower(),
@@ -621,6 +647,7 @@ def _summary(
         "run_potion_lane": potion_lane.value,
         "sampling_mode": config.sampling_mode.value,
         "episode_root_attempts": config.episode_root_attempts,
+        "ascension_level": config.ascension_level,
         "run_policy_update": config.policy_update.rule.name.lower(),
         "run_policy_normalize_advantage": (
             config.policy_update.normalize_advantage
@@ -1006,6 +1033,12 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--evaluation-behavior-seed", type=int, default=100_000)
     parser.add_argument("--held-out-seed-start", type=int, default=1_000_000)
     parser.add_argument(
+        "--ascension",
+        type=int,
+        choices=range(21),
+        required=True,
+    )
+    parser.add_argument(
         "--advantage-mode",
         choices=tuple(_ADVANTAGE_MODE_ARGUMENTS),
         default="auto",
@@ -1051,6 +1084,7 @@ def main() -> int:
             evaluation_max_batch_steps=arguments.evaluation_max_batch_steps,
             evaluation_behavior_seed=arguments.evaluation_behavior_seed,
             held_out_seed_start=arguments.held_out_seed_start,
+            ascension_level=arguments.ascension,
             advantage_mode=_ADVANTAGE_MODE_ARGUMENTS[arguments.advantage_mode],
             decision_scope=(
                 RunDecisionScope.ALL

@@ -32,7 +32,8 @@ from .torch_session_config import (
 from .torch_policy import RaggedScorerConfig
 
 
-RUN_TRAINING_SCHEMA = "sts-learning-run-training-v3"
+RUN_TRAINING_SCHEMA = "sts-learning-run-training-v4"
+_LEGACY_RUN_TRAINING_SCHEMAS = frozenset({"sts-learning-run-training-v3"})
 _MAX_TRAINING_JOURNAL_BYTES = 16 * 1024 * 1024
 
 
@@ -47,6 +48,7 @@ class PublishedRunBehavior:
     manifest_id: BehaviorManifestId
     checkpoint_id: ManifestArtifactId
     training_step: int
+    training_ascension_level: int
     training_potion_lane: CombatPotionLane
     training_sampling_mode: RunSamplingMode
     training_episode_root_attempts: int | None
@@ -61,6 +63,7 @@ class PublishedRunBehavior:
         if self.checkpoint_id.kind is not ManifestArtifactKind.MODEL_CHECKPOINT:
             raise PublishedRunBehaviorError("run behavior checkpoint has the wrong kind")
         _nonnegative(self.training_step, "training_step")
+        _ascension(self.training_ascension_level, "training_ascension_level")
         if not isinstance(self.training_potion_lane, CombatPotionLane):
             raise PublishedRunBehaviorError("run behavior potion lane must be typed")
         if self.training_potion_lane is CombatPotionLane.ROOT_SLOTS:
@@ -165,6 +168,17 @@ def recover_published_run_behavior(
     potion_lane = _potion_lane(completed.get("run_potion_lane"))
     if _potion_lane(configuration.get("run_potion_lane")) is not potion_lane:
         raise PublishedRunBehaviorError("run potion lane changed across publication")
+    training_ascension_level = _ascension(
+        configuration.get("ascension_level"),
+        "ascension_level",
+    )
+    if (
+        _ascension(completed.get("ascension_level"), "completed ascension_level")
+        != training_ascension_level
+    ):
+        raise PublishedRunBehaviorError(
+            "run ascension level changed across publication"
+        )
     configuration_sampling_mode = _sampling_mode(
         configuration.get(
             "sampling_mode",
@@ -206,6 +220,7 @@ def recover_published_run_behavior(
         owner_capacity=max(16, _nonnegative(configuration.get("generations"), "generations") + 2),
     )
     session_config = CategoricalOnlineSessionConfig(
+        ascension_level=training_ascension_level,
         schedule=SeedSchedule(
             SeedPartition.TRAINING,
             next_candidate=_seed(
@@ -241,6 +256,7 @@ def recover_published_run_behavior(
         manifest_id=manifest_id,
         checkpoint_id=checkpoint_id,
         training_step=training_step,
+        training_ascension_level=training_ascension_level,
         training_potion_lane=potion_lane,
         training_sampling_mode=configuration_sampling_mode,
         training_episode_root_attempts=(
@@ -265,7 +281,8 @@ def is_run_training_publication(behavior_root: str | Path) -> bool:
                     value = json.loads(line)
                     return (
                         isinstance(value, dict)
-                        and value.get("schema") == RUN_TRAINING_SCHEMA
+                        and value.get("schema")
+                        in {RUN_TRAINING_SCHEMA, *_LEGACY_RUN_TRAINING_SCHEMAS}
                         and value.get("kind") == "configuration"
                     )
     except (OSError, json.JSONDecodeError):
@@ -298,6 +315,13 @@ def _training_boundary_records(
         raise PublishedRunBehaviorError("run training journal is empty")
     configuration = _journal_record(*first)
     completed = _journal_record(*last)
+    if (
+        configuration.get("schema") in _LEGACY_RUN_TRAINING_SCHEMAS
+        or completed.get("schema") in _LEGACY_RUN_TRAINING_SCHEMAS
+    ):
+        raise PublishedRunBehaviorError(
+            "run training publication predates explicit ascension provenance"
+        )
     if (
         configuration.get("schema") != RUN_TRAINING_SCHEMA
         or configuration.get("kind") != "configuration"
@@ -441,6 +465,13 @@ def _nonnegative(value: object, name: str) -> int:
         raise PublishedRunBehaviorError(f"{name} must be an integer") from error
     if normalized < 0:
         raise PublishedRunBehaviorError(f"{name} must be non-negative")
+    return normalized
+
+
+def _ascension(value: object, name: str) -> int:
+    normalized = _nonnegative(value, name)
+    if normalized > 20:
+        raise PublishedRunBehaviorError(f"{name} must be at most 20")
     return normalized
 
 

@@ -204,8 +204,10 @@ def _factory(root: Path, *, attempts_per_update: int = 1):
     return CategoricalOnlineSessionFactory(
         root,
         CategoricalSessionBridge(
-            environment=NumpyWinningBatchEnv,
-            environment_without_combat_potions=NumpyWinningBatchEnv,
+            environment=lambda seeds, ascension_level: NumpyWinningBatchEnv(seeds),
+            environment_without_combat_potions=(
+                lambda seeds, ascension_level: NumpyWinningBatchEnv(seeds)
+            ),
             environment_from_checkpoint=(
                 NumpyWinningBatchEnv.from_checkpoint_bytes
             ),
@@ -215,6 +217,7 @@ def _factory(root: Path, *, attempts_per_update: int = 1):
             semantic_schema=semantic_schema_fixture(),
         ),
         CategoricalOnlineSessionConfig(
+            ascension_level=20,
             profile=CategoricalOnlineProfile(
                 scorer=RaggedScorerConfig(hidden_dim=4, relation_layers=1),
                 behavior=RaggedCategoricalPolicyConfig(temperature=0.8),

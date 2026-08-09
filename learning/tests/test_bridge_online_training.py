@@ -156,7 +156,7 @@ class RealBridgeOnlineTrainingTests(unittest.TestCase):
                 update_batcher,
             )
             population = initialize_population(
-                LearningBatchEnv,
+                lambda seeds: LearningBatchEnv(seeds, 20),
                 slot_count=1,
                 schedule=SeedSchedule(SeedPartition.HELD_OUT),
                 max_recoveries_per_episode=0,
@@ -377,7 +377,7 @@ class RealBridgeOnlineTrainingTests(unittest.TestCase):
             )
 
             held_out_comparison = evaluate_paired_held_out_behaviors(
-                LearningBatchEnv,
+                lambda seeds: LearningBatchEnv(seeds, 20),
                 generation_zero_policy,
                 generation_two_policy,
                 spec=PairedHeldOutEvaluationSpec(

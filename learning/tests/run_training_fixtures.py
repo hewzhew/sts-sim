@@ -83,8 +83,10 @@ def published_behavior(
         bridge=combat_bridge,
     )
     run_bridge = CategoricalSessionBridge(
-        environment=NumpyWinningBatchEnv,
-        environment_without_combat_potions=NumpyWinningBatchEnv,
+        environment=lambda seeds, ascension_level: NumpyWinningBatchEnv(seeds),
+        environment_without_combat_potions=(
+            lambda seeds, ascension_level: NumpyWinningBatchEnv(seeds)
+        ),
         environment_from_checkpoint=NumpyWinningBatchEnv.from_checkpoint_bytes,
         checkpoint_bank_from_checkpoint=(
             FakeCheckpointBatch.from_checkpoint_bytes

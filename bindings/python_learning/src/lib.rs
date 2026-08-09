@@ -405,13 +405,23 @@ struct LearningBatchEnv {
 #[pymethods]
 impl LearningBatchEnv {
     #[new]
-    fn new(seeds: Vec<u64>) -> PyResult<Self> {
-        Self::from_seeds_with_potion_policy(seeds, CombatLearningPotionPolicyV1::All)
+    #[pyo3(signature = (seeds, ascension_level))]
+    fn new(seeds: Vec<u64>, ascension_level: u8) -> PyResult<Self> {
+        Self::from_seeds_with_potion_policy(
+            seeds,
+            ascension_level,
+            CombatLearningPotionPolicyV1::All,
+        )
     }
 
     #[staticmethod]
-    fn without_combat_potions(seeds: Vec<u64>) -> PyResult<Self> {
-        Self::from_seeds_with_potion_policy(seeds, CombatLearningPotionPolicyV1::never())
+    #[pyo3(signature = (seeds, ascension_level))]
+    fn without_combat_potions(seeds: Vec<u64>, ascension_level: u8) -> PyResult<Self> {
+        Self::from_seeds_with_potion_policy(
+            seeds,
+            ascension_level,
+            CombatLearningPotionPolicyV1::never(),
+        )
     }
 
     #[getter]
@@ -859,11 +869,18 @@ impl LearningBatchEnv {
 impl LearningBatchEnv {
     fn from_seeds_with_potion_policy(
         seeds: Vec<u64>,
+        ascension_level: u8,
         potion_policy: CombatLearningPotionPolicyV1,
     ) -> PyResult<Self> {
+        if ascension_level > 20 {
+            return Err(PyValueError::new_err(
+                "ascension_level must be between 0 and 20",
+            ));
+        }
         let pool =
             LearningEnvPoolV1::from_configs(seeds.into_iter().map(|seed| RunControlConfig {
                 seed,
+                ascension_level,
                 ..RunControlConfig::default()
             }))
             .map_err(runtime_error)?;
@@ -1605,10 +1622,15 @@ mod checkpoint_tests {
                 amount: 1,
                 can_skip: true,
             });
+        let mut combat = sts_oracle_eval::test_support::blank_test_combat();
+        combat
+            .entities
+            .monsters
+            .push(sts_oracle_eval::test_support::test_monster(EnemyId::JawWorm));
         session.engine_state = EngineState::PendingChoice(choice.clone());
         session.active_combat = Some(ActiveCombat::new(
             EngineState::PendingChoice(choice),
-            sts_oracle_eval::test_support::blank_test_combat(),
+            combat,
             CombatContext::Room(RoomCombatContext {
                 room_type: RoomType::MonsterRoom,
             }),

@@ -61,6 +61,7 @@ def _command_config(
         evaluation_max_batch_steps=10,
         evaluation_behavior_seed=4,
         held_out_seed_start=5,
+        ascension_level=20,
         advantage_mode=advantage_mode,
         sampling_mode=sampling_mode,
         episode_root_attempts=episode_root_attempts,
@@ -125,7 +126,11 @@ def test_run_training_samples_bounded_pairs_from_multiple_roots(
     behavior, combat_bridge, run_bridge = published_behavior(tmp_path)
     populations: list[_NumpyLosingBatchEnv] = []
 
-    def losing_environment(seeds: list[int]) -> _NumpyLosingBatchEnv:
+    def losing_environment(
+        seeds: list[int],
+        ascension_level: int,
+    ) -> _NumpyLosingBatchEnv:
+        assert ascension_level == 20
         environment = _NumpyLosingBatchEnv(seeds)
         populations.append(environment)
         return environment
@@ -154,6 +159,7 @@ def test_run_training_samples_bounded_pairs_from_multiple_roots(
             evaluation_max_batch_steps=2,
             evaluation_behavior_seed=501,
             held_out_seed_start=1000,
+            ascension_level=20,
             advantage_mode=(
                 TerminalAdvantageMode.MATCHED_EPISODE_FLOOR_CONTEXT_LEAVE_ONE_OUT
             ),
@@ -185,6 +191,7 @@ def test_run_training_samples_bounded_pairs_from_multiple_roots(
             terminal_attempts=1,
             max_batch_steps=2,
             behavior_seed=777,
+            ascension_level=20,
             held_out_seed_start=2000,
         ),
         combat_bridge=combat_bridge,

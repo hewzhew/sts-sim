@@ -628,11 +628,18 @@ Configure one stable Python 3.12 training runtime once, then use the small
 .\learning\dev.ps1 train-combat-recovery -Artifact <roots.bin> -SourceExpectedRoots <artifact-root-count> -SourceRootSlot <zero-based-slot> -Behavior <warm-start-dir> -Output <fresh-dir> -Roots 4 -Replicates 8 -Updates 1 -PotionLane root-slots -PotionSlots 0 -CombatPolicyUpdate ppo-clip
 .\learning\dev.ps1 evaluate-combat -Artifact <held-out-roots.bin> -Behavior <training-dir> -Output <fresh-dir> -Roots <count> -Replicates <count> [-CombatDecisionRule sampled|greedy] [-TraceReplicatesPerRoot 1]
 .\learning\dev.ps1 evaluate-combat-potions -Artifact <held-out-roots.bin> -Behavior <training-dir> -Output <fresh-dir> -Roots <count> -Replicates <count>
-.\learning\dev.ps1 evaluate-run -Behavior <training-dir> -Output <fresh-dir> -Attempts 8 -MaxBatchSteps 4096 -BehaviorSeed 10000 -HeldOutSeedStart 0 -RunPotionLane trained
-.\learning\dev.ps1 evaluate-run-potions -Behavior <training-dir> -Output <fresh-dir> -Attempts 8 -MaxBatchSteps 4096 -BehaviorSeed 10000 -HeldOutSeedStart 0
-.\learning\dev.ps1 collect-run-roots -Behavior <training-dir> -Output <fresh.bin> -Roots 2 -MaxBatchSteps 4096 -WallMs 60000 -BehaviorSeed 120000 -TrainingSeedStart 10000000 -MinFloor 2 -MinUsablePotions 1 -RunPotionLane trained
-.\learning\dev.ps1 train-run -Behavior <combat-training-dir> -Output <fresh-dir> -Slots 4 -Generations 1 -AttemptsPerUpdate 32 -MaxBatchSteps 4096 -EvaluationAttempts 16 -HeldOutSeedStart 1000000 -AdvantageMode decision-local-gae -DecisionScope all -SamplingMode independent-cohorts -RunPolicyUpdate ppo-clip-value -RunPotionLane trained
+.\learning\dev.ps1 evaluate-run -Behavior <training-dir> -Output <fresh-dir> -Ascension <0..20> -Attempts 8 -MaxBatchSteps 4096 -BehaviorSeed 10000 -HeldOutSeedStart 0 -RunPotionLane trained
+.\learning\dev.ps1 evaluate-run-potions -Behavior <training-dir> -Output <fresh-dir> -Ascension <0..20> -Attempts 8 -MaxBatchSteps 4096 -BehaviorSeed 10000 -HeldOutSeedStart 0
+.\learning\dev.ps1 collect-run-roots -Behavior <training-dir> -Output <fresh.bin> -Ascension <0..20> -Roots 2 -MaxBatchSteps 4096 -WallMs 60000 -BehaviorSeed 120000 -TrainingSeedStart 10000000 -MinFloor 2 -MinUsablePotions 1 -RunPotionLane trained
+.\learning\dev.ps1 train-run -Behavior <combat-training-dir> -Output <fresh-dir> -Ascension <0..20> -Slots 4 -Generations 1 -AttemptsPerUpdate 32 -MaxBatchSteps 4096 -EvaluationAttempts 16 -HeldOutSeedStart 1000000 -AdvantageMode decision-local-gae -DecisionScope all -SamplingMode independent-cohorts -RunPolicyUpdate ppo-clip-value -RunPotionLane trained
 ```
+
+Every learning command that creates a fresh run requires an explicit
+`-Ascension`; there is no implicit A0 default. The collector receipt, run
+training journal, and run held-out evaluation all retain that value. Combat
+training and combat evaluation inherit ascension from each exact opaque root
+instead of accepting a second override. Do not infer ascension from an artifact
+or directory name.
 
 `train-combat` and `train-combat-recovery` may warm start from either a verified
 combat- or run-training publication. Cross-objective handoffs copy only actor
@@ -702,6 +709,7 @@ continuations or probing JSON:
 .\learning\dev.ps1 collect-run-roots `
   -Behavior <completed-training-directory> `
   -Output <fresh.combat-roots.bin> `
+  -Ascension <0..20> `
   -Roots 2 -MaxBatchSteps 4096 -WallMs 60000 `
   -BehaviorSeed 120000 -TrainingSeedStart 10000000 `
   -MinFloor 2 -MinUsablePotions 1 -RunPotionLane trained
@@ -738,6 +746,7 @@ fixed quotas instead of collecting and merging shards by hand:
 .\learning\dev.ps1 collect-run-roots `
   -Behavior <completed-training-directory> `
   -Output <fresh.combat-roots.bin> `
+  -Ascension <0..20> `
   -EncounterQuota ThreeSentries=4,Lagavulin=4,ExordiumThugs=4 `
   -MaxBatchSteps 4096 -WallMs 60000 `
   -BehaviorSeed 120000 -TrainingSeedStart 10000000 `

@@ -25,6 +25,10 @@ from sts_learning.torch_behavior import FrozenDecisionRule  # noqa: E402
 class _RootCapturingWinningEnv(NumpyWinningBatchEnv):
     potion_ids = ("FearPotion", None, None)
 
+    def __init__(self, seeds: list[int], ascension_level: int) -> None:
+        assert ascension_level == 20
+        super().__init__(seeds)
+
     @staticmethod
     def supported_potion_ids() -> list[str]:
         return ["FearPotion", "FirePotion"]
@@ -141,6 +145,7 @@ def test_collection_captures_one_potion_root_per_seed_and_merges_once(
             wall_ms=10_000,
             behavior_seed=94,
             training_seed_start=100,
+            ascension_level=20,
             min_floor=2,
             min_usable_potions=1,
             potion_lane=RunPotionLane.TRAINED,
@@ -162,7 +167,8 @@ def test_collection_captures_one_potion_root_per_seed_and_merges_once(
     assert summary["required_potion_slot"] == 0
     assert summary["requested_run_potion_lane"] == "trained"
     assert summary["run_potion_lane"] == "never"
-    assert summary["schema"] == "sts-learning-run-combat-root-collection-v2"
+    assert summary["schema"] == "sts-learning-run-combat-root-collection-v3"
+    assert summary["ascension_level"] == 20
     assert summary["combat_decision_rule"] == "sampled"
     assert summary["collection_manifest_id"] == summary["behavior_manifest_id"]
     roots = summary["roots"]
@@ -194,6 +200,7 @@ def test_collection_can_make_only_combat_decisions_greedy(tmp_path: Path) -> Non
             wall_ms=10_000,
             behavior_seed=94,
             training_seed_start=100,
+            ascension_level=20,
             combat_decision_rule=FrozenDecisionRule.GREEDY,
             min_floor=2,
             min_usable_potions=0,
@@ -230,6 +237,7 @@ def test_collection_can_capture_a_potionless_combat_root(tmp_path: Path) -> None
             wall_ms=10_000,
             behavior_seed=94,
             training_seed_start=100,
+            ascension_level=20,
             min_floor=2,
             min_usable_potions=0,
             max_artifact_bytes=1024,
@@ -264,6 +272,7 @@ def test_collection_can_require_distinct_encounters(tmp_path: Path) -> None:
             wall_ms=10_000,
             behavior_seed=94,
             training_seed_start=100,
+            ascension_level=20,
             min_floor=2,
             min_usable_potions=0,
             max_artifact_bytes=1024,
@@ -300,6 +309,7 @@ def test_collection_can_require_one_exact_encounter(tmp_path: Path) -> None:
             wall_ms=10_000,
             behavior_seed=94,
             training_seed_start=100,
+            ascension_level=20,
             min_floor=2,
             min_usable_potions=0,
             max_artifact_bytes=1024,
@@ -335,6 +345,7 @@ def test_collection_fulfills_each_encounter_quota_from_distinct_seeds(
             wall_ms=10_000,
             behavior_seed=94,
             training_seed_start=100,
+            ascension_level=20,
             min_floor=2,
             min_usable_potions=0,
             max_artifact_bytes=1024,
@@ -387,6 +398,7 @@ def test_incomplete_encounter_quota_publishes_no_artifact(tmp_path: Path) -> Non
                 wall_ms=10_000,
                 behavior_seed=94,
                 training_seed_start=100,
+                ascension_level=20,
                 min_floor=2,
                 min_usable_potions=0,
                 max_artifact_bytes=1024,
@@ -430,6 +442,7 @@ def test_required_encounter_rejects_unsupported_identity_before_collection(
                 wall_ms=10_000,
                 behavior_seed=94,
                 training_seed_start=100,
+                ascension_level=20,
                 min_floor=2,
                 min_usable_potions=0,
                 max_artifact_bytes=1024,
@@ -466,6 +479,7 @@ def test_bounded_unmatched_potion_collection_publishes_no_artifact(
                 wall_ms=10_000,
                 behavior_seed=95,
                 training_seed_start=200,
+                ascension_level=20,
                 min_floor=2,
                 min_usable_potions=1,
                 potion_lane=RunPotionLane.NEVER,

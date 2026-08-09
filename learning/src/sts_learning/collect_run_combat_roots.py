@@ -102,6 +102,7 @@ class RunCombatRootCollectionConfig:
     wall_ms: int
     behavior_seed: int
     training_seed_start: int
+    ascension_level: int
     combat_decision_rule: FrozenDecisionRule = FrozenDecisionRule.SAMPLED
     min_floor: int = 2
     min_usable_potions: int = 1
@@ -219,6 +220,12 @@ class RunCombatRootCollectionConfig:
             "training_seed_start",
             _seed(self.training_seed_start, "training_seed_start"),
         )
+        ascension_level = _nonnegative(self.ascension_level, "ascension_level")
+        if ascension_level > 20:
+            raise RunCombatRootCollectionError(
+                "ascension_level must be at most 20"
+            )
+        object.__setattr__(self, "ascension_level", ascension_level)
 
 
 @dataclass(frozen=True)
@@ -551,7 +558,7 @@ def run_run_combat_root_collection(
         )
         behavior_kind = "combat"
     potion_lane = resolve_run_potion_lane(config.potion_lane, recovered)
-    environment_factory = (
+    environment_constructor = (
         active_run_bridge.environment
         if potion_lane is CombatPotionLane.ALL
         else active_run_bridge.environment_without_combat_potions
@@ -567,7 +574,9 @@ def run_run_combat_root_collection(
         )
 
     sink = _RootCaptureSink(config, required_encounter_id, encounter_quotas)
-    tracing_factory = ResourceTracingEnvironmentFactory(environment_factory)
+    tracing_factory = ResourceTracingEnvironmentFactory(
+        lambda seeds: environment_constructor(seeds, config.ascension_level)
+    )
 
     def capturing_factory(seeds: list[int]) -> _CapturingEnvironment:
         env = tracing_factory(seeds)
@@ -638,7 +647,7 @@ def run_run_combat_root_collection(
     resource_trace = tracing_factory.trace
 
     summary: dict[str, object] = {
-        "schema": "sts-learning-run-combat-root-collection-v2",
+        "schema": "sts-learning-run-combat-root-collection-v3",
         "behavior": str(config.behavior),
         "behavior_training_kind": behavior_kind,
         "behavior_manifest_id": recovered.manifest_id.digest.hex(),
@@ -648,6 +657,7 @@ def run_run_combat_root_collection(
         ),
         "behavior_checkpoint_id": recovered.checkpoint_id.digest.hex(),
         "behavior_seed": config.behavior_seed,
+        "ascension_level": config.ascension_level,
         "requested_run_potion_lane": config.potion_lane.value,
         "run_potion_lane": potion_lane.value,
         "training_seed_start": config.training_seed_start,
@@ -828,6 +838,12 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--behavior-seed", type=int, default=10_000)
     parser.add_argument("--training-seed-start", type=int, default=10_000_000)
     parser.add_argument(
+        "--ascension",
+        type=int,
+        choices=range(21),
+        required=True,
+    )
+    parser.add_argument(
         "--combat-decision-rule",
         choices=tuple(rule.value for rule in FrozenDecisionRule),
         default=FrozenDecisionRule.SAMPLED.value,
@@ -905,6 +921,7 @@ def main() -> int:
             wall_ms=arguments.wall_ms,
             behavior_seed=arguments.behavior_seed,
             training_seed_start=arguments.training_seed_start,
+            ascension_level=arguments.ascension,
             combat_decision_rule=FrozenDecisionRule(
                 arguments.combat_decision_rule
             ),
