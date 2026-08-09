@@ -344,6 +344,8 @@ def test_observed_resource_frontier_keeps_hp_potion_tradeoffs_incomparable() -> 
             final_max_hp=80,
             final_gold=99,
             hp_loss=80 - hp,
+            enemy_start_hp=40,
+            enemy_final_hp=0 if won else 20,
             turns=3,
             potions_used=0,
             potions_discarded=0,

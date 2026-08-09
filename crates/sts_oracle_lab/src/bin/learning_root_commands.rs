@@ -611,7 +611,10 @@ mod tests {
         session.engine_state = EngineState::PendingChoice(choice.clone());
         session.active_combat = Some(ActiveCombat::new(
             EngineState::PendingChoice(choice),
-            sts_oracle_runtime::test_support::blank_test_combat(),
+            combat_root_session(40)
+                .active_combat
+                .expect("combat fixture")
+                .combat_state,
             CombatContext::Room(RoomCombatContext {
                 room_type: RoomType::MonsterRoom,
             }),

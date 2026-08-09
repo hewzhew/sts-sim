@@ -358,13 +358,16 @@ An undecoded combat slot may create a fixed-size group of exact same-root
 combat episodes. Rust owns the normalized run-session root id, exact combat
 state hash, numbered replicate lineage, and terminal outcome facts; each
 bridge transition repeats both root identities and emits aligned terminal win,
-HP/max HP, gold, concrete potion-slot identities, turn, potion-action counts,
-and card-play columns only for newly terminal replicates.
+player HP/max HP, total enemy HP at the root and terminal boundary, gold,
+concrete potion-slot identities, turn, potion-action counts, and card-play
+columns only for newly terminal replicates.
 The Python caller rejects a terminal batch from another root before mutating
 its bounded accumulator and completes a group only after receiving exactly one
-outcome for every replicate. Same-root leave-one-out evidence remains three
-independent axes: win, terminal-HP ratio, and potion retention. There is no
-default scalar exchange rate between HP and potions, and the execution
+outcome for every replicate. Same-root leave-one-out evidence remains four
+independent axes: win, player terminal-HP ratio, enemy-HP progress, and potion
+retention. Enemy-HP progress is diagnostic evidence only while all-loss groups
+remain outside the maintained training objective. There is no default scalar
+exchange rate among survival, either HP axis, and potions, and the execution
 primitive is not itself a trainer or teacher.
 
 Held-out combat evaluation preserves these resource facts without reducing

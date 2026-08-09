@@ -107,6 +107,7 @@ def test_training_command_runs_updates_journals_and_publishes(
     assert records[0]["warm_start_training_kind"] is None
     assert records[1]["roots"][1]["slot_index"] == 1
     assert records[1]["roots"][1]["selected_objective"] == "hp"
+    assert records[1]["roots"][1]["enemy_hp_progress_signal_replicates"] == 0
     assert records[1]["active_manifest_id_before"] != records[1][
         "active_manifest_id_after"
     ]

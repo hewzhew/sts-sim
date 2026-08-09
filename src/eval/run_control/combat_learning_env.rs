@@ -72,6 +72,8 @@ pub struct CombatLearningTerminalOutcomeV1 {
     pub episode: CombatLearningEpisodeIdentityV1,
     pub combat: CombatBaselineOutcomeV1,
     pub resources: CombatLearningResourceSnapshotV1,
+    pub enemy_start_hp: i32,
+    pub enemy_final_hp: i32,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -108,6 +110,8 @@ pub struct CombatLearningEnvCheckpointV1 {
     episode: CombatLearningEpisodeIdentityV1,
     session: RunControlSessionCheckpointV1,
     root_previous_outcome: Option<CombatBaselineOutcomeV1>,
+    enemy_start_hp: i32,
+    combat_sequence: u64,
 }
 
 /// One immutable exact combat root from which caller-numbered replicates are created.
@@ -119,10 +123,13 @@ pub struct CombatLearningRootV1 {
     potion_uuids: Vec<Option<u32>>,
     session: RunControlSessionCheckpointV1,
     previous_outcome: Option<CombatBaselineOutcomeV1>,
+    enemy_start_hp: i32,
+    combat_sequence: u64,
 }
 
 impl CombatLearningRootV1 {
-    pub fn from_session(session: RunControlSession) -> Result<Self, String> {
+    pub fn from_session(mut session: RunControlSession) -> Result<Self, String> {
+        session.observe_active_combat_started();
         let position = session.current_combat_position_for_actions()?;
         let identity = CombatLearningRootIdentityV1 {
             root_id: run_control_session_fingerprint_v2(&session),
@@ -138,6 +145,11 @@ impl CombatLearningRootV1 {
             .map(|slot| slot.as_ref().map(|potion| potion.uuid))
             .collect();
         let previous_outcome = session.last_combat_baseline().cloned();
+        let enemy_start_hp = super::outcome::combat_enemy_hp(&position.combat);
+        if enemy_start_hp <= 0 {
+            return Err("combat learning root enemy HP must be positive".to_string());
+        }
+        let combat_sequence = session.combat_sequence;
         Ok(Self {
             identity,
             context,
@@ -145,6 +157,8 @@ impl CombatLearningRootV1 {
             potion_uuids,
             session: RunControlSessionCheckpointV1::from_session(&session),
             previous_outcome,
+            enemy_start_hp,
+            combat_sequence,
         })
     }
 
@@ -176,6 +190,8 @@ impl CombatLearningRootV1 {
             },
             session: self.session.clone().into_session()?,
             root_previous_outcome: self.previous_outcome.clone(),
+            enemy_start_hp: self.enemy_start_hp,
+            combat_sequence: self.combat_sequence,
         };
         env.observe()?;
         Ok(env)
@@ -271,6 +287,8 @@ pub struct CombatLearningEnvV1 {
     episode: CombatLearningEpisodeIdentityV1,
     session: RunControlSession,
     root_previous_outcome: Option<CombatBaselineOutcomeV1>,
+    enemy_start_hp: i32,
+    combat_sequence: u64,
 }
 
 impl CombatLearningEnvV1 {
@@ -294,6 +312,8 @@ impl CombatLearningEnvV1 {
             episode: checkpoint.episode,
             session: checkpoint.session.into_session()?,
             root_previous_outcome: checkpoint.root_previous_outcome,
+            enemy_start_hp: checkpoint.enemy_start_hp,
+            combat_sequence: checkpoint.combat_sequence,
         };
         env.observe()?;
         Ok(env)
@@ -320,11 +340,21 @@ impl CombatLearningEnvV1 {
                 "combat learning episode left its root combat without a new typed outcome"
                     .to_string()
             })?;
+        let enemy_final_hp = self
+            .session
+            .recent_combat_enemy_hp()
+            .filter(|progress| progress.combat_sequence == self.combat_sequence)
+            .map(|progress| progress.terminal_enemy_hp)
+            .ok_or_else(|| {
+                "combat learning terminal is missing aligned enemy HP facts".to_string()
+            })?;
         Ok(CombatLearningBoundaryV1::Terminal {
             outcome: CombatLearningTerminalOutcomeV1 {
                 episode: self.episode.clone(),
                 combat,
                 resources: combat_learning_resources_from_run_v1(&self.session),
+                enemy_start_hp: self.enemy_start_hp,
+                enemy_final_hp,
             },
         })
     }
@@ -362,6 +392,8 @@ impl CombatLearningEnvV1 {
             episode: self.episode.clone(),
             session: RunControlSessionCheckpointV1::from_session(&self.session),
             root_previous_outcome: self.root_previous_outcome.clone(),
+            enemy_start_hp: self.enemy_start_hp,
+            combat_sequence: self.combat_sequence,
         }
     }
 
@@ -535,6 +567,8 @@ mod tests {
         assert_eq!(outcome.combat.start_hp, 80);
         assert_eq!(outcome.combat.final_hp, 80);
         assert_eq!(outcome.combat.cards_played, 1);
+        assert_eq!(outcome.enemy_start_hp, 1);
+        assert_eq!(outcome.enemy_final_hp, 0);
         assert!(env
             .step(LearningActionV1::CombatInput {
                 input: ClientInput::EndTurn,
@@ -549,6 +583,14 @@ mod tests {
                 .expect_err("strategic boundary is not a combat root");
 
         assert!(error.contains("no active combat"));
+    }
+
+    #[test]
+    fn root_without_positive_enemy_hp_is_rejected() {
+        let error = CombatLearningRootV1::from_session(combat_root_session(0))
+            .expect_err("combat learning progress requires a positive enemy-HP denominator");
+
+        assert!(error.contains("enemy HP must be positive"));
     }
 
     fn combat_root_session(monster_hp: i32) -> RunControlSession {

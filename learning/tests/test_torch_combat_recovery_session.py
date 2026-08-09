@@ -141,6 +141,14 @@ class _ReplayableGroup:
                 [80 - hp for hp in final_hp] if terminal else [],
                 dtype=np.int32,
             ),
+            "terminal_enemy_start_hp": np.asarray(
+                [40] * row_count,
+                dtype=np.int32,
+            ),
+            "terminal_enemy_final_hp": np.asarray(
+                [0] * row_count,
+                dtype=np.int32,
+            ),
             "terminal_turns": np.asarray([3] * row_count, dtype=np.uint32),
             "terminal_potions_used": np.asarray(
                 potion_use if terminal else [],

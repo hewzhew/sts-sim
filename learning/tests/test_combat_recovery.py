@@ -90,6 +90,8 @@ class _TwoTransitionWinningReplay:
             "terminal_final_max_hp": (80,) if terminal else (),
             "terminal_final_gold": (99,) if terminal else (),
             "terminal_hp_loss": (70,) if terminal else (),
+            "terminal_enemy_start_hp": (40,) if terminal else (),
+            "terminal_enemy_final_hp": (0,) if terminal else (),
             "terminal_turns": (3,) if terminal else (),
             "terminal_potions_used": (1,) if terminal else (),
             "terminal_potions_discarded": (0,) if terminal else (),

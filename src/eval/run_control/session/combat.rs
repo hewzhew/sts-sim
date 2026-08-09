@@ -64,7 +64,7 @@ impl RunControlSession {
         )
     }
 
-    pub(super) fn observe_active_combat_started(&mut self) {
+    pub(in crate::eval::run_control) fn observe_active_combat_started(&mut self) {
         let started = self.combat_outcomes.ensure_started(
             self.active_combat
                 .as_ref()

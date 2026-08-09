@@ -21,6 +21,7 @@ def _summary(root_byte: str, *, hp_signal: bool) -> CombatGroupSignalSummary:
             4 if hp_signal else 0,
             20 if hp_signal else 0,
         ),
+        enemy_hp_progress=CombatAxisSignalSummary(0, 0),
         potion_retention=CombatAxisSignalSummary(0, 0),
     )
 
@@ -38,6 +39,7 @@ def test_census_aggregates_distinct_roots_without_payloads() -> None:
     assert census.terminal_hp.signal_group_count == 1
     assert census.terminal_hp.signal_replicate_count == 4
     assert census.terminal_hp.signal_decision_count == 20
+    assert census.enemy_hp_progress.signal_group_count == 0
 
 
 def test_census_rejects_duplicate_roots_and_group_overflow() -> None:

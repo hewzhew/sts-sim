@@ -377,6 +377,20 @@ impl CombatLearningBatchEnv {
                     .map(|(_, outcome)| outcome.combat.hp_loss)
                     .collect(),
             ),
+            (
+                "terminal_enemy_start_hp",
+                terminal_slots
+                    .iter()
+                    .map(|(_, outcome)| outcome.enemy_start_hp)
+                    .collect(),
+            ),
+            (
+                "terminal_enemy_final_hp",
+                terminal_slots
+                    .iter()
+                    .map(|(_, outcome)| outcome.enemy_final_hp)
+                    .collect(),
+            ),
         ] {
             result.set_item(key, PyArray1::from_vec(py, values))?;
         }

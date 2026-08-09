@@ -115,12 +115,13 @@ class CombatDecisionExperienceBatch:
 
 @dataclass(frozen=True)
 class CombatDecisionAdvantageBatch:
-    """Three independent advantage columns aligned to one retained model call."""
+    """Independent advantage columns aligned to one retained model call."""
 
     sequence_index: int
     replicate_indices: tuple[int, ...]
     win: tuple[float, ...]
     terminal_hp: tuple[float, ...]
+    enemy_hp_progress: tuple[float, ...]
     potion_retention: tuple[float, ...]
 
     def __post_init__(self) -> None:
@@ -129,7 +130,12 @@ class CombatDecisionAdvantageBatch:
             _nonnegative_integer(value, "replicate_index")
             for value in self.replicate_indices
         )
-        axes = (tuple(self.win), tuple(self.terminal_hp), tuple(self.potion_retention))
+        axes = (
+            tuple(self.win),
+            tuple(self.terminal_hp),
+            tuple(self.enemy_hp_progress),
+            tuple(self.potion_retention),
+        )
         if not replicates or any(len(axis) != len(replicates) for axis in axes):
             raise CombatExperienceError("combat decision advantage rows are misaligned")
         if not all(math.isfinite(value) for axis in axes for value in axis):
@@ -138,7 +144,8 @@ class CombatDecisionAdvantageBatch:
         object.__setattr__(self, "replicate_indices", replicates)
         object.__setattr__(self, "win", axes[0])
         object.__setattr__(self, "terminal_hp", axes[1])
-        object.__setattr__(self, "potion_retention", axes[2])
+        object.__setattr__(self, "enemy_hp_progress", axes[2])
+        object.__setattr__(self, "potion_retention", axes[3])
 
 
 @dataclass(frozen=True)
@@ -221,6 +228,10 @@ class CompletedCombatGroupExperience:
                 terminal_hp=tuple(
                     grouped.terminal_hp[index] for index in batch.replicate_indices
                 ),
+                enemy_hp_progress=tuple(
+                    grouped.enemy_hp_progress[index]
+                    for index in batch.replicate_indices
+                ),
                 potion_retention=tuple(
                     grouped.potion_retention[index]
                     for index in batch.replicate_indices
@@ -244,6 +255,9 @@ class CompletedCombatGroupExperience:
             ),
             terminal_hp_decisions=tuple(
                 value for batch in projected for value in batch.terminal_hp
+            ),
+            enemy_hp_progress_decisions=tuple(
+                value for batch in projected for value in batch.enemy_hp_progress
             ),
             potion_retention_decisions=tuple(
                 value for batch in projected for value in batch.potion_retention

@@ -134,13 +134,14 @@ never parses a production continuation or simulator checkpoint. Private branch
 cutpoint files are intentionally not accepted.
 Every combat step repeats the exact root id and combat-state hash. Its newly
 terminal rows have no run reward fields: they return aligned terminal kind,
-bridge-owned win, HP, turn, potion, and card-play columns from
-`CombatBaselineOutcomeV1`. The source run slot is unchanged. The Python caller
-can accumulate exactly one row per replicate and derive separate same-root
-leave-one-out win, terminal-HP-ratio, and potion-retention axes. It does not
-combine HP and potion facts into a default scalar score. This remains an
-execution primitive for caller-owned grouped objectives, not a trainer or a
-teacher.
+bridge-owned win, player HP, root/terminal total enemy HP, turn, potion, and
+card-play columns. The source run slot is unchanged. The Python caller can
+accumulate exactly one row per replicate and derive separate same-root
+leave-one-out win, player-terminal-HP-ratio, enemy-HP-progress, and
+potion-retention axes. Enemy progress remains diagnostic and does not change
+the maintained all-loss no-signal objective. The caller does not combine these
+facts into a default scalar score. This remains an execution primitive for
+caller-owned grouped objectives, not a trainer or a teacher.
 Smoke Bomb escape is terminal kind `Unresolved` with `terminal_won=false`.
 Post-combat screen state alone never turns an escape into a learning victory.
 

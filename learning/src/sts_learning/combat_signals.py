@@ -48,7 +48,7 @@ class CombatAxisSignalSummary:
 
 @dataclass(frozen=True)
 class CombatGroupSignalSummary:
-    """Compact three-axis signal census for one completed exact root."""
+    """Compact independent-axis signal census for one completed exact root."""
 
     root_id: str
     exact_combat_state_hash: str
@@ -56,13 +56,19 @@ class CombatGroupSignalSummary:
     decision_count: int
     win: CombatAxisSignalSummary
     terminal_hp: CombatAxisSignalSummary
+    enemy_hp_progress: CombatAxisSignalSummary
     potion_retention: CombatAxisSignalSummary
 
     def __post_init__(self) -> None:
         _validate_root(self.root_id, self.exact_combat_state_hash)
         replicate_count = _positive_integer(self.replicate_count, "replicate_count")
         decision_count = _positive_integer(self.decision_count, "decision_count")
-        for axis in (self.win, self.terminal_hp, self.potion_retention):
+        for axis in (
+            self.win,
+            self.terminal_hp,
+            self.enemy_hp_progress,
+            self.potion_retention,
+        ):
             if not isinstance(axis, CombatAxisSignalSummary):
                 raise CombatSignalError(
                     "combat signal summary requires typed axis summaries"
@@ -107,13 +113,19 @@ class CombatSignalCensus:
     decision_count: int
     win: CombatAxisSignalCensus
     terminal_hp: CombatAxisSignalCensus
+    enemy_hp_progress: CombatAxisSignalCensus
     potion_retention: CombatAxisSignalCensus
 
     def __post_init__(self) -> None:
         group_count = _positive_integer(self.group_count, "group_count")
         replicate_count = _positive_integer(self.replicate_count, "replicate_count")
         decision_count = _positive_integer(self.decision_count, "decision_count")
-        for axis in (self.win, self.terminal_hp, self.potion_retention):
+        for axis in (
+            self.win,
+            self.terminal_hp,
+            self.enemy_hp_progress,
+            self.potion_retention,
+        ):
             if not isinstance(axis, CombatAxisSignalCensus):
                 raise CombatSignalError(
                     "combat signal census requires typed axis counts"
@@ -141,6 +153,7 @@ def summarize_combat_group_signals(
     decision_count: int,
     win_decisions: Sequence[float],
     terminal_hp_decisions: Sequence[float],
+    enemy_hp_progress_decisions: Sequence[float],
     potion_retention_decisions: Sequence[float],
 ) -> CombatGroupSignalSummary:
     """Summarize aligned axes without retaining semantic decision payloads."""
@@ -153,6 +166,7 @@ def summarize_combat_group_signals(
         for values in (
             win_decisions,
             terminal_hp_decisions,
+            enemy_hp_progress_decisions,
             potion_retention_decisions,
         )
     )
@@ -166,9 +180,13 @@ def summarize_combat_group_signals(
         decision_count=normalized_decision_count,
         win=_axis_summary(grouped.win, decision_axes[0]),
         terminal_hp=_axis_summary(grouped.terminal_hp, decision_axes[1]),
+        enemy_hp_progress=_axis_summary(
+            grouped.enemy_hp_progress,
+            decision_axes[2],
+        ),
         potion_retention=_axis_summary(
             grouped.potion_retention,
-            decision_axes[2],
+            decision_axes[3],
         ),
     )
 
@@ -199,6 +217,9 @@ def build_combat_signal_census(
         decision_count=sum(item.decision_count for item in normalized),
         win=_axis_census(tuple(item.win for item in normalized)),
         terminal_hp=_axis_census(tuple(item.terminal_hp for item in normalized)),
+        enemy_hp_progress=_axis_census(
+            tuple(item.enemy_hp_progress for item in normalized)
+        ),
         potion_retention=_axis_census(
             tuple(item.potion_retention for item in normalized)
         ),

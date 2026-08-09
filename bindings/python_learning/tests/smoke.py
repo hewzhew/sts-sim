@@ -299,6 +299,8 @@ def _assert_same_root_combat_group(env: LearningBatchEnv, slot: int) -> None:
             "terminal_start_hp",
             "terminal_final_hp",
             "terminal_hp_loss",
+            "terminal_enemy_start_hp",
+            "terminal_enemy_final_hp",
             "terminal_final_max_hp",
             "terminal_final_gold",
         ):

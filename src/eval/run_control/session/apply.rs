@@ -1,8 +1,9 @@
 use crate::engine::run_loop::tick_run_active_with_observer;
 use crate::state::core::{ClientInput, EngineState, RunResult};
 
-use super::{CombatCompletionSource, RunControlSession, RunProgressOutcome};
+use super::{CombatCompletionSource, RecentCombatEnemyHpV1, RunControlSession, RunProgressOutcome};
 use crate::eval::run_control::auto_capture::render_auto_capture_result;
+use crate::eval::run_control::outcome::combat_enemy_hp;
 use crate::eval::run_control::render::render_run_control_state;
 use crate::eval::run_control::trace_annotation::RunControlTraceAnnotationV1;
 use crate::eval::run_control::transition_report::{
@@ -592,6 +593,10 @@ impl RunControlSession {
                 self.run_state.seed, self.combat_sequence
             );
             let outcome = self.combat_outcomes.finish(case_id, finished);
+            self.recent_combat_enemy_hp = Some(RecentCombatEnemyHpV1 {
+                combat_sequence: self.combat_sequence,
+                terminal_enemy_hp: combat_enemy_hp(&finished.combat_state),
+            });
             self.recent_combat_attrition = Some(super::RecentCombatAttritionV1 {
                 act: self.run_state.act_num,
                 floor: self.run_state.floor_num,

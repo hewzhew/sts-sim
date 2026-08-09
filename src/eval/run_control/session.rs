@@ -81,6 +81,7 @@ pub struct RunControlSession {
     last_combat_automation_trajectory: Option<CombatAutomationTrajectoryRecordV1>,
     last_capture_case: Option<LastBenchmarkCaptureCase>,
     recent_combat_attrition: Option<RecentCombatAttritionV1>,
+    recent_combat_enemy_hp: Option<RecentCombatEnemyHpV1>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Deserialize, Serialize)]
@@ -143,6 +144,12 @@ pub struct RecentCombatAttritionV1 {
     pub raw_hp_loss: i32,
     pub turns: u32,
     pub potions_used: u32,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(in crate::eval::run_control) struct RecentCombatEnemyHpV1 {
+    pub combat_sequence: u64,
+    pub terminal_enemy_hp: i32,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -653,12 +660,19 @@ impl RunControlSession {
             last_combat_automation_trajectory: None,
             last_capture_case: None,
             recent_combat_attrition: None,
+            recent_combat_enemy_hp: None,
         }
     }
 
     pub fn set_auto_capture_config(&mut self, auto_capture: AutoCombatCaptureConfig) {
         self.auto_capture = auto_capture;
         self.auto_capture_last_combat_sequence = None;
+    }
+
+    pub(in crate::eval::run_control) fn recent_combat_enemy_hp(
+        &self,
+    ) -> Option<RecentCombatEnemyHpV1> {
+        self.recent_combat_enemy_hp
     }
 
     pub fn shop_visit_context(&self) -> Option<ShopVisitContextV1> {
@@ -887,6 +901,7 @@ impl RunControlSessionCheckpointV1 {
             last_combat_automation_trajectory: self.last_combat_automation_trajectory,
             last_capture_case: self.last_capture_case,
             recent_combat_attrition: self.recent_combat_attrition,
+            recent_combat_enemy_hp: None,
         })
     }
 }

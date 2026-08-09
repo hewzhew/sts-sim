@@ -227,6 +227,16 @@ fn potion_uuid_exists(combat: &CombatState, uuid: u32) -> bool {
         .any(|slot| slot.as_ref().is_some_and(|potion| potion.uuid == uuid))
 }
 
+pub(in crate::eval::run_control) fn combat_enemy_hp(combat: &CombatState) -> i32 {
+    combat
+        .entities
+        .monsters
+        .iter()
+        .fold(0i32, |total, monster| {
+            total.saturating_add(monster.current_hp.max(0))
+        })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

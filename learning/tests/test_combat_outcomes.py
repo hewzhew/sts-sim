@@ -23,7 +23,10 @@ def _outcome(
     kind: int = WIN_KIND,
     final_hp: int = 80,
     potions_used: int = 0,
+    enemy_final_hp: int | None = None,
 ) -> CombatTerminalOutcome:
+    if enemy_final_hp is None:
+        enemy_final_hp = 0 if kind == WIN_KIND else 20
     return CombatTerminalOutcome(
         replicate_index=replicate,
         terminal_kind=kind,
@@ -33,6 +36,8 @@ def _outcome(
         final_max_hp=80,
         final_gold=99,
         hp_loss=max(80 - final_hp, 0),
+        enemy_start_hp=40,
+        enemy_final_hp=enemy_final_hp,
         turns=3,
         potions_used=potions_used,
         potions_discarded=0,
@@ -58,6 +63,8 @@ def _bridge_step(replicates: list[int]) -> dict[str, object]:
         "terminal_hp_loss": np.asarray(
             [10 * replicate for replicate in replicates], dtype=np.int32
         ),
+        "terminal_enemy_start_hp": np.full(rows, 40, dtype=np.int32),
+        "terminal_enemy_final_hp": np.zeros(rows, dtype=np.int32),
         "terminal_turns": np.full(rows, 3, dtype=np.uint32),
         "terminal_potions_used": np.zeros(rows, dtype=np.uint32),
         "terminal_potions_discarded": np.zeros(rows, dtype=np.uint32),
@@ -127,6 +134,7 @@ def test_grouped_axes_remain_independent_and_sibling_relative() -> None:
 
     assert all_wins.win == (0.0, 0.0, 0.0)
     assert np.allclose(all_wins.terminal_hp, (0.375, 0.0, -0.375))
+    assert all_wins.enemy_hp_progress == (0.0, 0.0, 0.0)
     assert all_wins.potion_retention == (0.5, -1.0, 0.5)
     assert not all_wins.win_has_signal
     assert all_wins.terminal_hp_has_signal
@@ -144,6 +152,17 @@ def test_grouped_axes_remain_independent_and_sibling_relative() -> None:
     assert mixed_result.win == (1.0, -1.0)
     assert mixed_result.win_has_signal
 
+    all_losses = CompletedCombatGroup(
+        root_id=ROOT_ID,
+        exact_combat_state_hash=COMBAT_HASH,
+        outcomes=(
+            _outcome(0, kind=LOSS_KIND, final_hp=0, enemy_final_hp=30),
+            _outcome(1, kind=LOSS_KIND, final_hp=0, enemy_final_hp=10),
+        ),
+    ).grouped_advantages()
+    assert all_losses.enemy_hp_progress == (-0.5, 0.5)
+    assert all_losses.enemy_hp_progress_has_signal
+
 
 def test_same_root_group_rejects_mismatched_start_hp() -> None:
     second = CombatTerminalOutcome(
@@ -155,6 +174,8 @@ def test_same_root_group_rejects_mismatched_start_hp() -> None:
         final_max_hp=80,
         final_gold=99,
         hp_loss=0,
+        enemy_start_hp=40,
+        enemy_final_hp=0,
         turns=3,
         potions_used=0,
         potions_discarded=0,
@@ -174,6 +195,7 @@ def test_grouped_signal_ignores_floating_point_residue() -> None:
     advantages = CombatGroupedAdvantages(
         win=(1.0e-16, -1.0e-16),
         terminal_hp=(0.0, 0.0),
+        enemy_hp_progress=(0.0, 0.0),
         potion_retention=(0.0, 0.0),
     )
 

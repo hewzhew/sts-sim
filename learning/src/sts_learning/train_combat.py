@@ -457,6 +457,9 @@ def _root(
         "decision_count": signals.decision_count,
         "win_signal_replicates": signals.win.replicate_count,
         "terminal_hp_signal_replicates": signals.terminal_hp.replicate_count,
+        "enemy_hp_progress_signal_replicates": (
+            signals.enemy_hp_progress.replicate_count
+        ),
         "potion_signal_replicates": signals.potion_retention.replicate_count,
         "selected_objective": _selected_objective(root),
     }

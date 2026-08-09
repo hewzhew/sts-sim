@@ -41,6 +41,7 @@ def _evidence(
             REPLICATES if hp_signal else 0,
             DECISIONS if hp_signal else 0,
         ),
+        enemy_hp_progress=CombatAxisSignalSummary(0, 0),
         potion_retention=CombatAxisSignalSummary(0, 0),
     )
     return CombatRootCompetenceEvidence(

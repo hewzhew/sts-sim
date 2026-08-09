@@ -72,6 +72,8 @@ class _OneStepCombatGroup:
             "terminal_final_max_hp": np.asarray([80, 80], dtype=np.int32),
             "terminal_final_gold": np.asarray([99, 99], dtype=np.int32),
             "terminal_hp_loss": np.asarray([10, 80], dtype=np.int32),
+            "terminal_enemy_start_hp": np.asarray([40, 40], dtype=np.int32),
+            "terminal_enemy_final_hp": np.asarray([0, 20], dtype=np.int32),
             "terminal_turns": np.asarray([3, 5], dtype=np.uint32),
             "terminal_potions_used": np.asarray([0, 1], dtype=np.uint32),
             "terminal_potions_discarded": np.asarray([0, 0], dtype=np.uint32),
@@ -111,6 +113,7 @@ def test_driver_returns_complete_aligned_group_experience() -> None:
     assert projected[0].replicate_indices == (0, 1)
     assert projected[0].win == (1.0, -1.0)
     assert projected[0].terminal_hp == (0.875, -0.875)
+    assert projected[0].enemy_hp_progress == (0.5, -0.5)
     assert projected[0].potion_retention == (1.0, -1.0)
     summary = result.experience.signal_summary()
     assert summary.replicate_count == 2
@@ -118,6 +121,7 @@ def test_driver_returns_complete_aligned_group_experience() -> None:
     assert summary.win.replicate_count == 2
     assert summary.win.decision_count == 2
     assert summary.terminal_hp.replicate_count == 2
+    assert summary.enemy_hp_progress.replicate_count == 2
     assert summary.potion_retention.replicate_count == 2
 
 

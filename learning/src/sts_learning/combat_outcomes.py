@@ -24,6 +24,8 @@ class CombatTerminalOutcome:
     final_max_hp: int
     final_gold: int
     hp_loss: int
+    enemy_start_hp: int
+    enemy_final_hp: int
     turns: int
     potions_used: int
     potions_discarded: int
@@ -39,6 +41,8 @@ class CombatTerminalOutcome:
             "final_max_hp",
             "final_gold",
             "hp_loss",
+            "enemy_start_hp",
+            "enemy_final_hp",
             "turns",
             "potions_used",
             "potions_discarded",
@@ -63,6 +67,10 @@ class CombatTerminalOutcome:
             raise CombatOutcomeError("final_gold must be non-negative")
         if self.hp_loss != max(self.start_hp - self.final_hp, 0):
             raise CombatOutcomeError("hp_loss disagrees with start_hp and final_hp")
+        if self.enemy_start_hp <= 0:
+            raise CombatOutcomeError("enemy_start_hp must be positive")
+        if self.enemy_final_hp < 0:
+            raise CombatOutcomeError("enemy_final_hp must be non-negative")
         for name in (
             "turns",
             "potions_used",
@@ -126,6 +134,8 @@ class CombatTerminalStepBatch:
                 "terminal_final_max_hp",
                 "terminal_final_gold",
                 "terminal_hp_loss",
+                "terminal_enemy_start_hp",
+                "terminal_enemy_final_hp",
                 "terminal_turns",
                 "terminal_potions_used",
                 "terminal_potions_discarded",
@@ -152,6 +162,8 @@ class CombatTerminalStepBatch:
                 final_max_hp=columns["terminal_final_max_hp"][row],
                 final_gold=columns["terminal_final_gold"][row],
                 hp_loss=columns["terminal_hp_loss"][row],
+                enemy_start_hp=columns["terminal_enemy_start_hp"][row],
+                enemy_final_hp=columns["terminal_enemy_final_hp"][row],
                 turns=columns["terminal_turns"][row],
                 potions_used=columns["terminal_potions_used"][row],
                 potions_discarded=columns["terminal_potions_discarded"][row],
@@ -176,15 +188,26 @@ class CombatGroupedAdvantages:
 
     win: tuple[float, ...]
     terminal_hp: tuple[float, ...]
+    enemy_hp_progress: tuple[float, ...]
     potion_retention: tuple[float, ...]
 
     def __post_init__(self) -> None:
-        lengths = {len(self.win), len(self.terminal_hp), len(self.potion_retention)}
+        lengths = {
+            len(self.win),
+            len(self.terminal_hp),
+            len(self.enemy_hp_progress),
+            len(self.potion_retention),
+        }
         if len(lengths) != 1 or next(iter(lengths), 0) < 2:
             raise CombatOutcomeError(
                 "grouped advantage axes require the same two-or-more replicates"
             )
-        for axis in (self.win, self.terminal_hp, self.potion_retention):
+        for axis in (
+            self.win,
+            self.terminal_hp,
+            self.enemy_hp_progress,
+            self.potion_retention,
+        ):
             if not all(math.isfinite(value) for value in axis):
                 raise CombatOutcomeError("grouped advantages must be finite")
 
@@ -196,6 +219,13 @@ class CombatGroupedAdvantages:
     def terminal_hp_has_signal(self) -> bool:
         return any(
             combat_advantage_has_signal(value) for value in self.terminal_hp
+        )
+
+    @property
+    def enemy_hp_progress_has_signal(self) -> bool:
+        return any(
+            combat_advantage_has_signal(value)
+            for value in self.enemy_hp_progress
         )
 
     @property
@@ -231,6 +261,10 @@ class CompletedCombatGroup:
             )
         if len({row.start_hp for row in outcomes}) != 1:
             raise CombatOutcomeError("same-root outcomes disagree on start_hp")
+        if len({row.enemy_start_hp for row in outcomes}) != 1:
+            raise CombatOutcomeError(
+                "same-root outcomes disagree on enemy_start_hp"
+            )
         object.__setattr__(self, "outcomes", outcomes)
 
     def grouped_advantages(self) -> CombatGroupedAdvantages:
@@ -239,6 +273,12 @@ class CompletedCombatGroup:
             win=_leave_one_out(tuple(1.0 if row.won else 0.0 for row in self.outcomes)),
             terminal_hp=_leave_one_out(
                 tuple(row.final_hp / start_hp for row in self.outcomes)
+            ),
+            enemy_hp_progress=_leave_one_out(
+                tuple(
+                    1.0 - row.enemy_final_hp / row.enemy_start_hp
+                    for row in self.outcomes
+                )
             ),
             potion_retention=_leave_one_out(
                 tuple(

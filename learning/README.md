@@ -159,8 +159,10 @@ the exact combat root and numbered replicate, rejects mixed behavior manifests,
 and retains one complete group under independent decision, payload-byte,
 model-round, and transition limits. A memory overflow is detected before the
 corresponding bridge choice; a partial group is an error, not a fabricated
-terminal sample. Completed groups expose win, terminal-HP-ratio, and potion
-retention leave-one-out axes separately and define no HP/potion exchange rate.
+terminal sample. Completed groups expose win, player-terminal-HP-ratio,
+enemy-HP-progress, and potion-retention leave-one-out axes separately and
+define no exchange rate among them. Enemy-HP progress remains diagnostic
+evidence; all-loss groups do not select it as a training objective.
 Before running a group, callers may select or stratify roots through the
 bridge-owned frozen root context; the caller must not decode semantic feature
 numbers or copy the full combat observation into a parallel metadata schema.
@@ -244,7 +246,7 @@ promoted. A temporary promotion failure retains one compact pending result and
 retries it before requesting another group, while root drift fails before any
 new policy or environment mutation. The runner does not yet own cross-root
 scheduling, durable combat-training resume, or a scalar HP/potion objective.
-Each generation result carries the completed group's compact three-axis signal
+Each generation result carries the completed group's compact four-axis signal
 summary after its bounded experience has been consumed. Cross-root diagnostics
 can therefore build the existing bounded census without retaining or reopening
 semantic decision payloads.
@@ -255,7 +257,8 @@ and returns compact generation results plus the aggregate census. The artifact
 is imported once and every slot selects from that shared typed source; slot-local
 trainers and stores live only in temporary directories, their updates are
 discarded, and nothing is published. The runner measures whether diverse roots
-provide win, HP, or potion signal—it does not train one behavior across roots.
+provide win, player-HP, enemy-HP-progress, or potion signal—it does not train
+one behavior across roots.
 
 Run bounded shared-model training over one opaque multi-root artifact through
 the configured Python runtime:
