@@ -981,7 +981,10 @@ anchored run policies, and preserves each combat's typed encounter and monster
 identities for encounter-level resource analysis.
 Use `train-run` for the first whole-run on-policy handoff. `-Behavior` is a
 verified completed `train-combat` directory whose scorer becomes an independent
-generation-zero parameter copy. Training uses the `TRAINING` seed partition,
+generation-zero parameter copy. `-Device cpu|cuda` selects the scorer and
+categorical RNG device; the default is `cpu`. An unavailable CUDA runtime fails
+before session setup, and the selected device is retained in the journal and
+publication. Training uses the `TRAINING` seed partition,
 the terminal floor-progress return, and exactly
 `-AttemptsPerUpdate` complete runs per generation. The attempt count must be a
 multiple of `-Slots`: faster slots park at terminal until the complete slot

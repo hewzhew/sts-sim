@@ -32,6 +32,8 @@ from .torch_session_config import (
     CategoricalOnlineSessionConfig,
     CategoricalSessionBridge,
     CategoricalSessionLimits,
+    TorchSessionError,
+    normalize_torch_device_type,
 )
 from .torch_policy import RaggedScorerConfig
 
@@ -62,6 +64,7 @@ class PublishedRunBehavior:
     training_potion_lane: CombatPotionLane
     training_sampling_mode: RunSamplingMode
     training_episode_root_attempts: int | None
+    training_device_type: str
     training_combat_decision_rule: FrozenDecisionRule
     combat_anchor_manifest_id: BehaviorManifestId | None
     combat_anchor_checkpoint_id: ManifestArtifactId | None
@@ -87,6 +90,10 @@ class PublishedRunBehavior:
             raise PublishedRunBehaviorError("whole-run training cannot publish root slots")
         if not isinstance(self.training_sampling_mode, RunSamplingMode):
             raise PublishedRunBehaviorError("run behavior sampling mode must be typed")
+        try:
+            normalize_torch_device_type(self.training_device_type)
+        except TorchSessionError as error:
+            raise PublishedRunBehaviorError(str(error)) from error
         if not isinstance(
             self.training_combat_decision_rule,
             FrozenDecisionRule,
@@ -269,6 +276,19 @@ def recover_published_run_behavior(
         raise PublishedRunBehaviorError(
             "run ascension level changed across publication"
         )
+    try:
+        training_device_type = normalize_torch_device_type(
+            configuration.get("device_type", "cpu")
+        )
+        completed_device_type = normalize_torch_device_type(
+            completed.get("device_type", "cpu")
+        )
+    except TorchSessionError as error:
+        raise PublishedRunBehaviorError(str(error)) from error
+    if completed_device_type != training_device_type:
+        raise PublishedRunBehaviorError(
+            "run device type changed across publication"
+        )
     configuration_sampling_mode = _sampling_mode(
         configuration.get(
             "sampling_mode",
@@ -351,6 +371,7 @@ def recover_published_run_behavior(
         combat_decision_rule=combat_decision_rule,
         combat_anchor_manifest_id=combat_anchor_manifest_id,
         combat_anchor_scorer=combat_anchor_scorer,
+        device_type=training_device_type,
     )
     limits = replace(
         CategoricalSessionLimits(),
@@ -403,6 +424,7 @@ def recover_published_run_behavior(
         training_episode_root_attempts=(
             configuration_episode_root_attempts
         ),
+        training_device_type=training_device_type,
         training_combat_decision_rule=combat_decision_rule,
         combat_anchor_manifest_id=combat_anchor_manifest_id,
         combat_anchor_checkpoint_id=combat_anchor_checkpoint_id,

@@ -250,9 +250,9 @@ def sample_ragged_categorical(
     if generator is torch.default_generator:
         raise TorchPolicyError("categorical sampling refuses the global generator")
     generator_device = torch.device(generator.device)
-    if generator_device != logits.values.device:
+    if generator_device.type != logits.values.device.type:
         raise TorchPolicyError(
-            "categorical generator device must match candidate logits"
+            "categorical generator device type must match candidate logits"
         )
     if not bool(torch.all(torch.isfinite(logits.values))):
         raise TorchPolicyError("categorical candidate logits must be finite")

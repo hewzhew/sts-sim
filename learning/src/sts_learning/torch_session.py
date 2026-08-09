@@ -312,7 +312,9 @@ class CategoricalOnlineSessionFactory:
             capacity=self.config.limits.owner_capacity
         )
         controller = self._controller(
-            torch.Generator(device="cpu").manual_seed(behavior_seed),
+            torch.Generator(
+                device=self.config.profile.device_type
+            ).manual_seed(behavior_seed),
             checkpoint_store,
             catalog,
             registry,
@@ -441,7 +443,9 @@ class CategoricalOnlineSessionFactory:
 
         seed = _torch_seed(behavior_seed, "behavior_seed")
         checkpoint_store, catalog = self._behavior_stores()
-        generator = torch.Generator(device="cpu").manual_seed(seed)
+        generator = torch.Generator(
+            device=self.config.profile.device_type
+        ).manual_seed(seed)
         if (
             self.config.profile.combat_decision_rule
             is FrozenDecisionRule.SAMPLED

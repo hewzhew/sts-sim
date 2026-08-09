@@ -172,6 +172,7 @@ def test_run_training_uses_greedy_combat_and_trains_only_strategic_rows(
     )
     assert records[0]["decision_scope"] == "strategic"
     assert records[0]["combat_decision_rule"] == "greedy"
+    assert records[0]["device_type"] == "cpu"
     assert records[0]["schema"] == "sts-learning-run-training-v6"
     assert records[0]["combat_anchor_manifest_id"] == (
         summary["combat_anchor_manifest_id"]
@@ -180,6 +181,7 @@ def test_run_training_uses_greedy_combat_and_trains_only_strategic_rows(
         summary["combat_anchor_checkpoint_id"]
     )
     recovered = recover_published_run_behavior(output, run_bridge, (777,))
+    assert recovered.training_device_type == "cpu"
     assert recovered.training_combat_decision_rule is FrozenDecisionRule.GREEDY
     assert isinstance(recovered.policies[0], FrozenCombatGreedyTorchPolicy)
     assert recovered.combat_anchor_manifest_id is not None

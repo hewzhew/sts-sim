@@ -53,6 +53,8 @@ param(
     [string]$PotionLane = "all",
     [ValidateSet("trained", "all", "never")]
     [string]$RunPotionLane = "trained",
+    [ValidateSet("cpu", "cuda")]
+    [string]$Device = "cpu",
     [int[]]$PotionSlots = @(),
     [string]$RequiredEncounterId,
     [switch]$DistinctEncounters,
@@ -470,7 +472,8 @@ switch ($Command) {
                 --run-policy-update $RunPolicyUpdate `
                 --sampling-mode $SamplingMode `
                 @episodeRootArguments `
-                --potion-lane $RunPotionLane
+                --potion-lane $RunPotionLane `
+                --device $Device
             if ($LASTEXITCODE -ne 0) {
                 throw "run training command failed"
             }

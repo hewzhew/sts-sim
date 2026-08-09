@@ -60,6 +60,8 @@ from .torch_session_config import (
     CategoricalOnlineSessionConfig,
     CategoricalSessionBridge,
     CategoricalSessionLimits,
+    TorchSessionError,
+    normalize_torch_device_type,
 )
 from .torch_policy import RaggedScorerConfig
 from .torch_training import RunPolicyTrainingResult
@@ -112,8 +114,14 @@ class RunTrainingCommandConfig:
     sampling_mode: RunSamplingMode = RunSamplingMode.INDEPENDENT_COHORTS
     episode_root_attempts: int | None = None
     potion_lane: RunPotionLane = RunPotionLane.TRAINED
+    device_type: str = "cpu"
 
     def __post_init__(self) -> None:
+        try:
+            device_type = normalize_torch_device_type(self.device_type)
+        except TorchSessionError as error:
+            raise RunTrainingCommandError(str(error)) from error
+        object.__setattr__(self, "device_type", device_type)
         behavior = Path(self.warm_start_behavior).resolve()
         output = Path(self.output).resolve()
         if not behavior.is_dir():
@@ -329,6 +337,7 @@ def run_run_training(
         combat_anchor_scorer=(
             None if combat_anchor is None else combat_anchor.scorer.config
         ),
+        device_type=config.device_type,
     )
     limits = replace(
         CategoricalSessionLimits(),
@@ -518,6 +527,7 @@ def _configuration(
         "sampling_mode": config.sampling_mode.value,
         "episode_root_attempts": config.episode_root_attempts,
         "slot_count": config.slot_count,
+        "device_type": config.device_type,
         "ascension_level": config.ascension_level,
         "generations": config.generations,
         "attempts_per_update": config.attempts_per_update,
@@ -697,6 +707,7 @@ def _summary(
         "run_potion_lane": potion_lane.value,
         "sampling_mode": config.sampling_mode.value,
         "episode_root_attempts": config.episode_root_attempts,
+        "device_type": config.device_type,
         "ascension_level": config.ascension_level,
         "combat_decision_rule": config.combat_decision_rule.value,
         "combat_anchor_manifest_id": (
@@ -1139,6 +1150,11 @@ def _parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--episode-root-attempts", type=int)
     parser.add_argument(
+        "--device",
+        choices=("cpu", "cuda"),
+        default="cpu",
+    )
+    parser.add_argument(
         "--potion-lane",
         choices=tuple(lane.value for lane in RunPotionLane),
         default=RunPotionLane.TRAINED.value,
@@ -1179,6 +1195,7 @@ def main() -> int:
             sampling_mode=RunSamplingMode(arguments.sampling_mode),
             episode_root_attempts=arguments.episode_root_attempts,
             potion_lane=RunPotionLane(arguments.potion_lane),
+            device_type=arguments.device,
         )
     )
     return 0

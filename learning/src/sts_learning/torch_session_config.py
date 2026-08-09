@@ -7,6 +7,8 @@ import operator
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 
+import torch
+
 from .attempts import AttemptAssemblyLimits
 from .attempt_batching import AttemptUpdateBatchLimits
 from .driver import BatchEnvironment
@@ -32,6 +34,23 @@ from .torch_resume_restore import CheckpointBankDecoder, EnvironmentCheckpointDe
 
 class TorchSessionError(RuntimeError):
     """A categorical session profile or owner graph is invalid."""
+
+
+def normalize_torch_device_type(value: object) -> str:
+    """Return one maintained torch device type and fail before session setup."""
+
+    if not isinstance(value, str):
+        raise TorchSessionError("session device_type must be a string")
+    device_type = value.strip().lower()
+    if device_type not in {"cpu", "cuda"}:
+        raise TorchSessionError(
+            "session device_type must be either 'cpu' or 'cuda'"
+        )
+    if device_type == "cuda" and not torch.cuda.is_available():
+        raise TorchSessionError(
+            "session device_type requests cuda, but torch.cuda is unavailable"
+        )
+    return device_type
 
 
 @dataclass(frozen=True)
@@ -167,10 +186,11 @@ class CategoricalOnlineProfile:
                 "on-policy session requires exactly one optimizer step per generation"
             )
         object.__setattr__(self, "optimizer_steps_per_generation", optimizer_steps)
-        if self.device_type != "cpu":
-            raise TorchSessionError(
-                "the first maintained session profile supports only cpu"
-            )
+        object.__setattr__(
+            self,
+            "device_type",
+            normalize_torch_device_type(self.device_type),
+        )
 
     @property
     def behavior_rule(self) -> BehaviorRuleBinding:

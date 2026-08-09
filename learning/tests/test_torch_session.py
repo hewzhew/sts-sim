@@ -5,6 +5,7 @@ import tempfile
 import unittest
 from dataclasses import replace
 from pathlib import Path
+from unittest.mock import patch
 
 from learning.tests.driver_fixtures import (
     FakeCheckpointBatch,
@@ -48,10 +49,66 @@ if _TORCH_AVAILABLE:
 
 @unittest.skipUnless(_TORCH_AVAILABLE, "optional PyTorch dependency is not installed")
 class CategoricalOnlineSessionTests(unittest.TestCase):
+    def test_online_profile_normalizes_cpu_device_type(self) -> None:
+        profile = CategoricalOnlineProfile(device_type=" CPU ")
+
+        self.assertEqual(profile.device_type, "cpu")
+
+    def test_online_profile_rejects_unavailable_cuda_early(self) -> None:
+        with patch(
+            "sts_learning.torch_session_config.torch.cuda.is_available",
+            return_value=False,
+        ):
+            with self.assertRaisesRegex(TorchSessionError, "cuda.*unavailable"):
+                CategoricalOnlineProfile(device_type="cuda")
+
+    def test_online_profile_accepts_available_cuda(self) -> None:
+        with patch(
+            "sts_learning.torch_session_config.torch.cuda.is_available",
+            return_value=True,
+        ):
+            profile = CategoricalOnlineProfile(device_type="CUDA")
+
+        self.assertEqual(profile.device_type, "cuda")
+
     def test_online_profile_rejects_relation_blind_scorers(self) -> None:
         with self.assertRaisesRegex(TorchSessionError, "relation-aware"):
             CategoricalOnlineProfile(
                 scorer=RaggedScorerConfig(hidden_dim=8, relation_layers=0),
+            )
+
+    @unittest.skipUnless(
+        _TORCH_AVAILABLE and torch.cuda.is_available(),
+        "CUDA torch runtime is unavailable",
+    )
+    def test_cuda_session_places_scorer_and_generator_on_cuda(self) -> None:
+        with tempfile.TemporaryDirectory() as root:
+            factory = _factory(Path(root), device_type="cuda")
+            session = factory.new(
+                model_seed=43,
+                behavior_seed=94,
+            )
+
+            self.assertEqual(
+                next(session.runner.trainer.scorer.parameters()).device.type,
+                "cuda",
+            )
+            self.assertEqual(
+                session.runner.controller.generator.device.type,
+                "cuda",
+            )
+            result = session.advance_generation(max_batch_steps=1)
+            self.assertTrue(result.promoted)
+
+            resume = session.publish()
+            restored = factory.restore(resume.manifest_id)
+            self.assertEqual(
+                next(restored.runner.trainer.scorer.parameters()).device.type,
+                "cuda",
+            )
+            self.assertEqual(
+                restored.runner.controller.generator.device.type,
+                "cuda",
             )
 
     def test_compact_session_trains_publishes_restores_and_continues(self) -> None:
@@ -314,7 +371,12 @@ class CategoricalOnlineSessionTests(unittest.TestCase):
             )
 
 
-def _factory(root: Path, *, attempts_per_update: int = 1):
+def _factory(
+    root: Path,
+    *,
+    attempts_per_update: int = 1,
+    device_type: str = "cpu",
+):
     return CategoricalOnlineSessionFactory(
         root,
         CategoricalSessionBridge(
@@ -339,6 +401,7 @@ def _factory(root: Path, *, attempts_per_update: int = 1):
                     attempts_per_update=attempts_per_update,
                 ),
                 optimizer_steps_per_generation=1,
+                device_type=device_type,
             ),
             limits=CategoricalSessionLimits(
                 owner_capacity=4,

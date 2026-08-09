@@ -1370,9 +1370,10 @@ def _require_generator_device(
     generator: torch.Generator,
 ) -> None:
     model_device = next(scorer.parameters()).device
-    if torch.device(generator.device) != model_device:
+    generator_device = torch.device(generator.device)
+    if generator_device.type != model_device.type:
         raise TorchBehaviorError(
-            "categorical generator device must match the restored scorer"
+            "categorical generator device type must match the restored scorer"
         )
 
 
