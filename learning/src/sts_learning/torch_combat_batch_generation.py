@@ -10,7 +10,8 @@ import torch
 
 from .combat_driver import CombatGroupDriver
 from .combat_experience import CombatExperienceLimits
-from .combat_objective import CombatAllWinAxis
+from .combat_objective import CombatAllLossAxis, CombatAllWinAxis
+from .combat_outcomes import CombatTerminalKind
 from .combat_signals import CombatGroupSignalSummary
 from .policy import BehaviorManifestId
 from .torch_behavior import (
@@ -41,6 +42,7 @@ class CombatWinRootGenerationResult:
     replicate_count: int
     wins: int
     losses: int
+    unresolved: int
     model_rounds: int
     transitions: int
     signals: CombatGroupSignalSummary
@@ -57,7 +59,7 @@ class CombatWinRootGenerationResult:
             raise TorchCombatBatchGenerationError(
                 "combat root generation signals changed exact identity"
             )
-        if self.replicate_count != self.wins + self.losses:
+        if self.replicate_count != self.wins + self.losses + self.unresolved:
             raise TorchCombatBatchGenerationError(
                 "combat root generation outcomes are misaligned"
             )
@@ -111,6 +113,18 @@ class CombatWinBatchGenerationResult:
             if self.training.all_win_axis is CombatAllWinAxis.TERMINAL_HP
             else 0
         )
+        eligible_enemy_hp_progress_signal_groups = sum(
+            not root.signals.win.has_signal
+            and root.losses == root.replicate_count
+            and root.signals.enemy_hp_progress.has_signal
+            for root in roots
+        )
+        enemy_hp_progress_signal_groups = (
+            eligible_enemy_hp_progress_signal_groups
+            if self.training.all_loss_axis
+            is CombatAllLossAxis.ENEMY_HP_PROGRESS
+            else 0
+        )
         if win_signal_groups != self.training.win_signal_group_count:
             raise TorchCombatBatchGenerationError(
                 "combat batch generation win signal count is misaligned"
@@ -120,7 +134,16 @@ class CombatWinBatchGenerationResult:
                 "combat batch generation terminal-HP signal count is misaligned"
             )
         if (
-            win_signal_groups + terminal_hp_signal_groups
+            enemy_hp_progress_signal_groups
+            != self.training.enemy_hp_progress_signal_group_count
+        ):
+            raise TorchCombatBatchGenerationError(
+                "combat batch generation enemy-HP signal count is misaligned"
+            )
+        if (
+            win_signal_groups
+            + terminal_hp_signal_groups
+            + enemy_hp_progress_signal_groups
             != self.training.signal_group_count
         ):
             raise TorchCombatBatchGenerationError(
@@ -307,7 +330,18 @@ class BoundedCombatWinBatchGenerationRunner:
                         "combat batch generation result changed its exact root"
                     )
                 outcomes = experience.outcomes.outcomes
-                wins = sum(outcome.won for outcome in outcomes)
+                wins = sum(
+                    outcome.terminal_kind is CombatTerminalKind.WIN
+                    for outcome in outcomes
+                )
+                losses = sum(
+                    outcome.terminal_kind is CombatTerminalKind.LOSS
+                    for outcome in outcomes
+                )
+                unresolved = sum(
+                    outcome.terminal_kind is CombatTerminalKind.UNRESOLVED
+                    for outcome in outcomes
+                )
                 signals = experience.signal_summary()
                 roots.append(
                     CombatWinRootGenerationResult(
@@ -315,7 +349,8 @@ class BoundedCombatWinBatchGenerationRunner:
                         exact_combat_state_hash=experience.exact_combat_state_hash,
                         replicate_count=len(outcomes),
                         wins=wins,
-                        losses=len(outcomes) - wins,
+                        losses=losses,
+                        unresolved=unresolved,
                         model_rounds=run.model_rounds,
                         transitions=run.transitions,
                         signals=signals,

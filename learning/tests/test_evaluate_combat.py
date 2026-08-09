@@ -142,7 +142,7 @@ def test_evaluation_recovers_published_behavior_without_training_or_experience(
         bridge=bridge,
     )
 
-    assert summary["schema"] == "sts-learning-combat-held-out-evaluation-v8"
+    assert summary["schema"] == "sts-learning-combat-held-out-evaluation-v9"
     assert summary["behavior_training_kind"] == "combat"
     assert summary["potion_lane"] == "all"
     assert summary["potion_slots"] == ()
@@ -152,6 +152,7 @@ def test_evaluation_recovers_published_behavior_without_training_or_experience(
     assert summary["losses"] == 1
     assert summary["behavior_training_step"] == 1
     assert summary["behavior_training_root_count"] == 2
+    assert summary["behavior_training_all_loss_axis"] == "none"
     assert summary["behavior_training_artifact_sha256"] == hashlib.sha256(
         training_artifact.read_bytes()
     ).hexdigest()
@@ -240,6 +241,7 @@ def test_evaluation_recovers_published_behavior_without_training_or_experience(
         "root-slot-1",
         "all",
     )
+    assert sweep["behavior_training_all_loss_axis"] == "none"
     assert tuple(lane["potions_used"] for lane in sweep["lanes"]) == (
         0,
         2,
@@ -349,7 +351,7 @@ def test_observed_resource_frontier_keeps_hp_potion_tradeoffs_incomparable() -> 
     ) -> CombatTerminalOutcome:
         return CombatTerminalOutcome(
             replicate_index=replicate_index,
-            terminal_kind=1 if won else 2,
+            terminal_kind=0 if won else 1,
             won=won,
             start_hp=80,
             final_hp=hp,

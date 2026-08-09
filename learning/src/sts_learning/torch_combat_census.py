@@ -217,6 +217,7 @@ def _competence_evidence(
         replicate_count=result.replicate_count,
         wins=result.wins,
         losses=result.losses,
+        unresolved=result.unresolved,
         signals=result.signals,
     )
 

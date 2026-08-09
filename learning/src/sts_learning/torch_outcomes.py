@@ -22,11 +22,13 @@ from .combat_experience import (
     CompletedCombatGroupExperience,
 )
 from .combat_objective import (
+    CombatAllLossAxis,
     CombatAllWinAxis,
     CombatPolicyUpdateConfig,
     CombatPolicyUpdateRule,
     CombatWinObjectiveConfig,
 )
+from .combat_outcomes import CombatTerminalKind
 from .experience import DecisionExperienceBatch, ExperienceError
 from .manifests import BehaviorManifestRegistry
 from .policy import BehaviorManifestId, SelectionProbability
@@ -116,8 +118,9 @@ class OnPolicyCombatWinLoss:
 
     A root with mixed wins and losses uses only win advantage.  An all-win
     root may use the configured all-win terminal-HP advantage, so solved early
-    combats can keep learning resource preservation. Potion retention remains
-    evidence only.
+    combats can keep learning resource preservation. An exact all-loss root may
+    use enemy-HP progress only when explicitly configured. Potion retention
+    remains evidence only.
     """
 
     value: Tensor
@@ -125,6 +128,7 @@ class OnPolicyCombatWinLoss:
     signal_group_count: int
     win_signal_group_count: int
     terminal_hp_signal_group_count: int
+    enemy_hp_progress_signal_group_count: int
     replicate_count: int
     decision_count: int
     behavior_manifest_ids: tuple[BehaviorManifestId, ...]
@@ -431,8 +435,10 @@ def on_policy_combat_win_loss(
     equal total weight regardless of combat length, and its weight is split
     equally across only that replicate's retained decisions. A group with any
     win variation uses only win advantage. An all-win group uses terminal HP
-    only when configured and that axis varies. Potion retention is deliberately
-    absent, so there is no HP/potion exchange rate.
+    only when configured and that axis varies. An all-loss group uses enemy-HP
+    progress only when explicitly configured, every terminal is an exact loss,
+    and that axis varies. Potion retention is deliberately absent, so there is
+    no exchange rate among the selected axes and potions.
     """
 
     if not callable(scorer):
@@ -481,6 +487,7 @@ def on_policy_combat_win_loss(
     total_decisions = 0
     win_signal_groups = 0
     terminal_hp_signal_groups = 0
+    enemy_hp_progress_signal_groups = 0
 
     for group_index, group in enumerate(normalized):
         if not isinstance(group, CompletedCombatGroupExperience):
@@ -520,6 +527,21 @@ def on_policy_combat_win_loss(
                 for outcome in group.outcomes.outcomes
             )
             terminal_hp_signal_groups += 1
+        elif (
+            objective_config.all_loss_axis
+            is CombatAllLossAxis.ENEMY_HP_PROGRESS
+            and all(
+                outcome.terminal_kind is CombatTerminalKind.LOSS
+                for outcome in group.outcomes.outcomes
+            )
+            and advantages.enemy_hp_progress_has_signal
+        ):
+            selected_advantages = advantages.enemy_hp_progress
+            selected_returns = tuple(
+                1.0 - outcome.enemy_final_hp / outcome.enemy_start_hp
+                for outcome in group.outcomes.outcomes
+            )
+            enemy_hp_progress_signal_groups += 1
         else:
             selected_advantages = advantages.win
             selected_returns = tuple(
@@ -587,9 +609,16 @@ def on_policy_combat_win_loss(
     return OnPolicyCombatWinLoss(
         value=policy_loss.value,
         group_count=len(normalized),
-        signal_group_count=win_signal_groups + terminal_hp_signal_groups,
+        signal_group_count=(
+            win_signal_groups
+            + terminal_hp_signal_groups
+            + enemy_hp_progress_signal_groups
+        ),
         win_signal_group_count=win_signal_groups,
         terminal_hp_signal_group_count=terminal_hp_signal_groups,
+        enemy_hp_progress_signal_group_count=(
+            enemy_hp_progress_signal_groups
+        ),
         replicate_count=total_replicates,
         decision_count=total_decisions,
         behavior_manifest_ids=tuple(behavior_ids),

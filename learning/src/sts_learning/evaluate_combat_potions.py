@@ -18,7 +18,7 @@ from .torch_combat_session_config import CombatSessionBridge
 from .torch_session_config import CategoricalSessionBridge
 
 
-COMBAT_POTION_SWEEP_SCHEMA = "sts-learning-combat-potion-sweep-v1"
+COMBAT_POTION_SWEEP_SCHEMA = "sts-learning-combat-potion-sweep-v2"
 
 
 @dataclass(frozen=True)
@@ -186,6 +186,7 @@ def _validate_lane_identity(results: tuple[dict[str, object], ...]) -> None:
         first["behavior_manifest_id"],
         first["behavior_checkpoint_id"],
         first["behavior_training_artifact_sha256"],
+        first["behavior_training_all_loss_axis"],
         first["behavior_training_potion_lane"],
         tuple(first["behavior_training_potion_slots"]),
         tuple(first["behavior_seeds"]),
@@ -200,6 +201,7 @@ def _validate_lane_identity(results: tuple[dict[str, object], ...]) -> None:
             result["behavior_manifest_id"],
             result["behavior_checkpoint_id"],
             result["behavior_training_artifact_sha256"],
+            result["behavior_training_all_loss_axis"],
             result["behavior_training_potion_lane"],
             tuple(result["behavior_training_potion_slots"]),
             tuple(result["behavior_seeds"]),
@@ -231,6 +233,9 @@ def _summary(
         "behavior_checkpoint_id": first["behavior_checkpoint_id"],
         "behavior_training_artifact_sha256": first[
             "behavior_training_artifact_sha256"
+        ],
+        "behavior_training_all_loss_axis": first[
+            "behavior_training_all_loss_axis"
         ],
         "behavior_training_potion_lane": first[
             "behavior_training_potion_lane"

@@ -10,7 +10,11 @@ from dataclasses import dataclass
 
 import torch
 
-from .combat_objective import CombatPolicyUpdateRule, CombatWinObjectiveConfig
+from .combat_objective import (
+    CombatAllLossAxis,
+    CombatPolicyUpdateRule,
+    CombatWinObjectiveConfig,
+)
 from .manifests import (
     BehaviorManifestTemplate,
     ManifestArtifactId,
@@ -47,6 +51,12 @@ _COMBAT_PPO_TRAINER_IMPLEMENTATION_VERSION = 4
 _COMBAT_PPO_OBJECTIVE_VERSION = 4
 _COMBAT_VALUE_PPO_TRAINER_IMPLEMENTATION_VERSION = 1
 _COMBAT_VALUE_PPO_OBJECTIVE_VERSION = 1
+_COMBAT_ALL_LOSS_WIN_TRAINER_IMPLEMENTATION_VERSION = 4
+_COMBAT_ALL_LOSS_WIN_OBJECTIVE_VERSION = 4
+_COMBAT_ALL_LOSS_PPO_TRAINER_IMPLEMENTATION_VERSION = 5
+_COMBAT_ALL_LOSS_PPO_OBJECTIVE_VERSION = 5
+_COMBAT_ALL_LOSS_VALUE_PPO_TRAINER_IMPLEMENTATION_VERSION = 2
+_COMBAT_ALL_LOSS_VALUE_PPO_OBJECTIVE_VERSION = 2
 _MAX_SCHEMA_BYTES = 1 << 20
 _MAX_SCHEMA_DEPTH = 16
 _MAX_SCHEMA_ITEMS = 100_000
@@ -320,7 +330,28 @@ def combat_win_trainer_implementation(
     if not isinstance(objective_config, CombatWinObjectiveConfig):
         raise TorchProvenanceError("combat objective_config must be typed")
     update = objective_config.policy_update
+    all_loss_enabled = (
+        objective_config.all_loss_axis is not CombatAllLossAxis.NONE
+    )
     if update.rule is CombatPolicyUpdateRule.REINFORCE:
+        if all_loss_enabled:
+            return ManifestArtifactId.from_content(
+                ManifestArtifactKind.TRAINER_IMPLEMENTATION,
+                b"STS-SYNCHRONOUS-COMBAT-WIN-FIRST-POLICY-TRAINER\x00"
+                + struct.pack(
+                    ">I",
+                    _COMBAT_ALL_LOSS_WIN_TRAINER_IMPLEMENTATION_VERSION,
+                )
+                + b"STS-SAME-ROOT-WIN-FIRST-TYPED-FALLBACK-AXES\x00"
+                + struct.pack(
+                    ">IQBB",
+                    _COMBAT_ALL_LOSS_WIN_OBJECTIVE_VERSION,
+                    objective_config.groups_per_update,
+                    int(objective_config.all_win_axis),
+                    int(objective_config.all_loss_axis),
+                )
+                + _runtime_version_bytes(),
+            )
         return ManifestArtifactId.from_content(
             ManifestArtifactKind.TRAINER_IMPLEMENTATION,
             b"STS-SYNCHRONOUS-COMBAT-WIN-FIRST-POLICY-TRAINER\x00"
@@ -337,15 +368,34 @@ def combat_win_trainer_implementation(
     if update.rule is CombatPolicyUpdateRule.PPO_CLIP_VALUE:
         max_grad_norm = update.max_grad_norm
         target_kl = update.target_kl
-        return ManifestArtifactId.from_content(
-            ManifestArtifactKind.TRAINER_IMPLEMENTATION,
-            b"STS-SYNCHRONOUS-COMBAT-PPO-CLIP-VALUE-TRAINER\x00"
-            + struct.pack(
-                ">I",
-                _COMBAT_VALUE_PPO_TRAINER_IMPLEMENTATION_VERSION,
+        if all_loss_enabled:
+            implementation_version = (
+                _COMBAT_ALL_LOSS_VALUE_PPO_TRAINER_IMPLEMENTATION_VERSION
             )
-            + b"STS-SAME-ROOT-WIN-FIRST-PPO-CLIP-VALUE\x00"
-            + struct.pack(
+            objective_version = _COMBAT_ALL_LOSS_VALUE_PPO_OBJECTIVE_VERSION
+            objective_marker = (
+                b"STS-SAME-ROOT-WIN-FIRST-PPO-CLIP-VALUE-TYPED-FALLBACK-AXES\x00"
+            )
+            objective_encoding = struct.pack(
+                ">IQBBBQdddBdBd",
+                objective_version,
+                objective_config.groups_per_update,
+                int(objective_config.all_win_axis),
+                int(objective_config.all_loss_axis),
+                int(update.rule),
+                update.epochs,
+                update.clip_coefficient,
+                update.entropy_coefficient,
+                update.value_loss_coefficient,
+                int(max_grad_norm is not None),
+                0.0 if max_grad_norm is None else max_grad_norm,
+                int(target_kl is not None),
+                0.0 if target_kl is None else target_kl,
+            )
+        else:
+            implementation_version = _COMBAT_VALUE_PPO_TRAINER_IMPLEMENTATION_VERSION
+            objective_marker = b"STS-SAME-ROOT-WIN-FIRST-PPO-CLIP-VALUE\x00"
+            objective_encoding = struct.pack(
                 ">IQBBQdddBdBd",
                 _COMBAT_VALUE_PPO_OBJECTIVE_VERSION,
                 objective_config.groups_per_update,
@@ -360,16 +410,40 @@ def combat_win_trainer_implementation(
                 int(target_kl is not None),
                 0.0 if target_kl is None else target_kl,
             )
+        return ManifestArtifactId.from_content(
+            ManifestArtifactKind.TRAINER_IMPLEMENTATION,
+            b"STS-SYNCHRONOUS-COMBAT-PPO-CLIP-VALUE-TRAINER\x00"
+            + struct.pack(">I", implementation_version)
+            + objective_marker
+            + objective_encoding
             + _runtime_version_bytes(),
         )
     max_grad_norm = update.max_grad_norm
     target_kl = update.target_kl
-    return ManifestArtifactId.from_content(
-        ManifestArtifactKind.TRAINER_IMPLEMENTATION,
-        b"STS-SYNCHRONOUS-COMBAT-PPO-CLIP-POLICY-TRAINER\x00"
-        + struct.pack(">I", _COMBAT_PPO_TRAINER_IMPLEMENTATION_VERSION)
-        + b"STS-SAME-ROOT-WIN-FIRST-PPO-CLIP\x00"
-        + struct.pack(
+    if all_loss_enabled:
+        implementation_version = (
+            _COMBAT_ALL_LOSS_PPO_TRAINER_IMPLEMENTATION_VERSION
+        )
+        objective_marker = b"STS-SAME-ROOT-WIN-FIRST-PPO-CLIP-TYPED-FALLBACK-AXES\x00"
+        objective_encoding = struct.pack(
+            ">IQBBBQddBdBd",
+            _COMBAT_ALL_LOSS_PPO_OBJECTIVE_VERSION,
+            objective_config.groups_per_update,
+            int(objective_config.all_win_axis),
+            int(objective_config.all_loss_axis),
+            int(update.rule),
+            update.epochs,
+            update.clip_coefficient,
+            update.entropy_coefficient,
+            int(max_grad_norm is not None),
+            0.0 if max_grad_norm is None else max_grad_norm,
+            int(target_kl is not None),
+            0.0 if target_kl is None else target_kl,
+        )
+    else:
+        implementation_version = _COMBAT_PPO_TRAINER_IMPLEMENTATION_VERSION
+        objective_marker = b"STS-SAME-ROOT-WIN-FIRST-PPO-CLIP\x00"
+        objective_encoding = struct.pack(
             ">IQBBQddBdBd",
             _COMBAT_PPO_OBJECTIVE_VERSION,
             objective_config.groups_per_update,
@@ -383,6 +457,12 @@ def combat_win_trainer_implementation(
             int(target_kl is not None),
             0.0 if target_kl is None else target_kl,
         )
+    return ManifestArtifactId.from_content(
+        ManifestArtifactKind.TRAINER_IMPLEMENTATION,
+        b"STS-SYNCHRONOUS-COMBAT-PPO-CLIP-POLICY-TRAINER\x00"
+        + struct.pack(">I", implementation_version)
+        + objective_marker
+        + objective_encoding
         + _runtime_version_bytes(),
     )
 

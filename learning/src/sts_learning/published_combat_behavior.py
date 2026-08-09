@@ -13,6 +13,7 @@ from typing import Mapping
 import torch
 
 from .combat_objective import (
+    CombatAllLossAxis,
     CombatPolicyUpdateConfig,
     CombatPolicyUpdateRule,
     CombatWinObjectiveConfig,
@@ -41,7 +42,11 @@ from .torch_combat_session_config import (
 )
 from .torch_policy import RaggedCandidateScorer, RaggedScorerConfig
 from .torch_provenance import combat_win_training_manifest_template
-from .train_combat import COMBAT_TRAINING_SCHEMA, LEGACY_COMBAT_TRAINING_SCHEMA
+from .train_combat import (
+    COMBAT_TRAINING_SCHEMA,
+    LEGACY_COMBAT_TRAINING_SCHEMA,
+    PREVIOUS_COMBAT_TRAINING_SCHEMA,
+)
 
 
 _MAX_TRAINING_JOURNAL_BYTES = 16 * 1024 * 1024
@@ -60,6 +65,7 @@ class PublishedCombatBehavior:
     training_step: int
     training_root_count: int
     training_artifact_sha256: str
+    training_all_loss_axis: CombatAllLossAxis
     training_potion_lane: CombatPotionLane
     training_potion_slots: tuple[int, ...]
     policies: tuple[FrozenCategoricalTorchPolicy, ...]
@@ -92,6 +98,10 @@ class PublishedCombatBehavior:
             "training_artifact_sha256",
             _sha256(self.training_artifact_sha256, "training_artifact_sha256"),
         )
+        if not isinstance(self.training_all_loss_axis, CombatAllLossAxis):
+            raise PublishedCombatBehaviorError(
+                "published combat behavior requires a typed all-loss axis"
+            )
         if not isinstance(self.training_potion_lane, CombatPotionLane):
             raise PublishedCombatBehaviorError(
                 "published combat behavior requires a typed training potion lane"
@@ -175,6 +185,7 @@ def recover_published_combat_behavior(
         training_potion_lane,
     )
     policy_update = _policy_update(configuration)
+    all_loss_axis = _all_loss_axis(configuration)
     profile = replace(
         CombatWinSessionProfile(),
         scorer=RaggedScorerConfig(
@@ -183,6 +194,7 @@ def recover_published_combat_behavior(
         objective=CombatWinObjectiveConfig(
             groups_per_update=training_root_count,
             policy_update=policy_update,
+            all_loss_axis=all_loss_axis,
         ),
     )
     if configuration.get("all_win_axis") != profile.objective.all_win_axis.name:
@@ -263,6 +275,7 @@ def recover_published_combat_behavior(
         training_step=training_step,
         training_root_count=training_root_count,
         training_artifact_sha256=training_artifact_sha256,
+        training_all_loss_axis=all_loss_axis,
         training_potion_lane=training_potion_lane,
         training_potion_slots=training_potion_slots,
         policies=(first,) + tuple(
@@ -306,7 +319,11 @@ def _training_boundary_records(
         raise PublishedCombatBehaviorError("training journal is empty")
     first = _journal_record(*first_line)
     last = _journal_record(*last_line)
-    schemas = {COMBAT_TRAINING_SCHEMA, LEGACY_COMBAT_TRAINING_SCHEMA}
+    schemas = {
+        COMBAT_TRAINING_SCHEMA,
+        PREVIOUS_COMBAT_TRAINING_SCHEMA,
+        LEGACY_COMBAT_TRAINING_SCHEMA,
+    }
     if (
         first.get("schema") not in schemas
         or first.get("kind") != "configuration"
@@ -364,6 +381,25 @@ def _potion_lane(value: object) -> CombatPotionLane:
     except (TypeError, ValueError) as error:
         raise PublishedCombatBehaviorError(
             "training potion_lane is unsupported"
+        ) from error
+
+
+def _all_loss_axis(configuration: Mapping[str, object]) -> CombatAllLossAxis:
+    value = configuration.get("all_loss_axis")
+    if value is None and configuration.get("schema") in {
+        LEGACY_COMBAT_TRAINING_SCHEMA,
+        PREVIOUS_COMBAT_TRAINING_SCHEMA,
+    }:
+        return CombatAllLossAxis.NONE
+    if not isinstance(value, str):
+        raise PublishedCombatBehaviorError(
+            "training journal has an unsupported all-loss objective"
+        )
+    try:
+        return CombatAllLossAxis[value]
+    except KeyError as error:
+        raise PublishedCombatBehaviorError(
+            "training journal has an unsupported all-loss objective"
         ) from error
 
 

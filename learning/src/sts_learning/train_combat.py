@@ -12,6 +12,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Protocol, TextIO
 
 from .combat_objective import (
+    CombatAllLossAxis,
+    CombatAllWinAxis,
     CombatPolicyUpdateConfig,
     CombatPolicyUpdateRule,
     CombatWinObjectiveConfig,
@@ -43,7 +45,8 @@ if TYPE_CHECKING:
 
 
 LEGACY_COMBAT_TRAINING_SCHEMA = "sts-learning-combat-training-v3"
-COMBAT_TRAINING_SCHEMA = "sts-learning-combat-training-v4"
+PREVIOUS_COMBAT_TRAINING_SCHEMA = "sts-learning-combat-training-v4"
+COMBAT_TRAINING_SCHEMA = "sts-learning-combat-training-v5"
 
 
 class CombatTrainingCommandError(RuntimeError):
@@ -72,6 +75,7 @@ class CombatTrainingCommandConfig:
     potion_slots: tuple[int, ...] = ()
     warm_start_behavior: Path | None = None
     policy_update: CombatPolicyUpdateConfig = CombatPolicyUpdateConfig()
+    all_loss_axis: CombatAllLossAxis = CombatAllLossAxis.NONE
 
     def __post_init__(self) -> None:
         artifact = Path(self.artifact).resolve()
@@ -117,6 +121,10 @@ class CombatTrainingCommandConfig:
         if not isinstance(self.policy_update, CombatPolicyUpdateConfig):
             raise CombatTrainingCommandError(
                 "combat training policy_update must be typed"
+            )
+        if not isinstance(self.all_loss_axis, CombatAllLossAxis):
+            raise CombatTrainingCommandError(
+                "combat training all_loss_axis must be typed"
             )
         if root_count < 2:
             raise CombatTrainingCommandError(
@@ -167,6 +175,7 @@ def run_combat_training(
         objective=CombatWinObjectiveConfig(
             groups_per_update=config.root_count,
             policy_update=config.policy_update,
+            all_loss_axis=config.all_loss_axis,
         ),
     )
     limits = replace(
@@ -294,6 +303,7 @@ def _run_combat_training_session(
         "model_seed": config.model_seed,
         "behavior_seeds": behavior_seeds,
         "all_win_axis": profile.objective.all_win_axis.name,
+        "all_loss_axis": profile.objective.all_loss_axis.name,
         "policy_update_rule": profile.objective.policy_update.rule.name,
         "policy_update_epochs": profile.objective.policy_update.epochs,
         "policy_clip_coefficient": (
@@ -328,6 +338,7 @@ def _run_combat_training_session(
 
     total_wins = 0
     total_losses = 0
+    total_unresolved = 0
     started = time.perf_counter()
     with (config.output / "training.jsonl").open(
         "x",
@@ -343,15 +354,22 @@ def _run_combat_training_session(
             losses = sum(root.losses for root in result.roots)
             total_wins += wins
             total_losses += losses
+            unresolved = sum(root.unresolved for root in result.roots)
+            total_unresolved += unresolved
             _write(journal, _generation(generation, result, elapsed))
             root_wins = ",".join(str(root.wins) for root in result.roots)
             root_objectives = ",".join(
-                _selected_objective(root) for root in result.roots
+                _selected_objective(
+                    root,
+                    result.training.all_win_axis,
+                    result.training.all_loss_axis,
+                )
+                for root in result.roots
             )
             print(
                 f"generation={generation} "
                 f"step_before={result.active_training_step_before} "
-                f"wins={wins} losses={losses} "
+                f"wins={wins} losses={losses} unresolved={unresolved} "
                 f"signal_groups={result.training.signal_group_count} "
                 f"status={result.training.status.name} "
                 f"promoted={str(result.promoted).lower()} "
@@ -378,6 +396,7 @@ def _run_combat_training_session(
             "no_update_deliveries": snapshot.no_update_deliveries,
             "total_wins": total_wins,
             "total_losses": total_losses,
+            "total_unresolved": total_unresolved,
             "elapsed_seconds": time.perf_counter() - started,
             "final_manifest_id": publication.manifest_id.digest.hex(),
             "final_checkpoint_id": publication.checkpoint_id.digest.hex(),
@@ -426,6 +445,9 @@ def _generation(
         "terminal_hp_signal_group_count": (
             result.training.terminal_hp_signal_group_count
         ),
+        "enemy_hp_progress_signal_group_count": (
+            result.training.enemy_hp_progress_signal_group_count
+        ),
         "decision_count": result.training.decision_count,
         "optimizer_steps_after": result.training.optimizer_steps_after,
         "optimizer_steps_applied": result.training.optimizer_steps_applied,
@@ -434,7 +456,12 @@ def _generation(
         "entropy": result.training.entropy,
         "value_loss": result.training.value_loss,
         "roots": tuple(
-            _root(slot_index, root)
+            _root(
+                slot_index,
+                root,
+                result.training.all_win_axis,
+                result.training.all_loss_axis,
+            )
             for slot_index, root in enumerate(result.roots)
         ),
         "elapsed_seconds": elapsed,
@@ -444,6 +471,8 @@ def _generation(
 def _root(
     slot_index: int,
     root: CombatWinRootGenerationResult,
+    all_win_axis: CombatAllWinAxis,
+    all_loss_axis: CombatAllLossAxis,
 ) -> dict[str, object]:
     signals = root.signals
     return {
@@ -452,6 +481,7 @@ def _root(
         "exact_combat_state_hash": root.exact_combat_state_hash,
         "wins": root.wins,
         "losses": root.losses,
+        "unresolved": root.unresolved,
         "model_rounds": root.model_rounds,
         "transitions": root.transitions,
         "decision_count": signals.decision_count,
@@ -461,15 +491,33 @@ def _root(
             signals.enemy_hp_progress.replicate_count
         ),
         "potion_signal_replicates": signals.potion_retention.replicate_count,
-        "selected_objective": _selected_objective(root),
+        "selected_objective": _selected_objective(
+            root,
+            all_win_axis,
+            all_loss_axis,
+        ),
     }
 
 
-def _selected_objective(root: CombatWinRootGenerationResult) -> str:
+def _selected_objective(
+    root: CombatWinRootGenerationResult,
+    all_win_axis: CombatAllWinAxis,
+    all_loss_axis: CombatAllLossAxis,
+) -> str:
     if root.signals.win.has_signal:
         return "win"
-    if root.wins == root.replicate_count and root.signals.terminal_hp.has_signal:
+    if (
+        all_win_axis is CombatAllWinAxis.TERMINAL_HP
+        and root.wins == root.replicate_count
+        and root.signals.terminal_hp.has_signal
+    ):
         return "hp"
+    if (
+        all_loss_axis is CombatAllLossAxis.ENEMY_HP_PROGRESS
+        and root.losses == root.replicate_count
+        and root.signals.enemy_hp_progress.has_signal
+    ):
+        return "enemy-hp-progress"
     return "none"
 
 
@@ -539,6 +587,11 @@ def _parser() -> argparse.ArgumentParser:
         default="reinforce",
     )
     parser.add_argument(
+        "--all-loss-axis",
+        choices=("none", "enemy-hp-progress"),
+        default="none",
+    )
+    parser.add_argument(
         "--potion-lane",
         choices=tuple(lane.value for lane in CombatPotionLane),
         default=CombatPotionLane.ALL.value,
@@ -562,12 +615,18 @@ def main() -> int:
             potion_slots=tuple(arguments.potion_slot),
             warm_start_behavior=arguments.warm_start_behavior,
             policy_update=_policy_update(arguments.policy_update),
+            all_loss_axis=(
+                CombatAllLossAxis.ENEMY_HP_PROGRESS
+                if arguments.all_loss_axis == "enemy-hp-progress"
+                else CombatAllLossAxis.NONE
+            ),
         )
     )
     print(
         "training_complete=true "
         f"optimizer_steps={summary['optimizer_steps']} "
         f"policy_update={arguments.policy_update} "
+        f"all_loss_axis={arguments.all_loss_axis} "
         f"potion_lane={arguments.potion_lane} "
         f"potion_slots={_potion_slots_text(arguments)} "
         f"wins={summary['total_wins']} losses={summary['total_losses']} "

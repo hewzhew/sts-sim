@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from dataclasses import replace
+
 import numpy as np
 import pytest
 
@@ -7,6 +9,7 @@ from sts_learning import (
     CombatGroupedAdvantages,
     CombatGroupOutcomeAccumulator,
     CombatOutcomeError,
+    CombatTerminalKind,
     CombatTerminalOutcome,
     CombatTerminalStepBatch,
     CompletedCombatGroup,
@@ -82,6 +85,16 @@ def test_bridge_terminal_columns_copy_into_typed_rows() -> None:
     assert tuple(row.replicate_index for row in batch.outcomes) == (0, 2)
     assert tuple(row.final_hp for row in batch.outcomes) == (80, 60)
     assert all(row.won for row in batch.outcomes)
+    assert all(
+        row.terminal_kind is CombatTerminalKind.WIN for row in batch.outcomes
+    )
+
+
+def test_terminal_kind_is_closed_and_must_agree_with_win_fact() -> None:
+    with pytest.raises(CombatOutcomeError, match="unsupported"):
+        replace(_outcome(0), terminal_kind=9)
+    with pytest.raises(CombatOutcomeError, match="disagrees"):
+        replace(_outcome(0), terminal_kind=CombatTerminalKind.LOSS)
 
 
 def test_accumulator_rejects_wrong_identity_and_duplicate_atomically() -> None:

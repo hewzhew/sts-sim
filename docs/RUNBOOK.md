@@ -624,7 +624,7 @@ Configure one stable Python 3.12 training runtime once, then use the small
 .\learning\dev.ps1 refresh-bridge
 .\learning\dev.ps1 test
 .\learning\dev.ps1 verify -MaturinPython <python-with-maturin>
-.\learning\dev.ps1 train-combat -Artifact <roots.bin> -Behavior <optional-warm-start-dir> -Output <fresh-dir> -Roots <count> -Updates <count> -PotionLane never -CombatPolicyUpdate ppo-clip
+.\learning\dev.ps1 train-combat -Artifact <roots.bin> -Behavior <optional-warm-start-dir> -Output <fresh-dir> -Roots <count> -Updates <count> -PotionLane never -CombatPolicyUpdate ppo-clip -CombatAllLossAxis none
 .\learning\dev.ps1 train-combat-recovery -Artifact <roots.bin> -SourceExpectedRoots <artifact-root-count> -SourceRootSlot <zero-based-slot> -Behavior <warm-start-dir> -Output <fresh-dir> -Roots 4 -Replicates 8 -Updates 1 -PotionLane root-slots -PotionSlots 0 -CombatPolicyUpdate ppo-clip
 .\learning\dev.ps1 evaluate-combat -Artifact <held-out-roots.bin> -Behavior <training-dir> -Output <fresh-dir> -Roots <count> -Replicates <count>
 .\learning\dev.ps1 evaluate-combat-potions -Artifact <held-out-roots.bin> -Behavior <training-dir> -Output <fresh-dir> -Roots <count> -Replicates <count>
@@ -835,10 +835,15 @@ The batch and recovery sessions bind `PotionLane all|never|root-slots` into
 their root sources.
 Prefer `never` when the selected roots already have no-potion winning coverage,
 so the all-win terminal-HP axis cannot learn to burn inventory for local HP. An
-all-loss `never` group stays no-signal; move it to `root-slots` with one
-`-PotionSlots <zero-based-slot>` at a time instead of rerunning unrestricted
-`all` by default. The selected slot binds its exact root potion UUID; a later
-replacement in that slot remains unavailable.
+all-loss `never` group stays no-signal by default. The explicit
+`-CombatAllLossAxis enemy-hp-progress` mode selects varying enemy-HP progress
+only when every replicate is an exact loss; Smoke Bomb escapes and all other
+unresolved terminals remain ineligible. Use that mode as a separately
+provenanced bounded damage-support experiment, not as a victory claim or an
+HP/potion price. A concrete-potion rescue question still moves to `root-slots`
+with one `-PotionSlots <zero-based-slot>` at a time instead of reopening
+unrestricted `all`; the selected slot binds its exact root potion UUID, and a
+later replacement in that slot remains unavailable.
 
 Use `evaluate-combat` on a distinct opaque root artifact after publication. The
 behavior directory may be an exact completed combat- or run-training output

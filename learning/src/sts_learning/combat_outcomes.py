@@ -6,10 +6,19 @@ import math
 import operator
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
+from enum import IntEnum
 
 
 class CombatOutcomeError(ValueError):
     """A combat terminal batch or same-root group is malformed."""
+
+
+class CombatTerminalKind(IntEnum):
+    """Stable bridge codes for exact combat terminal semantics."""
+
+    WIN = 0
+    LOSS = 1
+    UNRESOLVED = 2
 
 
 @dataclass(frozen=True)
@@ -17,7 +26,7 @@ class CombatTerminalOutcome:
     """Typed terminal facts for one numbered replicate from one combat root."""
 
     replicate_index: int
-    terminal_kind: int
+    terminal_kind: CombatTerminalKind
     won: bool
     start_hp: int
     final_hp: int
@@ -35,7 +44,6 @@ class CombatTerminalOutcome:
     def __post_init__(self) -> None:
         for name in (
             "replicate_index",
-            "terminal_kind",
             "start_hp",
             "final_hp",
             "final_max_hp",
@@ -49,12 +57,19 @@ class CombatTerminalOutcome:
             "cards_played",
         ):
             object.__setattr__(self, name, _integer(getattr(self, name), name))
+        try:
+            terminal_kind = CombatTerminalKind(
+                _integer(self.terminal_kind, "terminal_kind")
+            )
+        except ValueError as error:
+            raise CombatOutcomeError("terminal_kind is unsupported") from error
+        object.__setattr__(self, "terminal_kind", terminal_kind)
         if self.replicate_index < 0:
             raise CombatOutcomeError("replicate_index must be non-negative")
-        if self.terminal_kind < 0:
-            raise CombatOutcomeError("terminal_kind must be non-negative")
         if not isinstance(self.won, bool):
             raise CombatOutcomeError("won must be a boolean bridge fact")
+        if self.won != (self.terminal_kind is CombatTerminalKind.WIN):
+            raise CombatOutcomeError("won disagrees with terminal_kind")
         if self.start_hp <= 0:
             raise CombatOutcomeError("start_hp must be positive")
         if self.final_hp < 0:

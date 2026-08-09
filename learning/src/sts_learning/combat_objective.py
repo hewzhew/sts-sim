@@ -20,6 +20,13 @@ class CombatAllWinAxis(IntEnum):
     TERMINAL_HP = 1
 
 
+class CombatAllLossAxis(IntEnum):
+    """Optional learning axis when every same-root replicate truly loses."""
+
+    NONE = 0
+    ENEMY_HP_PROGRESS = 1
+
+
 class CombatPolicyUpdateRule(IntEnum):
     """How one frozen combat batch changes the policy."""
 
@@ -133,10 +140,11 @@ class CombatPolicyUpdateConfig:
 
 @dataclass(frozen=True)
 class CombatWinObjectiveConfig:
-    """Exact width and all-win fallback axis of the combat objective."""
+    """Exact width and typed fallback axes of the combat objective."""
 
     groups_per_update: int = 1
     all_win_axis: CombatAllWinAxis = CombatAllWinAxis.TERMINAL_HP
+    all_loss_axis: CombatAllLossAxis = CombatAllLossAxis.NONE
     policy_update: CombatPolicyUpdateConfig = field(
         default_factory=CombatPolicyUpdateConfig
     )
@@ -155,6 +163,8 @@ class CombatWinObjectiveConfig:
             raise CombatObjectiveError("groups_per_update must be positive")
         if not isinstance(self.all_win_axis, CombatAllWinAxis):
             raise CombatObjectiveError("all_win_axis must be CombatAllWinAxis")
+        if not isinstance(self.all_loss_axis, CombatAllLossAxis):
+            raise CombatObjectiveError("all_loss_axis must be CombatAllLossAxis")
         if not isinstance(self.policy_update, CombatPolicyUpdateConfig):
             raise CombatObjectiveError(
                 "policy_update must be CombatPolicyUpdateConfig"

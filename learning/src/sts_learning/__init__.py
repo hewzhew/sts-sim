@@ -38,10 +38,12 @@ from .combat_outcomes import (
     CombatGroupOutcomeAccumulator,
     CombatOutcomeError,
     CombatTerminalOutcome,
+    CombatTerminalKind,
     CombatTerminalStepBatch,
     CompletedCombatGroup,
 )
 from .combat_objective import (
+    CombatAllLossAxis,
     CombatAllWinAxis,
     CombatObjectiveError,
     CombatPolicyUpdateConfig,
@@ -273,6 +275,7 @@ __all__ = [
     "CombatSignalError",
     "CombatRootCompetenceEvidence",
     "CombatOutcomeError",
+    "CombatAllLossAxis",
     "CombatAllWinAxis",
     "CombatObjectiveError",
     "CombatPolicyUpdateConfig",
@@ -282,6 +285,7 @@ __all__ = [
     "CombatRecoveryRoot",
     "CombatRecoveryRootSource",
     "CombatTerminalOutcome",
+    "CombatTerminalKind",
     "CombatTerminalStepBatch",
     "CombatWinObjectiveConfig",
     "CompleteRunRollout",

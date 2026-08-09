@@ -9,6 +9,7 @@ from typing import Protocol
 from .combat_signals import CombatGroupSignalSummary
 from .combat_driver import CombatGroupDriver
 from .combat_experience import CombatExperienceLimits
+from .combat_outcomes import CombatTerminalKind
 from .policy import BehaviorManifestId
 from .torch_behavior import (
     CategoricalTorchBehaviorController,
@@ -43,6 +44,7 @@ class CombatWinGenerationResult:
     replicate_count: int
     wins: int
     losses: int
+    unresolved: int
     model_rounds: int
     transitions: int
     signals: CombatGroupSignalSummary
@@ -63,6 +65,7 @@ class _PendingCombatPromotion:
     replicate_count: int
     wins: int
     losses: int
+    unresolved: int
     model_rounds: int
     transitions: int
     signals: CombatGroupSignalSummary
@@ -169,16 +172,29 @@ class BoundedCombatWinGenerationRunner:
                 "combat generation result changed its exact root"
             )
 
-        wins = sum(outcome.won for outcome in experience.outcomes.outcomes)
+        outcomes = experience.outcomes.outcomes
+        wins = sum(
+            outcome.terminal_kind is CombatTerminalKind.WIN
+            for outcome in outcomes
+        )
+        losses = sum(
+            outcome.terminal_kind is CombatTerminalKind.LOSS
+            for outcome in outcomes
+        )
+        unresolved = sum(
+            outcome.terminal_kind is CombatTerminalKind.UNRESOLVED
+            for outcome in outcomes
+        )
         training = self.trainer.train((experience,))
         pending = _PendingCombatPromotion(
             root_id=experience.root_id,
             exact_combat_state_hash=experience.exact_combat_state_hash,
             active_manifest_id_before=manifest_id,
             active_training_step_before=training_step,
-            replicate_count=len(experience.outcomes.outcomes),
+            replicate_count=len(outcomes),
             wins=wins,
-            losses=len(experience.outcomes.outcomes) - wins,
+            losses=losses,
+            unresolved=unresolved,
             model_rounds=run.model_rounds,
             transitions=run.transitions,
             signals=experience.signal_summary(),
@@ -279,6 +295,7 @@ def _generation_result(
         replicate_count=pending.replicate_count,
         wins=pending.wins,
         losses=pending.losses,
+        unresolved=pending.unresolved,
         model_rounds=pending.model_rounds,
         transitions=pending.transitions,
         signals=pending.signals,

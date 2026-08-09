@@ -4,6 +4,7 @@ import unittest
 from dataclasses import replace
 
 from sts_learning import (
+    CombatAllLossAxis,
     CombatAllWinAxis,
     CombatAxisSignalSummary,
     CombatCurriculumError,
@@ -24,6 +25,8 @@ def _evidence(
     wins: int,
     *,
     hp_signal: bool = False,
+    enemy_signal: bool = False,
+    unresolved: int = 0,
 ) -> CombatRootCompetenceEvidence:
     root_id = format(source_slot + 1, "x") * 64
     combat_hash = format(source_slot + 9, "x") * 64
@@ -41,7 +44,10 @@ def _evidence(
             REPLICATES if hp_signal else 0,
             DECISIONS if hp_signal else 0,
         ),
-        enemy_hp_progress=CombatAxisSignalSummary(0, 0),
+        enemy_hp_progress=CombatAxisSignalSummary(
+            REPLICATES if enemy_signal else 0,
+            DECISIONS if enemy_signal else 0,
+        ),
         potion_retention=CombatAxisSignalSummary(0, 0),
     )
     return CombatRootCompetenceEvidence(
@@ -50,7 +56,8 @@ def _evidence(
         exact_combat_state_hash=combat_hash,
         replicate_count=REPLICATES,
         wins=wins,
-        losses=REPLICATES - wins,
+        losses=REPLICATES - wins - unresolved,
+        unresolved=unresolved,
         signals=signals,
     )
 
@@ -118,6 +125,25 @@ class CombatFrontierPlanTests(unittest.TestCase):
         self.assertEqual(plan.training_slots, (1,))
         self.assertEqual(plan.rescue_slots, (0,))
         self.assertEqual(plan.solved_slots, (2, 3))
+
+    def test_all_loss_axis_admits_exact_losses_but_not_unresolved_roots(self) -> None:
+        roots = (
+            _evidence(0, 0, enemy_signal=True),
+            _evidence(1, 0, enemy_signal=True, unresolved=1),
+        )
+        objective = CombatWinObjectiveConfig(
+            all_loss_axis=CombatAllLossAxis.ENEMY_HP_PROGRESS,
+        )
+
+        plan = build_combat_frontier_plan(roots, objective, max_roots=2)
+
+        self.assertEqual(plan.survival_frontier_slots, (0,))
+        self.assertEqual(plan.rescue_slots, (1,))
+        self.assertEqual(plan.training_slots, (0,))
+        self.assertIs(
+            plan.training_objective_config().all_loss_axis,
+            CombatAllLossAxis.ENEMY_HP_PROGRESS,
+        )
 
     def test_plan_without_frontier_cannot_construct_training_surface(self) -> None:
         roots = (self.roots[0], self.roots[3])

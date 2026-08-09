@@ -9,6 +9,7 @@ from learning.tests.torch_outcome_fixtures import behavior_manifest_fixture
 from sts_learning import (
     BehaviorManifestId,
     BehaviorManifestRegistry,
+    CombatAllLossAxis,
     CombatAllWinAxis,
     CombatPolicyUpdateConfig,
     CombatPolicyUpdateRule,
@@ -79,6 +80,7 @@ class OnPolicyCombatWinLossTests(unittest.TestCase):
         self.assertEqual(result.signal_group_count, 1)
         self.assertEqual(result.win_signal_group_count, 1)
         self.assertEqual(result.terminal_hp_signal_group_count, 0)
+        self.assertEqual(result.enemy_hp_progress_signal_group_count, 0)
         self.assertEqual(result.replicate_count, 2)
         self.assertEqual(result.decision_count, 3)
         self.assertAlmostEqual(
@@ -116,6 +118,7 @@ class OnPolicyCombatWinLossTests(unittest.TestCase):
         self.assertEqual(result.signal_group_count, 1)
         self.assertEqual(result.win_signal_group_count, 0)
         self.assertEqual(result.terminal_hp_signal_group_count, 1)
+        self.assertEqual(result.enemy_hp_progress_signal_group_count, 0)
         self.assertAlmostEqual(
             float(result.value.detach()),
             0.1875 * (math.log(2.0) - math.log(3.0)),
@@ -144,6 +147,7 @@ class OnPolicyCombatWinLossTests(unittest.TestCase):
         self.assertEqual(result.signal_group_count, 0)
         self.assertEqual(result.win_signal_group_count, 0)
         self.assertEqual(result.terminal_hp_signal_group_count, 0)
+        self.assertEqual(result.enemy_hp_progress_signal_group_count, 0)
         torch.testing.assert_close(values.grad, torch.zeros_like(values))
 
     def test_mixed_outcomes_use_win_only_even_when_hp_also_varies(self) -> None:
@@ -164,6 +168,7 @@ class OnPolicyCombatWinLossTests(unittest.TestCase):
 
         self.assertEqual(result.win_signal_group_count, 1)
         self.assertEqual(result.terminal_hp_signal_group_count, 0)
+        self.assertEqual(result.enemy_hp_progress_signal_group_count, 0)
 
     def test_all_loss_and_potion_only_variation_have_no_signal(self) -> None:
         for wins, final_hps in (
@@ -189,6 +194,7 @@ class OnPolicyCombatWinLossTests(unittest.TestCase):
                             self.manifest_id,
                             wins=wins,
                             final_hps=final_hps,
+                            enemy_final_hps=(30, 10),
                             potions_used=(0, 1),
                         ),
                     ),
@@ -202,8 +208,72 @@ class OnPolicyCombatWinLossTests(unittest.TestCase):
                 self.assertEqual(result.signal_group_count, 0)
                 self.assertEqual(result.win_signal_group_count, 0)
                 self.assertEqual(result.terminal_hp_signal_group_count, 0)
+                self.assertEqual(result.enemy_hp_progress_signal_group_count, 0)
                 self.assertEqual(float(result.value.detach()), 0.0)
                 torch.testing.assert_close(values.grad, torch.zeros_like(values))
+
+    def test_all_loss_enemy_hp_progress_requires_explicit_opt_in(self) -> None:
+        values = torch.nn.Parameter(torch.zeros(7))
+        result = on_policy_combat_win_loss(
+            lambda payload: RaggedCandidateLogits(
+                values=values,
+                row_splits=torch.as_tensor(
+                    payload["candidate_row_splits"],
+                    dtype=torch.long,
+                ),
+            ),
+            (
+                combat_group_experience_fixture(
+                    self.manifest_id,
+                    wins=(False, False),
+                    enemy_final_hps=(30, 10),
+                ),
+            ),
+            self.registry,
+            CONCAT_LIMITS,
+            self.config,
+            CombatWinObjectiveConfig(
+                all_loss_axis=CombatAllLossAxis.ENEMY_HP_PROGRESS,
+            ),
+        )
+        result.value.backward()
+
+        self.assertEqual(result.signal_group_count, 1)
+        self.assertEqual(result.win_signal_group_count, 0)
+        self.assertEqual(result.terminal_hp_signal_group_count, 0)
+        self.assertEqual(result.enemy_hp_progress_signal_group_count, 1)
+        self.assertTrue(bool(torch.any(values.grad != 0)))
+
+    def test_unresolved_escapes_never_use_the_all_loss_axis(self) -> None:
+        values = torch.nn.Parameter(torch.zeros(7))
+        result = on_policy_combat_win_loss(
+            lambda payload: RaggedCandidateLogits(
+                values=values,
+                row_splits=torch.as_tensor(
+                    payload["candidate_row_splits"],
+                    dtype=torch.long,
+                ),
+            ),
+            (
+                combat_group_experience_fixture(
+                    self.manifest_id,
+                    wins=(False, False),
+                    enemy_final_hps=(30, 10),
+                    terminal_kinds=(2, 2),
+                ),
+            ),
+            self.registry,
+            CONCAT_LIMITS,
+            self.config,
+            CombatWinObjectiveConfig(
+                all_loss_axis=CombatAllLossAxis.ENEMY_HP_PROGRESS,
+            ),
+        )
+        result.value.backward()
+
+        self.assertEqual(result.signal_group_count, 0)
+        self.assertEqual(result.enemy_hp_progress_signal_group_count, 0)
+        torch.testing.assert_close(values.grad, torch.zeros_like(values))
 
     def test_unknown_behavior_and_off_policy_probability_fail_closed(self) -> None:
         def scorer(payload):

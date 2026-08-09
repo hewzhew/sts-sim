@@ -33,12 +33,16 @@ class OneRoundCombatGroup:
         wins: tuple[bool, bool],
         *,
         final_hps: tuple[int, int] | None = None,
+        enemy_final_hps: tuple[int, int] | None = None,
+        terminal_kinds: tuple[int, int] | None = None,
         potion_slots: Sequence[int] | None = None,
     ) -> None:
         self.root_id = root_id
         self.exact_combat_state_hash = exact_combat_state_hash
         self.wins = wins
         self.final_hps = final_hps
+        self.enemy_final_hps = enemy_final_hps
+        self.terminal_kinds = terminal_kinds
         self.potion_slots = (
             None if potion_slots is None else tuple(potion_slots)
         )
@@ -89,6 +93,18 @@ class OneRoundCombatGroup:
             else [70 if won else 0 for won in self.wins],
             dtype=np.int32,
         )
+        enemy_final_hp = np.asarray(
+            self.enemy_final_hps
+            if self.enemy_final_hps is not None
+            else [0 if won else 20 for won in self.wins],
+            dtype=np.int32,
+        )
+        terminal_kind = np.asarray(
+            self.terminal_kinds
+            if self.terminal_kinds is not None
+            else [0 if won else 1 for won in self.wins],
+            dtype=np.uint8,
+        )
         used_slot = (
             0
             if self.potion_slots is None or 0 in self.potion_slots
@@ -114,10 +130,7 @@ class OneRoundCombatGroup:
             "root_id": self.root_id,
             "exact_combat_state_hash": self.exact_combat_state_hash,
             "terminal_slot_indices": np.asarray([0, 1], dtype=np.uint64),
-            "terminal_kind": np.asarray(
-                [0 if won else 1 for won in self.wins],
-                dtype=np.uint8,
-            ),
+            "terminal_kind": terminal_kind,
             "terminal_won": np.asarray(self.wins, dtype=np.bool_),
             "terminal_start_hp": np.asarray([80, 80], dtype=np.int32),
             "terminal_final_hp": final_hp,
@@ -125,10 +138,7 @@ class OneRoundCombatGroup:
             "terminal_final_gold": np.asarray([99, 99], dtype=np.int32),
             "terminal_hp_loss": 80 - final_hp,
             "terminal_enemy_start_hp": np.asarray([40, 40], dtype=np.int32),
-            "terminal_enemy_final_hp": np.asarray(
-                [0 if won else 20 for won in self.wins],
-                dtype=np.int32,
-            ),
+            "terminal_enemy_final_hp": enemy_final_hp,
             "terminal_turns": np.asarray([3, 5], dtype=np.uint32),
             "terminal_potions_used": np.asarray(potion_use, dtype=np.uint32),
             "terminal_potions_discarded": np.asarray([0, 0], dtype=np.uint32),
@@ -172,6 +182,8 @@ def combat_group_experience_fixture(
     wins: tuple[bool, bool],
     first_probability: SelectionProbability | None = None,
     final_hps: tuple[int, int] | None = None,
+    enemy_final_hps: tuple[int, int] | None = None,
+    terminal_kinds: tuple[int, int] | None = None,
     potions_used: tuple[int, int] = (0, 1),
 ) -> CompletedCombatGroupExperience:
     first = CombatDecisionExperienceBatch(
@@ -205,6 +217,10 @@ def combat_group_experience_fixture(
     )
     if final_hps is None:
         final_hps = (70 if wins[0] else 0, 10 if wins[1] else 0)
+    if enemy_final_hps is None:
+        enemy_final_hps = (0 if wins[0] else 20, 0 if wins[1] else 20)
+    if terminal_kinds is None:
+        terminal_kinds = (0 if wins[0] else 1, 0 if wins[1] else 1)
     outcomes = CompletedCombatGroup(
         root_id=ROOT_ID,
         exact_combat_state_hash=COMBAT_HASH,
@@ -212,13 +228,17 @@ def combat_group_experience_fixture(
             _outcome(
                 0,
                 wins[0],
+                terminal_kind=terminal_kinds[0],
                 final_hp=final_hps[0],
+                enemy_final_hp=enemy_final_hps[0],
                 potions_used=potions_used[0],
             ),
             _outcome(
                 1,
                 wins[1],
+                terminal_kind=terminal_kinds[1],
                 final_hp=final_hps[1],
+                enemy_final_hp=enemy_final_hps[1],
                 potions_used=potions_used[1],
             ),
         ),
@@ -238,12 +258,14 @@ def _outcome(
     replicate_index: int,
     won: bool,
     *,
+    terminal_kind: int,
     final_hp: int,
+    enemy_final_hp: int,
     potions_used: int,
 ) -> CombatTerminalOutcome:
     return CombatTerminalOutcome(
         replicate_index=replicate_index,
-        terminal_kind=0 if won else 1,
+        terminal_kind=terminal_kind,
         won=won,
         start_hp=80,
         final_hp=final_hp,
@@ -251,7 +273,7 @@ def _outcome(
         final_gold=99,
         hp_loss=80 - final_hp,
         enemy_start_hp=40,
-        enemy_final_hp=0 if won else 20,
+        enemy_final_hp=enemy_final_hp,
         turns=3,
         potions_used=potions_used,
         potions_discarded=0,

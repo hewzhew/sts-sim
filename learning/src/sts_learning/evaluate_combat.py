@@ -43,7 +43,7 @@ from .torch_combat_session_config import (
 from .torch_session_config import CategoricalSessionBridge
 
 
-COMBAT_EVALUATION_SCHEMA = "sts-learning-combat-held-out-evaluation-v8"
+COMBAT_EVALUATION_SCHEMA = "sts-learning-combat-held-out-evaluation-v9"
 
 
 class CombatEvaluationCommandError(RuntimeError):
@@ -395,6 +395,11 @@ def _summary(
         ),
         "behavior_training_artifact_sha256": (
             recovered.training_artifact_sha256 if combat_trained else None
+        ),
+        "behavior_training_all_loss_axis": (
+            recovered.training_all_loss_axis.name.lower()
+            if combat_trained
+            else None
         ),
         "behavior_training_potion_lane": recovered.training_potion_lane.value,
         "behavior_training_potion_slots": (

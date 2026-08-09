@@ -162,7 +162,9 @@ corresponding bridge choice; a partial group is an error, not a fabricated
 terminal sample. Completed groups expose win, player-terminal-HP-ratio,
 enemy-HP-progress, and potion-retention leave-one-out axes separately and
 define no exchange rate among them. Enemy-HP progress remains diagnostic
-evidence; all-loss groups do not select it as a training objective.
+evidence by default; a separately provenanced opt-in objective may select it
+only for groups whose terminals are all exact losses. Unresolved escapes never
+enter that fallback.
 Before running a group, callers may select or stratify roots through the
 bridge-owned frozen root context; the caller must not decode semantic feature
 numbers or copy the full combat observation into a parallel metadata schema.
@@ -228,10 +230,13 @@ call, verifies their exact behavior manifests and sampled propensities, and
 selects one same-root advantage axis lexicographically. Any mixed win/loss
 group uses only win advantage. The typed all-win axis is either `NONE` for a
 strict win-only ablation or `TERMINAL_HP` so solved early combats continue
-learning resource preservation. All-loss groups remain no-signal, and potion
-retention stays excluded rather than being silently exchanged for HP. Every
-replicate contributes equal total weight regardless of how many decisions it
-needed. The selected all-win axis is part of exact trainer provenance.
+learning resource preservation. The independent all-loss axis defaults to
+`NONE`; explicit `ENEMY_HP_PROGRESS` applies only when every terminal is an
+exact loss and the axis varies. `UNRESOLVED` terminals remain no-signal, and
+potion retention stays excluded rather than being silently exchanged for HP.
+Every replicate contributes equal total weight regardless of how many
+decisions it needed. Both selected fallback axes are part of exact trainer
+provenance.
 `sts_learning.torch_combat_training.SynchronousCombatWinTrainer` gives this
 objective a separate provenance identity and consumes exactly the configured
 number of complete groups. No selected-axis signal and exactly zero policy
@@ -273,7 +278,8 @@ the configured Python runtime:
   -Updates <bounded-update-count> `
   -ModelSeed 0 `
   -BehaviorSeedBase 1000 `
-  -PotionLane never
+  -PotionLane never `
+  -CombatAllLossAxis none
 ```
 
 Every update collects all declared roots under one frozen behavior, applies at
@@ -289,10 +295,13 @@ as initialization provenance. Omitting `-Behavior` keeps random initialization.
 `-PotionLane never` removes potion use/discard candidates for every generated
 group while preserving the simulator legality surface. Use it for roots with
 observed no-potion wins so terminal-HP refinement cannot spend inventory. A
-no-potion all-loss root remains no-signal and belongs in a separately bounded
-concrete-potion rescue lane; `-PotionLane root-slots -PotionSlots 0` admits only
-the exact starting potion UUID in root slot 0. A replacement later generated in
-that slot is not admitted. This command does not assign potion values.
+no-potion all-loss root remains no-signal by default. The explicit
+`-CombatAllLossAxis enemy-hp-progress` mode can investigate bounded damage
+support when every terminal is an exact loss; it excludes unresolved escapes
+and does not claim victory or price potions. A concrete-potion rescue lane uses
+`-PotionLane root-slots -PotionSlots 0` to admit only the exact starting potion
+UUID in root slot 0. A replacement later generated in that slot is not
+admitted. This command does not assign potion values.
 
 Evaluate the published frozen behavior on a distinct held-out root batch with:
 
@@ -317,9 +326,11 @@ promotion owner. The root and terminal records preserve HP/max HP, gold,
 actionable living-enemy HP, concrete potion-slot identities, lost/gained
 identity deltas, potion use/discard counts, turn, and card facts as separate
 axes. Per-root enemy-HP ranges and signal-replicate counts make all-loss
-variation inspectable without selecting it as a training objective. Potion
-identity deltas are multiset inventory facts; the
-evaluator neither assigns potion tiers nor invents an HP/gold/potion exchange
+variation inspectable without selecting it as an objective. Evaluation also
+reports the published combat all-loss axis, so an opt-in behavior cannot be
+mistaken for a default win/HP-only behavior. Potion identity deltas are
+multiset inventory facts; the evaluator neither assigns potion tiers nor
+invents an HP/gold/potion exchange
 rate. Cross-combat resource value requires an exact continuation and remains
 outside this command. These facts measure that exact manifest on the bounded
 held-out sample and are not an improvement claim without a same-input frozen

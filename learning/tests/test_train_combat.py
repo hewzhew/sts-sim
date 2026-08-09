@@ -11,9 +11,12 @@ pytest.importorskip("torch")
 from learning.tests.semantic_fixtures import semantic_schema_fixture
 from learning.tests.run_training_fixtures import published_behavior
 from learning.tests.torch_combat_fixtures import OneRoundCombatGroup
+from sts_learning import CombatAllLossAxis
 from sts_learning.combat_potion_lane import CombatPotionLane
 from sts_learning import RunPolicyUpdateConfig
+from sts_learning.published_combat_behavior import recover_published_combat_behavior
 from sts_learning.torch_combat_session_config import CombatSessionBridge
+from sts_learning.torch_combat_session_config import CombatWinSessionLimits
 from sts_learning.train_combat import (
     CombatTrainingCommandConfig,
     run_combat_training,
@@ -49,6 +52,23 @@ class _RootSource:
             wins,
             final_hps=final_hps,
             potion_slots=normalized_slots,
+        )
+
+
+class _EnemyProgressRootSource:
+    def combat_group(
+        self,
+        slot_index: int,
+        replicate_count: int,
+        potion_slots: Sequence[int] | None = None,
+    ) -> OneRoundCombatGroup:
+        assert replicate_count == 2
+        return OneRoundCombatGroup(
+            f"{slot_index + 5:02x}" * 32,
+            f"{slot_index + 21:02x}" * 32,
+            (False, False),
+            enemy_final_hps=(30, 10),
+            potion_slots=None if potion_slots is None else tuple(potion_slots),
         )
 
 
@@ -98,7 +118,7 @@ def test_training_command_runs_updates_journals_and_publishes(
         "generation",
         "completed",
     )
-    assert records[0]["schema"] == "sts-learning-combat-training-v4"
+    assert records[0]["schema"] == "sts-learning-combat-training-v5"
     assert records[0]["policy_update_rule"] == "REINFORCE"
     assert records[0]["potion_lane"] == "never"
     assert records[0]["potion_slots"] == []
@@ -154,6 +174,57 @@ def test_training_command_warm_starts_from_a_verified_published_behavior(
     assert records[-1]["final_manifest_id"] != configuration[
         "warm_start_manifest_id"
     ]
+
+
+def test_training_command_publishes_explicit_all_loss_objective(
+    tmp_path: Path,
+) -> None:
+    artifact = tmp_path / "all-loss-roots.bin"
+    artifact.write_bytes(b"opaque-all-loss-roots")
+    output = tmp_path / "all-loss-training"
+    bridge = CombatSessionBridge(
+        combat_roots_from_artifact=lambda payload, **_: _EnemyProgressRootSource(),
+        semantic_schema=semantic_schema_fixture(),
+    )
+
+    run_combat_training(
+        CombatTrainingCommandConfig(
+            artifact=artifact,
+            output=output,
+            root_count=2,
+            replicate_count=2,
+            updates=1,
+            model_seed=45,
+            behavior_seed_base=110,
+            potion_lane=CombatPotionLane.NEVER,
+            all_loss_axis=CombatAllLossAxis.ENEMY_HP_PROGRESS,
+        ),
+        bridge=bridge,
+    )
+
+    records = tuple(
+        json.loads(line)
+        for line in (output / "training.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
+    )
+    assert records[0]["all_loss_axis"] == "ENEMY_HP_PROGRESS"
+    assert records[1]["enemy_hp_progress_signal_group_count"] == 2
+    assert tuple(
+        root["selected_objective"] for root in records[1]["roots"]
+    ) == ("enemy-hp-progress", "enemy-hp-progress")
+    assert records[-1]["total_unresolved"] == 0
+
+    recovered = recover_published_combat_behavior(
+        output,
+        bridge,
+        CombatWinSessionLimits(),
+        (701,),
+    )
+    assert (
+        recovered.training_all_loss_axis
+        is CombatAllLossAxis.ENEMY_HP_PROGRESS
+    )
 
 
 def test_training_command_warm_starts_actor_only_from_run_value_behavior(

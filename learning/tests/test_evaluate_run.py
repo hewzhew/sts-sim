@@ -53,8 +53,9 @@ def test_run_evaluation_uses_frozen_combat_behavior_without_recovery(
         run_bridge=run_bridge,
     )
 
-    assert summary["schema"] == "sts-learning-run-held-out-evaluation-v4"
+    assert summary["schema"] == "sts-learning-run-held-out-evaluation-v5"
     assert summary["behavior_training_kind"] == "combat"
+    assert summary["behavior_training_all_loss_axis"] == "none"
     assert summary["behavior_run_sampling_mode"] is None
     assert summary["behavior_run_episode_root_attempts"] is None
     assert summary["combat_potion_lane"] == "all"

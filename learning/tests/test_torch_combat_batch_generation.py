@@ -12,6 +12,7 @@ from sts_learning import (
     BehaviorManifestCatalogLimits,
     BehaviorManifestRegistry,
     BoundedBehaviorManifestCatalog,
+    CombatAllLossAxis,
     CombatAllWinAxis,
     CombatExperienceLimits,
     CombatWinObjectiveConfig,
@@ -76,11 +77,21 @@ class _IndexedCombatRootSource:
             None,
             None,
         ),
+        enemy_final_hps: tuple[
+            tuple[int, int] | None,
+            tuple[int, int] | None,
+        ] = (None, None),
+        terminal_kinds: tuple[
+            tuple[int, int] | None,
+            tuple[int, int] | None,
+        ] = (None, None),
         repeated_root: bool = False,
         fail_slot: int | None = None,
     ) -> None:
         self.wins = wins
         self.final_hps = final_hps
+        self.enemy_final_hps = enemy_final_hps
+        self.terminal_kinds = terminal_kinds
         self.repeated_root = repeated_root
         self.fail_slot = fail_slot
         self.calls: list[int] = []
@@ -97,6 +108,8 @@ class _IndexedCombatRootSource:
             *root,
             self.wins[slot_index],
             final_hps=self.final_hps[slot_index],
+            enemy_final_hps=self.enemy_final_hps[slot_index],
+            terminal_kinds=self.terminal_kinds[slot_index],
         )
         self.groups.append(group)
         return group
@@ -181,6 +194,43 @@ class BoundedCombatWinBatchGenerationRunnerTests(unittest.TestCase):
             self.assertIs(result.training.all_win_axis, CombatAllWinAxis.NONE)
             self.assertEqual(result.training.signal_group_count, 0)
             self.assertEqual(result.training.terminal_hp_signal_group_count, 0)
+
+    def test_all_loss_axis_counts_only_exact_losses_across_the_batch(self) -> None:
+        source = _IndexedCombatRootSource(
+            ((False, False), (False, False)),
+            enemy_final_hps=((30, 10), (30, 10)),
+            terminal_kinds=((1, 1), (2, 2)),
+        )
+        with tempfile.TemporaryDirectory() as root:
+            owners = _owners(
+                Path(root),
+                source,
+                all_loss_axis=CombatAllLossAxis.ENEMY_HP_PROGRESS,
+            )
+
+            result = owners.runner.advance()
+
+            self.assertIs(
+                result.training.all_loss_axis,
+                CombatAllLossAxis.ENEMY_HP_PROGRESS,
+            )
+            self.assertEqual(result.training.signal_group_count, 1)
+            self.assertEqual(
+                result.training.enemy_hp_progress_signal_group_count,
+                1,
+            )
+            self.assertEqual(
+                (result.roots[0].losses, result.roots[0].unresolved),
+                (2, 0),
+            )
+            self.assertEqual(
+                (result.roots[1].losses, result.roots[1].unresolved),
+                (0, 2),
+            )
+            self.assertEqual(
+                owners.trainer.snapshot.enemy_hp_progress_signal_groups,
+                1,
+            )
 
     def test_collection_failure_restores_rng_and_skips_training(self) -> None:
         source = _IndexedCombatRootSource(
@@ -275,6 +325,7 @@ if _TORCH_AVAILABLE:
             source: _IndexedCombatRootSource,
             *,
             all_win_axis: CombatAllWinAxis = CombatAllWinAxis.TERMINAL_HP,
+            all_loss_axis: CombatAllLossAxis = CombatAllLossAxis.NONE,
         ) -> None:
             schema = semantic_schema_fixture()
             scorer_config = RaggedScorerConfig(hidden_dim=4, relation_layers=0)
@@ -283,6 +334,7 @@ if _TORCH_AVAILABLE:
             objective_config = CombatWinObjectiveConfig(
                 groups_per_update=2,
                 all_win_axis=all_win_axis,
+                all_loss_axis=all_loss_axis,
             )
             self.shadow = RaggedCandidateScorer.from_bridge_schema(
                 schema,
@@ -360,8 +412,14 @@ if _TORCH_AVAILABLE:
         source: _IndexedCombatRootSource,
         *,
         all_win_axis: CombatAllWinAxis = CombatAllWinAxis.TERMINAL_HP,
+        all_loss_axis: CombatAllLossAxis = CombatAllLossAxis.NONE,
     ) -> _CombatBatchOwners:
-        return _CombatBatchOwners(root, source, all_win_axis=all_win_axis)
+        return _CombatBatchOwners(
+            root,
+            source,
+            all_win_axis=all_win_axis,
+            all_loss_axis=all_loss_axis,
+        )
 
 
 if __name__ == "__main__":

@@ -6,6 +6,7 @@ from dataclasses import replace
 
 from learning.tests.semantic_fixtures import semantic_schema_fixture
 from sts_learning import (
+    CombatAllLossAxis,
     CombatAllWinAxis,
     CombatPolicyUpdateConfig,
     CombatWinObjectiveConfig,
@@ -130,6 +131,35 @@ class TorchProvenanceTests(unittest.TestCase):
             ppo.trainer_implementation,
             combat_template.trainer_implementation,
         )
+
+    def test_all_loss_axis_preserves_default_identity_and_forks_each_update_rule(
+        self,
+    ) -> None:
+        updates = (
+            CombatPolicyUpdateConfig(),
+            CombatPolicyUpdateConfig.ppo_clip(),
+            CombatPolicyUpdateConfig.ppo_clip_value(),
+        )
+        for update in updates:
+            with self.subTest(rule=update.rule.name):
+                default = CombatWinObjectiveConfig(policy_update=update)
+                explicit_none = CombatWinObjectiveConfig(
+                    policy_update=update,
+                    all_loss_axis=CombatAllLossAxis.NONE,
+                )
+                enabled = CombatWinObjectiveConfig(
+                    policy_update=update,
+                    all_loss_axis=CombatAllLossAxis.ENEMY_HP_PROGRESS,
+                )
+
+                self.assertEqual(
+                    combat_win_trainer_implementation(default),
+                    combat_win_trainer_implementation(explicit_none),
+                )
+                self.assertNotEqual(
+                    combat_win_trainer_implementation(default),
+                    combat_win_trainer_implementation(enabled),
+                )
 
     def test_run_value_ppo_has_distinct_model_and_trainer_identity(self) -> None:
         schema = semantic_schema_fixture()

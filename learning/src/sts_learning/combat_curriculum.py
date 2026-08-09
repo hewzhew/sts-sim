@@ -7,7 +7,11 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from enum import IntEnum
 
-from .combat_objective import CombatAllWinAxis, CombatWinObjectiveConfig
+from .combat_objective import (
+    CombatAllLossAxis,
+    CombatAllWinAxis,
+    CombatWinObjectiveConfig,
+)
 from .combat_signals import CombatGroupSignalSummary
 
 
@@ -21,6 +25,7 @@ class CombatCompetenceBand(IntEnum):
     ALL_LOSS = 0
     MIXED = 1
     ALL_WIN = 2
+    UNRESOLVED = 3
 
 
 @dataclass(frozen=True)
@@ -33,6 +38,7 @@ class CombatRootCompetenceEvidence:
     replicate_count: int
     wins: int
     losses: int
+    unresolved: int
     signals: CombatGroupSignalSummary
 
     def __post_init__(self) -> None:
@@ -43,9 +49,10 @@ class CombatRootCompetenceEvidence:
         )
         wins = _nonnegative_integer(self.wins, "wins")
         losses = _nonnegative_integer(self.losses, "losses")
-        if wins + losses != replicate_count:
+        unresolved = _nonnegative_integer(self.unresolved, "unresolved")
+        if wins + losses + unresolved != replicate_count:
             raise CombatCurriculumError(
-                "combat competence wins and losses must equal replicate_count"
+                "combat competence terminals must equal replicate_count"
             )
         if not isinstance(self.signals, CombatGroupSignalSummary):
             raise CombatCurriculumError(
@@ -75,12 +82,15 @@ class CombatRootCompetenceEvidence:
         object.__setattr__(self, "replicate_count", replicate_count)
         object.__setattr__(self, "wins", wins)
         object.__setattr__(self, "losses", losses)
+        object.__setattr__(self, "unresolved", unresolved)
 
     @property
     def band(self) -> CombatCompetenceBand:
+        if self.unresolved:
+            return CombatCompetenceBand.UNRESOLVED
         if self.wins == 0:
             return CombatCompetenceBand.ALL_LOSS
-        if self.losses == 0:
+        if self.wins == self.replicate_count:
             return CombatCompetenceBand.ALL_WIN
         return CombatCompetenceBand.MIXED
 
@@ -159,6 +169,7 @@ class CombatFrontierPlan:
         return CombatWinObjectiveConfig(
             groups_per_update=len(self.training_slots),
             all_win_axis=self.objective_config.all_win_axis,
+            all_loss_axis=self.objective_config.all_loss_axis,
             policy_update=self.objective_config.policy_update,
         )
 
@@ -261,8 +272,18 @@ def _partition_slots(
             raise CombatCurriculumError(
                 "combat frontier plan requires typed root evidence"
             )
-        if root.band is CombatCompetenceBand.ALL_LOSS:
+        if root.band is CombatCompetenceBand.UNRESOLVED:
             rescue.append(root.source_slot)
+        elif root.band is CombatCompetenceBand.ALL_LOSS:
+            if (
+                objective_config.all_loss_axis
+                is CombatAllLossAxis.ENEMY_HP_PROGRESS
+                and root.losses == root.replicate_count
+                and root.signals.enemy_hp_progress.has_signal
+            ):
+                survival.append(root.source_slot)
+            else:
+                rescue.append(root.source_slot)
         elif root.band is CombatCompetenceBand.MIXED:
             survival.append(root.source_slot)
         elif (

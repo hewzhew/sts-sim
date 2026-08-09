@@ -366,10 +366,11 @@ The Python caller rejects a terminal batch from another root before mutating
 its bounded accumulator and completes a group only after receiving exactly one
 outcome for every replicate. Same-root leave-one-out evidence remains four
 independent axes: win, player terminal-HP ratio, enemy-HP progress, and potion
-retention. Enemy-HP progress is diagnostic evidence only while all-loss groups
-remain outside the maintained training objective. There is no default scalar
-exchange rate among survival, either HP axis, and potions, and the execution
-primitive is not itself a trainer or teacher.
+retention. Enemy-HP progress is diagnostic evidence by default. A separately
+provenanced opt-in objective may select it only when every replicate is an
+exact loss; escaped or otherwise unresolved terminals remain ineligible. There
+is no default scalar exchange rate among survival, either HP axis, and potions,
+and the execution primitive is not itself a trainer or teacher.
 
 Held-out combat evaluation preserves these resource facts without reducing
 them to one score. Its root and replicate records make HP and gold deltas,
@@ -415,9 +416,12 @@ win/loss variation uses only its win axis. Once every replicate wins, a typed
 all-win configuration selects either no fallback axis for strict win-only
 ablation or terminal-HP ratio so early combats keep learning resource
 preservation after survival is solved. This selection is bound into trainer
-provenance. All-loss groups remain no-signal, and potion retention remains
-typed evidence outside the loss; HP is therefore not traded against either
-survival or potions. Groups have equal total weight,
+provenance. An independent all-loss configuration defaults to no fallback; its
+explicit enemy-HP-progress mode applies only when every terminal is an exact
+loss and that axis varies. Unresolved terminals never enter this fallback, and
+potion retention remains typed evidence outside the loss. The lexicographic
+selection therefore creates no scalar exchange rate among survival, either HP
+axis, and potions. Groups have equal total weight,
 replicates have equal total weight inside a group regardless of combat length,
 and each replicate divides its weight across its own retained decisions. The
 objective rechecks exact behavior manifests and recorded selection propensities
@@ -444,9 +448,11 @@ The training root source also binds one explicit model-facing potion lane.
 `Never` is the primary resource-preserving lane for roots that can already win
 without potion actions; it makes terminal-HP refinement honest by removing
 potion use/discard candidates rather than pricing their outcomes. An all-loss
-no-potion group remains no-signal and requires a bounded `RootSlots` rescue
-lane for one concrete starting identity at a time; training does not silently
-reopen unrestricted potion actions.
+no-potion group remains no-signal by default. A bounded investigation may
+explicitly enable enemy-HP progress to test whether damage support can be
+learned without reopening potions; a concrete-potion rescue question still
+uses `RootSlots` for one starting identity at a time. Training never silently
+reopens unrestricted potion actions.
 The synchronous combat-win trainer has its own objective configuration and
 trainer provenance; it cannot reuse a terminal floor-return behavior manifest.
 Each delivery contains exactly the declared number of complete groups. No

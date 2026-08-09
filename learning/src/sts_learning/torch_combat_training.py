@@ -11,7 +11,11 @@ from enum import IntEnum
 import torch
 
 from .combat_experience import CompletedCombatGroupExperience
-from .combat_objective import CombatAllWinAxis, CombatWinObjectiveConfig
+from .combat_objective import (
+    CombatAllLossAxis,
+    CombatAllWinAxis,
+    CombatWinObjectiveConfig,
+)
 from .manifests import BehaviorManifestRegistry
 from .policy import BehaviorManifestId
 from .semantic_concat import SemanticBatchConcatLimits
@@ -37,10 +41,12 @@ class CombatWinTrainingStatus(IntEnum):
 class CombatWinTrainingResult:
     status: CombatWinTrainingStatus
     all_win_axis: CombatAllWinAxis
+    all_loss_axis: CombatAllLossAxis
     group_count: int
     signal_group_count: int
     win_signal_group_count: int
     terminal_hp_signal_group_count: int
+    enemy_hp_progress_signal_group_count: int
     replicate_count: int
     decision_count: int
     loss: float
@@ -59,12 +65,14 @@ class CombatWinTrainingResult:
 @dataclass(frozen=True)
 class SynchronousCombatWinTrainerSnapshot:
     all_win_axis: CombatAllWinAxis
+    all_loss_axis: CombatAllLossAxis
     deliveries: int
     optimizer_steps: int
     completed_groups: int
     signal_groups: int
     win_signal_groups: int
     terminal_hp_signal_groups: int
+    enemy_hp_progress_signal_groups: int
     no_update_deliveries: int
     trained_replicates: int
     trained_decisions: int
@@ -120,6 +128,7 @@ class SynchronousCombatWinTrainer:
         self._signal_groups = 0
         self._win_signal_groups = 0
         self._terminal_hp_signal_groups = 0
+        self._enemy_hp_progress_signal_groups = 0
         self._no_update_deliveries = 0
         self._trained_replicates = 0
         self._trained_decisions = 0
@@ -134,12 +143,16 @@ class SynchronousCombatWinTrainer:
     def snapshot(self) -> SynchronousCombatWinTrainerSnapshot:
         return SynchronousCombatWinTrainerSnapshot(
             all_win_axis=self.objective_config.all_win_axis,
+            all_loss_axis=self.objective_config.all_loss_axis,
             deliveries=self._deliveries,
             optimizer_steps=self._optimizer_steps,
             completed_groups=self._completed_groups,
             signal_groups=self._signal_groups,
             win_signal_groups=self._win_signal_groups,
             terminal_hp_signal_groups=self._terminal_hp_signal_groups,
+            enemy_hp_progress_signal_groups=(
+                self._enemy_hp_progress_signal_groups
+            ),
             no_update_deliveries=self._no_update_deliveries,
             trained_replicates=self._trained_replicates,
             trained_decisions=self._trained_decisions,
@@ -299,6 +312,9 @@ class SynchronousCombatWinTrainer:
         self._signal_groups += objective.signal_group_count
         self._win_signal_groups += objective.win_signal_group_count
         self._terminal_hp_signal_groups += objective.terminal_hp_signal_group_count
+        self._enemy_hp_progress_signal_groups += (
+            objective.enemy_hp_progress_signal_group_count
+        )
         self._no_update_deliveries += int(
             status is not CombatWinTrainingStatus.OPTIMIZER_STEP
         )
@@ -310,10 +326,14 @@ class SynchronousCombatWinTrainer:
         return CombatWinTrainingResult(
             status=status,
             all_win_axis=self.objective_config.all_win_axis,
+            all_loss_axis=self.objective_config.all_loss_axis,
             group_count=objective.group_count,
             signal_group_count=objective.signal_group_count,
             win_signal_group_count=objective.win_signal_group_count,
             terminal_hp_signal_group_count=objective.terminal_hp_signal_group_count,
+            enemy_hp_progress_signal_group_count=(
+                objective.enemy_hp_progress_signal_group_count
+            ),
             replicate_count=objective.replicate_count,
             decision_count=objective.decision_count,
             loss=loss,

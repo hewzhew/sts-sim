@@ -12,6 +12,8 @@ param(
     [int]$Updates,
     [ValidateSet("reinforce", "ppo-clip", "ppo-clip-value")]
     [string]$CombatPolicyUpdate = "reinforce",
+    [ValidateSet("none", "enemy-hp-progress")]
+    [string]$CombatAllLossAxis = "none",
     [ValidateSet("reinforce", "ppo-clip-value")]
     [string]$RunPolicyUpdate = "reinforce",
     [long]$ModelSeed = 0,
@@ -255,6 +257,7 @@ switch ($Command) {
                 --model-seed $ModelSeed `
                 --behavior-seed-base $BehaviorSeedBase `
                 --policy-update $CombatPolicyUpdate `
+                --all-loss-axis $CombatAllLossAxis `
                 @warmStartArguments `
                 @potionArguments
             if ($LASTEXITCODE -ne 0) {
