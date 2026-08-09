@@ -43,7 +43,7 @@ from .torch_combat_session_config import (
 from .torch_session_config import CategoricalSessionBridge
 
 
-COMBAT_EVALUATION_SCHEMA = "sts-learning-combat-held-out-evaluation-v9"
+COMBAT_EVALUATION_SCHEMA = "sts-learning-combat-held-out-evaluation-v10"
 
 
 class CombatEvaluationCommandError(RuntimeError):
@@ -474,6 +474,7 @@ def _summary(
         ),
         "turns_sum": sum(outcome.turns for outcome in outcomes),
         "cards_played_sum": sum(outcome.cards_played for outcome in outcomes),
+        "encounters": _encounter_summaries(result.roots),
         "roots": roots,
         "elapsed_seconds": elapsed,
     }
@@ -496,6 +497,9 @@ def _root_summary(
         "model_rounds": root.model_rounds,
         "transitions": root.transitions,
         "context": {
+            "seed": context.seed,
+            "encounter_id": context.encounter_id,
+            "monster_ids": context.monster_ids,
             "act": context.act,
             "floor": context.floor,
             "ascension_level": context.ascension_level,
@@ -581,6 +585,51 @@ def _root_summary(
                 )[1],
             }
             for outcome in outcomes
+        ),
+    }
+
+
+def _encounter_summaries(
+    roots: tuple[CombatEvaluationRootResult, ...],
+) -> tuple[dict[str, object], ...]:
+    grouped: dict[str, list[CombatEvaluationRootResult]] = {}
+    for root in roots:
+        grouped.setdefault(root.context.encounter_id, []).append(root)
+    return tuple(
+        _encounter_summary(encounter_id, tuple(encounter_roots))
+        for encounter_id, encounter_roots in sorted(grouped.items())
+    )
+
+
+def _encounter_summary(
+    encounter_id: str,
+    roots: tuple[CombatEvaluationRootResult, ...],
+) -> dict[str, object]:
+    outcomes = tuple(
+        outcome
+        for root in roots
+        for outcome in root.group.outcomes
+    )
+    monster_lineups = Counter(root.context.monster_ids for root in roots)
+    return {
+        "encounter_id": encounter_id,
+        "root_count": len(roots),
+        "replicate_count": len(outcomes),
+        "wins": sum(outcome.won for outcome in outcomes),
+        "losses": sum(not outcome.won for outcome in outcomes),
+        "final_hp_sum": sum(outcome.final_hp for outcome in outcomes),
+        "hp_loss_sum": sum(outcome.hp_loss for outcome in outcomes),
+        "enemy_final_hp_sum": sum(outcome.enemy_final_hp for outcome in outcomes),
+        "potions_used": sum(outcome.potions_used for outcome in outcomes),
+        "potions_discarded": sum(
+            outcome.potions_discarded for outcome in outcomes
+        ),
+        "monster_lineups": tuple(
+            {
+                "monster_ids": monster_ids,
+                "root_count": count,
+            }
+            for monster_ids, count in sorted(monster_lineups.items())
         ),
     }
 

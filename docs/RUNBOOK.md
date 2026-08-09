@@ -855,7 +855,11 @@ instead records its run objective and sampling contract.
 It gives every root an independent explicit behavior RNG stream and writes only
 `evaluation.json` with per-replicate win, HP/max HP, gold, turn,
 concrete starting/final/lost/gained potion identities, potion use/discard
-counts, and card facts plus compact aggregates. The completion line includes each root's
+counts, and card facts plus compact aggregates. Each root retains its seed,
+canonical encounter identity, and ordered monster identities; the top-level
+`encounters` rows aggregate wins, losses, HP loss, enemy HP, and potion actions
+without inventing a scalar score. Use these rows as the fixed-cohort combat
+school view before interpreting a whole-run floor metric. The completion line includes each root's
 site and starting potion identities, so routine resource-loss classification
 does not require reopening the JSON. Identity loss is an inventory fact, not a
 static potion-value score; strategic retained value requires an exact run

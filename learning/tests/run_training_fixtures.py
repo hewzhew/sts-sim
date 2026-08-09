@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from pathlib import Path
+from types import SimpleNamespace
 
 from learning.tests.driver_fixtures import (
     FakeCheckpointBatch,
@@ -19,6 +20,26 @@ from sts_learning.train_combat import (
 
 
 class CombatRootSource:
+    def public_run_contexts(self) -> list[tuple[int, SimpleNamespace]]:
+        return [
+            (
+                slot_index,
+                SimpleNamespace(
+                    is_combat=True,
+                    seed=20_000 + slot_index,
+                    act=1,
+                    floor=4,
+                    hp=80,
+                    max_hp=80,
+                    gold=99,
+                    potion_ids=("EntropicBrew", "GamblersBrew"),
+                    encounter_id=("Cultist", "JawWorm")[slot_index],
+                    monster_ids=(("Cultist",), ("JawWorm",))[slot_index],
+                ),
+            )
+            for slot_index in range(2)
+        ]
+
     def combat_group(
         self,
         slot_index: int,

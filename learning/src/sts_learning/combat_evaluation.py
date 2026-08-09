@@ -219,6 +219,9 @@ def _observed_resource_relation(
 class CombatEvaluationRootContext:
     """Public run context needed to interpret one combat resource outcome."""
 
+    seed: int
+    encounter_id: str
+    monster_ids: tuple[str, ...]
     act: int
     floor: int
     ascension_level: int
@@ -239,10 +242,34 @@ class CombatEvaluationRootContext:
     potion_ids: tuple[str | None, ...]
 
     @classmethod
-    def from_environment(cls, env: object) -> CombatEvaluationRootContext:
+    def from_environment(
+        cls,
+        env: object,
+        public_context: object,
+    ) -> CombatEvaluationRootContext:
         try:
             context = env.root_context
+            public_potions = tuple(public_context.potion_ids)
+            root_potions = tuple(env.root_potion_ids)
+            if not public_context.is_combat:
+                raise CombatEvaluationError(
+                    "combat evaluation root context is not a combat boundary"
+                )
+            if (
+                public_context.act != context.act
+                or public_context.floor != context.floor
+                or public_context.hp != context.hp
+                or public_context.max_hp != context.max_hp
+                or public_context.gold != env.root_gold
+                or public_potions != root_potions
+            ):
+                raise CombatEvaluationError(
+                    "combat evaluation public context disagrees with exact root"
+                )
             return cls(
+                seed=public_context.seed,
+                encounter_id=public_context.encounter_id,
+                monster_ids=tuple(public_context.monster_ids),
                 act=context.act,
                 floor=context.floor,
                 ascension_level=context.ascension_level,
@@ -260,7 +287,7 @@ class CombatEvaluationRootContext:
                 hp=context.hp,
                 max_hp=context.max_hp,
                 gold=env.root_gold,
-                potion_ids=tuple(env.root_potion_ids),
+                potion_ids=root_potions,
             )
         except AttributeError as error:
             raise CombatEvaluationError(
@@ -269,6 +296,7 @@ class CombatEvaluationRootContext:
 
     def __post_init__(self) -> None:
         for name in (
+            "seed",
             "act",
             "floor",
             "ascension_level",
@@ -295,6 +323,21 @@ class CombatEvaluationRootContext:
                 raise CombatEvaluationError(f"{name} must be boolean")
         if self.hp == 0 or self.max_hp == 0 or self.hp > self.max_hp:
             raise CombatEvaluationError("root hp must be in 1..max_hp")
+        if not isinstance(self.encounter_id, str) or not self.encounter_id:
+            raise CombatEvaluationError(
+                "combat evaluation root requires an encounter identity"
+            )
+        monster_ids = tuple(self.monster_ids)
+        if not monster_ids or not all(
+            isinstance(monster, str) and monster for monster in monster_ids
+        ):
+            raise CombatEvaluationError(
+                "combat evaluation root requires monster identities"
+            )
+        if len(monster_ids) != self.monster_count:
+            raise CombatEvaluationError(
+                "combat evaluation monster identities do not match monster_count"
+            )
         potion_ids = _potion_ids(self.potion_ids, "root potion_ids")
         if len(potion_ids) != self.potion_slot_count:
             raise CombatEvaluationError(
@@ -305,6 +348,7 @@ class CombatEvaluationRootContext:
                 "root potion ids do not match filled_potion_count"
             )
         object.__setattr__(self, "potion_ids", potion_ids)
+        object.__setattr__(self, "monster_ids", monster_ids)
 
 
 @dataclass(frozen=True)
@@ -476,6 +520,7 @@ class CombatHeldOutEvaluator:
             potion_lane,
             potion_slots,
         )
+        public_contexts = _public_root_contexts(source, slots)
         self.source = CombatPotionLaneRootSource(
             source,
             potion_lane,
@@ -489,6 +534,7 @@ class CombatHeldOutEvaluator:
         self.potion_lane = potion_lane
         self.potion_slots = normalized_potion_slots
         self.behavior_manifest_id = next(iter(manifest_ids))
+        self.public_contexts = public_contexts
         self._started = False
 
     def evaluate(self) -> CombatHeldOutEvaluationResult:
@@ -505,9 +551,10 @@ class CombatHeldOutEvaluator:
         roots: list[CombatEvaluationRootResult] = []
         observed_identities: set[tuple[object, object]] = set()
         try:
-            for slot_index, policy in zip(
+            for slot_index, policy, public_context in zip(
                 self.slot_indices,
                 self.policies,
+                self.public_contexts,
                 strict=True,
             ):
                 group = self.source.combat_group(
@@ -531,6 +578,7 @@ class CombatHeldOutEvaluator:
                     group,
                     policy,
                     self.limits,
+                    public_context,
                 )
                 if self.potion_lane is CombatPotionLane.NEVER and any(
                     outcome.potions_used or outcome.potions_discarded
@@ -560,12 +608,13 @@ def _evaluate_group(
     env: object,
     policy: FrozenCategoricalTorchPolicy,
     limits: CombatEvaluationLimits,
+    public_context: object,
 ) -> CombatEvaluationRootResult:
     if getattr(env, "terminal_count", None) != 0:
         raise CombatEvaluationError(
             "combat evaluation requires a fresh group"
         )
-    context = CombatEvaluationRootContext.from_environment(env)
+    context = CombatEvaluationRootContext.from_environment(env, public_context)
     try:
         outcomes = CombatGroupOutcomeAccumulator(
             root_id=env.root_id,
@@ -617,6 +666,37 @@ def _evaluate_group(
         model_rounds=model_rounds,
         transitions=transitions,
     )
+
+
+def _public_root_contexts(
+    source: object,
+    slot_indices: tuple[int, ...],
+) -> tuple[object, ...]:
+    provider = getattr(source, "public_run_contexts", None)
+    if not callable(provider):
+        raise CombatEvaluationError(
+            "combat evaluation source omitted public run contexts"
+        )
+    try:
+        rows = tuple(provider())
+    except Exception as error:
+        raise CombatEvaluationError(
+            "combat evaluation could not read public run contexts"
+        ) from error
+    by_slot: dict[int, object] = {}
+    for raw_slot, context in rows:
+        slot = _nonnegative_integer(raw_slot, "public context slot")
+        if slot in by_slot:
+            raise CombatEvaluationError(
+                "combat evaluation source repeated a public context slot"
+            )
+        by_slot[slot] = context
+    try:
+        return tuple(by_slot[slot] for slot in slot_indices)
+    except KeyError as error:
+        raise CombatEvaluationError(
+            "combat evaluation source omitted a selected root context"
+        ) from error
 
 
 def _positive_integer(value: object, name: str) -> int:

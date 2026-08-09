@@ -4,6 +4,7 @@ import hashlib
 import json
 from collections.abc import Sequence
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -41,6 +42,28 @@ class _RootSource:
     ) -> None:
         self.roots = roots
         self.calls: list[tuple[int, tuple[int, ...] | None]] = []
+
+    def public_run_contexts(self) -> list[tuple[int, SimpleNamespace]]:
+        encounter_ids = ("Cultist", "JawWorm")
+        monster_ids = (("Cultist",), ("JawWorm",))
+        return [
+            (
+                slot_index,
+                SimpleNamespace(
+                    is_combat=True,
+                    seed=10_000 + slot_index,
+                    act=1,
+                    floor=4,
+                    hp=80,
+                    max_hp=80,
+                    gold=99,
+                    potion_ids=("EntropicBrew", "GamblersBrew"),
+                    encounter_id=encounter_ids[slot_index],
+                    monster_ids=monster_ids[slot_index],
+                ),
+            )
+            for slot_index in range(len(self.roots))
+        ]
 
     def combat_group(
         self,
@@ -142,7 +165,7 @@ def test_evaluation_recovers_published_behavior_without_training_or_experience(
         bridge=bridge,
     )
 
-    assert summary["schema"] == "sts-learning-combat-held-out-evaluation-v9"
+    assert summary["schema"] == "sts-learning-combat-held-out-evaluation-v10"
     assert summary["behavior_training_kind"] == "combat"
     assert summary["potion_lane"] == "all"
     assert summary["potion_slots"] == ()
@@ -170,6 +193,9 @@ def test_evaluation_recovers_published_behavior_without_training_or_experience(
     assert summary["observed_resource_incomparable_winning_pairs"] == 1
     assert tuple(root["wins"] for root in summary["roots"]) == (1, 2)
     assert summary["roots"][0]["context"]["floor"] == 4
+    assert summary["roots"][0]["context"]["seed"] == 10_000
+    assert summary["roots"][0]["context"]["encounter_id"] == "Cultist"
+    assert summary["roots"][0]["context"]["monster_ids"] == ("Cultist",)
     assert summary["roots"][0]["context"]["gold"] == 99
     assert summary["roots"][0]["context"]["potion_ids"] == (
         "EntropicBrew",
@@ -201,6 +227,25 @@ def test_evaluation_recovers_published_behavior_without_training_or_experience(
         "strict_order_pair_count": 0,
         "equivalent_pair_count": 0,
         "incomparable_pair_count": 1,
+    }
+    assert tuple(row["encounter_id"] for row in summary["encounters"]) == (
+        "Cultist",
+        "JawWorm",
+    )
+    assert summary["encounters"][0] == {
+        "encounter_id": "Cultist",
+        "root_count": 1,
+        "replicate_count": 2,
+        "wins": 1,
+        "losses": 1,
+        "final_hp_sum": 61,
+        "hp_loss_sum": 99,
+        "enemy_final_hp_sum": 20,
+        "potions_used": 1,
+        "potions_discarded": 0,
+        "monster_lineups": (
+            {"monster_ids": ("Cultist",), "root_count": 1},
+        ),
     }
     assert (behavior / "training.jsonl").read_bytes() == training_journal_before
     assert tuple(path.name for path in output.iterdir()) == ("evaluation.json",)

@@ -80,6 +80,16 @@ class CombatPotionLaneRootSource:
             )
         return group
 
+    def public_run_contexts(self):
+        """Preserve public root provenance beside the changed action surface."""
+
+        provider = getattr(self.source, "public_run_contexts", None)
+        if not callable(provider):
+            raise CombatPotionLaneError(
+                "combat root source omitted public run contexts"
+            )
+        return provider()
+
 
 def _nonnegative_integer(value: object, name: str) -> int:
     if isinstance(value, bool):

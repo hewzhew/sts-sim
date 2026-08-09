@@ -375,7 +375,12 @@ and the execution primitive is not itself a trainer or teacher.
 Held-out combat evaluation preserves these resource facts without reducing
 them to one score. Its root and replicate records make HP and gold deltas,
 concrete starting/final/lost/gained potion identities, and use/discard counts
-independently inspectable. A lost identity is a multiset inventory fact, not a
+independently inspectable. The evaluator also joins each selected opaque root
+to the bridge-owned public run context and requires its seed, canonical
+encounter identity, and ordered monster identities to agree with the spawned
+exact root. Encounter aggregates therefore stratify the same terminal facts;
+they do not become a reward, teacher label, or substitute for exact roots. A
+lost identity is a multiset inventory fact, not a
 claim about whether spending it was strategically correct. Cross-combat value
 requires an exact run continuation and remains outside the combat evaluator.
 Published behavior recovery also retains the training root artifact digest and
