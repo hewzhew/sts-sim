@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import operator
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 import torch
 
@@ -474,6 +474,77 @@ class FrozenCategoricalTorchPolicy:
 
 class CheckpointedCategoricalTorchPolicy(FrozenCategoricalTorchPolicy):
     """Frozen behavior whose binding was verified through durable stores."""
+
+
+class FrozenGreedyTorchPolicy:
+    """Exact greedy decision rule derived from a frozen categorical scorer."""
+
+    def __init__(
+        self,
+        scorer: RaggedCandidateScorer,
+        binding: TorchBehaviorBinding,
+        source_manifest_id: BehaviorManifestId,
+        *,
+        _token: object,
+    ) -> None:
+        if _token is not _PROMOTION_TOKEN:
+            raise TorchBehaviorError(
+                "greedy evaluation policy must derive from frozen behavior"
+            )
+        if not isinstance(binding, TorchBehaviorBinding):
+            raise TorchBehaviorError("greedy evaluation requires an exact binding")
+        if not isinstance(source_manifest_id, BehaviorManifestId):
+            raise TorchBehaviorError(
+                "greedy evaluation requires a source behavior manifest"
+            )
+        _require_behavior_rule(
+            binding.manifest,
+            GREEDY_BEHAVIOR_RULE_V1,
+            "greedy candidate rule",
+        )
+        self._scorer = scorer
+        self.binding = binding
+        self.source_manifest_id = source_manifest_id
+
+    @classmethod
+    def from_categorical(
+        cls,
+        policy: FrozenCategoricalTorchPolicy,
+    ) -> FrozenGreedyTorchPolicy:
+        if not isinstance(policy, FrozenCategoricalTorchPolicy):
+            raise TorchBehaviorError(
+                "greedy evaluation requires frozen categorical behavior"
+            )
+        manifest = replace(
+            policy.binding.manifest,
+            behavior_rule=GREEDY_BEHAVIOR_RULE_V1,
+        )
+        binding = TorchBehaviorBinding(
+            manifest.identity,
+            manifest,
+            policy.binding.checkpoint_id,
+        )
+        return cls(
+            policy.frozen_scorer,
+            binding,
+            policy.behavior_manifest_id,
+            _token=_PROMOTION_TOKEN,
+        )
+
+    @property
+    def behavior_manifest_id(self) -> BehaviorManifestId:
+        return self.binding.manifest_id
+
+    def score(self, decision_batch: Mapping[str, object]) -> RaggedCandidateLogits:
+        with torch.inference_mode():
+            return self._scorer(decision_batch)
+
+    def choose(self, decision_batch: Mapping[str, object]) -> BatchPolicyChoice:
+        ordinals = self.score(decision_batch).greedy_ordinals()
+        return BatchPolicyChoice.deterministic(
+            ordinals,
+            self.behavior_manifest_id,
+        )
 
 
 @dataclass(frozen=True)

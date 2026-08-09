@@ -626,7 +626,7 @@ Configure one stable Python 3.12 training runtime once, then use the small
 .\learning\dev.ps1 verify -MaturinPython <python-with-maturin>
 .\learning\dev.ps1 train-combat -Artifact <roots.bin> -Behavior <optional-warm-start-dir> -Output <fresh-dir> -Roots <count> -Updates <count> -PotionLane never -CombatPolicyUpdate ppo-clip -CombatAllLossAxis none
 .\learning\dev.ps1 train-combat-recovery -Artifact <roots.bin> -SourceExpectedRoots <artifact-root-count> -SourceRootSlot <zero-based-slot> -Behavior <warm-start-dir> -Output <fresh-dir> -Roots 4 -Replicates 8 -Updates 1 -PotionLane root-slots -PotionSlots 0 -CombatPolicyUpdate ppo-clip
-.\learning\dev.ps1 evaluate-combat -Artifact <held-out-roots.bin> -Behavior <training-dir> -Output <fresh-dir> -Roots <count> -Replicates <count> [-TraceReplicatesPerRoot 1]
+.\learning\dev.ps1 evaluate-combat -Artifact <held-out-roots.bin> -Behavior <training-dir> -Output <fresh-dir> -Roots <count> -Replicates <count> [-CombatDecisionRule sampled|greedy] [-TraceReplicatesPerRoot 1]
 .\learning\dev.ps1 evaluate-combat-potions -Artifact <held-out-roots.bin> -Behavior <training-dir> -Output <fresh-dir> -Roots <count> -Replicates <count>
 .\learning\dev.ps1 evaluate-run -Behavior <training-dir> -Output <fresh-dir> -Attempts 8 -MaxBatchSteps 4096 -BehaviorSeed 10000 -HeldOutSeedStart 0 -RunPotionLane trained
 .\learning\dev.ps1 evaluate-run-potions -Behavior <training-dir> -Output <fresh-dir> -Attempts 8 -MaxBatchSteps 4096 -BehaviorSeed 10000 -HeldOutSeedStart 0
@@ -871,6 +871,14 @@ continuation outside this evaluator. It creates no optimizer, trainer,
 experience buffer, or behavior promotion. A result measures the exact frozen
 manifest on that bounded sample; it does not establish improvement without a
 comparable baseline using the same roots and RNG streams.
+
+The default `-CombatDecisionRule sampled` evaluates the exact published
+temperature-scaled behavior and retains its independent RNG streams. Use
+`-CombatDecisionRule greedy` only as a paired ranking diagnostic. It derives a
+separate in-memory behavior manifest over the same immutable checkpoint with
+the explicit greedy rule, records both source and evaluation manifest ids, and
+uses deterministic selection probabilities. It does not relabel the published
+sampled behavior or silently promote a deployment policy.
 
 For one bounded diagnosis, pass `-TraceReplicatesPerRoot <count>`. The count
 cannot exceed `-Replicates`; zero is the default. The evaluator then writes

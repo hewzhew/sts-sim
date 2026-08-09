@@ -8,6 +8,7 @@ import json
 import time
 from collections import Counter
 from dataclasses import dataclass
+from enum import Enum
 from pathlib import Path
 
 from .combat_evaluation import (
@@ -40,16 +41,24 @@ from .torch_combat_session_config import (
     CombatSessionBridge,
     CombatWinSessionLimits,
 )
+from .torch_behavior import FrozenGreedyTorchPolicy
 from .torch_session_config import CategoricalSessionBridge
 
 
-COMBAT_EVALUATION_SCHEMA = "sts-learning-combat-held-out-evaluation-v11"
+COMBAT_EVALUATION_SCHEMA = "sts-learning-combat-held-out-evaluation-v12"
 COMBAT_ACTION_TRACE_SCHEMA = "sts-learning-combat-action-trace-v1"
 COMBAT_ACTION_TRACE_FILENAME = "combat-traces.jsonl"
 
 
 class CombatEvaluationCommandError(RuntimeError):
     """A held-out combat evaluation command is malformed."""
+
+
+class CombatEvaluationDecisionRule(str, Enum):
+    """Exact action-selection rule used only for held-out evaluation."""
+
+    SAMPLED = "sampled"
+    GREEDY = "greedy"
 
 
 @dataclass(frozen=True)
@@ -60,6 +69,7 @@ class CombatEvaluationCommandConfig:
     root_count: int
     replicate_count: int
     behavior_seed_base: int
+    decision_rule: CombatEvaluationDecisionRule = CombatEvaluationDecisionRule.SAMPLED
     potion_lane: CombatPotionLane = CombatPotionLane.ALL
     potion_slots: tuple[int, ...] = ()
     trace_replicates_per_root: int = 0
@@ -103,6 +113,10 @@ class CombatEvaluationCommandConfig:
         if not isinstance(self.potion_lane, CombatPotionLane):
             raise CombatEvaluationCommandError(
                 "combat evaluation potion_lane must be typed"
+            )
+        if not isinstance(self.decision_rule, CombatEvaluationDecisionRule):
+            raise CombatEvaluationCommandError(
+                "combat evaluation decision_rule must be typed"
             )
         try:
             potion_slots = normalize_combat_potion_slots(
@@ -201,11 +215,17 @@ def run_combat_evaluation(
         expected_roots=config.root_count,
         max_bytes=session_limits.max_artifact_bytes,
     )
+    evaluation_policies = recovered.policies
+    if config.decision_rule is CombatEvaluationDecisionRule.GREEDY:
+        evaluation_policies = tuple(
+            FrozenGreedyTorchPolicy.from_categorical(policy)
+            for policy in recovered.policies
+        )
     evaluator = CombatHeldOutEvaluator(
         source,
         slot_indices=tuple(range(config.root_count)),
         replicate_count=config.replicate_count,
-        policies=recovered.policies,
+        policies=evaluation_policies,
         max_roots=config.root_count,
         limits=CombatEvaluationLimits(
             max_model_rounds=session_limits.experience.max_model_rounds,
@@ -329,6 +349,7 @@ def run_combat_evaluation(
     if print_completion:
         print(
             f"evaluation_complete=true wins={result.wins} losses={result.losses} "
+            f"decision_rule={config.decision_rule.value} "
             f"potion_lane={result.potion_lane.value} "
             f"potion_slots={_potion_slots_text(result)} "
             f"root_wins={root_wins} root_final_hp_sums={root_final_hp} "
@@ -399,6 +420,8 @@ def _summary(
     return {
         "schema": COMBAT_EVALUATION_SCHEMA,
         "kind": "completed",
+        "decision_rule": config.decision_rule.value,
+        "evaluation_manifest_id": result.behavior_manifest_id.digest.hex(),
         "potion_lane": result.potion_lane.value,
         "potion_slots": result.potion_slots,
         "artifact": str(config.artifact),
@@ -754,6 +777,11 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--roots", type=int, required=True)
     parser.add_argument("--replicates", type=int, default=8)
     parser.add_argument("--behavior-seed-base", type=int, default=10_000)
+    parser.add_argument(
+        "--decision-rule",
+        choices=tuple(rule.value for rule in CombatEvaluationDecisionRule),
+        default=CombatEvaluationDecisionRule.SAMPLED.value,
+    )
     parser.add_argument("--trace-replicates-per-root", type=int, default=0)
     parser.add_argument(
         "--potion-lane",
@@ -774,6 +802,7 @@ def main() -> int:
             root_count=arguments.roots,
             replicate_count=arguments.replicates,
             behavior_seed_base=arguments.behavior_seed_base,
+            decision_rule=CombatEvaluationDecisionRule(arguments.decision_rule),
             potion_lane=CombatPotionLane(arguments.potion_lane),
             potion_slots=tuple(arguments.potion_slot),
             trace_replicates_per_root=arguments.trace_replicates_per_root,

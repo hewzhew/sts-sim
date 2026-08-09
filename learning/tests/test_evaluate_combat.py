@@ -18,6 +18,7 @@ from sts_learning.combat_outcomes import CombatTerminalOutcome
 from sts_learning.evaluate_combat import (
     CombatEvaluationCommandConfig,
     CombatEvaluationCommandError,
+    CombatEvaluationDecisionRule,
     run_combat_evaluation,
 )
 from sts_learning.evaluate_combat_potions import (
@@ -165,7 +166,9 @@ def test_evaluation_recovers_published_behavior_without_training_or_experience(
         bridge=bridge,
     )
 
-    assert summary["schema"] == "sts-learning-combat-held-out-evaluation-v11"
+    assert summary["schema"] == "sts-learning-combat-held-out-evaluation-v12"
+    assert summary["decision_rule"] == "sampled"
+    assert summary["evaluation_manifest_id"] == summary["behavior_manifest_id"]
     assert summary["behavior_training_kind"] == "combat"
     assert summary["potion_lane"] == "all"
     assert summary["potion_slots"] == ()
@@ -260,7 +263,8 @@ def test_evaluation_recovers_published_behavior_without_training_or_experience(
     ] == summary["behavior_manifest_id"]
     all_stdout = capsys.readouterr().out
     assert (
-        "evaluation_complete=true wins=3 losses=1 potion_lane=all "
+        "evaluation_complete=true wins=3 losses=1 decision_rule=sampled "
+        "potion_lane=all "
         "potion_slots=all "
         "root_wins=1,2"
     ) in all_stdout
@@ -282,6 +286,7 @@ def test_evaluation_recovers_published_behavior_without_training_or_experience(
             root_count=2,
             replicate_count=2,
             behavior_seed_base=1_000,
+            decision_rule=CombatEvaluationDecisionRule.GREEDY,
             trace_replicates_per_root=1,
         ),
         bridge=bridge,
@@ -299,6 +304,9 @@ def test_evaluation_recovers_published_behavior_without_training_or_experience(
         "replicates_per_root": 1,
         "schema": "sts-learning-combat-action-trace-v1",
     }
+    assert traced_summary["decision_rule"] == "greedy"
+    assert traced_summary["behavior_manifest_id"] == summary["behavior_manifest_id"]
+    assert traced_summary["evaluation_manifest_id"] != summary["behavior_manifest_id"]
     assert set(path.name for path in trace_output.iterdir()) == {
         "combat-traces.jsonl",
         "evaluation.json",
@@ -312,7 +320,7 @@ def test_evaluation_recovers_published_behavior_without_training_or_experience(
     assert all(row["decision"]["model_round_index"] == 0 for row in trace_rows)
     assert all(row["decision"]["selected_ordinal"] == 0 for row in trace_rows)
     assert all(
-        0.0 < row["decision"]["selection_probability"] <= 1.0
+        row["decision"]["selection_probability"] == 1.0
         for row in trace_rows
     )
 

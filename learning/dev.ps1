@@ -10,6 +10,8 @@ param(
     [int]$Roots,
     [int]$Replicates = 8,
     [int]$TraceReplicatesPerRoot = 0,
+    [ValidateSet("sampled", "greedy")]
+    [string]$CombatDecisionRule = "sampled",
     [int]$Updates,
     [ValidateSet("reinforce", "ppo-clip", "ppo-clip-value")]
     [string]$CombatPolicyUpdate = "reinforce",
@@ -303,6 +305,7 @@ switch ($Command) {
                 --roots $Roots `
                 --replicates $Replicates `
                 --trace-replicates-per-root $TraceReplicatesPerRoot `
+                --decision-rule $CombatDecisionRule `
                 --behavior-seed-base $BehaviorSeedBase `
                 @potionArguments
             if ($LASTEXITCODE -ne 0) {

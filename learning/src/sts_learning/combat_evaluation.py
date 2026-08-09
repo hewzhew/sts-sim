@@ -21,7 +21,13 @@ from .combat_potion_lane import (
     normalize_combat_potion_slots,
 )
 from .policy import BehaviorManifestId
-from .torch_behavior import FrozenCategoricalTorchPolicy
+from .torch_behavior import (
+    FrozenCategoricalTorchPolicy,
+    FrozenGreedyTorchPolicy,
+)
+
+
+CombatEvaluationPolicy = FrozenCategoricalTorchPolicy | FrozenGreedyTorchPolicy
 
 
 class CombatEvaluationError(RuntimeError):
@@ -466,7 +472,7 @@ class CombatHeldOutEvaluator:
         *,
         slot_indices: Sequence[int],
         replicate_count: int,
-        policies: Sequence[FrozenCategoricalTorchPolicy],
+        policies: Sequence[CombatEvaluationPolicy],
         max_roots: int,
         limits: CombatEvaluationLimits | None = None,
         potion_lane: CombatPotionLane = CombatPotionLane.ALL,
@@ -509,11 +515,22 @@ class CombatHeldOutEvaluator:
             )
         frozen_policies = tuple(policies)
         if len(frozen_policies) != len(slots) or not all(
-            isinstance(policy, FrozenCategoricalTorchPolicy)
+            isinstance(
+                policy,
+                (FrozenCategoricalTorchPolicy, FrozenGreedyTorchPolicy),
+            )
             for policy in frozen_policies
         ):
             raise CombatEvaluationError(
                 "combat evaluation requires one frozen policy per root"
+            )
+        greedy_modes = {
+            isinstance(policy, FrozenGreedyTorchPolicy)
+            for policy in frozen_policies
+        }
+        if len(greedy_modes) != 1:
+            raise CombatEvaluationError(
+                "combat evaluation cannot mix sampled and greedy policies"
             )
         manifest_ids = {
             policy.behavior_manifest_id for policy in frozen_policies
@@ -522,9 +539,10 @@ class CombatHeldOutEvaluator:
             raise CombatEvaluationError(
                 "combat evaluation policies must share one frozen manifest"
             )
-        if len({id(policy.generator) for policy in frozen_policies}) != len(
-            frozen_policies
-        ):
+        sampled = not next(iter(greedy_modes))
+        if sampled and len(
+            {id(policy.generator) for policy in frozen_policies}
+        ) != len(frozen_policies):
             raise CombatEvaluationError(
                 "combat evaluation requires independent policy RNG streams"
             )
@@ -552,6 +570,7 @@ class CombatHeldOutEvaluator:
         self.potion_slots = normalized_potion_slots
         self.trace_replicates_per_root = traced_replicates
         self.behavior_manifest_id = next(iter(manifest_ids))
+        self.sampled = sampled
         self.public_contexts = public_contexts
         self._started = False
 
@@ -563,8 +582,14 @@ class CombatHeldOutEvaluator:
                 "combat held-out evaluation is single-use"
             )
         self._started = True
-        generator_states = tuple(
-            policy.generator.get_state().clone() for policy in self.policies
+        generator_states = (
+            tuple(
+                policy.generator.get_state().clone()
+                for policy in self.policies
+                if isinstance(policy, FrozenCategoricalTorchPolicy)
+            )
+            if self.sampled
+            else ()
         )
         roots: list[CombatEvaluationRootResult] = []
         observed_identities: set[tuple[object, object]] = set()
@@ -608,12 +633,15 @@ class CombatHeldOutEvaluator:
                     )
                 roots.append(root)
         except Exception:
-            for policy, state in zip(
-                self.policies,
-                generator_states,
-                strict=True,
-            ):
-                policy.generator.set_state(state)
+            if self.sampled:
+                for policy, state in zip(
+                    self.policies,
+                    generator_states,
+                    strict=True,
+                ):
+                    if not isinstance(policy, FrozenCategoricalTorchPolicy):
+                        raise AssertionError("sampled policy type changed")
+                    policy.generator.set_state(state)
             raise
         return CombatHeldOutEvaluationResult(
             self.behavior_manifest_id,
@@ -625,7 +653,7 @@ class CombatHeldOutEvaluator:
 
 def _evaluate_group(
     env: object,
-    policy: FrozenCategoricalTorchPolicy,
+    policy: CombatEvaluationPolicy,
     limits: CombatEvaluationLimits,
     public_context: object,
     trace_replicates_per_root: int,
