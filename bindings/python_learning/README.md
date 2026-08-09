@@ -141,6 +141,8 @@ leave-one-out win, terminal-HP-ratio, and potion-retention axes. It does not
 combine HP and potion facts into a default scalar score. This remains an
 execution primitive for caller-owned grouped objectives, not a trainer or a
 teacher.
+Smoke Bomb escape is terminal kind `Unresolved` with `terminal_won=false`.
+Post-combat screen state alone never turns an escape into a learning victory.
 
 Terminal step batches retain aligned `terminal_slot_indices`,
 `terminal_reward`, public `terminal_act`, `terminal_floor`, `terminal_hp`,

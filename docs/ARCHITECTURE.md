@@ -304,6 +304,10 @@ Terminal learning steps retain the typed run result plus public terminal act,
 floor, HP, max HP, and gold. The Python bridge returns those facts as compact
 columns aligned only to terminal slots. They are outcome evidence for progress
 and lower-tail targets, not a shaped reward or a context-free resource score.
+Combat learning distinguishes an exact victory from leaving through Smoke
+Bomb: the latter is a completed episode with terminal kind `Unresolved` and
+`terminal_won=false`, so an escape cannot become a win target merely because
+the run reached a post-combat screen.
 An explicit `public_run_contexts()` snapshot separately exposes every current
 slot's seed, typed boundary kind, act/floor, HP/max HP, gold, and concrete
 potion-slot identities. Active combat contexts additionally expose ordered

@@ -140,11 +140,16 @@ impl CombatOutcomeTracker {
             potions_discarded: 0,
         });
         let final_hp = finished.combat_state.entities.player.current_hp;
+        let terminal = if finished.combat_state.runtime.combat_smoked {
+            CombatTerminal::Unresolved
+        } else {
+            combat_terminal(&finished.engine_state, &finished.combat_state)
+        };
         let outcome = CombatBaselineOutcomeV1 {
             schema_name: COMBAT_BASELINE_OUTCOME_SCHEMA_NAME.to_string(),
             schema_version: COMBAT_BASELINE_OUTCOME_SCHEMA_VERSION,
             case_id: case_id.into(),
-            terminal: combat_terminal(&finished.engine_state, &finished.combat_state),
+            terminal,
             start_hp: draft.start_hp,
             final_hp,
             hp_loss: (draft.start_hp - final_hp).max(0),
@@ -240,6 +245,35 @@ mod tests {
 
     #[test]
     fn tracker_builds_outcome_from_finished_combat() {
+        let mut finished = finished_jaw_worm();
+
+        let mut tracker = CombatOutcomeTracker::default();
+        tracker.ensure_started(Some(&finished.combat_state));
+        finished.combat_state.entities.player.current_hp = 65;
+        for monster in &mut finished.combat_state.entities.monsters {
+            monster.current_hp = 0;
+        }
+        let outcome = tracker.finish("jaw", &finished);
+
+        assert_eq!(outcome.start_hp, 72);
+        assert_eq!(outcome.final_hp, 65);
+        assert_eq!(outcome.hp_loss, 7);
+        assert_eq!(outcome.cards_played, 1);
+    }
+
+    #[test]
+    fn tracker_does_not_classify_smoke_escape_as_combat_win() {
+        let mut finished = finished_jaw_worm();
+        let mut tracker = CombatOutcomeTracker::default();
+        tracker.ensure_started(Some(&finished.combat_state));
+        finished.combat_state.runtime.combat_smoked = true;
+
+        let outcome = tracker.finish("escaped-jaw", &finished);
+
+        assert_eq!(outcome.terminal, CombatTerminal::Unresolved);
+    }
+
+    fn finished_jaw_worm() -> FinishedActiveCombat {
         let spec: CombatStartSpec = serde_json::from_str(
             r#"{
                 "name": "jaw_worm_starter",
@@ -263,25 +297,12 @@ mod tests {
         combat_state.entities.player.current_hp = 72;
         combat_state.turn.counters.card_ids_played_this_combat =
             vec![crate::content::cards::CardId::Strike];
-
-        let mut tracker = CombatOutcomeTracker::default();
-        tracker.ensure_started(Some(&combat_state));
-        combat_state.entities.player.current_hp = 65;
-        for monster in &mut combat_state.entities.monsters {
-            monster.current_hp = 0;
-        }
-        let finished = FinishedActiveCombat {
+        FinishedActiveCombat {
             engine_state: crate::state::core::EngineState::GameOver(
                 crate::state::core::RunResult::Victory,
             ),
             combat_state,
-        };
-        let outcome = tracker.finish("jaw", &finished);
-
-        assert_eq!(outcome.start_hp, 72);
-        assert_eq!(outcome.final_hp, 65);
-        assert_eq!(outcome.hp_loss, 7);
-        assert_eq!(outcome.cards_played, 1);
+        }
     }
 
     fn sample_baseline() -> CombatBaselineOutcomeV1 {
