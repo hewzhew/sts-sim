@@ -410,6 +410,7 @@ switch ($Command) {
                 --wall-ms $WallMs `
                 --behavior-seed $BehaviorSeed `
                 --training-seed-start $TrainingSeedStart `
+                --combat-decision-rule $CombatDecisionRule `
                 --min-floor $MinFloor `
                 --min-usable-potions $MinUsablePotions `
                 --max-artifact-bytes $MaxArtifactBytes `

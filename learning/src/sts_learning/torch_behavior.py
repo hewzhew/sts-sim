@@ -5,6 +5,7 @@ from __future__ import annotations
 import operator
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, replace
+from enum import Enum
 
 import torch
 
@@ -15,12 +16,18 @@ from .manifests import (
     BehaviorRuleBinding,
     GREEDY_BEHAVIOR_RULE_V1,
     ManifestArtifactId,
+    combat_greedy_strategic_sampled_rule_v1,
 )
 from .manifest_catalog import (
     BoundedBehaviorManifestCatalog,
     PreparedBehaviorManifest,
 )
-from .policy import BatchPolicyChoice, BehaviorManifestId
+from .decision_progress import DecisionProgressProvider
+from .policy import (
+    DETERMINISTIC_SELECTION,
+    BatchPolicyChoice,
+    BehaviorManifestId,
+)
 from .torch_checkpoints import (
     BoundedTorchCheckpointStore,
     PreparedTorchCheckpoint,
@@ -35,6 +42,13 @@ from .torch_policy import (
 
 class TorchBehaviorError(RuntimeError):
     """A shadow model cannot be safely bound, promoted, or published."""
+
+
+class FrozenDecisionRule(str, Enum):
+    """How a frozen scorer selects one action for diagnostics or collection."""
+
+    SAMPLED = "sampled"
+    GREEDY = "greedy"
 
 
 @dataclass(frozen=True)
@@ -547,6 +561,125 @@ class FrozenGreedyTorchPolicy:
         )
 
 
+class FrozenCombatGreedyTorchPolicy:
+    """Use argmax for typed combat rows and source sampling elsewhere."""
+
+    def __init__(
+        self,
+        sampled_policy: FrozenCategoricalTorchPolicy,
+        binding: TorchBehaviorBinding,
+        progress_provider: DecisionProgressProvider,
+        *,
+        _token: object,
+    ) -> None:
+        if _token is not _PROMOTION_TOKEN:
+            raise TorchBehaviorError(
+                "combat-scoped greedy policy must derive from frozen behavior"
+            )
+        if not isinstance(sampled_policy, FrozenCategoricalTorchPolicy):
+            raise TorchBehaviorError(
+                "combat-scoped greedy policy requires categorical behavior"
+            )
+        if not isinstance(binding, TorchBehaviorBinding):
+            raise TorchBehaviorError(
+                "combat-scoped greedy policy requires an exact binding"
+            )
+        if not callable(getattr(progress_provider, "capture", None)):
+            raise TorchBehaviorError(
+                "combat-scoped greedy policy requires typed decision progress"
+            )
+        expected_rule = combat_greedy_strategic_sampled_rule_v1(
+            sampled_policy.binding.manifest.behavior_rule
+        )
+        _require_behavior_rule(
+            binding.manifest,
+            expected_rule,
+            "combat-scoped greedy candidate rule",
+        )
+        self.sampled_policy = sampled_policy
+        self.binding = binding
+        self.progress_provider = progress_provider
+        self.source_manifest_id = sampled_policy.behavior_manifest_id
+
+    @classmethod
+    def from_categorical(
+        cls,
+        policy: FrozenCategoricalTorchPolicy,
+        progress_provider: DecisionProgressProvider,
+    ) -> FrozenCombatGreedyTorchPolicy:
+        if not isinstance(policy, FrozenCategoricalTorchPolicy):
+            raise TorchBehaviorError(
+                "combat-scoped greedy policy requires frozen categorical behavior"
+            )
+        if policy.binding.manifest.behavior_rule != policy.config.behavior_rule:
+            raise TorchBehaviorError(
+                "categorical policy rule conflicts with its sampled configuration"
+            )
+        manifest = replace(
+            policy.binding.manifest,
+            behavior_rule=combat_greedy_strategic_sampled_rule_v1(
+                policy.binding.manifest.behavior_rule
+            ),
+        )
+        binding = TorchBehaviorBinding(
+            manifest.identity,
+            manifest,
+            policy.binding.checkpoint_id,
+        )
+        return cls(
+            policy,
+            binding,
+            progress_provider,
+            _token=_PROMOTION_TOKEN,
+        )
+
+    @property
+    def behavior_manifest_id(self) -> BehaviorManifestId:
+        return self.binding.manifest_id
+
+    def score(self, decision_batch: Mapping[str, object]) -> RaggedCandidateLogits:
+        return self.sampled_policy.score(decision_batch)
+
+    def choose(self, decision_batch: Mapping[str, object]) -> BatchPolicyChoice:
+        slots = _decision_slots(decision_batch)
+        progress = tuple(self.progress_provider.capture(slots))
+        if len(progress) != len(slots):
+            raise TorchBehaviorError(
+                "combat-scoped greedy progress rows are misaligned"
+            )
+        logits = self.score(decision_batch)
+        greedy_ordinals = logits.greedy_ordinals()
+        if len(greedy_ordinals) != len(progress):
+            raise TorchBehaviorError(
+                "combat-scoped greedy logits are misaligned"
+            )
+        sampled = (
+            None
+            if all(row.is_combat for row in progress)
+            else sample_ragged_categorical(
+                logits,
+                self.sampled_policy.config,
+                self.sampled_policy.generator,
+            )
+        )
+        ordinals: list[int] = []
+        probabilities = []
+        for index, row in enumerate(progress):
+            if row.is_combat:
+                ordinals.append(greedy_ordinals[index])
+                probabilities.append(DETERMINISTIC_SELECTION)
+            else:
+                if sampled is None:
+                    raise AssertionError("strategic sampling result is missing")
+                ordinals.append(sampled.ordinals[index])
+                probabilities.append(sampled.selection_probabilities[index])
+        return BatchPolicyChoice.create(
+            ordinals,
+            self.behavior_manifest_id,
+            probabilities,
+        )
+
+
 @dataclass(frozen=True)
 class CategoricalTorchBehaviorControllerSnapshot:
     active_manifest_id: BehaviorManifestId | None
@@ -847,6 +980,34 @@ def _require_generator_device(
         raise TorchBehaviorError(
             "categorical generator device must match the restored scorer"
         )
+
+
+def _decision_slots(decision_batch: Mapping[str, object]) -> tuple[int, ...]:
+    try:
+        raw_slots = decision_batch["slot_indices"]
+        values = tuple(raw_slots)  # type: ignore[arg-type]
+    except (KeyError, TypeError) as error:
+        raise TorchBehaviorError(
+            "combat-scoped greedy policy requires decision slot indices"
+        ) from error
+    slots: list[int] = []
+    for value in values:
+        if isinstance(value, bool):
+            raise TorchBehaviorError("decision slot index must be an integer")
+        try:
+            slot = operator.index(value)
+        except TypeError as error:
+            raise TorchBehaviorError(
+                "decision slot index must be an integer"
+            ) from error
+        if slot < 0:
+            raise TorchBehaviorError("decision slot index must be non-negative")
+        slots.append(slot)
+    if not slots:
+        raise TorchBehaviorError(
+            "combat-scoped greedy policy requires at least one decision row"
+        )
+    return tuple(slots)
 
 
 def _training_step(value: object) -> int:

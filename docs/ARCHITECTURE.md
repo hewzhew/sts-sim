@@ -584,6 +584,14 @@ aggregates. It does not claim that combat-only training taught route, reward,
 shop, or other strategic decisions; those candidates remain part of the tested
 policy surface and their weakness is part of the whole-run result.
 
+The run-derived combat-root collector may derive one explicit scoped behavior
+for curriculum construction. Typed public run context selects greedy argmax for
+combat rows while strategic rows retain the source categorical rule and RNG.
+The combined rule has its own manifest identity bound to the exact source
+sampling rule; it neither relabels the publication nor treats untrained
+strategic argmax as competence. Its purpose is to prevent exploratory combat
+mistakes from defining the HP distribution of later training roots.
+
 A fresh whole-run on-policy session may also copy that compatible frozen scorer
 as generation zero. The copy shares no mutable parameters; the new run trainer
 immediately binds its own objective and behavior manifest. The command records

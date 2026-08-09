@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Protocol, cast
 
 from .combat_potion_lane import CombatPotionLane
+from .decision_progress import BridgeDecisionProgressProvider
 from .driver import (
     BatchEnvironment,
     OnlineBatchDriver,
@@ -37,6 +38,7 @@ from .run_resource_trace import (
 )
 from .seeds import SeedPartition, SeedSchedule
 from .torch_combat_session_config import CombatSessionBridge, CombatWinSessionLimits
+from .torch_behavior import FrozenCombatGreedyTorchPolicy, FrozenDecisionRule
 from .torch_session_config import CategoricalSessionBridge
 
 
@@ -100,6 +102,7 @@ class RunCombatRootCollectionConfig:
     wall_ms: int
     behavior_seed: int
     training_seed_start: int
+    combat_decision_rule: FrozenDecisionRule = FrozenDecisionRule.SAMPLED
     min_floor: int = 2
     min_usable_potions: int = 1
     potion_lane: RunPotionLane = RunPotionLane.TRAINED
@@ -131,6 +134,10 @@ class RunCombatRootCollectionConfig:
         if not isinstance(self.potion_lane, RunPotionLane):
             raise RunCombatRootCollectionError(
                 "root collection potion lane must be typed"
+            )
+        if not isinstance(self.combat_decision_rule, FrozenDecisionRule):
+            raise RunCombatRootCollectionError(
+                "root collection combat decision rule must be typed"
             )
         if self.required_potion is not None and not isinstance(
             self.required_potion,
@@ -406,6 +413,9 @@ class _CapturingEnvironment:
         self.sink.observe(self.env)
         return self.env.decision_batch(semantic=semantic)
 
+    def public_run_contexts(self) -> Sequence[object]:
+        return self.env.public_run_contexts()
+
     def choose(self, ordinals: list[int]) -> None:
         self.env.choose(ordinals)
 
@@ -582,9 +592,15 @@ def run_run_combat_root_collection(
         schedule=schedule_start,
         max_recoveries_per_episode=0,
     )
+    collection_policy = recovered.policies[0]
+    if config.combat_decision_rule is FrozenDecisionRule.GREEDY:
+        collection_policy = FrozenCombatGreedyTorchPolicy.from_categorical(
+            collection_policy,
+            BridgeDecisionProgressProvider(population.env),
+        )
     driver = OnlineBatchDriver(
         population,
-        policy=recovered.policies[0],
+        policy=collection_policy,
         curriculum=_NoRecovery(),
     )
     started = time.perf_counter()
@@ -622,10 +638,14 @@ def run_run_combat_root_collection(
     resource_trace = tracing_factory.trace
 
     summary: dict[str, object] = {
-        "schema": "sts-learning-run-combat-root-collection-v1",
+        "schema": "sts-learning-run-combat-root-collection-v2",
         "behavior": str(config.behavior),
         "behavior_training_kind": behavior_kind,
         "behavior_manifest_id": recovered.manifest_id.digest.hex(),
+        "combat_decision_rule": config.combat_decision_rule.value,
+        "collection_manifest_id": (
+            collection_policy.behavior_manifest_id.digest.hex()
+        ),
         "behavior_checkpoint_id": recovered.checkpoint_id.digest.hex(),
         "behavior_seed": config.behavior_seed,
         "requested_run_potion_lane": config.potion_lane.value,
@@ -807,6 +827,11 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--wall-ms", type=int, default=60_000)
     parser.add_argument("--behavior-seed", type=int, default=10_000)
     parser.add_argument("--training-seed-start", type=int, default=10_000_000)
+    parser.add_argument(
+        "--combat-decision-rule",
+        choices=tuple(rule.value for rule in FrozenDecisionRule),
+        default=FrozenDecisionRule.SAMPLED.value,
+    )
     parser.add_argument("--min-floor", type=int, default=2)
     parser.add_argument("--min-usable-potions", type=int, default=1)
     parser.add_argument("--required-potion-id")
@@ -880,6 +905,9 @@ def main() -> int:
             wall_ms=arguments.wall_ms,
             behavior_seed=arguments.behavior_seed,
             training_seed_start=arguments.training_seed_start,
+            combat_decision_rule=FrozenDecisionRule(
+                arguments.combat_decision_rule
+            ),
             min_floor=arguments.min_floor,
             min_usable_potions=arguments.min_usable_potions,
             potion_lane=RunPotionLane(arguments.potion_lane),

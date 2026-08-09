@@ -716,6 +716,14 @@ single-line receipt reports seed/site/resource facts and artifact identity.
 Set `-MinUsablePotions 0` to collect ordinary run-derived combat roots without
 conditioning the corpus on potion ownership. An exact potion rescue corpus
 still supplies both `-RequiredPotionId` and `-RequiredPotionSlot`.
+The default `-CombatDecisionRule sampled` preserves the source behavior on
+every decision. For curriculum collection from a combat-trained publication,
+`-CombatDecisionRule greedy` applies argmax only while the bridge's typed public
+run context says the current row is combat; strategic rows retain the source
+categorical temperature and RNG. The collector records the distinct combined
+manifest identity. This prevents combat exploration noise from manufacturing
+low-HP later roots without pretending that untrained route or reward decisions
+have become a greedy policy.
 Add `-DistinctEncounters` for a small diversity census or training batch; the
 collector then admits at most one root for each canonical `EncounterId` and
 reports the active contract in its receipt.

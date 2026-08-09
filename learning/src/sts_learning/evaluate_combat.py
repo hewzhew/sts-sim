@@ -8,7 +8,6 @@ import json
 import time
 from collections import Counter
 from dataclasses import dataclass
-from enum import Enum
 from pathlib import Path
 
 from .combat_evaluation import (
@@ -41,7 +40,7 @@ from .torch_combat_session_config import (
     CombatSessionBridge,
     CombatWinSessionLimits,
 )
-from .torch_behavior import FrozenGreedyTorchPolicy
+from .torch_behavior import FrozenDecisionRule, FrozenGreedyTorchPolicy
 from .torch_session_config import CategoricalSessionBridge
 
 
@@ -54,13 +53,6 @@ class CombatEvaluationCommandError(RuntimeError):
     """A held-out combat evaluation command is malformed."""
 
 
-class CombatEvaluationDecisionRule(str, Enum):
-    """Exact action-selection rule used only for held-out evaluation."""
-
-    SAMPLED = "sampled"
-    GREEDY = "greedy"
-
-
 @dataclass(frozen=True)
 class CombatEvaluationCommandConfig:
     artifact: Path
@@ -69,7 +61,7 @@ class CombatEvaluationCommandConfig:
     root_count: int
     replicate_count: int
     behavior_seed_base: int
-    decision_rule: CombatEvaluationDecisionRule = CombatEvaluationDecisionRule.SAMPLED
+    decision_rule: FrozenDecisionRule = FrozenDecisionRule.SAMPLED
     potion_lane: CombatPotionLane = CombatPotionLane.ALL
     potion_slots: tuple[int, ...] = ()
     trace_replicates_per_root: int = 0
@@ -114,7 +106,7 @@ class CombatEvaluationCommandConfig:
             raise CombatEvaluationCommandError(
                 "combat evaluation potion_lane must be typed"
             )
-        if not isinstance(self.decision_rule, CombatEvaluationDecisionRule):
+        if not isinstance(self.decision_rule, FrozenDecisionRule):
             raise CombatEvaluationCommandError(
                 "combat evaluation decision_rule must be typed"
             )
@@ -216,7 +208,7 @@ def run_combat_evaluation(
         max_bytes=session_limits.max_artifact_bytes,
     )
     evaluation_policies = recovered.policies
-    if config.decision_rule is CombatEvaluationDecisionRule.GREEDY:
+    if config.decision_rule is FrozenDecisionRule.GREEDY:
         evaluation_policies = tuple(
             FrozenGreedyTorchPolicy.from_categorical(policy)
             for policy in recovered.policies
@@ -779,8 +771,8 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--behavior-seed-base", type=int, default=10_000)
     parser.add_argument(
         "--decision-rule",
-        choices=tuple(rule.value for rule in CombatEvaluationDecisionRule),
-        default=CombatEvaluationDecisionRule.SAMPLED.value,
+        choices=tuple(rule.value for rule in FrozenDecisionRule),
+        default=FrozenDecisionRule.SAMPLED.value,
     )
     parser.add_argument("--trace-replicates-per-root", type=int, default=0)
     parser.add_argument(
@@ -802,7 +794,7 @@ def main() -> int:
             root_count=arguments.roots,
             replicate_count=arguments.replicates,
             behavior_seed_base=arguments.behavior_seed_base,
-            decision_rule=CombatEvaluationDecisionRule(arguments.decision_rule),
+            decision_rule=FrozenDecisionRule(arguments.decision_rule),
             potion_lane=CombatPotionLane(arguments.potion_lane),
             potion_slots=tuple(arguments.potion_slot),
             trace_replicates_per_root=arguments.trace_replicates_per_root,

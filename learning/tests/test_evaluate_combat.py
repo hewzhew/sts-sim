@@ -18,13 +18,13 @@ from sts_learning.combat_outcomes import CombatTerminalOutcome
 from sts_learning.evaluate_combat import (
     CombatEvaluationCommandConfig,
     CombatEvaluationCommandError,
-    CombatEvaluationDecisionRule,
     run_combat_evaluation,
 )
 from sts_learning.evaluate_combat_potions import (
     CombatPotionSweepCommandConfig,
     run_combat_potion_sweep,
 )
+from sts_learning.torch_behavior import FrozenDecisionRule
 from sts_learning.torch_combat_session_config import CombatSessionBridge
 from sts_learning.train_combat import (
     CombatTrainingCommandConfig,
@@ -286,7 +286,7 @@ def test_evaluation_recovers_published_behavior_without_training_or_experience(
             root_count=2,
             replicate_count=2,
             behavior_seed_base=1_000,
-            decision_rule=CombatEvaluationDecisionRule.GREEDY,
+            decision_rule=FrozenDecisionRule.GREEDY,
             trace_replicates_per_root=1,
         ),
         bridge=bridge,

@@ -19,6 +19,7 @@ from sts_learning.collect_run_combat_roots import (  # noqa: E402
     run_run_combat_root_collection,
 )
 from sts_learning.evaluate_run import RunPotionLane  # noqa: E402
+from sts_learning.torch_behavior import FrozenDecisionRule  # noqa: E402
 
 
 class _RootCapturingWinningEnv(NumpyWinningBatchEnv):
@@ -161,12 +162,51 @@ def test_collection_captures_one_potion_root_per_seed_and_merges_once(
     assert summary["required_potion_slot"] == 0
     assert summary["requested_run_potion_lane"] == "trained"
     assert summary["run_potion_lane"] == "never"
+    assert summary["schema"] == "sts-learning-run-combat-root-collection-v2"
+    assert summary["combat_decision_rule"] == "sampled"
+    assert summary["collection_manifest_id"] == summary["behavior_manifest_id"]
     roots = summary["roots"]
     assert isinstance(roots, tuple)
     assert len({root["seed"] for root in roots}) == 2
     assert all(root["potion_ids"] == ("FearPotion", None, None) for root in roots)
     assert all(root["monster_ids"] == ("JawWorm",) for root in roots)
     assert all(root["prior_combats"] == () for root in roots)
+
+
+def test_collection_can_make_only_combat_decisions_greedy(tmp_path: Path) -> None:
+    behavior, combat_bridge, run_bridge = published_behavior(tmp_path)
+    run_bridge = replace(
+        run_bridge,
+        environment=_PotionlessRootCapturingWinningEnv,
+        environment_without_combat_potions=_PotionlessRootCapturingWinningEnv,
+        environment_from_checkpoint=(
+            _PotionlessRootCapturingWinningEnv.from_checkpoint_bytes
+        ),
+    )
+    output = tmp_path / "combat-greedy-root.bin"
+
+    summary = run_run_combat_root_collection(
+        RunCombatRootCollectionConfig(
+            behavior=behavior,
+            output=output,
+            root_count=1,
+            max_batch_steps=1,
+            wall_ms=10_000,
+            behavior_seed=94,
+            training_seed_start=100,
+            combat_decision_rule=FrozenDecisionRule.GREEDY,
+            min_floor=2,
+            min_usable_potions=0,
+            max_artifact_bytes=1024,
+        ),
+        combat_bridge=combat_bridge,
+        run_bridge=run_bridge,
+        artifact_merger=lambda payloads, *, max_bytes: payloads[0],
+    )
+
+    assert output.is_file()
+    assert summary["combat_decision_rule"] == "greedy"
+    assert summary["collection_manifest_id"] != summary["behavior_manifest_id"]
 
 
 def test_collection_can_capture_a_potionless_combat_root(tmp_path: Path) -> None:

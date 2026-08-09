@@ -18,6 +18,7 @@ from sts_learning import (
     BehaviorManifestRegistry,
     BehaviorRuleBinding,
     BoundedBehaviorManifestCatalog,
+    DecisionRunProgress,
     ManifestArtifactId,
     ManifestArtifactKind,
 )
@@ -31,6 +32,7 @@ if _TORCH_AVAILABLE:
         CategoricalTorchBehaviorController,
         CheckpointedCategoricalTorchPolicy,
         CheckpointedGreedyTorchPolicy,
+        FrozenCombatGreedyTorchPolicy,
         TorchBehaviorError,
         TorchBehaviorPublisher,
     )
@@ -338,6 +340,68 @@ class TorchBehaviorPublicationTests(unittest.TestCase):
             self.assertEqual(
                 recovered_registry.resolve(publication.manifest_id),
                 publication.manifest,
+            )
+
+    def test_combat_scoped_greedy_preserves_strategic_sampling(self) -> None:
+        config = RaggedCategoricalPolicyConfig(temperature=0.75)
+        registry = BehaviorManifestRegistry(capacity=1)
+        batch = semantic_batch_fixture()
+
+        class _ProgressProvider:
+            def __init__(self) -> None:
+                self.calls: list[tuple[int, ...]] = []
+
+            def capture(self, slots):
+                normalized = tuple(slots)
+                self.calls.append(normalized)
+                return (
+                    DecisionRunProgress(100, 1, 3, True, None),
+                    DecisionRunProgress(101, 1, 4, False, 2),
+                )
+
+        with tempfile.TemporaryDirectory() as root:
+            store = _store(Path(root, "checkpoints"))
+            catalog = _catalog(Path(root, "manifests"))
+            publication = TorchBehaviorPublisher(
+                store,
+                catalog,
+                registry,
+                behavior_manifest_template_fixture(
+                    behavior_rule=config.behavior_rule,
+                ),
+            ).publish(_scorer(), training_step=0)
+            source = CheckpointedCategoricalTorchPolicy.promote(
+                publication,
+                store,
+                catalog,
+                registry,
+                _scorer,
+                config,
+                torch.Generator().manual_seed(55),
+            )
+            sampled_reference = source.fork(torch.Generator().manual_seed(55))
+            provider = _ProgressProvider()
+            scoped = FrozenCombatGreedyTorchPolicy.from_categorical(
+                source,
+                provider,
+            )
+
+            expected_greedy = source.score(batch).greedy_ordinals()
+            expected_sampled = sampled_reference.choose(batch)
+            choice = scoped.choose(batch)
+
+            self.assertEqual(provider.calls, [(4, 9)])
+            self.assertEqual(choice.ordinals[0], expected_greedy[0])
+            self.assertEqual(choice.selection_probabilities[0].value, 1.0)
+            self.assertEqual(choice.ordinals[1], expected_sampled.ordinals[1])
+            self.assertEqual(
+                choice.selection_probabilities[1],
+                expected_sampled.selection_probabilities[1],
+            )
+            self.assertEqual(scoped.source_manifest_id, source.behavior_manifest_id)
+            self.assertNotEqual(
+                scoped.behavior_manifest_id,
+                source.behavior_manifest_id,
             )
 
     def test_categorical_controller_rotates_live_behavior_then_publishes_explicitly(self) -> None:

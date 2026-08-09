@@ -92,6 +92,35 @@ GREEDY_BEHAVIOR_RULE_V1 = BehaviorRuleBinding(
 )
 
 
+_COMBAT_GREEDY_STRATEGIC_SAMPLED_RULE_V1 = ManifestArtifactId.from_content(
+    ManifestArtifactKind.BEHAVIOR_RULE,
+    b"sts_learning.combat_greedy_strategic_sampled\x00v1",
+)
+
+
+def combat_greedy_strategic_sampled_rule_v1(
+    sampled_rule: BehaviorRuleBinding,
+) -> BehaviorRuleBinding:
+    """Bind combat argmax plus the exact source rule for strategic rows."""
+
+    if not isinstance(sampled_rule, BehaviorRuleBinding):
+        raise BehaviorManifestError(
+            "combat-scoped greedy behavior requires a sampled rule binding"
+        )
+    configuration = (
+        b"sts_learning.combat_greedy_strategic_sampled.config\x00v1"
+        + sampled_rule.implementation.digest
+        + sampled_rule.configuration.digest
+    )
+    return BehaviorRuleBinding(
+        implementation=_COMBAT_GREEDY_STRATEGIC_SAMPLED_RULE_V1,
+        configuration=ManifestArtifactId.from_content(
+            ManifestArtifactKind.BEHAVIOR_RULE_CONFIG,
+            configuration,
+        ),
+    )
+
+
 @dataclass(frozen=True)
 class BehaviorManifest:
     """Exact external identities needed to reproduce one behavior policy."""
