@@ -602,10 +602,15 @@ def run_run_combat_root_collection(
         max_recoveries_per_episode=0,
     )
     collection_policy = recovered.policies[0]
-    if config.combat_decision_rule is FrozenDecisionRule.GREEDY:
+    progress_provider = BridgeDecisionProgressProvider(population.env)
+    if isinstance(collection_policy, FrozenCombatGreedyTorchPolicy):
+        collection_policy = collection_policy.bind_progress_provider(
+            progress_provider
+        )
+    elif config.combat_decision_rule is FrozenDecisionRule.GREEDY:
         collection_policy = FrozenCombatGreedyTorchPolicy.from_categorical(
             collection_policy,
-            BridgeDecisionProgressProvider(population.env),
+            progress_provider,
         )
     driver = OnlineBatchDriver(
         population,

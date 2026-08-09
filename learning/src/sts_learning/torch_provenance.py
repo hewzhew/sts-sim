@@ -16,6 +16,7 @@ from .combat_objective import (
     CombatWinObjectiveConfig,
 )
 from .manifests import (
+    BehaviorRuleBinding,
     BehaviorManifestTemplate,
     ManifestArtifactId,
     ManifestArtifactKind,
@@ -143,6 +144,7 @@ def categorical_training_manifest_template(
     objective_config: OnPolicyObjectiveConfig,
     *,
     device_type: str,
+    behavior_rule: BehaviorRuleBinding | None = None,
 ) -> BehaviorManifestTemplate:
     """Bind the exact maintained model, schema, optimizer, and trainer profile."""
 
@@ -155,6 +157,7 @@ def categorical_training_manifest_template(
         optimizer_config,
         categorical_trainer_implementation(objective_config),
         device_type=device_type,
+        behavior_rule=behavior_rule,
     )
 
 
@@ -189,6 +192,7 @@ def _categorical_manifest_template(
     trainer_implementation: ManifestArtifactId,
     *,
     device_type: str,
+    behavior_rule: BehaviorRuleBinding | None = None,
 ) -> BehaviorManifestTemplate:
     if not isinstance(scorer_config, RaggedScorerConfig):
         raise TorchProvenanceError("scorer_config must be typed")
@@ -198,6 +202,11 @@ def _categorical_manifest_template(
         raise TorchProvenanceError("optimizer_config must be typed")
     if not isinstance(trainer_implementation, ManifestArtifactId):
         raise TorchProvenanceError("trainer_implementation must be typed")
+    if behavior_rule is not None and not isinstance(
+        behavior_rule,
+        BehaviorRuleBinding,
+    ):
+        raise TorchProvenanceError("behavior_rule must be typed")
     if type(device_type) is not str or not device_type:
         raise TorchProvenanceError("device_type must be a non-empty string")
     try:
@@ -255,7 +264,11 @@ def _categorical_manifest_template(
     return BehaviorManifestTemplate(
         model_definition=model_definition,
         model_config=model_config,
-        behavior_rule=behavior_config.behavior_rule,
+        behavior_rule=(
+            behavior_config.behavior_rule
+            if behavior_rule is None
+            else behavior_rule
+        ),
         semantic_schema=semantic_schema_id,
         optimizer_config=optimizer_config.artifact_id,
         trainer_implementation=trainer_implementation,

@@ -241,6 +241,9 @@ class CategoricalGenerationResumeRestorer:
             raise TorchResumeRestoreError(
                 "restored controller does not own the restored generator"
             )
+        controller.bind_progress_provider(
+            BridgeDecisionProgressProvider(environment)
+        )
         controller_state = saved.boundary.controller
         active_manifest_id = controller_state.active_manifest_id
         if active_manifest_id is None:
@@ -275,6 +278,7 @@ class CategoricalGenerationResumeRestorer:
             self.config.concat_limits,
             controller.config,
             self.config.objective,
+            behavior_rule=controller.behavior_rule,
             resume_snapshot=saved.boundary.trainer,
         )
         update_batcher = BoundedAttemptUpdateBatcher(

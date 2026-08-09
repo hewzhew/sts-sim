@@ -391,6 +391,10 @@ class BoundedCategoricalGenerationRunner:
                 "pending attempt update batch does not match active behavior"
             )
         active_manifest = self.trainer.registry.resolve(active_manifest_id)
+        if active_manifest.behavior_rule != self.trainer.behavior_rule:
+            raise TorchGenerationError(
+                "active behavior conflicts with the trainer behavior rule"
+            )
         if active_manifest.trainer_implementation != categorical_trainer_implementation(
             self.trainer.objective_config,
         ):

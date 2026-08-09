@@ -14,6 +14,7 @@ from .driver import (
     TerminalTargetRunResult,
     initialize_population,
 )
+from .decision_progress import BridgeDecisionProgressProvider
 from .policy import BatchPolicyChoice, BehaviorManifestId
 from .recovery import RecoverySlotSnapshot, TerminalAccountingBatch
 from .seeds import SeedPartition, SeedSchedule
@@ -231,9 +232,19 @@ def evaluate_held_out_behavior(
         schedule=schedule,
         max_recoveries_per_episode=0,
     )
+    bind_progress = getattr(policy, "bind_progress_provider", None)
+    active_policy = (
+        bind_progress(BridgeDecisionProgressProvider(population.env))
+        if callable(bind_progress)
+        else policy
+    )
+    if getattr(active_policy, "behavior_manifest_id", None) != manifest_id:
+        raise HeldOutEvaluationError(
+            "environment binding changed behavior manifest identity"
+        )
     driver = OnlineBatchDriver(
         population,
-        policy=_ManifestLockedPolicy(policy, manifest_id),
+        policy=_ManifestLockedPolicy(active_policy, manifest_id),
         curriculum=_NoHeldOutRecovery(),
     )
     run = driver.run_until_terminal_attempts(

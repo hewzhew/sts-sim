@@ -11,7 +11,11 @@ from learning.tests.driver_fixtures import (
     NumpyWinningBatchEnv,
 )
 from learning.tests.semantic_fixtures import semantic_schema_fixture
-from sts_learning import AttemptUpdateBatchLimits, OnPolicyObjectiveConfig
+from sts_learning import (
+    AttemptUpdateBatchLimits,
+    OnPolicyObjectiveConfig,
+    RunDecisionScope,
+)
 
 
 _TORCH_AVAILABLE = importlib.util.find_spec("torch") is not None
@@ -33,6 +37,7 @@ if _TORCH_AVAILABLE:
         CategoricalSessionLimits,
     )
     from sts_learning.torch_generation import TorchGenerationError
+    from sts_learning.torch_behavior import FrozenDecisionRule
 
 
 @unittest.skipUnless(_TORCH_AVAILABLE, "optional PyTorch dependency is not installed")
@@ -131,6 +136,44 @@ class CategoricalOnlineSessionTests(unittest.TestCase):
                 path for path in root_path.rglob("*") if path.is_file()
             )
             self.assertGreater(len(durable_files), len(live_files))
+
+    def test_combat_greedy_session_restores_the_same_mixed_behavior(self) -> None:
+        with tempfile.TemporaryDirectory() as root:
+            baseline = _factory(Path(root))
+            profile = replace(
+                baseline.config.profile,
+                objective=replace(
+                    baseline.config.profile.objective,
+                    decision_scope=RunDecisionScope.STRATEGIC,
+                ),
+                combat_decision_rule=FrozenDecisionRule.GREEDY,
+            )
+            factory = CategoricalOnlineSessionFactory(
+                baseline.root,
+                baseline.bridge,
+                replace(baseline.config, profile=profile),
+                baseline.curriculum,
+            )
+            initial = factory.new(model_seed=43, behavior_seed=94)
+            decision = initial.runner.driver.env.decision_batch(semantic=True)
+            before = initial.runner.controller.choose(decision)
+            publication = initial.publish()
+
+            restored = factory.restore(publication.manifest_id)
+            after = restored.runner.controller.choose(
+                restored.runner.driver.env.decision_batch(semantic=True)
+            )
+
+            self.assertEqual(
+                before.behavior_manifest_id,
+                after.behavior_manifest_id,
+            )
+            self.assertTrue(
+                all(
+                    probability.value == 1.0
+                    for probability in after.selection_probabilities
+                )
+            )
 
     def test_multi_generation_advance_stops_at_first_incomplete_generation(self) -> None:
         with tempfile.TemporaryDirectory() as root:

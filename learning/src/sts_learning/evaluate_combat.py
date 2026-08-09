@@ -40,11 +40,15 @@ from .torch_combat_session_config import (
     CombatSessionBridge,
     CombatWinSessionLimits,
 )
-from .torch_behavior import FrozenDecisionRule, FrozenGreedyTorchPolicy
+from .torch_behavior import (
+    FrozenCombatGreedyTorchPolicy,
+    FrozenDecisionRule,
+    FrozenGreedyTorchPolicy,
+)
 from .torch_session_config import CategoricalSessionBridge
 
 
-COMBAT_EVALUATION_SCHEMA = "sts-learning-combat-held-out-evaluation-v12"
+COMBAT_EVALUATION_SCHEMA = "sts-learning-combat-held-out-evaluation-v13"
 COMBAT_ACTION_TRACE_SCHEMA = "sts-learning-combat-action-trace-v1"
 COMBAT_ACTION_TRACE_FILENAME = "combat-traces.jsonl"
 
@@ -207,10 +211,15 @@ def run_combat_evaluation(
         expected_roots=config.root_count,
         max_bytes=session_limits.max_artifact_bytes,
     )
-    evaluation_policies = recovered.policies
+    evaluation_policies = tuple(
+        policy.bind_combat_only()
+        if isinstance(policy, FrozenCombatGreedyTorchPolicy)
+        else policy
+        for policy in recovered.policies
+    )
     if config.decision_rule is FrozenDecisionRule.GREEDY:
         evaluation_policies = tuple(
-            FrozenGreedyTorchPolicy.from_categorical(policy)
+            FrozenGreedyTorchPolicy.from_behavior(policy)
             for policy in recovered.policies
         )
     evaluator = CombatHeldOutEvaluator(
@@ -444,6 +453,11 @@ def _summary(
         ),
         "behavior_run_episode_root_attempts": (
             None if combat_trained else recovered.training_episode_root_attempts
+        ),
+        "behavior_run_combat_decision_rule": (
+            None
+            if combat_trained
+            else recovered.training_combat_decision_rule.value
         ),
         "behavior_run_objective": (
             None

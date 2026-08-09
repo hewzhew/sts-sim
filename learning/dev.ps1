@@ -466,6 +466,7 @@ switch ($Command) {
                 --ascension $Ascension `
                 --advantage-mode $AdvantageMode `
                 --decision-scope $DecisionScope `
+                --combat-decision-rule $CombatDecisionRule `
                 --run-policy-update $RunPolicyUpdate `
                 --sampling-mode $SamplingMode `
                 @episodeRootArguments `

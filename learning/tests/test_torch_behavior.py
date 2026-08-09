@@ -33,8 +33,13 @@ if _TORCH_AVAILABLE:
         CheckpointedCategoricalTorchPolicy,
         CheckpointedGreedyTorchPolicy,
         FrozenCombatGreedyTorchPolicy,
+        FrozenDecisionRule,
+        FrozenGreedyTorchPolicy,
         TorchBehaviorError,
         TorchBehaviorPublisher,
+    )
+    from sts_learning.manifests import (
+        combat_greedy_strategic_sampled_rule_v1,
     )
     from sts_learning.torch_checkpoints import (
         BoundedTorchCheckpointStore,
@@ -402,6 +407,96 @@ class TorchBehaviorPublicationTests(unittest.TestCase):
             self.assertNotEqual(
                 scoped.behavior_manifest_id,
                 source.behavior_manifest_id,
+            )
+
+    def test_combat_scoped_controller_publishes_and_recovers_exact_mixed_rule(
+        self,
+    ) -> None:
+        config = RaggedCategoricalPolicyConfig(temperature=0.75)
+        mixed_rule = combat_greedy_strategic_sampled_rule_v1(
+            config.behavior_rule
+        )
+
+        class _ProgressProvider:
+            def capture(self, slots):
+                assert tuple(slots) == (4, 9)
+                return (
+                    DecisionRunProgress(100, 1, 3, True, None),
+                    DecisionRunProgress(101, 1, 4, False, 2),
+                )
+
+        provider = _ProgressProvider()
+        batch = semantic_batch_fixture()
+        with tempfile.TemporaryDirectory() as root:
+            store = _store(Path(root, "checkpoints"))
+            catalog = _catalog(Path(root, "manifests"))
+            registry = BehaviorManifestRegistry(capacity=3)
+            publisher = TorchBehaviorPublisher(
+                store,
+                catalog,
+                registry,
+                behavior_manifest_template_fixture(
+                    behavior_rule=mixed_rule,
+                ),
+            )
+            controller = CategoricalTorchBehaviorController(
+                publisher,
+                _scorer,
+                config,
+                torch.Generator().manual_seed(55),
+                combat_decision_rule=FrozenDecisionRule.GREEDY,
+                progress_provider=provider,
+            )
+            binding = controller.promote_live(_scorer(), training_step=0)
+            choice = controller.choose(batch)
+
+            self.assertEqual(binding.manifest.behavior_rule, mixed_rule)
+            self.assertEqual(choice.behavior_manifest_id, binding.manifest_id)
+            self.assertEqual(choice.selection_probabilities[0].value, 1.0)
+            self.assertIsNotNone(choice.selection_probabilities[1].value)
+            publication = controller.publish_active()
+
+            recovered = FrozenCombatGreedyTorchPolicy.recover(
+                publication.manifest_id,
+                store,
+                catalog,
+                BehaviorManifestRegistry(capacity=1),
+                _scorer,
+                config,
+                torch.Generator().manual_seed(55),
+            )
+            with self.assertRaisesRegex(TorchBehaviorError, "not bound"):
+                recovered.choose(batch)
+            recovered_choice = recovered.bind_progress_provider(provider).choose(
+                batch
+            )
+            self.assertEqual(
+                recovered_choice.behavior_manifest_id,
+                publication.manifest_id,
+            )
+            self.assertEqual(
+                recovered_choice.selection_probabilities[0].value,
+                1.0,
+            )
+            combat_only = recovered.bind_combat_only().choose(batch)
+            self.assertTrue(
+                all(
+                    probability.value == 1.0
+                    for probability in combat_only.selection_probabilities
+                )
+            )
+            fully_greedy = FrozenGreedyTorchPolicy.from_behavior(recovered)
+            self.assertNotEqual(
+                fully_greedy.behavior_manifest_id,
+                recovered.behavior_manifest_id,
+            )
+            self.assertTrue(
+                all(
+                    probability.value == 1.0
+                    for probability in fully_greedy.choose(
+                        batch
+                    ).selection_probabilities
+                )
             )
 
     def test_categorical_controller_rotates_live_behavior_then_publishes_explicitly(self) -> None:

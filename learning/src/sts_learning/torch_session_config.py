@@ -15,7 +15,12 @@ from .manifest_catalog import BehaviorManifestCatalogLimits
 from .resume_store import ResumeStoreLimits
 from .seeds import SeedPartition, SeedSchedule
 from .semantic_concat import SemanticBatchConcatLimits
-from .terminal_returns import OnPolicyObjectiveConfig
+from .terminal_returns import OnPolicyObjectiveConfig, RunDecisionScope
+from .manifests import (
+    BehaviorRuleBinding,
+    combat_greedy_strategic_sampled_rule_v1,
+)
+from .torch_behavior import FrozenDecisionRule
 from .torch_checkpoints import TorchCheckpointLimits
 from .torch_policy import RaggedCategoricalPolicyConfig, RaggedScorerConfig
 from .torch_provenance import AdamTrainingConfig
@@ -85,12 +90,13 @@ class CategoricalSessionBridge:
 
 @dataclass(frozen=True)
 class CategoricalOnlineProfile:
-    """Algorithm configuration shared by new and restored baseline sessions."""
+    """Algorithm configuration shared by new and restored online sessions."""
 
     scorer: RaggedScorerConfig = RaggedScorerConfig()
     behavior: RaggedCategoricalPolicyConfig = RaggedCategoricalPolicyConfig()
     optimizer: AdamTrainingConfig = AdamTrainingConfig()
     objective: OnPolicyObjectiveConfig = OnPolicyObjectiveConfig()
+    combat_decision_rule: FrozenDecisionRule = FrozenDecisionRule.SAMPLED
     optimizer_steps_per_generation: int = 1
     device_type: str = "cpu"
 
@@ -107,6 +113,17 @@ class CategoricalOnlineProfile:
             raise TorchSessionError("session optimizer config must be typed")
         if not isinstance(self.objective, OnPolicyObjectiveConfig):
             raise TorchSessionError("session objective config must be typed")
+        if not isinstance(self.combat_decision_rule, FrozenDecisionRule):
+            raise TorchSessionError(
+                "session combat decision rule must be typed"
+            )
+        if (
+            self.combat_decision_rule is FrozenDecisionRule.GREEDY
+            and self.objective.decision_scope is not RunDecisionScope.STRATEGIC
+        ):
+            raise TorchSessionError(
+                "combat-greedy training requires strategic decision scope"
+            )
         if (
             self.scorer.value_head
             != self.objective.policy_update.uses_value_baseline
@@ -127,6 +144,14 @@ class CategoricalOnlineProfile:
             raise TorchSessionError(
                 "the first maintained session profile supports only cpu"
             )
+
+    @property
+    def behavior_rule(self) -> BehaviorRuleBinding:
+        if self.combat_decision_rule is FrozenDecisionRule.SAMPLED:
+            return self.behavior.behavior_rule
+        return combat_greedy_strategic_sampled_rule_v1(
+            self.behavior.behavior_rule
+        )
 
 
 @dataclass(frozen=True)

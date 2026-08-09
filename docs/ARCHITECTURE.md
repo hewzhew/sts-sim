@@ -598,6 +598,17 @@ sampling rule; it neither relabels the publication nor treats untrained
 strategic argmax as competence. Its purpose is to prevent exploratory combat
 mistakes from defining the HP distribution of later training roots.
 
+Whole-run training may opt into that same scoped behavior only together with
+the strategic decision scope. The mixed selector is the actual on-policy
+behavior: it owns a distinct manifest, records deterministic probability
+`1.0` for combat rows, and records the exact categorical propensity for
+strategic rows. Combat decisions remain in complete-attempt transition and
+return-to-go evidence, but they do not enter the strategic actor/value loss.
+Every promotion freezes the newly updated scorer and reconstructs the mixed
+selector under a new manifest before another environment step. Recovery binds
+typed run progress from the restored environment before the first choice; an
+unbound mixed publication cannot silently guess whether a row is combat.
+
 A fresh whole-run on-policy session may also copy that compatible frozen scorer
 as generation zero. The copy shares no mutable parameters; the new run trainer
 immediately binds its own objective and behavior manifest. The command records

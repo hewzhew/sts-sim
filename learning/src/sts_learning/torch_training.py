@@ -14,7 +14,7 @@ from .credit_assignment import (
     CreditAssignmentError,
     compare_credit_assignment,
 )
-from .manifests import BehaviorManifestRegistry
+from .manifests import BehaviorManifestRegistry, BehaviorRuleBinding
 from .policy import BehaviorManifestId, SelectionProbability
 from .semantic_concat import SemanticBatchConcatLimits
 from .terminal_returns import OnPolicyObjectiveConfig
@@ -78,6 +78,7 @@ class SynchronousPolicyTrainer:
         policy_config: RaggedCategoricalPolicyConfig,
         objective_config: OnPolicyObjectiveConfig,
         *,
+        behavior_rule: BehaviorRuleBinding | None = None,
         resume_snapshot: SynchronousPolicyTrainerSnapshot | None = None,
     ) -> None:
         if not callable(scorer):
@@ -92,11 +93,16 @@ class SynchronousPolicyTrainer:
             raise TorchTrainingError("trainer requires categorical policy config")
         if not isinstance(objective_config, OnPolicyObjectiveConfig):
             raise TorchTrainingError("trainer requires on-policy objective config")
+        if behavior_rule is None:
+            behavior_rule = policy_config.behavior_rule
+        if not isinstance(behavior_rule, BehaviorRuleBinding):
+            raise TorchTrainingError("trainer behavior rule must be typed")
         self.scorer = scorer
         self.optimizer = optimizer
         self.registry = registry
         self.concat_limits = concat_limits
         self.policy_config = policy_config
+        self.behavior_rule = behavior_rule
         self.objective_config = objective_config
         restored = _validated_resume_snapshot(resume_snapshot)
         self._deliveries = restored.deliveries
@@ -194,6 +200,7 @@ class SynchronousPolicyTrainer:
             self.objective_config.terminal_return,
             self.objective_config.advantage_mode,
             self.objective_config.decision_scope,
+            expected_behavior_rule=self.behavior_rule,
             update_config=self.objective_config.policy_update,
         )
         if objective.value.ndim != 0 or not objective.value.requires_grad:
@@ -226,6 +233,7 @@ class SynchronousPolicyTrainer:
                         self.objective_config.terminal_return,
                         self.objective_config.advantage_mode,
                         self.objective_config.decision_scope,
+                        expected_behavior_rule=self.behavior_rule,
                         update_config=self.objective_config.policy_update,
                         require_matching_propensities=False,
                         fixed_actor_advantages=fixed_actor_advantages,

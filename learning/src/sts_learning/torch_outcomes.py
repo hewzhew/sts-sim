@@ -30,7 +30,7 @@ from .combat_objective import (
 )
 from .combat_outcomes import CombatTerminalKind
 from .experience import DecisionExperienceBatch, ExperienceError
-from .manifests import BehaviorManifestRegistry
+from .manifests import BehaviorManifestRegistry, BehaviorRuleBinding
 from .policy import BehaviorManifestId, SelectionProbability
 from .run_rollout import RunRolloutError, build_complete_run_rollout
 from .semantic_concat import (
@@ -175,6 +175,7 @@ def on_policy_terminal_loss(
     advantage_mode: TerminalAdvantageMode,
     decision_scope: RunDecisionScope = RunDecisionScope.ALL,
     *,
+    expected_behavior_rule: BehaviorRuleBinding | None = None,
     update_config: RunPolicyUpdateConfig = RunPolicyUpdateConfig(),
     require_matching_propensities: bool = True,
     fixed_actor_advantages: Sequence[float] | None = None,
@@ -202,6 +203,10 @@ def on_policy_terminal_loss(
         raise TorchOutcomeError("policy objective requires typed advantage mode")
     if not isinstance(decision_scope, RunDecisionScope):
         raise TorchOutcomeError("policy objective requires typed decision scope")
+    if expected_behavior_rule is None:
+        expected_behavior_rule = policy_config.behavior_rule
+    if not isinstance(expected_behavior_rule, BehaviorRuleBinding):
+        raise TorchOutcomeError("policy objective behavior rule must be typed")
     if not isinstance(update_config, RunPolicyUpdateConfig):
         raise TorchOutcomeError("policy objective requires typed run update config")
     if type(require_matching_propensities) is not bool:
@@ -337,7 +342,7 @@ def on_policy_terminal_loss(
                 raise TorchOutcomeError(
                     "complete attempt references an unknown behavior manifest"
                 ) from error
-            if manifest.behavior_rule != policy_config.behavior_rule:
+            if manifest.behavior_rule != expected_behavior_rule:
                 raise TorchOutcomeError(
                     "complete attempt behavior rule conflicts with policy config"
                 )

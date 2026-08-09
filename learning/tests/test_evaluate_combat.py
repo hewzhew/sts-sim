@@ -166,7 +166,7 @@ def test_evaluation_recovers_published_behavior_without_training_or_experience(
         bridge=bridge,
     )
 
-    assert summary["schema"] == "sts-learning-combat-held-out-evaluation-v12"
+    assert summary["schema"] == "sts-learning-combat-held-out-evaluation-v13"
     assert summary["decision_rule"] == "sampled"
     assert summary["evaluation_manifest_id"] == summary["behavior_manifest_id"]
     assert summary["behavior_training_kind"] == "combat"

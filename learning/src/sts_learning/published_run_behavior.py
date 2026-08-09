@@ -21,7 +21,11 @@ from .terminal_returns import (
     RunPolicyUpdateRule,
     TerminalAdvantageMode,
 )
-from .torch_behavior import CheckpointedCategoricalTorchPolicy
+from .torch_behavior import (
+    CheckpointedCategoricalTorchPolicy,
+    FrozenCombatGreedyTorchPolicy,
+    FrozenDecisionRule,
+)
 from .torch_session import CategoricalOnlineSessionFactory, NoRecoveryCurriculum
 from .torch_session_config import (
     CategoricalOnlineProfile,
@@ -32,8 +36,13 @@ from .torch_session_config import (
 from .torch_policy import RaggedScorerConfig
 
 
-RUN_TRAINING_SCHEMA = "sts-learning-run-training-v4"
-_LEGACY_RUN_TRAINING_SCHEMAS = frozenset({"sts-learning-run-training-v3"})
+RUN_TRAINING_SCHEMA = "sts-learning-run-training-v5"
+_LEGACY_RUN_TRAINING_SCHEMAS = frozenset(
+    {
+        "sts-learning-run-training-v3",
+        "sts-learning-run-training-v4",
+    }
+)
 _MAX_TRAINING_JOURNAL_BYTES = 16 * 1024 * 1024
 
 
@@ -52,8 +61,12 @@ class PublishedRunBehavior:
     training_potion_lane: CombatPotionLane
     training_sampling_mode: RunSamplingMode
     training_episode_root_attempts: int | None
+    training_combat_decision_rule: FrozenDecisionRule
     objective: OnPolicyObjectiveConfig
-    policies: tuple[CheckpointedCategoricalTorchPolicy, ...]
+    policies: tuple[
+        CheckpointedCategoricalTorchPolicy | FrozenCombatGreedyTorchPolicy,
+        ...,
+    ]
 
     def __post_init__(self) -> None:
         if not isinstance(self.manifest_id, BehaviorManifestId):
@@ -70,6 +83,13 @@ class PublishedRunBehavior:
             raise PublishedRunBehaviorError("whole-run training cannot publish root slots")
         if not isinstance(self.training_sampling_mode, RunSamplingMode):
             raise PublishedRunBehaviorError("run behavior sampling mode must be typed")
+        if not isinstance(
+            self.training_combat_decision_rule,
+            FrozenDecisionRule,
+        ):
+            raise PublishedRunBehaviorError(
+                "run behavior combat decision rule must be typed"
+            )
         if not isinstance(self.objective, OnPolicyObjectiveConfig):
             raise PublishedRunBehaviorError("run behavior objective must be typed")
         expected_attempts = _episode_root_attempts(
@@ -86,7 +106,13 @@ class PublishedRunBehavior:
                 "episode-root attempts exceed the training update"
             )
         if not self.policies or not all(
-            isinstance(policy, CheckpointedCategoricalTorchPolicy)
+            isinstance(
+                policy,
+                (
+                    CheckpointedCategoricalTorchPolicy,
+                    FrozenCombatGreedyTorchPolicy,
+                ),
+            )
             for policy in self.policies
         ):
             raise PublishedRunBehaviorError("run behavior policies must be checkpointed")
@@ -207,6 +233,16 @@ def recover_published_run_behavior(
         raise PublishedRunBehaviorError(
             "episode-root attempt cap changed across publication"
         )
+    combat_decision_rule = _combat_decision_rule(
+        configuration.get("combat_decision_rule")
+    )
+    if (
+        _combat_decision_rule(completed.get("combat_decision_rule"))
+        is not combat_decision_rule
+    ):
+        raise PublishedRunBehaviorError(
+            "combat decision rule changed across publication"
+        )
 
     profile = replace(
         CategoricalOnlineProfile(),
@@ -214,6 +250,7 @@ def recover_published_run_behavior(
             value_head=policy_update.uses_value_baseline,
         ),
         objective=objective,
+        combat_decision_rule=combat_decision_rule,
     )
     limits = replace(
         CategoricalSessionLimits(),
@@ -262,6 +299,7 @@ def recover_published_run_behavior(
         training_episode_root_attempts=(
             configuration_episode_root_attempts
         ),
+        training_combat_decision_rule=combat_decision_rule,
         objective=objective,
         policies=policies,
     )
@@ -320,7 +358,7 @@ def _training_boundary_records(
         or completed.get("schema") in _LEGACY_RUN_TRAINING_SCHEMAS
     ):
         raise PublishedRunBehaviorError(
-            "run training publication predates explicit ascension provenance"
+            "run training publication predates the current explicit run provenance"
         )
     if (
         configuration.get("schema") != RUN_TRAINING_SCHEMA
@@ -373,6 +411,15 @@ def _sampling_mode(value: object) -> RunSamplingMode:
     except (TypeError, ValueError) as error:
         raise PublishedRunBehaviorError(
             "run sampling mode is unsupported"
+        ) from error
+
+
+def _combat_decision_rule(value: object) -> FrozenDecisionRule:
+    try:
+        return FrozenDecisionRule(value)
+    except (TypeError, ValueError) as error:
+        raise PublishedRunBehaviorError(
+            "combat decision rule is unsupported"
         ) from error
 
 

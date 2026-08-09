@@ -38,7 +38,7 @@ from .torch_combat_session_config import (
 from .torch_session_config import CategoricalSessionBridge
 
 
-RUN_EVALUATION_SCHEMA = "sts-learning-run-held-out-evaluation-v6"
+RUN_EVALUATION_SCHEMA = "sts-learning-run-held-out-evaluation-v7"
 
 
 class RunEvaluationCommandError(RuntimeError):
@@ -295,6 +295,11 @@ def _summary(
             None
             if combat_trained
             else recovered.training_episode_root_attempts
+        ),
+        "behavior_run_combat_decision_rule": (
+            None
+            if combat_trained
+            else recovered.training_combat_decision_rule.value
         ),
         "behavior_run_objective": (
             None

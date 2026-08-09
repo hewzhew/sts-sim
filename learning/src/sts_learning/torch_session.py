@@ -27,6 +27,8 @@ from .resume_store import BoundedResumeStore, ResumeManifestId
 from .torch_behavior import (
     CategoricalTorchBehaviorController,
     CheckpointedCategoricalTorchPolicy,
+    FrozenCombatGreedyTorchPolicy,
+    FrozenDecisionRule,
     TorchBehaviorPublisher,
 )
 from .torch_checkpoints import BoundedTorchCheckpointStore
@@ -225,6 +227,7 @@ class CategoricalOnlineSessionFactory:
             profile.optimizer,
             profile.objective,
             device_type=profile.device_type,
+            behavior_rule=profile.behavior_rule,
         )
 
     def new(
@@ -294,6 +297,9 @@ class CategoricalOnlineSessionFactory:
             catalog,
             registry,
         )
+        controller.bind_progress_provider(
+            BridgeDecisionProgressProvider(population.env)
+        )
         optimizer = self.config.profile.optimizer.create(shadow.parameters())
         trainer = SynchronousPolicyTrainer(
             shadow,
@@ -302,6 +308,7 @@ class CategoricalOnlineSessionFactory:
             self.config.limits.concat,
             self.config.profile.behavior,
             self.config.profile.objective,
+            behavior_rule=self.config.profile.behavior_rule,
         )
         update_batcher = BoundedAttemptUpdateBatcher(
             self.config.profile.objective.attempts_per_update,
@@ -402,19 +409,33 @@ class CategoricalOnlineSessionFactory:
         manifest_id: BehaviorManifestId,
         *,
         behavior_seed: int,
-    ) -> CheckpointedCategoricalTorchPolicy:
+    ) -> CheckpointedCategoricalTorchPolicy | FrozenCombatGreedyTorchPolicy:
         """Materialize one frozen behavior for held-out evaluation."""
 
         seed = _torch_seed(behavior_seed, "behavior_seed")
         checkpoint_store, catalog = self._behavior_stores()
-        return CheckpointedCategoricalTorchPolicy.recover(
+        generator = torch.Generator(device="cpu").manual_seed(seed)
+        if (
+            self.config.profile.combat_decision_rule
+            is FrozenDecisionRule.SAMPLED
+        ):
+            return CheckpointedCategoricalTorchPolicy.recover(
+                manifest_id,
+                checkpoint_store,
+                catalog,
+                BehaviorManifestRegistry(capacity=1),
+                self._scorer,
+                self.config.profile.behavior,
+                generator,
+            )
+        return FrozenCombatGreedyTorchPolicy.recover(
             manifest_id,
             checkpoint_store,
             catalog,
             BehaviorManifestRegistry(capacity=1),
             self._scorer,
             self.config.profile.behavior,
-            torch.Generator(device="cpu").manual_seed(seed),
+            generator,
         )
 
     def _scorer(self) -> RaggedCandidateScorer:
@@ -455,6 +476,9 @@ class CategoricalOnlineSessionFactory:
             self._scorer,
             self.config.profile.behavior,
             generator,
+            combat_decision_rule=(
+                self.config.profile.combat_decision_rule
+            ),
         )
 
     def _behavior_stores(

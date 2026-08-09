@@ -631,7 +631,7 @@ Configure one stable Python 3.12 training runtime once, then use the small
 .\learning\dev.ps1 evaluate-run -Behavior <training-dir> -Output <fresh-dir> -Ascension <0..20> -Attempts 8 -MaxBatchSteps 4096 -BehaviorSeed 10000 -HeldOutSeedStart 0 -RunPotionLane trained
 .\learning\dev.ps1 evaluate-run-potions -Behavior <training-dir> -Output <fresh-dir> -Ascension <0..20> -Attempts 8 -MaxBatchSteps 4096 -BehaviorSeed 10000 -HeldOutSeedStart 0
 .\learning\dev.ps1 collect-run-roots -Behavior <training-dir> -Output <fresh.bin> -Ascension <0..20> -Roots 2 -MaxBatchSteps 4096 -WallMs 60000 -BehaviorSeed 120000 -TrainingSeedStart 10000000 -MinFloor 2 -MinUsablePotions 1 -RunPotionLane trained
-.\learning\dev.ps1 train-run -Behavior <combat-training-dir> -Output <fresh-dir> -Ascension <0..20> -Slots 4 -Generations 1 -AttemptsPerUpdate 32 -MaxBatchSteps 4096 -EvaluationAttempts 16 -HeldOutSeedStart 1000000 -AdvantageMode decision-local-gae -DecisionScope all -SamplingMode independent-cohorts -RunPolicyUpdate ppo-clip-value -RunPotionLane trained
+.\learning\dev.ps1 train-run -Behavior <combat-training-dir> -Output <fresh-dir> -Ascension <0..20> -Slots 4 -Generations 1 -AttemptsPerUpdate 32 -MaxBatchSteps 4096 -EvaluationAttempts 16 -HeldOutSeedStart 1000000 -AdvantageMode decision-local-gae -DecisionScope strategic -CombatDecisionRule greedy -SamplingMode independent-cohorts -RunPolicyUpdate ppo-clip-value -RunPotionLane trained
 ```
 
 Every learning command that creates a fresh run requires an explicit
@@ -969,7 +969,7 @@ bounded end-to-end diagnostic of that complete policy surface, not a claim that
 all decisions were trained.
 Run-trained publications are recovered directly from their completed V2
 training journal and durable behavior stores, so a new held-out seed block does
-not require repeating the optimizer update. Evaluation output V4 records
+not require repeating the optimizer update. Evaluation output V7 records
 whether the source behavior was combat- or run-trained, includes the run
 objective when applicable, and preserves each combat's typed encounter and
 monster identities for encounter-level resource analysis.
@@ -1032,12 +1032,18 @@ the same episode seed and generation at the same floor and typed context. The
 training recovery budget is derived as `EpisodeRootAttempts - 1`; held-out
 evaluation still uses zero recovery. Treat the cap and recovery count as
 sampling provenance, not reward or a competence metric.
-`-DecisionScope all` is the maintained default. The explicit `strategic`
-ablation removes combat-boundary rows from the whole-run loss and renormalizes
-each attempt over its remaining strategic decisions; it does not change the
-behavior candidate surface or erase combat actions from experience evidence.
-Use it only with decision-time progress capture and compare it on the same
-training and held-out seed blocks.
+`-DecisionScope all` and `-CombatDecisionRule sampled` remain the compatibility
+defaults. The explicit `strategic` scope removes combat-boundary rows from the
+whole-run loss and renormalizes each attempt over its remaining strategic
+decisions; it does not erase combat actions or their state transitions from
+complete-attempt evidence. Pairing it with `-CombatDecisionRule greedy` uses
+argmax only for typed combat rows while strategic rows retain categorical
+sampling. That pairing has its own behavior manifest, records combat
+propensity as `1.0`, records the real strategic propensity, and is reconstructed
+after every promotion and durable recovery. `greedy` is rejected with the
+`all` scope because categorical PPO cannot claim deterministic combat choices
+as on-policy samples. Compare the explicit pair on the same training and
+held-out seed blocks.
 `-RunPolicyUpdate reinforce` preserves the compatibility whole-run update and
 remains the default. The opt-in `ppo-clip-value` profile adds a zero-initialized
 value head and requires `-AdvantageMode decision-local-gae`. It predicts the
@@ -1059,9 +1065,10 @@ these rows diagnose premature low-HP state occupancy without inventing an HP
 reward or declaring one combat result sufficient evidence of improvement.
 Missing or malformed decision-time progress fails value PPO before optimizer
 mutation; the caller never reconstructs rollout floors from semantic tensors.
-Whole-run publication schema V3 is intentionally incompatible with V2, which
-did not bind the decision-local optimizer contract and used terminal-broadcast
-targets for value PPO.
+Whole-run publication schema V5 is intentionally incompatible with V4, which
+did not record the combat/strategic selection rule. V4 already replaced V3 to
+require explicit ascension provenance; V3 in turn replaced the older
+terminal-broadcast value-PPO contract.
 
 `test` requires PyTorch and the installed bridge and runs the complete learning
 suite; missing training dependencies are failures, not skips. `verify` runs

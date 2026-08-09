@@ -48,6 +48,7 @@ from .torch_combat_session_config import (
     CombatWinSessionLimits,
 )
 from .torch_generation import CategoricalGenerationAdvanceResult
+from .torch_behavior import FrozenDecisionRule
 from .torch_outcomes import AttemptEqualSignalSummary
 from .torch_session import (
     CategoricalOnlineSession,
@@ -106,6 +107,7 @@ class RunTrainingCommandConfig:
     ascension_level: int
     advantage_mode: TerminalAdvantageMode | None = None
     decision_scope: RunDecisionScope = RunDecisionScope.ALL
+    combat_decision_rule: FrozenDecisionRule = FrozenDecisionRule.SAMPLED
     policy_update: RunPolicyUpdateConfig = RunPolicyUpdateConfig()
     sampling_mode: RunSamplingMode = RunSamplingMode.INDEPENDENT_COHORTS
     episode_root_attempts: int | None = None
@@ -149,6 +151,17 @@ class RunTrainingCommandConfig:
         if not isinstance(self.decision_scope, RunDecisionScope):
             raise RunTrainingCommandError(
                 "run training decision scope must be typed"
+            )
+        if not isinstance(self.combat_decision_rule, FrozenDecisionRule):
+            raise RunTrainingCommandError(
+                "run training combat decision rule must be typed"
+            )
+        if (
+            self.combat_decision_rule is FrozenDecisionRule.GREEDY
+            and self.decision_scope is not RunDecisionScope.STRATEGIC
+        ):
+            raise RunTrainingCommandError(
+                "combat-greedy run training requires strategic decision scope"
             )
         if not isinstance(self.sampling_mode, RunSamplingMode):
             raise RunTrainingCommandError(
@@ -304,6 +317,7 @@ def run_run_training(
             decision_scope=config.decision_scope,
             policy_update=config.policy_update,
         ),
+        combat_decision_rule=config.combat_decision_rule,
     )
     limits = replace(
         CategoricalSessionLimits(),
@@ -379,6 +393,7 @@ def run_run_training(
                 f"recoveries={result.recoveries} "
                 f"floor_sum={progress.floor_sum} "
                 f"floor_counts={_counts(progress.floor_counts)} "
+                f"combat_rule={config.combat_decision_rule.value} "
                 f"batch_steps={result.batch_steps}/"
                 f"{config.max_batch_steps_per_generation} "
                 f"loss={_optional_float(session.runner.trainer.snapshot.last_loss)} "
@@ -458,6 +473,7 @@ def run_run_training(
         f"held_out_victories={run.victories} "
         f"held_out_floor_sum={run.terminal_progress.floor_sum} "
         f"held_out_floor_counts={_counts(run.terminal_progress.floor_counts)} "
+        f"combat_rule={config.combat_decision_rule.value} "
         f"held_out_early={_early_resource_line(held_out_resource_factory.trace)} "
         f"run_policy_update={config.policy_update.rule.name.lower()} "
         f"output={config.output}",
@@ -490,6 +506,7 @@ def _configuration(
         "attempts_per_update": config.attempts_per_update,
         "advantage_mode": config.advantage_mode.name.lower(),
         "decision_scope": config.decision_scope.name.lower(),
+        "combat_decision_rule": config.combat_decision_rule.value,
         "run_policy_update": config.policy_update.rule.name.lower(),
         "run_policy_epochs": config.policy_update.epochs,
         "run_policy_clip_coefficient": config.policy_update.clip_coefficient,
@@ -648,6 +665,7 @@ def _summary(
         "sampling_mode": config.sampling_mode.value,
         "episode_root_attempts": config.episode_root_attempts,
         "ascension_level": config.ascension_level,
+        "combat_decision_rule": config.combat_decision_rule.value,
         "run_policy_update": config.policy_update.rule.name.lower(),
         "run_policy_normalize_advantage": (
             config.policy_update.normalize_advantage
@@ -1049,6 +1067,11 @@ def _parser() -> argparse.ArgumentParser:
         default="all",
     )
     parser.add_argument(
+        "--combat-decision-rule",
+        choices=tuple(rule.value for rule in FrozenDecisionRule),
+        default=FrozenDecisionRule.SAMPLED.value,
+    )
+    parser.add_argument(
         "--run-policy-update",
         choices=tuple(_RUN_POLICY_UPDATE_ARGUMENTS),
         default="reinforce",
@@ -1090,6 +1113,9 @@ def main() -> int:
                 RunDecisionScope.ALL
                 if arguments.decision_scope == "all"
                 else RunDecisionScope.STRATEGIC
+            ),
+            combat_decision_rule=FrozenDecisionRule(
+                arguments.combat_decision_rule
             ),
             policy_update=_RUN_POLICY_UPDATE_ARGUMENTS[
                 arguments.run_policy_update

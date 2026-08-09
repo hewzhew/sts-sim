@@ -29,7 +29,10 @@ from sts_learning.train_run import (
     RunTrainingCommandConfig,
     run_run_training,
 )
-from sts_learning import RunPolicyUpdateConfig, TerminalAdvantageMode
+from sts_learning import (
+    RunPolicyUpdateConfig,
+    TerminalAdvantageMode,
+)
 
 
 def test_run_evaluation_uses_frozen_combat_behavior_without_recovery(
@@ -54,12 +57,13 @@ def test_run_evaluation_uses_frozen_combat_behavior_without_recovery(
         run_bridge=run_bridge,
     )
 
-    assert summary["schema"] == "sts-learning-run-held-out-evaluation-v6"
+    assert summary["schema"] == "sts-learning-run-held-out-evaluation-v7"
     assert summary["ascension_level"] == 20
     assert summary["behavior_training_kind"] == "combat"
     assert summary["behavior_training_all_loss_axis"] == "none"
     assert summary["behavior_run_sampling_mode"] is None
     assert summary["behavior_run_episode_root_attempts"] is None
+    assert summary["behavior_run_combat_decision_rule"] is None
     assert summary["combat_potion_lane"] == "all"
     assert summary["requested_combat_potion_lane"] == "trained"
     assert summary["kind"] == "completed"
@@ -259,6 +263,7 @@ def test_run_training_warm_starts_publishes_and_evaluates(
     assert reevaluation["behavior_training_kind"] == "run"
     assert reevaluation["behavior_run_sampling_mode"] == "independent-cohorts"
     assert reevaluation["behavior_run_episode_root_attempts"] is None
+    assert reevaluation["behavior_run_combat_decision_rule"] == "sampled"
     assert reevaluation["behavior_run_objective"] == {
         "attempts_per_update": 2,
         "advantage_mode": "raw_return",
@@ -286,6 +291,25 @@ def test_run_training_warm_starts_publishes_and_evaluates(
     with pytest.raises(
         PublishedRunBehaviorError,
         match="exact configuration/completion",
+    ):
+        recover_published_run_behavior(output, run_bridge, (777,))
+
+    v4_records = tuple(
+        record | {"schema": "sts-learning-run-training-v4"}
+        for record in records
+    )
+    (output / "training.jsonl").write_text(
+        "".join(
+            json.dumps(record, separators=(",", ":"), sort_keys=True) + "\n"
+            for record in v4_records
+        ),
+        encoding="utf-8",
+        newline="\n",
+    )
+    assert is_run_training_publication(output)
+    with pytest.raises(
+        PublishedRunBehaviorError,
+        match="current explicit run provenance",
     ):
         recover_published_run_behavior(output, run_bridge, (777,))
 
