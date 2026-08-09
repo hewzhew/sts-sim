@@ -15,6 +15,7 @@ from .evaluate_combat import (
     run_combat_evaluation,
 )
 from .torch_combat_session_config import CombatSessionBridge
+from .torch_session_config import CategoricalSessionBridge
 
 
 COMBAT_POTION_SWEEP_SCHEMA = "sts-learning-combat-potion-sweep-v1"
@@ -62,6 +63,7 @@ def run_combat_potion_sweep(
     config: CombatPotionSweepCommandConfig,
     *,
     bridge: CombatSessionBridge | None = None,
+    run_bridge: CategoricalSessionBridge | None = None,
 ) -> dict[str, object]:
     """Run the complete bounded lane set with identical roots and RNG seeds."""
 
@@ -74,6 +76,7 @@ def run_combat_potion_sweep(
     no_potions = _run_lane(
         config,
         bridge,
+        run_bridge,
         label="never",
         directory="no-potions",
         lane=CombatPotionLane.NEVER,
@@ -84,6 +87,7 @@ def run_combat_potion_sweep(
             _run_lane(
                 config,
                 bridge,
+                run_bridge,
                 label=f"root-slot-{slot}",
                 directory=f"root-slot-{slot}",
                 lane=CombatPotionLane.ROOT_SLOTS,
@@ -94,6 +98,7 @@ def run_combat_potion_sweep(
         _run_lane(
             config,
             bridge,
+            run_bridge,
             label="all",
             directory="all-potions",
             lane=CombatPotionLane.ALL,
@@ -134,6 +139,7 @@ def run_combat_potion_sweep(
 def _run_lane(
     config: CombatPotionSweepCommandConfig,
     bridge: CombatSessionBridge | None,
+    run_bridge: CategoricalSessionBridge | None,
     *,
     label: str,
     directory: str,
@@ -153,6 +159,7 @@ def _run_lane(
             potion_slots=potion_slots,
         ),
         bridge=bridge,
+        run_bridge=run_bridge,
         print_completion=False,
     )
     return label, result, output

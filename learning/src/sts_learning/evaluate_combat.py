@@ -30,13 +30,19 @@ from .published_combat_behavior import (
     PublishedCombatBehavior,
     recover_published_combat_behavior,
 )
+from .published_run_behavior import (
+    PublishedRunBehavior,
+    is_run_training_publication,
+    recover_published_run_behavior,
+)
 from .torch_combat_session_config import (
     CombatSessionBridge,
     CombatWinSessionLimits,
 )
+from .torch_session_config import CategoricalSessionBridge
 
 
-COMBAT_EVALUATION_SCHEMA = "sts-learning-combat-held-out-evaluation-v6"
+COMBAT_EVALUATION_SCHEMA = "sts-learning-combat-held-out-evaluation-v7"
 
 
 class CombatEvaluationCommandError(RuntimeError):
@@ -121,6 +127,7 @@ def run_combat_evaluation(
     config: CombatEvaluationCommandConfig,
     *,
     bridge: CombatSessionBridge | None = None,
+    run_bridge: CategoricalSessionBridge | None = None,
     print_completion: bool = True,
 ) -> dict[str, object]:
     """Recover exact frozen behavior and evaluate it without training owners."""
@@ -140,16 +147,37 @@ def run_combat_evaluation(
         max_bytes=session_limits.max_artifact_bytes,
     )
     artifact_sha256 = hashlib.sha256(artifact).hexdigest()
-    recovered = recover_published_combat_behavior(
-        config.behavior,
-        active_bridge,
-        session_limits,
-        config.behavior_seeds,
-    )
-    if artifact_sha256 == recovered.training_artifact_sha256:
-        raise CombatEvaluationCommandError(
-            "combat held-out evaluation artifact matches the training artifact"
+    recovered: PublishedCombatBehavior | PublishedRunBehavior
+    if is_run_training_publication(config.behavior):
+        active_run_bridge = (
+            run_bridge
+            if run_bridge is not None
+            else CategoricalSessionBridge.installed()
         )
+        if not isinstance(active_run_bridge, CategoricalSessionBridge):
+            raise CombatEvaluationCommandError(
+                "run behavior recovery bridge must be typed"
+            )
+        if active_run_bridge.semantic_schema != active_bridge.semantic_schema:
+            raise CombatEvaluationCommandError(
+                "run behavior and combat evaluation semantic schemas differ"
+            )
+        recovered = recover_published_run_behavior(
+            config.behavior,
+            active_run_bridge,
+            config.behavior_seeds,
+        )
+    else:
+        recovered = recover_published_combat_behavior(
+            config.behavior,
+            active_bridge,
+            session_limits,
+            config.behavior_seeds,
+        )
+        if artifact_sha256 == recovered.training_artifact_sha256:
+            raise CombatEvaluationCommandError(
+                "combat held-out evaluation artifact matches the training artifact"
+            )
     source = load_combat_root_source(
         active_bridge,
         artifact,
@@ -288,13 +316,14 @@ def _potion_slots_text(result: CombatHeldOutEvaluationResult) -> str:
 
 def _summary(
     config: CombatEvaluationCommandConfig,
-    recovered: PublishedCombatBehavior,
+    recovered: PublishedCombatBehavior | PublishedRunBehavior,
     result: CombatHeldOutEvaluationResult,
     *,
     artifact_bytes: int,
     artifact_sha256: str,
     elapsed: float,
 ) -> dict[str, object]:
+    combat_trained = isinstance(recovered, PublishedCombatBehavior)
     roots = tuple(
         _root_summary(slot_index, root)
         for slot_index, root in enumerate(result.roots)
@@ -338,12 +367,39 @@ def _summary(
         "behavior_manifest_id": recovered.manifest_id.digest.hex(),
         "behavior_checkpoint_id": recovered.checkpoint_id.digest.hex(),
         "behavior_training_step": recovered.training_step,
-        "behavior_training_root_count": recovered.training_root_count,
+        "behavior_training_kind": "combat" if combat_trained else "run",
+        "behavior_training_root_count": (
+            recovered.training_root_count if combat_trained else None
+        ),
         "behavior_training_artifact_sha256": (
-            recovered.training_artifact_sha256
+            recovered.training_artifact_sha256 if combat_trained else None
         ),
         "behavior_training_potion_lane": recovered.training_potion_lane.value,
-        "behavior_training_potion_slots": recovered.training_potion_slots,
+        "behavior_training_potion_slots": (
+            recovered.training_potion_slots if combat_trained else ()
+        ),
+        "behavior_run_sampling_mode": (
+            None if combat_trained else recovered.training_sampling_mode.value
+        ),
+        "behavior_run_episode_root_attempts": (
+            None if combat_trained else recovered.training_episode_root_attempts
+        ),
+        "behavior_run_objective": (
+            None
+            if combat_trained
+            else {
+                "attempts_per_update": recovered.objective.attempts_per_update,
+                "advantage_mode": recovered.objective.advantage_mode.name.lower(),
+                "decision_scope": recovered.objective.decision_scope.name.lower(),
+                "policy_update": recovered.objective.policy_update.rule.name.lower(),
+                "normalize_advantage": (
+                    recovered.objective.policy_update.normalize_advantage
+                ),
+                "value_clip_coefficient": (
+                    recovered.objective.policy_update.value_clip_coefficient
+                ),
+            }
+        ),
         "root_count": config.root_count,
         "replicate_count": config.replicate_count,
         "behavior_seeds": config.behavior_seeds,

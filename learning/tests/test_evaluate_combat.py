@@ -10,6 +10,7 @@ import pytest
 pytest.importorskip("torch")
 
 from learning.tests.semantic_fixtures import semantic_schema_fixture
+from learning.tests.run_training_fixtures import published_behavior
 from learning.tests.torch_combat_fixtures import OneRoundCombatGroup
 from sts_learning.combat_evaluation import combat_observed_resource_frontier
 from sts_learning.combat_outcomes import CombatTerminalOutcome
@@ -27,6 +28,7 @@ from sts_learning.train_combat import (
     CombatTrainingCommandConfig,
     run_combat_training,
 )
+from sts_learning.train_run import RunTrainingCommandConfig, run_run_training
 
 
 class _RootSource:
@@ -140,7 +142,8 @@ def test_evaluation_recovers_published_behavior_without_training_or_experience(
         bridge=bridge,
     )
 
-    assert summary["schema"] == "sts-learning-combat-held-out-evaluation-v6"
+    assert summary["schema"] == "sts-learning-combat-held-out-evaluation-v7"
+    assert summary["behavior_training_kind"] == "combat"
     assert summary["potion_lane"] == "all"
     assert summary["potion_slots"] == ()
     assert training_source.calls == [(0, None), (1, None)]
@@ -275,6 +278,53 @@ def test_evaluation_recovers_published_behavior_without_training_or_experience(
         "lanes=never:1/61/0/0,root-slot-0:1/61/1/0,"
         "root-slot-1:1/61/1/0,all:1/61/1/0"
     ) in sweep_stdout
+
+
+def test_evaluation_accepts_a_verified_run_trained_behavior(tmp_path: Path) -> None:
+    combat_behavior, combat_bridge, run_bridge = published_behavior(tmp_path)
+    run_behavior = tmp_path / "run-behavior"
+    run_run_training(
+        RunTrainingCommandConfig(
+            warm_start_behavior=combat_behavior,
+            output=run_behavior,
+            slot_count=2,
+            generations=1,
+            attempts_per_update=2,
+            max_batch_steps_per_generation=1,
+            model_seed=43,
+            behavior_seed=94,
+            training_seed_start=0,
+            evaluation_attempts=2,
+            evaluation_max_batch_steps=2,
+            evaluation_behavior_seed=501,
+            held_out_seed_start=1000,
+        ),
+        combat_bridge=combat_bridge,
+        run_bridge=run_bridge,
+    )
+    artifact = tmp_path / "run-held-out-roots.bin"
+    artifact.write_bytes(b"distinct-run-held-out-roots")
+
+    summary = run_combat_evaluation(
+        CombatEvaluationCommandConfig(
+            artifact=artifact,
+            behavior=run_behavior,
+            output=tmp_path / "run-held-out",
+            root_count=2,
+            replicate_count=2,
+            behavior_seed_base=1_000,
+        ),
+        bridge=combat_bridge,
+        run_bridge=run_bridge,
+    )
+
+    assert summary["behavior_training_kind"] == "run"
+    assert summary["behavior_training_root_count"] is None
+    assert summary["behavior_training_artifact_sha256"] is None
+    assert summary["behavior_run_sampling_mode"] == "independent-cohorts"
+    assert summary["behavior_run_objective"]["attempts_per_update"] == 2
+    assert summary["wins"] == 3
+    assert summary["losses"] == 1
 
 
 def test_observed_resource_frontier_keeps_hp_potion_tradeoffs_incomparable() -> None:

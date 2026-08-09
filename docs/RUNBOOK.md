@@ -817,10 +817,12 @@ all-loss `never` group stays no-signal; move it to `root-slots` with one
 replacement in that slot remains unavailable.
 
 Use `evaluate-combat` on a distinct opaque root artifact after publication. The
-behavior directory must be an exact completed combat-training output containing
-one durable checkpoint and manifest. The evaluator verifies its complete
-provenance, recovers the training artifact digest and potion lane, and rejects
-an evaluation artifact with the same digest before constructing combat groups.
+behavior directory may be an exact completed combat- or run-training output
+containing one durable checkpoint and manifest. The evaluator verifies its
+complete provenance and records the training kind. For a combat-trained source
+it also recovers the training artifact digest and rejects an evaluation artifact
+with the same digest before constructing combat groups; a run-trained source
+instead records its run objective and sampling contract.
 It gives every root an independent explicit behavior RNG stream and writes only
 `evaluation.json` with per-replicate win, HP/max HP, gold, turn,
 concrete starting/final/lost/gained potion identities, potion use/discard
