@@ -95,11 +95,6 @@ Use these principles unless stronger measured evidence replaces them:
 - Use the V2 `.\ol.cmd contract`, `artifact`, and `case` surfaces for routine
   exact-combat evidence as documented in `docs/RUNBOOK.md`. Rebuild through
   `cargo oracle-lab contract --help`.
-- Repeated shell discovery, guessed JSON paths, manual artifact naming, large
-  default output, stale help, or a second ad-hoc query needed to classify one
-  experiment are control-plane rot signals. Stop the active investigation and
-  repair the owning typed tool, compact schema, or contract test before
-  continuing. Do not normalize the workaround into a runbook.
 - Prefer a deliberate breaking migration over maintaining duplicate routine
   experiment surfaces. Legacy reports and catalogs are not automatically V2
   evidence; import an exact root and regenerate a fresh V2 artifact instead of
