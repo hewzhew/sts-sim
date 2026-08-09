@@ -719,6 +719,25 @@ For a concrete encounter corpus, pass `-RequiredEncounterId GremlinGang` (or
 another canonical ID). The installed bridge normalizes the ID before any run
 advances, and the receipt records the normalized contract. Variable member
 composition remains part of the exact root rather than the selector identity.
+For one shared curriculum with several explicit encounter targets, supply
+fixed quotas instead of collecting and merging shards by hand:
+
+```powershell
+.\learning\dev.ps1 collect-run-roots `
+  -Behavior <completed-training-directory> `
+  -Output <fresh.combat-roots.bin> `
+  -EncounterQuota ThreeSentries=4,Lagavulin=4,ExordiumThugs=4 `
+  -MaxBatchSteps 4096 -WallMs 60000 `
+  -BehaviorSeed 120000 -TrainingSeedStart 10000000 `
+  -MinFloor 6 -MinUsablePotions 0 -RunPotionLane trained
+```
+
+The quota total determines the artifact root count; an optional `-Roots` must
+match it exactly. Quotas cannot be combined with `-DistinctEncounters` or
+`-RequiredEncounterId`. Every admitted root still comes from a distinct seed,
+each encounter stops accepting roots when its own quota is full, and any
+incomplete quota leaves the output absent. The receipt reports requested and
+captured roots for every canonical encounter.
 Encounter-aware roots use opaque artifact format version 2. Version 1 roots
 fail explicitly as incompatible and must be recollected from their recorded
 seed/behavior provenance.

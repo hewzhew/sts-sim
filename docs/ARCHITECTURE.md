@@ -269,10 +269,15 @@ The bounded later-combat sampler advances one frozen published behavior over
 training-partition runs and inspects only the bridge's aligned public run
 context and undecoded combat-root context. It captures at most one qualifying
 root per seed, filters by typed floor and usable-potion count, and may require
-one bridge-validated canonical potion identity in one exact slot. It then asks Rust to
+one bridge-validated canonical potion identity in one exact slot. Encounter
+selection may require one canonical identity, one root per distinct identity,
+or an explicit fixed quota for each of several canonical identities. Those
+modes are mutually exclusive; every quota must be complete before publication.
+It then asks Rust to
 merge canonical single-root payloads without exposing checkpoint fields. The
 sampler writes one fresh batch only after the requested root count is complete;
-a deadline, step bound, duplicate root, context mismatch, or byte overflow
+a deadline, step bound, duplicate root, incomplete encounter quota, context
+mismatch, or byte overflow
 publishes nothing. Its compact receipt is corpus provenance, not a policy
 label or a potion-value judgment. The receipt reuses the held-out resource
 trace owner to attach earlier same-seed combat HP, gold, and concrete potion

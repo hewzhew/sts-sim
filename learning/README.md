@@ -201,6 +201,13 @@ An optional exact encounter selector is normalized by the installed bridge
 before advancing a run. Variable members such as a `GremlinGang` roll retain
 one stable encounter identity while their exact monster identities remain in
 the root receipt.
+An explicit encounter-quota mode accepts several canonical encounter targets
+with a fixed root count for each. It derives the total batch width from those
+quotas, stops admitting an encounter once its target is full, and publishes
+nothing unless every target is complete. Quota, exact-encounter, and
+distinct-encounter modes are mutually exclusive. The receipt reports both the
+requested and captured count per encounter, while the ordinary one-root-per-seed
+identity rule remains unchanged.
 It keeps the requested run potion lane separate from the resolved combat
 potion lane, including when `trained` inherits `all` or `never`.
 Its receipt composes the existing typed run-resource trace and includes prior

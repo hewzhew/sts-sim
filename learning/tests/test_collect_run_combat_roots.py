@@ -12,6 +12,7 @@ from learning.tests.driver_fixtures import NumpyWinningBatchEnv  # noqa: E402
 from learning.tests.run_training_fixtures import published_behavior  # noqa: E402
 from sts_learning.combat_potion_lane import CombatPotionLane  # noqa: E402
 from sts_learning.collect_run_combat_roots import (  # noqa: E402
+    EncounterQuota,
     RequiredPotionSlot,
     RunCombatRootCollectionError,
     RunCombatRootCollectionConfig,
@@ -271,6 +272,97 @@ def test_collection_can_require_one_exact_encounter(tmp_path: Path) -> None:
 
     assert summary["required_encounter_id"] == "JawWorm"
     assert summary["roots"][0]["encounter_id"] == "JawWorm"
+
+
+def test_collection_fulfills_each_encounter_quota_from_distinct_seeds(
+    tmp_path: Path,
+) -> None:
+    behavior, combat_bridge, run_bridge = published_behavior(tmp_path)
+    run_bridge = replace(
+        run_bridge,
+        environment=_AlternatingEncounterRootEnv,
+        environment_without_combat_potions=_AlternatingEncounterRootEnv,
+        environment_from_checkpoint=_AlternatingEncounterRootEnv.from_checkpoint_bytes,
+    )
+    output = tmp_path / "encounter-quotas.bin"
+
+    summary = run_run_combat_root_collection(
+        RunCombatRootCollectionConfig(
+            behavior=behavior,
+            output=output,
+            root_count=3,
+            max_batch_steps=4,
+            wall_ms=10_000,
+            behavior_seed=94,
+            training_seed_start=100,
+            min_floor=2,
+            min_usable_potions=0,
+            max_artifact_bytes=1024,
+            encounter_quotas=(
+                EncounterQuota("JawWorm", 1),
+                EncounterQuota("Cultist", 2),
+            ),
+        ),
+        combat_bridge=combat_bridge,
+        run_bridge=run_bridge,
+        artifact_merger=lambda payloads, *, max_bytes: b"merged",
+    )
+
+    assert output.is_file()
+    assert [root["seed"] for root in summary["roots"]] == [100, 101, 103]
+    assert summary["encounter_quotas"] == (
+        {
+            "encounter_id": "JawWorm",
+            "requested_roots": 1,
+            "captured_roots": 1,
+        },
+        {
+            "encounter_id": "Cultist",
+            "requested_roots": 2,
+            "captured_roots": 2,
+        },
+    )
+
+
+def test_incomplete_encounter_quota_publishes_no_artifact(tmp_path: Path) -> None:
+    behavior, combat_bridge, run_bridge = published_behavior(tmp_path)
+    run_bridge = replace(
+        run_bridge,
+        environment=_AlternatingEncounterRootEnv,
+        environment_without_combat_potions=_AlternatingEncounterRootEnv,
+        environment_from_checkpoint=_AlternatingEncounterRootEnv.from_checkpoint_bytes,
+    )
+    output = tmp_path / "incomplete-encounter-quotas.bin"
+
+    with pytest.raises(
+        RunCombatRootCollectionError,
+        match=r"Cultist=1/2",
+    ):
+        run_run_combat_root_collection(
+            RunCombatRootCollectionConfig(
+                behavior=behavior,
+                output=output,
+                root_count=3,
+                max_batch_steps=3,
+                wall_ms=10_000,
+                behavior_seed=94,
+                training_seed_start=100,
+                min_floor=2,
+                min_usable_potions=0,
+                max_artifact_bytes=1024,
+                encounter_quotas=(
+                    EncounterQuota("JawWorm", 1),
+                    EncounterQuota("Cultist", 2),
+                ),
+            ),
+            combat_bridge=combat_bridge,
+            run_bridge=run_bridge,
+            artifact_merger=lambda *_args, **_kwargs: pytest.fail(
+                "incomplete encounter quotas must not merge"
+            ),
+        )
+
+    assert not output.exists()
 
 
 def test_required_encounter_rejects_unsupported_identity_before_collection(

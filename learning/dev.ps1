@@ -49,6 +49,7 @@ param(
     [int[]]$PotionSlots = @(),
     [string]$RequiredEncounterId,
     [switch]$DistinctEncounters,
+    [string[]]$EncounterQuota = @(),
     [ValidateSet("dev", "release")]
     [string]$BridgeProfile = "release"
 )
@@ -357,6 +358,7 @@ switch ($Command) {
     "collect-run-roots" {
         $pythonPath = Get-ConfiguredPython
         $selectorArguments = @()
+        $rootArguments = @()
         if ($RequiredPotionId -or $null -ne $RequiredPotionSlot) {
             if (-not $RequiredPotionId -or $null -eq $RequiredPotionSlot) {
                 throw "collect-run-roots requires both -RequiredPotionId and -RequiredPotionSlot"
@@ -374,12 +376,28 @@ switch ($Command) {
                 "--required-encounter-id", $RequiredEncounterId
             )
         }
+        if ($EncounterQuota.Count -gt 0) {
+            if ($DistinctEncounters -or $RequiredEncounterId) {
+                throw "collect-run-roots encounter quotas cannot be combined with another encounter selector"
+            }
+            foreach ($quota in $EncounterQuota) {
+                $selectorArguments += @("--encounter-quota", $quota)
+            }
+            if ($Roots -gt 0) {
+                $rootArguments = @("--roots", $Roots)
+            }
+        } else {
+            if ($Roots -le 0) {
+                throw "collect-run-roots requires -Roots or at least one -EncounterQuota"
+            }
+            $rootArguments = @("--roots", $Roots)
+        }
         Invoke-Doctor $pythonPath
         Invoke-WithLearningPath {
             & $pythonPath -m sts_learning.collect_run_combat_roots `
                 --behavior $Behavior `
                 --output $Output `
-                --roots $Roots `
+                @rootArguments `
                 --max-batch-steps $MaxBatchSteps `
                 --wall-ms $WallMs `
                 --behavior-seed $BehaviorSeed `

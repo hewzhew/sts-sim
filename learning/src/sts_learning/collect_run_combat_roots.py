@@ -75,6 +75,23 @@ class RequiredPotionSlot:
 
 
 @dataclass(frozen=True)
+class EncounterQuota:
+    encounter_id: str
+    root_count: int
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.encounter_id, str) or not self.encounter_id:
+            raise RunCombatRootCollectionError(
+                "encounter quota id must be non-empty text"
+            )
+        object.__setattr__(
+            self,
+            "root_count",
+            _positive(self.root_count, "encounter quota root count"),
+        )
+
+
+@dataclass(frozen=True)
 class RunCombatRootCollectionConfig:
     behavior: Path
     output: Path
@@ -90,6 +107,7 @@ class RunCombatRootCollectionConfig:
     required_potion: RequiredPotionSlot | None = None
     required_encounter_id: str | None = None
     distinct_encounters: bool = False
+    encounter_quotas: tuple[EncounterQuota, ...] = ()
 
     def __post_init__(self) -> None:
         behavior = Path(self.behavior).resolve()
@@ -132,6 +150,27 @@ class RunCombatRootCollectionConfig:
             raise RunCombatRootCollectionError(
                 "required encounter id must be non-empty text"
             )
+        if (
+            not isinstance(self.encounter_quotas, tuple)
+            or any(
+                not isinstance(quota, EncounterQuota)
+                for quota in self.encounter_quotas
+            )
+        ):
+            raise RunCombatRootCollectionError(
+                "encounter quotas must be a typed tuple"
+            )
+        quota_ids = tuple(quota.encounter_id for quota in self.encounter_quotas)
+        if len(set(quota_ids)) != len(quota_ids):
+            raise RunCombatRootCollectionError(
+                "encounter quota ids must be distinct"
+            )
+        if self.encounter_quotas and (
+            self.required_encounter_id is not None or self.distinct_encounters
+        ):
+            raise RunCombatRootCollectionError(
+                "encounter quotas cannot be combined with another encounter selector"
+            )
         object.__setattr__(self, "behavior", behavior)
         object.__setattr__(self, "output", output)
         root_count = _positive(self.root_count, "root_count")
@@ -145,6 +184,14 @@ class RunCombatRootCollectionConfig:
             raise RunCombatRootCollectionError(
                 "distinct encounter collection cannot request multiple roots "
                 "for one exact required encounter"
+            )
+        quota_root_count = sum(
+            quota.root_count for quota in self.encounter_quotas
+        )
+        if self.encounter_quotas and root_count != quota_root_count:
+            raise RunCombatRootCollectionError(
+                "root_count must equal the encounter quota total: "
+                f"root_count={root_count} quota_total={quota_root_count}"
             )
         object.__setattr__(self, "root_count", root_count)
         for name in ("max_batch_steps", "wall_ms", "max_artifact_bytes"):
@@ -186,17 +233,40 @@ class _RootCaptureSink:
         self,
         config: RunCombatRootCollectionConfig,
         required_encounter_id: str | None,
+        encounter_quotas: tuple[EncounterQuota, ...],
     ) -> None:
         self.config = config
         self.required_encounter_id = required_encounter_id
+        self.encounter_quotas = {
+            quota.encounter_id: quota.root_count for quota in encounter_quotas
+        }
         self.payloads: list[bytes] = []
         self.roots: list[CapturedRunCombatRoot] = []
         self._captured_seeds: set[int] = set()
         self._captured_encounters: set[str] = set()
+        self._captured_encounter_counts = {
+            encounter_id: 0 for encounter_id in self.encounter_quotas
+        }
 
     @property
     def complete(self) -> bool:
+        if self.encounter_quotas:
+            return all(
+                self._captured_encounter_counts[encounter_id] >= root_count
+                for encounter_id, root_count in self.encounter_quotas.items()
+            )
         return len(self.roots) >= self.config.root_count
+
+    @property
+    def encounter_quota_progress(self) -> tuple[dict[str, object], ...]:
+        return tuple(
+            {
+                "encounter_id": encounter_id,
+                "requested_roots": requested_roots,
+                "captured_roots": self._captured_encounter_counts[encounter_id],
+            }
+            for encounter_id, requested_roots in self.encounter_quotas.items()
+        )
 
     def observe(self, env: _RootExportEnvironment) -> None:
         if self.complete:
@@ -269,6 +339,12 @@ class _RootCaptureSink:
                 encounter != self.required_encounter_id
             ):
                 continue
+            if self.encounter_quotas and (
+                encounter not in self.encounter_quotas
+                or self._captured_encounter_counts[encounter]
+                >= self.encounter_quotas[encounter]
+            ):
+                continue
             if (
                 self.config.distinct_encounters
                 and encounter in self._captured_encounters
@@ -301,6 +377,8 @@ class _RootCaptureSink:
             )
             self._captured_seeds.add(context.seed)
             self._captured_encounters.add(encounter)
+            if encounter in self._captured_encounter_counts:
+                self._captured_encounter_counts[encounter] += 1
 
 
 class _CapturingEnvironment:
@@ -415,7 +493,8 @@ def run_run_combat_root_collection(
                 f"{config.required_potion.potion_id}"
             )
     required_encounter_id = config.required_encounter_id
-    if required_encounter_id is not None:
+    encounter_quotas = config.encounter_quotas
+    if required_encounter_id is not None or encounter_quotas:
         canonical_source = getattr(
             active_run_bridge.environment,
             "canonical_encounter_id",
@@ -425,18 +504,25 @@ def run_run_combat_root_collection(
             raise RunCombatRootCollectionError(
                 "run bridge does not expose canonical encounter identity validation"
             )
-        try:
-            canonical = canonical_source(required_encounter_id)
-        except (TypeError, ValueError) as error:
-            raise RunCombatRootCollectionError(
-                "required encounter id is unsupported by the installed bridge: "
-                f"{required_encounter_id}"
-            ) from error
-        if not isinstance(canonical, str) or not canonical:
-            raise RunCombatRootCollectionError(
-                "run bridge returned a malformed canonical encounter identity"
+        if required_encounter_id is not None:
+            required_encounter_id = _canonical_encounter_id(
+                canonical_source,
+                required_encounter_id,
             )
-        required_encounter_id = canonical
+        encounter_quotas = tuple(
+            EncounterQuota(
+                _canonical_encounter_id(canonical_source, quota.encounter_id),
+                quota.root_count,
+            )
+            for quota in encounter_quotas
+        )
+        canonical_quota_ids = tuple(
+            quota.encounter_id for quota in encounter_quotas
+        )
+        if len(set(canonical_quota_ids)) != len(canonical_quota_ids):
+            raise RunCombatRootCollectionError(
+                "encounter quota ids must remain distinct after canonicalization"
+            )
 
     recovered: PublishedCombatBehavior | PublishedRunBehavior
     if is_run_training_publication(config.behavior):
@@ -470,7 +556,7 @@ def run_run_combat_root_collection(
             "run bridge does not provide opaque combat-root merging"
         )
 
-    sink = _RootCaptureSink(config, required_encounter_id)
+    sink = _RootCaptureSink(config, required_encounter_id, encounter_quotas)
     tracing_factory = ResourceTracingEnvironmentFactory(environment_factory)
 
     def capturing_factory(seeds: list[int]) -> _CapturingEnvironment:
@@ -512,10 +598,18 @@ def run_run_combat_root_collection(
         terminal_attempts += len(result.attempts)
     elapsed = time.perf_counter() - started
     if not sink.complete:
+        quota_progress = ""
+        if sink.encounter_quota_progress:
+            quota_progress = " quotas=" + ",".join(
+                f"{row['encounter_id']}="
+                f"{row['captured_roots']}/{row['requested_roots']}"
+                for row in sink.encounter_quota_progress
+            )
         raise RunCombatRootCollectionError(
             "root collection did not reach its target within the step/deadline bounds: "
             f"roots={len(sink.roots)}/{config.root_count} "
             f"batch_steps={batch_steps}/{config.max_batch_steps}"
+            f"{quota_progress}"
         )
 
     payload = bytes(merger(sink.payloads, max_bytes=config.max_artifact_bytes))
@@ -541,6 +635,7 @@ def run_run_combat_root_collection(
         "min_floor": config.min_floor,
         "min_usable_potions": config.min_usable_potions,
         "distinct_encounters": config.distinct_encounters,
+        "encounter_quotas": sink.encounter_quota_progress,
         "required_potion_id": (
             None
             if config.required_potion is None
@@ -581,6 +676,24 @@ def run_run_combat_root_collection(
     }
     print(json.dumps(summary, separators=(",", ":"), sort_keys=True), flush=True)
     return summary
+
+
+def _canonical_encounter_id(
+    canonical_source: Callable[[str], object],
+    encounter_id: str,
+) -> str:
+    try:
+        canonical = canonical_source(encounter_id)
+    except (TypeError, ValueError) as error:
+        raise RunCombatRootCollectionError(
+            "required encounter id is unsupported by the installed bridge: "
+            f"{encounter_id}"
+        ) from error
+    if not isinstance(canonical, str) or not canonical:
+        raise RunCombatRootCollectionError(
+            "run bridge returned a malformed canonical encounter identity"
+        )
+    return canonical
 
 
 def _prior_combat_rows(
@@ -660,6 +773,19 @@ def _seed(value: object, name: str) -> int:
     return normalized
 
 
+def _encounter_quota_argument(raw: str) -> EncounterQuota:
+    encounter_id, separator, raw_count = raw.partition("=")
+    if not separator or not encounter_id or not raw_count:
+        raise argparse.ArgumentTypeError(
+            "encounter quota must use ENCOUNTER_ID=ROOT_COUNT"
+        )
+    try:
+        root_count = int(raw_count)
+        return EncounterQuota(encounter_id, root_count)
+    except (ValueError, RunCombatRootCollectionError) as error:
+        raise argparse.ArgumentTypeError(str(error)) from error
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
@@ -669,7 +795,14 @@ def _parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--behavior", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
-    parser.add_argument("--roots", type=int, required=True)
+    parser.add_argument(
+        "--roots",
+        type=int,
+        help=(
+            "target root count; omit when encounter quotas should determine "
+            "the batch width"
+        ),
+    )
     parser.add_argument("--max-batch-steps", type=int, default=4096)
     parser.add_argument("--wall-ms", type=int, default=60_000)
     parser.add_argument("--behavior-seed", type=int, default=10_000)
@@ -678,8 +811,27 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--min-usable-potions", type=int, default=1)
     parser.add_argument("--required-potion-id")
     parser.add_argument("--required-potion-slot", type=int)
-    parser.add_argument("--required-encounter-id")
-    parser.add_argument("--distinct-encounters", action="store_true")
+    encounter_selector = parser.add_mutually_exclusive_group()
+    encounter_selector.add_argument(
+        "--required-encounter-id",
+        help="capture only one canonical encounter identity",
+    )
+    encounter_selector.add_argument(
+        "--distinct-encounters",
+        action="store_true",
+        help="capture at most one root per canonical encounter identity",
+    )
+    encounter_selector.add_argument(
+        "--encounter-quota",
+        action="append",
+        default=[],
+        type=_encounter_quota_argument,
+        metavar="ENCOUNTER_ID=ROOT_COUNT",
+        help=(
+            "fixed target for one encounter; repeat for a mixed curriculum "
+            "and omit --roots to derive the total"
+        ),
+    )
     parser.add_argument(
         "--potion-lane",
         choices=tuple(lane.value for lane in RunPotionLane),
@@ -706,11 +858,24 @@ def main() -> int:
             arguments.required_potion_id,
         )
     )
+    encounter_quotas = tuple(arguments.encounter_quota)
+    quota_root_count = sum(quota.root_count for quota in encounter_quotas)
+    if arguments.roots is None and not encounter_quotas:
+        parser.error("--roots is required unless --encounter-quota is supplied")
+    if (
+        arguments.roots is not None
+        and encounter_quotas
+        and arguments.roots != quota_root_count
+    ):
+        parser.error("--roots must equal the --encounter-quota total")
+    root_count = (
+        quota_root_count if arguments.roots is None else arguments.roots
+    )
     run_run_combat_root_collection(
         RunCombatRootCollectionConfig(
             behavior=arguments.behavior,
             output=arguments.output,
-            root_count=arguments.roots,
+            root_count=root_count,
             max_batch_steps=arguments.max_batch_steps,
             wall_ms=arguments.wall_ms,
             behavior_seed=arguments.behavior_seed,
@@ -722,6 +887,7 @@ def main() -> int:
             required_potion=required_potion,
             required_encounter_id=arguments.required_encounter_id,
             distinct_encounters=arguments.distinct_encounters,
+            encounter_quotas=encounter_quotas,
         )
     )
     return 0
