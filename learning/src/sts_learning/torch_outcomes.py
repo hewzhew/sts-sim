@@ -72,6 +72,34 @@ class OnPolicyTerminalLoss:
     entropy: float
     value_loss: float
     actor_advantages: tuple[float, ...]
+    value_diagnostics: RunValueDiagnostics | None
+
+
+@dataclass(frozen=True)
+class AttemptEqualSignalSummary:
+    """Compact decision signal statistics under equal total attempt weight."""
+
+    decision_count: int
+    negative_decisions: int
+    zero_decisions: int
+    positive_decisions: int
+    negative_weight: float
+    zero_weight: float
+    positive_weight: float
+    weighted_mean: float
+    weighted_standard_deviation: float
+    minimum: float
+    maximum: float
+
+
+@dataclass(frozen=True)
+class RunValueDiagnostics:
+    """Frozen rollout diagnostics for one whole-run actor-critic objective."""
+
+    actor_advantage: AttemptEqualSignalSummary
+    critic_prediction: AttemptEqualSignalSummary
+    terminal_target: AttemptEqualSignalSummary
+    critic_residual: AttemptEqualSignalSummary
 
 
 @dataclass(frozen=True)
@@ -118,6 +146,7 @@ class _RunPolicyLoss:
     entropy: float
     value_loss: float
     actor_advantages: tuple[float, ...]
+    value_diagnostics: RunValueDiagnostics | None
 
 
 def on_policy_terminal_loss(
@@ -312,6 +341,7 @@ def on_policy_terminal_loss(
         entropy=policy_loss.entropy,
         value_loss=policy_loss.value_loss,
         actor_advantages=policy_loss.actor_advantages,
+        value_diagnostics=policy_loss.value_diagnostics,
     )
 
 
@@ -657,6 +687,7 @@ def _run_policy_weighted_loss(
             entropy=0.0,
             value_loss=0.0,
             actor_advantages=tuple(float(target) for target in targets),
+            value_diagnostics=None,
         )
 
     decision_count = len(selected_ordinals)
@@ -723,6 +754,18 @@ def _run_policy_weighted_loss(
         raise TorchOutcomeError("run critic values are misaligned")
     if fixed_actor_advantages is None:
         actor_advantages = target_tensor - predicted_values.detach()
+        if update_config.normalize_advantage:
+            advantage_weight = torch.sum(weight_tensor)
+            advantage_mean = (
+                torch.sum(actor_advantages * weight_tensor) / advantage_weight
+            )
+            advantage_variance = torch.sum(
+                (actor_advantages - advantage_mean).square() * weight_tensor
+            ) / advantage_weight
+            actor_advantages = (actor_advantages - advantage_mean) / torch.clamp_min(
+                torch.sqrt(advantage_variance),
+                1e-8,
+            )
     else:
         if (
             len(fixed_actor_advantages) != decision_count
@@ -774,15 +817,119 @@ def _run_policy_weighted_loss(
     )
     if not all(bool(torch.all(torch.isfinite(value))) for value in diagnostics):
         raise TorchOutcomeError("run PPO objective must be finite")
+    detached_advantages = tuple(
+        float(value) for value in actor_advantages.detach().cpu().tolist()
+    )
+    value_diagnostics = None
+    if fixed_actor_advantages is None:
+        detached_predictions = tuple(
+            float(value) for value in predicted_values.detach().cpu().tolist()
+        )
+        detached_targets = tuple(
+            float(value) for value in target_tensor.detach().cpu().tolist()
+        )
+        detached_residuals = tuple(
+            target - prediction
+            for target, prediction in zip(
+                detached_targets,
+                detached_predictions,
+                strict=True,
+            )
+        )
+        value_diagnostics = RunValueDiagnostics(
+            actor_advantage=_attempt_equal_signal_summary(
+                detached_advantages,
+                weights,
+            ),
+            critic_prediction=_attempt_equal_signal_summary(
+                detached_predictions,
+                weights,
+            ),
+            terminal_target=_attempt_equal_signal_summary(
+                detached_targets,
+                weights,
+            ),
+            critic_residual=_attempt_equal_signal_summary(
+                detached_residuals,
+                weights,
+            ),
+        )
     return _RunPolicyLoss(
         value=loss,
         approximate_kl=float(approximate_kl.detach().item()),
         clip_fraction=float(clip_fraction.detach().item()),
         entropy=float(mean_entropy.detach().item()),
         value_loss=float(value_loss.detach().item()),
-        actor_advantages=tuple(
-            float(value) for value in actor_advantages.detach().cpu().tolist()
+        actor_advantages=detached_advantages,
+        value_diagnostics=value_diagnostics,
+    )
+
+
+def _attempt_equal_signal_summary(
+    values: Sequence[float],
+    weights: Sequence[float],
+) -> AttemptEqualSignalSummary:
+    """Summarize rows without allowing longer attempts to dominate moments."""
+
+    normalized_values = tuple(float(value) for value in values)
+    normalized_weights = tuple(float(weight) for weight in weights)
+    if (
+        len(normalized_values) != len(normalized_weights)
+        or not normalized_values
+        or not all(math.isfinite(value) for value in normalized_values)
+        or not all(
+            math.isfinite(weight) and weight > 0.0
+            for weight in normalized_weights
+        )
+    ):
+        raise TorchOutcomeError("run value diagnostics are misaligned or non-finite")
+    total_weight = math.fsum(normalized_weights)
+    if not math.isfinite(total_weight) or total_weight <= 0.0:
+        raise TorchOutcomeError("run value diagnostic weight must be positive")
+    scaled_weights = tuple(weight / total_weight for weight in normalized_weights)
+    weighted_mean = math.fsum(
+        value * weight
+        for value, weight in zip(
+            normalized_values,
+            scaled_weights,
+            strict=True,
+        )
+    )
+    weighted_variance = math.fsum(
+        weight * (value - weighted_mean) ** 2
+        for value, weight in zip(
+            normalized_values,
+            scaled_weights,
+            strict=True,
+        )
+    )
+    negative = tuple(value < 0.0 for value in normalized_values)
+    zero = tuple(value == 0.0 for value in normalized_values)
+    positive = tuple(value > 0.0 for value in normalized_values)
+    return AttemptEqualSignalSummary(
+        decision_count=len(normalized_values),
+        negative_decisions=sum(negative),
+        zero_decisions=sum(zero),
+        positive_decisions=sum(positive),
+        negative_weight=math.fsum(
+            weight
+            for weight, selected in zip(scaled_weights, negative, strict=True)
+            if selected
         ),
+        zero_weight=math.fsum(
+            weight
+            for weight, selected in zip(scaled_weights, zero, strict=True)
+            if selected
+        ),
+        positive_weight=math.fsum(
+            weight
+            for weight, selected in zip(scaled_weights, positive, strict=True)
+            if selected
+        ),
+        weighted_mean=weighted_mean,
+        weighted_standard_deviation=math.sqrt(max(0.0, weighted_variance)),
+        minimum=min(normalized_values),
+        maximum=max(normalized_values),
     )
 
 

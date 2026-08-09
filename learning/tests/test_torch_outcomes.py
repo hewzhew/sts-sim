@@ -393,7 +393,7 @@ class OnPolicyTerminalLossTests(unittest.TestCase):
         )
         frozen = first.actor_advantages
         self.assertAlmostEqual(frozen[0], 1.0)
-        self.assertAlmostEqual(frozen[1], -0.2)
+        self.assertAlmostEqual(frozen[1], -1.0)
         self.assertGreater(first.value_loss, 0.0)
         self.assertEqual(first.approximate_kl, 0.0)
         optimizer = torch.optim.SGD(scorer.parameters(), lr=0.01)
@@ -424,6 +424,62 @@ class OnPolicyTerminalLossTests(unittest.TestCase):
 
         self.assertEqual(second.actor_advantages, frozen)
         self.assertGreaterEqual(second.approximate_kl, 0.0)
+        self.assertIsNone(second.value_diagnostics)
+
+    def test_run_value_diagnostics_keep_attempt_equal_weight_for_unequal_lengths(
+        self,
+    ) -> None:
+        torch.manual_seed(44)
+        scorer = RaggedCandidateScorer.from_bridge_schema(
+            semantic_schema_fixture(),
+            RaggedScorerConfig(
+                hidden_dim=10,
+                relation_layers=1,
+                value_head=True,
+            ),
+        )
+        short = completed_attempt_fixture(
+            slot=1,
+            batches=(self._on_policy_batch(scorer, slot=1, row=0, ordinal=1),),
+            reward=1,
+        )
+        long = completed_attempt_fixture(
+            slot=2,
+            batches=(
+                self._on_policy_batch(scorer, slot=2, row=1, ordinal=2),
+                self._on_policy_batch(scorer, slot=2, row=0, ordinal=0),
+                self._on_policy_batch(scorer, slot=2, row=1, ordinal=1),
+            ),
+            reward=-1,
+        )
+
+        result = on_policy_terminal_loss(
+            scorer,
+            (short, long),
+            self.registry,
+            CONCAT_LIMITS,
+            self.config,
+            self.return_config,
+            TerminalAdvantageMode.RAW_RETURN,
+            update_config=RunPolicyUpdateConfig.ppo_clip_value(),
+        )
+
+        diagnostics = result.value_diagnostics
+        assert diagnostics is not None
+        advantage = diagnostics.actor_advantage
+        self.assertEqual(advantage.decision_count, 4)
+        self.assertEqual(advantage.positive_decisions, 1)
+        self.assertEqual(advantage.negative_decisions, 3)
+        self.assertAlmostEqual(advantage.positive_weight, 0.5)
+        self.assertAlmostEqual(advantage.negative_weight, 0.5)
+        self.assertAlmostEqual(advantage.weighted_mean, 0.0)
+        self.assertAlmostEqual(advantage.weighted_standard_deviation, 1.0)
+        self.assertAlmostEqual(diagnostics.critic_prediction.weighted_mean, 0.0)
+        self.assertAlmostEqual(diagnostics.critic_residual.weighted_mean, 0.4)
+        self.assertAlmostEqual(
+            diagnostics.critic_residual.weighted_standard_deviation,
+            0.6,
+        )
 
     def test_unknown_or_mismatched_propensity_is_rejected(self) -> None:
         values = torch.nn.Parameter(torch.zeros(2))

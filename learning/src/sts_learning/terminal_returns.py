@@ -69,6 +69,7 @@ class RunPolicyUpdateConfig:
     max_grad_norm: float | None = None
     target_kl: float | None = None
     value_loss_coefficient: float = 0.0
+    normalize_advantage: bool = False
 
     @classmethod
     def ppo_clip_value(cls) -> RunPolicyUpdateConfig:
@@ -79,6 +80,7 @@ class RunPolicyUpdateConfig:
             max_grad_norm=0.5,
             target_kl=0.02,
             value_loss_coefficient=0.5,
+            normalize_advantage=True,
         )
 
     @property
@@ -111,6 +113,8 @@ class RunPolicyUpdateConfig:
             self.value_loss_coefficient,
             "value_loss_coefficient",
         )
+        if type(self.normalize_advantage) is not bool:
+            raise TerminalReturnError("normalize_advantage must be bool")
         max_grad_norm = _optional_positive_float(
             self.max_grad_norm,
             "max_grad_norm",
@@ -128,6 +132,7 @@ class RunPolicyUpdateConfig:
             or max_grad_norm is not None
             or target_kl is not None
             or value_loss != 0.0
+            or self.normalize_advantage
         ):
             raise TerminalReturnError(
                 "run REINFORCE requires one epoch and no PPO regularization"

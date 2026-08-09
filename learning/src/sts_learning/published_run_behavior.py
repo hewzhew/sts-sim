@@ -137,6 +137,14 @@ def recover_published_run_behavior(
         raise PublishedRunBehaviorError(
             "run policy update changed across publication"
         )
+    completed_normalization = completed.get(
+        "run_policy_normalize_advantage",
+        False,
+    )
+    if completed_normalization != policy_update.normalize_advantage:
+        raise PublishedRunBehaviorError(
+            "run advantage normalization changed across publication"
+        )
     training_step = _nonnegative(
         completed.get("optimizer_steps"),
         "optimizer_steps",
@@ -373,7 +381,17 @@ def _run_policy_update(configuration: Mapping[str, object]) -> RunPolicyUpdateCo
             configuration.get("run_policy_value_loss_coefficient"),
             "run_policy_value_loss_coefficient",
         ),
+        normalize_advantage=_boolean(
+            configuration.get("run_policy_normalize_advantage", False),
+            "run_policy_normalize_advantage",
+        ),
     )
+
+
+def _boolean(value: object, name: str) -> bool:
+    if type(value) is not bool:
+        raise PublishedRunBehaviorError(f"{name} must be boolean")
+    return value
 
 
 def _episode_root_attempts(

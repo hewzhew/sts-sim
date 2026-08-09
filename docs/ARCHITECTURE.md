@@ -859,6 +859,16 @@ categorical rule to match its typed configuration and recomputes every recorded
 selection propensity from the current shadow scorer before mutation. Unknown
 or mismatched propensity is explicitly off-policy and rejected. Any future
 off-policy correction requires a separate objective with declared assumptions.
+The whole-run PPO-clip-value rule adds a scalar critic over the same decision
+state. Before the first optimizer step it subtracts the critic prediction from
+the raw terminal target, then centers and scales the resulting actor advantage
+with the same attempt-equal weights used by the loss. The critic continues to
+fit the unnormalized terminal target. Actor advantages and behavior
+probabilities remain frozen across the bounded PPO epochs. A compact rollout
+diagnostic retains raw row sign counts plus attempt-equal sign weight and
+weighted moments for actor advantage, critic prediction, target, and
+target-minus-prediction residual; it retains no experience rows and later
+epochs cannot rewrite it.
 For whole-run batches that carry decision-time progress, the trainer also emits
 a bounded non-authoritative comparison against a remaining-horizon target. A
 defeat observed from decision floor `d` maps its later terminal floor `f` to

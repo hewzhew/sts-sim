@@ -20,6 +20,7 @@ from .semantic_concat import SemanticBatchConcatLimits
 from .terminal_returns import OnPolicyObjectiveConfig
 from .torch_outcomes import (
     CandidatePolicyScorer,
+    RunValueDiagnostics,
     on_policy_terminal_loss,
 )
 from .torch_policy import RaggedCategoricalPolicyConfig
@@ -59,6 +60,7 @@ class RunPolicyTrainingResult:
     entropy: float
     value_loss: float
     gradient_norm: float
+    rollout_value_diagnostics: RunValueDiagnostics | None
 
 
 class SynchronousPolicyTrainer:
@@ -203,6 +205,7 @@ class SynchronousPolicyTrainer:
             if self.objective_config.policy_update.uses_value_baseline
             else None
         )
+        rollout_value_diagnostics = objective.value_diagnostics
         try:
             for epoch in range(self.objective_config.policy_update.epochs):
                 if epoch > 0:
@@ -281,6 +284,7 @@ class SynchronousPolicyTrainer:
             entropy=objective.entropy,
             value_loss=objective.value_loss,
             gradient_norm=gradient_norm,
+            rollout_value_diagnostics=rollout_value_diagnostics,
         )
         elapsed = time.perf_counter() - training_started
         self._total_training_seconds += elapsed

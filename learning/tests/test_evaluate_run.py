@@ -248,6 +248,7 @@ def test_run_training_warm_starts_publishes_and_evaluates(
         "advantage_mode": "raw_return",
         "decision_scope": "all",
         "policy_update": "reinforce",
+        "normalize_advantage": False,
     }
     assert reevaluation["terminal_attempts"] == 2
 
@@ -299,11 +300,21 @@ def test_run_value_ppo_warm_starts_actor_and_publishes_diagnostics(
     )
     generation = records[1]
     assert summary["run_policy_update"] == "ppo_clip_value"
+    assert summary["run_policy_normalize_advantage"] is True
     assert 1 <= summary["optimizer_steps"] <= 4
     assert generation["optimizer_steps_applied"] == summary["optimizer_steps"]
     assert generation["value_loss"] > 0.0
     assert generation["gradient_norm"] > 0.0
     assert generation["approximate_kl"] >= 0.0
+    rollout = generation["rollout_value_diagnostics"]
+    assert rollout["weighting"] == "attempt_equal"
+    assert (
+        rollout["critic_residual_convention"]
+        == "terminal_target_minus_prediction"
+    )
+    assert rollout["critic_prediction"]["weighted_mean"] == pytest.approx(0.0)
+    assert rollout["actor_advantage"]["zero_weight"] == pytest.approx(1.0)
+    assert rollout["critic_residual"]["weighted_mean"] == pytest.approx(1.0)
 
     recovered = recover_published_run_behavior(output, run_bridge, (777,))
     assert recovered.objective.policy_update.uses_value_baseline

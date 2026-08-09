@@ -167,6 +167,7 @@ class OnPolicyObjectiveConfigTests(unittest.TestCase):
         self.assertIs(objective.policy_update, update)
         self.assertTrue(objective.policy_update.uses_value_baseline)
         self.assertEqual(objective.policy_update.epochs, 4)
+        self.assertTrue(objective.policy_update.normalize_advantage)
         with self.assertRaisesRegex(TerminalReturnError, "raw-return"):
             OnPolicyObjectiveConfig(
                 attempts_per_update=2,

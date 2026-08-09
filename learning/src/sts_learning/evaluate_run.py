@@ -290,6 +290,9 @@ def _summary(
                 "policy_update": (
                     recovered.objective.policy_update.rule.name.lower()
                 ),
+                "normalize_advantage": (
+                    recovered.objective.policy_update.normalize_advantage
+                ),
             }
         ),
         "behavior_seed": config.behavior_seed,

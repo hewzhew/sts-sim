@@ -47,6 +47,7 @@ from .torch_combat_session_config import (
     CombatWinSessionLimits,
 )
 from .torch_generation import CategoricalGenerationAdvanceResult
+from .torch_outcomes import AttemptEqualSignalSummary
 from .torch_session import (
     CategoricalOnlineSession,
     CategoricalOnlineSessionFactory,
@@ -59,6 +60,7 @@ from .torch_session_config import (
     CategoricalSessionLimits,
 )
 from .torch_policy import RaggedScorerConfig
+from .torch_training import RunPolicyTrainingResult
 
 
 class RunTrainingCommandError(RuntimeError):
@@ -461,6 +463,9 @@ def _configuration(
         "run_policy_value_loss_coefficient": (
             config.policy_update.value_loss_coefficient
         ),
+        "run_policy_normalize_advantage": (
+            config.policy_update.normalize_advantage
+        ),
         "max_batch_steps_per_generation": (
             config.max_batch_steps_per_generation
         ),
@@ -511,12 +516,47 @@ def _generation(
         "entropy": None if training is None else training.entropy,
         "value_loss": None if training is None else training.value_loss,
         "gradient_norm": None if training is None else training.gradient_norm,
+        "rollout_value_diagnostics": _rollout_value_diagnostics(training),
         "trained_decisions": trainer.trained_decisions,
         "training_resources_cumulative": _resource_aggregate(resources),
         "credit_assignment": _credit_assignment(
             session.runner.trainer.last_credit_assignment
         ),
         "elapsed_seconds": elapsed,
+    }
+
+
+def _rollout_value_diagnostics(
+    training: RunPolicyTrainingResult | None,
+) -> dict[str, object] | None:
+    diagnostics = (
+        None if training is None else training.rollout_value_diagnostics
+    )
+    if diagnostics is None:
+        return None
+
+    def signal(summary: AttemptEqualSignalSummary) -> dict[str, object]:
+        return {
+            "decision_count": summary.decision_count,
+            "negative_decisions": summary.negative_decisions,
+            "zero_decisions": summary.zero_decisions,
+            "positive_decisions": summary.positive_decisions,
+            "negative_weight": summary.negative_weight,
+            "zero_weight": summary.zero_weight,
+            "positive_weight": summary.positive_weight,
+            "weighted_mean": summary.weighted_mean,
+            "weighted_standard_deviation": summary.weighted_standard_deviation,
+            "minimum": summary.minimum,
+            "maximum": summary.maximum,
+        }
+
+    return {
+        "weighting": "attempt_equal",
+        "critic_residual_convention": "terminal_target_minus_prediction",
+        "actor_advantage": signal(diagnostics.actor_advantage),
+        "critic_prediction": signal(diagnostics.critic_prediction),
+        "terminal_target": signal(diagnostics.terminal_target),
+        "critic_residual": signal(diagnostics.critic_residual),
     }
 
 
@@ -546,6 +586,9 @@ def _summary(
         "sampling_mode": config.sampling_mode.value,
         "episode_root_attempts": config.episode_root_attempts,
         "run_policy_update": config.policy_update.rule.name.lower(),
+        "run_policy_normalize_advantage": (
+            config.policy_update.normalize_advantage
+        ),
         "generations": config.generations,
         "optimizer_steps": session.runner.trainer.snapshot.optimizer_steps,
         "training_resources_cumulative": _resource_aggregate(training_resources),

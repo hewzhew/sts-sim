@@ -140,6 +140,13 @@ class TorchProvenanceTests(unittest.TestCase):
             reinforce,
             policy_update=RunPolicyUpdateConfig.ppo_clip_value(),
         )
+        unnormalized_value = replace(
+            value,
+            policy_update=replace(
+                value.policy_update,
+                normalize_advantage=False,
+            ),
+        )
 
         policy_template = categorical_training_manifest_template(
             schema,
@@ -161,6 +168,18 @@ class TorchProvenanceTests(unittest.TestCase):
             value,
             device_type="cpu",
         )
+        unnormalized_value_template = categorical_training_manifest_template(
+            schema,
+            RaggedScorerConfig(
+                hidden_dim=4,
+                relation_layers=1,
+                value_head=True,
+            ),
+            behavior,
+            optimizer,
+            unnormalized_value,
+            device_type="cpu",
+        )
 
         self.assertNotEqual(
             value_template.model_definition,
@@ -173,6 +192,10 @@ class TorchProvenanceTests(unittest.TestCase):
         self.assertNotEqual(
             value_template.trainer_implementation,
             policy_template.trainer_implementation,
+        )
+        self.assertNotEqual(
+            unnormalized_value_template.trainer_implementation,
+            value_template.trainer_implementation,
         )
 
     def test_template_is_canonical_and_changes_with_runtime_profile(self) -> None:

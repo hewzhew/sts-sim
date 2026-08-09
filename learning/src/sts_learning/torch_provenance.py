@@ -39,8 +39,8 @@ _SEMANTIC_SCHEMA_ENCODING_VERSION = 1
 _OPTIMIZER_CONFIG_VERSION = 1
 _TRAINER_IMPLEMENTATION_VERSION = 4
 _TERMINAL_RETURN_CONFIG_VERSION = 1
-_RUN_VALUE_PPO_TRAINER_IMPLEMENTATION_VERSION = 1
-_RUN_VALUE_PPO_OBJECTIVE_VERSION = 1
+_RUN_VALUE_PPO_TRAINER_IMPLEMENTATION_VERSION = 2
+_RUN_VALUE_PPO_OBJECTIVE_VERSION = 2
 _COMBAT_WIN_TRAINER_IMPLEMENTATION_VERSION = 3
 _COMBAT_WIN_OBJECTIVE_VERSION = 3
 _COMBAT_PPO_TRAINER_IMPLEMENTATION_VERSION = 4
@@ -279,14 +279,31 @@ def categorical_trainer_implementation(
         )
     max_grad_norm = update.max_grad_norm
     target_kl = update.target_kl
-    return ManifestArtifactId.from_content(
-        ManifestArtifactKind.TRAINER_IMPLEMENTATION,
-        b"STS-SYNCHRONOUS-RUN-PPO-CLIP-VALUE-TRAINER\x00"
-        + struct.pack(">I", _RUN_VALUE_PPO_TRAINER_IMPLEMENTATION_VERSION)
-        + b"STS-FLOOR-PROGRESS-RETURN-PPO-CLIP-VALUE\x00"
-        + struct.pack(
-            ">IQQBBBQdddBdBd",
+    if update.normalize_advantage:
+        trainer_version = _RUN_VALUE_PPO_TRAINER_IMPLEMENTATION_VERSION
+        objective_encoding = struct.pack(
+            ">IQQBBBBQdddBdBd",
             _RUN_VALUE_PPO_OBJECTIVE_VERSION,
+            objective_config.terminal_return.target_floor,
+            objective_config.attempts_per_update,
+            int(objective_config.advantage_mode),
+            int(objective_config.decision_scope),
+            int(update.rule),
+            int(update.normalize_advantage),
+            update.epochs,
+            update.clip_coefficient,
+            update.entropy_coefficient,
+            update.value_loss_coefficient,
+            int(max_grad_norm is not None),
+            0.0 if max_grad_norm is None else max_grad_norm,
+            int(target_kl is not None),
+            0.0 if target_kl is None else target_kl,
+        )
+    else:
+        trainer_version = 1
+        objective_encoding = struct.pack(
+            ">IQQBBBQdddBdBd",
+            1,
             objective_config.terminal_return.target_floor,
             objective_config.attempts_per_update,
             int(objective_config.advantage_mode),
@@ -301,6 +318,12 @@ def categorical_trainer_implementation(
             int(target_kl is not None),
             0.0 if target_kl is None else target_kl,
         )
+    return ManifestArtifactId.from_content(
+        ManifestArtifactKind.TRAINER_IMPLEMENTATION,
+        b"STS-SYNCHRONOUS-RUN-PPO-CLIP-VALUE-TRAINER\x00"
+        + struct.pack(">I", trainer_version)
+        + b"STS-FLOOR-PROGRESS-RETURN-PPO-CLIP-VALUE\x00"
+        + objective_encoding
         + _runtime_version_bytes(),
     )
 
