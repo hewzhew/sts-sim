@@ -7,6 +7,17 @@ use crate::content::relics::{RelicId, RelicState};
 use crate::runtime::combat::{CombatRng, Power};
 use crate::runtime::rng::RngPool;
 
+fn test_power(power_type: PowerId, instance_id: u32, amount: i32) -> Power {
+    Power {
+        power_type,
+        instance_id: Some(instance_id),
+        amount,
+        extra_data: 0,
+        payload: PowerPayload::None,
+        just_applied: false,
+    }
+}
+
 #[test]
 fn private_rng_and_card_uuid_do_not_change_learning_observation() {
     let mut left = crate::test_support::blank_test_combat();
@@ -135,14 +146,98 @@ fn learning_observation_keeps_domain_card_potion_and_enemy_identities() {
 }
 
 #[test]
-fn serialized_learning_observation_has_one_card_zone_projection() {
-    let observation = combat_learning_observation_v1(&crate::test_support::blank_test_combat());
+fn hand_attack_projects_current_damage_for_each_monster_without_mutating_the_card() {
+    let mut combat = crate::test_support::blank_test_combat();
+    let mut strike = CombatCard::new(CardId::Strike, 41);
+    strike.base_damage_mut = 99;
+    strike.base_block_mut = 88;
+    strike.base_magic_num_mut = 77;
+    strike.multi_damage = smallvec::smallvec![66];
+    combat.zones.hand = vec![strike.clone()];
+
+    let mut first = crate::test_support::test_monster(EnemyId::Cultist);
+    first.id = 1;
+    first.slot = 0;
+    let mut second = crate::test_support::test_monster(EnemyId::JawWorm);
+    second.id = 2;
+    second.slot = 1;
+    combat.entities.monsters = vec![first, second];
+    store::set_powers_for(
+        &mut combat,
+        0,
+        vec![
+            test_power(PowerId::Strength, 1, 3),
+            test_power(PowerId::Weak, 2, 1),
+        ],
+    );
+    store::set_powers_for(&mut combat, 2, vec![test_power(PowerId::Vulnerable, 3, 1)]);
+
+    let observation = combat_learning_observation_v1(&combat);
+    let projected = &observation.cards.hand.cards[0];
+
+    assert_eq!(projected.current_damage, 6);
+    assert_eq!(projected.damage_by_monster_order, vec![6, 10]);
+    assert_eq!(combat.zones.hand[0], strike);
+}
+
+#[test]
+fn hand_multi_attack_projection_stays_aligned_to_monster_order() {
+    let mut combat = crate::test_support::blank_test_combat();
+    combat.zones.hand = vec![CombatCard::new(CardId::ThunderClap, 41)];
+
+    let mut first = crate::test_support::test_monster(EnemyId::Cultist);
+    first.id = 1;
+    first.slot = 0;
+    let mut second = crate::test_support::test_monster(EnemyId::JawWorm);
+    second.id = 2;
+    second.slot = 1;
+    combat.entities.monsters = vec![first, second];
+    store::set_powers_for(&mut combat, 2, vec![test_power(PowerId::Vulnerable, 1, 1)]);
+
+    let observation = combat_learning_observation_v1(&combat);
+    let projected = &observation.cards.hand.cards[0];
+
+    assert_eq!(projected.current_damage, 4);
+    assert_eq!(projected.damage_by_monster_order, vec![4, 6]);
+}
+
+#[test]
+fn hand_skill_projects_current_block_without_fake_target_damage() {
+    let mut combat = crate::test_support::blank_test_combat();
+    let mut defend = CombatCard::new(CardId::Defend, 41);
+    defend.base_block_mut = 99;
+    defend.multi_damage = smallvec::smallvec![55];
+    combat.zones.hand = vec![defend.clone()];
+    combat
+        .entities
+        .monsters
+        .push(crate::test_support::test_monster(EnemyId::Cultist));
+    store::set_powers_for(&mut combat, 0, vec![test_power(PowerId::Dexterity, 1, 2)]);
+
+    let observation = combat_learning_observation_v1(&combat);
+    let projected = &observation.cards.hand.cards[0];
+
+    assert_eq!(projected.current_block, 7);
+    assert!(projected.damage_by_monster_order.is_empty());
+    assert_eq!(combat.zones.hand[0], defend);
+}
+
+#[test]
+fn serialized_learning_observation_uses_v2_current_card_projection() {
+    let mut combat = crate::test_support::blank_test_combat();
+    combat.zones.hand = vec![CombatCard::new(CardId::Strike, 1)];
+    let observation = combat_learning_observation_v1(&combat);
     let value = serde_json::to_value(observation).expect("serialize learning observation");
 
+    assert_eq!(value["schema_name"], "CombatLearningObservation");
+    assert_eq!(value["schema_version"], 2);
     assert!(value.get("cards").is_some());
     assert!(value.get("player").is_some());
     assert!(value.get("player_summary").is_none());
     assert!(value.get("public_summary").is_none());
+    let card = &value["cards"]["hand"]["cards"][0];
+    assert_eq!(card["current_damage"], 6);
+    assert!(card.get("base_damage_mut").is_none());
 }
 
 #[test]

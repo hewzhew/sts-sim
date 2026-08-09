@@ -352,11 +352,19 @@ Monster intent follows the game's information boundary. Single-step monster
 plans materialize their unambiguous `visible_spec`; multi-step plans must
 declare one explicitly. A public observation uses an explicit protocol mirror
 when available and otherwise falls back only to that visible spec, never to
-private move RNG or arbitrary execution steps. Current damage preview is
-projected through the simulator damage pipeline. Runic Dome hides both intent
-and preview before either source is consulted.
+private move RNG or arbitrary execution steps. Current monster damage preview
+is projected through the simulator damage pipeline. Card projections likewise
+ignore mutable rendering caches: every public card gets fresh current damage,
+block, and magic values, while hand and limbo attacks additionally carry
+damage aligned to monster order. Other card zones do not repeat the per-target
+projection. Runic Dome hides both monster intent and monster damage preview
+before either source is consulted.
 `semantic_schema()` exposes enum dictionaries and categorical vocabulary sizes
 from the same Rust definitions, avoiding a second Python feature dictionary.
+Changing an encoded field's meaning or turning a previously constant field into
+live information requires a semantic-schema version bump even when the table
+shape is unchanged. Checkpoints trained under the prior meaning must fail
+closed rather than silently consuming the new distribution.
 The bridge still owns no policy, optimizer, automatic reset, or PyTorch
 dependency. Keeping the crate standalone prevents Python build dependencies
 from entering ordinary simulator checks.

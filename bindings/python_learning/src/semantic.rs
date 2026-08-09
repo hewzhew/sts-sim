@@ -30,7 +30,7 @@ use sts_oracle_eval::state::events::{EventActionKind, EventId};
 use sts_oracle_eval::state::map::node::RoomType;
 use sts_oracle_eval::state::selection::{SelectionReason, SelectionScope};
 
-pub const SEMANTIC_SCHEMA_VERSION: u32 = 4;
+pub const SEMANTIC_SCHEMA_VERSION: u32 = 5;
 pub const NO_CANDIDATE_TOKEN: u64 = u64::MAX;
 pub const CARD_ID_VOCABULARY_SIZE: u64 = 371;
 pub const RELIC_ID_VOCABULARY_SIZE: u64 = 182;
@@ -42,7 +42,7 @@ pub const POWER_ID_VOCABULARY_SIZE: u64 = 135;
 
 const RUN_SELECTION_DECK_CARD_UUID_INPUT_ENCODING: i64 = 3;
 
-// Domain identities use their fieldless enum ordinals inside schema v4. These
+// Domain identities use their fieldless enum ordinals inside schema v5. These
 // compile-time size sentinels catch vocabulary extension; any intentional
 // insertion or reordering also requires an explicit schema review and bump.
 const _: () = {
@@ -287,9 +287,9 @@ pub enum ScalarField: u16 {
     PublicCounterValue = 65,
     CardCostForTurn = 66,
     CardEffectiveCost = 67,
-    CardBaseDamageMut = 68,
-    CardBaseBlockMut = 69,
-    CardBaseMagicNumberMut = 70,
+    CardCurrentDamage = 68,
+    CardCurrentBlock = 69,
+    CardCurrentMagicNumber = 70,
     CardEnergyOnUse = 71,
     DamageProjectionValue = 72,
     ActionIndex = 73,

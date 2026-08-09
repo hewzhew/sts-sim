@@ -245,6 +245,12 @@ def recover_published_combat_behavior(
         manifest.model_checkpoint,
         training_step=manifest.training_step,
     )
+    if manifest.semantic_schema_version != expected.semantic_schema_version:
+        raise PublishedCombatBehaviorError(
+            "published behavior semantic schema version "
+            f"{manifest.semantic_schema_version} does not match installed version "
+            f"{expected.semantic_schema_version}"
+        )
     if manifest != expected:
         raise PublishedCombatBehaviorError(
             "published behavior does not match the maintained combat profile"

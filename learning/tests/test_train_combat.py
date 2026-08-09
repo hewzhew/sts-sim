@@ -14,7 +14,10 @@ from learning.tests.torch_combat_fixtures import OneRoundCombatGroup
 from sts_learning import CombatAllLossAxis
 from sts_learning.combat_potion_lane import CombatPotionLane
 from sts_learning import RunPolicyUpdateConfig
-from sts_learning.published_combat_behavior import recover_published_combat_behavior
+from sts_learning.published_combat_behavior import (
+    PublishedCombatBehaviorError,
+    recover_published_combat_behavior,
+)
 from sts_learning.torch_combat_session_config import CombatSessionBridge
 from sts_learning.torch_combat_session_config import CombatWinSessionLimits
 from sts_learning.train_combat import (
@@ -225,6 +228,27 @@ def test_training_command_publishes_explicit_all_loss_objective(
         recovered.training_all_loss_axis
         is CombatAllLossAxis.ENEMY_HP_PROGRESS
     )
+
+
+def test_recovery_reports_semantic_schema_version_mismatch(tmp_path: Path) -> None:
+    behavior, bridge, _ = published_behavior(tmp_path)
+    mismatched_schema = dict(bridge.semantic_schema)
+    mismatched_schema["version"] = int(mismatched_schema["version"]) + 1
+    mismatched_bridge = CombatSessionBridge(
+        combat_roots_from_artifact=bridge.combat_roots_from_artifact,
+        semantic_schema=mismatched_schema,
+    )
+
+    with pytest.raises(
+        PublishedCombatBehaviorError,
+        match="semantic schema version 2 does not match installed version 3",
+    ):
+        recover_published_combat_behavior(
+            behavior,
+            mismatched_bridge,
+            CombatWinSessionLimits(),
+            (701,),
+        )
 
 
 def test_training_command_warm_starts_actor_only_from_run_value_behavior(

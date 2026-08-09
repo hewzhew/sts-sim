@@ -6,7 +6,7 @@ without per-step JSON or one Python call per environment slot.
 
 The control surface exposes slot identity, decision phase, ragged candidate row
 splits, candidate counts, and an optional dense legal-action mask. Calling
-`decision_batch(semantic=True)` additionally returns semantic schema version 4
+`decision_batch(semantic=True)` additionally returns semantic schema version 5
 as five sparse, columnar NumPy table families:
 
 - `token`: token kinds plus per-decision row splits;

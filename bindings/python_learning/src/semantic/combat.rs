@@ -1,4 +1,4 @@
-//! Complete combat-side encoding for semantic schema v4.
+//! Complete combat-side encoding for semantic schema v5.
 
 use sts_oracle_eval::ai::combat_learning_observation::{
     CombatLearningCardCollectionV1, CombatLearningCardV1, CombatLearningEnemyIdentityV1,
@@ -662,12 +662,12 @@ impl SemanticBatchBuilder {
             self.scalar(token, ScalarField::CardCostForTurn, value);
         }
         self.scalar(token, ScalarField::CardEffectiveCost, card.effective_cost);
-        self.scalar(token, ScalarField::CardBaseDamageMut, card.base_damage_mut);
-        self.scalar(token, ScalarField::CardBaseBlockMut, card.base_block_mut);
+        self.scalar(token, ScalarField::CardCurrentDamage, card.current_damage);
+        self.scalar(token, ScalarField::CardCurrentBlock, card.current_block);
         self.scalar(
             token,
-            ScalarField::CardBaseMagicNumberMut,
-            card.base_magic_num_mut,
+            ScalarField::CardCurrentMagicNumber,
+            card.current_magic_number,
         );
         if let Some(value) = card.exhaust_override {
             self.category(

@@ -9,7 +9,7 @@ use std::cmp::Ordering;
 use serde::{Deserialize, Serialize};
 
 use crate::ai::planner_core::PlannerPlayerClass;
-use crate::content::cards::CardId;
+use crate::content::cards::{evaluate_card_for_play, get_card_definition, CardId, CardType};
 use crate::content::monsters::EnemyId;
 use crate::content::potions::PotionId;
 use crate::content::powers::PowerId;
@@ -25,8 +25,8 @@ use super::combat_public_observation::{
     HiddenInformationReasonV1, InformationAccessV1, ObservationEvidenceKindV1,
 };
 
-pub const COMBAT_LEARNING_OBSERVATION_SCHEMA_NAME: &str = "CombatLearningObservationV1";
-pub const COMBAT_LEARNING_OBSERVATION_SCHEMA_VERSION: u32 = 1;
+pub const COMBAT_LEARNING_OBSERVATION_SCHEMA_NAME: &str = "CombatLearningObservation";
+pub const COMBAT_LEARNING_OBSERVATION_SCHEMA_VERSION: u32 = 2;
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -206,9 +206,9 @@ pub struct CombatLearningCardV1 {
     pub cost_modifier: i8,
     pub cost_for_turn: Option<u8>,
     pub effective_cost: i32,
-    pub base_damage_mut: i32,
-    pub base_block_mut: i32,
-    pub base_magic_num_mut: i32,
+    pub current_damage: i32,
+    pub current_block: i32,
+    pub current_magic_number: i32,
     pub damage_by_monster_order: Vec<i32>,
     pub exhaust_override: Option<bool>,
     pub retain_override: Option<bool>,
@@ -227,9 +227,9 @@ impl Ord for CombatLearningCardV1 {
             .then_with(|| self.cost_modifier.cmp(&other.cost_modifier))
             .then_with(|| self.cost_for_turn.cmp(&other.cost_for_turn))
             .then_with(|| self.effective_cost.cmp(&other.effective_cost))
-            .then_with(|| self.base_damage_mut.cmp(&other.base_damage_mut))
-            .then_with(|| self.base_block_mut.cmp(&other.base_block_mut))
-            .then_with(|| self.base_magic_num_mut.cmp(&other.base_magic_num_mut))
+            .then_with(|| self.current_damage.cmp(&other.current_damage))
+            .then_with(|| self.current_block.cmp(&other.current_block))
+            .then_with(|| self.current_magic_number.cmp(&other.current_magic_number))
             .then_with(|| {
                 self.damage_by_monster_order
                     .cmp(&other.damage_by_monster_order)
@@ -337,21 +337,25 @@ pub fn combat_learning_observation_v1(combat: &CombatState) -> CombatLearningObs
             powers: learning_powers(combat, player.id),
         },
         cards: CombatLearningCardZonesV1 {
-            master_deck: unordered_cards(combat.meta.master_deck_snapshot.iter()),
+            master_deck: unordered_cards(combat, combat.meta.master_deck_snapshot.iter()),
             hand: ordered_cards(
+                combat,
                 combat.zones.hand.iter(),
                 ObservationEvidenceKindV1::PublicOrderedCollection,
+                true,
             ),
             draw: if draw_evidence == ObservationEvidenceKindV1::PublicOrderedCollection {
-                ordered_cards(combat.zones.draw_pile.iter(), draw_evidence)
+                ordered_cards(combat, combat.zones.draw_pile.iter(), draw_evidence, false)
             } else {
-                unordered_cards_with_evidence(combat.zones.draw_pile.iter(), draw_evidence)
+                unordered_cards_with_evidence(combat, combat.zones.draw_pile.iter(), draw_evidence)
             },
-            discard: unordered_cards(combat.zones.discard_pile.iter()),
-            exhaust: unordered_cards(combat.zones.exhaust_pile.iter()),
+            discard: unordered_cards(combat, combat.zones.discard_pile.iter()),
+            exhaust: unordered_cards(combat, combat.zones.exhaust_pile.iter()),
             limbo: ordered_cards(
+                combat,
                 combat.zones.limbo.iter(),
                 ObservationEvidenceKindV1::VisibleExact,
+                true,
             ),
         },
         monsters,
@@ -422,11 +426,11 @@ fn learning_powers(combat: &CombatState, entity_id: usize) -> Vec<CombatLearning
         .get(&entity_id)
         .into_iter()
         .flatten()
-        .map(learning_power)
+        .map(|power| learning_power(combat, power))
         .collect()
 }
 
-fn learning_power(power: &Power) -> CombatLearningPowerV1 {
+fn learning_power(combat: &CombatState, power: &Power) -> CombatLearningPowerV1 {
     CombatLearningPowerV1 {
         power: power.power_type,
         amount: power.amount,
@@ -434,37 +438,75 @@ fn learning_power(power: &Power) -> CombatLearningPowerV1 {
         just_applied: power.just_applied,
         payload_card: match &power.payload {
             PowerPayload::None => None,
-            PowerPayload::Card(card) => Some(learning_card(card)),
+            PowerPayload::Card(card) => Some(learning_card(combat, card, false)),
         },
     }
 }
 
 fn ordered_cards<'a>(
+    combat: &CombatState,
     cards: impl Iterator<Item = &'a CombatCard>,
     evidence: ObservationEvidenceKindV1,
+    include_damage_by_monster_order: bool,
 ) -> CombatLearningCardCollectionV1 {
     CombatLearningCardCollectionV1 {
         evidence,
-        cards: cards.map(learning_card).collect(),
+        cards: cards
+            .map(|card| learning_card(combat, card, include_damage_by_monster_order))
+            .collect(),
     }
 }
 
 fn unordered_cards<'a>(
+    combat: &CombatState,
     cards: impl Iterator<Item = &'a CombatCard>,
 ) -> CombatLearningCardCollectionV1 {
-    unordered_cards_with_evidence(cards, ObservationEvidenceKindV1::PublicUnorderedCollection)
+    unordered_cards_with_evidence(
+        combat,
+        cards,
+        ObservationEvidenceKindV1::PublicUnorderedCollection,
+    )
 }
 
 fn unordered_cards_with_evidence<'a>(
+    combat: &CombatState,
     cards: impl Iterator<Item = &'a CombatCard>,
     evidence: ObservationEvidenceKindV1,
 ) -> CombatLearningCardCollectionV1 {
-    let mut cards = cards.map(learning_card).collect::<Vec<_>>();
+    let mut cards = cards
+        .map(|card| learning_card(combat, card, false))
+        .collect::<Vec<_>>();
     cards.sort();
     CombatLearningCardCollectionV1 { evidence, cards }
 }
 
-fn learning_card(card: &CombatCard) -> CombatLearningCardV1 {
+fn learning_card(
+    combat: &CombatState,
+    card: &CombatCard,
+    include_damage_by_monster_order: bool,
+) -> CombatLearningCardV1 {
+    // `CombatCard` keeps Java-style rendering caches, but production combat
+    // execution does not guarantee that applyPowers() populated them before a
+    // learning observation is requested. Project from a fresh clone through
+    // the same mechanism pipeline used by actual card play instead of exposing
+    // stale cache values or mutating the live card.
+    let evaluated = evaluate_card_for_play(card, combat, None);
+    let definition = get_card_definition(card.id);
+    let damage_by_monster_order = if !include_damage_by_monster_order
+        || definition.card_type != CardType::Attack
+    {
+        Vec::new()
+    } else if definition.is_multi_damage {
+        evaluated.multi_damage.iter().copied().collect()
+    } else {
+        combat
+            .entities
+            .monsters
+            .iter()
+            .map(|monster| evaluate_card_for_play(card, combat, Some(monster.id)).base_damage_mut)
+            .collect()
+    };
+
     CombatLearningCardV1 {
         card_id: card.id,
         upgrades: card.upgrades,
@@ -474,10 +516,10 @@ fn learning_card(card: &CombatCard) -> CombatLearningCardV1 {
         cost_modifier: card.cost_modifier,
         cost_for_turn: card.cost_for_turn,
         effective_cost: card.cost_for_turn_java(),
-        base_damage_mut: card.base_damage_mut,
-        base_block_mut: card.base_block_mut,
-        base_magic_num_mut: card.base_magic_num_mut,
-        damage_by_monster_order: card.multi_damage.iter().copied().collect(),
+        current_damage: evaluated.base_damage_mut,
+        current_block: evaluated.base_block_mut,
+        current_magic_number: evaluated.base_magic_num_mut,
+        damage_by_monster_order,
         exhaust_override: card.exhaust_override,
         retain_override: card.retain_override,
         free_to_play_once: card.free_to_play_once,
