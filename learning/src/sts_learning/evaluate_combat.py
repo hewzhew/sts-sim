@@ -43,7 +43,9 @@ from .torch_combat_session_config import (
 from .torch_session_config import CategoricalSessionBridge
 
 
-COMBAT_EVALUATION_SCHEMA = "sts-learning-combat-held-out-evaluation-v10"
+COMBAT_EVALUATION_SCHEMA = "sts-learning-combat-held-out-evaluation-v11"
+COMBAT_ACTION_TRACE_SCHEMA = "sts-learning-combat-action-trace-v1"
+COMBAT_ACTION_TRACE_FILENAME = "combat-traces.jsonl"
 
 
 class CombatEvaluationCommandError(RuntimeError):
@@ -60,6 +62,7 @@ class CombatEvaluationCommandConfig:
     behavior_seed_base: int
     potion_lane: CombatPotionLane = CombatPotionLane.ALL
     potion_slots: tuple[int, ...] = ()
+    trace_replicates_per_root: int = 0
 
     def __post_init__(self) -> None:
         artifact = Path(self.artifact).resolve()
@@ -89,6 +92,14 @@ class CombatEvaluationCommandConfig:
             self.behavior_seed_base,
             "behavior_seed_base",
         )
+        trace_replicates_per_root = _nonnegative(
+            self.trace_replicates_per_root,
+            "trace_replicates_per_root",
+        )
+        if trace_replicates_per_root > replicate_count:
+            raise CombatEvaluationCommandError(
+                "combat evaluation cannot trace more replicates than it runs"
+            )
         if not isinstance(self.potion_lane, CombatPotionLane):
             raise CombatEvaluationCommandError(
                 "combat evaluation potion_lane must be typed"
@@ -115,6 +126,11 @@ class CombatEvaluationCommandConfig:
         object.__setattr__(self, "replicate_count", replicate_count)
         object.__setattr__(self, "behavior_seed_base", behavior_seed_base)
         object.__setattr__(self, "potion_slots", potion_slots)
+        object.__setattr__(
+            self,
+            "trace_replicates_per_root",
+            trace_replicates_per_root,
+        )
 
     @property
     def behavior_seeds(self) -> tuple[int, ...]:
@@ -197,6 +213,7 @@ def run_combat_evaluation(
         ),
         potion_lane=config.potion_lane,
         potion_slots=config.potion_slots,
+        trace_replicates_per_root=config.trace_replicates_per_root,
     )
 
     started = time.perf_counter()
@@ -211,6 +228,8 @@ def run_combat_evaluation(
         elapsed=elapsed,
     )
     config.output.mkdir(parents=True, exist_ok=True)
+    if config.trace_replicates_per_root:
+        _write_decision_traces(config.output, result)
     with (config.output / "evaluation.json").open(
         "x",
         encoding="utf-8",
@@ -429,6 +448,18 @@ def _summary(
         ),
         "root_count": config.root_count,
         "replicate_count": config.replicate_count,
+        "decision_trace": {
+            "file": (
+                COMBAT_ACTION_TRACE_FILENAME
+                if config.trace_replicates_per_root
+                else None
+            ),
+            "record_count": sum(
+                len(root.decision_traces) for root in result.roots
+            ),
+            "replicates_per_root": config.trace_replicates_per_root,
+            "schema": COMBAT_ACTION_TRACE_SCHEMA,
+        },
         "behavior_seeds": config.behavior_seeds,
         "wins": result.wins,
         "losses": result.losses,
@@ -589,6 +620,34 @@ def _root_summary(
     }
 
 
+def _write_decision_traces(
+    output: Path,
+    result: CombatHeldOutEvaluationResult,
+) -> None:
+    with (output / COMBAT_ACTION_TRACE_FILENAME).open(
+        "x",
+        encoding="utf-8",
+        newline="\n",
+    ) as destination:
+        for root_slot_index, root in enumerate(result.roots):
+            for decision in root.decision_traces:
+                json.dump(
+                    {
+                        "schema": COMBAT_ACTION_TRACE_SCHEMA,
+                        "root_slot_index": root_slot_index,
+                        "root_id": root.group.root_id,
+                        "exact_combat_state_hash": (
+                            root.group.exact_combat_state_hash
+                        ),
+                        "decision": decision,
+                    },
+                    destination,
+                    separators=(",", ":"),
+                    sort_keys=True,
+                )
+                destination.write("\n")
+
+
 def _encounter_summaries(
     roots: tuple[CombatEvaluationRootResult, ...],
 ) -> tuple[dict[str, object], ...]:
@@ -695,6 +754,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--roots", type=int, required=True)
     parser.add_argument("--replicates", type=int, default=8)
     parser.add_argument("--behavior-seed-base", type=int, default=10_000)
+    parser.add_argument("--trace-replicates-per-root", type=int, default=0)
     parser.add_argument(
         "--potion-lane",
         choices=tuple(lane.value for lane in CombatPotionLane),
@@ -716,6 +776,7 @@ def main() -> int:
             behavior_seed_base=arguments.behavior_seed_base,
             potion_lane=CombatPotionLane(arguments.potion_lane),
             potion_slots=tuple(arguments.potion_slot),
+            trace_replicates_per_root=arguments.trace_replicates_per_root,
         )
     )
     return 0

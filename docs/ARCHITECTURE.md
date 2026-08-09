@@ -383,6 +383,15 @@ they do not become a reward, teacher label, or substitute for exact roots. A
 lost identity is a multiset inventory fact, not a
 claim about whether spending it was strategically correct. Cross-combat value
 requires an exact run continuation and remains outside the combat evaluator.
+Evaluation may opt into a bounded pre-action diagnostic trace for the first
+caller-declared replicates of each root. Rust emits that record only after a
+symbolic selection becomes one decoded action; it contains the typed public
+combat observation, decoded action, selection prefix, and exact replicate
+identity. Python adds the frozen model round, selected ordinal, and selection
+probability, then writes the records to a separate JSONL sidecar. The ordinary
+evaluation summary retains only the sidecar schema, filename, record count,
+and replicate bound. Tracing defaults to zero and is evidence only: it neither
+changes the model batch nor becomes reward, experience, or a teacher label.
 Published behavior recovery also retains the training root artifact digest and
 training potion lane from the bounded journal. Evaluation rejects an artifact
 with that same digest before constructing any combat groups, so a training-set

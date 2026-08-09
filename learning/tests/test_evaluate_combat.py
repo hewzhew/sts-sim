@@ -165,10 +165,16 @@ def test_evaluation_recovers_published_behavior_without_training_or_experience(
         bridge=bridge,
     )
 
-    assert summary["schema"] == "sts-learning-combat-held-out-evaluation-v10"
+    assert summary["schema"] == "sts-learning-combat-held-out-evaluation-v11"
     assert summary["behavior_training_kind"] == "combat"
     assert summary["potion_lane"] == "all"
     assert summary["potion_slots"] == ()
+    assert summary["decision_trace"] == {
+        "file": None,
+        "record_count": 0,
+        "replicates_per_root": 0,
+        "schema": "sts-learning-combat-action-trace-v1",
+    }
     assert training_source.calls == [(0, None), (1, None)]
     assert evaluation_source.calls == [(0, None), (1, None)]
     assert summary["wins"] == 3
@@ -267,6 +273,49 @@ def test_evaluation_recovers_published_behavior_without_training_or_experience(
         "lost_potions=EntropicBrew:2 gained_potions=BlockPotion:2" in all_stdout
     )
 
+    trace_output = tmp_path / "held-out-with-trace"
+    traced_summary = run_combat_evaluation(
+        CombatEvaluationCommandConfig(
+            artifact=evaluation_artifact,
+            behavior=behavior,
+            output=trace_output,
+            root_count=2,
+            replicate_count=2,
+            behavior_seed_base=1_000,
+            trace_replicates_per_root=1,
+        ),
+        bridge=bridge,
+        print_completion=False,
+    )
+    trace_rows = tuple(
+        json.loads(line)
+        for line in (trace_output / "combat-traces.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
+    )
+    assert traced_summary["decision_trace"] == {
+        "file": "combat-traces.jsonl",
+        "record_count": 2,
+        "replicates_per_root": 1,
+        "schema": "sts-learning-combat-action-trace-v1",
+    }
+    assert set(path.name for path in trace_output.iterdir()) == {
+        "combat-traces.jsonl",
+        "evaluation.json",
+    }
+    assert tuple(row["root_slot_index"] for row in trace_rows) == (0, 1)
+    assert all(
+        row["schema"] == "sts-learning-combat-action-trace-v1"
+        for row in trace_rows
+    )
+    assert all(row["decision"]["replicate_index"] == 0 for row in trace_rows)
+    assert all(row["decision"]["model_round_index"] == 0 for row in trace_rows)
+    assert all(row["decision"]["selected_ordinal"] == 0 for row in trace_rows)
+    assert all(
+        0.0 < row["decision"]["selection_probability"] <= 1.0
+        for row in trace_rows
+    )
+
     sweep_output = tmp_path / "held-out-potion-sweep"
     sweep = run_combat_potion_sweep(
         CombatPotionSweepCommandConfig(
@@ -303,6 +352,8 @@ def test_evaluation_recovers_published_behavior_without_training_or_experience(
         "all",
     )
     assert evaluation_source.calls == [
+        (0, None),
+        (1, None),
         (0, None),
         (1, None),
         (0, ()),

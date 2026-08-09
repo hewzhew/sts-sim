@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from collections.abc import Sequence
 from types import SimpleNamespace
 
@@ -82,6 +83,32 @@ class OneRoundCombatGroup:
             raise AssertionError("combat group received an invalid choice")
         self.choose_calls += 1
         self.ready = True
+
+    def ready_action_trace_json(self, replicate_index: int) -> str | None:
+        if not self.ready:
+            return None
+        if not 0 <= replicate_index < self.replicate_count:
+            raise AssertionError("combat trace replicate is out of range")
+        return json.dumps(
+            {
+                "schema_name": "CombatLearningReadyActionTrace",
+                "schema_version": 1,
+                "replicate_index": replicate_index,
+                "decision_ordinals": [0],
+                "turn": 1,
+                "energy": 3,
+                "player_hp": 80,
+                "player_max_hp": 80,
+                "player_block": 0,
+                "hand": [],
+                "draw_count": 5,
+                "discard_count": 0,
+                "exhaust_count": 0,
+                "potions": ["EntropicBrew", "GamblersBrew"],
+                "monsters": [],
+                "action": {"kind": "combat_input"},
+            }
+        )
 
     def step(self) -> dict[str, object]:
         if not self.ready or self.terminal_count != 0:

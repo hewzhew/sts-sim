@@ -626,7 +626,7 @@ Configure one stable Python 3.12 training runtime once, then use the small
 .\learning\dev.ps1 verify -MaturinPython <python-with-maturin>
 .\learning\dev.ps1 train-combat -Artifact <roots.bin> -Behavior <optional-warm-start-dir> -Output <fresh-dir> -Roots <count> -Updates <count> -PotionLane never -CombatPolicyUpdate ppo-clip -CombatAllLossAxis none
 .\learning\dev.ps1 train-combat-recovery -Artifact <roots.bin> -SourceExpectedRoots <artifact-root-count> -SourceRootSlot <zero-based-slot> -Behavior <warm-start-dir> -Output <fresh-dir> -Roots 4 -Replicates 8 -Updates 1 -PotionLane root-slots -PotionSlots 0 -CombatPolicyUpdate ppo-clip
-.\learning\dev.ps1 evaluate-combat -Artifact <held-out-roots.bin> -Behavior <training-dir> -Output <fresh-dir> -Roots <count> -Replicates <count>
+.\learning\dev.ps1 evaluate-combat -Artifact <held-out-roots.bin> -Behavior <training-dir> -Output <fresh-dir> -Roots <count> -Replicates <count> [-TraceReplicatesPerRoot 1]
 .\learning\dev.ps1 evaluate-combat-potions -Artifact <held-out-roots.bin> -Behavior <training-dir> -Output <fresh-dir> -Roots <count> -Replicates <count>
 .\learning\dev.ps1 evaluate-run -Behavior <training-dir> -Output <fresh-dir> -Attempts 8 -MaxBatchSteps 4096 -BehaviorSeed 10000 -HeldOutSeedStart 0 -RunPotionLane trained
 .\learning\dev.ps1 evaluate-run-potions -Behavior <training-dir> -Output <fresh-dir> -Attempts 8 -MaxBatchSteps 4096 -BehaviorSeed 10000 -HeldOutSeedStart 0
@@ -852,8 +852,8 @@ complete provenance and records the training kind. For a combat-trained source
 it also recovers the training artifact digest and rejects an evaluation artifact
 with the same digest before constructing combat groups; a run-trained source
 instead records its run objective and sampling contract.
-It gives every root an independent explicit behavior RNG stream and writes only
-`evaluation.json` with per-replicate win, HP/max HP, gold, turn,
+It gives every root an independent explicit behavior RNG stream and, by
+default, writes only `evaluation.json` with per-replicate win, HP/max HP, gold, turn,
 concrete starting/final/lost/gained potion identities, potion use/discard
 counts, and card facts plus compact aggregates. Each root retains its seed,
 canonical encounter identity, and ordered monster identities; the top-level
@@ -867,6 +867,16 @@ continuation outside this evaluator. It creates no optimizer, trainer,
 experience buffer, or behavior promotion. A result measures the exact frozen
 manifest on that bounded sample; it does not establish improvement without a
 comparable baseline using the same roots and RNG streams.
+
+For one bounded diagnosis, pass `-TraceReplicatesPerRoot <count>`. The count
+cannot exceed `-Replicates`; zero is the default. The evaluator then writes
+`combat-traces.jsonl` with one compact pre-action row whenever those selected
+replicates finish symbolic action decoding. Each row retains root and replicate
+identity, turn, energy, HP/block, hand and pile counts, potions, monster intent,
+the decoded action, model round, selected ordinal, and selection probability.
+`evaluation.json` keeps only the sidecar schema, filename, record count, and
+bound, so ordinary aggregate reads never ingest the trace. Treat it as
+diagnostic evidence, not training experience or an action-quality label.
 
 Select the model-facing potion action surface explicitly with
 `-PotionLane all|never|root-slots` (default `all`). `never` removes potion use

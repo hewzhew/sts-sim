@@ -535,6 +535,7 @@ dependencies = [
  "pyo3",
  "rmp-serde",
  "serde",
+ "serde_json",
  "sts_oracle_eval",
 ]
 

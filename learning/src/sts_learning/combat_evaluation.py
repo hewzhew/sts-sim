@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import operator
 from collections import Counter
 from collections.abc import Sequence
@@ -359,6 +360,7 @@ class CombatEvaluationRootResult:
     context: CombatEvaluationRootContext
     model_rounds: int
     transitions: int
+    decision_traces: tuple[dict[str, object], ...] = ()
 
     def __post_init__(self) -> None:
         if not isinstance(self.group, CompletedCombatGroup):
@@ -390,6 +392,12 @@ class CombatEvaluationRootResult:
             "transitions",
             _positive_integer(self.transitions, "transitions"),
         )
+        traces = tuple(self.decision_traces)
+        if not all(isinstance(trace, dict) for trace in traces):
+            raise CombatEvaluationError(
+                "combat evaluation decision traces must be mappings"
+            )
+        object.__setattr__(self, "decision_traces", traces)
 
     @property
     def wins(self) -> int:
@@ -463,6 +471,7 @@ class CombatHeldOutEvaluator:
         limits: CombatEvaluationLimits | None = None,
         potion_lane: CombatPotionLane = CombatPotionLane.ALL,
         potion_slots: Sequence[int] = (),
+        trace_replicates_per_root: int = 0,
     ) -> None:
         if not callable(getattr(source, "combat_group", None)):
             raise CombatEvaluationError(
@@ -489,6 +498,14 @@ class CombatHeldOutEvaluator:
         if replicates < 2:
             raise CombatEvaluationError(
                 "combat evaluation requires at least two replicates"
+            )
+        traced_replicates = _nonnegative_integer(
+            trace_replicates_per_root,
+            "trace_replicates_per_root",
+        )
+        if traced_replicates > replicates:
+            raise CombatEvaluationError(
+                "combat evaluation cannot trace more replicates than it runs"
             )
         frozen_policies = tuple(policies)
         if len(frozen_policies) != len(slots) or not all(
@@ -533,6 +550,7 @@ class CombatHeldOutEvaluator:
         self.limits = active_limits
         self.potion_lane = potion_lane
         self.potion_slots = normalized_potion_slots
+        self.trace_replicates_per_root = traced_replicates
         self.behavior_manifest_id = next(iter(manifest_ids))
         self.public_contexts = public_contexts
         self._started = False
@@ -579,6 +597,7 @@ class CombatHeldOutEvaluator:
                     policy,
                     self.limits,
                     public_context,
+                    self.trace_replicates_per_root,
                 )
                 if self.potion_lane is CombatPotionLane.NEVER and any(
                     outcome.potions_used or outcome.potions_discarded
@@ -609,6 +628,7 @@ def _evaluate_group(
     policy: FrozenCategoricalTorchPolicy,
     limits: CombatEvaluationLimits,
     public_context: object,
+    trace_replicates_per_root: int,
 ) -> CombatEvaluationRootResult:
     if getattr(env, "terminal_count", None) != 0:
         raise CombatEvaluationError(
@@ -627,6 +647,7 @@ def _evaluate_group(
         ) from error
     model_rounds = 0
     transitions = 0
+    decision_traces: list[dict[str, object]] = []
     while outcomes.terminal_count < env.replicate_count:
         while not env.ready:
             if model_rounds >= limits.max_model_rounds:
@@ -640,6 +661,16 @@ def _evaluate_group(
                     "combat evaluation policy changed behavior manifest"
                 )
             env.choose(list(choice.ordinals))
+            if trace_replicates_per_root:
+                decision_traces.extend(
+                    _ready_action_traces(
+                        env,
+                        decision_batch,
+                        choice,
+                        model_round_index=model_rounds,
+                        replicate_bound=trace_replicates_per_root,
+                    )
+                )
             model_rounds += 1
         if transitions >= limits.max_transitions:
             raise CombatEvaluationError(
@@ -665,7 +696,85 @@ def _evaluate_group(
         context=context,
         model_rounds=model_rounds,
         transitions=transitions,
+        decision_traces=tuple(decision_traces),
     )
+
+
+def _ready_action_traces(
+    env: object,
+    decision_batch: object,
+    choice: object,
+    *,
+    model_round_index: int,
+    replicate_bound: int,
+) -> tuple[dict[str, object], ...]:
+    provider = getattr(env, "ready_action_trace_json", None)
+    if not callable(provider):
+        raise CombatEvaluationError(
+            "combat evaluation trace requested from an unsupported bridge"
+        )
+    try:
+        raw_slots = decision_batch["slot_indices"]  # type: ignore[index]
+        slots = tuple(
+            _nonnegative_integer(slot, f"decision slot_indices[{index}]")
+            for index, slot in enumerate(raw_slots)
+        )
+        ordinals = tuple(choice.ordinals)
+        probabilities = tuple(choice.selection_probabilities)
+    except (KeyError, TypeError, AttributeError) as error:
+        raise CombatEvaluationError(
+            "combat evaluation trace rows are unavailable"
+        ) from error
+    if not len(slots) == len(ordinals) == len(probabilities):
+        raise CombatEvaluationError(
+            "combat evaluation trace rows are misaligned"
+        )
+
+    traces: list[dict[str, object]] = []
+    for replicate_index, ordinal, probability in zip(
+        slots,
+        ordinals,
+        probabilities,
+        strict=True,
+    ):
+        if replicate_index >= replicate_bound:
+            continue
+        raw_trace = provider(replicate_index)
+        if raw_trace is None:
+            continue
+        if not isinstance(raw_trace, str):
+            raise CombatEvaluationError(
+                "combat evaluation bridge returned a non-text action trace"
+            )
+        try:
+            trace = json.loads(raw_trace)
+        except json.JSONDecodeError as error:
+            raise CombatEvaluationError(
+                "combat evaluation bridge returned invalid action trace JSON"
+            ) from error
+        if not isinstance(trace, dict):
+            raise CombatEvaluationError(
+                "combat evaluation bridge action trace must be a mapping"
+            )
+        if trace.get("replicate_index") != replicate_index:
+            raise CombatEvaluationError(
+                "combat evaluation bridge action trace changed replicate identity"
+            )
+        try:
+            selected_ordinal = _nonnegative_integer(
+                ordinal,
+                "selected_ordinal",
+            )
+            selection_probability = probability.value
+        except AttributeError as error:
+            raise CombatEvaluationError(
+                "combat evaluation trace probability is untyped"
+            ) from error
+        trace["model_round_index"] = model_round_index
+        trace["selected_ordinal"] = selected_ordinal
+        trace["selection_probability"] = selection_probability
+        traces.append(trace)
+    return tuple(traces)
 
 
 def _public_root_contexts(

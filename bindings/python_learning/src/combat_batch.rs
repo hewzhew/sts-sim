@@ -7,9 +7,15 @@ use numpy::PyArray1;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
+use serde::Serialize;
+use sts_oracle_eval::ai::combat_learning_observation::{
+    CombatLearningCardV1, CombatLearningEnemyIdentityV1, CombatLearningIntentV1,
+};
+use sts_oracle_eval::content::potions::PotionId;
 use sts_oracle_eval::eval::run_control::{
-    CombatLearningEnvPoolV1, CombatLearningPotionPolicyV1, CombatLearningRootContextV1,
-    CombatLearningRootIdentityV1, CombatLearningRootV1,
+    CombatLearningBoundaryV1, CombatLearningEnvPoolV1, CombatLearningPotionPolicyV1,
+    CombatLearningRootContextV1, CombatLearningRootIdentityV1, CombatLearningRootV1,
+    LearningActionV1,
 };
 use sts_oracle_eval::sim::combat::CombatTerminal;
 
@@ -22,6 +28,62 @@ use super::{
 pub(super) const COMBAT_TERMINAL_WIN: u8 = 0;
 pub(super) const COMBAT_TERMINAL_LOSS: u8 = 1;
 pub(super) const COMBAT_TERMINAL_UNRESOLVED: u8 = 2;
+
+const READY_ACTION_TRACE_SCHEMA_NAME: &str = "CombatLearningReadyActionTrace";
+const READY_ACTION_TRACE_SCHEMA_VERSION: u32 = 1;
+
+#[derive(Serialize)]
+#[serde(deny_unknown_fields)]
+struct ReadyActionTraceV1<'a> {
+    schema_name: &'static str,
+    schema_version: u32,
+    replicate_index: usize,
+    decision_ordinals: &'a [usize],
+    turn: u32,
+    energy: u8,
+    player_hp: i32,
+    player_max_hp: i32,
+    player_block: i32,
+    hand: Vec<ReadyActionCardV1<'a>>,
+    draw_count: usize,
+    discard_count: usize,
+    exhaust_count: usize,
+    potions: Vec<Option<PotionId>>,
+    monsters: Vec<ReadyActionMonsterV1<'a>>,
+    action: &'a LearningActionV1,
+}
+
+#[derive(Serialize)]
+#[serde(deny_unknown_fields)]
+struct ReadyActionCardV1<'a> {
+    card_id: sts_oracle_eval::content::cards::CardId,
+    upgrades: u8,
+    effective_cost: i32,
+    damage_by_monster_order: &'a [i32],
+}
+
+impl<'a> ReadyActionCardV1<'a> {
+    fn from_card(card: &'a CombatLearningCardV1) -> Self {
+        Self {
+            card_id: card.card_id,
+            upgrades: card.upgrades,
+            effective_cost: card.effective_cost,
+            damage_by_monster_order: &card.damage_by_monster_order,
+        }
+    }
+}
+
+#[derive(Serialize)]
+#[serde(deny_unknown_fields)]
+struct ReadyActionMonsterV1<'a> {
+    entity_id: usize,
+    slot: u8,
+    enemy: CombatLearningEnemyIdentityV1,
+    hp: i32,
+    max_hp: i32,
+    block: i32,
+    intent: &'a CombatLearningIntentV1,
+}
 
 /// Read-only Python view of the compact public context captured with one exact root.
 #[pyclass(frozen, name = "CombatLearningRootContextV1")]
@@ -255,6 +317,80 @@ impl CombatLearningBatchEnv {
 
     fn choose(&mut self, ordinals: Vec<usize>) -> PyResult<()> {
         choose_bridge_ordinals(&self.pool, &mut self.states, ordinals).map_err(value_error)
+    }
+
+    /// Return one compact, typed pre-action record after ordinal decoding.
+    ///
+    /// This diagnostic view is optional and never participates in policy
+    /// inference. A symbolic selection that is not yet ready returns ``None``.
+    fn ready_action_trace_json(&self, replicate_index: usize) -> PyResult<Option<String>> {
+        let Some(state) = self.states.get(replicate_index) else {
+            return Err(PyValueError::new_err(format!(
+                "combat replicate index {replicate_index} is out of range"
+            )));
+        };
+        let BridgeSlotState::Ready {
+            action,
+            decision_ordinals,
+        } = state
+        else {
+            return Ok(None);
+        };
+        let replicate_index_u32 = u32::try_from(replicate_index)
+            .map_err(|_| PyValueError::new_err("combat replicate index exceeds u32"))?;
+        let Some(CombatLearningBoundaryV1::Decision { boundary, .. }) =
+            self.pool.boundary(replicate_index_u32)
+        else {
+            return Err(PyValueError::new_err(
+                "ready combat action has no decision boundary",
+            ));
+        };
+        let observation = &boundary.observation;
+        let trace = ReadyActionTraceV1 {
+            schema_name: READY_ACTION_TRACE_SCHEMA_NAME,
+            schema_version: READY_ACTION_TRACE_SCHEMA_VERSION,
+            replicate_index,
+            decision_ordinals,
+            turn: observation.turn.turn_count,
+            energy: observation.turn.energy,
+            player_hp: observation.player.hp,
+            player_max_hp: observation.player.max_hp,
+            player_block: observation.player.block,
+            hand: observation
+                .cards
+                .hand
+                .cards
+                .iter()
+                .map(ReadyActionCardV1::from_card)
+                .collect(),
+            draw_count: observation.cards.draw.cards.len(),
+            discard_count: observation.cards.discard.cards.len(),
+            exhaust_count: observation.cards.exhaust.cards.len(),
+            potions: observation
+                .potions
+                .iter()
+                .map(|potion| potion.as_ref().map(|potion| potion.potion_id))
+                .collect(),
+            monsters: observation
+                .monsters
+                .iter()
+                .map(|monster| ReadyActionMonsterV1 {
+                    entity_id: monster.entity_id,
+                    slot: monster.slot,
+                    enemy: monster.enemy,
+                    hp: monster.hp,
+                    max_hp: monster.max_hp,
+                    block: monster.block,
+                    intent: &monster.intent,
+                })
+                .collect(),
+            action,
+        };
+        serde_json::to_string(&trace)
+            .map(Some)
+            .map_err(|error| PyValueError::new_err(format!(
+                "failed to encode ready combat action trace: {error}"
+            )))
     }
 
     /// Capture one undecoded active replicate as an opaque recovery root.
@@ -556,6 +692,42 @@ mod tests {
         assert_eq!(recovered.replicate_count(), 2);
         assert_eq!(recovered.root_id(), recovery.root.identity().root_id);
         assert_eq!(recovered.potion_slots(), Some(vec![]));
+    }
+
+    #[test]
+    fn ready_action_trace_is_opt_in_and_keeps_decoded_action_context() {
+        let root =
+            CombatLearningRootV1::from_session(combat_root_session()).expect("construct root");
+        let mut group = CombatLearningBatchEnv::from_root(&root, 1).expect("construct group");
+        assert_eq!(
+            group
+                .ready_action_trace_json(0)
+                .expect("inspect undecoded replicate"),
+            None
+        );
+        group.states[0] = BridgeSlotState::Ready {
+            action: LearningActionV1::CombatInput {
+                input: ClientInput::PlayCard {
+                    card_index: 0,
+                    target: Some(7),
+                },
+            },
+            decision_ordinals: vec![2, 1],
+        };
+
+        let encoded = group
+            .ready_action_trace_json(0)
+            .expect("encode ready action")
+            .expect("ready action must produce a trace");
+        let trace: serde_json::Value =
+            serde_json::from_str(&encoded).expect("trace must be valid JSON");
+
+        assert_eq!(trace["schema_name"], READY_ACTION_TRACE_SCHEMA_NAME);
+        assert_eq!(trace["schema_version"], READY_ACTION_TRACE_SCHEMA_VERSION);
+        assert_eq!(trace["replicate_index"], 0);
+        assert_eq!(trace["decision_ordinals"], serde_json::json!([2, 1]));
+        assert_eq!(trace["hand"][0]["card_id"], "Strike");
+        assert_eq!(trace["action"]["kind"], "combat_input");
     }
 
     fn combat_root_session() -> RunControlSession {
