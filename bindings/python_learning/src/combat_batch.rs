@@ -10,6 +10,7 @@ use pyo3::types::PyDict;
 use serde::Serialize;
 use sts_oracle_eval::ai::combat_learning_observation::{
     CombatLearningCardV1, CombatLearningEnemyIdentityV1, CombatLearningIntentV1,
+    CombatLearningPowerV1,
 };
 use sts_oracle_eval::content::potions::PotionId;
 use sts_oracle_eval::eval::run_control::{
@@ -20,9 +21,10 @@ use sts_oracle_eval::eval::run_control::{
 use sts_oracle_eval::sim::combat::CombatTerminal;
 
 use super::{
-    bridge_states_ready, choose_bridge_ordinals, collect_ready_actions, decision_batch_dict,
-    decision_snapshot_from_source, runtime_error, semantic_snapshot_from_source,
-    states_from_source, usize_array, value_error, BridgeSlotState,
+    bridge_states_ready, choose_bridge_ordinals, collect_ready_actions,
+    combat_decision_audit_json_from_source, decision_batch_dict, decision_snapshot_from_source,
+    runtime_error, semantic_snapshot_from_source, states_from_source, usize_array, value_error,
+    BridgeSlotState,
 };
 
 pub(super) const COMBAT_TERMINAL_WIN: u8 = 0;
@@ -30,7 +32,66 @@ pub(super) const COMBAT_TERMINAL_LOSS: u8 = 1;
 pub(super) const COMBAT_TERMINAL_UNRESOLVED: u8 = 2;
 
 const READY_ACTION_TRACE_SCHEMA_NAME: &str = "CombatLearningReadyActionTrace";
-const READY_ACTION_TRACE_SCHEMA_VERSION: u32 = 1;
+const READY_ACTION_TRACE_SCHEMA_VERSION: u32 = 2;
+
+/// Compact public combat state aligned to one current model decision row.
+///
+/// This is trajectory data, not a reward or a second observation encoding.  Repeated
+/// selection rows for the same unchanged simulator boundary intentionally repeat it.
+#[pyclass(frozen)]
+pub(super) struct CombatLearningDecisionProgressV1 {
+    replicate_index: usize,
+    turn: u32,
+    player_hp: i32,
+    player_max_hp: i32,
+    enemy_hp: i32,
+    enemy_max_hp: i32,
+    potion_uuids: Vec<Option<u32>>,
+    potion_ids: Vec<Option<String>>,
+}
+
+#[pymethods]
+impl CombatLearningDecisionProgressV1 {
+    #[getter]
+    fn replicate_index(&self) -> usize {
+        self.replicate_index
+    }
+
+    #[getter]
+    fn turn(&self) -> u32 {
+        self.turn
+    }
+
+    #[getter]
+    fn player_hp(&self) -> i32 {
+        self.player_hp
+    }
+
+    #[getter]
+    fn player_max_hp(&self) -> i32 {
+        self.player_max_hp
+    }
+
+    #[getter]
+    fn enemy_hp(&self) -> i32 {
+        self.enemy_hp
+    }
+
+    #[getter]
+    fn enemy_max_hp(&self) -> i32 {
+        self.enemy_max_hp
+    }
+
+    #[getter]
+    fn potion_uuids(&self) -> Vec<Option<u32>> {
+        self.potion_uuids.clone()
+    }
+
+    #[getter]
+    fn potion_ids(&self) -> Vec<Option<String>> {
+        self.potion_ids.clone()
+    }
+}
 
 #[derive(Serialize)]
 #[serde(deny_unknown_fields)]
@@ -44,6 +105,7 @@ struct ReadyActionTraceV1<'a> {
     player_hp: i32,
     player_max_hp: i32,
     player_block: i32,
+    player_powers: &'a [CombatLearningPowerV1],
     hand: Vec<ReadyActionCardV1<'a>>,
     draw_count: usize,
     discard_count: usize,
@@ -83,6 +145,7 @@ struct ReadyActionMonsterV1<'a> {
     max_hp: i32,
     block: i32,
     intent: &'a CombatLearningIntentV1,
+    powers: &'a [CombatLearningPowerV1],
 }
 
 /// Read-only Python view of the compact public context captured with one exact root.
@@ -315,6 +378,69 @@ impl CombatLearningBatchEnv {
         decision_batch_dict(py, snapshot, dense_mask, semantic, None)
     }
 
+    /// Return compact public progress in exactly the current decision-row order.
+    fn decision_progress(&self) -> PyResult<Vec<CombatLearningDecisionProgressV1>> {
+        let snapshot =
+            decision_snapshot_from_source(&self.pool, &self.states).map_err(runtime_error)?;
+        snapshot
+            .slot_indices
+            .into_iter()
+            .map(|replicate_index| {
+                let replicate_index_u32 = u32::try_from(replicate_index).map_err(|_| {
+                    PyValueError::new_err("combat replicate index exceeds u32")
+                })?;
+                let Some(CombatLearningBoundaryV1::Decision { boundary, .. }) =
+                    self.pool.boundary(replicate_index_u32)
+                else {
+                    return Err(PyValueError::new_err(format!(
+                        "combat decision row {replicate_index} has no active boundary"
+                    )));
+                };
+                let observation = &boundary.observation;
+                let enemy_hp = observation
+                    .monsters
+                    .iter()
+                    .filter(|monster| monster.alive)
+                    .fold(0i32, |total, monster| total.saturating_add(monster.hp));
+                let enemy_max_hp = observation
+                    .monsters
+                    .iter()
+                    .fold(0i32, |total, monster| total.saturating_add(monster.max_hp));
+                Ok(CombatLearningDecisionProgressV1 {
+                    replicate_index,
+                    turn: observation.turn.turn_count,
+                    player_hp: observation.player.hp,
+                    player_max_hp: observation.player.max_hp,
+                    enemy_hp,
+                    enemy_max_hp,
+                    potion_uuids: observation
+                        .potions
+                        .iter()
+                        .map(|potion| potion.as_ref().map(|potion| potion.potion_uuid))
+                        .collect(),
+                    potion_ids: observation
+                        .potions
+                        .iter()
+                        .map(|potion| {
+                            potion
+                                .as_ref()
+                                .map(|potion| format!("{:?}", potion.potion_id))
+                        })
+                        .collect(),
+                })
+            })
+            .collect()
+    }
+
+    /// Return the complete typed candidate set for one current combat decision.
+    ///
+    /// This diagnostic view is read-only, excluded from model input, and returns
+    /// ``None`` after an action has been fully decoded or the replicate is terminal.
+    fn combat_decision_audit_json(&self, replicate_index: usize) -> PyResult<Option<String>> {
+        combat_decision_audit_json_from_source(&self.pool, &self.states, replicate_index)
+            .map_err(runtime_error)
+    }
+
     fn choose(&mut self, ordinals: Vec<usize>) -> PyResult<()> {
         choose_bridge_ordinals(&self.pool, &mut self.states, ordinals).map_err(value_error)
     }
@@ -356,6 +482,7 @@ impl CombatLearningBatchEnv {
             player_hp: observation.player.hp,
             player_max_hp: observation.player.max_hp,
             player_block: observation.player.block,
+            player_powers: &observation.player.powers,
             hand: observation
                 .cards
                 .hand
@@ -382,6 +509,7 @@ impl CombatLearningBatchEnv {
                     max_hp: monster.max_hp,
                     block: monster.block,
                     intent: &monster.intent,
+                    powers: &monster.powers,
                 })
                 .collect(),
             action,
@@ -727,7 +855,104 @@ mod tests {
         assert_eq!(trace["replicate_index"], 0);
         assert_eq!(trace["decision_ordinals"], serde_json::json!([2, 1]));
         assert_eq!(trace["hand"][0]["card_id"], "Strike");
+        assert_eq!(trace["player_powers"], serde_json::json!([]));
+        assert_eq!(trace["monsters"][0]["powers"][0]["power"], "Artifact");
+        assert_eq!(trace["monsters"][0]["powers"][0]["amount"], 1);
         assert_eq!(trace["action"]["kind"], "combat_input");
+    }
+
+    #[test]
+    fn combat_decision_audit_is_read_only_typed_and_candidate_aligned() {
+        let root =
+            CombatLearningRootV1::from_session(combat_root_session()).expect("construct root");
+        let mut group = CombatLearningBatchEnv::from_root(&root, 1).expect("construct group");
+
+        let encoded = group
+            .combat_decision_audit_json(0)
+            .expect("encode combat decision")
+            .expect("root combat decision must be auditable");
+        assert_eq!(
+            group
+                .combat_decision_audit_json(0)
+                .expect("repeat combat decision audit"),
+            Some(encoded.clone())
+        );
+        let audit: serde_json::Value =
+            serde_json::from_str(&encoded).expect("audit must be valid JSON");
+        let snapshot = decision_snapshot_from_source(&group.pool, &group.states)
+            .expect("inspect unchanged decision");
+
+        assert_eq!(audit["schema"], "sts-learning-combat-decision-audit-v1");
+        assert_eq!(audit["phase"], "combat_root");
+        assert_eq!(audit["selection_prefix"], serde_json::json!([]));
+        assert_eq!(
+            audit["candidates"].as_array().map(Vec::len),
+            Some(snapshot.candidate_counts[0])
+        );
+        assert!(audit["candidates"]
+            .as_array()
+            .expect("candidate array")
+            .iter()
+            .any(|candidate| {
+                candidate["kind"] == "play_card"
+                    && candidate["hand_index"] == 0
+                    && candidate["card"]["card_id"] == "Strike"
+                    && candidate["target"]["monster_index"] == 0
+                    && candidate["target"]["enemy"]["status"] == "known"
+                    && candidate["target"]["enemy"]["enemy_id"] == "JawWorm"
+            }));
+        assert!(audit["candidates"]
+            .as_array()
+            .expect("candidate array")
+            .iter()
+            .any(|candidate| candidate["kind"] == "end_turn"));
+
+        group.states[0] = BridgeSlotState::Ready {
+            action: LearningActionV1::CombatInput {
+                input: ClientInput::EndTurn,
+            },
+            decision_ordinals: vec![0],
+        };
+        assert_eq!(
+            group
+                .combat_decision_audit_json(0)
+                .expect("inspect decoded action"),
+            None
+        );
+    }
+
+    #[test]
+    fn decision_progress_stays_aligned_to_active_decision_rows() {
+        let root =
+            CombatLearningRootV1::from_session(combat_root_session()).expect("construct root");
+        let mut group = CombatLearningBatchEnv::from_root(&root, 2).expect("construct group");
+
+        let progress = group.decision_progress().expect("capture root progress");
+        assert_eq!(
+            progress
+                .iter()
+                .map(|row| row.replicate_index)
+                .collect::<Vec<_>>(),
+            vec![0, 1]
+        );
+        assert!(progress.iter().all(|row| row.player_hp > 0));
+        assert!(progress.iter().all(|row| row.enemy_hp == 20));
+        assert!(progress.iter().all(|row| row.enemy_max_hp == 20));
+        assert!(progress
+            .iter()
+            .all(|row| row.potion_uuids.len() == row.potion_ids.len()));
+
+        group.states[0] = BridgeSlotState::Ready {
+            action: LearningActionV1::CombatInput {
+                input: ClientInput::EndTurn,
+            },
+            decision_ordinals: vec![0],
+        };
+        let remaining = group
+            .decision_progress()
+            .expect("capture remaining progress");
+        assert_eq!(remaining.len(), 1);
+        assert_eq!(remaining[0].replicate_index, 1);
     }
 
     fn combat_root_session() -> RunControlSession {
@@ -743,6 +968,17 @@ mod tests {
         monster.set_planned_steps(plan.steps);
         monster.set_planned_visible_spec(plan.visible_spec);
         combat.entities.monsters.push(monster);
+        combat.entities.power_db.insert(
+            7,
+            vec![sts_oracle_eval::runtime::combat::Power {
+                power_type: sts_oracle_eval::content::powers::PowerId::Artifact,
+                instance_id: None,
+                amount: 1,
+                extra_data: 0,
+                payload: sts_oracle_eval::runtime::combat::PowerPayload::None,
+                just_applied: false,
+            }],
+        );
         session.engine_state = EngineState::CombatPlayerTurn;
         session.active_combat = Some(ActiveCombat::new(
             EngineState::CombatPlayerTurn,

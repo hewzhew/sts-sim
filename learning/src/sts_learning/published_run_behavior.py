@@ -591,7 +591,8 @@ def _scorer_config(value: object, name: str) -> RaggedScorerConfig:
     if not isinstance(value, Mapping):
         raise PublishedRunBehaviorError(f"{name} must be an object")
     expected = {"hidden_dim", "relation_layers", "value_head"}
-    if set(value) != expected:
+    extended = expected | {"value_head_width"}
+    if set(value) not in (expected, extended):
         raise PublishedRunBehaviorError(f"{name} fields changed")
     value_head = value.get("value_head")
     if type(value_head) is not bool:
@@ -603,6 +604,10 @@ def _scorer_config(value: object, name: str) -> RaggedScorerConfig:
             f"{name}.relation_layers",
         ),
         value_head=value_head,
+        value_head_width=_positive(
+            value.get("value_head_width", 1),
+            f"{name}.value_head_width",
+        ),
     )
 
 

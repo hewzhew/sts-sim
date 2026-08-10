@@ -11,8 +11,8 @@ use sts_oracle_eval::eval::run_control::{
     capture_planner_boundary_yield_v1, CombatLearningPotionPolicyV1,
     CombatLearningRootBatchArtifactV1, CombatLearningRootV1, LearningActionV1,
     LearningBoundaryKindV1, LearningBoundaryV1, LearningEnvPoolV1, LearningEnvV1,
-    LearningPublicRunContextV1, LearningSelectionDraftV1, PlannerBoundaryYieldKindV1,
-    RunControlConfig, RunControlSessionCheckpointV1,
+    LearningModelDecisionV1, LearningPublicRunContextV1, LearningSelectionDraftV1,
+    PlannerBoundaryYieldKindV1, RunControlConfig, RunControlSessionCheckpointV1,
 };
 
 mod bridge_decision;
@@ -21,12 +21,13 @@ mod semantic;
 
 use bridge_decision::{
     bridge_states_ready, choose_bridge_ordinals, collect_ready_actions,
-    decision_snapshot_from_source, replay_bridge_state, semantic_snapshot_from_source,
-    states_from_source, LearningBatchDecisionSource,
+    combat_decision_audit_json_from_source, decision_snapshot_from_source, replay_bridge_state,
+    semantic_snapshot_from_source, states_from_source, strategic_decision_audit_json_from_source,
+    LearningBatchDecisionSource,
 };
 use combat_batch::{
-    potion_id_names, CombatLearningBatchEnv, CombatLearningRecoveryRoot,
-    PyCombatLearningRootContextV1,
+    potion_id_names, CombatLearningBatchEnv, CombatLearningDecisionProgressV1,
+    CombatLearningRecoveryRoot, PyCombatLearningRootContextV1,
     COMBAT_TERMINAL_LOSS, COMBAT_TERMINAL_UNRESOLVED, COMBAT_TERMINAL_WIN,
 };
 
@@ -323,6 +324,96 @@ struct PyLearningPublicRunContextV1 {
     inner: LearningPublicRunContextV1,
 }
 
+/// Compact, on-demand audit facts for one exact combat root.
+///
+/// This view is deliberately separate from the per-decision semantic batch:
+/// collection and training journals can inspect curriculum composition without
+/// copying the deck and relic inventory through every model inference call.
+#[pyclass(frozen, name = "CombatLearningRootAuditV1")]
+struct PyCombatLearningRootAuditV1 {
+    seed: u64,
+    act: u8,
+    floor: i32,
+    ascension_level: u8,
+    hp: i32,
+    max_hp: i32,
+    potion_ids: Vec<Option<String>>,
+    encounter_id: String,
+    monster_ids: Vec<String>,
+    is_elite_fight: bool,
+    is_boss_fight: bool,
+    master_deck_cards: Vec<(String, u8)>,
+    relic_ids: Vec<String>,
+}
+
+#[pymethods]
+impl PyCombatLearningRootAuditV1 {
+    #[getter]
+    fn seed(&self) -> u64 {
+        self.seed
+    }
+
+    #[getter]
+    fn act(&self) -> u8 {
+        self.act
+    }
+
+    #[getter]
+    fn floor(&self) -> i32 {
+        self.floor
+    }
+
+    #[getter]
+    fn ascension_level(&self) -> u8 {
+        self.ascension_level
+    }
+
+    #[getter]
+    fn hp(&self) -> i32 {
+        self.hp
+    }
+
+    #[getter]
+    fn max_hp(&self) -> i32 {
+        self.max_hp
+    }
+
+    #[getter]
+    fn potion_ids(&self) -> Vec<Option<String>> {
+        self.potion_ids.clone()
+    }
+
+    #[getter]
+    fn encounter_id(&self) -> String {
+        self.encounter_id.clone()
+    }
+
+    #[getter]
+    fn monster_ids(&self) -> Vec<String> {
+        self.monster_ids.clone()
+    }
+
+    #[getter]
+    fn is_elite_fight(&self) -> bool {
+        self.is_elite_fight
+    }
+
+    #[getter]
+    fn is_boss_fight(&self) -> bool {
+        self.is_boss_fight
+    }
+
+    #[getter]
+    fn master_deck_cards(&self) -> Vec<(String, u8)> {
+        self.master_deck_cards.clone()
+    }
+
+    #[getter]
+    fn relic_ids(&self) -> Vec<String> {
+        self.relic_ids.clone()
+    }
+}
+
 #[pymethods]
 impl PyLearningPublicRunContextV1 {
     #[getter]
@@ -353,6 +444,11 @@ impl PyLearningPublicRunContextV1 {
     #[getter]
     fn seed(&self) -> u64 {
         self.inner.seed
+    }
+
+    #[getter]
+    fn ascension_level(&self) -> u8 {
+        self.inner.ascension_level
     }
 
     #[getter]
@@ -561,6 +657,15 @@ impl LearningBatchEnv {
         )
     }
 
+    /// Return the exact typed strategic candidates for one current root decision.
+    ///
+    /// Combat, terminal, ready, and symbolic-selection slots return `None`.
+    fn strategic_decision_audit_json(&self, slot_index: usize) -> PyResult<Option<String>> {
+        let source = LearningBatchDecisionSource::new(&self.pool, &self.potion_policy);
+        strategic_decision_audit_json_from_source(&source, &self.states, slot_index)
+            .map_err(value_error)
+    }
+
     fn choose(&mut self, ordinals: Vec<usize>) -> PyResult<()> {
         let source = LearningBatchDecisionSource::new(&self.pool, &self.potion_policy);
         choose_bridge_ordinals(&source, &mut self.states, ordinals).map_err(value_error)
@@ -710,6 +815,83 @@ impl LearningBatchEnv {
         Ok(contexts)
     }
 
+    /// Return auditable deck, upgrade, relic, and ascension facts for one root.
+    ///
+    /// The exact session stays opaque.  Python receives only stable domain
+    /// identities needed to review curriculum composition.
+    fn combat_root_audit(&self, slot_index: usize) -> PyResult<PyCombatLearningRootAuditV1> {
+        if !matches!(self.states.get(slot_index), Some(BridgeSlotState::Root))
+            || !matches!(
+                self.pool.boundary(slot_index),
+                Some(LearningBoundaryV1::Combat { .. })
+            )
+        {
+            return Err(PyValueError::new_err(format!(
+                "slot {slot_index} must be at an undecoded combat root"
+            )));
+        }
+        let context = self
+            .pool
+            .combat_root_context(slot_index)
+            .map_err(runtime_error)?;
+        let public = self
+            .pool
+            .public_run_context(slot_index)
+            .map_err(runtime_error)?;
+        let encounter_id = public.encounter_id.ok_or_else(|| {
+            PyRuntimeError::new_err("combat root audit has no encounter identity")
+        })?;
+        let session = self
+            .pool
+            .checkpoint_slot(slot_index)
+            .map_err(runtime_error)?
+            .into_session()
+            .map_err(runtime_error)?;
+        let active = session.active_combat.as_ref().ok_or_else(|| {
+            PyRuntimeError::new_err("combat root audit has no active combat")
+        })?;
+        let deck = &active.combat_state.meta.master_deck_snapshot;
+        let relics = &active.combat_state.entities.player.relics;
+        if deck.len() != context.master_deck_card_count as usize
+            || relics.len() != context.relic_count as usize
+            || active.combat_state.meta.ascension_level != context.ascension_level
+            || public.ascension_level != context.ascension_level
+            || public.act != context.act
+            || public.floor != context.floor
+            || public.hp != context.hp
+            || public.max_hp != context.max_hp
+        {
+            return Err(PyRuntimeError::new_err(
+                "combat root audit disagrees with its compact context",
+            ));
+        }
+        Ok(PyCombatLearningRootAuditV1 {
+            seed: public.seed,
+            act: public.act,
+            floor: public.floor,
+            ascension_level: context.ascension_level,
+            hp: public.hp,
+            max_hp: public.max_hp,
+            potion_ids: potion_id_names(&public.potion_ids),
+            encounter_id: format!("{encounter_id:?}"),
+            monster_ids: public
+                .monster_ids
+                .iter()
+                .map(|monster| format!("{monster:?}"))
+                .collect(),
+            is_elite_fight: context.is_elite_fight,
+            is_boss_fight: context.is_boss_fight,
+            master_deck_cards: deck
+                .iter()
+                .map(|card| (format!("{:?}", card.id), card.upgrades))
+                .collect(),
+            relic_ids: relics
+                .iter()
+                .map(|relic| format!("{:?}", relic.id))
+                .collect(),
+        })
+    }
+
     /// Return compact public run facts for every slot without cloning sessions.
     fn public_run_contexts<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyList>> {
         let contexts = PyList::empty(py);
@@ -764,10 +946,11 @@ impl LearningBatchEnv {
         let mut checkpoints = Vec::with_capacity(slot_indices.len());
         let mut replacements = Vec::with_capacity(slot_indices.len());
         for (slot_index, seed) in slot_indices.iter().copied().zip(seeds) {
-            let env = LearningEnvV1::new(RunControlConfig {
-                seed,
-                ..RunControlConfig::default()
-            });
+            let config = self
+                .pool
+                .fresh_run_config(slot_index, seed)
+                .map_err(runtime_error)?;
+            let env = LearningEnvV1::new(config);
             checkpoints.push(LearningSlotCheckpoint {
                 source_slot_index: slot_index,
                 session: env.checkpoint(),
@@ -1255,11 +1438,9 @@ fn production_behavior_ordinal(
     else {
         return Ok(None);
     };
-    Ok(boundary
-        .legal_candidates
-        .candidates
-        .iter()
-        .position(|candidate| candidate.candidate_id == link.planner_candidate_id))
+    let decision = LearningModelDecisionV1::from_strategic_boundary(boundary)
+        .map_err(|error| error.to_string())?;
+    Ok(decision.strategic_ordinal_for_planner_candidate_id(&link.planner_candidate_id))
 }
 
 fn usize_array(py: Python<'_>, values: Vec<usize>) -> Bound<'_, PyArray1<u64>> {
@@ -1427,8 +1608,10 @@ fn runtime_error(error: impl ToString) -> PyErr {
 #[pymodule]
 fn _native(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_class::<CombatLearningBatchEnv>()?;
+    module.add_class::<CombatLearningDecisionProgressV1>()?;
     module.add_class::<CombatLearningRecoveryRoot>()?;
     module.add_class::<PyCombatLearningRootContextV1>()?;
+    module.add_class::<PyCombatLearningRootAuditV1>()?;
     module.add_class::<PyLearningPublicRunContextV1>()?;
     module.add_class::<LearningBatchEnv>()?;
     module.add_class::<LearningCheckpointBatch>()?;

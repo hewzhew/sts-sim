@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import operator
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from enum import Enum
 
@@ -38,6 +38,7 @@ from .torch_policy import (
     RaggedCandidateScorer,
     RaggedCategoricalPolicyConfig,
     sample_ragged_categorical,
+    sample_ragged_categorical_rows,
 )
 
 
@@ -479,6 +480,96 @@ class FrozenCategoricalTorchPolicy:
             self.score(decision_batch),
             self.config,
             self.generator,
+        )
+        return BatchPolicyChoice.create(
+            sample.ordinals,
+            self.behavior_manifest_id,
+            sample.selection_probabilities,
+        )
+
+
+class FrozenReplicateCategoricalTorchPolicy:
+    """One frozen scorer with an independent RNG stream per replicate slot."""
+
+    def __init__(
+        self,
+        scorer: RaggedCandidateScorer,
+        binding: TorchBehaviorBinding,
+        config: RaggedCategoricalPolicyConfig,
+        generators: Sequence[torch.Generator],
+        *,
+        _token: object,
+    ) -> None:
+        if _token is not _PROMOTION_TOKEN:
+            raise TorchBehaviorError(
+                "replicate policy must derive from frozen behavior"
+            )
+        if not isinstance(binding, TorchBehaviorBinding):
+            raise TorchBehaviorError(
+                "replicate policy requires an exact binding"
+            )
+        streams = tuple(generators)
+        if not streams:
+            raise TorchBehaviorError(
+                "replicate policy requires at least one RNG stream"
+            )
+        if not all(isinstance(generator, torch.Generator) for generator in streams):
+            raise TorchBehaviorError(
+                "replicate policy requires typed RNG streams"
+            )
+        if len({id(generator) for generator in streams}) != len(streams):
+            raise TorchBehaviorError(
+                "replicate policy requires independent RNG streams"
+            )
+        for generator in streams:
+            _validate_categorical_inputs(config, generator)
+            _require_generator_device(scorer, generator)
+        self._scorer = scorer
+        self.binding = binding
+        self.config = config
+        self.generators = streams
+
+    @classmethod
+    def from_categorical(
+        cls,
+        policy: FrozenCategoricalTorchPolicy,
+        generators: Sequence[torch.Generator],
+    ) -> FrozenReplicateCategoricalTorchPolicy:
+        if not isinstance(policy, FrozenCategoricalTorchPolicy):
+            raise TorchBehaviorError(
+                "replicate policy requires frozen categorical behavior"
+            )
+        streams = tuple(generators)
+        if not streams or streams[0] is not policy.generator:
+            raise TorchBehaviorError(
+                "replicate policy must retain its recovered first RNG stream"
+            )
+        return cls(
+            policy.frozen_scorer,
+            policy.binding,
+            policy.config,
+            streams,
+            _token=_PROMOTION_TOKEN,
+        )
+
+    @property
+    def behavior_manifest_id(self) -> BehaviorManifestId:
+        return self.binding.manifest_id
+
+    def score(self, decision_batch: Mapping[str, object]) -> RaggedCandidateLogits:
+        with torch.inference_mode():
+            return self._scorer(decision_batch)
+
+    def choose(self, decision_batch: Mapping[str, object]) -> BatchPolicyChoice:
+        slots = _decision_slots(decision_batch)
+        if any(slot >= len(self.generators) for slot in slots):
+            raise TorchBehaviorError(
+                "decision slot exceeds replicate RNG stream count"
+            )
+        sample = sample_ragged_categorical_rows(
+            self.score(decision_batch),
+            self.config,
+            tuple(self.generators[slot] for slot in slots),
         )
         return BatchPolicyChoice.create(
             sample.ordinals,
@@ -1383,7 +1474,7 @@ def _decision_slots(decision_batch: Mapping[str, object]) -> tuple[int, ...]:
         values = tuple(raw_slots)  # type: ignore[arg-type]
     except (KeyError, TypeError) as error:
         raise TorchBehaviorError(
-            "combat-scoped greedy policy requires decision slot indices"
+            "slot-bound policy requires decision slot indices"
         ) from error
     slots: list[int] = []
     for value in values:
@@ -1400,11 +1491,11 @@ def _decision_slots(decision_batch: Mapping[str, object]) -> tuple[int, ...]:
         slots.append(slot)
     if not slots:
         raise TorchBehaviorError(
-            "combat-scoped greedy policy requires at least one decision row"
+            "slot-bound policy requires at least one decision row"
         )
     if len(set(slots)) != len(slots):
         raise TorchBehaviorError(
-            "combat-scoped greedy policy decision slots contain duplicates"
+            "slot-bound policy decision slots contain duplicates"
         )
     return tuple(slots)
 

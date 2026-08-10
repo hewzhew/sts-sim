@@ -9,7 +9,7 @@ import time
 from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import TYPE_CHECKING, Protocol, TextIO
+from typing import Protocol, TextIO
 
 from .combat_objective import (
     CombatAllLossAxis,
@@ -23,30 +23,39 @@ from .combat_potion_lane import (
     CombatPotionLaneError,
     normalize_combat_potion_slots,
 )
+from .combat_root_artifacts import (
+    load_combat_root_source,
+    read_combat_root_artifact,
+)
+from .combat_root_audit import CombatRootAuditError, read_combat_root_audits
+from .combat_rollout import COMBAT_ROLLOUT_VALUE_HEAD_WIDTH
+from .manifests import ManifestArtifactId
+from .policy import BehaviorManifestId
 from .torch_combat_batch_generation import (
     BoundedCombatWinBatchGenerationRunner,
     CombatWinBatchGenerationResult,
     CombatWinRootGenerationResult,
 )
 from .torch_combat_batch_session import CombatWinBatchSessionFactory
+from .torch_combat_census import (
+    CombatWinSignalCensusResult,
+    CombatWinSignalCensusRunner,
+)
 from .torch_behavior import TorchBehaviorPublication
 from .torch_combat_session_config import (
     CombatSessionBridge,
     CombatWinBatchSessionConfig,
+    CombatWinSessionConfig,
     CombatWinSessionLimits,
     CombatWinSessionProfile,
 )
-from .torch_policy import RaggedScorerConfig
+from .torch_policy import RaggedCandidateScorer, RaggedScorerConfig
 from .torch_session_config import CategoricalSessionBridge
 
-if TYPE_CHECKING:
-    from .published_combat_behavior import PublishedCombatBehavior
-    from .published_run_behavior import PublishedRunBehavior
 
-
-LEGACY_COMBAT_TRAINING_SCHEMA = "sts-learning-combat-training-v3"
-PREVIOUS_COMBAT_TRAINING_SCHEMA = "sts-learning-combat-training-v4"
-COMBAT_TRAINING_SCHEMA = "sts-learning-combat-training-v5"
+LEGACY_COMBAT_TRAINING_SCHEMA = "sts-learning-combat-training-v4"
+PREVIOUS_COMBAT_TRAINING_SCHEMA = "sts-learning-combat-training-v5"
+COMBAT_TRAINING_SCHEMA = "sts-learning-combat-training-v6"
 
 
 class CombatTrainingCommandError(RuntimeError):
@@ -60,6 +69,17 @@ class _CombatTrainingSession(Protocol):
     def advance(self) -> CombatWinBatchGenerationResult: ...
 
     def publish_active_behavior(self) -> TorchBehaviorPublication: ...
+
+
+@dataclass(frozen=True)
+class _CombatWarmStart:
+    """Verified scorer weights imported without claiming trainer resume."""
+
+    manifest_id: BehaviorManifestId
+    checkpoint_id: ManifestArtifactId
+    training_step: int
+    scorer: RaggedCandidateScorer
+    provenance_mismatches: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -167,13 +187,19 @@ def run_combat_training(
     active_bridge = bridge if bridge is not None else CombatSessionBridge.installed()
     if not isinstance(active_bridge, CombatSessionBridge):
         raise CombatTrainingCommandError("combat training bridge must be typed")
-    profile = replace(
-        CombatWinSessionProfile(),
-        scorer=RaggedScorerConfig(
-            value_head=config.policy_update.uses_value_baseline,
+    scorer_config = RaggedScorerConfig(
+        value_head=config.policy_update.uses_value_baseline,
+        value_head_width=(
+            COMBAT_ROLLOUT_VALUE_HEAD_WIDTH
+            if config.policy_update.uses_value_baseline
+            else 1
         ),
+    )
+    census_profile = replace(
+        CombatWinSessionProfile(),
+        scorer=scorer_config,
         objective=CombatWinObjectiveConfig(
-            groups_per_update=config.root_count,
+            groups_per_update=1,
             policy_update=config.policy_update,
             all_loss_axis=config.all_loss_axis,
         ),
@@ -188,33 +214,130 @@ def run_combat_training(
         run_bridge,
         config.behavior_seed_base,
     )
-    session = CombatWinBatchSessionFactory(
-        config.output,
+    artifact = read_combat_root_artifact(
+        config.artifact,
+        max_bytes=limits.max_artifact_bytes,
+    )
+    audit_source = load_combat_root_source(
         active_bridge,
-        CombatWinBatchSessionConfig(
-            expected_roots=config.root_count,
+        artifact,
+        expected_roots=config.root_count,
+        max_bytes=limits.max_artifact_bytes,
+    )
+    try:
+        root_audits = read_combat_root_audits(
+            audit_source,
+            tuple(range(config.root_count)),
+        )
+    except CombatRootAuditError as error:
+        raise CombatTrainingCommandError(str(error)) from error
+    initial_scorer = None if warm_start is None else warm_start.scorer
+    initial_scorer_actor_only = (
+        warm_start_training_kind == "run"
+        or (
+            warm_start is not None
+            and bool(warm_start.provenance_mismatches)
+        )
+    )
+    training_slots = tuple(range(config.root_count))
+    training_behavior_seeds = config.behavior_seeds
+    frontier_record: dict[str, object] = {
+        "frontier_admission": "not-run-zero-updates",
+        "frontier_training_slots": training_slots,
+        "frontier_rescue_slots": (),
+        "frontier_solved_slots": (),
+        "frontier_roots": (),
+    }
+    if config.updates:
+        census = CombatWinSignalCensusRunner(
+            active_bridge,
+            CombatWinSessionConfig(
+                expected_roots=config.root_count,
+                replicate_count=config.replicate_count,
+                profile=census_profile,
+                limits=limits,
+            ),
             max_roots=config.root_count,
-            replicate_count=config.replicate_count,
-            profile=profile,
-            limits=limits,
             potion_lane=config.potion_lane,
             potion_slots=config.potion_slots,
-        ),
-    ).new_from_artifact_file(
-        config.artifact,
-        model_seed=config.model_seed,
-        behavior_seeds=config.behavior_seeds,
-        initial_scorer=(
-            None if warm_start is None else warm_start.policies[0].frozen_scorer
-        ),
-        initial_scorer_actor_only=warm_start_training_kind == "run",
-    )
+        ).run_from_combat_root_source(
+            audit_source,
+            artifact_byte_count=len(artifact),
+            model_seed=config.model_seed,
+            behavior_seeds=config.behavior_seeds,
+            initial_scorer=initial_scorer,
+            initial_scorer_actor_only=initial_scorer_actor_only,
+        )
+        training_slots = census.frontier.training_slots
+        if not training_slots:
+            raise CombatTrainingCommandError(
+                "combat fixed-behavior census found no trainable frontier; "
+                f"rescue_slots={census.frontier.rescue_slots} "
+                f"solved_slots={census.frontier.solved_slots}"
+            )
+        training_behavior_seeds = tuple(
+            config.behavior_seeds[source_slot]
+            for source_slot in training_slots
+        )
+        profile = replace(
+            census_profile,
+            objective=census.frontier.training_objective_config(),
+        )
+        frontier_record = _frontier_configuration(census)
+        session = CombatWinBatchSessionFactory(
+            config.output,
+            active_bridge,
+            CombatWinBatchSessionConfig(
+                expected_roots=len(training_slots),
+                max_roots=config.root_count,
+                replicate_count=config.replicate_count,
+                profile=profile,
+                limits=limits,
+                potion_lane=config.potion_lane,
+                potion_slots=config.potion_slots,
+            ),
+        ).new_from_frontier_root_source(
+            audit_source,
+            census.frontier,
+            artifact_byte_count=len(artifact),
+            model_seed=config.model_seed,
+            behavior_seeds=training_behavior_seeds,
+            initial_scorer=initial_scorer,
+            initial_scorer_actor_only=initial_scorer_actor_only,
+        )
+    else:
+        profile = replace(
+            census_profile,
+            objective=replace(
+                census_profile.objective,
+                groups_per_update=config.root_count,
+            ),
+        )
+        session = CombatWinBatchSessionFactory(
+            config.output,
+            active_bridge,
+            CombatWinBatchSessionConfig(
+                expected_roots=config.root_count,
+                max_roots=config.root_count,
+                replicate_count=config.replicate_count,
+                profile=profile,
+                limits=limits,
+                potion_lane=config.potion_lane,
+                potion_slots=config.potion_slots,
+            ),
+        ).new_from_artifact_bytes(
+            artifact,
+            model_seed=config.model_seed,
+            behavior_seeds=training_behavior_seeds,
+            initial_scorer=initial_scorer,
+            initial_scorer_actor_only=initial_scorer_actor_only,
+        )
 
     return _run_combat_training_session(
         config,
         session=session,
         profile=profile,
-        behavior_seeds=config.behavior_seeds,
+        behavior_seeds=training_behavior_seeds,
         warm_start_manifest_id=(
             None if warm_start is None else warm_start.manifest_id.digest.hex()
         ),
@@ -225,6 +348,14 @@ def run_combat_training(
             None if warm_start is None else warm_start.training_step
         ),
         warm_start_training_kind=warm_start_training_kind,
+        warm_start_provenance_mismatches=(
+            () if warm_start is None else warm_start.provenance_mismatches
+        ),
+        configuration_extra={
+            "root_audits": tuple(audit.as_mapping() for audit in root_audits),
+            **frontier_record,
+        },
+        source_root_slots=training_slots,
     )
 
 
@@ -233,7 +364,7 @@ def _recover_combat_warm_start(
     combat_bridge: CombatSessionBridge,
     run_bridge: CategoricalSessionBridge | None,
     behavior_seed: int,
-) -> tuple[PublishedCombatBehavior | PublishedRunBehavior | None, str | None]:
+) -> tuple[_CombatWarmStart | None, str | None]:
     if behavior is None:
         return None, None
     from .published_run_behavior import (
@@ -255,25 +386,63 @@ def _recover_combat_warm_start(
             raise CombatTrainingCommandError(
                 "run warm-start and combat training semantic schemas differ"
             )
+        recovered = recover_published_run_behavior(
+            behavior,
+            active_run_bridge,
+            (behavior_seed,),
+        )
         return (
-            recover_published_run_behavior(
-                behavior,
-                active_run_bridge,
-                (behavior_seed,),
+            _CombatWarmStart(
+                manifest_id=recovered.manifest_id,
+                checkpoint_id=recovered.checkpoint_id,
+                training_step=recovered.training_step,
+                scorer=recovered.policies[0].frozen_scorer,
             ),
             "run",
         )
-    from .published_combat_behavior import recover_published_combat_behavior
+    from .published_combat_behavior import recover_compatible_combat_scorer
 
+    recovered = recover_compatible_combat_scorer(
+        behavior,
+        combat_bridge,
+        CombatWinSessionLimits(),
+    )
     return (
-        recover_published_combat_behavior(
-            behavior,
-            combat_bridge,
-            CombatWinSessionLimits(),
-            (behavior_seed,),
+        _CombatWarmStart(
+            manifest_id=recovered.source_manifest_id,
+            checkpoint_id=recovered.checkpoint_id,
+            training_step=recovered.training_step,
+            scorer=recovered.scorer,
+            provenance_mismatches=recovered.provenance_mismatches,
         ),
         "combat",
     )
+
+
+def _frontier_configuration(
+    census: CombatWinSignalCensusResult,
+) -> dict[str, object]:
+    frontier = census.frontier
+    return {
+        "frontier_admission": "fixed-behavior-census-v1",
+        "frontier_training_slots": frontier.training_slots,
+        "frontier_survival_slots": frontier.survival_frontier_slots,
+        "frontier_resource_slots": frontier.resource_frontier_slots,
+        "frontier_rescue_slots": frontier.rescue_slots,
+        "frontier_solved_slots": frontier.solved_slots,
+        "frontier_roots": tuple(
+            {
+                "slot_index": root.source_slot,
+                "root_id": root.root_id,
+                "exact_combat_state_hash": root.exact_combat_state_hash,
+                "band": root.band.name,
+                "wins": root.wins,
+                "losses": root.losses,
+                "unresolved": root.unresolved,
+            }
+            for root in frontier.roots
+        ),
+    }
 
 
 def _run_combat_training_session(
@@ -286,11 +455,37 @@ def _run_combat_training_session(
     warm_start_checkpoint_id: str | None,
     warm_start_training_step: int | None,
     warm_start_training_kind: str | None = None,
+    warm_start_provenance_mismatches: tuple[str, ...] = (),
     configuration_extra: Mapping[str, object] | None = None,
     completion_extra: Mapping[str, object] | None = None,
+    source_root_slots: tuple[int, ...] | None = None,
 ) -> dict[str, object]:
     """Journal and publish one already-constructed combat training session."""
 
+    normalized_source_slots = (
+        tuple(range(config.root_count))
+        if source_root_slots is None
+        else tuple(source_root_slots)
+    )
+    if not normalized_source_slots:
+        raise CombatTrainingCommandError(
+            "combat training requires at least one selected root"
+        )
+    if len(normalized_source_slots) != len(behavior_seeds):
+        raise CombatTrainingCommandError(
+            "combat training selected roots and behavior seeds are misaligned"
+        )
+    if len(set(normalized_source_slots)) != len(normalized_source_slots):
+        raise CombatTrainingCommandError(
+            "combat training selected roots must be distinct"
+        )
+    if any(
+        slot < 0 or slot >= config.root_count
+        for slot in normalized_source_slots
+    ):
+        raise CombatTrainingCommandError(
+            "combat training selected root is outside the source artifact"
+        )
     configuration = {
         "schema": COMBAT_TRAINING_SCHEMA,
         "kind": "configuration",
@@ -298,6 +493,8 @@ def _run_combat_training_session(
         "artifact_sha256": _sha256(config.artifact),
         "artifact_bytes": session.artifact_byte_count,
         "root_count": config.root_count,
+        "training_root_count": len(normalized_source_slots),
+        "training_root_slots": normalized_source_slots,
         "replicate_count": config.replicate_count,
         "updates": config.updates,
         "model_seed": config.model_seed,
@@ -333,6 +530,9 @@ def _run_combat_training_session(
         "warm_start_checkpoint_id": warm_start_checkpoint_id,
         "warm_start_training_step": warm_start_training_step,
         "warm_start_training_kind": warm_start_training_kind,
+        "warm_start_provenance_mismatches": (
+            warm_start_provenance_mismatches
+        ),
     }
     _extend_record(configuration, configuration_extra)
 
@@ -356,7 +556,15 @@ def _run_combat_training_session(
             total_losses += losses
             unresolved = sum(root.unresolved for root in result.roots)
             total_unresolved += unresolved
-            _write(journal, _generation(generation, result, elapsed))
+            _write(
+                journal,
+                _generation(
+                    generation,
+                    result,
+                    elapsed,
+                    normalized_source_slots,
+                ),
+            )
             root_wins = ",".join(str(root.wins) for root in result.roots)
             root_objectives = ",".join(
                 _selected_objective(
@@ -425,7 +633,12 @@ def _generation(
     index: int,
     result: CombatWinBatchGenerationResult,
     elapsed: float,
+    source_root_slots: tuple[int, ...],
 ) -> dict[str, object]:
+    if len(source_root_slots) != len(result.roots):
+        raise CombatTrainingCommandError(
+            "combat generation roots changed the selected frontier width"
+        )
     return {
         "schema": COMBAT_TRAINING_SCHEMA,
         "kind": "generation",
@@ -457,26 +670,31 @@ def _generation(
         "value_loss": result.training.value_loss,
         "roots": tuple(
             _root(
-                slot_index,
+                training_slot_index,
+                source_root_slot,
                 root,
                 result.training.all_win_axis,
                 result.training.all_loss_axis,
             )
-            for slot_index, root in enumerate(result.roots)
+            for training_slot_index, (source_root_slot, root) in enumerate(
+                zip(source_root_slots, result.roots, strict=True)
+            )
         ),
         "elapsed_seconds": elapsed,
     }
 
 
 def _root(
-    slot_index: int,
+    training_slot_index: int,
+    source_root_slot: int,
     root: CombatWinRootGenerationResult,
     all_win_axis: CombatAllWinAxis,
     all_loss_axis: CombatAllLossAxis,
 ) -> dict[str, object]:
     signals = root.signals
     return {
-        "slot_index": slot_index,
+        "slot_index": source_root_slot,
+        "training_slot_index": training_slot_index,
         "root_id": root.root_id,
         "exact_combat_state_hash": root.exact_combat_state_hash,
         "wins": root.wins,

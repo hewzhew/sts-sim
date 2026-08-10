@@ -320,6 +320,9 @@ def _summary(
                     recovered.combat_anchor_scorer.relation_layers
                 ),
                 "value_head": recovered.combat_anchor_scorer.value_head,
+                "value_head_width": (
+                    recovered.combat_anchor_scorer.value_head_width
+                ),
             }
         ),
         "behavior_run_objective": (

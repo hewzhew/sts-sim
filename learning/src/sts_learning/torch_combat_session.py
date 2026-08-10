@@ -24,6 +24,7 @@ from .torch_combat_session_config import (
     CombatWinSessionConfig,
     TorchCombatSessionError,
 )
+from .torch_policy import RaggedCandidateScorer
 
 
 class CombatWinSession:
@@ -91,6 +92,8 @@ class CombatWinSessionFactory:
         *,
         model_seed: int,
         behavior_seed: int,
+        initial_scorer: RaggedCandidateScorer | None = None,
+        initial_scorer_actor_only: bool = False,
     ) -> CombatWinSession:
         """Read one bounded opaque artifact and create generation zero."""
 
@@ -102,6 +105,8 @@ class CombatWinSessionFactory:
             payload,
             model_seed=model_seed,
             behavior_seed=behavior_seed,
+            initial_scorer=initial_scorer,
+            initial_scorer_actor_only=initial_scorer_actor_only,
         )
 
     def new_from_artifact_bytes(
@@ -110,6 +115,8 @@ class CombatWinSessionFactory:
         *,
         model_seed: int,
         behavior_seed: int,
+        initial_scorer: RaggedCandidateScorer | None = None,
+        initial_scorer_actor_only: bool = False,
     ) -> CombatWinSession:
         """Import exact roots and create one fully wired in-process session."""
 
@@ -131,6 +138,8 @@ class CombatWinSessionFactory:
             artifact_byte_count=len(artifact),
             model_seed=model_seed,
             behavior_seed=behavior_seed,
+            initial_scorer=initial_scorer,
+            initial_scorer_actor_only=initial_scorer_actor_only,
         )
 
     def _new_from_combat_root_source(
@@ -140,6 +149,8 @@ class CombatWinSessionFactory:
         artifact_byte_count: int,
         model_seed: int,
         behavior_seed: int,
+        initial_scorer: RaggedCandidateScorer | None = None,
+        initial_scorer_actor_only: bool = False,
     ) -> CombatWinSession:
         if not callable(getattr(source, "combat_group", None)):
             raise TorchCombatSessionError(
@@ -153,6 +164,8 @@ class CombatWinSessionFactory:
             self.config.limits,
             model_seed=model_seed,
             controller_seed=behavior_seed,
+            initial_scorer=initial_scorer,
+            initial_scorer_actor_only=initial_scorer_actor_only,
         )
         runner = BoundedCombatWinGenerationRunner(
             source,

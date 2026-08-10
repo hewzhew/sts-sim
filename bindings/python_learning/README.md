@@ -114,6 +114,14 @@ replicate index, and `spawn_group(replicate_count)` derives a new same-root
 group without exposing the session. Partially decoded actions and terminal
 replicates are rejected. The group records no automatic history; bounded
 retention and replay verification remain caller-owned curriculum work.
+`group.combat_decision_audit_json(replicate_index)` is the read-only diagnostic
+companion to one current model row. It returns the complete ordered typed
+candidate surface, including card/potion identity and monster target semantics,
+or `None` after full action decoding or terminal completion. Symbolic selection
+rows retain their exact prefix and append/submit domain. This JSON never enters
+the semantic model batch, chooses an action, or exposes a runtime handle; the
+Python learning caller may use it only to align interpretable policy scores
+with the unchanged candidate ordinals.
 `group.root_context` is a frozen native `CombatLearningRootContextV1` generated
 once by Rust. It exposes only compact public root facts for corpus selection and
 stratification; Python does not reconstruct them from semantic feature ids, and

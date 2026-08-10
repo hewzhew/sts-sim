@@ -206,6 +206,19 @@ class TorchProvenanceTests(unittest.TestCase):
             value,
             device_type="cpu",
         )
+        multi_value_template = categorical_training_manifest_template(
+            schema,
+            RaggedScorerConfig(
+                hidden_dim=4,
+                relation_layers=1,
+                value_head=True,
+                value_head_width=3,
+            ),
+            behavior,
+            optimizer,
+            value,
+            device_type="cpu",
+        )
         unnormalized_value_template = categorical_training_manifest_template(
             schema,
             RaggedScorerConfig(
@@ -238,6 +251,14 @@ class TorchProvenanceTests(unittest.TestCase):
         self.assertNotEqual(
             value_template.model_config,
             policy_template.model_config,
+        )
+        self.assertNotEqual(
+            multi_value_template.model_definition,
+            value_template.model_definition,
+        )
+        self.assertNotEqual(
+            multi_value_template.model_config,
+            value_template.model_config,
         )
         self.assertNotEqual(
             value_template.trainer_implementation,

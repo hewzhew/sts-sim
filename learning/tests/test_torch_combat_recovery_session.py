@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 from pathlib import Path
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -91,6 +92,22 @@ class _ReplayableGroup:
         batch = semantic_batch_fixture()
         batch["slot_indices"] = np.asarray([0, 1], dtype=np.uint64)
         return batch
+
+    def decision_progress(self) -> list[SimpleNamespace]:
+        assert not self.ready and not self.terminal_count
+        return [
+            SimpleNamespace(
+                replicate_index=replicate_index,
+                turn=self.transition + 1,
+                player_hp=80 - 15 * self.transition,
+                player_max_hp=80,
+                enemy_hp=40 - 15 * self.transition,
+                enemy_max_hp=40,
+                potion_uuids=(101 + replicate_index,),
+                potion_ids=("FearPotion",),
+            )
+            for replicate_index in range(self.replicate_count)
+        ]
 
     def choose(self, ordinals: list[int]) -> None:
         assert not self.ready and len(ordinals) == self.replicate_count

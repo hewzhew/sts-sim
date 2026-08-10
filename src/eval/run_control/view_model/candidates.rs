@@ -499,18 +499,6 @@ fn reward_candidates(
             )
         };
         candidates.push(candidate(id, label, input, note));
-        if let Some(candidate) = candidates.last_mut() {
-            if candidate.id == "skip" && reward.has_card_reward_item() {
-                if let Some(reward_item_index) = reward
-                    .items
-                    .iter()
-                    .position(|item| matches!(item, crate::state::rewards::RewardItem::Card { .. }))
-                {
-                    candidate.key =
-                        Some(DecisionCandidateKey::CardRewardSkip { reward_item_index });
-                }
-            }
-        }
     }
     candidates
 }

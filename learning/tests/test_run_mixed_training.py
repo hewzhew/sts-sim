@@ -162,6 +162,7 @@ def test_run_training_uses_greedy_combat_and_trains_only_strategic_rows(
         "hidden_dim": 64,
         "relation_layers": 2,
         "value_head": False,
+        "value_head_width": 1,
     }
     assert summary["held_out_target_reached"] is True
     records = tuple(

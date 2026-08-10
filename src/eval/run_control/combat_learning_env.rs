@@ -129,8 +129,8 @@ pub struct CombatLearningRootV1 {
 
 impl CombatLearningRootV1 {
     pub fn from_session(mut session: RunControlSession) -> Result<Self, String> {
-        session.observe_active_combat_started();
         let position = session.current_combat_position_for_actions()?;
+        session.combat_outcomes.rebase_active(&position.combat);
         let identity = CombatLearningRootIdentityV1 {
             root_id: run_control_session_fingerprint_v2(&session),
             exact_combat_state_hash: combat_exact_state_hash_v2(&position.engine, &position.combat),
@@ -574,6 +574,38 @@ mod tests {
                 input: ClientInput::EndTurn,
             })
             .is_err());
+    }
+
+    #[test]
+    fn suffix_root_rebases_terminal_hp_to_its_own_exact_boundary() {
+        let mut session = combat_root_session(1);
+        session.observe_active_combat_started();
+        session
+            .active_combat
+            .as_mut()
+            .expect("active combat")
+            .combat_state
+            .entities
+            .player
+            .current_hp = 61;
+        let mut env = CombatLearningEnvV1::from_root_session(session, 0)
+            .expect("construct suffix combat root");
+
+        let step = env
+            .step(LearningActionV1::CombatInput {
+                input: ClientInput::PlayCard {
+                    card_index: 0,
+                    target: Some(7),
+                },
+            })
+            .expect("finish suffix combat");
+        let CombatLearningBoundaryV1::Terminal { outcome } = step.boundary else {
+            panic!("suffix combat must terminate");
+        };
+
+        assert_eq!(outcome.combat.start_hp, 61);
+        assert_eq!(outcome.combat.final_hp, 61);
+        assert_eq!(outcome.combat.hp_loss, 0);
     }
 
     #[test]

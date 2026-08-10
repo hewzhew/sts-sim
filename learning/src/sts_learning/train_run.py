@@ -752,6 +752,7 @@ def _scorer_config(config: RaggedScorerConfig) -> dict[str, object]:
         "hidden_dim": config.hidden_dim,
         "relation_layers": config.relation_layers,
         "value_head": config.value_head,
+        "value_head_width": config.value_head_width,
     }
 
 

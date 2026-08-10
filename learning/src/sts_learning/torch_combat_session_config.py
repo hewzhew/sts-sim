@@ -14,6 +14,7 @@ from .combat_potion_lane import (
     CombatPotionLaneError,
     normalize_combat_potion_slots,
 )
+from .combat_rollout import COMBAT_ROLLOUT_VALUE_HEAD_WIDTH
 from .manifest_catalog import BehaviorManifestCatalogLimits
 from .semantic_concat import SemanticBatchConcatLimits
 from .torch_checkpoints import TorchCheckpointLimits
@@ -95,6 +96,19 @@ class CombatWinSessionProfile:
             raise TorchCombatSessionError("combat session optimizer must be typed")
         if not isinstance(self.objective, CombatWinObjectiveConfig):
             raise TorchCombatSessionError("combat session objective must be typed")
+        expected_value_width = (
+            COMBAT_ROLLOUT_VALUE_HEAD_WIDTH
+            if self.objective.policy_update.uses_value_baseline
+            else 1
+        )
+        if (
+            self.scorer.value_head
+            != self.objective.policy_update.uses_value_baseline
+            or self.scorer.value_head_width != expected_value_width
+        ):
+            raise TorchCombatSessionError(
+                "combat session scorer value profile disagrees with the objective"
+            )
         if self.device_type != "cpu":
             raise TorchCombatSessionError(
                 "the first maintained combat session supports only cpu"
@@ -198,7 +212,7 @@ class CombatWinSessionConfig:
 
 @dataclass(frozen=True)
 class CombatWinBatchSessionConfig:
-    """Exact multi-root delivery width, algorithm, and resource bounds."""
+    """Exact frontier delivery width, algorithm, and resource bounds."""
 
     expected_roots: int
     max_roots: int
@@ -216,10 +230,6 @@ class CombatWinBatchSessionConfig:
         expected = _positive_integer(self.expected_roots, "expected_roots")
         root_bound = _positive_integer(self.max_roots, "max_roots")
         replicates = _positive_integer(self.replicate_count, "replicate_count")
-        if expected < 2:
-            raise TorchCombatSessionError(
-                "combat batch session requires at least two roots"
-            )
         if expected > root_bound:
             raise TorchCombatSessionError(
                 "combat batch session expected roots exceed max_roots"

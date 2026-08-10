@@ -618,6 +618,44 @@ impl<'a> LearningModelDecisionV1<'a> {
         })
     }
 
+    /// Resolves one planner-owned strategic identity against this exact model surface.
+    ///
+    /// Candidate identities remain internal execution metadata and are never model
+    /// features.  This join exists for bridge-side behavior labels after policy
+    /// canonicalization has filtered or reordered the planner's complete legal set.
+    /// Missing or ambiguous identities fail closed as unavailable.
+    pub fn strategic_ordinal_for_planner_candidate_id(
+        &self,
+        planner_candidate_id: &str,
+    ) -> Option<usize> {
+        let mut matches = self
+            .candidates
+            .iter()
+            .enumerate()
+            .filter_map(|(ordinal, candidate)| {
+                let candidate_id = match candidate.resolution {
+                    LearningCandidateResolutionV1::StrategicCandidate { candidate_id } => {
+                        candidate_id
+                    }
+                    LearningCandidateResolutionV1::RunSelectionFamily {
+                        planner_candidate_id,
+                        ..
+                    } => planner_candidate_id,
+                    LearningCandidateResolutionV1::CombatAtomic { .. }
+                    | LearningCandidateResolutionV1::CombatSelectionFamily { .. } => return None,
+                };
+                (candidate_id == planner_candidate_id).then_some(ordinal)
+            });
+        let ordinal = matches.next()?;
+        matches.next().is_none().then_some(ordinal)
+    }
+
+    pub fn from_strategic_boundary(
+        boundary: &'a LearningStrategicBoundaryV1,
+    ) -> Result<Self, LearningModelInputError> {
+        Self::from_strategic(boundary)
+    }
+
     pub fn from_combat_boundary(
         boundary: &'a LearningCombatBoundaryV1,
     ) -> Result<Self, LearningModelInputError> {
@@ -658,10 +696,8 @@ impl<'a> LearningModelDecisionV1<'a> {
         }
 
         let observation = &boundary.observation;
-        let candidates = boundary
-            .legal_candidates
-            .candidates
-            .iter()
+        let candidates = strategic_learning_policy_candidates(boundary)
+            .into_iter()
             .map(|candidate| {
                 let resolution = match &candidate.action {
                     PlannerAction::BeginRunCardSelection {
@@ -762,6 +798,77 @@ impl<'a> LearningModelDecisionV1<'a> {
             candidates,
         })
     }
+}
+
+/// Removes mechanically dominated reward clicks from the learned policy surface.
+///
+/// The full planner candidate set remains the source of legal runtime actions.
+/// A learner is only asked to choose after deterministic free resources and a
+/// costless card-reward reveal have been resolved. This preserves meaningful
+/// choices such as card versus skip, a full potion inventory, and route
+/// commitment without spending samples on whether to accept free gold.
+fn strategic_learning_policy_candidates(
+    boundary: &LearningStrategicBoundaryV1,
+) -> Vec<&crate::ai::planner_core::LegalCandidate> {
+    let candidates = &boundary.legal_candidates.candidates;
+    if !matches!(
+        &boundary.observation.context,
+        PlannerDecisionContext::Reward
+    ) {
+        return candidates.iter().collect();
+    }
+
+    let first_free_gold = candidates.iter().find(|candidate| {
+        matches!(
+            &candidate.action,
+            PlannerAction::ClaimReward {
+                reward: crate::ai::planner_core::PlannerRewardDescriptor::Gold { .. }
+                    | crate::ai::planner_core::PlannerRewardDescriptor::StolenGold { .. },
+                ..
+            }
+        )
+    });
+    if let Some(candidate) = first_free_gold {
+        return vec![candidate];
+    }
+
+    let has_empty_potion_slot = boundary
+        .observation
+        .potions
+        .iter()
+        .any(|slot| slot.potion.is_none());
+    let has_sozu = boundary
+        .observation
+        .relics
+        .iter()
+        .any(|relic| relic.relic == crate::content::relics::RelicId::Sozu);
+    if has_empty_potion_slot && !has_sozu {
+        let mut potion_candidates = candidates.iter().filter(|candidate| {
+            matches!(
+                &candidate.action,
+                PlannerAction::ClaimReward {
+                    reward: crate::ai::planner_core::PlannerRewardDescriptor::Potion { .. },
+                    ..
+                }
+            )
+        });
+        if let Some(candidate) = potion_candidates.next() {
+            if potion_candidates.next().is_none() {
+                return vec![candidate];
+            }
+        }
+    }
+
+    let mut card_reward_candidates = candidates
+        .iter()
+        .filter(|candidate| matches!(&candidate.action, PlannerAction::OpenCardReward { .. }));
+    if let Some(candidate) = card_reward_candidates.next() {
+        if card_reward_candidates.next().is_none() {
+            return vec![candidate];
+        }
+    }
+
+    candidates.iter().collect()
 }
 
 /// Keeps the engine's Java-faithful legal surface separate from the actions a
@@ -1557,6 +1664,7 @@ mod tests {
         RunPendingChoiceReason, RunPendingChoiceState,
     };
     use crate::state::map::node::RoomType;
+    use crate::state::rewards::{RewardCard, RewardItem, RewardState};
     use crate::state::selection::DomainEventSource;
     use crate::state::PendingChoice;
 
@@ -1784,6 +1892,180 @@ mod tests {
             decision.choose(0).expect("resolve first ordinal"),
             LearningModelChoiceV1::Apply(LearningActionV1::StrategicCandidate { .. })
         ));
+    }
+
+    #[test]
+    fn strategic_reward_policy_forces_free_resources_and_card_reveal_before_choice() {
+        let mut session = RunControlSession::new(RunControlConfig::default());
+        let mut reward = RewardState::new();
+        reward.items = vec![
+            RewardItem::Gold { amount: 12 },
+            RewardItem::Potion {
+                potion_id: PotionId::SmokeBomb,
+            },
+            RewardItem::Card {
+                cards: vec![
+                    RewardCard::new(CardId::PommelStrike, 0),
+                    RewardCard::new(CardId::ShrugItOff, 0),
+                ],
+            },
+        ];
+        session.engine_state = EngineState::RewardScreen(reward);
+        let mut env = LearningEnvV1::from_session(session);
+
+        for expected in ["gold", "potion", "open_card"] {
+            let boundary = env.observe().expect("reward learning boundary");
+            let LearningBoundaryV1::Strategic {
+                boundary: strategic_boundary,
+            } = &boundary
+            else {
+                panic!("reward boundary should remain strategic");
+            };
+            let decision =
+                LearningModelDecisionV1::from_boundary(&boundary).expect("reward decision");
+            assert_eq!(decision.candidates.len(), 1);
+            let exposed_id = strategic_learning_policy_candidates(strategic_boundary)[0]
+                .candidate_id
+                .as_str();
+            assert_eq!(
+                decision.strategic_ordinal_for_planner_candidate_id(exposed_id),
+                Some(0)
+            );
+            let filtered_id = strategic_boundary
+                .legal_candidates
+                .candidates
+                .iter()
+                .find(|candidate| candidate.candidate_id != exposed_id)
+                .map(|candidate| candidate.candidate_id.as_str())
+                .expect("reward fixture should retain a filtered candidate");
+            assert_eq!(
+                decision.strategic_ordinal_for_planner_candidate_id(filtered_id),
+                None
+            );
+            let LearningModelCandidateSemanticsV1::Strategic { action } =
+                decision.candidates[0].semantics
+            else {
+                panic!("reward decision should remain strategic");
+            };
+            match (expected, action) {
+                (
+                    "gold",
+                    PlannerAction::ClaimReward {
+                        reward:
+                            crate::ai::planner_core::PlannerRewardDescriptor::Gold { amount: 12 },
+                        ..
+                    },
+                )
+                | (
+                    "potion",
+                    PlannerAction::ClaimReward {
+                        reward:
+                            crate::ai::planner_core::PlannerRewardDescriptor::Potion {
+                                potion: PotionId::SmokeBomb,
+                            },
+                        ..
+                    },
+                )
+                | ("open_card", PlannerAction::OpenCardReward { .. }) => {}
+                _ => panic!("unexpected canonical reward action: {action:?}"),
+            }
+            let action = match decision.choose(0).expect("choose forced reward action") {
+                LearningModelChoiceV1::Apply(action) => action,
+                LearningModelChoiceV1::DecodeSelection(_) => {
+                    panic!("reward action should not start a selection")
+                }
+            };
+            env.step(action).expect("apply forced reward action");
+        }
+
+        let boundary = env.observe().expect("opened card reward boundary");
+        let decision =
+            LearningModelDecisionV1::from_boundary(&boundary).expect("card choice decision");
+        assert!(decision.candidates.len() >= 3);
+        assert!(decision.candidates.iter().any(|candidate| matches!(
+            candidate.semantics,
+            LearningModelCandidateSemanticsV1::Strategic {
+                action: PlannerAction::TakeCard {
+                    card: CardId::PommelStrike,
+                    ..
+                }
+            }
+        )));
+        assert!(decision.candidates.iter().any(|candidate| matches!(
+            candidate.semantics,
+            LearningModelCandidateSemanticsV1::Strategic {
+                action: PlannerAction::SkipCardReward { .. }
+            }
+        )));
+    }
+
+    #[test]
+    fn strategic_reward_policy_keeps_multiple_potions_and_card_rewards_as_choices() {
+        let mut session = RunControlSession::new(RunControlConfig::default());
+        let mut reward = RewardState::new();
+        reward.items = vec![
+            RewardItem::Potion {
+                potion_id: PotionId::FruitJuice,
+            },
+            RewardItem::Potion {
+                potion_id: PotionId::FearPotion,
+            },
+            RewardItem::Potion {
+                potion_id: PotionId::StrengthPotion,
+            },
+        ];
+        session.engine_state = EngineState::RewardScreen(reward);
+        let boundary = LearningEnvV1::from_session(session)
+            .observe()
+            .expect("multi-potion reward boundary");
+        let decision =
+            LearningModelDecisionV1::from_boundary(&boundary).expect("multi-potion decision");
+        assert_eq!(
+            decision
+                .candidates
+                .iter()
+                .filter(|candidate| matches!(
+                    candidate.semantics,
+                    LearningModelCandidateSemanticsV1::Strategic {
+                        action: PlannerAction::ClaimReward {
+                            reward: crate::ai::planner_core::PlannerRewardDescriptor::Potion { .. },
+                            ..
+                        }
+                    }
+                ))
+                .count(),
+            3
+        );
+
+        let mut session = RunControlSession::new(RunControlConfig::default());
+        let mut reward = RewardState::new();
+        reward.items = vec![
+            RewardItem::Card {
+                cards: vec![RewardCard::new(CardId::PommelStrike, 0)],
+            },
+            RewardItem::Card {
+                cards: vec![RewardCard::new(CardId::ShrugItOff, 0)],
+            },
+        ];
+        session.engine_state = EngineState::RewardScreen(reward);
+        let boundary = LearningEnvV1::from_session(session)
+            .observe()
+            .expect("multi-card-reward boundary");
+        let decision =
+            LearningModelDecisionV1::from_boundary(&boundary).expect("multi-card-reward decision");
+        assert_eq!(
+            decision
+                .candidates
+                .iter()
+                .filter(|candidate| matches!(
+                    candidate.semantics,
+                    LearningModelCandidateSemanticsV1::Strategic {
+                        action: PlannerAction::OpenCardReward { .. }
+                    }
+                ))
+                .count(),
+            2
+        );
     }
 
     #[test]

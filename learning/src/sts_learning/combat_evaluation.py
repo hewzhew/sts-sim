@@ -22,14 +22,14 @@ from .combat_potion_lane import (
 )
 from .policy import BehaviorManifestId
 from .torch_behavior import (
-    FrozenCategoricalTorchPolicy,
     FrozenCombatGreedyTorchPolicy,
     FrozenGreedyTorchPolicy,
+    FrozenReplicateCategoricalTorchPolicy,
 )
 
 
 CombatEvaluationPolicy = (
-    FrozenCategoricalTorchPolicy
+    FrozenReplicateCategoricalTorchPolicy
     | FrozenCombatGreedyTorchPolicy
     | FrozenGreedyTorchPolicy
 )
@@ -523,7 +523,7 @@ class CombatHeldOutEvaluator:
             isinstance(
                 policy,
                 (
-                    FrozenCategoricalTorchPolicy,
+                    FrozenReplicateCategoricalTorchPolicy,
                     FrozenCombatGreedyTorchPolicy,
                     FrozenGreedyTorchPolicy,
                 ),
@@ -560,12 +560,28 @@ class CombatHeldOutEvaluator:
                 "combat evaluation policies must share one frozen manifest"
             )
         sampled = not next(iter(greedy_modes))
-        if sampled and len(
-            {id(policy.generator) for policy in frozen_policies}
-        ) != len(frozen_policies):
-            raise CombatEvaluationError(
-                "combat evaluation requires independent policy RNG streams"
+        if sampled:
+            sampled_policies = tuple(
+                policy
+                for policy in frozen_policies
+                if isinstance(policy, FrozenReplicateCategoricalTorchPolicy)
             )
+            if any(
+                len(policy.generators) != replicates
+                for policy in sampled_policies
+            ):
+                raise CombatEvaluationError(
+                    "combat evaluation requires one policy RNG stream per replicate"
+                )
+            generators = tuple(
+                generator
+                for policy in sampled_policies
+                for generator in policy.generators
+            )
+            if len({id(generator) for generator in generators}) != len(generators):
+                raise CombatEvaluationError(
+                    "combat evaluation requires independent policy RNG streams"
+                )
         active_limits = CombatEvaluationLimits() if limits is None else limits
         if not isinstance(active_limits, CombatEvaluationLimits):
             raise CombatEvaluationError(
@@ -604,9 +620,12 @@ class CombatHeldOutEvaluator:
         self._started = True
         generator_states = (
             tuple(
-                policy.generator.get_state().clone()
+                tuple(
+                    generator.get_state().clone()
+                    for generator in policy.generators
+                )
                 for policy in self.policies
-                if isinstance(policy, FrozenCategoricalTorchPolicy)
+                if isinstance(policy, FrozenReplicateCategoricalTorchPolicy)
             )
             if self.sampled
             else ()
@@ -654,14 +673,22 @@ class CombatHeldOutEvaluator:
                 roots.append(root)
         except Exception:
             if self.sampled:
-                for policy, state in zip(
+                for policy, states in zip(
                     self.policies,
                     generator_states,
                     strict=True,
                 ):
-                    if not isinstance(policy, FrozenCategoricalTorchPolicy):
+                    if not isinstance(
+                        policy,
+                        FrozenReplicateCategoricalTorchPolicy,
+                    ):
                         raise AssertionError("sampled policy type changed")
-                    policy.generator.set_state(state)
+                    for generator, state in zip(
+                        policy.generators,
+                        states,
+                        strict=True,
+                    ):
+                        generator.set_state(state)
             raise
         return CombatHeldOutEvaluationResult(
             self.behavior_manifest_id,

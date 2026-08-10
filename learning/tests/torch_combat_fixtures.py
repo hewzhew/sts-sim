@@ -10,6 +10,7 @@ from learning.tests.semantic_fixtures import semantic_batch_fixture
 from sts_learning import (
     BehaviorManifestId,
     CombatDecisionExperienceBatch,
+    CombatDecisionProgress,
     CombatTerminalOutcome,
     CompletedCombatGroup,
     CompletedCombatGroupExperience,
@@ -78,6 +79,21 @@ class OneRoundCombatGroup:
         batch["slot_indices"] = np.asarray([0, 1], dtype=np.uint64)
         return batch
 
+    def decision_progress(self) -> list[SimpleNamespace]:
+        return [
+            SimpleNamespace(
+                replicate_index=replicate_index,
+                turn=1,
+                player_hp=80,
+                player_max_hp=80,
+                enemy_hp=40,
+                enemy_max_hp=40,
+                potion_uuids=(101, 102),
+                potion_ids=("EntropicBrew", "GamblersBrew"),
+            )
+            for replicate_index in range(self.replicate_count)
+        ]
+
     def choose(self, ordinals: list[int]) -> None:
         if self.ready or len(ordinals) != self.replicate_count:
             raise AssertionError("combat group received an invalid choice")
@@ -92,7 +108,7 @@ class OneRoundCombatGroup:
         return json.dumps(
             {
                 "schema_name": "CombatLearningReadyActionTrace",
-                "schema_version": 1,
+                "schema_version": 2,
                 "replicate_index": replicate_index,
                 "decision_ordinals": [0],
                 "turn": 1,
@@ -218,6 +234,10 @@ def combat_group_experience_fixture(
         root_id=ROOT_ID,
         exact_combat_state_hash=COMBAT_HASH,
         replicate_indices=(0, 1),
+        decision_progress=(
+            _progress(0, turn=1, player_hp=80, enemy_hp=40),
+            _progress(1, turn=1, player_hp=80, enemy_hp=40),
+        ),
         payload=semantic_batch_fixture(),
         selected_ordinals=(0, 0),
         selection_probabilities=(
@@ -235,6 +255,9 @@ def combat_group_experience_fixture(
         root_id=ROOT_ID,
         exact_combat_state_hash=COMBAT_HASH,
         replicate_indices=(1,),
+        decision_progress=(
+            _progress(1, turn=2, player_hp=75, enemy_hp=25),
+        ),
         payload=select_semantic_decision_rows(semantic_batch_fixture(), [0]),
         selected_ordinals=(0,),
         selection_probabilities=(SelectionProbability.known(0.5),),
@@ -278,6 +301,25 @@ def combat_group_experience_fixture(
         outcomes=outcomes,
         decision_count=3,
         payload_bytes=2,
+    )
+
+
+def _progress(
+    replicate_index: int,
+    *,
+    turn: int,
+    player_hp: int,
+    enemy_hp: int,
+) -> CombatDecisionProgress:
+    return CombatDecisionProgress(
+        replicate_index=replicate_index,
+        turn=turn,
+        player_hp=player_hp,
+        player_max_hp=80,
+        enemy_hp=enemy_hp,
+        enemy_max_hp=40,
+        potion_uuids=(101, 102),
+        potion_ids=("FearPotion", "GamblersBrew"),
     )
 
 

@@ -100,6 +100,28 @@ impl LearningEnvPoolV1 {
         Ok(slot.env.checkpoint())
     }
 
+    /// Return the exact durable run configuration for replacing one slot with
+    /// a fresh seed.  This deliberately derives from the live slot instead of
+    /// `RunControlConfig::default()` so resets cannot silently change the
+    /// experiment's ascension or other environment settings.
+    pub fn fresh_run_config(
+        &self,
+        slot_index: usize,
+        seed: u64,
+    ) -> Result<RunControlConfig, LearningEnvPoolError> {
+        if self.poisoned {
+            return Err(LearningEnvPoolError::PoolPoisoned);
+        }
+        let slot = self
+            .slots
+            .get(slot_index)
+            .ok_or(LearningEnvPoolError::SlotIndexOutOfRange {
+                slot_index,
+                slot_count: self.slots.len(),
+            })?;
+        Ok(slot.env.fresh_run_config(seed))
+    }
+
     /// Returns compact public metadata for one current combat root without cloning its session.
     pub fn combat_root_context(
         &self,
@@ -403,6 +425,7 @@ mod tests {
             Some(LearningStrategicContextKindV1::Event)
         );
         assert_eq!(context.seed, seed);
+        assert_eq!(context.ascension_level, 0);
         assert_eq!((context.act, context.floor), (2, 19));
         assert_eq!((context.hp, context.max_hp, context.gold), (41, 85, 123));
         assert_eq!(context.potion_ids, vec![Some(PotionId::GamblersBrew), None]);
@@ -440,6 +463,34 @@ mod tests {
                 slot_count: 1,
             }
         );
+    }
+
+    #[test]
+    fn fresh_run_config_preserves_environment_settings_and_changes_only_seed() {
+        let pool = LearningEnvPoolV1::from_configs([RunControlConfig {
+            seed: 17,
+            ascension_level: 20,
+            final_act: true,
+            search_max_nodes: Some(1234),
+            search_wall_ms: Some(5678),
+            search_max_hp_loss: Some(9),
+            search_max_potions_used: Some(1),
+            ..RunControlConfig::default()
+        }])
+        .expect("create pool");
+
+        let replacement = pool
+            .fresh_run_config(0, 99)
+            .expect("derive replacement config");
+
+        assert_eq!(replacement.seed, 99);
+        assert_eq!(replacement.ascension_level, 20);
+        assert!(replacement.final_act);
+        assert_eq!(replacement.player_class, "Ironclad");
+        assert_eq!(replacement.search_max_nodes, Some(1234));
+        assert_eq!(replacement.search_wall_ms, Some(5678));
+        assert_eq!(replacement.search_max_hp_loss, Some(9));
+        assert_eq!(replacement.search_max_potions_used, Some(1));
     }
 
     #[test]

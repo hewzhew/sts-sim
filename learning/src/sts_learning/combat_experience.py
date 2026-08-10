@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 import operator
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
 from .combat_outcomes import (
@@ -55,6 +55,91 @@ class CombatExperienceLimits:
 
 
 @dataclass(frozen=True)
+class CombatDecisionProgress:
+    """Compact public combat state aligned to one policy decision row."""
+
+    replicate_index: int
+    turn: int
+    player_hp: int
+    player_max_hp: int
+    enemy_hp: int
+    enemy_max_hp: int
+    potion_uuids: tuple[int | None, ...]
+    potion_ids: tuple[str | None, ...]
+
+    def __post_init__(self) -> None:
+        replicate_index = _nonnegative_integer(
+            self.replicate_index,
+            "replicate_index",
+        )
+        turn = _nonnegative_integer(self.turn, "combat turn")
+        player_hp = _nonnegative_integer(self.player_hp, "player_hp")
+        player_max_hp = _positive_integer(self.player_max_hp, "player_max_hp")
+        enemy_hp = _nonnegative_integer(self.enemy_hp, "enemy_hp")
+        enemy_max_hp = _positive_integer(self.enemy_max_hp, "enemy_max_hp")
+        if player_hp > player_max_hp:
+            raise CombatExperienceError("player_hp exceeds player_max_hp")
+        if enemy_hp > enemy_max_hp:
+            raise CombatExperienceError("enemy_hp exceeds enemy_max_hp")
+        potion_uuids = tuple(
+            None
+            if value is None
+            else _nonnegative_integer(value, "potion_uuid")
+            for value in self.potion_uuids
+        )
+        potion_ids = tuple(self.potion_ids)
+        if len(potion_uuids) != len(potion_ids):
+            raise CombatExperienceError("combat progress potion columns are misaligned")
+        for potion_uuid, potion_id in zip(potion_uuids, potion_ids, strict=True):
+            if (potion_uuid is None) != (potion_id is None):
+                raise CombatExperienceError(
+                    "combat progress potion identity columns disagree"
+                )
+            if potion_id is not None and (
+                not isinstance(potion_id, str) or not potion_id
+            ):
+                raise CombatExperienceError("potion_id must be a non-empty string")
+        object.__setattr__(self, "replicate_index", replicate_index)
+        object.__setattr__(self, "turn", turn)
+        object.__setattr__(self, "player_hp", player_hp)
+        object.__setattr__(self, "player_max_hp", player_max_hp)
+        object.__setattr__(self, "enemy_hp", enemy_hp)
+        object.__setattr__(self, "enemy_max_hp", enemy_max_hp)
+        object.__setattr__(self, "potion_uuids", potion_uuids)
+        object.__setattr__(self, "potion_ids", potion_ids)
+
+
+@dataclass(frozen=True)
+class CombatChronologicalDecisionStep:
+    """One replicate-local policy step recovered from batch chronology."""
+
+    sequence_index: int
+    progress: CombatDecisionProgress
+    selected_ordinal: int
+    selection_probability: SelectionProbability
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "sequence_index",
+            _nonnegative_integer(self.sequence_index, "sequence_index"),
+        )
+        if not isinstance(self.progress, CombatDecisionProgress):
+            raise CombatExperienceError(
+                "chronological combat step requires typed progress"
+            )
+        object.__setattr__(
+            self,
+            "selected_ordinal",
+            _nonnegative_integer(self.selected_ordinal, "selected_ordinal"),
+        )
+        if not isinstance(self.selection_probability, SelectionProbability):
+            raise CombatExperienceError(
+                "chronological combat step requires typed probability"
+            )
+
+
+@dataclass(frozen=True)
 class CombatDecisionExperienceBatch:
     """One immutable semantic model call aligned to combat replicate indices."""
 
@@ -62,6 +147,7 @@ class CombatDecisionExperienceBatch:
     root_id: str
     exact_combat_state_hash: str
     replicate_indices: tuple[int, ...]
+    decision_progress: tuple[CombatDecisionProgress, ...]
     payload: Mapping[str, object]
     selected_ordinals: tuple[int, ...]
     selection_probabilities: tuple[SelectionProbability, ...]
@@ -81,6 +167,7 @@ class CombatDecisionExperienceBatch:
             for value in self.selected_ordinals
         )
         probabilities = tuple(self.selection_probabilities)
+        progress = tuple(self.decision_progress)
         decision_count = _positive_integer(self.decision_count, "decision_count")
         payload_bytes = _positive_integer(self.payload_bytes, "payload_bytes")
         if not isinstance(self.payload, Mapping):
@@ -96,17 +183,25 @@ class CombatDecisionExperienceBatch:
             raise CombatExperienceError(
                 "combat decision probabilities must be typed"
             )
+        if not all(isinstance(row, CombatDecisionProgress) for row in progress):
+            raise CombatExperienceError("combat decision progress must be typed")
         if not (
             len(replicates)
+            == len(progress)
             == len(ordinals)
             == len(probabilities)
             == decision_count
         ):
             raise CombatExperienceError("combat decision batch rows are misaligned")
+        if tuple(row.replicate_index for row in progress) != replicates:
+            raise CombatExperienceError(
+                "combat decision progress disagrees with replicate rows"
+            )
         if len(set(replicates)) != len(replicates):
             raise CombatExperienceError("combat decision batch repeats a replicate")
         object.__setattr__(self, "sequence_index", sequence_index)
         object.__setattr__(self, "replicate_indices", replicates)
+        object.__setattr__(self, "decision_progress", progress)
         object.__setattr__(self, "selected_ordinals", ordinals)
         object.__setattr__(self, "selection_probabilities", probabilities)
         object.__setattr__(self, "decision_count", decision_count)
@@ -215,6 +310,45 @@ class CompletedCombatGroupExperience:
 
     def grouped_advantages(self) -> CombatGroupedAdvantages:
         return self.outcomes.grouped_advantages()
+
+    def chronological_steps(
+        self,
+        replicate_index: int,
+    ) -> tuple[CombatChronologicalDecisionStep, ...]:
+        """Return one replicate's exact retained policy order."""
+
+        replicate_index = _nonnegative_integer(
+            replicate_index,
+            "replicate_index",
+        )
+        if replicate_index >= len(self.outcomes.outcomes):
+            raise CombatExperienceError(
+                "chronological combat replicate is outside completed outcomes"
+            )
+        steps: list[CombatChronologicalDecisionStep] = []
+        previous_turn = -1
+        for batch in self.batches:
+            try:
+                row_index = batch.replicate_indices.index(replicate_index)
+            except ValueError:
+                continue
+            progress = batch.decision_progress[row_index]
+            if progress.turn < previous_turn:
+                raise CombatExperienceError(
+                    "combat decision turns are not chronological"
+                )
+            previous_turn = progress.turn
+            steps.append(
+                CombatChronologicalDecisionStep(
+                    sequence_index=batch.sequence_index,
+                    progress=progress,
+                    selected_ordinal=batch.selected_ordinals[row_index],
+                    selection_probability=batch.selection_probabilities[row_index],
+                )
+            )
+        if not steps:
+            raise CombatExperienceError("combat replicate has no retained decisions")
+        return tuple(steps)
 
     def decision_advantages(self) -> tuple[CombatDecisionAdvantageBatch, ...]:
         """Project replicate outcomes onto rows without combining reward axes."""
@@ -330,6 +464,7 @@ class BoundedCombatGroupExperience:
         self,
         prepared: PreparedDecisionRows,
         choice: BatchPolicyChoice,
+        decision_progress: Sequence[object],
     ) -> CombatDecisionExperienceBatch:
         if not isinstance(choice, BatchPolicyChoice):
             raise CombatExperienceError("policy must return BatchPolicyChoice")
@@ -349,11 +484,21 @@ class BoundedCombatGroupExperience:
             raise CombatExperienceError(
                 "combat group cannot mix behavior manifest identities"
             )
+        progress = _capture_decision_progress(decision_progress)
+        if len(progress) != prepared.decision_count:
+            raise CombatExperienceError(
+                "combat decision progress count disagrees with decision rows"
+            )
+        if tuple(row.replicate_index for row in progress) != prepared.slot_indices:
+            raise CombatExperienceError(
+                "combat decision progress order disagrees with decision rows"
+            )
         return CombatDecisionExperienceBatch(
             sequence_index=len(self._batches),
             root_id=self.root_id,
             exact_combat_state_hash=self.exact_combat_state_hash,
             replicate_indices=prepared.slot_indices,
+            decision_progress=progress,
             payload=prepared.payload,
             selected_ordinals=ordinals,
             selection_probabilities=probabilities,
@@ -447,3 +592,39 @@ def _validate_root(root_id: object, exact_combat_state_hash: object) -> None:
         )
     except CombatOutcomeError as error:
         raise CombatExperienceError(str(error)) from error
+
+
+def _capture_decision_progress(
+    rows: Sequence[object],
+) -> tuple[CombatDecisionProgress, ...]:
+    if isinstance(rows, (str, bytes)):
+        raise CombatExperienceError("combat decision progress must be a sequence")
+    try:
+        normalized = tuple(rows)
+    except TypeError as error:
+        raise CombatExperienceError(
+            "combat decision progress must be a sequence"
+        ) from error
+    captured = []
+    for row in normalized:
+        if isinstance(row, CombatDecisionProgress):
+            captured.append(row)
+            continue
+        try:
+            captured.append(
+                CombatDecisionProgress(
+                    replicate_index=getattr(row, "replicate_index"),
+                    turn=getattr(row, "turn"),
+                    player_hp=getattr(row, "player_hp"),
+                    player_max_hp=getattr(row, "player_max_hp"),
+                    enemy_hp=getattr(row, "enemy_hp"),
+                    enemy_max_hp=getattr(row, "enemy_max_hp"),
+                    potion_uuids=tuple(getattr(row, "potion_uuids")),
+                    potion_ids=tuple(getattr(row, "potion_ids")),
+                )
+            )
+        except (AttributeError, TypeError) as error:
+            raise CombatExperienceError(
+                "combat decision progress row is malformed"
+            ) from error
+    return tuple(captured)

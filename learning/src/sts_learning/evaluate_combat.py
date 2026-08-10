@@ -10,6 +10,8 @@ from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 
+import torch
+
 from .combat_evaluation import (
     CombatEvaluationLimits,
     CombatEvaluationRootResult,
@@ -27,6 +29,11 @@ from .combat_root_artifacts import (
     load_combat_root_source,
     read_combat_root_artifact,
 )
+from .combat_root_audit import (
+    CombatRootAudit,
+    CombatRootAuditError,
+    read_combat_root_audits,
+)
 from .published_combat_behavior import (
     PublishedCombatBehavior,
     recover_published_combat_behavior,
@@ -41,15 +48,17 @@ from .torch_combat_session_config import (
     CombatWinSessionLimits,
 )
 from .torch_behavior import (
+    FrozenCategoricalTorchPolicy,
     FrozenCombatGreedyTorchPolicy,
     FrozenDecisionRule,
     FrozenGreedyTorchPolicy,
+    FrozenReplicateCategoricalTorchPolicy,
 )
 from .torch_session_config import CategoricalSessionBridge
 
 
-COMBAT_EVALUATION_SCHEMA = "sts-learning-combat-held-out-evaluation-v14"
-COMBAT_ACTION_TRACE_SCHEMA = "sts-learning-combat-action-trace-v1"
+COMBAT_EVALUATION_SCHEMA = "sts-learning-combat-held-out-evaluation-v16"
+COMBAT_ACTION_TRACE_SCHEMA = "sts-learning-combat-action-trace-v2"
 COMBAT_ACTION_TRACE_FILENAME = "combat-traces.jsonl"
 
 
@@ -125,7 +134,7 @@ class CombatEvaluationCommandConfig:
             raise CombatEvaluationCommandError(
                 "combat evaluation requires at least two replicates"
             )
-        if behavior_seed_base + root_count > 1 << 63:
+        if behavior_seed_base + root_count * replicate_count > 1 << 63:
             raise CombatEvaluationCommandError(
                 "behavior seeds must stay below 2^63"
             )
@@ -143,11 +152,24 @@ class CombatEvaluationCommandConfig:
         )
 
     @property
-    def behavior_seeds(self) -> tuple[int, ...]:
+    def behavior_seeds(self) -> tuple[tuple[int, ...], ...]:
+        """Explicit root-major RNG seed matrix indexed by replicate slot."""
+
         return tuple(
-            self.behavior_seed_base + index
-            for index in range(self.root_count)
+            tuple(
+                self.behavior_seed_base
+                + root_index * self.replicate_count
+                + replicate_index
+                for replicate_index in range(self.replicate_count)
+            )
+            for root_index in range(self.root_count)
         )
+
+    @property
+    def loader_behavior_seeds(self) -> tuple[int, ...]:
+        """One recovery seed per root; the first replicate retains its stream."""
+
+        return tuple(row[0] for row in self.behavior_seeds)
 
 
 def run_combat_evaluation(
@@ -192,14 +214,14 @@ def run_combat_evaluation(
         recovered = recover_published_run_behavior(
             config.behavior,
             active_run_bridge,
-            config.behavior_seeds,
+            config.loader_behavior_seeds,
         )
     else:
         recovered = recover_published_combat_behavior(
             config.behavior,
             active_bridge,
             session_limits,
-            config.behavior_seeds,
+            config.loader_behavior_seeds,
         )
         if artifact_sha256 == recovered.training_artifact_sha256:
             raise CombatEvaluationCommandError(
@@ -211,6 +233,13 @@ def run_combat_evaluation(
         expected_roots=config.root_count,
         max_bytes=session_limits.max_artifact_bytes,
     )
+    try:
+        root_audits = read_combat_root_audits(
+            source,
+            tuple(range(config.root_count)),
+        )
+    except CombatRootAuditError as error:
+        raise CombatEvaluationCommandError(str(error)) from error
     evaluation_policies = tuple(
         policy.bind_combat_only()
         if isinstance(policy, FrozenCombatGreedyTorchPolicy)
@@ -221,6 +250,17 @@ def run_combat_evaluation(
         evaluation_policies = tuple(
             FrozenGreedyTorchPolicy.from_behavior(policy)
             for policy in recovered.policies
+        )
+    else:
+        evaluation_policies = tuple(
+            _bind_replicate_rng_streams(policy, seeds)
+            if isinstance(policy, FrozenCategoricalTorchPolicy)
+            else policy
+            for policy, seeds in zip(
+                evaluation_policies,
+                config.behavior_seeds,
+                strict=True,
+            )
         )
     evaluator = CombatHeldOutEvaluator(
         source,
@@ -244,6 +284,7 @@ def run_combat_evaluation(
         config,
         recovered,
         result,
+        root_audits=root_audits,
         artifact_bytes=len(artifact),
         artifact_sha256=artifact_sha256,
         elapsed=elapsed,
@@ -382,11 +423,26 @@ def _summary(
     recovered: PublishedCombatBehavior | PublishedRunBehavior,
     result: CombatHeldOutEvaluationResult,
     *,
+    root_audits: tuple[CombatRootAudit, ...],
     artifact_bytes: int,
     artifact_sha256: str,
     elapsed: float,
 ) -> dict[str, object]:
     combat_trained = isinstance(recovered, PublishedCombatBehavior)
+    if len(root_audits) != len(result.roots):
+        raise CombatEvaluationCommandError(
+            "combat evaluation root audits are misaligned"
+        )
+    for audit, root in zip(root_audits, result.roots, strict=True):
+        if (
+            audit.seed != root.context.seed
+            or audit.act != root.context.act
+            or audit.floor != root.context.floor
+            or audit.encounter_id != root.context.encounter_id
+        ):
+            raise CombatEvaluationCommandError(
+                "combat evaluation root audit changed during evaluation"
+            )
     roots = tuple(
         _root_summary(slot_index, root)
         for slot_index, root in enumerate(result.roots)
@@ -478,6 +534,9 @@ def _summary(
                     recovered.combat_anchor_scorer.relation_layers
                 ),
                 "value_head": recovered.combat_anchor_scorer.value_head,
+                "value_head_width": (
+                    recovered.combat_anchor_scorer.value_head_width
+                ),
             }
         ),
         "behavior_run_objective": (
@@ -497,6 +556,7 @@ def _summary(
             }
         ),
         "root_count": config.root_count,
+        "root_audits": tuple(audit.as_mapping() for audit in root_audits),
         "replicate_count": config.replicate_count,
         "decision_trace": {
             "file": (
@@ -510,6 +570,7 @@ def _summary(
             "replicates_per_root": config.trace_replicates_per_root,
             "schema": COMBAT_ACTION_TRACE_SCHEMA,
         },
+        "behavior_seed_scope": "root_replicate_independent",
         "behavior_seeds": config.behavior_seeds,
         "wins": result.wins,
         "losses": result.losses,
@@ -559,6 +620,24 @@ def _summary(
         "roots": roots,
         "elapsed_seconds": elapsed,
     }
+
+
+def _bind_replicate_rng_streams(
+    policy: FrozenCategoricalTorchPolicy,
+    seeds: tuple[int, ...],
+) -> FrozenReplicateCategoricalTorchPolicy:
+    if not seeds:
+        raise CombatEvaluationCommandError(
+            "combat evaluation requires replicate RNG seeds"
+        )
+    generators = (policy.generator,) + tuple(
+        torch.Generator(device=policy.generator.device).manual_seed(seed)
+        for seed in seeds[1:]
+    )
+    return FrozenReplicateCategoricalTorchPolicy.from_categorical(
+        policy,
+        generators,
+    )
 
 
 def _root_summary(

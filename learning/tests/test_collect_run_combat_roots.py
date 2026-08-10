@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
@@ -16,10 +17,28 @@ from sts_learning.collect_run_combat_roots import (  # noqa: E402
     RequiredPotionSlot,
     RunCombatRootCollectionError,
     RunCombatRootCollectionConfig,
+    _parser,
     run_run_combat_root_collection,
 )
 from sts_learning.evaluate_run import RunPotionLane  # noqa: E402
 from sts_learning.torch_behavior import FrozenDecisionRule  # noqa: E402
+
+
+def test_curriculum_cli_defaults_combat_decisions_to_greedy(tmp_path: Path) -> None:
+    arguments = _parser().parse_args(
+        [
+            "--behavior",
+            str(tmp_path / "behavior"),
+            "--output",
+            str(tmp_path / "roots.bin"),
+            "--roots",
+            "1",
+            "--ascension",
+            "20",
+        ]
+    )
+
+    assert arguments.combat_decision_rule == "greedy"
 
 
 class _RootCapturingWinningEnv(NumpyWinningBatchEnv):
@@ -69,6 +88,7 @@ class _RootCapturingWinningEnv(NumpyWinningBatchEnv):
                 SimpleNamespace(
                     act=1,
                     floor=3,
+                    ascension_level=20,
                     hp=70,
                     max_hp=80,
                     filled_potion_count=sum(
@@ -77,11 +97,40 @@ class _RootCapturingWinningEnv(NumpyWinningBatchEnv):
                     usable_potion_count=sum(
                         potion is not None for potion in self.potion_ids
                     ),
+                    master_deck_card_count=11,
+                    relic_count=1,
                 ),
             )
             for slot, terminal in enumerate(self.terminal)
             if not terminal
         ]
+
+    def combat_root_audit(self, slot_index: int) -> SimpleNamespace:
+        assert slot_index == 0
+        return SimpleNamespace(
+            seed=self.seeds[slot_index],
+            act=1,
+            floor=3,
+            ascension_level=20,
+            hp=70,
+            max_hp=80,
+            potion_ids=tuple(self.potion_ids),
+            encounter_id="JawWorm",
+            monster_ids=("JawWorm",),
+            is_elite_fight=False,
+            is_boss_fight=False,
+            master_deck_cards=[
+                *[("Strike", 0)] * 5,
+                *[("Defend", 0)] * 4,
+                ("Bash", 0),
+                ("AscendersBane", 0),
+            ],
+            relic_ids=["BurningBlood"],
+        )
+
+    def strategic_decision_audit_json(self, slot_index: int) -> None:
+        assert slot_index == 0
+        return None
 
     def combat_root_artifact_bytes(
         self,
@@ -111,6 +160,55 @@ class _AlternatingEncounterRootEnv(_PotionlessRootCapturingWinningEnv):
                     "JawWorm" if self.seeds[slot] % 2 == 0 else "Cultist"
                 ]
         return rows
+
+
+class _WrongAscensionRootEnv(_PotionlessRootCapturingWinningEnv):
+    def combat_root_contexts(self) -> list[tuple[int, SimpleNamespace]]:
+        rows = super().combat_root_contexts()
+        for _, context in rows:
+            context.ascension_level = 0
+        return rows
+
+
+class _DelayedStrategicAuditRootEnv(_PotionlessRootCapturingWinningEnv):
+    def public_run_contexts(self) -> list[tuple[int, SimpleNamespace]]:
+        rows = super().public_run_contexts()
+        if self._round == 0:
+            for _, context in rows:
+                context.boundary_kind = 0
+                context.is_combat = False
+                context.strategic_context_kind = 2
+                context.floor = 1
+                context.hp = 75
+                context.encounter_id = None
+                context.monster_ids = []
+        return rows
+
+    def combat_root_contexts(self) -> list[tuple[int, SimpleNamespace]]:
+        if self._round == 0:
+            return []
+        return super().combat_root_contexts()
+
+    def strategic_decision_audit_json(self, slot_index: int) -> str | None:
+        assert slot_index == 0
+        if self._round != 0:
+            return None
+        return json.dumps(
+            {
+                "schema": "sts-learning-strategic-decision-audit-v1",
+                "decision_site": "card_reward",
+                "candidates": [
+                    {
+                        "kind": "take_card",
+                        "reward_item_index": 0,
+                        "option_index": 0,
+                        "card": "PommelStrike",
+                        "upgrades": 0,
+                    },
+                    {"kind": "skip_card_reward", "reward_item_index": 0},
+                ],
+            }
+        )
 
 
 def test_collection_captures_one_potion_root_per_seed_and_merges_once(
@@ -147,6 +245,7 @@ def test_collection_captures_one_potion_root_per_seed_and_merges_once(
             training_seed_start=100,
             ascension_level=20,
             min_floor=2,
+            min_hp_percent=80,
             min_usable_potions=1,
             potion_lane=RunPotionLane.TRAINED,
             max_artifact_bytes=1024,
@@ -167,16 +266,111 @@ def test_collection_captures_one_potion_root_per_seed_and_merges_once(
     assert summary["required_potion_slot"] == 0
     assert summary["requested_run_potion_lane"] == "trained"
     assert summary["run_potion_lane"] == "never"
-    assert summary["schema"] == "sts-learning-run-combat-root-collection-v3"
+    assert summary["schema"] == "sts-learning-run-combat-root-collection-v5"
     assert summary["ascension_level"] == 20
-    assert summary["combat_decision_rule"] == "sampled"
-    assert summary["collection_manifest_id"] == summary["behavior_manifest_id"]
+    assert summary["combat_decision_rule"] == "greedy"
+    assert summary["collection_manifest_id"] != summary["behavior_manifest_id"]
+    assert summary["min_hp_percent"] == 80
     roots = summary["roots"]
     assert isinstance(roots, tuple)
     assert len({root["seed"] for root in roots}) == 2
     assert all(root["potion_ids"] == ("FearPotion", None, None) for root in roots)
     assert all(root["monster_ids"] == ("JawWorm",) for root in roots)
+    assert all(root["ascension_level"] == 20 for root in roots)
+    assert all(root["relic_ids"] == ("BurningBlood",) for root in roots)
+    assert roots[0]["deck"] == (
+        {"card_id": "AscendersBane", "upgrades": 0, "count": 1},
+        {"card_id": "Bash", "upgrades": 0, "count": 1},
+        {"card_id": "Defend", "upgrades": 0, "count": 4},
+        {"card_id": "Strike", "upgrades": 0, "count": 5},
+    )
     assert all(root["prior_combats"] == () for root in roots)
+    assert all(root["prior_strategic_decisions"] == () for root in roots)
+
+
+def test_collection_binds_prior_strategic_candidates_to_the_chosen_ordinal(
+    tmp_path: Path,
+) -> None:
+    behavior, combat_bridge, run_bridge = published_behavior(tmp_path)
+    run_bridge = replace(
+        run_bridge,
+        environment=_DelayedStrategicAuditRootEnv,
+        environment_without_combat_potions=_DelayedStrategicAuditRootEnv,
+        environment_from_checkpoint=(
+            _DelayedStrategicAuditRootEnv.from_checkpoint_bytes
+        ),
+    )
+    output = tmp_path / "strategic-audit-root.bin"
+
+    summary = run_run_combat_root_collection(
+        RunCombatRootCollectionConfig(
+            behavior=behavior,
+            output=output,
+            root_count=1,
+            max_batch_steps=1,
+            wall_ms=10_000,
+            behavior_seed=94,
+            training_seed_start=100,
+            ascension_level=20,
+            min_floor=2,
+            min_usable_potions=0,
+            max_artifact_bytes=1024,
+        ),
+        combat_bridge=combat_bridge,
+        run_bridge=run_bridge,
+        artifact_merger=lambda *_args, **_kwargs: b"merged-root-artifact",
+    )
+
+    root = summary["roots"][0]
+    decisions = root["prior_strategic_decisions"]
+    assert len(decisions) == 1
+    decision = decisions[0]
+    assert decision["decision_site"] == "card_reward"
+    assert decision["act"] == 1
+    assert decision["floor"] == 1
+    assert decision["hp"] == 75
+    assert len(decision["candidates"]) == 2
+    assert decision["selected_action"] == decision["candidates"][
+        decision["selected_ordinal"]
+    ]
+
+
+def test_collection_rejects_a_root_that_changed_ascension(tmp_path: Path) -> None:
+    behavior, combat_bridge, run_bridge = published_behavior(tmp_path)
+    run_bridge = replace(
+        run_bridge,
+        environment=_WrongAscensionRootEnv,
+        environment_without_combat_potions=_WrongAscensionRootEnv,
+        environment_from_checkpoint=_WrongAscensionRootEnv.from_checkpoint_bytes,
+    )
+    output = tmp_path / "wrong-ascension-root.bin"
+
+    with pytest.raises(
+        RunCombatRootCollectionError,
+        match="changed the requested ascension level",
+    ):
+        run_run_combat_root_collection(
+            RunCombatRootCollectionConfig(
+                behavior=behavior,
+                output=output,
+                root_count=1,
+                max_batch_steps=1,
+                wall_ms=10_000,
+                behavior_seed=94,
+                training_seed_start=100,
+                ascension_level=20,
+                min_floor=2,
+                min_usable_potions=0,
+                max_artifact_bytes=1024,
+            ),
+            combat_bridge=combat_bridge,
+            run_bridge=run_bridge,
+            artifact_merger=lambda *_args, **_kwargs: pytest.fail(
+                "invalid ascension must not merge"
+            ),
+        )
+
+    assert not output.exists()
 
 
 def test_collection_can_make_only_combat_decisions_greedy(tmp_path: Path) -> None:

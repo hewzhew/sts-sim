@@ -8,6 +8,7 @@ use crate::ai::combat_search_v2::{
     CombatSearchV2TurnPlanPolicy,
 };
 use crate::ai::combat_state_key::combat_exact_state_hash_v2;
+use crate::content::monsters::factory::EncounterId;
 use crate::eval::combat_case::{combat_summary, CombatCase, CombatCaseRngSummary};
 use crate::eval::combat_guidance_bundle::CombatGuidanceBundleV1;
 use crate::eval::run_control::{
@@ -97,6 +98,8 @@ pub struct CombatCaseProductionContextV1 {
     pub root_exact_state_hash: String,
     pub run_session_fingerprint: String,
     pub combat_context: CombatContext,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub encounter_id: Option<EncounterId>,
     pub run_session_checkpoint: RunControlSessionCheckpointV1,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub production_owner: Option<CombatCaseProductionOwnerV1>,
@@ -121,6 +124,7 @@ pub fn capture_combat_case_production_context_v1(
         root_exact_state_hash,
         run_session_fingerprint: run_control_session_fingerprint_v2(session),
         combat_context: active_combat.context,
+        encounter_id: active_combat.encounter_id,
         run_session_checkpoint,
         production_owner: None,
     };
@@ -362,11 +366,20 @@ fn restore_context_session(
             "combat case production checkpoint must externalize its active combat".to_string(),
         );
     }
-    checkpoint.restore_active_combat_from_external_ref(ActiveCombat::new(
-        case.position.engine.clone(),
-        case.position.combat.clone(),
-        context.combat_context.clone(),
-    ));
+    let active_combat = match context.encounter_id {
+        Some(encounter_id) => ActiveCombat::new_for_encounter(
+            case.position.engine.clone(),
+            case.position.combat.clone(),
+            encounter_id,
+            context.combat_context.clone(),
+        ),
+        None => ActiveCombat::new(
+            case.position.engine.clone(),
+            case.position.combat.clone(),
+            context.combat_context.clone(),
+        ),
+    };
+    checkpoint.restore_active_combat_from_external_ref(active_combat);
     checkpoint.into_session()
 }
 
@@ -465,9 +478,10 @@ mod tests {
         session.run_state.potions = combat.entities.potions.clone();
         session.run_state.rng_pool = combat.rng.pool.clone();
         session.engine_state = EngineState::CombatPlayerTurn;
-        session.active_combat = Some(ActiveCombat::new(
+        session.active_combat = Some(ActiveCombat::new_for_encounter(
             EngineState::CombatPlayerTurn,
             combat,
+            EncounterId::JawWorm,
             CombatContext::Room(RoomCombatContext {
                 room_type: RoomType::MonsterRoom,
             }),
@@ -516,6 +530,7 @@ mod tests {
 
         let payload = serde_json::to_value(&case).unwrap();
         assert!(payload["production_context"]["run_session_checkpoint"][2].is_null());
+        assert_eq!(payload["production_context"]["encounter_id"], "JawWorm");
 
         assert_eq!(
             case.replay_capability_v1().unwrap(),
@@ -534,6 +549,13 @@ mod tests {
         );
         assert!(identity.owner_policy_fingerprint.is_none());
         let restored = restore_combat_case_production_session_v1(&case).unwrap();
+        assert_eq!(
+            restored
+                .active_combat
+                .as_ref()
+                .and_then(|combat| combat.encounter_id),
+            Some(EncounterId::JawWorm)
+        );
         assert_eq!(
             run_control_session_fingerprint_v2(&restored),
             run_control_session_fingerprint_v2(&session)

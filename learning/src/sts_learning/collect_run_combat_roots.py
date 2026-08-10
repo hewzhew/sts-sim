@@ -13,6 +13,11 @@ from pathlib import Path
 from typing import Protocol, cast
 
 from .combat_potion_lane import CombatPotionLane
+from .combat_root_audit import (
+    CombatRootAudit,
+    CombatRootAuditError,
+    read_combat_root_audit,
+)
 from .decision_progress import BridgeDecisionProgressProvider
 from .driver import (
     BatchEnvironment,
@@ -37,6 +42,11 @@ from .run_resource_trace import (
     RunResourceTrace,
 )
 from .seeds import SeedPartition, SeedSchedule
+from .strategic_decision_audit import (
+    StrategicDecisionAudit,
+    StrategicDecisionAuditError,
+    read_strategic_decision_audit,
+)
 from .torch_combat_session_config import CombatSessionBridge, CombatWinSessionLimits
 from .torch_behavior import FrozenCombatGreedyTorchPolicy, FrozenDecisionRule
 from .torch_session_config import CategoricalSessionBridge
@@ -50,6 +60,10 @@ class _RootExportEnvironment(BatchEnvironment, Protocol):
     def public_run_contexts(self) -> Sequence[object]: ...
 
     def combat_root_contexts(self) -> Sequence[object]: ...
+
+    def combat_root_audit(self, slot_index: int) -> object: ...
+
+    def strategic_decision_audit_json(self, slot_index: int) -> str | None: ...
 
     def combat_root_artifact_bytes(
         self,
@@ -103,8 +117,9 @@ class RunCombatRootCollectionConfig:
     behavior_seed: int
     training_seed_start: int
     ascension_level: int
-    combat_decision_rule: FrozenDecisionRule = FrozenDecisionRule.SAMPLED
+    combat_decision_rule: FrozenDecisionRule = FrozenDecisionRule.GREEDY
     min_floor: int = 2
+    min_hp_percent: int = 0
     min_usable_potions: int = 1
     potion_lane: RunPotionLane = RunPotionLane.TRAINED
     max_artifact_bytes: int = 16 * 1024 * 1024
@@ -205,6 +220,12 @@ class RunCombatRootCollectionConfig:
         for name in ("max_batch_steps", "wall_ms", "max_artifact_bytes"):
             object.__setattr__(self, name, _positive(getattr(self, name), name))
         object.__setattr__(self, "min_floor", _nonnegative(self.min_floor, "min_floor"))
+        min_hp_percent = _nonnegative(self.min_hp_percent, "min_hp_percent")
+        if min_hp_percent > 100:
+            raise RunCombatRootCollectionError(
+                "min_hp_percent must be at most 100"
+            )
+        object.__setattr__(self, "min_hp_percent", min_hp_percent)
         object.__setattr__(
             self,
             "min_usable_potions",
@@ -233,6 +254,7 @@ class CapturedRunCombatRoot:
     seed: int
     act: int
     floor: int
+    ascension_level: int
     hp: int
     max_hp: int
     potion_ids: tuple[str | None, ...]
@@ -240,6 +262,8 @@ class CapturedRunCombatRoot:
     monster_ids: tuple[str, ...]
     filled_potion_count: int
     usable_potion_count: int
+    audit: CombatRootAudit
+    prior_strategic_decisions: tuple[dict[str, object], ...]
 
 
 class _RootCaptureSink:
@@ -261,6 +285,7 @@ class _RootCaptureSink:
         self._captured_encounter_counts = {
             encounter_id: 0 for encounter_id in self.encounter_quotas
         }
+        self._strategic_decisions: dict[int, list[dict[str, object]]] = {}
 
     @property
     def complete(self) -> bool:
@@ -281,6 +306,25 @@ class _RootCaptureSink:
             }
             for encounter_id, requested_roots in self.encounter_quotas.items()
         )
+
+    def record_strategic_decision(
+        self,
+        context: RunPublicContext,
+        audit: StrategicDecisionAudit,
+        selected_ordinal: object,
+    ) -> None:
+        row = audit.selected_mapping(selected_ordinal)
+        row.update(
+            {
+                "act": context.act,
+                "floor": context.floor,
+                "hp": context.hp,
+                "max_hp": context.max_hp,
+                "gold": context.gold,
+                "potion_ids": context.potion_ids,
+            }
+        )
+        self._strategic_decisions.setdefault(context.seed, []).append(row)
 
     def observe(self, env: _RootExportEnvironment) -> None:
         if self.complete:
@@ -309,6 +353,7 @@ class _RootCaptureSink:
                 continue
             floor = _root_integer(root, "floor", minimum=0)
             act = _root_integer(root, "act", minimum=0)
+            ascension_level = _root_integer(root, "ascension_level", minimum=0)
             hp = _root_integer(root, "hp", minimum=0)
             max_hp = _root_integer(root, "max_hp", minimum=1)
             filled = _root_integer(root, "filled_potion_count", minimum=0)
@@ -326,6 +371,12 @@ class _RootCaptureSink:
                     f"public=(act={context.act},floor={context.floor},"
                     f"hp={context.hp},max_hp={context.max_hp})"
                 )
+            if ascension_level != self.config.ascension_level:
+                raise RunCombatRootCollectionError(
+                    "combat root changed the requested ascension level: "
+                    f"slot={slot} seed={context.seed} "
+                    f"root={ascension_level} requested={self.config.ascension_level}"
+                )
             if filled != sum(potion is not None for potion in context.potion_ids):
                 raise RunCombatRootCollectionError(
                     "combat root and public potion inventory disagree"
@@ -335,6 +386,8 @@ class _RootCaptureSink:
                     "usable potion count exceeds filled inventory"
                 )
             if floor < self.config.min_floor:
+                continue
+            if 100 * hp < self.config.min_hp_percent * max_hp:
                 continue
             if usable < self.config.min_usable_potions:
                 continue
@@ -364,6 +417,28 @@ class _RootCaptureSink:
                 and encounter in self._captured_encounters
             ):
                 continue
+            try:
+                audit = read_combat_root_audit(env, slot)
+            except CombatRootAuditError as error:
+                raise RunCombatRootCollectionError(str(error)) from error
+            if audit.ascension_level != ascension_level:
+                raise RunCombatRootCollectionError(
+                    "combat root audit disagrees with root ascension"
+                )
+            master_deck_card_count = _root_integer(
+                root,
+                "master_deck_card_count",
+                minimum=0,
+            )
+            relic_count = _root_integer(root, "relic_count", minimum=0)
+            if audit.deck_card_count != master_deck_card_count:
+                raise RunCombatRootCollectionError(
+                    "combat root audit deck count disagrees with root context"
+                )
+            if len(audit.relic_ids) != relic_count:
+                raise RunCombatRootCollectionError(
+                    "combat root audit relic count disagrees with root context"
+                )
             payload = bytes(
                 env.combat_root_artifact_bytes(
                     [slot],
@@ -380,6 +455,7 @@ class _RootCaptureSink:
                     seed=context.seed,
                     act=act,
                     floor=floor,
+                    ascension_level=ascension_level,
                     hp=hp,
                     max_hp=max_hp,
                     potion_ids=context.potion_ids,
@@ -387,6 +463,10 @@ class _RootCaptureSink:
                     monster_ids=context.monster_ids,
                     filled_potion_count=filled,
                     usable_potion_count=usable,
+                    audit=audit,
+                    prior_strategic_decisions=tuple(
+                        self._strategic_decisions.get(context.seed, ())
+                    ),
                 )
             )
             self._captured_seeds.add(context.seed)
@@ -403,6 +483,9 @@ class _CapturingEnvironment:
     ) -> None:
         self.env = env
         self.sink = sink
+        self._pending_decisions: tuple[
+            tuple[RunPublicContext, StrategicDecisionAudit | None], ...
+        ] | None = None
 
     @property
     def slot_count(self) -> int:
@@ -417,14 +500,62 @@ class _CapturingEnvironment:
         return self.env.ready
 
     def decision_batch(self, *, semantic: bool = False) -> Mapping[str, object]:
+        if self._pending_decisions is not None:
+            raise RunCombatRootCollectionError(
+                "a strategic decision audit is still waiting for its chosen ordinal"
+            )
         self.sink.observe(self.env)
-        return self.env.decision_batch(semantic=semantic)
+        batch = self.env.decision_batch(semantic=semantic)
+        slots = _decision_integer_sequence(batch, "slot_indices")
+        counts = _decision_integer_sequence(batch, "candidate_counts")
+        if len(slots) != len(counts):
+            raise RunCombatRootCollectionError(
+                "decision audit slot and candidate-count columns are misaligned"
+            )
+        public = {
+            context.slot_index: context
+            for context in (
+                RunPublicContext.from_bridge_row(row)
+                for row in self.env.public_run_contexts()
+            )
+        }
+        pending: list[tuple[RunPublicContext, StrategicDecisionAudit | None]] = []
+        for slot, candidate_count in zip(slots, counts, strict=True):
+            context = public.get(slot)
+            if context is None:
+                raise RunCombatRootCollectionError(
+                    "decision audit has no aligned public run context"
+                )
+            try:
+                audit = read_strategic_decision_audit(self.env, slot)
+            except StrategicDecisionAuditError as error:
+                raise RunCombatRootCollectionError(str(error)) from error
+            if audit is not None and len(audit.candidates) != candidate_count:
+                raise RunCombatRootCollectionError(
+                    "strategic decision audit candidate count disagrees with the decision batch"
+                )
+            pending.append((context, audit))
+        self._pending_decisions = tuple(pending)
+        return batch
 
     def public_run_contexts(self) -> Sequence[object]:
         return self.env.public_run_contexts()
 
     def choose(self, ordinals: list[int]) -> None:
+        pending = self._pending_decisions
+        if pending is None:
+            raise RunCombatRootCollectionError(
+                "chosen ordinals have no pending strategic decision audit"
+            )
+        if len(ordinals) != len(pending):
+            raise RunCombatRootCollectionError(
+                "chosen ordinals and strategic decision audits are misaligned"
+            )
         self.env.choose(ordinals)
+        for (context, audit), ordinal in zip(pending, ordinals, strict=True):
+            if audit is not None:
+                self.sink.record_strategic_decision(context, audit, ordinal)
+        self._pending_decisions = None
 
     def step(self) -> Mapping[str, object]:
         return self.env.step()
@@ -583,6 +714,8 @@ def run_run_combat_root_collection(
         for name in (
             "public_run_contexts",
             "combat_root_contexts",
+            "combat_root_audit",
+            "strategic_decision_audit_json",
             "combat_root_artifact_bytes",
         ):
             if not callable(getattr(env, name, None)):
@@ -652,7 +785,7 @@ def run_run_combat_root_collection(
     resource_trace = tracing_factory.trace
 
     summary: dict[str, object] = {
-        "schema": "sts-learning-run-combat-root-collection-v3",
+        "schema": "sts-learning-run-combat-root-collection-v5",
         "behavior": str(config.behavior),
         "behavior_training_kind": behavior_kind,
         "behavior_manifest_id": recovered.manifest_id.digest.hex(),
@@ -668,6 +801,7 @@ def run_run_combat_root_collection(
         "training_seed_start": config.training_seed_start,
         "training_seed_end": driver.schedule.next_candidate,
         "min_floor": config.min_floor,
+        "min_hp_percent": config.min_hp_percent,
         "min_usable_potions": config.min_usable_potions,
         "distinct_encounters": config.distinct_encounters,
         "encounter_quotas": sink.encounter_quota_progress,
@@ -694,6 +828,7 @@ def run_run_combat_root_collection(
                 "seed": root.seed,
                 "act": root.act,
                 "floor": root.floor,
+                "ascension_level": root.ascension_level,
                 "hp": root.hp,
                 "max_hp": root.max_hp,
                 "potion_ids": root.potion_ids,
@@ -701,10 +836,13 @@ def run_run_combat_root_collection(
                 "monster_ids": root.monster_ids,
                 "filled_potion_count": root.filled_potion_count,
                 "usable_potion_count": root.usable_potion_count,
+                "deck": root.audit.as_mapping()["deck"],
+                "relic_ids": root.audit.relic_ids,
                 "prior_combats": _prior_combat_rows(
                     root,
                     resource_trace,
                 ),
+                "prior_strategic_decisions": root.prior_strategic_decisions,
             }
             for root in sink.roots
         ),
@@ -782,6 +920,28 @@ def _root_integer(root: object, name: str, *, minimum: int) -> int:
     return normalized
 
 
+def _decision_integer_sequence(
+    batch: Mapping[str, object],
+    name: str,
+) -> tuple[int, ...]:
+    try:
+        raw = batch[name]
+    except KeyError as error:
+        raise RunCombatRootCollectionError(
+            f"decision batch lacks {name}"
+        ) from error
+    if not isinstance(raw, Sequence) and not hasattr(raw, "__iter__"):
+        raise RunCombatRootCollectionError(
+            f"decision batch {name} must be iterable"
+        )
+    try:
+        return tuple(_nonnegative(value, f"decision batch {name}") for value in raw)
+    except TypeError as error:
+        raise RunCombatRootCollectionError(
+            f"decision batch {name} must be iterable"
+        ) from error
+
+
 def _positive(value: object, name: str) -> int:
     normalized = _nonnegative(value, name)
     if normalized == 0:
@@ -851,9 +1011,10 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--combat-decision-rule",
         choices=tuple(rule.value for rule in FrozenDecisionRule),
-        default=FrozenDecisionRule.SAMPLED.value,
+        default=FrozenDecisionRule.GREEDY.value,
     )
     parser.add_argument("--min-floor", type=int, default=2)
+    parser.add_argument("--min-hp-percent", type=int, choices=range(101), default=0)
     parser.add_argument("--min-usable-potions", type=int, default=1)
     parser.add_argument("--required-potion-id")
     parser.add_argument("--required-potion-slot", type=int)
@@ -931,6 +1092,7 @@ def main() -> int:
                 arguments.combat_decision_rule
             ),
             min_floor=arguments.min_floor,
+            min_hp_percent=arguments.min_hp_percent,
             min_usable_potions=arguments.min_usable_potions,
             potion_lane=RunPotionLane(arguments.potion_lane),
             max_artifact_bytes=arguments.max_artifact_bytes,

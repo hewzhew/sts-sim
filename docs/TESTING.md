@@ -27,7 +27,10 @@ Tests are deliberately split across real Cargo packages:
   and requires NumPy, PyTorch, the installed bridge, and the repository caller;
   it is the maintained complete online-learning pytest entrypoint. New and
   rewritten tests use plain pytest functions; existing `unittest.TestCase`
-  files remain collected while their contracts are reviewed and migrated;
+  files remain collected while their contracts are reviewed and migrated. The
+  entrypoint keeps pytest's reusable cache and each run's isolated temporary
+  tree under ignored `.oracle-lab/pytest/`; neither belongs in the source tree
+  or the system temporary directory;
 - `learning/dev.ps1 verify` runs that complete suite before delegating to
   `bindings/python_learning/verify.ps1`, which builds a fresh standalone wheel
   and checks Rust, smoke, and isolated minimal caller contracts. The lower-level

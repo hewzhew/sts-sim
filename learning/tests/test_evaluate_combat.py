@@ -67,6 +67,28 @@ class _RootSource:
             for slot_index in range(len(self.roots))
         ]
 
+    def combat_root_audit(self, slot_index: int) -> SimpleNamespace:
+        return SimpleNamespace(
+            seed=10_000 + slot_index,
+            act=1,
+            floor=4,
+            ascension_level=20,
+            hp=80,
+            max_hp=80,
+            potion_ids=("EntropicBrew", "GamblersBrew"),
+            encounter_id=("Cultist", "JawWorm")[slot_index],
+            monster_ids=(("Cultist",), ("JawWorm",))[slot_index],
+            is_elite_fight=False,
+            is_boss_fight=False,
+            master_deck_cards=[
+                *[("Strike", 0)] * (5 - slot_index),
+                *[("Defend", 0)] * 4,
+                ("Bash", 0),
+                ("AscendersBane", 0),
+            ],
+            relic_ids=["BurningBlood"],
+        )
+
     def combat_group(
         self,
         slot_index: int,
@@ -167,19 +189,33 @@ def test_evaluation_recovers_published_behavior_without_training_or_experience(
         bridge=bridge,
     )
 
-    assert summary["schema"] == "sts-learning-combat-held-out-evaluation-v14"
+    assert summary["schema"] == "sts-learning-combat-held-out-evaluation-v16"
     assert summary["decision_rule"] == "sampled"
+    assert summary["behavior_seed_scope"] == "root_replicate_independent"
+    assert summary["behavior_seeds"] == ((1_000, 1_001), (1_002, 1_003))
     assert summary["evaluation_manifest_id"] == summary["behavior_manifest_id"]
     assert summary["behavior_training_kind"] == "combat"
     assert summary["potion_lane"] == "all"
     assert summary["potion_slots"] == ()
+    assert summary["root_audits"][0]["encounter_id"] == "Cultist"
+    assert summary["root_audits"][0]["deck"][-1] == {
+        "card_id": "Strike",
+        "upgrades": 0,
+        "count": 5,
+    }
+    assert summary["root_audits"][1]["relic_ids"] == ("BurningBlood",)
     assert summary["decision_trace"] == {
         "file": None,
         "record_count": 0,
         "replicates_per_root": 0,
-        "schema": "sts-learning-combat-action-trace-v1",
+        "schema": "sts-learning-combat-action-trace-v2",
     }
-    assert training_source.calls == [(0, None), (1, None)]
+    assert training_source.calls == [
+        (0, None),
+        (1, None),
+        (0, None),
+        (1, None),
+    ]
     assert evaluation_source.calls == [(0, None), (1, None)]
     assert summary["wins"] == 3
     assert summary["losses"] == 1
@@ -303,7 +339,7 @@ def test_evaluation_recovers_published_behavior_without_training_or_experience(
         "file": "combat-traces.jsonl",
         "record_count": 2,
         "replicates_per_root": 1,
-        "schema": "sts-learning-combat-action-trace-v1",
+        "schema": "sts-learning-combat-action-trace-v2",
     }
     assert traced_summary["decision_rule"] == "greedy"
     assert traced_summary["behavior_manifest_id"] == summary["behavior_manifest_id"]
@@ -314,7 +350,7 @@ def test_evaluation_recovers_published_behavior_without_training_or_experience(
     }
     assert tuple(row["root_slot_index"] for row in trace_rows) == (0, 1)
     assert all(
-        row["schema"] == "sts-learning-combat-action-trace-v1"
+        row["schema"] == "sts-learning-combat-action-trace-v2"
         for row in trace_rows
     )
     assert all(row["decision"]["replicate_index"] == 0 for row in trace_rows)
@@ -488,7 +524,7 @@ def test_evaluation_recovers_an_anchored_run_combat_policy(tmp_path: Path) -> No
         run_bridge=run_bridge,
     )
 
-    assert summary["schema"] == "sts-learning-combat-held-out-evaluation-v14"
+    assert summary["schema"] == "sts-learning-combat-held-out-evaluation-v16"
     assert summary["behavior_run_combat_decision_rule"] == "greedy"
     assert summary["behavior_run_combat_anchor_manifest_id"] is not None
     assert summary["behavior_run_combat_anchor_checkpoint_id"] is not None
@@ -496,6 +532,7 @@ def test_evaluation_recovers_an_anchored_run_combat_policy(tmp_path: Path) -> No
         "hidden_dim": 64,
         "relation_layers": 2,
         "value_head": False,
+        "value_head_width": 1,
     }
 
 

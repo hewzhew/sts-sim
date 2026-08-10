@@ -123,6 +123,7 @@ class RaggedScorerConfig:
     hidden_dim: int = 64
     relation_layers: int = 2
     value_head: bool = False
+    value_head_width: int = 1
 
     def __post_init__(self) -> None:
         object.__setattr__(
@@ -137,6 +138,17 @@ class RaggedScorerConfig:
         )
         if type(self.value_head) is not bool:
             raise TorchPolicyError("value_head must be bool")
+        object.__setattr__(
+            self,
+            "value_head_width",
+            _positive_integer(self.value_head_width, "value_head_width"),
+        )
+        if self.value_head_width > 64:
+            raise TorchPolicyError("value_head_width must not exceed 64")
+        if not self.value_head and self.value_head_width != 1:
+            raise TorchPolicyError(
+                "value_head_width must be one when the value head is disabled"
+            )
 
 
 @dataclass(frozen=True)
@@ -189,6 +201,26 @@ class RaggedActorCriticOutput:
             raise TorchPolicyError("actor-critic values must be one-dimensional")
         if self.row_values.numel() != self.logits.row_count:
             raise TorchPolicyError("actor-critic values must align to decision rows")
+
+
+@dataclass(frozen=True)
+class RaggedMultiActorCriticOutput:
+    """Candidate logits and fixed-semantic value columns per decision row."""
+
+    logits: RaggedCandidateLogits
+    row_values: Tensor
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.logits, RaggedCandidateLogits):
+            raise TorchPolicyError("multi actor-critic logits must be ragged")
+        if self.row_values.ndim != 2 or self.row_values.shape[1] <= 0:
+            raise TorchPolicyError(
+                "multi actor-critic values must be a non-empty matrix"
+            )
+        if self.row_values.shape[0] != self.logits.row_count:
+            raise TorchPolicyError(
+                "multi actor-critic values must align to decision rows"
+            )
 
 
 _RAGGED_CATEGORICAL_RULE_V1 = ManifestArtifactId.from_content(
@@ -254,6 +286,69 @@ def sample_ragged_categorical(
         raise TorchPolicyError(
             "categorical generator device type must match candidate logits"
         )
+    probability_rows = _categorical_probability_rows(logits, config)
+
+    uniforms = torch.rand(
+        (len(probability_rows),),
+        dtype=torch.float64,
+        device=logits.values.device,
+        generator=generator,
+    )
+    return _sample_probability_rows(probability_rows, uniforms)
+
+
+def sample_ragged_categorical_rows(
+    logits: RaggedCandidateLogits,
+    config: RaggedCategoricalPolicyConfig,
+    generators: Sequence[torch.Generator],
+) -> RaggedCategoricalSample:
+    """Sample each ragged row from its own caller-owned random stream."""
+
+    if not isinstance(logits, RaggedCandidateLogits):
+        raise TorchPolicyError("categorical sampling requires RaggedCandidateLogits")
+    if not isinstance(config, RaggedCategoricalPolicyConfig):
+        raise TorchPolicyError("categorical sampling requires typed config")
+    row_generators = tuple(generators)
+    if len(row_generators) != logits.row_count:
+        raise TorchPolicyError(
+            "categorical row generators must align to decision rows"
+        )
+    if not all(isinstance(generator, torch.Generator) for generator in row_generators):
+        raise TorchPolicyError(
+            "categorical row sampling requires caller-owned generators"
+        )
+    if any(generator is torch.default_generator for generator in row_generators):
+        raise TorchPolicyError("categorical sampling refuses the global generator")
+    if len({id(generator) for generator in row_generators}) != len(row_generators):
+        raise TorchPolicyError(
+            "categorical row sampling requires independent generators"
+        )
+    logits_device = logits.values.device.type
+    if any(
+        torch.device(generator.device).type != logits_device
+        for generator in row_generators
+    ):
+        raise TorchPolicyError(
+            "categorical generator device type must match candidate logits"
+        )
+
+    probability_rows = _categorical_probability_rows(logits, config)
+    uniforms = tuple(
+        torch.rand(
+            (),
+            dtype=torch.float64,
+            device=logits.values.device,
+            generator=generator,
+        )
+        for generator in row_generators
+    )
+    return _sample_probability_rows(probability_rows, uniforms)
+
+
+def _categorical_probability_rows(
+    logits: RaggedCandidateLogits,
+    config: RaggedCategoricalPolicyConfig,
+) -> tuple[Tensor, ...]:
     if not bool(torch.all(torch.isfinite(logits.values))):
         raise TorchPolicyError("categorical candidate logits must be finite")
 
@@ -271,13 +366,13 @@ def sample_ragged_categorical(
         if not bool(torch.any(probabilities > 0.0)):
             raise TorchPolicyError("categorical row has no positive probability")
         probability_rows.append(probabilities)
+    return tuple(probability_rows)
 
-    uniforms = torch.rand(
-        (len(probability_rows),),
-        dtype=torch.float64,
-        device=logits.values.device,
-        generator=generator,
-    )
+
+def _sample_probability_rows(
+    probability_rows: Sequence[Tensor],
+    uniforms: Sequence[Tensor] | Tensor,
+) -> RaggedCategoricalSample:
     ordinals: list[int] = []
     selected_probabilities: list[SelectionProbability] = []
     for probabilities, uniform in zip(
@@ -373,7 +468,7 @@ class RaggedCandidateScorer(nn.Module):
             self.value_head = nn.Sequential(
                 nn.Linear(hidden_dim, hidden_dim),
                 nn.SiLU(),
-                nn.Linear(hidden_dim, 1),
+                nn.Linear(hidden_dim, self.config.value_head_width),
             )
             final = self.value_head[-1]
             assert isinstance(final, nn.Linear)
@@ -419,10 +514,26 @@ class RaggedCandidateScorer(nn.Module):
     ) -> RaggedActorCriticOutput:
         if self.value_head is None:
             raise TorchPolicyError("actor-critic output requires a value head")
+        if self.config.value_head_width != 1:
+            raise TorchPolicyError(
+                "scalar actor-critic output requires value_head_width one"
+            )
         logits, row_state = self._forward_encoded(decision_batch)
         return RaggedActorCriticOutput(
             logits=logits,
             row_values=self.value_head(row_state).squeeze(1),
+        )
+
+    def actor_critic_multi(
+        self,
+        decision_batch: Mapping[str, object],
+    ) -> RaggedMultiActorCriticOutput:
+        if self.value_head is None:
+            raise TorchPolicyError("multi actor-critic output requires a value head")
+        logits, row_state = self._forward_encoded(decision_batch)
+        return RaggedMultiActorCriticOutput(
+            logits=logits,
+            row_values=self.value_head(row_state),
         )
 
     def _forward_encoded(
@@ -626,7 +737,11 @@ def load_scorer_warm_start(
     if type(actor_only) is not bool:
         raise TorchPolicyError("scorer warm-start actor_only must be bool")
     try:
-        if not actor_only and target.config.value_head == source.config.value_head:
+        same_value_profile = (
+            target.config.value_head == source.config.value_head
+            and target.config.value_head_width == source.config.value_head_width
+        )
+        if not actor_only and same_value_profile:
             target.load_state_dict(source.state_dict(), strict=True)
             return
         actor_state = {

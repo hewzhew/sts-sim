@@ -24,8 +24,10 @@ if _TORCH_AVAILABLE:
         RaggedScorerConfig,
         SemanticSchemaDimensions,
         TorchPolicyError,
+        load_scorer_warm_start,
         ragged_cross_entropy,
         sample_ragged_categorical,
+        sample_ragged_categorical_rows,
     )
 
 try:
@@ -99,6 +101,45 @@ class TorchPolicyTests(unittest.TestCase):
         assert isinstance(final, torch.nn.Linear)
         self.assertTrue(bool(torch.any(final.bias.grad != 0)))
 
+    def test_multi_actor_critic_has_fixed_columns_and_actor_only_warm_start(
+        self,
+    ) -> None:
+        schema = semantic_schema_fixture()
+        source = RaggedCandidateScorer.from_bridge_schema(
+            schema,
+            RaggedScorerConfig(
+                hidden_dim=24,
+                relation_layers=1,
+                value_head=True,
+            ),
+        )
+        target = RaggedCandidateScorer.from_bridge_schema(
+            schema,
+            RaggedScorerConfig(
+                hidden_dim=24,
+                relation_layers=1,
+                value_head=True,
+                value_head_width=3,
+            ),
+        )
+
+        load_scorer_warm_start(target, source)
+        output = target.actor_critic_multi(semantic_batch_fixture())
+
+        self.assertEqual(tuple(output.row_values.shape), (2, 3))
+        torch.testing.assert_close(output.row_values, torch.zeros(2, 3))
+        with self.assertRaisesRegex(TorchPolicyError, "width one"):
+            target.actor_critic(semantic_batch_fixture())
+        for key, value in source.state_dict().items():
+            if not key.startswith("value_head."):
+                torch.testing.assert_close(target.state_dict()[key], value)
+
+    def test_value_head_width_rejects_ambiguous_profiles(self) -> None:
+        with self.assertRaisesRegex(TorchPolicyError, "disabled"):
+            RaggedScorerConfig(value_head_width=3)
+        with self.assertRaisesRegex(TorchPolicyError, "must not exceed"):
+            RaggedScorerConfig(value_head=True, value_head_width=65)
+
     def test_cross_row_relation_is_rejected(self) -> None:
         scorer = RaggedCandidateScorer.from_bridge_schema(semantic_schema_fixture())
         batch = semantic_batch_fixture()
@@ -167,6 +208,47 @@ class TorchPolicyTests(unittest.TestCase):
         self.assertAlmostEqual(
             first.selection_probabilities[1].value,
             1.0 / 3.0,
+        )
+
+    def test_row_local_generators_isolate_divergent_replicates(self) -> None:
+        two_rows = RaggedCandidateLogits(
+            values=torch.tensor([0.0, 0.0, 0.0, 0.0]),
+            row_splits=torch.tensor([0, 2, 4]),
+        )
+        one_row = RaggedCandidateLogits(
+            values=torch.tensor([0.0, 0.0]),
+            row_splits=torch.tensor([0, 2]),
+        )
+        first_stream = torch.Generator().manual_seed(111)
+        second_stream = torch.Generator().manual_seed(222)
+        reference = torch.Generator().manual_seed(222)
+
+        first_round = sample_ragged_categorical_rows(
+            two_rows,
+            RaggedCategoricalPolicyConfig(),
+            (first_stream, second_stream),
+        )
+        first_stream_after_round = first_stream.get_state().clone()
+        second_round = sample_ragged_categorical_rows(
+            one_row,
+            RaggedCategoricalPolicyConfig(),
+            (second_stream,),
+        )
+        reference_first = sample_ragged_categorical(
+            one_row,
+            RaggedCategoricalPolicyConfig(),
+            reference,
+        )
+        reference_second = sample_ragged_categorical(
+            one_row,
+            RaggedCategoricalPolicyConfig(),
+            reference,
+        )
+
+        self.assertEqual(first_round.ordinals[1], reference_first.ordinals[0])
+        self.assertEqual(second_round, reference_second)
+        self.assertTrue(
+            torch.equal(first_stream.get_state(), first_stream_after_round)
         )
 
     def test_categorical_sampling_validates_all_rows_before_consuming_rng(self) -> None:

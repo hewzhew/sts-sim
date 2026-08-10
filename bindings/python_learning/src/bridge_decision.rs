@@ -5,8 +5,10 @@
 
 use sts_oracle_eval::eval::run_control::{
     CombatLearningBoundaryV1, CombatLearningEnvPoolV1, CombatLearningPotionPolicyV1,
-    LearningActionV1, LearningBoundaryV1, LearningEnvPoolV1, LearningModelChoiceV1,
-    LearningModelDecisionV1, LearningModelObservationV1, LearningSelectionStepV1,
+    LearningActionV1, LearningBoundaryV1, LearningCombatAtomicActionV1,
+    LearningCombatModelObservationV1, LearningCombatSelectionDomainSemanticsV1, LearningEnvPoolV1,
+    LearningModelCandidateSemanticsV1, LearningModelChoiceV1, LearningModelDecisionV1,
+    LearningModelObservationV1, LearningSelectionCandidateSemanticsV1, LearningSelectionStepV1,
 };
 
 use super::semantic::{SemanticBatch, SemanticBatchBuilder};
@@ -199,6 +201,250 @@ pub(super) fn semantic_snapshot_from_source(
         }
     }
     Ok(builder.finish())
+}
+
+pub(super) fn strategic_decision_audit_json_from_source(
+    source: &impl BridgeDecisionSource,
+    states: &[BridgeSlotState],
+    slot_index: usize,
+) -> Result<Option<String>, String> {
+    let state = states
+        .get(slot_index)
+        .ok_or_else(|| format!("missing bridge slot {slot_index}"))?;
+    if !matches!(state, BridgeSlotState::Root) {
+        return Ok(None);
+    }
+    let decision = source.bridge_root_decision(slot_index)?;
+    let LearningModelObservationV1::Strategic(observation) = decision.observation else {
+        return Ok(None);
+    };
+    let candidates = decision
+        .candidates
+        .iter()
+        .map(|candidate| match candidate.semantics {
+            LearningModelCandidateSemanticsV1::Strategic { action } => Ok(action),
+            LearningModelCandidateSemanticsV1::CombatAtomic { .. }
+            | LearningModelCandidateSemanticsV1::CombatSelectionFamily { .. } => Err(format!(
+                "strategic bridge slot {slot_index} exposed a non-strategic candidate"
+            )),
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+    serde_json::to_string(&serde_json::json!({
+        "schema": "sts-learning-strategic-decision-audit-v1",
+        "decision_site": observation.decision_site,
+        "candidates": candidates,
+    }))
+    .map(Some)
+    .map_err(|error| format!("cannot encode strategic decision audit: {error}"))
+}
+
+pub(super) fn combat_decision_audit_json_from_source(
+    source: &impl BridgeDecisionSource,
+    states: &[BridgeSlotState],
+    slot_index: usize,
+) -> Result<Option<String>, String> {
+    let state = states
+        .get(slot_index)
+        .ok_or_else(|| format!("missing bridge slot {slot_index}"))?;
+    let (phase, selection_prefix, candidates) = match state {
+        BridgeSlotState::Root => {
+            let decision = source.bridge_root_decision(slot_index)?;
+            let LearningModelObservationV1::Combat(observation) = decision.observation else {
+                return Ok(None);
+            };
+            let candidates = decision
+                .candidates
+                .iter()
+                .map(|candidate| match candidate.semantics {
+                    LearningModelCandidateSemanticsV1::CombatAtomic { action } => {
+                        combat_atomic_candidate_audit(action, observation)
+                    }
+                    LearningModelCandidateSemanticsV1::CombatSelectionFamily { family } => {
+                        let domains = (0..family.domain_count())
+                            .map(|index| {
+                                family
+                                    .domain(index)
+                                    .map(|domain| combat_selection_domain_audit(domain.semantics()))
+                                    .ok_or_else(|| {
+                                        format!("combat selection family lost domain index {index}")
+                                    })
+                            })
+                            .collect::<Result<Vec<_>, String>>()?;
+                        Ok(serde_json::json!({
+                            "kind": "selection_family",
+                            "input_encoding": family.input_encoding(),
+                            "reason": family.reason(),
+                            "source_pile": family.source_pile(),
+                            "raw_domain_count": family.raw_domain_count(),
+                            "eligible_domain_count": family.eligible_domain_count(),
+                            "max_distinct_selection_count": family.max_distinct_selection_count(),
+                            "declared_min": family.declared_min(),
+                            "declared_max": family.declared_max(),
+                            "effective_max": family.effective_max(),
+                            "payload_language": family.payload_language(),
+                            "domain": domains,
+                        }))
+                    }
+                    LearningModelCandidateSemanticsV1::Strategic { .. } => Err(format!(
+                        "combat bridge slot {slot_index} exposed a strategic candidate"
+                    )),
+                })
+                .collect::<Result<Vec<_>, String>>()?;
+            ("combat_root", Vec::new(), candidates)
+        }
+        BridgeSlotState::Selection { draft, .. } => {
+            let Some(family) = draft.combat_family() else {
+                return Ok(None);
+            };
+            let decision = draft.decision();
+            let candidates = decision
+                .candidates
+                .iter()
+                .map(|candidate| match candidate.semantics {
+                    LearningSelectionCandidateSemanticsV1::Submit => {
+                        Ok(serde_json::json!({"kind": "selection_submit"}))
+                    }
+                    LearningSelectionCandidateSemanticsV1::Append { domain_index } => {
+                        let domain = family.domain(domain_index).ok_or_else(|| {
+                            format!(
+                                "combat selection candidate references missing domain {domain_index}"
+                            )
+                        })?;
+                        Ok(serde_json::json!({
+                            "kind": "selection_append",
+                            "domain_index": domain_index,
+                            "domain": combat_selection_domain_audit(domain.semantics()),
+                        }))
+                    }
+                })
+                .collect::<Result<Vec<_>, String>>()?;
+            (
+                "combat_selection",
+                draft.selected_domain_indices().to_vec(),
+                candidates,
+            )
+        }
+        BridgeSlotState::Terminal | BridgeSlotState::Ready { .. } => return Ok(None),
+    };
+    serde_json::to_string(&serde_json::json!({
+        "schema": "sts-learning-combat-decision-audit-v1",
+        "phase": phase,
+        "selection_prefix": selection_prefix,
+        "candidates": candidates,
+    }))
+    .map(Some)
+    .map_err(|error| format!("cannot encode combat decision audit: {error}"))
+}
+
+fn combat_atomic_candidate_audit(
+    action: LearningCombatAtomicActionV1<'_>,
+    observation: LearningCombatModelObservationV1<'_>,
+) -> Result<serde_json::Value, String> {
+    Ok(match action {
+        LearningCombatAtomicActionV1::PlayCard {
+            hand_index,
+            target_monster_index,
+        } => {
+            let card = observation
+                .cards
+                .hand
+                .cards
+                .get(hand_index)
+                .ok_or_else(|| format!("combat play candidate lost hand index {hand_index}"))?;
+            serde_json::json!({
+                "kind": "play_card",
+                "hand_index": hand_index,
+                "card": card,
+                "target": combat_target_audit(observation, target_monster_index)?,
+            })
+        }
+        LearningCombatAtomicActionV1::UsePotion {
+            potion_index,
+            target_monster_index,
+        } => {
+            let potion = observation
+                .potions
+                .get(potion_index)
+                .ok_or_else(|| format!("combat potion candidate lost slot {potion_index}"))?;
+            serde_json::json!({
+                "kind": "use_potion",
+                "potion_index": potion_index,
+                "potion": potion,
+                "target": combat_target_audit(observation, target_monster_index)?,
+            })
+        }
+        LearningCombatAtomicActionV1::DiscardPotion { potion_index } => {
+            let potion = observation
+                .potions
+                .get(potion_index)
+                .ok_or_else(|| format!("combat potion candidate lost slot {potion_index}"))?;
+            serde_json::json!({
+                "kind": "discard_potion",
+                "potion_index": potion_index,
+                "potion": potion,
+            })
+        }
+        LearningCombatAtomicActionV1::EndTurn => serde_json::json!({"kind": "end_turn"}),
+        LearningCombatAtomicActionV1::SubmitIndexedChoice {
+            choice_index,
+            indexed,
+        } => serde_json::json!({
+            "kind": "submit_indexed_choice",
+            "choice_index": choice_index,
+            "input_encoding": indexed.input_encoding,
+            "reason": indexed.reason,
+            "candidate": indexed.candidate,
+        }),
+        LearningCombatAtomicActionV1::Proceed => serde_json::json!({"kind": "proceed"}),
+        LearningCombatAtomicActionV1::Cancel => serde_json::json!({"kind": "cancel"}),
+    })
+}
+
+fn combat_target_audit(
+    observation: LearningCombatModelObservationV1<'_>,
+    target_monster_index: Option<usize>,
+) -> Result<Option<serde_json::Value>, String> {
+    target_monster_index
+        .map(|monster_index| {
+            let monster = observation.monsters.get(monster_index).ok_or_else(|| {
+                format!("combat candidate lost target monster index {monster_index}")
+            })?;
+            Ok(serde_json::json!({
+                "monster_index": monster_index,
+                "slot": monster.slot(),
+                "enemy": monster.enemy(),
+            }))
+        })
+        .transpose()
+}
+
+fn combat_selection_domain_audit(
+    semantics: LearningCombatSelectionDomainSemanticsV1,
+) -> serde_json::Value {
+    match semantics {
+        LearningCombatSelectionDomainSemanticsV1::Card {
+            ordinal,
+            card_id,
+            upgrades,
+            eligible,
+        } => serde_json::json!({
+            "kind": "card",
+            "ordinal": ordinal,
+            "card_id": card_id,
+            "upgrades": upgrades,
+            "eligible": eligible,
+        }),
+        LearningCombatSelectionDomainSemanticsV1::Scry {
+            index,
+            card_id,
+            currently_present,
+        } => serde_json::json!({
+            "kind": "scry",
+            "index": index,
+            "card_id": card_id,
+            "currently_present": currently_present,
+        }),
+    }
 }
 
 pub(super) fn bridge_states_ready(states: &[BridgeSlotState]) -> bool {

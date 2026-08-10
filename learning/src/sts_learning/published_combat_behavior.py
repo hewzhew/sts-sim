@@ -23,6 +23,7 @@ from .combat_potion_lane import (
     CombatPotionLaneError,
     normalize_combat_potion_slots,
 )
+from .combat_rollout import COMBAT_ROLLOUT_VALUE_HEAD_WIDTH
 from .manifest_catalog import BoundedBehaviorManifestCatalog
 from .manifests import (
     BehaviorManifest,
@@ -387,8 +388,11 @@ def _verified_combat_publication(
         )
     configuration, completed = _training_boundary_records(root / "training.jsonl")
     training_root_count = _positive(
-        configuration.get("root_count"),
-        "training root_count",
+        configuration.get(
+            "training_root_count",
+            configuration.get("root_count"),
+        ),
+        "training_root_count",
     )
     training_artifact_sha256 = _sha256(
         configuration.get("artifact_sha256"),
@@ -407,6 +411,11 @@ def _verified_combat_publication(
         CombatWinSessionProfile(),
         scorer=RaggedScorerConfig(
             value_head=policy_update.uses_value_baseline,
+            value_head_width=(
+                COMBAT_ROLLOUT_VALUE_HEAD_WIDTH
+                if policy_update.uses_value_baseline
+                else 1
+            ),
         ),
         objective=CombatWinObjectiveConfig(
             groups_per_update=training_root_count,

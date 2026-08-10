@@ -627,6 +627,8 @@ Configure one stable Python 3.12 training runtime once, then use the small
 .\learning\dev.ps1 train-combat -Artifact <roots.bin> -Behavior <optional-warm-start-dir> -Output <fresh-dir> -Roots <count> -Updates <count> -PotionLane never -CombatPolicyUpdate ppo-clip -CombatAllLossAxis none
 .\learning\dev.ps1 train-combat-recovery -Artifact <roots.bin> -SourceExpectedRoots <artifact-root-count> -SourceRootSlot <zero-based-slot> -Behavior <warm-start-dir> -Output <fresh-dir> -Roots 4 -Replicates 8 -Updates 1 -PotionLane root-slots -PotionSlots 0 -CombatPolicyUpdate ppo-clip
 .\learning\dev.ps1 evaluate-combat -Artifact <held-out-roots.bin> -Behavior <training-dir> -Output <fresh-dir> -Roots <count> -Replicates <count> [-CombatDecisionRule sampled|greedy] [-TraceReplicatesPerRoot 1]
+.\learning\dev.ps1 audit-combat-policy -Artifact <roots.bin> -BaselineBehavior <baseline-dir> -CandidateBehavior <candidate-dir> -Output <fresh-dir> -Roots <count> -RootSlot <slot> [-DecisionOrdinals <ordinal-prefix>] -PotionLane never
+.\learning\dev.ps1 compare-combat-paired -Artifact <held-out-roots.bin> -BaselineBehavior <baseline-dir> -CandidateBehavior <candidate-dir> -Output <fresh-dir> -Roots <count> -Replicates 2 -BehaviorSeedBase <seed> [-CombatDecisionRule greedy|sampled] -PotionLane never
 .\learning\dev.ps1 evaluate-combat-potions -Artifact <held-out-roots.bin> -Behavior <training-dir> -Output <fresh-dir> -Roots <count> -Replicates <count>
 .\learning\dev.ps1 evaluate-run -Behavior <training-dir> -Output <fresh-dir> -Ascension <0..20> -Attempts 8 -MaxBatchSteps 4096 -BehaviorSeed 10000 -HeldOutSeedStart 0 -RunPotionLane trained
 .\learning\dev.ps1 evaluate-run-potions -Behavior <training-dir> -Output <fresh-dir> -Ascension <0..20> -Attempts 8 -MaxBatchSteps 4096 -BehaviorSeed 10000 -HeldOutSeedStart 0
@@ -645,6 +647,12 @@ or directory name.
 combat- or run-training publication. Cross-objective handoffs copy only actor
 parameters: a run continuation critic is never reused as a combat outcome
 critic, and a combat critic is never reused as a run continuation critic.
+Combat-to-combat warm starts still require exact model configuration, semantic
+schema, behavior rule, and checkpoint tensor compatibility. Historical
+model-definition, optimizer, or trainer-provenance digest differences are
+recorded as `warm_start_provenance_mismatches` and force an actor-only copy;
+they are compatibility evidence, not a resume claim. A fresh optimizer,
+destination critic, manifest, and step-zero training lineage are always used.
 `train-combat -Updates 0` publishes the seeded initialization without collecting
 experience or applying an optimizer step. Use it for a paired untrained
 baseline under the same schema, model seed, evaluation roots, and behavior RNG;
@@ -656,6 +664,11 @@ pytest, NumPy, PyTorch, the repository caller, and the installed bridge. The
 caller continues to load from the repository source path, so configuration
 does not build or install the local package into its own worktree. No separate
 requirements file or global pytest installation is needed.
+`test` writes its full log below `.oracle-lab/reports/`, keeps pytest's small
+reusable cache below `.oracle-lab/pytest/cache/`, and gives every invocation a
+fresh `.oracle-lab/pytest/runs/` base temporary directory. It does not write a
+`.pytest_cache` into `learning/` or depend on access to the process-wide system
+temporary directory.
 
 Use `check-bridge` for the routine bridge edit loop. It builds a dev-profile
 wheel and verifies it through the isolated Python smoke and caller suite in
@@ -724,14 +737,18 @@ single-line receipt reports seed/site/resource facts and artifact identity.
 Set `-MinUsablePotions 0` to collect ordinary run-derived combat roots without
 conditioning the corpus on potion ownership. An exact potion rescue corpus
 still supplies both `-RequiredPotionId` and `-RequiredPotionSlot`.
-The default `-CombatDecisionRule sampled` preserves the source behavior on
-every decision. For curriculum collection from a combat-trained publication,
-`-CombatDecisionRule greedy` applies argmax only while the bridge's typed public
-run context says the current row is combat; strategic rows retain the source
-categorical temperature and RNG. The collector records the distinct combined
-manifest identity. This prevents combat exploration noise from manufacturing
-low-HP later roots without pretending that untrained route or reward decisions
-have become a greedy policy.
+Use `-MinHpPercent <0..100>` when the curriculum question requires viable
+entry states; the filter compares exact integer HP against max HP and is
+recorded in the receipt. Keep low-HP roots in a separate recovery corpus rather
+than silently mixing them into ordinary competence training.
+Run-derived curriculum collection defaults to `-CombatDecisionRule greedy`:
+argmax applies only while the bridge's typed public run context says the current
+row is combat, while strategic rows retain the source categorical temperature
+and RNG. The collector records the distinct combined manifest identity. This
+prevents combat exploration noise from manufacturing low-HP later roots without
+pretending that untrained route or reward decisions have become competent.
+Pass `-CombatDecisionRule sampled` explicitly only when the source behavior's
+combat exploration distribution is itself the subject of the collection.
 Add `-DistinctEncounters` for a small diversity census or training batch; the
 collector then admits at most one root for each canonical `EncounterId` and
 reports the active contract in its receipt.
@@ -785,9 +802,15 @@ When a combat case has validated exact production context and a typed action
 file already replays to a win, derive a bounded reverse-curriculum batch with:
 
 ```powershell
+cargo oracle-lab learning-root case --artifact <combat-roots.bin> --expected-roots <count> --root-slot <zero-based-slot> --output <fresh.case.json>
 cargo oracle-lab learning-root recover --case <case.json> --actions <win.actions.json> --output <fresh.combat-roots.bin> --max-roots 8 --max-bytes 16777216
 ```
 
+`learning-root case` is the read-only bridge from one validated opaque training
+root into the existing bounded combat-search and witness tools. It decodes the
+batch once, requires the declared root count and slot, writes a fresh case with
+exact production-state replay context, and reports both learning-root and case
+identity. It neither samples the policy nor creates action labels.
 Rust restores the production session, replays every input, requires a new typed
 combat win, retains at most the terminal-nearest requested roots in memory, and
 writes the same opaque root-batch format. The compact receipt reports the
@@ -801,20 +824,58 @@ single-root artifacts and combined without decoding them:
 cargo oracle-lab learning-root merge --input <first.bin> --input <second.bin> --output <fresh.combat-roots.bin> --max-bytes 16777216
 ```
 
-Every input must contain exactly one distinct root. Rust validates artifact
-versions, identities, the combined byte bound, and the fresh output before
-publishing; duplicate roots or any malformed input leave the output absent.
+With no extra counts, every input must contain exactly one distinct root. To
+compose already canonical batches for one small joint frontier/rehearsal
+curriculum, declare one count per input in the same order:
+
+```powershell
+cargo oracle-lab learning-root merge `
+  --input <three-root-rehearsal.bin> --input <twenty-four-root-frontier.bin> `
+  --input-roots 3 --input-roots 24 `
+  --output <fresh-27-root-curriculum.bin> --max-bytes 16777216
+```
+
+Rust requires the declared width of every input, revalidates artifact versions
+and exact identities, rejects duplicate roots across inputs, caps the combined
+batch at 64 roots, and writes only to a fresh output after all checks pass. The
+operation preserves input/root order; it does not select or weight curriculum
+roots.
+To retain an exact typed subset before composition, select source slots without
+decoding the artifact:
+
+```powershell
+cargo oracle-lab learning-root select `
+  --artifact <source-batch.bin> --expected-roots <source-count> `
+  --root-slot <first-slot> --root-slot <second-slot> `
+  --output <fresh-subset.bin> --max-bytes 16777216
+```
+
+The selected artifact follows caller slot order. Duplicate or out-of-range
+slots, source-width mismatch, malformed input, byte overflow, or an existing
+output path all fail before publication. Selection is curriculum configuration,
+not a policy score or teacher label.
 For a bounded fixed-behavior coverage check over every root, use
 `CombatWinSignalCensusRunner` with the same `expected_roots`, one shared model
 seed, one explicit behavior seed per root, and `max_roots` equal to the intended
-census bound. It returns compact per-root generations and a signal census,
-imports the opaque batch only once, publishes nothing, and is not a cross-root
-training scheduler.
+census bound. Bind the same verified warm start and potion lane that the
+destination trainer will use. It returns compact per-root generations and a
+signal census, imports the opaque batch only once, publishes nothing, and is
+not a cross-root training scheduler.
+
+`train-combat` performs that fixed-behavior census automatically whenever
+`-Updates` is nonzero. It reuses the already validated root source and trains
+only mixed-win survival roots plus all-win roots with terminal-HP variation.
+Default all-loss roots are recorded in `frontier_rescue_slots`; solved roots are
+recorded separately and neither class enters the optimizer. The generation
+journal keeps source artifact slot indices even when only one frontier root is
+trainable. `-Updates 0` skips census and remains an initialization-only
+publication.
 
 For one bounded shared update, construct
 `CombatWinBatchSessionFactory` with a `CombatWinBatchSessionConfig` whose
-`expected_roots` exactly equals `profile.objective.groups_per_update` and does
-not exceed the separately declared `max_roots`. Pass one distinct explicit
+`expected_roots` exactly equals the selected frontier's
+`profile.objective.groups_per_update` and does not exceed the separately
+declared source `max_roots`. Pass one distinct explicit
 behavior seed per root. `advance()` loads no additional artifact, collects every
 root under the same frozen manifest, attempts one group-balanced optimizer
 delivery, and promotes at most once. `-CombatPolicyUpdate reinforce` (the
@@ -829,10 +890,13 @@ returned loss and promotion as training accounting, not held-out evidence of
 improvement.
 
 `-CombatPolicyUpdate ppo-clip-value` selects the separate actor-critic profile.
-Its zero-output value head predicts raw win or terminal-HP return, its actor
-advantage stays centered within each exact root and is frozen across PPO
-epochs, and the journal reports `value_loss`. It may warm-start shared actor
-weights from a policy-only publication, but publishes a distinct model
+Its three zero-output value columns have fixed win, future player-HP-change,
+and future enemy-HP-change meanings. The typed win-first selector chooses the
+matching column for a group; every decision uses its own undiscounted
+return-to-go minus its matching pre-update value, without centering residuals
+across turns. Actor advantages are frozen across PPO epochs and the journal
+reports `value_loss`. It may warm-start shared actor weights from a
+policy-only or differently shaped publication, but publishes a distinct model
 identity. Keep it opt-in until held-out evidence justifies making it the
 maintained default.
 
@@ -875,8 +939,13 @@ the training kind. For a combat-trained source
 it also recovers the training artifact digest and rejects an evaluation artifact
 with the same digest before constructing combat groups; a run-trained source
 instead records its run objective, sampling contract, and combat-anchor
-identity. Combat evaluation output V14 carries those anchor fields explicitly.
-It gives every root an independent explicit behavior RNG stream and, by
+identity. Combat evaluation output V16 carries those anchor fields explicitly,
+adds the root-by-replicate policy RNG seed matrix, and retains `root_audits`
+read directly from every opaque evaluation root. Each
+audit records seed, act/floor, ascension, encounter and ordered monsters, entry
+HP, canonical card/upgrade counts, relics, and potion slots; filenames are not
+accepted as root identity.
+It gives every root and replicate an independent explicit behavior RNG stream and, by
 default, writes only `evaluation.json` with per-replicate win, HP/max HP, gold, turn,
 concrete starting/final/lost/gained potion identities, potion use/discard
 counts, and card facts plus compact aggregates. Each root retains its seed,
@@ -906,8 +975,11 @@ For one bounded diagnosis, pass `-TraceReplicatesPerRoot <count>`. The count
 cannot exceed `-Replicates`; zero is the default. The evaluator then writes
 `combat-traces.jsonl` with one compact pre-action row whenever those selected
 replicates finish symbolic action decoding. Each row retains root and replicate
-identity, turn, energy, HP/block, hand and pile counts, potions, monster intent,
-the decoded action, model round, selected ordinal, and selection probability.
+identity, turn, energy, HP/block, player and monster powers, hand and pile
+counts, potions, monster intent, the decoded action, model round, selected
+ordinal, and selection probability. Trace schema V2 adds those power rows so
+Artifact, Vulnerable, Strength, and similar state cannot disappear from manual
+diagnosis.
 `evaluation.json` keeps only the sidecar schema, filename, record count, and
 bound, so ordinary aggregate reads never ingest the trace. Treat it as
 diagnostic evidence, not training experience or an action-quality label.

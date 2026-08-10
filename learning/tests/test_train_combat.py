@@ -4,6 +4,7 @@ import json
 from collections.abc import Sequence
 from dataclasses import replace
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -61,8 +62,30 @@ class _RootSource:
             potion_slots=normalized_slots,
         )
 
+    def combat_root_audit(self, slot_index: int) -> SimpleNamespace:
+        return SimpleNamespace(
+            seed=30_000 + slot_index,
+            act=1,
+            floor=4 + slot_index,
+            ascension_level=20,
+            hp=70 - slot_index,
+            max_hp=80,
+            potion_ids=(None, None),
+            encounter_id=("Cultist", "JawWorm")[slot_index],
+            monster_ids=(("Cultist",), ("JawWorm",))[slot_index],
+            is_elite_fight=False,
+            is_boss_fight=False,
+            master_deck_cards=[
+                *[("Strike", 0)] * (5 - slot_index),
+                *[("Defend", 0)] * 4,
+                ("Bash", slot_index),
+                ("AscendersBane", 0),
+            ],
+            relic_ids=["BurningBlood"],
+        )
 
-class _EnemyProgressRootSource:
+
+class _EnemyProgressRootSource(_RootSource):
     def combat_group(
         self,
         slot_index: int,
@@ -111,6 +134,8 @@ def test_training_command_runs_updates_journals_and_publishes(
         (1, ()),
         (0, ()),
         (1, ()),
+        (0, ()),
+        (1, ()),
     ]
     assert summary["optimizer_steps"] == 2
     records = tuple(
@@ -125,14 +150,31 @@ def test_training_command_runs_updates_journals_and_publishes(
         "generation",
         "completed",
     )
-    assert records[0]["schema"] == "sts-learning-combat-training-v5"
+    assert records[0]["schema"] == "sts-learning-combat-training-v6"
     assert records[0]["policy_update_rule"] == "REINFORCE"
     assert records[0]["potion_lane"] == "never"
     assert records[0]["potion_slots"] == []
     assert records[0]["initialization"] == "random"
     assert records[0]["warm_start_manifest_id"] is None
     assert records[0]["warm_start_training_kind"] is None
+    assert records[0]["root_audits"][0]["ascension_level"] == 20
+    assert records[0]["root_audits"][0]["deck"][-1] == {
+        "card_id": "Strike",
+        "upgrades": 0,
+        "count": 5,
+    }
+    assert records[0]["root_audits"][1]["deck"][1] == {
+        "card_id": "Bash",
+        "upgrades": 1,
+        "count": 1,
+    }
+    assert records[0]["frontier_admission"] == "fixed-behavior-census-v1"
+    assert records[0]["frontier_training_slots"] == [0, 1]
+    assert records[0]["frontier_rescue_slots"] == []
+    assert records[0]["training_root_count"] == 2
+    assert records[0]["training_root_slots"] == [0, 1]
     assert records[1]["roots"][1]["slot_index"] == 1
+    assert records[1]["roots"][1]["training_slot_index"] == 1
     assert records[1]["roots"][1]["selected_objective"] == "hp"
     assert records[1]["roots"][1]["enemy_hp_progress_signal_replicates"] == 0
     assert records[1]["active_manifest_id_before"] != records[1][
@@ -222,6 +264,7 @@ def test_training_command_warm_starts_from_a_verified_published_behavior(
     assert configuration["warm_start_checkpoint_id"] is not None
     assert configuration["warm_start_training_step"] == 1
     assert configuration["warm_start_training_kind"] == "combat"
+    assert configuration["warm_start_provenance_mismatches"] == []
     assert records[-1]["final_manifest_id"] != configuration[
         "warm_start_manifest_id"
     ]
@@ -276,6 +319,38 @@ def test_training_command_publishes_explicit_all_loss_objective(
         recovered.training_all_loss_axis
         is CombatAllLossAxis.ENEMY_HP_PROGRESS
     )
+
+
+def test_training_command_routes_all_loss_roots_to_rescue_by_default(
+    tmp_path: Path,
+) -> None:
+    artifact = tmp_path / "all-loss-roots.bin"
+    artifact.write_bytes(b"opaque-all-loss-roots")
+    output = tmp_path / "all-loss-rescue"
+    bridge = CombatSessionBridge(
+        combat_roots_from_artifact=lambda payload, **_: _EnemyProgressRootSource(),
+        semantic_schema=semantic_schema_fixture(),
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match=r"no trainable frontier; rescue_slots=\(0, 1\)",
+    ):
+        run_combat_training(
+            CombatTrainingCommandConfig(
+                artifact=artifact,
+                output=output,
+                root_count=2,
+                replicate_count=2,
+                updates=1,
+                model_seed=45,
+                behavior_seed_base=110,
+                potion_lane=CombatPotionLane.NEVER,
+            ),
+            bridge=bridge,
+        )
+
+    assert not output.exists()
 
 
 def test_recovery_reports_semantic_schema_version_mismatch(tmp_path: Path) -> None:
@@ -347,6 +422,30 @@ def test_compatible_scorer_import_allows_only_weight_compatible_provenance(
     assert imported.provenance_mismatches == ("model_definition",)
     assert not imported.scorer.training
     assert not any(parameter.requires_grad for parameter in imported.scorer.parameters())
+
+    compatible_output = tmp_path / "compatible-warm-start"
+    run_combat_training(
+        CombatTrainingCommandConfig(
+            artifact=tmp_path / "combat-roots.bin",
+            output=compatible_output,
+            root_count=2,
+            replicate_count=2,
+            updates=0,
+            model_seed=46,
+            behavior_seed_base=112,
+            potion_lane=CombatPotionLane.NEVER,
+            warm_start_behavior=behavior,
+        ),
+        bridge=bridge,
+    )
+    configuration = json.loads(
+        (compatible_output / "training.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()[0]
+    )
+    assert configuration["warm_start_provenance_mismatches"] == [
+        "model_definition"
+    ]
 
     monkeypatch.setattr(
         published_combat_behavior_module,

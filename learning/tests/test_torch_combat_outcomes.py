@@ -28,9 +28,9 @@ if _TORCH_AVAILABLE:
         on_policy_combat_win_loss,
     )
     from sts_learning.torch_policy import (
-        RaggedActorCriticOutput,
         RaggedCandidateLogits,
         RaggedCategoricalPolicyConfig,
+        RaggedMultiActorCriticOutput,
     )
 
 
@@ -371,7 +371,7 @@ class OnPolicyCombatWinLossTests(unittest.TestCase):
             def __init__(self) -> None:
                 super().__init__()
                 self.logits = torch.nn.Parameter(torch.zeros(7))
-                self.values = torch.nn.Parameter(torch.zeros(3))
+                self.values = torch.nn.Parameter(torch.zeros((3, 3)))
 
             def forward(self, payload):
                 return RaggedCandidateLogits(
@@ -382,8 +382,8 @@ class OnPolicyCombatWinLossTests(unittest.TestCase):
                     ),
                 )
 
-            def actor_critic(self, payload):
-                return RaggedActorCriticOutput(
+            def actor_critic_multi(self, payload):
+                return RaggedMultiActorCriticOutput(
                     logits=self(payload),
                     row_values=self.values,
                 )
@@ -408,12 +408,14 @@ class OnPolicyCombatWinLossTests(unittest.TestCase):
         )
         result.value.backward()
 
+        self.assertEqual(result.actor_advantages, (1.0, 0.0, 0.0))
         self.assertGreater(result.value_loss, 0.0)
-        self.assertTrue(bool(torch.any(scorer.values.grad != 0)))
+        self.assertTrue(bool(torch.any(scorer.values.grad[:, 0] != 0)))
+        self.assertTrue(bool(torch.all(scorer.values.grad[:, 1:] == 0)))
         self.assertTrue(bool(torch.any(scorer.logits.grad != 0)))
 
         with torch.no_grad():
-            scorer.values[:] = torch.tensor((0.5, -0.25, 0.75))
+            scorer.values[:, 0] = torch.tensor((0.5, -0.25, 0.75))
         reused = on_policy_combat_win_loss(
             scorer,
             (
@@ -430,6 +432,74 @@ class OnPolicyCombatWinLossTests(unittest.TestCase):
             fixed_actor_advantages=result.actor_advantages,
         )
         self.assertEqual(reused.actor_advantages, result.actor_advantages)
+
+    def test_value_ppo_fallbacks_use_only_their_fixed_value_column(self) -> None:
+        class _MultiCritic(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.logits = torch.nn.Parameter(torch.zeros(7))
+                self.values = torch.nn.Parameter(torch.zeros((3, 3)))
+
+            def forward(self, payload):
+                return RaggedCandidateLogits(
+                    values=self.logits,
+                    row_splits=torch.as_tensor(
+                        payload["candidate_row_splits"],
+                        dtype=torch.long,
+                    ),
+                )
+
+            def actor_critic_multi(self, payload):
+                return RaggedMultiActorCriticOutput(
+                    logits=self(payload),
+                    row_values=self.values,
+                )
+
+        cases = (
+            (
+                CombatWinObjectiveConfig(
+                    policy_update=CombatPolicyUpdateConfig.ppo_clip_value(),
+                ),
+                combat_group_experience_fixture(
+                    self.manifest_id,
+                    wins=(True, True),
+                    final_hps=(70, 10),
+                ),
+                1,
+                (-0.125, -0.875, -0.8125),
+            ),
+            (
+                CombatWinObjectiveConfig(
+                    all_loss_axis=CombatAllLossAxis.ENEMY_HP_PROGRESS,
+                    policy_update=CombatPolicyUpdateConfig.ppo_clip_value(),
+                ),
+                combat_group_experience_fixture(
+                    self.manifest_id,
+                    wins=(False, False),
+                    enemy_final_hps=(30, 20),
+                ),
+                2,
+                (0.25, 0.5, 0.125),
+            ),
+        )
+
+        for objective, experience, selected_column, expected in cases:
+            scorer = _MultiCritic()
+            result = on_policy_combat_win_loss(
+                scorer,
+                (experience,),
+                self.registry,
+                CONCAT_LIMITS,
+                self.config,
+                objective,
+            )
+            result.value.backward()
+
+            self.assertEqual(result.actor_advantages, expected)
+            assert scorer.values.grad is not None
+            for column in range(3):
+                has_gradient = bool(torch.any(scorer.values.grad[:, column] != 0))
+                self.assertEqual(has_gradient, column == selected_column)
 
 if __name__ == "__main__":
     unittest.main()

@@ -93,6 +93,7 @@ pub struct LearningPublicRunContextV1 {
     pub boundary_kind: LearningBoundaryKindV1,
     pub strategic_context_kind: Option<LearningStrategicContextKindV1>,
     pub seed: u64,
+    pub ascension_level: u8,
     pub act: u8,
     pub floor: i32,
     pub hp: i32,
@@ -194,6 +195,10 @@ impl LearningEnvV1 {
         RunControlSessionCheckpointV1::from_session(&self.session)
     }
 
+    pub(crate) fn fresh_run_config(&self, seed: u64) -> RunControlConfig {
+        self.session.fresh_run_config(seed)
+    }
+
     pub fn combat_root_context(&self) -> Result<CombatLearningRootContextV1, String> {
         let active = self
             .session
@@ -274,6 +279,7 @@ impl LearningEnvV1 {
             boundary_kind: boundary.kind(),
             strategic_context_kind: boundary.strategic_context_kind(),
             seed: self.session.run_state.seed,
+            ascension_level: self.session.run_state.ascension_level,
             act: self.session.run_state.act_num,
             floor: self.session.run_state.floor_num,
             hp,

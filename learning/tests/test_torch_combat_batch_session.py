@@ -168,9 +168,11 @@ class CombatWinBatchSessionTests(unittest.TestCase):
             self.assertEqual(loader.calls, [])
             self.assertEqual(_files(factory.root), ())
 
-    def test_config_requires_multiple_roots_and_exact_delivery_width(self) -> None:
-        with self.assertRaisesRegex(TorchCombatSessionError, "at least two roots"):
-            CombatWinBatchSessionConfig(expected_roots=1, max_roots=2)
+    def test_config_allows_one_frontier_root_and_requires_exact_delivery_width(
+        self,
+    ) -> None:
+        one_root = CombatWinBatchSessionConfig(expected_roots=1, max_roots=2)
+        self.assertEqual(one_root.expected_roots, 1)
         with self.assertRaisesRegex(TorchCombatSessionError, "groups_per_update"):
             CombatWinBatchSessionConfig(expected_roots=2, max_roots=2)
         with self.assertRaisesRegex(TorchCombatSessionError, "exceed max_roots"):

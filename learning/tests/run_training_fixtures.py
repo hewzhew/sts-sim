@@ -20,6 +20,28 @@ from sts_learning.train_combat import (
 
 
 class CombatRootSource:
+    def combat_root_audit(self, slot_index: int) -> SimpleNamespace:
+        return SimpleNamespace(
+            seed=20_000 + slot_index,
+            act=1,
+            floor=4,
+            ascension_level=20,
+            hp=80,
+            max_hp=80,
+            potion_ids=("EntropicBrew", "GamblersBrew"),
+            encounter_id=("Cultist", "JawWorm")[slot_index],
+            monster_ids=(("Cultist",), ("JawWorm",))[slot_index],
+            is_elite_fight=False,
+            is_boss_fight=False,
+            master_deck_cards=[
+                *[("Strike", 0)] * (5 - slot_index),
+                *[("Defend", 0)] * 4,
+                ("Bash", 0),
+                ("AscendersBane", 0),
+            ],
+            relic_ids=["BurningBlood"],
+        )
+
     def public_run_contexts(self) -> list[tuple[int, SimpleNamespace]]:
         return [
             (

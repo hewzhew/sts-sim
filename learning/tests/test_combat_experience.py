@@ -10,8 +10,11 @@ from sts_learning import (
     CombatExperienceError,
     CombatExperienceLimits,
     CombatGroupDriver,
+    CombatDecisionProgress,
     SelectionProbability,
 )
+
+from learning.tests.torch_combat_fixtures import combat_group_experience_fixture
 
 
 ROOT_ID = "12" * 32
@@ -27,6 +30,24 @@ def _decision_batch() -> dict[str, object]:
         "candidate_row_splits": np.asarray([0, 2, 4], dtype=np.uint64),
         "semantic": {"fixture": np.asarray([10, 20], dtype=np.int32)},
     }
+
+
+def _decision_progress(
+    replicate_indices: tuple[int, ...] = (0, 1),
+) -> tuple[CombatDecisionProgress, ...]:
+    return tuple(
+        CombatDecisionProgress(
+            replicate_index=replicate_index,
+            turn=1,
+            player_hp=80,
+            player_max_hp=80,
+            enemy_hp=40,
+            enemy_max_hp=40,
+            potion_uuids=(100 + replicate_index,),
+            potion_ids=("FearPotion",),
+        )
+        for replicate_index in replicate_indices
+    )
 
 
 class _Policy:
@@ -52,6 +73,9 @@ class _OneStepCombatGroup:
     def decision_batch(self, *, semantic: bool) -> dict[str, object]:
         assert semantic
         return _decision_batch()
+
+    def decision_progress(self) -> tuple[CombatDecisionProgress, ...]:
+        return _decision_progress()
 
     def choose(self, ordinals: list[int]) -> None:
         assert ordinals == [0, 1]
@@ -106,6 +130,7 @@ def test_driver_returns_complete_aligned_group_experience() -> None:
     assert result.experience.behavior_manifest_id == MANIFEST
     assert result.experience.decision_count == 2
     assert result.experience.batches[0].replicate_indices == (0, 1)
+    assert result.experience.batches[0].decision_progress == _decision_progress()
     assert result.experience.batches[0].selected_ordinals == (0, 1)
     assert result.experience.grouped_advantages().win == (1.0, -1.0)
     projected = result.experience.decision_advantages()
@@ -142,7 +167,11 @@ def test_group_rejects_mixed_behavior_manifests_before_second_commit() -> None:
         limits=_limits(),
     )
     prepared = collector.prepare(_decision_batch())
-    first = collector.bind_choice(prepared, _Policy().choose(prepared.payload))
+    first = collector.bind_choice(
+        prepared,
+        _Policy().choose(prepared.payload),
+        _decision_progress(),
+    )
     collector.commit(first)
     foreign_choice = BatchPolicyChoice.create(
         (0, 1),
@@ -151,6 +180,42 @@ def test_group_rejects_mixed_behavior_manifests_before_second_commit() -> None:
     )
 
     with pytest.raises(CombatExperienceError):
-        collector.bind_choice(prepared, foreign_choice)
+        collector.bind_choice(prepared, foreign_choice, _decision_progress())
 
     assert collector.decision_count == 2
+
+
+def test_progress_must_match_decision_row_order_before_commit() -> None:
+    collector = BoundedCombatGroupExperience(
+        root_id=ROOT_ID,
+        exact_combat_state_hash=COMBAT_HASH,
+        replicate_count=2,
+        limits=_limits(),
+    )
+    prepared = collector.prepare(_decision_batch())
+
+    with pytest.raises(CombatExperienceError, match="progress order"):
+        collector.bind_choice(
+            prepared,
+            _Policy().choose(prepared.payload),
+            tuple(reversed(_decision_progress())),
+        )
+
+    assert collector.decision_count == 0
+
+
+def test_completed_group_reconstructs_each_replicate_chronologically() -> None:
+    experience = combat_group_experience_fixture(MANIFEST, wins=(True, True))
+
+    first = experience.chronological_steps(0)
+    second = experience.chronological_steps(1)
+
+    assert tuple(step.sequence_index for step in first) == (0,)
+    assert tuple(step.sequence_index for step in second) == (0, 1)
+    assert tuple(step.progress.turn for step in second) == (1, 2)
+    assert tuple(step.progress.player_hp for step in second) == (80, 75)
+    assert tuple(step.selected_ordinal for step in second) == (0, 0)
+    assert all(
+        isinstance(step.selection_probability, SelectionProbability)
+        for step in second
+    )

@@ -204,6 +204,20 @@ define no exchange rate among them. Enemy-HP progress remains diagnostic
 evidence by default; a separately provenanced opt-in objective may select it
 only for groups whose terminals are all exact losses. Unresolved escapes never
 enter that fallback.
+`sts_learning.combat_rollout` reconstructs every replicate in retained
+model-call order and attributes each observed public-state change to the
+preceding decision. It keeps sparse terminal win, future player-HP change, and
+future enemy-HP change as three independent undiscounted return-to-go columns.
+Potion UUID/domain identities remain before/after facts and receive no scalar
+price; because the terminal bridge has only potion ids, terminal UUIDs stay
+explicitly unavailable. Combat value PPO consumes these columns through three
+fixed-semantic value heads. The typed win-first selector chooses one matching
+column for each exact-root group, and every row uses its own return-to-go minus
+that row's matching pre-update value; residuals are never centered across
+unrelated decision times. Policy-only combat REINFORCE/PPO deliberately retain
+the terminal same-root comparison path. Scalar whole-run critics and the
+multi-value combat critic have distinct model provenance and cannot be
+silently recovered into one another.
 Before running a group, callers may select or stratify roots through the
 bridge-owned frozen root context; the caller must not decode semantic feature
 numbers or copy the full combat observation into a parallel metadata schema.
@@ -221,10 +235,17 @@ emits their first combats as one batch; `learning-root export` converts public
 continuations already at useful later combat boundaries. The caller reads those
 opaque bytes and constructs a fresh bridge batch with the exact expected root
 count; Rust revalidates every combat boundary and root identity first.
-`learning-root merge` combines two or more canonical single-root artifacts
-under the same validation and fresh-output boundary. This lets rare selectors
-publish honest one-root shards without adding an ad-hoc binary concatenation or
-weakening the multi-root trainer contract.
+`learning-root select` derives one explicit ordered root subset from a
+canonical batch after revalidating its declared source width; selected slots
+stay opaque and duplicate or out-of-range slots publish nothing.
+`learning-root merge` combines two or more canonical artifacts under the same
+validation and fresh-output boundary. Single-root inputs remain the default;
+an explicit expected root count for every input admits already canonical
+multi-root batches for joint curricula. Rust revalidates every root, rejects a
+declared-width mismatch or repeated exact identity, and caps the combined batch
+at 64 roots. This lets rare selectors publish honest one-root shards and lets a
+bounded rehearsal corpus coexist with a new competence frontier without an
+ad-hoc binary concatenation or Python checkpoint decoding.
 `sts_learning.collect_run_combat_roots` supplies the bounded corpus path when
 useful later continuations do not yet exist. It advances one published frozen
 behavior over training-partition runs, aligns compact public run facts with
@@ -233,10 +254,23 @@ usable-potion-qualified root per seed. Rust merges the canonical single-root
 payloads without exposing their sessions. The command publishes one fresh
 opaque batch only after reaching its declared root target; a step/deadline,
 identity, alignment, or byte failure leaves no output. Its receipt records the
-collected seed/site/resource facts but assigns no potion value and supplies no
-teacher labels.
+collected seed/site/resource facts plus canonical card/upgrade counts and relic
+identities. It also retains the exact typed strategic candidate set and chosen
+ordinal for every preceding run decision on that seed, so route, event, and
+card-reward behavior can be audited without decoding the opaque combat root.
+These are behavior facts, not teacher labels, and assign no potion value. The
+requested ascension is checked against every exact combat root before any
+artifact is published; a reset or import that changed difficulty is a hard
+collection failure.
 The minimum usable-potion filter accepts zero, allowing an ordinary
 run-derived combat corpus that is not biased toward potion-bearing paths.
+The model-facing strategic surface canonicalizes deterministic free reward
+steps before inference: gold is claimed, one unique potion reward is claimed
+into an empty slot when Sozu is absent, and one unique card reward is opened
+before the policy sees the actual card-versus-skip choice. Multiple potion or
+card-reward items remain policy choices because their order can matter. The
+underlying planner surface retains the full legal actions; this is action-space
+reduction, not a card or potion value label.
 An explicit distinct-encounter mode admits at most one root for each canonical
 encounter identity within a batch; repeated encounters remain the normal
 default when distributional frequency is the intended evidence.
@@ -295,8 +329,9 @@ summary after its bounded experience has been consumed. Cross-root diagnostics
 can therefore build the existing bounded census without retaining or reopening
 semantic decision payloads.
 `sts_learning.torch_combat_census.CombatWinSignalCensusRunner` owns that routine
-diagnostic composition. It reads one bounded opaque batch, starts every root
-from identical model weights, requires one explicit behavior RNG seed per root,
+diagnostic composition. It reads one bounded opaque batch or reuses one already
+validated source, starts every root from identical random or verified warm-start
+weights under the declared potion lane, requires one explicit behavior RNG seed per root,
 and returns compact generation results plus the aggregate census. The artifact
 is imported once and every slot selects from that shared typed source; slot-local
 trainers and stores live only in temporary directories, their updates are
@@ -321,16 +356,40 @@ the configured Python runtime:
   -CombatAllLossAxis none
 ```
 
-Every update collects all declared roots under one frozen behavior, applies at
-most one shared optimizer step, and immediately promotes only a real update.
+For a nonzero update count, the command first censuses every declared root under
+the exact destination initialization, potion lane, replicate count, and behavior
+seed. It reuses the already decoded source, then trains only mixed-win survival
+frontier roots and all-win roots with real terminal-HP variation. Default
+all-loss roots are journaled as rescue and solved roots are excluded from the
+optimizer; neither disappears from root audits. Every update collects only that
+selected frontier under one frozen behavior, applies at most one shared
+optimizer step, and immediately promotes only a real update.
 The command appends compact generation and per-root signal facts to
 `training.jsonl`, then explicitly publishes the final behavior checkpoint.
+Its configuration record also persists each exact root's seed, act/floor,
+actual ascension, entry HP, potion identities, encounter/monster and elite/boss
+facts, canonical card/upgrade counts, and relic identities. This audit is read
+from the opaque root through the bridge; filenames are never trusted as
+curriculum identity.
 The output directory must be absent or empty; optimizer resume is not implied.
+Publication makes the frozen scorer reproducible, but it does not make that
+scorer the accepted or best behavior. The current live promotion inside one
+training session only rotates the immutable on-policy collector after a real
+optimizer step. A separate candidate-to-accepted behavior gate is the next
+control-plane boundary; until its typed contracts exist, compare publications
+explicitly and never infer an accepted latest model from directory names or
+training-step order. See `Learning Control Plane` in
+[`docs/ARCHITECTURE.md`](../docs/ARCHITECTURE.md).
 When `-Behavior` is supplied, the command first verifies that publication and
 copies its frozen scorer parameters into the fresh destination shadow. The
 destination still starts a new optimizer, step-zero manifest, root-set
 objective, potion lane, and journal; source manifest/checkpoint ids are retained
-as initialization provenance. Omitting `-Behavior` keeps random initialization.
+as initialization provenance. Exact model configuration, semantic schema,
+behavior rule, and checkpoint shapes remain mandatory. Compatible historical
+model-definition, optimizer, or trainer-provenance digest differences are
+written to `warm_start_provenance_mismatches` and force actor-only import, so an
+old critic is never presented as a resumed current critic. Omitting `-Behavior`
+keeps random initialization.
 `-PotionLane never` removes potion use/discard candidates for every generated
 group while preserving the simulator legality surface. Use it for roots with
 observed no-potion wins so terminal-HP refinement cannot spend inventory. A
@@ -359,13 +418,17 @@ This command verifies the exact durable manifest, checkpoint, maintained model
 profile, schema, trainer provenance, training step, training root artifact
 digest, and training potion lane before evaluation. It rejects the training
 artifact itself before constructing combat groups, uses independent explicit
-RNG streams per root, and writes one compact
+RNG streams per root and replicate, and writes one compact
 `evaluation.json`; it creates no optimizer, trainer, experience collector, or
 promotion owner. The root and terminal records preserve HP/max HP, gold,
 actionable living-enemy HP, concrete potion-slot identities, lost/gained
 identity deltas, potion use/discard counts, turn, and card facts as separate
 axes. Per-root enemy-HP ranges and signal-replicate counts make all-loss
 variation inspectable without selecting it as an objective. Evaluation also
+stores `root_audits` read directly from the opaque roots: seed, act/floor,
+ascension, encounter and ordered monsters, entry HP, canonical card/upgrade
+counts, relics, and potion slots. Artifact filenames are never trusted as
+identity. Evaluation also
 reports the published combat all-loss axis, so an opt-in behavior cannot be
 mistaken for a default win/HP-only behavior. Potion identity deltas are
 multiset inventory facts; the evaluator neither assigns potion tiers nor
@@ -374,6 +437,67 @@ rate. Cross-combat resource value requires an exact continuation and remains
 outside this command. These facts measure that exact manifest on the bounded
 held-out sample and are not an improvement claim without a same-input frozen
 baseline.
+
+Audit one unchanged exact combat decision under two distinct frozen combat
+publications with:
+
+```powershell
+.\learning\dev.ps1 audit-combat-policy `
+  -Artifact <combat-roots.bin> `
+  -BaselineBehavior <baseline-training-directory> `
+  -CandidateBehavior <candidate-training-directory> `
+  -Output <fresh-audit-directory> `
+  -Roots <artifact-root-count> `
+  -RootSlot <zero-based-root-slot> `
+  -DecisionOrdinals <optional-explicit-prefix> `
+  -PotionLane never
+```
+
+The optional prefix is the flattened sequence of model-facing ordinals, not a
+display action string. Every ordinal is replayed against the current typed
+candidate surface; symbolic selection rounds remain explicit, and the prefix
+must finish at a new undecoded combat boundary. Rust then captures that exact
+decision identity without exposing its checkpoint. The command scores the
+unchanged semantic batch once with each behavior and writes
+`policy-audit.json` containing the source and decision root identities, replayed
+typed candidates, every current typed legal candidate, raw logits, normalized
+probabilities, ranks, top-two margins, and candidate-minus-baseline probability
+and rank deltas. Candidate ids are content identities over the exact decision,
+ordinal, and typed semantics. The command chooses no audited action, consumes
+no policy RNG, creates no trainer, and cannot accept or publish a behavior.
+The first implementation accepts combat-training publications; run-publication
+and automatic gate composition remain outside this diagnostic slice.
+
+Run one paired comparison over a complete exact-root batch with:
+
+```powershell
+.\learning\dev.ps1 compare-combat-paired `
+  -Artifact <held-out-combat-roots.bin> `
+  -BaselineBehavior <accepted-or-baseline-directory> `
+  -CandidateBehavior <candidate-directory> `
+  -Output <fresh-comparison-directory> `
+  -Roots <artifact-root-count> `
+  -Replicates 2 `
+  -BehaviorSeedBase 10000 `
+  -CombatDecisionRule greedy `
+  -PotionLane never
+```
+
+The command runs the ordinary held-out evaluator twice under the same exact
+roots, root order, decision rule, potion lane, and explicit root-major
+root-by-replicate seed matrix. Greedy remains the command default and consumes
+no policy RNG; pass `-CombatDecisionRule sampled` for paired stochastic
+evaluation. Sampled rows share one batched scorer call but draw only from the
+generator owned by that replicate slot, so divergence or early termination in
+one replicate cannot move another replicate's stream.
+It retains both complete `evaluation.json` artifacts, then writes
+`paired-comparison.json` with exact contract/comparison identities, every
+root/replicate alignment, win transitions, and separate HP, enemy-HP, gold,
+potion, turn, and card axes. Root differences precede aggregate differences;
+the artifact emits no `better`, `accepted`, or scalar resource score. Sampled
+pairing establishes aligned stochastic measurements, not statistical
+independence among repeats of the same exact root and not an acceptance claim.
+
 `-PotionLane never` runs the same frozen behavior and roots with every potion
 use/discard candidate removed from the model-facing action surface. The engine
 legality surface remains complete. Matching `all` and `never` runs with the
@@ -406,7 +530,7 @@ multisets. A result with more HP but a different or smaller potion inventory is
 left incomparable; the frontier does not model deck mutations, relic counters,
 future encounters, or route value and is not automatically a training target.
 
-The same result includes a typed competence plan over exact source slots.
+The fixed-behavior census includes a typed competence plan over exact source slots.
 All-loss roots enter a rescue backlog, mixed win/loss roots form the survival
 frontier, and all-win roots either form the configured terminal-HP resource
 frontier or remain solved. CombatFrontierRootSource exposes only the two
@@ -415,9 +539,10 @@ rescue and solved slots cannot enter through its selected index surface. The
 plan is bounded selection evidence, not a rescue algorithm or permission to
 drop hard roots from evaluation accounting.
 `sts_learning.torch_combat_batch_session.CombatWinBatchSessionFactory` owns the
-first bounded shared update. Its config requires the artifact root count to
+first bounded shared update. Its config requires the selected frontier width to
 equal the win-first objective's exact group delivery width without exceeding a
-separate explicit root bound. One artifact import constructs one mutable shadow
+separate explicit source-root bound; a single trainable frontier root is valid.
+One artifact import constructs one mutable shadow
 model, one active frozen controller, one trainer, and one independent
 caller-seeded behavior stream per root. Every root finishes under the same
 behavior manifest before the trainer sees any group; distinct roots receive

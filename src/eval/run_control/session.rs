@@ -664,6 +664,28 @@ impl RunControlSession {
         }
     }
 
+    /// Reconstruct the durable environment configuration for a fresh seed.
+    ///
+    /// Episode schedulers replace a completed run without rebuilding policy
+    /// configuration from defaults.  The current session remains the source
+    /// of truth for every setting that must survive that replacement; only
+    /// the run seed changes.
+    pub(crate) fn fresh_run_config(&self, seed: u64) -> RunControlConfig {
+        RunControlConfig {
+            seed,
+            ascension_level: self.run_state.ascension_level,
+            final_act: self.run_state.is_final_act_available,
+            player_class: self.run_state.player_class,
+            reward_automation: self.reward_automation.clone(),
+            auto_capture: self.auto_capture.clone(),
+            search_max_nodes: self.search_max_nodes,
+            search_wall_ms: self.search_wall_ms,
+            search_max_hp_loss: self.search_max_hp_loss,
+            search_potion_policy: self.search_potion_policy,
+            search_max_potions_used: self.search_max_potions_used,
+        }
+    }
+
     pub fn set_auto_capture_config(&mut self, auto_capture: AutoCombatCaptureConfig) {
         self.auto_capture = auto_capture;
         self.auto_capture_last_combat_sequence = None;

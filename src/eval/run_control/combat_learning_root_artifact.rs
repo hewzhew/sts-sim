@@ -65,6 +65,36 @@ impl CombatLearningRootBatchArtifactV1 {
         &self.roots
     }
 
+    /// Retain an explicit non-empty ordered subset without exposing checkpoint
+    /// fields. Caller order becomes the canonical order of the new artifact.
+    pub fn select_root_slots(
+        &self,
+        root_slots: impl IntoIterator<Item = usize>,
+    ) -> Result<Self, String> {
+        self.validate(None)?;
+        let root_slots = root_slots.into_iter().collect::<Vec<_>>();
+        if root_slots.is_empty() {
+            return Err("combat learning root selection requires at least one slot".to_owned());
+        }
+        let mut distinct = BTreeSet::new();
+        let roots = root_slots
+            .into_iter()
+            .map(|slot| {
+                if !distinct.insert(slot) {
+                    return Err(format!(
+                        "combat learning root selection repeats slot {slot}"
+                    ));
+                }
+                self.roots.get(slot).cloned().ok_or_else(|| {
+                    format!("combat learning root selection slot {slot} is out of range")
+                })
+            })
+            .collect::<Result<Vec<_>, String>>()?;
+        let artifact = Self { roots };
+        artifact.validate(None)?;
+        Ok(artifact)
+    }
+
     pub fn encode(&self, max_bytes: usize) -> Result<Vec<u8>, String> {
         self.validate(None)?;
         encode_artifact(self, max_bytes)
@@ -125,18 +155,31 @@ impl CombatLearningRootBatchArtifactV1 {
         payloads: impl IntoIterator<Item = &'a [u8]>,
         max_input_bytes: usize,
     ) -> Result<Self, String> {
+        Self::merge_canonical_payloads(
+            payloads.into_iter().map(|payload| (payload, 1)),
+            max_input_bytes,
+        )
+    }
+
+    /// Merge canonical payloads with an explicit expected width for each input
+    /// without exposing checkpoint fields.
+    pub fn merge_canonical_payloads<'a>(
+        payloads: impl IntoIterator<Item = (&'a [u8], usize)>,
+        max_input_bytes: usize,
+    ) -> Result<Self, String> {
         let mut total_input_bytes = 0usize;
         let mut checkpoints = Vec::new();
-        for (index, payload) in payloads.into_iter().enumerate() {
+        for (index, (payload, expected_root_count)) in payloads.into_iter().enumerate() {
             total_input_bytes = total_input_bytes
                 .checked_add(payload.len())
                 .ok_or_else(|| "combat learning root merge input byte count overflow".to_owned())?;
             if total_input_bytes > max_input_bytes {
                 return Err("combat learning root merge exceeds its input byte limit".to_owned());
             }
-            let artifact = Self::decode(payload, 1, max_input_bytes).map_err(|error| {
-                format!("combat learning root merge input {index} is invalid: {error}")
-            })?;
+            let artifact =
+                Self::decode(payload, expected_root_count, max_input_bytes).map_err(|error| {
+                    format!("combat learning root merge input {index} is invalid: {error}")
+                })?;
             checkpoints.extend(artifact.into_checkpoints()?);
         }
         if checkpoints.is_empty() {
@@ -308,6 +351,34 @@ mod tests {
     }
 
     #[test]
+    fn artifact_selects_distinct_root_slots_in_caller_order() {
+        let artifact = CombatLearningRootBatchArtifactV1::from_checkpoints([
+            combat_root_checkpoint(20),
+            combat_root_checkpoint(21),
+            combat_root_checkpoint(22),
+        ])
+        .expect("capture roots");
+
+        let selected = artifact
+            .select_root_slots([2, 0])
+            .expect("select exact roots");
+
+        assert_eq!(selected.roots().len(), 2);
+        assert_eq!(selected.roots()[0].context(), artifact.roots()[2].context());
+        assert_eq!(
+            selected.roots()[0].identity(),
+            artifact.roots()[2].identity()
+        );
+        assert_eq!(
+            selected.roots()[1].identity(),
+            artifact.roots()[0].identity()
+        );
+        assert!(artifact.select_root_slots([]).is_err());
+        assert!(artifact.select_root_slots([1, 1]).is_err());
+        assert!(artifact.select_root_slots([3]).is_err());
+    }
+
+    #[test]
     fn artifact_merges_distinct_canonical_single_root_payloads() {
         let first =
             CombatLearningRootBatchArtifactV1::from_checkpoints([combat_root_checkpoint(20)])
@@ -348,6 +419,40 @@ mod tests {
             )
             .is_err()
         );
+    }
+
+    #[test]
+    fn artifact_merges_canonical_batches_only_at_declared_widths() {
+        let first = CombatLearningRootBatchArtifactV1::from_checkpoints([
+            combat_root_checkpoint(20),
+            combat_root_checkpoint(21),
+        ])
+        .expect("capture first batch")
+        .encode(1024 * 1024)
+        .expect("encode first batch");
+        let second =
+            CombatLearningRootBatchArtifactV1::from_checkpoints([combat_root_checkpoint(22)])
+                .expect("capture second batch")
+                .encode(1024 * 1024)
+                .expect("encode second batch");
+
+        let merged = CombatLearningRootBatchArtifactV1::merge_canonical_payloads(
+            [(first.as_slice(), 2), (second.as_slice(), 1)],
+            1024 * 1024,
+        )
+        .expect("merge declared canonical batches");
+
+        assert_eq!(merged.roots().len(), 3);
+        assert!(CombatLearningRootBatchArtifactV1::merge_canonical_payloads(
+            [(first.as_slice(), 1), (second.as_slice(), 1)],
+            1024 * 1024,
+        )
+        .is_err());
+        assert!(CombatLearningRootBatchArtifactV1::merge_canonical_payloads(
+            [(first.as_slice(), 2), (first.as_slice(), 2)],
+            1024 * 1024,
+        )
+        .is_err());
     }
 
     fn combat_root_checkpoint(monster_hp: i32) -> RunControlSessionCheckpointV1 {

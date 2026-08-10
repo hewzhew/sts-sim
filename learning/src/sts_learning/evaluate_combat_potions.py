@@ -18,7 +18,7 @@ from .torch_combat_session_config import CombatSessionBridge
 from .torch_session_config import CategoricalSessionBridge
 
 
-COMBAT_POTION_SWEEP_SCHEMA = "sts-learning-combat-potion-sweep-v2"
+COMBAT_POTION_SWEEP_SCHEMA = "sts-learning-combat-potion-sweep-v3"
 
 
 @dataclass(frozen=True)

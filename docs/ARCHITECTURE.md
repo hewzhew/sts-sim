@@ -219,6 +219,29 @@ replicate indices, ordinary sparse semantic action rows, and typed combat
 terminal columns; it does not receive or reconstruct the root session. Deriving
 or running the group does not advance the source run slot. This bridge surface
 owns neither reward shaping nor durable combat-group checkpoint publication.
+Every current combat decision row has a companion frozen progress record in the
+same replicate order: turn, player HP/max HP, current living-enemy HP, encounter
+max-HP total, and exact potion UUID/domain identity columns. The caller binds it to the chosen
+ordinal before mutation and retains model-call sequence order, allowing one
+replicate's chronological decisions to be reconstructed without parsing JSON.
+Selection-prefix rows intentionally repeat the unchanged simulator progress.
+These records are trajectory facts, not model inputs, rewards, or teacher labels.
+The caller may join consecutive records into action-aligned transitions. It
+keeps terminal win, future player-HP change, and future enemy-HP change as
+independent undiscounted return-to-go axes; potion identities remain typed
+before/after facts with no scalar exchange rate. The terminal bridge currently
+does not expose potion UUIDs, so a terminal after-state must mark that UUID
+column unavailable instead of guessing continuity from equal potion ids.
+These axis-specific returns must not be sent through one critic or normalized
+across unlike axes and unlike decision times. The combat value-PPO consumer
+owns three fixed-semantic value columns in enum order: win, player-HP change,
+and enemy-HP change. It selects only the column matching the group's typed
+win-first axis, uses that decision's return-to-go as the critic target, and
+forms the actor advantage from the same row and column. It never changes one
+scalar head's meaning after observing the terminal group and never centers
+residuals across unrelated decision times. Policy-only REINFORCE/PPO retain
+the terminal same-root comparison objective and do not pretend to consume a
+critic rollout.
 The source batch can enumerate all current undecoded combat roots and their
 frozen contexts in one call without creating replicate groups or cloning their
 sessions; only caller-selected roots pay group construction cost.
@@ -256,6 +279,18 @@ export only a bounded terminal-nearest window as an ordinary opaque root batch.
 The producer must observe a new typed win before writing anything. Search
 actions remain replay evidence outside the artifact; they neither cross the
 Python bridge nor become policy labels.
+Two or more canonical root artifacts may be composed without exposing their
+checkpoints. Every input binds an explicit expected root count (single-root is
+the compatibility default); Rust revalidates canonical encoding, every exact
+root identity and context, the total byte/root bounds, and cross-input identity
+uniqueness before publishing one fresh batch. This is the maintained boundary
+for a small joint frontier/rehearsal curriculum. It does not rank roots, infer
+teacher labels, or authorize unbounded corpus concatenation.
+Before composition, one canonical batch may be reduced to an explicit ordered
+set of source slots. Selection revalidates the source width and every retained
+identity, rejects repeated or out-of-range slots, and never exposes checkpoint
+fields. This provides typed curriculum balancing; slot order and membership
+remain caller-declared experiment configuration rather than a learned rank.
 
 Production runs hand combat boundaries to this bridge only through the
 versioned `CombatLearningRootBatchArtifactV1` envelope owned by run control.
@@ -468,17 +503,19 @@ gradient-norm clipping, entropy regularization, and a target-KL early stop are
 part of the typed trainer provenance; approximate KL, clip fraction, entropy,
 and actual optimizer-step count remain training diagnostics rather than held-out
 evidence.
-The distinct PPO-clip-value rule adds a scalar value head over the shared
-decision-row state. It predicts the selected axis's raw terminal return while
-the actor advantage remains centered independently inside each exact-root
-group, so win and terminal-HP axes never acquire a cross-root exchange rate.
-The value head starts at zero; the first actor advantage therefore matches the
-existing leave-one-out direction. Actor advantages and behavior probabilities
-are frozen when the delivery is collected and remain unchanged across PPO
-epochs, while the critic receives weighted mean-squared return loss. An
-actor-only warm start initializes every shared policy key and leaves only the
-new value-head keys at their defined zero-output initialization. Actor-only and
-actor-critic scorers retain distinct exact model and trainer identities.
+The distinct PPO-clip-value rule adds three fixed-semantic value columns over
+the shared decision-row state. The win-first group selector chooses win return,
+future player-HP change for an eligible all-win group, or future enemy-HP
+change for an explicitly eligible exact all-loss group. Each actor advantage
+is its own decision-local return-to-go minus the matching pre-update value;
+there is no whole-group residual centering across turns. The heads start at
+zero, and actor advantages plus behavior probabilities are frozen when the
+delivery is collected and remain unchanged across PPO epochs, while only the
+selected critic column receives weighted mean-squared return loss. An
+actor-only warm start initializes every shared policy key and leaves the three
+value columns at their defined zero-output initialization. Actor-only, scalar
+actor-critic, and multi-value combat scorers retain distinct exact model and
+trainer identities.
 The training root source also binds one explicit model-facing potion lane.
 `Never` is the primary resource-preserving lane for roots that can already win
 without potion actions; it makes terminal-HP refinement honest by removing
@@ -562,11 +599,27 @@ controller is bound. This is warm-start initialization under the destination
 root set, potion lane, objective, and fresh optimizer—not optimizer resume or
 continuation of the source training step. The new journal retains the source
 manifest/checkpoint identity while the new behavior manifest starts its own
-training provenance.
+training provenance. Warm-start admission verifies the source publication and
+still requires exact model configuration, semantic schema, behavior rule, and
+checkpoint tensor compatibility. Historical model-definition, optimizer, or
+trainer-provenance digests may differ when the tensor contract remains
+compatible; every such difference is recorded. Any admitted provenance
+difference forces an actor-only copy, leaving the destination combat critic at
+its defined initialization instead of importing an obsolete value function.
 
-The maintained `train-combat` command repeats a caller-bounded number of those
-shared-model updates over one fixed opaque artifact. It may start randomly or
-from that verified parameter copy. It journals only compact
+For a nonzero update count, the maintained `train-combat` command first runs
+that census from the exact destination initialization, potion lane, replicate
+count, and per-root behavior seeds. The already validated root source is reused;
+the artifact is not decoded again for census or training. The command then
+constructs its shared trainer only over the plan's survival and resource
+frontiers. Default all-loss roots stay in the journaled rescue backlog instead
+of receiving an invented damage target, while solved roots remain outside the
+optimizer. A zero-update baseline skips census and publishes initialization
+only.
+
+The command repeats a caller-bounded number of shared-model updates over that
+fixed selected frontier. It may start randomly or from that verified parameter
+copy. It journals only compact
 configuration, generation, per-root outcome/signal, and completion facts, then
 explicitly publishes the final active behavior. Its experiment directory must
 be fresh; the journal and published scorer do not contain optimizer state and
@@ -582,6 +635,141 @@ collector. Semantic decision batches are discarded after each choice; only
 compact per-replicate terminal facts survive. Its fresh single-file result is
 competence evidence for that exact manifest and evaluation sample, not an
 improvement claim without a comparable frozen baseline.
+Its result also carries a bridge-read audit of every opaque evaluation root:
+seed, act/floor, ascension, encounter and ordered monsters, entry HP, canonical
+card/upgrade counts, relics, and potion slots. Artifact filenames and prior
+training journals are never used to reconstruct that identity.
+
+### Learning Control Plane
+
+The simulator, bridge, collector, learner, evaluator, and behavior-release
+decision are separate roles. A command may compose those roles synchronously
+in one process, but its filesystem layout or call order must not become their
+implicit protocol. The same role boundaries must remain valid if collection
+and learning later move to separate processes.
+
+There are two deliberately different behavior transitions:
+
+1. A learner may rotate its immutable active-generation behavior after a real
+   optimizer step so that the next collection remains on-policy. This is a
+   training-local transition and makes no competence claim.
+2. A durably published behavior is a candidate until a separate behavior gate
+   compares it with one accepted baseline. Only the gate's complete evidence
+   may make it eligible for an explicit accepted-registry update.
+
+The active-generation controller and the accepted-behavior registry therefore
+must not share mutation authority. Until the accepted registry and gate result
+types exist, every current training publication remains a candidate regardless
+of its generation number or held-out summary; callers must not reconstruct an
+"accepted latest" behavior by scanning directory names.
+
+The first control-plane migration uses four immutable, versioned contracts:
+
+- `CombatExperimentManifestV1` binds the source behavior, exact root cohorts,
+  explicit source slots and curriculum roles, model-facing potion lane,
+  objective/value axis, model and optimizer provenance, replicate count,
+  update bounds, and one explicit policy RNG seed vector indexed by exact root
+  and replicate. A numeric seed base is CLI shorthand only and is expanded
+  before identity is computed.
+- `BehaviorCandidateManifestV1` binds one published behavior manifest to the
+  experiment manifest and its source accepted behavior. It contains no
+  `accepted`, `better`, rank, or mutable current-model field.
+- `BehaviorGateContractV1` binds one candidate/baseline pair to ordered paired
+  exact-root cohorts, an independent held-out cohort, frozen mechanism
+  sentinels, fixed-decision audit cases, completion bounds, and predeclared
+  per-root and aggregate regression floors.
+- `BehaviorGateResultV1` records `pass`, `fail`, or `incomparable`, the exact
+  completed evidence identities, every triggered floor, and the candidate and
+  baseline identities. Missing, censored, mismatched, or partially completed
+  evidence is incomparable rather than a pass or failure.
+
+An accepted-behavior registry is append-only and scoped by an explicit
+competence domain such as character, ascension, semantic schema, and decision
+scope. Its update consumes one passing gate result and one exact candidate
+identity. The first implementation is read-only with respect to this registry:
+it may produce a typed recommendation, but a human must explicitly perform the
+accepted update. Training, evaluation, directory discovery, and checkpoint
+publication cannot update it as a side effect.
+
+Exact roots are referenced through small typed cohorts rather than copied into
+a replay service. A cohort binds an opaque artifact digest, expected root
+count, ordered slots, partition, and one declared role: training frontier,
+rehearsal, independent held-out, or mechanism sentinel. Selection and canonical
+merge remain the only artifact composition authorities. Cohorts never attach a
+teacher action, scalar difficulty, or inferred continuation value. A training
+consumer declares an exact per-root consumption budget; repeating a convenient
+root or silently dropping an all-loss root cannot change the experiment
+identity.
+
+The behavior gate runs cheap, local evidence before broader evaluation:
+
+1. Structural admission verifies every manifest, schema, scorer, checkpoint,
+   root, seed-vector, and provenance identity. A schema or model migration also
+   requires an explicit behavior-equivalence or declared-reset audit; matching
+   tensor shapes alone is insufficient.
+2. A fixed-decision policy audit scores the complete typed legal-candidate set
+   without mutation. For both baseline and candidate it records raw logits,
+   normalized probabilities, stable candidate ids, rank, top-two margin, and
+   exact model/root/schema identity, then reports candidate-minus-baseline
+   probability and rank deltas. Display strings are optional diagnostics and
+   never candidate identity.
+3. Mechanism sentinels run paired evaluations on small frozen exact-root suites
+   for previously demonstrated capabilities such as Nob Enrage discipline,
+   Sentries focus fire, or Lagavulin setup. Their gates are outcome/resource
+   regression floors, not hand-authored action labels. The policy audit may
+   explain a regression but does not silently become a teacher.
+4. Paired comparison runs baseline and candidate from the same exact root and
+   the same explicitly enumerated policy RNG seed for each replicate. It emits
+   per-root differences before aggregates. A repeated root is a repeated
+   measurement, not an independent encounter sample.
+5. Only after the local floors survive does the gate run the declared
+   independent cohort. Training roots and recovery suffixes cannot substitute
+   for this cohort even when their aggregate is favorable.
+
+Early stopping is contractual: stop immediately when a required regression
+floor is irrecoverably exceeded, an identity mismatch appears, or the remaining
+budget cannot make the comparison complete. Small root suites do not justify a
+generic p-value or an SPRT claim. Statistical promotion rules may be added only
+after the sampling unit, root clustering, minimum effect, error budgets, and
+stopping rule are all explicit in the gate schema.
+
+This control plane intentionally borrows role separation from Acme, typed
+collection and consumption contracts from Reverb, candidate-to-accepted gating
+from KataGo, paired and early-stopped comparisons from Stockfish Fishtest,
+behavior-preserving migration discipline from OpenAI Five, and frozen coverage
+sentinels from AlphaStar. It does not import Reverb's service, a distributed
+worker fleet, a full self-play or opponent league, or large-scale training
+infrastructure. The maintained single-machine path stays compact and
+synchronous until measured throughput—not orchestration discomfort—requires a
+different deployment.
+
+The first implemented diagnostic slice is the fixed-decision policy audit. It
+may replay one explicit typed-ordinal prefix, requires that prefix to finish at
+an undecoded combat boundary, captures the resulting exact root identity, and
+scores the one unchanged candidate surface under two frozen publications. The
+audit emits content-identified typed candidates, raw logits, normalized
+probabilities, ranks, and deltas; it chooses no audited action and consumes no
+policy RNG. Paired exact-root comparison is also implemented for both greedy
+and sampled policies: it runs both publications through the ordinary held-out
+evaluator, verifies every root and replicate identity, preserves each resource
+axis, emits per-root differences before aggregates, and makes no `better` or
+acceptance claim. Sampled evaluation expands the declared seed base into one
+explicit root-major root-by-replicate seed matrix. The scorer still receives
+one ragged batch per model round, while each ready row samples only from the RNG
+stream owned by its replicate slot; a terminated or divergent replicate cannot
+advance another replicate's stream.
+
+The remaining first control-plane slice is the read-only behavior gate and its
+experiment/candidate manifests. It must not begin as a hand-authored JSON
+ceremony around historical directories. Current combat training still owns one
+sampled RNG stream per root, shared by that root's replicates, so it cannot
+honestly emit the root-by-replicate seed matrix required by
+`CombatExperimentManifestV1`. Training RNG ownership must migrate first; then
+publication should emit the experiment and candidate manifests automatically,
+and the gate may consume those identities together with fixed audits and paired
+comparisons. Older candidates remain diagnostic evidence and must not be
+retroactively guessed into a conforming manifest from filenames or partial
+journals.
 
 The same verified scorer may be evaluated over complete held-out runs because
 combat training and run execution share the one bridge-owned semantic schema.

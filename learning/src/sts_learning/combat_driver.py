@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Protocol
 
@@ -32,6 +32,8 @@ class CombatGroupEnvironment(Protocol):
     ready: bool
 
     def decision_batch(self, *, semantic: bool) -> Mapping[str, object]: ...
+
+    def decision_progress(self) -> Sequence[object]: ...
 
     def choose(self, ordinals: list[int]) -> None: ...
 
@@ -80,8 +82,9 @@ class CombatGroupDriver:
                     raise CombatExperienceError("combat group exceeded model-round limit")
                 decision_batch = self.env.decision_batch(semantic=True)
                 prepared = collector.prepare(decision_batch)
+                progress = self.env.decision_progress()
                 choice = self.policy.choose(decision_batch)
-                bound = collector.bind_choice(prepared, choice)
+                bound = collector.bind_choice(prepared, choice, progress)
                 self.env.choose(list(bound.selected_ordinals))
                 collector.commit(bound)
                 model_rounds += 1

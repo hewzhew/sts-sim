@@ -40,6 +40,8 @@ _MODEL_DEFINITION_VERSION = 1
 _MODEL_CONFIG_VERSION = 1
 _ACTOR_CRITIC_MODEL_DEFINITION_VERSION = 2
 _ACTOR_CRITIC_MODEL_CONFIG_VERSION = 2
+_MULTI_ACTOR_CRITIC_MODEL_DEFINITION_VERSION = 3
+_MULTI_ACTOR_CRITIC_MODEL_CONFIG_VERSION = 3
 _SEMANTIC_SCHEMA_ENCODING_VERSION = 1
 _OPTIMIZER_CONFIG_VERSION = 1
 _TRAINER_IMPLEMENTATION_VERSION = 4
@@ -50,14 +52,14 @@ _COMBAT_WIN_TRAINER_IMPLEMENTATION_VERSION = 3
 _COMBAT_WIN_OBJECTIVE_VERSION = 3
 _COMBAT_PPO_TRAINER_IMPLEMENTATION_VERSION = 4
 _COMBAT_PPO_OBJECTIVE_VERSION = 4
-_COMBAT_VALUE_PPO_TRAINER_IMPLEMENTATION_VERSION = 1
-_COMBAT_VALUE_PPO_OBJECTIVE_VERSION = 1
+_COMBAT_VALUE_PPO_TRAINER_IMPLEMENTATION_VERSION = 2
+_COMBAT_VALUE_PPO_OBJECTIVE_VERSION = 2
 _COMBAT_ALL_LOSS_WIN_TRAINER_IMPLEMENTATION_VERSION = 4
 _COMBAT_ALL_LOSS_WIN_OBJECTIVE_VERSION = 4
 _COMBAT_ALL_LOSS_PPO_TRAINER_IMPLEMENTATION_VERSION = 5
 _COMBAT_ALL_LOSS_PPO_OBJECTIVE_VERSION = 5
-_COMBAT_ALL_LOSS_VALUE_PPO_TRAINER_IMPLEMENTATION_VERSION = 2
-_COMBAT_ALL_LOSS_VALUE_PPO_OBJECTIVE_VERSION = 2
+_COMBAT_ALL_LOSS_VALUE_PPO_TRAINER_IMPLEMENTATION_VERSION = 3
+_COMBAT_ALL_LOSS_VALUE_PPO_OBJECTIVE_VERSION = 3
 _MAX_SCHEMA_BYTES = 1 << 20
 _MAX_SCHEMA_DEPTH = 16
 _MAX_SCHEMA_ITEMS = 100_000
@@ -216,7 +218,9 @@ def _categorical_manifest_template(
 
     runtime = _runtime_version_bytes()
     model_definition_version = (
-        _ACTOR_CRITIC_MODEL_DEFINITION_VERSION
+        _MULTI_ACTOR_CRITIC_MODEL_DEFINITION_VERSION
+        if scorer_config.value_head and scorer_config.value_head_width > 1
+        else _ACTOR_CRITIC_MODEL_DEFINITION_VERSION
         if scorer_config.value_head
         else _MODEL_DEFINITION_VERSION
     )
@@ -229,7 +233,16 @@ def _categorical_manifest_template(
     encoded_device = device_type.encode("utf-8")
     if len(encoded_device) > 255:
         raise TorchProvenanceError("device_type is too large")
-    if scorer_config.value_head:
+    if scorer_config.value_head and scorer_config.value_head_width > 1:
+        encoded_model_config = struct.pack(
+            ">IQQQB",
+            _MULTI_ACTOR_CRITIC_MODEL_CONFIG_VERSION,
+            scorer_config.hidden_dim,
+            scorer_config.relation_layers,
+            scorer_config.value_head_width,
+            len(encoded_device),
+        )
+    elif scorer_config.value_head:
         encoded_model_config = struct.pack(
             ">IQQBB",
             _ACTOR_CRITIC_MODEL_CONFIG_VERSION,
@@ -387,7 +400,8 @@ def combat_win_trainer_implementation(
             )
             objective_version = _COMBAT_ALL_LOSS_VALUE_PPO_OBJECTIVE_VERSION
             objective_marker = (
-                b"STS-SAME-ROOT-WIN-FIRST-PPO-CLIP-VALUE-TYPED-FALLBACK-AXES\x00"
+                b"STS-SAME-ROOT-WIN-FIRST-PPO-CLIP-VALUE-DECISION-LOCAL-"
+                b"MULTI-HEAD-TYPED-FALLBACK-AXES\x00"
             )
             objective_encoding = struct.pack(
                 ">IQBBBQdddBdBd",
@@ -407,7 +421,10 @@ def combat_win_trainer_implementation(
             )
         else:
             implementation_version = _COMBAT_VALUE_PPO_TRAINER_IMPLEMENTATION_VERSION
-            objective_marker = b"STS-SAME-ROOT-WIN-FIRST-PPO-CLIP-VALUE\x00"
+            objective_marker = (
+                b"STS-SAME-ROOT-WIN-FIRST-PPO-CLIP-VALUE-DECISION-LOCAL-"
+                b"MULTI-HEAD\x00"
+            )
             objective_encoding = struct.pack(
                 ">IQBBQdddBdBd",
                 _COMBAT_VALUE_PPO_OBJECTIVE_VERSION,

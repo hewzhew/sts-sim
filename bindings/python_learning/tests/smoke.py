@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import time
 
 import numpy as np
@@ -9,6 +10,7 @@ from sts_learning_bridge import (
     COMBAT_TERMINAL_UNRESOLVED,
     COMBAT_TERMINAL_WIN,
     CombatLearningBatchEnv,
+    CombatLearningDecisionProgressV1,
     CombatLearningRecoveryRoot,
     CombatLearningRootContextV1,
     LearningBatchEnv,
@@ -219,6 +221,10 @@ def _assert_same_root_combat_group(env: LearningBatchEnv, slot: int) -> None:
     assert slot in available
     preview_context = available[slot]
     assert isinstance(preview_context, CombatLearningRootContextV1)
+    preview_audit = env.combat_root_audit(slot)
+    assert preview_audit.ascension_level == preview_context.ascension_level
+    assert len(preview_audit.master_deck_cards) == preview_context.master_deck_card_count
+    assert len(preview_audit.relic_ids) == preview_context.relic_count
     payload = env.combat_root_artifact_bytes([slot], max_bytes=16 * 1024 * 1024)
     merged_payload = LearningBatchEnv.merge_combat_root_artifact_bytes(
         [payload],
@@ -233,6 +239,10 @@ def _assert_same_root_combat_group(env: LearningBatchEnv, slot: int) -> None:
     assert _combat_root_context_values(preview_context) == _combat_root_context_values(
         restored_context
     )
+    restored_audit = restored.combat_root_audit(0)
+    assert restored_audit.ascension_level == preview_audit.ascension_level
+    assert restored_audit.master_deck_cards == preview_audit.master_deck_cards
+    assert restored_audit.relic_ids == preview_audit.relic_ids
     group = env.combat_group(slot, 2)
     assert isinstance(group, CombatLearningBatchEnv)
     assert group.potion_slots is None
@@ -272,8 +282,47 @@ def _assert_same_root_combat_group(env: LearningBatchEnv, slot: int) -> None:
     while group.terminal_count < group.replicate_count:
         while not group.ready:
             batch = group.decision_batch(dense_mask=True, semantic=True)
+            progress = group.decision_progress()
+            assert len(progress) == len(batch["slot_indices"])
+            for replicate, row in zip(
+                batch["slot_indices"], progress, strict=True
+            ):
+                assert isinstance(row, CombatLearningDecisionProgressV1)
+                assert row.replicate_index == int(replicate)
+                assert row.turn >= 0
+                assert 0 <= row.player_hp <= row.player_max_hp
+                assert 0 <= row.enemy_hp <= row.enemy_max_hp
+                assert len(row.potion_uuids) == len(row.potion_ids)
+                assert all(
+                    (potion_uuid is None) == (potion_id is None)
+                    for potion_uuid, potion_id in zip(
+                        row.potion_uuids, row.potion_ids, strict=True
+                    )
+                )
             assert np.all(batch["phase"] != PHASE_STRATEGIC_ROOT)
             _assert_semantic(batch)
+            for replicate, count in zip(
+                batch["slot_indices"], batch["candidate_counts"], strict=True
+            ):
+                encoded_audit = group.combat_decision_audit_json(int(replicate))
+                assert encoded_audit == group.combat_decision_audit_json(
+                    int(replicate)
+                )
+                assert encoded_audit is not None
+                decision_audit = json.loads(encoded_audit)
+                assert (
+                    decision_audit["schema"]
+                    == "sts-learning-combat-decision-audit-v1"
+                )
+                assert decision_audit["phase"] in (
+                    "combat_root",
+                    "combat_selection",
+                )
+                assert len(decision_audit["candidates"]) == int(count)
+                assert all(
+                    isinstance(candidate.get("kind"), str)
+                    for candidate in decision_audit["candidates"]
+                )
             ordinals = [
                 _pick(random_states, int(replicate), int(count))
                 for replicate, count in zip(
@@ -370,6 +419,13 @@ def _assert_same_root_combat_group(env: LearningBatchEnv, slot: int) -> None:
 def _assert_explicit_checkpoint_replays_exactly() -> None:
     env = LearningBatchEnv([37], 20)
     root = env.decision_batch(dense_mask=True, semantic=True)
+    audit = json.loads(env.strategic_decision_audit_json(0))
+    assert audit["schema"] == "sts-learning-strategic-decision-audit-v1"
+    assert isinstance(audit["decision_site"], str)
+    assert len(audit["candidates"]) == int(root["candidate_counts"][0])
+    assert all(
+        isinstance(candidate.get("kind"), str) for candidate in audit["candidates"]
+    )
     root_checkpoint = env.checkpoint_slot(0)
     try:
         env.restore_slot(1, root_checkpoint)
@@ -378,6 +434,7 @@ def _assert_explicit_checkpoint_replays_exactly() -> None:
     else:
         raise AssertionError("out-of-range checkpoint restore was accepted")
     _choose_first_until_ready(env)
+    assert env.strategic_decision_audit_json(0) is None
     ready_checkpoint = env.checkpoint_slot(0)
 
     first_step = env.step()
@@ -784,6 +841,9 @@ def main() -> None:
     reset_checkpoints = env.reset_slots_checkpointed([0, 1], [99, 100])
     assert len(reset_checkpoints) == 2
     assert env.terminal_count == env.slot_count - 2
+    reset_contexts = dict(env.public_run_contexts())
+    assert reset_contexts[0].ascension_level == 20
+    assert reset_contexts[1].ascension_level == 20
     reset_batch = env.decision_batch(dense_mask=True, semantic=True)
     assert np.array_equal(reset_batch["slot_indices"], np.array([0, 1], dtype=np.uint64))
     try:

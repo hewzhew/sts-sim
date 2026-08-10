@@ -58,6 +58,14 @@ enum PotionObservationKind {
 }
 
 impl CombatOutcomeTracker {
+    pub fn rebase_active(&mut self, combat: &CombatState) {
+        self.active = Some(CombatOutcomeDraft {
+            start_hp: combat.entities.player.current_hp,
+            potions_used: 0,
+            potions_discarded: 0,
+        });
+    }
+
     pub fn ensure_started(&mut self, combat: Option<&CombatState>) -> bool {
         if self.active.is_some() {
             return false;

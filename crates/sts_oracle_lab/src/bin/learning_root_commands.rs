@@ -5,8 +5,14 @@ use std::path::{Path, PathBuf};
 
 use clap::Subcommand;
 use serde::Serialize;
-use sts_oracle_runtime::eval::combat_case::load_combat_case;
-use sts_oracle_runtime::eval::combat_case_context::restore_combat_case_production_session_v1;
+use sts_oracle_runtime::eval::combat_case::{
+    load_combat_case, save_combat_case, CombatCase, CombatCaseGap, CombatCaseRngSummary,
+    CombatCaseRunSummary, CombatCaseSource,
+};
+use sts_oracle_runtime::eval::combat_case_context::{
+    capture_combat_case_production_context_v1, restore_combat_case_production_session_v1,
+    CombatCaseReplayIdentityV1,
+};
 use sts_oracle_runtime::eval::run_control::{
     BoundedRunDriveStopV1, BoundedRunDriver, BoundedRunStepControlV1,
     CombatLearningRootBatchArtifactV1, CombatLearningRootContextV1, CombatLearningRootIdentityV1,
@@ -27,7 +33,11 @@ const COLLECTION_SUMMARY_SCHEMA_VERSION: u32 = 2;
 const RECOVERY_SUMMARY_SCHEMA_NAME: &str = "CombatLearningRecoveryRootSummary";
 const RECOVERY_SUMMARY_SCHEMA_VERSION: u32 = 1;
 const MERGE_SUMMARY_SCHEMA_NAME: &str = "CombatLearningRootMergeSummary";
-const MERGE_SUMMARY_SCHEMA_VERSION: u32 = 1;
+const MERGE_SUMMARY_SCHEMA_VERSION: u32 = 2;
+const CASE_SUMMARY_SCHEMA_NAME: &str = "CombatLearningRootCaseSummary";
+const CASE_SUMMARY_SCHEMA_VERSION: u32 = 1;
+const SELECT_SUMMARY_SCHEMA_NAME: &str = "CombatLearningRootSelectSummary";
+const SELECT_SUMMARY_SCHEMA_VERSION: u32 = 1;
 const MAX_COLLECTED_ROOTS: usize = 64;
 const MAX_RECOVERY_ACTIONS: usize = 4_096;
 const MAX_RECOVERY_ACTION_BYTES: u64 = 16 * 1024 * 1024;
@@ -74,10 +84,41 @@ pub(super) enum LearningRootCommand {
         #[arg(long, default_value_t = 16 * 1024 * 1024)]
         max_bytes: usize,
     },
-    /// Merge canonical single-root artifacts into one bounded opaque batch.
+    /// Export one exact root from an opaque learning batch as a replayable
+    /// production combat case for bounded search and witness construction.
+    Case {
+        #[arg(long)]
+        artifact: PathBuf,
+        #[arg(long)]
+        output: PathBuf,
+        #[arg(long)]
+        expected_roots: usize,
+        #[arg(long, default_value_t = 0)]
+        root_slot: usize,
+        #[arg(long, default_value_t = 16 * 1024 * 1024)]
+        max_bytes: usize,
+    },
+    /// Select an explicit ordered root subset from one canonical opaque batch.
+    Select {
+        #[arg(long)]
+        artifact: PathBuf,
+        #[arg(long)]
+        output: PathBuf,
+        #[arg(long)]
+        expected_roots: usize,
+        #[arg(long, required = true)]
+        root_slot: Vec<usize>,
+        #[arg(long, default_value_t = 16 * 1024 * 1024)]
+        max_bytes: usize,
+    },
+    /// Merge canonical root artifacts into one bounded opaque batch.
     Merge {
         #[arg(long, required = true)]
         input: Vec<PathBuf>,
+        /// Expected root count for each input, in input order. When omitted,
+        /// every input must be a canonical single-root artifact.
+        #[arg(long)]
+        input_roots: Vec<usize>,
         #[arg(long)]
         output: PathBuf,
         #[arg(long, default_value_t = 16 * 1024 * 1024)]
@@ -148,10 +189,38 @@ struct CombatLearningRecoveredRootV1 {
 
 #[derive(Debug, Serialize)]
 #[serde(deny_unknown_fields)]
-pub(super) struct CombatLearningRootMergeSummaryV1 {
+pub(super) struct CombatLearningRootMergeSummaryV2 {
     schema_name: &'static str,
     schema_version: u32,
     inputs: Vec<PathBuf>,
+    input_root_counts: Vec<usize>,
+    output: PathBuf,
+    payload_bytes: usize,
+    roots: Vec<CombatLearningRootExportedRootV1>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct CombatLearningRootCaseSummaryV1 {
+    schema_name: &'static str,
+    schema_version: u32,
+    artifact: PathBuf,
+    expected_roots: usize,
+    root_slot: usize,
+    output: PathBuf,
+    identity: CombatLearningRootIdentityV1,
+    context: CombatLearningRootContextV1,
+    replay_identity: CombatCaseReplayIdentityV1,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct CombatLearningRootSelectSummaryV1 {
+    schema_name: &'static str,
+    schema_version: u32,
+    artifact: PathBuf,
+    expected_roots: usize,
+    root_slots: Vec<usize>,
     output: PathBuf,
     payload_bytes: usize,
     roots: Vec<CombatLearningRootExportedRootV1>,
@@ -191,53 +260,241 @@ pub(super) fn run(command: LearningRootCommand) -> Result<(), String> {
             max_roots,
             max_bytes,
         } => super::print_json(&recover(&case, &actions, &output, max_roots, max_bytes)?),
+        LearningRootCommand::Case {
+            artifact,
+            output,
+            expected_roots,
+            root_slot,
+            max_bytes,
+        } => super::print_json(&export_case(
+            &artifact,
+            &output,
+            expected_roots,
+            root_slot,
+            max_bytes,
+        )?),
+        LearningRootCommand::Select {
+            artifact,
+            output,
+            expected_roots,
+            root_slot,
+            max_bytes,
+        } => super::print_json(&select(
+            &artifact,
+            &output,
+            expected_roots,
+            &root_slot,
+            max_bytes,
+        )?),
         LearningRootCommand::Merge {
             input,
+            input_roots,
             output,
             max_bytes,
-        } => super::print_json(&merge(&input, &output, max_bytes)?),
+        } => super::print_json(&merge(&input, &input_roots, &output, max_bytes)?),
     }
+}
+
+pub(super) fn export_case(
+    artifact_path: &Path,
+    output: &Path,
+    expected_roots: usize,
+    root_slot: usize,
+    max_bytes: usize,
+) -> Result<CombatLearningRootCaseSummaryV1, String> {
+    require_fresh_output(output)?;
+    if expected_roots == 0 || expected_roots > MAX_COLLECTED_ROOTS {
+        return Err(format!(
+            "learning root case expected_roots must be in 1..={MAX_COLLECTED_ROOTS}"
+        ));
+    }
+    if root_slot >= expected_roots {
+        return Err("learning root case root_slot is outside expected_roots".to_owned());
+    }
+    let payload = read_bounded_payload(artifact_path, max_bytes)?;
+    let artifact = CombatLearningRootBatchArtifactV1::decode(&payload, expected_roots, max_bytes)?;
+    let captured = artifact
+        .roots()
+        .get(root_slot)
+        .ok_or_else(|| "learning root case root_slot is absent after validation".to_owned())?;
+    let identity = captured.identity().clone();
+    let context = *captured.context();
+    let checkpoint = artifact
+        .into_checkpoints()?
+        .into_iter()
+        .nth(root_slot)
+        .ok_or_else(|| {
+            "learning root case checkpoint slot is absent after validation".to_owned()
+        })?;
+    let session = checkpoint.into_session()?;
+    let mut case = combat_case_from_session(&session)?;
+    case.production_context = Some(capture_combat_case_production_context_v1(&case, &session)?);
+    let replay_identity = case.replay_identity_v1()?;
+    if replay_identity.root_exact_state_hash != identity.exact_combat_state_hash {
+        return Err("learning root case changed the exact combat state".to_owned());
+    }
+    save_combat_case(output, &case)?;
+    Ok(CombatLearningRootCaseSummaryV1 {
+        schema_name: CASE_SUMMARY_SCHEMA_NAME,
+        schema_version: CASE_SUMMARY_SCHEMA_VERSION,
+        artifact: artifact_path.to_path_buf(),
+        expected_roots,
+        root_slot,
+        output: output.to_path_buf(),
+        identity,
+        context,
+        replay_identity,
+    })
+}
+
+pub(super) fn select(
+    artifact_path: &Path,
+    output: &Path,
+    expected_roots: usize,
+    root_slots: &[usize],
+    max_bytes: usize,
+) -> Result<CombatLearningRootSelectSummaryV1, String> {
+    require_fresh_output(output)?;
+    if expected_roots == 0 || expected_roots > MAX_COLLECTED_ROOTS {
+        return Err(format!(
+            "learning root select expected_roots must be in 1..={MAX_COLLECTED_ROOTS}"
+        ));
+    }
+    if root_slots.is_empty() || root_slots.len() > MAX_COLLECTED_ROOTS {
+        return Err(format!(
+            "learning root select root_slot count must be in 1..={MAX_COLLECTED_ROOTS}"
+        ));
+    }
+    let payload = read_bounded_payload(artifact_path, max_bytes)?;
+    let artifact = CombatLearningRootBatchArtifactV1::decode(&payload, expected_roots, max_bytes)?;
+    let selected = artifact.select_root_slots(root_slots.iter().copied())?;
+    let roots = selected
+        .roots()
+        .iter()
+        .map(|root| CombatLearningRootExportedRootV1 {
+            identity: root.identity().clone(),
+            context: *root.context(),
+        })
+        .collect();
+    let payload = selected.encode(max_bytes)?;
+    write_new_payload(output, &payload)?;
+    Ok(CombatLearningRootSelectSummaryV1 {
+        schema_name: SELECT_SUMMARY_SCHEMA_NAME,
+        schema_version: SELECT_SUMMARY_SCHEMA_VERSION,
+        artifact: artifact_path.to_path_buf(),
+        expected_roots,
+        root_slots: root_slots.to_vec(),
+        output: output.to_path_buf(),
+        payload_bytes: payload.len(),
+        roots,
+    })
+}
+
+fn read_bounded_payload(path: &Path, max_bytes: usize) -> Result<Vec<u8>, String> {
+    let file =
+        File::open(path).map_err(|error| format!("failed to open {}: {error}", path.display()))?;
+    let byte_count = usize::try_from(
+        file.metadata()
+            .map_err(|error| format!("failed to inspect {}: {error}", path.display()))?
+            .len(),
+    )
+    .map_err(|_| format!("learning root input is too large: {}", path.display()))?;
+    if byte_count == 0 || byte_count > max_bytes {
+        return Err(format!(
+            "learning root input violates its byte bound: {}",
+            path.display()
+        ));
+    }
+    let mut payload = Vec::with_capacity(byte_count);
+    file.take(max_bytes as u64 + 1)
+        .read_to_end(&mut payload)
+        .map_err(|error| format!("failed to read {}: {error}", path.display()))?;
+    if payload.len() != byte_count {
+        return Err(format!(
+            "learning root input changed while reading: {}",
+            path.display()
+        ));
+    }
+    Ok(payload)
+}
+
+fn combat_case_from_session(session: &RunControlSession) -> Result<CombatCase, String> {
+    Ok(CombatCase::new(
+        CombatCaseSource {
+            seed: session.run_state.seed,
+            ascension: session.run_state.ascension_level,
+            generation: 0,
+            branch_id: 0,
+            parent_id: None,
+        },
+        CombatCaseGap {
+            boundary: "learning_root_case_export".to_owned(),
+            reason: "exact opaque learning root selected for bounded diagnosis".to_owned(),
+            search_nodes: 0,
+            search_ms: 0,
+            rescue_search_nodes: 0,
+            rescue_search_ms: 0,
+        },
+        CombatCaseRunSummary {
+            act: session.run_state.act_num,
+            floor: session.run_state.floor_num,
+            hp: session.run_state.current_hp,
+            max_hp: session.run_state.max_hp,
+            gold: session.run_state.gold,
+            deck_size: session.run_state.master_deck.len(),
+            relic_count: session.run_state.relics.len(),
+            potion_slots: session.run_state.potions.len(),
+        },
+        Vec::new(),
+        None,
+        Vec::new(),
+        CombatCaseRngSummary::from_pool(&session.run_state.rng_pool),
+        session.current_active_combat_position()?,
+    ))
 }
 
 pub(super) fn merge(
     input_paths: &[PathBuf],
+    input_root_counts: &[usize],
     output: &Path,
     max_bytes: usize,
-) -> Result<CombatLearningRootMergeSummaryV1, String> {
+) -> Result<CombatLearningRootMergeSummaryV2, String> {
     if input_paths.len() < 2 {
         return Err("learning root merge requires at least two inputs".to_owned());
+    }
+    let input_root_counts = if input_root_counts.is_empty() {
+        vec![1; input_paths.len()]
+    } else {
+        if input_root_counts.len() != input_paths.len() {
+            return Err(
+                "learning root merge requires one input_roots count for every input".to_owned(),
+            );
+        }
+        input_root_counts.to_vec()
+    };
+    let total_root_count = input_root_counts.iter().try_fold(0usize, |total, &count| {
+        if count == 0 {
+            return Err("learning root merge input_roots counts must be positive".to_owned());
+        }
+        total
+            .checked_add(count)
+            .ok_or_else(|| "learning root merge root count overflow".to_owned())
+    })?;
+    if total_root_count > MAX_COLLECTED_ROOTS {
+        return Err(format!(
+            "learning root merge accepts at most {MAX_COLLECTED_ROOTS} total roots"
+        ));
     }
     require_fresh_output(output)?;
     let mut payloads = Vec::with_capacity(input_paths.len());
     for path in input_paths {
-        let file = File::open(path)
-            .map_err(|error| format!("failed to open {}: {error}", path.display()))?;
-        let byte_count = usize::try_from(
-            file.metadata()
-                .map_err(|error| format!("failed to inspect {}: {error}", path.display()))?
-                .len(),
-        )
-        .map_err(|_| format!("learning root input is too large: {}", path.display()))?;
-        if byte_count == 0 || byte_count > max_bytes {
-            return Err(format!(
-                "learning root input violates its byte bound: {}",
-                path.display()
-            ));
-        }
-        let mut payload = Vec::with_capacity(byte_count);
-        file.take(max_bytes as u64 + 1)
-            .read_to_end(&mut payload)
-            .map_err(|error| format!("failed to read {}: {error}", path.display()))?;
-        if payload.len() != byte_count {
-            return Err(format!(
-                "learning root input changed while reading: {}",
-                path.display()
-            ));
-        }
-        payloads.push(payload);
+        payloads.push(read_bounded_payload(path, max_bytes)?);
     }
-    let artifact = CombatLearningRootBatchArtifactV1::merge_single_root_payloads(
-        payloads.iter().map(Vec::as_slice),
+    let artifact = CombatLearningRootBatchArtifactV1::merge_canonical_payloads(
+        payloads
+            .iter()
+            .map(Vec::as_slice)
+            .zip(input_root_counts.iter().copied()),
         max_bytes,
     )?;
     let roots = artifact
@@ -250,10 +507,11 @@ pub(super) fn merge(
         .collect();
     let payload = artifact.encode(max_bytes)?;
     write_new_payload(output, &payload)?;
-    Ok(CombatLearningRootMergeSummaryV1 {
+    Ok(CombatLearningRootMergeSummaryV2 {
         schema_name: MERGE_SUMMARY_SCHEMA_NAME,
         schema_version: MERGE_SUMMARY_SCHEMA_VERSION,
         inputs: input_paths.to_vec(),
+        input_root_counts,
         output: output.to_path_buf(),
         payload_bytes: payload.len(),
         roots,
@@ -676,6 +934,7 @@ mod tests {
 
         let summary = merge(
             &[first_path.clone(), second_path.clone()],
+            &[],
             &output_path,
             1024 * 1024,
         )
@@ -690,11 +949,57 @@ mod tests {
         assert_eq!(artifact.roots().len(), 2);
         assert!(merge(
             &[first_path.clone(), first_path],
+            &[],
             &duplicate_output,
             1024 * 1024,
         )
         .is_err());
         assert!(!duplicate_output.exists());
+        fs::remove_dir_all(&root).expect("remove test root");
+    }
+
+    #[test]
+    fn canonical_root_batches_merge_only_at_explicit_widths() {
+        let root = unique_temp_dir("merge-batches");
+        fs::create_dir(&root).expect("create test root");
+        let first_path = root.join("first.bin");
+        let second_path = root.join("second.bin");
+        let output_path = root.join("merged.bin");
+        let rejected_path = root.join("rejected.bin");
+        for (path, monster_hps) in [(&first_path, vec![20, 21]), (&second_path, vec![22])] {
+            let payload = CombatLearningRootBatchArtifactV1::from_checkpoints(
+                monster_hps.into_iter().map(|monster_hp| {
+                    RunControlSessionCheckpointV1::from_session(&combat_root_session(monster_hp))
+                }),
+            )
+            .expect("capture root batch")
+            .encode(1024 * 1024)
+            .expect("encode root batch");
+            fs::write(path, payload).expect("write root batch");
+        }
+
+        let summary = merge(
+            &[first_path.clone(), second_path.clone()],
+            &[2, 1],
+            &output_path,
+            1024 * 1024,
+        )
+        .expect("merge declared root batches");
+        let payload = fs::read(&output_path).expect("read merged roots");
+        let artifact = CombatLearningRootBatchArtifactV1::decode(&payload, 3, 1024 * 1024)
+            .expect("decode merged roots");
+
+        assert_eq!(summary.schema_version, MERGE_SUMMARY_SCHEMA_VERSION);
+        assert_eq!(summary.input_root_counts, vec![2, 1]);
+        assert_eq!(artifact.roots().len(), 3);
+        assert!(merge(
+            &[first_path, second_path],
+            &[1, 1],
+            &rejected_path,
+            1024 * 1024,
+        )
+        .is_err());
+        assert!(!rejected_path.exists());
         fs::remove_dir_all(&root).expect("remove test root");
     }
 
@@ -729,6 +1034,93 @@ mod tests {
             assert_eq!(artifact_root.context(), &summary_root.context);
         }
 
+        fs::remove_dir_all(&root).expect("remove test root");
+    }
+
+    #[test]
+    fn opaque_batch_exports_one_exact_production_combat_case() {
+        let root = unique_temp_dir("case");
+        fs::create_dir(&root).expect("create test root");
+        let artifact_path = root.join("roots.bin");
+        let case_path = root.join("selected.case.json");
+        let rejected_path = root.join("rejected.case.json");
+        let first = combat_root_session(20);
+        let second = combat_root_session(21);
+        let expected_state = second
+            .current_active_combat_position()
+            .expect("second exact position");
+        let expected_hash = sts_oracle_runtime::ai::combat_state_key::combat_exact_state_hash_v2(
+            &expected_state.engine,
+            &expected_state.combat,
+        );
+        let payload = CombatLearningRootBatchArtifactV1::from_checkpoints([
+            RunControlSessionCheckpointV1::from_session(&first),
+            RunControlSessionCheckpointV1::from_session(&second),
+        ])
+        .expect("capture batch")
+        .encode(1024 * 1024)
+        .expect("encode batch");
+        fs::write(&artifact_path, payload).expect("write batch");
+
+        let summary = export_case(&artifact_path, &case_path, 2, 1, 1024 * 1024)
+            .expect("export selected root case");
+        let case = load_combat_case(&case_path).expect("load selected case");
+        let restored = restore_combat_case_production_session_v1(&case)
+            .expect("restore exact production session");
+        let restored_position = restored
+            .current_active_combat_position()
+            .expect("restored exact position");
+
+        assert_eq!(summary.schema_name, CASE_SUMMARY_SCHEMA_NAME);
+        assert_eq!(summary.root_slot, 1);
+        assert_eq!(summary.identity.exact_combat_state_hash, expected_hash);
+        assert_eq!(
+            case.replay_identity_v1().expect("replay identity").capability,
+            sts_oracle_runtime::eval::combat_case_context::CombatCaseReplayCapabilityV1::ExactProductionState
+        );
+        assert_eq!(restored_position, expected_state);
+        assert!(export_case(&artifact_path, &rejected_path, 1, 0, 1024 * 1024).is_err());
+        assert!(!rejected_path.exists());
+        fs::remove_dir_all(&root).expect("remove test root");
+    }
+
+    #[test]
+    fn opaque_batch_selects_ordered_exact_roots_atomically() {
+        let root = unique_temp_dir("select");
+        fs::create_dir(&root).expect("create test root");
+        let artifact_path = root.join("roots.bin");
+        let selected_path = root.join("selected.bin");
+        let duplicate_path = root.join("duplicate.bin");
+        let sessions = [
+            combat_root_session(20),
+            combat_root_session(21),
+            combat_root_session(22),
+        ];
+        let payload = CombatLearningRootBatchArtifactV1::from_checkpoints(
+            sessions
+                .iter()
+                .map(RunControlSessionCheckpointV1::from_session),
+        )
+        .expect("capture batch")
+        .encode(1024 * 1024)
+        .expect("encode batch");
+        fs::write(&artifact_path, payload).expect("write batch");
+
+        let summary =
+            select(&artifact_path, &selected_path, 3, &[2, 0], 1024 * 1024).expect("select roots");
+        let payload = fs::read(&selected_path).expect("read selected roots");
+        let selected = CombatLearningRootBatchArtifactV1::decode(&payload, 2, 1024 * 1024)
+            .expect("decode selected roots");
+        let source_payload = fs::read(&artifact_path).expect("read source roots");
+        let source = CombatLearningRootBatchArtifactV1::decode(&source_payload, 3, 1024 * 1024)
+            .expect("decode source roots");
+
+        assert_eq!(summary.schema_name, SELECT_SUMMARY_SCHEMA_NAME);
+        assert_eq!(summary.root_slots, vec![2, 0]);
+        assert_eq!(selected.roots()[0].identity(), source.roots()[2].identity());
+        assert_eq!(selected.roots()[1].identity(), source.roots()[0].identity());
+        assert!(select(&artifact_path, &duplicate_path, 3, &[1, 1], 1024 * 1024,).is_err());
+        assert!(!duplicate_path.exists());
         fs::remove_dir_all(&root).expect("remove test root");
     }
 

@@ -8,6 +8,7 @@ from pathlib import Path
 
 from .combat_objective import CombatWinObjectiveConfig
 from .combat_potion_lane import CombatPotionLane
+from .combat_rollout import COMBAT_ROLLOUT_VALUE_HEAD_WIDTH
 from .torch_combat_recovery_session import CombatWinRecoverySessionFactory
 from .torch_combat_session_config import (
     CombatSessionBridge,
@@ -59,6 +60,11 @@ def run_combat_recovery_training(
         CombatWinSessionProfile(),
         scorer=RaggedScorerConfig(
             value_head=config.policy_update.uses_value_baseline,
+            value_head_width=(
+                COMBAT_ROLLOUT_VALUE_HEAD_WIDTH
+                if config.policy_update.uses_value_baseline
+                else 1
+            ),
         ),
         objective=CombatWinObjectiveConfig(
             groups_per_update=config.root_count,
@@ -94,10 +100,14 @@ def run_combat_recovery_training(
         model_seed=config.model_seed,
         source_behavior_seed=source_behavior_seed,
         recovery_behavior_seeds=recovery_behavior_seeds,
-        initial_scorer=(
-            None if warm_start is None else warm_start.policies[0].frozen_scorer
+        initial_scorer=(None if warm_start is None else warm_start.scorer),
+        initial_scorer_actor_only=(
+            warm_start_training_kind == "run"
+            or (
+                warm_start is not None
+                and bool(warm_start.provenance_mismatches)
+            )
         ),
-        initial_scorer_actor_only=warm_start_training_kind == "run",
     )
 
     discovery = session.discovery
@@ -116,6 +126,9 @@ def run_combat_recovery_training(
             None if warm_start is None else warm_start.training_step
         ),
         warm_start_training_kind=warm_start_training_kind,
+        warm_start_provenance_mismatches=(
+            () if warm_start is None else warm_start.provenance_mismatches
+        ),
         configuration_extra={
             "curriculum": "verified-win-terminal-nearest",
             "teacher_selection": "highest-final-hp-then-lowest-index",

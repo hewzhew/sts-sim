@@ -29,6 +29,12 @@ from .combat_objective import (
     CombatWinObjectiveConfig,
 )
 from .combat_outcomes import CombatTerminalKind
+from .combat_rollout import (
+    COMBAT_ROLLOUT_VALUE_HEAD_WIDTH,
+    CombatRolloutAxis,
+    CombatRolloutError,
+    build_complete_combat_rollout,
+)
 from .experience import DecisionExperienceBatch, ExperienceError
 from .manifests import BehaviorManifestRegistry, BehaviorRuleBinding
 from .policy import BehaviorManifestId, SelectionProbability
@@ -49,6 +55,7 @@ from .terminal_returns import (
 from .torch_policy import (
     RaggedActorCriticOutput,
     RaggedCandidateLogits,
+    RaggedMultiActorCriticOutput,
     RaggedCategoricalPolicyConfig,
 )
 
@@ -486,15 +493,14 @@ def on_policy_combat_win_loss(
     selected_ordinals: list[int] = []
     targets: list[float] = []
     weights: list[float] = []
-    group_indices: list[int] = []
-    leave_one_out_scales: list[float] = []
+    value_head_indices: list[int] = []
     total_replicates = 0
     total_decisions = 0
     win_signal_groups = 0
     terminal_hp_signal_groups = 0
     enemy_hp_progress_signal_groups = 0
 
-    for group_index, group in enumerate(normalized):
+    for group in normalized:
         if not isinstance(group, CompletedCombatGroupExperience):
             raise TorchOutcomeError("combat win objective accepts only complete groups")
         root = (group.root_id, group.exact_combat_state_hash)
@@ -515,6 +521,7 @@ def on_policy_combat_win_loss(
         advantages = group.grouped_advantages()
         if advantages.win_has_signal:
             selected_advantages = advantages.win
+            selected_rollout_axis = CombatRolloutAxis.WIN
             selected_returns = tuple(
                 1.0 if outcome.won else 0.0
                 for outcome in group.outcomes.outcomes
@@ -526,6 +533,7 @@ def on_policy_combat_win_loss(
             and advantages.terminal_hp_has_signal
         ):
             selected_advantages = advantages.terminal_hp
+            selected_rollout_axis = CombatRolloutAxis.PLAYER_HP_CHANGE
             start_hp = group.outcomes.outcomes[0].start_hp
             selected_returns = tuple(
                 outcome.final_hp / start_hp
@@ -542,6 +550,7 @@ def on_policy_combat_win_loss(
             and advantages.enemy_hp_progress_has_signal
         ):
             selected_advantages = advantages.enemy_hp_progress
+            selected_rollout_axis = CombatRolloutAxis.ENEMY_HP_CHANGE
             selected_returns = tuple(
                 1.0 - outcome.enemy_final_hp / outcome.enemy_start_hp
                 for outcome in group.outcomes.outcomes
@@ -549,6 +558,7 @@ def on_policy_combat_win_loss(
             enemy_hp_progress_signal_groups += 1
         else:
             selected_advantages = advantages.win
+            selected_rollout_axis = CombatRolloutAxis.WIN
             selected_returns = tuple(
                 1.0 if outcome.won else 0.0
                 for outcome in group.outcomes.outcomes
@@ -565,13 +575,25 @@ def on_policy_combat_win_loss(
                 "combat win objective requires a retained decision for every replicate"
             )
 
-        for batch in group.batches:
+        rollout_batches = None
+        if objective_config.policy_update.uses_value_baseline:
+            try:
+                rollout_batches = build_complete_combat_rollout(group).batches
+            except CombatRolloutError as error:
+                raise TorchOutcomeError(str(error)) from error
+
+        for batch_index, batch in enumerate(group.batches):
             payloads.append(batch.payload)
             selected_ordinals.extend(batch.selected_ordinals)
             group_probabilities.extend(batch.selection_probabilities)
-            for replicate_index in batch.replicate_indices:
+            rollout_batch = (
+                None if rollout_batches is None else rollout_batches[batch_index]
+            )
+            for row_index, replicate_index in enumerate(batch.replicate_indices):
                 targets.append(
-                    selected_returns[replicate_index]
+                    rollout_batch.rows[row_index].return_to_go(
+                        selected_rollout_axis
+                    )
                     if objective_config.policy_update.uses_value_baseline
                     else selected_advantages[replicate_index]
                 )
@@ -583,10 +605,7 @@ def on_policy_combat_win_loss(
                         * decision_counts[replicate_index]
                     )
                 )
-                group_indices.append(group_index)
-                leave_one_out_scales.append(
-                    replicate_count / (replicate_count - 1)
-                )
+                value_head_indices.append(int(selected_rollout_axis))
         behavior_ids.append(group.behavior_manifest_id)
         probability_evidence.append(tuple(group_probabilities))
         total_replicates += replicate_count
@@ -603,8 +622,7 @@ def on_policy_combat_win_loss(
         ),
         targets=targets,
         weights=weights,
-        group_indices=group_indices,
-        leave_one_out_scales=leave_one_out_scales,
+        value_head_indices=value_head_indices,
         concat_limits=concat_limits,
         policy_config=policy_config,
         update_config=objective_config.policy_update,
@@ -1172,8 +1190,7 @@ def _combat_policy_weighted_loss(
     selection_probabilities: Sequence[SelectionProbability],
     targets: Sequence[float],
     weights: Sequence[float],
-    group_indices: Sequence[int],
-    leave_one_out_scales: Sequence[float],
+    value_head_indices: Sequence[int],
     concat_limits: SemanticBatchConcatLimits,
     policy_config: RaggedCategoricalPolicyConfig,
     update_config: CombatPolicyUpdateConfig,
@@ -1209,8 +1226,7 @@ def _combat_policy_weighted_loss(
         len(selection_probabilities)
         == len(targets)
         == len(weights)
-        == len(group_indices)
-        == len(leave_one_out_scales)
+        == len(value_head_indices)
         == decision_count
         > 0
     ):
@@ -1235,18 +1251,40 @@ def _combat_policy_weighted_loss(
     combined = concatenate_semantic_decision_batches(payloads, concat_limits)
     predicted_values: Tensor | None = None
     if update_config.uses_value_baseline:
-        actor_critic = getattr(scorer, "actor_critic", None)
-        if not callable(actor_critic):
+        actor_critic_multi = getattr(scorer, "actor_critic_multi", None)
+        if not callable(actor_critic_multi):
             raise TorchOutcomeError(
-                "combat value PPO requires an actor-critic scorer"
+                "combat value PPO requires a multi actor-critic scorer"
             )
-        actor_critic_output = actor_critic(combined)
-        if not isinstance(actor_critic_output, RaggedActorCriticOutput):
+        actor_critic_output = actor_critic_multi(combined)
+        if not isinstance(actor_critic_output, RaggedMultiActorCriticOutput):
             raise TorchOutcomeError(
-                "actor-critic scorer returned an invalid output"
+                "multi actor-critic scorer returned an invalid output"
             )
         logits = actor_critic_output.logits
-        predicted_values = actor_critic_output.row_values
+        all_predicted_values = actor_critic_output.row_values
+        if all_predicted_values.shape[1] != COMBAT_ROLLOUT_VALUE_HEAD_WIDTH:
+            raise TorchOutcomeError(
+                "combat value PPO requires exactly three fixed value columns"
+            )
+        value_head_tensor = torch.as_tensor(
+            value_head_indices,
+            dtype=torch.long,
+            device=all_predicted_values.device,
+        )
+        if bool(
+            torch.any(value_head_tensor < 0)
+            or torch.any(value_head_tensor >= all_predicted_values.shape[1])
+        ):
+            raise TorchOutcomeError("combat value head index is outside the scorer")
+        predicted_values = all_predicted_values[
+            torch.arange(
+                decision_count,
+                dtype=torch.long,
+                device=all_predicted_values.device,
+            ),
+            value_head_tensor,
+        ]
     else:
         logits = scorer(combined)
     if not isinstance(logits, RaggedCandidateLogits):
@@ -1292,33 +1330,7 @@ def _combat_policy_weighted_loss(
                 "combat critic values are misaligned"
             )
         if fixed_actor_advantages is None:
-            group_tensor = torch.as_tensor(
-                group_indices,
-                dtype=torch.long,
-                device=target_tensor.device,
-            )
-            scale_tensor = torch.as_tensor(
-                leave_one_out_scales,
-                dtype=target_tensor.dtype,
-                device=target_tensor.device,
-            )
-            group_count = max(group_indices) + 1
-            residual = target_tensor - predicted_values.detach()
-            group_weight = torch.zeros(
-                group_count,
-                dtype=target_tensor.dtype,
-                device=target_tensor.device,
-            )
-            group_residual = torch.zeros_like(group_weight)
-            group_weight.index_add_(0, group_tensor, weight_tensor)
-            group_residual.index_add_(0, group_tensor, residual * weight_tensor)
-            if bool(torch.any(group_weight <= 0.0)):
-                raise TorchOutcomeError(
-                    "combat critic group weight must be positive"
-                )
-            actor_advantages = (
-                residual - (group_residual / group_weight)[group_tensor]
-            ) * scale_tensor
+            actor_advantages = target_tensor - predicted_values.detach()
         else:
             if (
                 len(fixed_actor_advantages) != decision_count

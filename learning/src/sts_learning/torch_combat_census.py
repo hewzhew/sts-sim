@@ -13,6 +13,12 @@ from .combat_curriculum import (
     CombatRootCompetenceEvidence,
     build_combat_frontier_plan,
 )
+from .combat_potion_lane import (
+    CombatPotionLane,
+    CombatPotionLaneError,
+    CombatPotionLaneRootSource,
+    normalize_combat_potion_slots,
+)
 from .combat_root_artifacts import (
     load_combat_root_source,
     normalize_combat_root_artifact,
@@ -29,6 +35,7 @@ from .torch_combat_session_config import (
     CombatWinSessionConfig,
     TorchCombatSessionError,
 )
+from .torch_policy import RaggedCandidateScorer
 
 
 @dataclass(frozen=True)
@@ -102,6 +109,8 @@ class CombatWinSignalCensusRunner:
         config: CombatWinSessionConfig,
         *,
         max_roots: int,
+        potion_lane: CombatPotionLane = CombatPotionLane.ALL,
+        potion_slots: Sequence[int] = (),
     ) -> None:
         if not isinstance(bridge, CombatSessionBridge):
             raise TorchCombatSessionError("combat signal census bridge must be typed")
@@ -119,6 +128,19 @@ class CombatWinSignalCensusRunner:
         self.bridge = bridge
         self.config = config
         self.max_roots = bound
+        if not isinstance(potion_lane, CombatPotionLane):
+            raise TorchCombatSessionError(
+                "combat signal census potion_lane must be typed"
+            )
+        try:
+            normalized_potion_slots = normalize_combat_potion_slots(
+                potion_lane,
+                potion_slots,
+            )
+        except CombatPotionLaneError as error:
+            raise TorchCombatSessionError(str(error)) from error
+        self.potion_lane = potion_lane
+        self.potion_slots = normalized_potion_slots
 
     def run_from_artifact_file(
         self,
@@ -126,6 +148,8 @@ class CombatWinSignalCensusRunner:
         *,
         model_seed: int,
         behavior_seeds: Sequence[int],
+        initial_scorer: RaggedCandidateScorer | None = None,
+        initial_scorer_actor_only: bool = False,
     ) -> CombatWinSignalCensusResult:
         payload = read_combat_root_artifact(
             artifact,
@@ -135,6 +159,8 @@ class CombatWinSignalCensusRunner:
             payload,
             model_seed=model_seed,
             behavior_seeds=behavior_seeds,
+            initial_scorer=initial_scorer,
+            initial_scorer_actor_only=initial_scorer_actor_only,
         )
 
     def run_from_artifact_bytes(
@@ -143,6 +169,8 @@ class CombatWinSignalCensusRunner:
         *,
         model_seed: int,
         behavior_seeds: Sequence[int],
+        initial_scorer: RaggedCandidateScorer | None = None,
+        initial_scorer_actor_only: bool = False,
     ) -> CombatWinSignalCensusResult:
         artifact = normalize_combat_root_artifact(
             payload,
@@ -168,6 +196,54 @@ class CombatWinSignalCensusRunner:
             expected_roots=self.config.expected_roots,
             max_bytes=self.config.limits.max_artifact_bytes,
         )
+        return self.run_from_combat_root_source(
+            source,
+            artifact_byte_count=len(artifact),
+            model_seed=model_seed,
+            behavior_seeds=seeds,
+            initial_scorer=initial_scorer,
+            initial_scorer_actor_only=initial_scorer_actor_only,
+        )
+
+    def run_from_combat_root_source(
+        self,
+        source: object,
+        *,
+        artifact_byte_count: int,
+        model_seed: int,
+        behavior_seeds: Sequence[int],
+        initial_scorer: RaggedCandidateScorer | None = None,
+        initial_scorer_actor_only: bool = False,
+    ) -> CombatWinSignalCensusResult:
+        """Census one already-validated source without decoding it again."""
+
+        if not callable(getattr(source, "combat_group", None)):
+            raise TorchCombatSessionError(
+                "combat signal census requires a combat-root source"
+            )
+        artifact_bytes = _positive_integer(
+            artifact_byte_count,
+            "artifact_byte_count",
+        )
+        model_seed = _torch_seed(model_seed, "model_seed")
+        seeds = tuple(behavior_seeds)
+        if len(seeds) != self.config.expected_roots:
+            raise TorchCombatSessionError(
+                "combat signal census requires one behavior seed per root"
+            )
+        seeds = tuple(
+            _torch_seed(seed, f"behavior_seeds[{index}]")
+            for index, seed in enumerate(seeds)
+        )
+        if len(set(seeds)) != len(seeds):
+            raise TorchCombatSessionError(
+                "combat signal census requires distinct behavior seeds"
+            )
+        source = CombatPotionLaneRootSource(
+            source,
+            self.potion_lane,
+            self.potion_slots,
+        )
 
         generations = []
         with tempfile.TemporaryDirectory(prefix="sts-combat-signal-census-") as root:
@@ -184,9 +260,11 @@ class CombatWinSignalCensusRunner:
                 )
                 session = factory._new_from_combat_root_source(
                     source,
-                    artifact_byte_count=len(artifact),
+                    artifact_byte_count=artifact_bytes,
                     model_seed=model_seed,
                     behavior_seed=behavior_seed,
+                    initial_scorer=initial_scorer,
+                    initial_scorer_actor_only=initial_scorer_actor_only,
                 )
                 generations.append(session.advance())
 

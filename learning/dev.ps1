@@ -1,13 +1,17 @@
 param(
     [Parameter(Mandatory = $true, Position = 0)]
-    [ValidateSet("configure", "doctor", "test", "verify", "check-bridge", "refresh-bridge", "train-combat", "train-combat-recovery", "evaluate-combat", "evaluate-combat-potions", "evaluate-run", "evaluate-run-potions", "collect-run-roots", "train-run")]
+    [ValidateSet("configure", "doctor", "test", "verify", "check-bridge", "refresh-bridge", "train-combat", "train-combat-recovery", "evaluate-combat", "evaluate-combat-potions", "audit-combat-policy", "compare-combat-paired", "evaluate-run", "evaluate-run-potions", "collect-run-roots", "train-run")]
     [string]$Command,
     [string]$Python,
     [string]$MaturinPython = "python",
     [string]$Artifact,
     [string]$Behavior,
+    [string]$BaselineBehavior,
+    [string]$CandidateBehavior,
     [string]$Output,
     [int]$Roots,
+    [int]$RootSlot = 0,
+    [int[]]$DecisionOrdinals = @(),
     [int]$Replicates = 8,
     [int]$TraceReplicatesPerRoot = 0,
     [ValidateSet("sampled", "greedy")]
@@ -38,6 +42,8 @@ param(
     [long]$EvaluationBehaviorSeed = 100000,
     [int]$WallMs = 60000,
     [int]$MinFloor = 2,
+    [ValidateRange(0, 100)]
+    [int]$MinHpPercent = 0,
     [int]$MinUsablePotions = 1,
     [int]$MaxArtifactBytes = 16777216,
     [string]$RequiredPotionId,
@@ -72,6 +78,9 @@ $testRoot = Join-Path $learningRoot "tests"
 $hostRoot = Join-Path $repositoryRoot ".oracle-lab\hosts"
 $pythonFile = Join-Path $hostRoot "learning-python.txt"
 $reportRoot = Join-Path $repositoryRoot ".oracle-lab\reports"
+$pytestRoot = Join-Path $repositoryRoot ".oracle-lab\pytest"
+$pytestCacheRoot = Join-Path $pytestRoot "cache\learning"
+$pytestRunRoot = Join-Path $pytestRoot "runs"
 $potionArguments = @("--potion-lane", $PotionLane)
 foreach ($potionSlot in $PotionSlots) {
     $potionArguments += @("--potion-slot", $potionSlot)
@@ -158,9 +167,11 @@ if source_root not in package_root.parents:
 
 required_bridge_methods = (
     "from_combat_root_artifact_bytes",
-        "merge_combat_root_artifact_bytes",
-        "supported_potion_ids",
-        "combat_root_artifact_bytes",
+    "merge_combat_root_artifact_bytes",
+    "supported_potion_ids",
+    "combat_root_artifact_bytes",
+    "combat_root_audit",
+    "strategic_decision_audit_json",
     "combat_group",
     "combat_root_contexts",
 )
@@ -176,7 +187,11 @@ if missing:
         + "; run: .\\learning\\dev.ps1 refresh-bridge [-Python <python.exe>]"
     )
 
-required_combat_group_methods = ("capture_recovery_root",)
+required_combat_group_methods = (
+    "capture_recovery_root",
+    "combat_decision_audit_json",
+    "decision_progress",
+)
 missing = [
     name
     for name in required_combat_group_methods
@@ -209,12 +224,20 @@ function Invoke-LearningTests([string]$PythonPath) {
     New-Item -ItemType Directory -Path $reportRoot -Force | Out-Null
     $runId = (Get-Date -Format "yyyyMMdd-HHmmss") + "-" + [Guid]::NewGuid().ToString("N").Substring(0, 8)
     $log = Join-Path $reportRoot "learning-tests-$runId.log"
+    $baseTemp = Join-Path $pytestRunRoot $runId
+    New-Item -ItemType Directory -Path $pytestCacheRoot -Force | Out-Null
+    New-Item -ItemType Directory -Path $baseTemp -Force | Out-Null
     $savedErrorPreference = $ErrorActionPreference
     Push-Location $repositoryRoot
     try {
         $ErrorActionPreference = "Continue"
         Invoke-WithLearningPath {
-            & $PythonPath -m pytest $testRoot -q *> $log
+            & $PythonPath -m pytest `
+                $testRoot `
+                -q `
+                --basetemp $baseTemp `
+                -o "cache_dir=$pytestCacheRoot" `
+                *> $log
             $script:testExit = $LASTEXITCODE
         }
     }
@@ -333,6 +356,73 @@ switch ($Command) {
             }
         }
     }
+    "audit-combat-policy" {
+        $pythonPath = Get-ConfiguredPython
+        $auditPotionLane = if ($PSBoundParameters.ContainsKey("PotionLane")) {
+            $PotionLane
+        }
+        else {
+            "never"
+        }
+        $auditPotionArguments = @("--potion-lane", $auditPotionLane)
+        foreach ($potionSlot in $PotionSlots) {
+            $auditPotionArguments += @("--potion-slot", $potionSlot)
+        }
+        $auditDecisionArguments = @()
+        foreach ($decisionOrdinal in $DecisionOrdinals) {
+            $auditDecisionArguments += @("--decision-ordinal", $decisionOrdinal)
+        }
+        Invoke-Doctor $pythonPath
+        Invoke-WithLearningPath {
+            & $pythonPath -m sts_learning.fixed_combat_policy_audit `
+                --artifact $Artifact `
+                --baseline-behavior $BaselineBehavior `
+                --candidate-behavior $CandidateBehavior `
+                --output $Output `
+                --roots $Roots `
+                --root-slot $RootSlot `
+                @auditDecisionArguments `
+                @auditPotionArguments
+            if ($LASTEXITCODE -ne 0) {
+                throw "fixed combat policy audit command failed"
+            }
+        }
+    }
+    "compare-combat-paired" {
+        $pythonPath = Get-ConfiguredPython
+        $pairDecisionRule = if ($PSBoundParameters.ContainsKey("CombatDecisionRule")) {
+            $CombatDecisionRule
+        }
+        else {
+            "greedy"
+        }
+        $pairPotionLane = if ($PSBoundParameters.ContainsKey("PotionLane")) {
+            $PotionLane
+        }
+        else {
+            "never"
+        }
+        $pairPotionArguments = @("--potion-lane", $pairPotionLane)
+        foreach ($potionSlot in $PotionSlots) {
+            $pairPotionArguments += @("--potion-slot", $potionSlot)
+        }
+        Invoke-Doctor $pythonPath
+        Invoke-WithLearningPath {
+            & $pythonPath -m sts_learning.paired_combat_compare `
+                --artifact $Artifact `
+                --baseline-behavior $BaselineBehavior `
+                --candidate-behavior $CandidateBehavior `
+                --output $Output `
+                --roots $Roots `
+                --replicates $Replicates `
+                --behavior-seed-base $BehaviorSeedBase `
+                --decision-rule $pairDecisionRule `
+                @pairPotionArguments
+            if ($LASTEXITCODE -ne 0) {
+                throw "paired combat comparison command failed"
+            }
+        }
+    }
     "evaluate-run" {
         if ($null -eq $Ascension) {
             throw "evaluate-run requires -Ascension 0..20"
@@ -415,6 +505,11 @@ switch ($Command) {
             }
             $rootArguments = @("--roots", $Roots)
         }
+        $collectorCombatDecisionRule = if ($PSBoundParameters.ContainsKey("CombatDecisionRule")) {
+            $CombatDecisionRule
+        } else {
+            "greedy"
+        }
         Invoke-Doctor $pythonPath
         Invoke-WithLearningPath {
             & $pythonPath -m sts_learning.collect_run_combat_roots `
@@ -426,8 +521,9 @@ switch ($Command) {
                 --behavior-seed $BehaviorSeed `
                 --training-seed-start $TrainingSeedStart `
                 --ascension $Ascension `
-                --combat-decision-rule $CombatDecisionRule `
+                --combat-decision-rule $collectorCombatDecisionRule `
                 --min-floor $MinFloor `
+                --min-hp-percent $MinHpPercent `
                 --min-usable-potions $MinUsablePotions `
                 --max-artifact-bytes $MaxArtifactBytes `
                 --potion-lane $RunPotionLane `
