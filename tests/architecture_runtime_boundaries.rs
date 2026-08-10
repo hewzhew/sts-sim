@@ -1429,6 +1429,55 @@ fn runtime_branch_does_not_path_import_branch_tiny_bin_modules() {
 }
 
 #[test]
+fn analysis_workspace_separates_live_state_schema_storage_and_recovery() {
+    let live = std::fs::read_to_string("src/runtime/branch/oracle_analysis.rs")
+        .expect("read live analysis workspace");
+    let contract =
+        std::fs::read_to_string("src/runtime/branch/oracle_analysis_workspace_contract.rs")
+            .expect("read analysis workspace contract");
+    let store = std::fs::read_to_string("src/runtime/branch/oracle_analysis_workspace_store.rs")
+        .expect("read analysis workspace store");
+    let recovery =
+        std::fs::read_to_string("src/runtime/branch/oracle_analysis_workspace_recovery.rs")
+            .expect("read analysis workspace recovery");
+
+    assert!(live.contains("pub struct OracleAnalysisWorkspaceV1"));
+    for forbidden in [
+        "pub struct OracleAnalysisWorkspaceArtifactV1",
+        "std::fs",
+        "serde_json",
+        "atomic_write_json",
+        "recover_oracle_analysis_combat_case_v1",
+    ] {
+        assert!(
+            !live.contains(forbidden),
+            "live analysis workspace must delegate `{forbidden}`"
+        );
+    }
+    assert!(
+        contract.contains("pub struct OracleAnalysisWorkspaceArtifactV1")
+            && contract.contains("OracleAnalysisSessionCheckpointV1")
+            && !contract.contains("OracleAnalysisSessionV1")
+            && !contract.contains("std::fs")
+            && !contract.contains("serde_json"),
+        "workspace contract must contain only durable typed data"
+    );
+    assert!(
+        store.contains("atomic_write_json")
+            && store.contains("load_oracle_analysis_workspace_artifact_v1")
+            && !store.contains("CombatCase::new"),
+        "workspace store must own file I/O without owning recovery projection"
+    );
+    assert!(
+        recovery.contains("recover_oracle_analysis_combat_case_v1")
+            && recovery.contains("load_oracle_analysis_workspace_artifact_v1")
+            && !recovery.contains("std::fs")
+            && !recovery.contains("serde_json"),
+        "selected-branch recovery must consume the typed artifact loader"
+    );
+}
+
+#[test]
 fn retired_repl_and_multi_operation_auto_run_do_not_return() {
     for retired in [
         "src/bin/run_play_driver/main.rs",

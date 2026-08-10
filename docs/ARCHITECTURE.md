@@ -1874,6 +1874,13 @@ schedules into typed content-addressed payload tables. Replay steps and emitted
 events use shared prefix DAGs. Payload hashes declare their algorithm and are
 validated during hydration; legacy inline checkpoints remain readable.
 
+The live workbench, durable workspace envelope, filesystem store, and selected-
+branch recovery projection are separate runtime owners. The envelope contains
+only configuration plus the typed analysis-session checkpoint. The store owns
+atomic JSON reads/writes and timing; recovery consumes that same typed loader
+without restoring unrelated branches. Live workspace methods own construction,
+navigation, and mutation and do not parse or write their own artifact.
+
 One workspace may carry one combat line-lab DAG bound to an immutable run combat
 node and its exact root hash. The root position remains owned by that run node;
 each child persists only its parent id, one typed `ClientInput`, and the exact

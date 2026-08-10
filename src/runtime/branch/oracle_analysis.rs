@@ -1,45 +1,23 @@
-use std::fs;
-use std::path::Path;
-
-use serde::{Deserialize, Serialize};
-
-use crate::eval::combat_case::{
-    CombatCase, CombatCaseGap, CombatCaseRngSummary, CombatCaseRunSummary, CombatCaseSource,
-};
-use crate::eval::combat_case_context::capture_oracle_analysis_combat_case_production_context_v1;
 use crate::eval::combat_guidance_bundle::CombatGuidanceBundleV1;
-use crate::eval::combat_lab_v1::atomic_write_json;
 use crate::eval::run_control::{
     exact_audit_run_progress_journal_policy_v1, expand_oracle_neow_candidates_v1,
     ordered_oracle_neow_root_candidate_ids_v1, seed_oracle_run_explorer_from_checkpoint_v1,
     seed_oracle_run_explorer_from_session_v1, seed_oracle_run_explorer_v1, NeowOracleExpansionV1,
     OracleAnalysisAdvanceReportV1, OracleAnalysisAdvanceRequestV1,
     OracleAnalysisCombatProbeReportV1, OracleAnalysisCombatProbeRequestV1,
-    OracleAnalysisNodeViewV1, OracleAnalysisSessionCheckpointV1, OracleAnalysisSessionV1,
-    RunControlConfig, RunControlSession, RunDecisionAction,
+    OracleAnalysisNodeViewV1, OracleAnalysisSessionV1, RunControlConfig, RunControlSession,
+    RunDecisionAction,
 };
 use crate::state::core::ClientInput;
 
+use super::oracle_analysis_workspace_contract::{
+    OracleAnalysisWorkspaceArtifactV1, ORACLE_ANALYSIS_WORKSPACE_SCHEMA_NAME,
+    ORACLE_ANALYSIS_WORKSPACE_SCHEMA_VERSION,
+};
 use super::oracle_run::{
     oracle_run_combat_budgets_v1, OracleRunBudget, OracleRunConfig, OracleRunContinuationV1,
     ORACLE_RUN_CONTINUATION_SCHEMA_NAME, ORACLE_RUN_CONTINUATION_SCHEMA_VERSION,
 };
-
-pub const ORACLE_ANALYSIS_WORKSPACE_SCHEMA_NAME: &str = "OracleAnalysisWorkspace";
-pub const ORACLE_ANALYSIS_WORKSPACE_SCHEMA_VERSION: u32 = 1;
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct OracleAnalysisWorkspaceArtifactV1 {
-    pub schema_name: String,
-    pub schema_version: u32,
-    pub seed: u64,
-    pub ascension: u8,
-    pub budget: OracleRunBudget,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub combat_guidance_bundle: Option<CombatGuidanceBundleV1>,
-    pub session: OracleAnalysisSessionCheckpointV1,
-}
 
 pub struct OracleAnalysisWorkspaceV1 {
     pub seed: u64,
@@ -47,12 +25,6 @@ pub struct OracleAnalysisWorkspaceV1 {
     pub budget: OracleRunBudget,
     pub combat_guidance_bundle: Option<CombatGuidanceBundleV1>,
     pub session: OracleAnalysisSessionV1,
-}
-
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub struct OracleAnalysisWorkspaceSaveTimingV1 {
-    pub checkpoint_elapsed_ms: u64,
-    pub write_elapsed_ms: u64,
 }
 
 impl OracleAnalysisWorkspaceV1 {
@@ -415,135 +387,6 @@ fn validate_combat_guidance(guidance: &Option<CombatGuidanceBundleV1>) -> Result
         .map(CombatGuidanceBundleV1::validate)
         .transpose()
         .map(|_| ())
-}
-
-pub fn save_oracle_analysis_workspace_v1(
-    path: &Path,
-    workspace: &OracleAnalysisWorkspaceV1,
-) -> Result<(), String> {
-    save_oracle_analysis_workspace_with_timing_v1(path, workspace).map(|_| ())
-}
-
-pub fn save_oracle_analysis_workspace_with_timing_v1(
-    path: &Path,
-    workspace: &OracleAnalysisWorkspaceV1,
-) -> Result<OracleAnalysisWorkspaceSaveTimingV1, String> {
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(|error| {
-            format!(
-                "failed to create oracle analysis directory '{}': {error}",
-                parent.display()
-            )
-        })?;
-    }
-    let checkpoint_started = std::time::Instant::now();
-    let artifact = workspace.artifact()?;
-    let checkpoint_elapsed_ms = elapsed_millis(checkpoint_started);
-    let write_started = std::time::Instant::now();
-    atomic_write_json(path, &artifact)?;
-    Ok(OracleAnalysisWorkspaceSaveTimingV1 {
-        checkpoint_elapsed_ms,
-        write_elapsed_ms: elapsed_millis(write_started),
-    })
-}
-
-fn elapsed_millis(started: std::time::Instant) -> u64 {
-    u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX)
-}
-
-pub fn load_oracle_analysis_workspace_v1(path: &Path) -> Result<OracleAnalysisWorkspaceV1, String> {
-    let bytes =
-        fs::read(path).map_err(|error| format!("failed to read '{}': {error}", path.display()))?;
-    let artifact = serde_json::from_slice::<OracleAnalysisWorkspaceArtifactV1>(&bytes)
-        .map_err(|error| format!("failed to parse '{}': {error}", path.display()))?;
-    OracleAnalysisWorkspaceV1::restore(artifact)
-}
-
-/// Recover one exact combat from an analysis workspace whose unrelated
-/// branches may no longer pass current whole-frontier validation.
-///
-/// The selected branch is still deserialized through the current checkpoint
-/// types. This deliberately bypasses only cross-branch fingerprint validation;
-/// it does not reinterpret or edit the saved combat state.
-pub fn recover_oracle_analysis_combat_case_v1(
-    path: &Path,
-    branch_id: usize,
-) -> Result<CombatCase, String> {
-    let bytes =
-        fs::read(path).map_err(|error| format!("failed to read '{}': {error}", path.display()))?;
-    let artifact = serde_json::from_slice::<OracleAnalysisWorkspaceArtifactV1>(&bytes)
-        .map_err(|error| format!("failed to parse '{}': {error}", path.display()))?;
-    if artifact.schema_name != ORACLE_ANALYSIS_WORKSPACE_SCHEMA_NAME
-        || artifact.schema_version != ORACLE_ANALYSIS_WORKSPACE_SCHEMA_VERSION
-    {
-        return Err(format!(
-            "unsupported oracle analysis workspace {} version {}",
-            artifact.schema_name, artifact.schema_version
-        ));
-    }
-    let explorer = &artifact.session.explorer;
-    let saved = explorer
-        .branches
-        .iter()
-        .find(|branch| branch.branch_id == branch_id)
-        .ok_or_else(|| format!("oracle analysis workspace has no branch {branch_id}"))?;
-    let source = CombatCaseSource {
-        seed: artifact.seed,
-        ascension: artifact.ascension,
-        generation: saved.path_depth as usize,
-        branch_id: saved.branch_id,
-        parent_id: saved.parent_branch_id,
-    };
-    let session = explorer.hydrated_branch_session(saved)?.into_session()?;
-    let position = session.current_active_combat_position()?;
-    let (search_nodes, search_ms) = if position.combat.meta.is_boss_fight {
-        (artifact.budget.boss_nodes, artifact.budget.boss_ms)
-    } else if position.combat.meta.is_elite_fight {
-        (artifact.budget.elite_nodes, artifact.budget.elite_ms)
-    } else {
-        (artifact.budget.hallway_nodes, artifact.budget.hallway_ms)
-    };
-    let mut case = CombatCase::new(
-        source,
-        CombatCaseGap {
-            boundary: format!(
-                "Act {} Floor {} recovered oracle analysis combat",
-                session.run_state.act_num, session.run_state.floor_num
-            ),
-            reason: "selected_branch_recovery".to_string(),
-            search_nodes,
-            search_ms,
-            rescue_search_nodes: 0,
-            rescue_search_ms: 0,
-        },
-        CombatCaseRunSummary {
-            act: session.run_state.act_num,
-            floor: session.run_state.floor_num,
-            hp: session.run_state.current_hp,
-            max_hp: session.run_state.max_hp,
-            gold: session.run_state.gold,
-            deck_size: session.run_state.master_deck.len(),
-            relic_count: session.run_state.relics.len(),
-            potion_slots: session.run_state.potions.len(),
-        },
-        Vec::new(),
-        None,
-        Vec::new(),
-        CombatCaseRngSummary::from_pool(&session.run_state.rng_pool),
-        position,
-    );
-    let owner_budgets = oracle_run_combat_budgets_v1(&OracleRunConfig {
-        seed: artifact.seed,
-        ascension: artifact.ascension,
-        budget: artifact.budget,
-    })
-    .with_guidance_bundle(artifact.combat_guidance_bundle.clone());
-    case.production_context = Some(capture_oracle_analysis_combat_case_production_context_v1(
-        &case.core,
-        &session,
-        &owner_budgets,
-    )?);
-    Ok(case)
 }
 
 fn validate_analysis_config(config: &OracleRunConfig) -> Result<(), String> {
