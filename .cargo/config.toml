@@ -17,18 +17,26 @@ combat-contract = ["run", "--quiet", "--release", "-p", "sts_combat_contract", "
 test-control = [
     "test",
     "-p", "sts_combat_legacy",
+    "-p", "sts_combat_search_driver",
     "-p", "sts_oracle_eval",
+    "-p", "sts_oracle_learning_env",
+    "-p", "sts_oracle_learning",
+    "-p", "sts_oracle_run_control",
     "-p", "sts_oracle_runtime",
     "-p", "sts_oracle_tools",
     "-p", "sts_oracle_lab",
     "--no-default-features",
-    "--features", "sts_oracle_eval/control-full,sts_oracle_runtime/control-full,sts_oracle_lab/canonical-oracle-artifacts",
+    "--features", "sts_combat_search_driver/backend,sts_oracle_eval/control-full,sts_oracle_run_control/control-full,sts_oracle_runtime/control-full,sts_oracle_lab/canonical-oracle-artifacts",
 ]
-test-runtime = ["test", "-p", "sts_oracle_eval", "-p", "sts_oracle_runtime", "--no-default-features", "--features", "sts_oracle_eval/control-full,sts_oracle_runtime/control-full", "--lib"]
-check-runtime = ["check", "-p", "sts_oracle_eval", "-p", "sts_oracle_runtime", "--no-default-features", "--features", "sts_oracle_eval/control-full,sts_oracle_runtime/control-full", "--lib"]
+test-runtime = ["test", "-p", "sts_oracle_eval", "-p", "sts_oracle_run_control", "-p", "sts_oracle_learning_env", "-p", "sts_oracle_learning", "-p", "sts_oracle_runtime", "--no-default-features", "--features", "sts_oracle_eval/control-full,sts_oracle_run_control/control-full,sts_oracle_runtime/control-full", "--lib"]
+check-runtime = ["check", "-p", "sts_oracle_eval", "-p", "sts_oracle_run_control", "-p", "sts_oracle_learning_env", "-p", "sts_oracle_learning", "-p", "sts_oracle_runtime", "--no-default-features", "--features", "sts_oracle_eval/control-full,sts_oracle_run_control/control-full,sts_oracle_runtime/control-full", "--lib"]
 check-workspace = ["check", "--workspace", "--all-targets", "--all-features"]
 # One canonical formatting gate for local work and CI.
 fmt-check = ["fmt", "--all", "--", "--check"]
+# Lightweight combat-search front door. Help and CLI-shape errors stop before
+# the optimized worker feature (and therefore the simulator) is built.
+combat-search = ["run", "--quiet", "-p", "sts_combat_search_driver", "--bin", "combat_search_v2", "--"]
+combat-search-build = ["build", "--release", "-p", "sts_combat_search_driver", "--features", "backend", "--bin", "combat_search_v2_worker"]
 # The standard release directory is the one canonical optimized oracle
 # artifact. `release-final` remains available for slow deployment builds.
 oracle-lab = ["run", "--quiet", "--release", "-p", "sts_oracle_lab", "--features", "canonical-oracle-artifacts", "--bin", "oracle_lab", "--", "--canonical-oracle"]

@@ -147,7 +147,7 @@ pub struct RecentCombatAttritionV1 {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(in crate::eval::run_control) struct RecentCombatEnemyHpV1 {
+pub struct RecentCombatEnemyHpV1 {
     pub combat_sequence: u64,
     pub terminal_enemy_hp: i32,
 }
@@ -670,7 +670,7 @@ impl RunControlSession {
     /// configuration from defaults.  The current session remains the source
     /// of truth for every setting that must survive that replacement; only
     /// the run seed changes.
-    pub(crate) fn fresh_run_config(&self, seed: u64) -> RunControlConfig {
+    pub fn fresh_run_config(&self, seed: u64) -> RunControlConfig {
         RunControlConfig {
             seed,
             ascension_level: self.run_state.ascension_level,
@@ -691,9 +691,7 @@ impl RunControlSession {
         self.auto_capture_last_combat_sequence = None;
     }
 
-    pub(in crate::eval::run_control) fn recent_combat_enemy_hp(
-        &self,
-    ) -> Option<RecentCombatEnemyHpV1> {
+    pub fn recent_combat_enemy_hp(&self) -> Option<RecentCombatEnemyHpV1> {
         self.recent_combat_enemy_hp
     }
 

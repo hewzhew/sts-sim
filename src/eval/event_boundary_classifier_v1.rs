@@ -1,7 +1,7 @@
 use crate::state::events::{EventActionKind, EventEffect, EventOption, EventOptionTransition};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum EventBoundaryClassV1 {
+pub enum EventBoundaryClassV1 {
     Disabled,
     FlavorAdvance,
     TerminalNoopLeave,
@@ -14,12 +14,12 @@ pub(crate) enum EventBoundaryClassV1 {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) struct EventBoundaryClassificationV1 {
-    pub(crate) class: EventBoundaryClassV1,
+pub struct EventBoundaryClassificationV1 {
+    pub class: EventBoundaryClassV1,
 }
 
 impl EventBoundaryClassificationV1 {
-    pub(crate) fn single_auto_advance_reason(self) -> Option<&'static str> {
+    pub fn single_auto_advance_reason(self) -> Option<&'static str> {
         match self.class {
             EventBoundaryClassV1::FlavorAdvance | EventBoundaryClassV1::TerminalNoopLeave => {
                 Some("routine event transition")
@@ -29,7 +29,7 @@ impl EventBoundaryClassificationV1 {
         }
     }
 
-    pub(crate) fn single_candidate_note(self) -> Option<&'static str> {
+    pub fn single_candidate_note(self) -> Option<&'static str> {
         match self.class {
             EventBoundaryClassV1::FlavorAdvance | EventBoundaryClassV1::TerminalNoopLeave => {
                 Some("routine")
@@ -40,9 +40,7 @@ impl EventBoundaryClassificationV1 {
     }
 }
 
-pub(crate) fn classify_event_option_boundary_v1(
-    option: &EventOption,
-) -> EventBoundaryClassificationV1 {
+pub fn classify_event_option_boundary_v1(option: &EventOption) -> EventBoundaryClassificationV1 {
     let class = if option.ui.disabled {
         EventBoundaryClassV1::Disabled
     } else if starts_combat(option) {

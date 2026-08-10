@@ -428,6 +428,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "sts_combat_search_driver"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "serde",
+ "serde_json",
+ "sts_oracle_eval",
+]
+
+[[package]]
 name = "sts_combat_strategy"
 version = "0.1.0"
 dependencies = [
@@ -462,7 +472,37 @@ dependencies = [
  "serde_json",
  "sts_combat_planner",
  "sts_combat_strategy",
+ "sts_oracle_learning",
  "sts_oracle_runtime",
+]
+
+[[package]]
+name = "sts_oracle_learning"
+version = "0.1.0"
+dependencies = [
+ "sts_oracle_learning_env",
+]
+
+[[package]]
+name = "sts_oracle_learning_env"
+version = "0.1.0"
+dependencies = [
+ "rmp-serde",
+ "serde",
+ "sts_oracle_run_control",
+]
+
+[[package]]
+name = "sts_oracle_run_control"
+version = "0.1.0"
+dependencies = [
+ "blake2",
+ "rmp-serde",
+ "serde",
+ "serde_json",
+ "sts_combat_knowledge",
+ "sts_combat_planner",
+ "sts_oracle_eval",
 ]
 
 [[package]]
@@ -474,7 +514,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sts_combat_planner",
- "sts_oracle_eval",
+ "sts_oracle_run_control",
  "sts_simulator",
 ]
 
@@ -485,6 +525,7 @@ dependencies = [
  "clap",
  "serde",
  "serde_json",
+ "sts_combat_search_driver",
  "sts_oracle_runtime",
 ]
 

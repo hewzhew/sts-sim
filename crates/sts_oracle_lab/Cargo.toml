@@ -16,6 +16,7 @@ canonical-oracle-artifacts = []
 [dependencies]
 oracle_artifact_contract = { path = "../oracle_artifact_contract", default-features = false, features = ["oracle-host"] }
 sts_oracle_runtime = { path = "../sts_oracle_runtime" }
+sts_oracle_learning = { path = "../sts_oracle_learning" }
 sts_combat_planner = { path = "../sts_combat_planner" }
 sts_combat_strategy = { path = "../sts_combat_strategy" }
 blake2 = "0.10"

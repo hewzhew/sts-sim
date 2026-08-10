@@ -129,8 +129,7 @@ pub struct CombatLearningRootV1 {
 
 impl CombatLearningRootV1 {
     pub fn from_session(mut session: RunControlSession) -> Result<Self, String> {
-        let position = session.current_combat_position_for_actions()?;
-        session.combat_outcomes.rebase_active(&position.combat);
+        let (position, combat_sequence) = session.rebase_current_combat_outcome_tracking_v1()?;
         let identity = CombatLearningRootIdentityV1 {
             root_id: run_control_session_fingerprint_v2(&session),
             exact_combat_state_hash: combat_exact_state_hash_v2(&position.engine, &position.combat),
@@ -149,7 +148,6 @@ impl CombatLearningRootV1 {
         if enemy_start_hp <= 0 {
             return Err("combat learning root enemy HP must be positive".to_string());
         }
-        let combat_sequence = session.combat_sequence;
         Ok(Self {
             identity,
             context,
@@ -364,7 +362,8 @@ impl CombatLearningEnvV1 {
         self.step_prepared(input)
     }
 
-    pub(super) fn prepare_action(&self, action: LearningActionV1) -> Result<ClientInput, String> {
+    #[doc(hidden)]
+    pub fn prepare_action(&self, action: LearningActionV1) -> Result<ClientInput, String> {
         if self.session.active_combat.is_none() {
             return Err("combat learning episode is already terminal".to_string());
         }
@@ -374,10 +373,8 @@ impl CombatLearningEnvV1 {
         prepare_learning_combat_input_v1(&self.session, input)
     }
 
-    pub(super) fn step_prepared(
-        &mut self,
-        input: ClientInput,
-    ) -> Result<CombatLearningStepV1, String> {
+    #[doc(hidden)]
+    pub fn step_prepared(&mut self, input: ClientInput) -> Result<CombatLearningStepV1, String> {
         self.session
             .apply_decision_action(RunDecisionAction::Input(input))?;
         let boundary = self.observe()?;
@@ -579,7 +576,9 @@ mod tests {
     #[test]
     fn suffix_root_rebases_terminal_hp_to_its_own_exact_boundary() {
         let mut session = combat_root_session(1);
-        session.observe_active_combat_started();
+        session
+            .rebase_current_combat_outcome_tracking_v1()
+            .expect("capture original combat entry");
         session
             .active_combat
             .as_mut()

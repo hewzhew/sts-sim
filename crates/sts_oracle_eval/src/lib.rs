@@ -1,4 +1,4 @@
-//! Combat evaluation and run-control above the stable simulator and planner.
+//! Combat evaluation and exact-search orchestration above the stable simulator and planner.
 
 extern crate self as sts_simulator;
 

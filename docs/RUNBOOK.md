@@ -19,7 +19,7 @@ Use the narrowest maintained surface for the task:
 | `branch_tiny` | One bounded owner-audit seed or capsule continuation. |
 | `branch_panel` | Small smoke, continuation, drain, or comparison panels. |
 | `combat_case_review` | Diagnostic review of one saved combat case. |
-| `combat_search_v2_driver` | Fixed combat starts, captures, benchmarks, and offline laboratories. |
+| `cargo combat-search` / `.\cs.cmd` | Lightweight combat-search frontend and reusable dedicated worker. |
 | `cargo oracle-lab contract --help` | Rebuild the canonical oracle host and show the compact V2 contract surface. |
 | `.\ol.cmd contract combat` | One bounded exact-combat experiment with compact stdout and automatic full evidence. |
 | `.\ol.cmd artifact summary/summaries/search/trace/compare/turn/rerun` | Read one or several results, inspect search service, replay/compare candidates, inspect one exact turn, or reproduce a V2 request without parsing full reports. |
@@ -331,14 +331,31 @@ unknown. See [Combat Evidence And Offline
 Laboratories](runbooks/combat-evidence.md) for manifests, typed queries,
 fresh-case capture, potion interpretation, and laboratory artifacts.
 
-## Combat Search Driver
+## Atomic Combat Search
 
-Use `combat_search_v2_driver` for fixed combat starts, captures, and
-benchmark suites:
+Use the capability-scoped combat-search frontend for fixed starts, captures,
+and benchmark suites:
 
 ```powershell
-cargo run -p sts_oracle_tools --release --bin combat_search_v2_driver -- --start-spec <path>
+cargo combat-search --help
+cargo combat-search --start-spec <path>
 ```
+
+The frontend owns only parsing and help. `--help` therefore never compiles the
+simulator or evaluation backend. A real request builds the optimized
+`combat_search_v2_worker` when necessary and then runs it.
+
+For repeated calls against one deliberately frozen build, bypass Cargo:
+
+```powershell
+cargo combat-search-build
+.\cs.cmd --start-spec <path>
+```
+
+`cs.cmd --help` invokes the already-built lightweight frontend. Other
+`cs.cmd` requests invoke the already-built worker directly; rebuild once with
+`cargo combat-search-build` after source changes. The old
+`combat_search_v2_driver` target remains only as a compatibility adapter.
 
 Common investigation switches include:
 
@@ -610,7 +627,8 @@ cargo test-core
 cargo test-control
 cargo architecture
 cargo check --workspace --release --all-targets
-cargo build -p sts_oracle_tools --release --bin combat_search_v2_driver
+cargo test -p sts_combat_search_driver --lib
+cargo check -p sts_combat_search_driver --features backend --bin combat_search_v2_worker
 git diff --check
 ```
 
@@ -684,7 +702,16 @@ test-binary link. For a functional experiment that does not measure throughput,
 semantics without paying the optimized rebuild; use the default `release`
 profile for timing or milestone evidence. Neither command mutates NumPy or
 PyTorch. `verify` is the release-profile milestone gate and additionally runs
-the Rust bridge contract tests. Ordinary Python-only edits still use `test`. For first setup, pass
+the Rust bridge contract tests. The standalone bridge workspace explicitly
+mirrors the root release ownership profiles: exact environments, model/pool
+adapters, and the NumPy bridge are separate optimized units. A model-view edit
+therefore rebuilds only the downstream adapter and bridge; it does not
+recompile exact episode transitions, run-control, or combat evaluation.
+The wheel and release Rust contract test reuse the same ignored Cargo target;
+fresh wheel directories and isolated Python environments remain per-run.
+`release-final` remains the explicit all-O3/thin-LTO deployment profile and is
+not the routine edit or verification path. Ordinary Python-only edits still
+use `test`. For first setup, pass
 `-Python <python.exe>` to refresh and record that runtime only after the guarded
 installation and final doctor both succeed.
 

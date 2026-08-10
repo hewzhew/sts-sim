@@ -3,7 +3,7 @@
 //! This module converts typed boundaries into model decisions, preserves bridge-local symbolic
 //! prefixes, and prepares complete action batches. It owns no environment mutation or policy.
 
-use sts_oracle_eval::eval::run_control::{
+use sts_oracle_learning::eval::run_control::{
     CombatLearningBoundaryV1, CombatLearningEnvPoolV1, CombatLearningPotionPolicyV1,
     LearningActionV1, LearningBoundaryV1, LearningCombatAtomicActionV1,
     LearningCombatModelObservationV1, LearningCombatSelectionDomainSemanticsV1, LearningEnvPoolV1,

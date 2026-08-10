@@ -56,7 +56,7 @@ cargo run -p sts_oracle_tools --bin combat_case_review -- --case <case.json> --l
 | `branch_tiny` | 轻量跑局 runner，用于 owner 覆盖、run capsule、frontier continuation 和 combat case capture |
 | `branch_panel` | Rust seed-panel scheduler，用于多 seed smoke/drain run |
 | `combat_case_review` | saved combat case 的诊断 review ladder |
-| `combat_search_v2_driver` | 从 start spec、capture 或 benchmark suite 跑固定战斗搜索 |
+| `combat_search_v2` / `combat_search_v2_worker` | 轻量 CLI/help 前端与专用优化 worker，用于固定战斗搜索 |
 | `rl_dataset_export` | 离线 decision sample 导出，用于 imitation/RL 实验 |
 
 Binary 边界见 [src/bin/README.md](src/bin/README.md)。
@@ -82,11 +82,15 @@ Binary 边界见 [src/bin/README.md](src/bin/README.md)。
 | `src/runtime` | run/combat 执行时支持 |
 | `src/sim` | 面向模拟器的 legal action、apply、search 边界 |
 | `src/ai` | policy、strategic facts、deck mutation、combat search、route/search work |
-| `src/eval` | run-control、benchmark artifact、diagnostics、report |
+| `src/eval` | combat eval、run-control、learning adapter 的历史物理源码树；Cargo owner 由下列 crate 明确切分 |
 | `src/bin` | 当前维护的命令入口 |
-| `crates/sts_oracle_eval` | combat evaluation、精确搜索编排和 run-control 的优化 Cargo owner |
+| `crates/sts_oracle_eval` | combat evaluation 与精确搜索编排的优化 Cargo owner |
+| `crates/sts_oracle_run_control` | exact run session、决策应用与跑局证据的独立 Cargo owner |
+| `crates/sts_oracle_learning_env` | 优化的 exact 单 episode learning env 与 opaque combat-root artifact owner |
+| `crates/sts_oracle_learning` | model input 与批量 learning adapter 的下游 Cargo owner |
 | `crates/sts_oracle_runtime` | branch 执行、持久化和服务编排的快速重建 Cargo owner |
-| `crates/sts_oracle_tools` | 无 library facade 的受维护 oracle 命令适配器与集成契约宿主 |
+| `crates/sts_combat_search_driver` | 轻量 combat-search 前端与 capability-scoped 优化 worker |
+| `crates/sts_oracle_tools` | 无 library facade 的旧 oracle 命令适配器与集成契约宿主 |
 | `learning` | 在线训练 caller、curriculum、seed 调度、模型和评估计账；不拥有模拟器机制 |
 | `tools` | 离线脚本、dataset、panel 和生成 artifact |
 | `docs` | 当前架构、runbook、测试说明和设计草稿 |

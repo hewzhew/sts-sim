@@ -13,6 +13,10 @@ use clap::Args;
 use serde::Serialize;
 use serde_json::{json, Value};
 use sts_combat_planner::CombatPolicyChoice;
+use sts_oracle_learning::eval::run_control::{
+    LearningCombatBoundaryV1, LearningModelDecisionV1, LearningObservationCompletenessV1,
+};
+use sts_oracle_runtime::ai::combat_learning_observation::combat_learning_observation_v1;
 use sts_oracle_runtime::ai::combat_search_v2::oracle_search_witness_proposal_v1;
 use sts_oracle_runtime::ai::combat_state_key::combat_exact_state_hash_v2;
 use sts_oracle_runtime::eval::combat_action_imitation::concrete_combat_action_candidates_v1;
@@ -22,17 +26,19 @@ use sts_oracle_runtime::sim::combat::{
     CombatPosition, CombatStepLimits, CombatStepper, CombatTerminal, EngineCombatStepper,
 };
 use sts_oracle_runtime::sim::combat_action::combat_action_key;
+use sts_oracle_runtime::sim::combat_action_surface::combat_legal_action_surface_v2;
 use sts_oracle_runtime::state::core::ClientInput;
 
 use super::combat_replay_tools::replay_combat_inputs;
 use super::combat_trace_view::combat_action_label;
 use super::exact_combat_evidence::{
-    evaluate_unresolved_position, exact_terminal_non_win, known_exact_win, ExactCombatEvidence,
+    evaluate_unresolved_position, exact_terminal_non_win, known_exact_win,
+    retain_verified_win_floor, ExactCombatEvaluation, ExactCombatEvidence,
 };
 use super::exact_turn_corridor::load_action_segments as load_combat_action_segments;
 use super::oracle_lab_runtime_identity;
 
-const CORPUS_SCHEMA: &str = "ActionSuccessorReanalysisCorpusV1";
+const CORPUS_SCHEMA: &str = "ActionSuccessorReanalysisCorpusV2";
 
 #[derive(Debug, Args)]
 pub(crate) struct ActionSuccessorReanalysisArgs {
@@ -76,6 +82,7 @@ pub(crate) struct ActionSuccessorReanalysisArgs {
 #[derive(Clone, Debug, Serialize)]
 struct ActionSuccessorCandidate {
     canonical_index: usize,
+    learning_candidate_ordinal: Option<usize>,
     input: ClientInput,
     label: String,
     action_key: String,
@@ -147,6 +154,18 @@ pub(crate) fn build(args: ActionSuccessorReanalysisArgs) -> Result<Value, String
         return Err("action-successor audit root has no materialized legal actions".to_string());
     }
 
+    let learning_boundary = LearningCombatBoundaryV1 {
+        observation: combat_learning_observation_v1(&root_position.combat),
+        observation_completeness: LearningObservationCompletenessV1::Complete,
+        legal_actions: combat_legal_action_surface_v2(&root_position.engine, &root_position.combat),
+    };
+    let learning_decision = LearningModelDecisionV1::from_combat_boundary(&learning_boundary)
+        .map_err(|error| format!("cannot construct learning candidate surface: {error:?}"))?;
+    let learning_ordinals = inputs
+        .iter()
+        .map(|input| learning_decision.combat_atomic_ordinal_for_input(input))
+        .collect::<Vec<_>>();
+
     let policy = args
         .action_imitation_artifact
         .as_deref()
@@ -206,6 +225,7 @@ pub(crate) fn build(args: ActionSuccessorReanalysisArgs) -> Result<Value, String
                 let safe_weights = &safe_weights;
                 let probabilities = &probabilities;
                 let policy_ranks = &policy_ranks;
+                let learning_ordinals = &learning_ordinals;
                 let args = &args;
                 let final_hp = final_position.combat.entities.player.current_hp;
                 scope.spawn(move || {
@@ -216,6 +236,7 @@ pub(crate) fn build(args: ActionSuccessorReanalysisArgs) -> Result<Value, String
                             let canonical_index = chunk_index * chunk_len + offset;
                             build_candidate(
                                 canonical_index,
+                                learning_ordinals[canonical_index],
                                 input,
                                 root_position,
                                 known_witness_action.as_ref(),
@@ -257,9 +278,17 @@ pub(crate) fn build(args: ActionSuccessorReanalysisArgs) -> Result<Value, String
             .entry(candidate.evidence.kind())
             .or_default() += 1;
     }
+    let aligned_learning_ordinals = learning_ordinals
+        .iter()
+        .flatten()
+        .copied()
+        .collect::<std::collections::BTreeSet<_>>();
+    let learning_surface_complete = learning_ordinals.iter().all(Option::is_some)
+        && aligned_learning_ordinals.len() == inputs.len()
+        && learning_decision.candidates.len() == inputs.len();
     let corpus = json!({
         "schema_name": CORPUS_SCHEMA,
-        "schema_version": 1,
+        "schema_version": 2,
         "runtime": oracle_lab_runtime_identity(),
         "source_case": args.case,
         "source_actions": args.actions,
@@ -278,6 +307,12 @@ pub(crate) fn build(args: ActionSuccessorReanalysisArgs) -> Result<Value, String
             "structured_family_count": legal_surface.selection_families.len(),
             "max_structured_alternatives": args.max_structured_alternatives,
             "complete": legal_surface.selection_families.is_empty(),
+        },
+        "learning_surface": {
+            "candidate_count": learning_decision.candidates.len(),
+            "aligned_candidate_count": learning_ordinals.iter().filter(|ordinal| ordinal.is_some()).count(),
+            "one_to_one_candidate_count": aligned_learning_ordinals.len(),
+            "complete": learning_surface_complete,
         },
         "config": {
             "solve_work_per_candidate": args.solve_work_per_candidate,
@@ -298,12 +333,13 @@ pub(crate) fn build(args: ActionSuccessorReanalysisArgs) -> Result<Value, String
     )
     .map_err(|error| error.to_string())?;
     Ok(json!({
-        "schema_name": "ActionSuccessorReanalysisBuildReportV1",
-        "schema_version": 1,
+        "schema_name": "ActionSuccessorReanalysisBuildReportV2",
+        "schema_version": 2,
         "output": args.output,
         "root_exact_state_hash": corpus["root_exact_state_hash"],
         "known_witness_action": corpus["known_witness_action"],
         "surface": corpus["surface"],
+        "learning_surface": corpus["learning_surface"],
         "evidence_counts": corpus["evidence_counts"],
     }))
 }
@@ -311,6 +347,7 @@ pub(crate) fn build(args: ActionSuccessorReanalysisArgs) -> Result<Value, String
 #[allow(clippy::too_many_arguments)]
 fn build_candidate(
     canonical_index: usize,
+    learning_candidate_ordinal: Option<usize>,
     input: &ClientInput,
     root_position: &CombatPosition,
     known_witness_action: Option<&ClientInput>,
@@ -339,76 +376,74 @@ fn build_candidate(
         ));
     }
     let is_known_witness_action = known_witness_action == Some(input);
-    let (evidence, continuation_witness_actions) = if is_known_witness_action {
-        (
-            known_exact_win(
-                "verified_witness_suffix",
-                known_final_hp,
-                known_witness_continuation.len(),
-            ),
-            Some(known_witness_continuation.to_vec()),
-        )
-    } else {
-        match step.terminal {
-            CombatTerminal::Win if !step.position.combat.runtime.combat_smoked => (
-                known_exact_win(
+    let mut evaluation = match step.terminal {
+        CombatTerminal::Win if !step.position.combat.runtime.combat_smoked => {
+            ExactCombatEvaluation {
+                evidence: known_exact_win(
                     "immediate_terminal_replay",
                     step.position.combat.entities.player.current_hp,
                     0,
                 ),
-                Some(Vec::new()),
-            ),
-            CombatTerminal::Win => (exact_terminal_non_win("SmokeEscape"), None),
-            CombatTerminal::Loss => (exact_terminal_non_win("Loss"), None),
-            CombatTerminal::Unresolved => {
-                let evaluation = evaluate_unresolved_position(
-                    &step.position,
-                    solve_work_per_candidate,
-                    max_structured_alternatives,
-                    max_engine_steps_per_transition,
-                )?;
-                if !matches!(
-                    &evaluation.evidence,
-                    ExactCombatEvidence::BudgetUnknown { .. }
-                ) || v2_teacher_wall_ms_per_candidate == 0
-                {
-                    (evaluation.evidence, evaluation.witness_actions)
-                } else {
-                    let deadline = Instant::now()
-                        .checked_add(Duration::from_millis(v2_teacher_wall_ms_per_candidate))
-                        .ok_or_else(|| "V2 teacher deadline overflowed".to_string())?;
-                    match oracle_search_witness_proposal_v1(
-                        &step.position,
-                        v2_teacher_max_nodes_per_candidate,
-                        Some(deadline),
-                    ) {
-                        Some(proposal) => {
-                            let replayed = replay_combat_inputs(
-                                step.position.clone(),
-                                &proposal.actions,
-                                max_engine_steps_per_transition,
-                            )?;
-                            if EngineCombatStepper.terminal(&replayed) == CombatTerminal::Win
-                                && !replayed.combat.runtime.combat_smoked
-                            {
-                                (
-                                    known_exact_win(
-                                        "v2_teacher_exact_replay",
-                                        replayed.combat.entities.player.current_hp,
-                                        proposal.actions.len(),
-                                    ),
-                                    Some(proposal.actions),
-                                )
-                            } else {
-                                (evaluation.evidence, evaluation.witness_actions)
-                            }
-                        }
-                        None => (evaluation.evidence, evaluation.witness_actions),
-                    }
-                }
+                witness_actions: Some(Vec::new()),
             }
         }
+        CombatTerminal::Win => ExactCombatEvaluation {
+            evidence: exact_terminal_non_win("SmokeEscape"),
+            witness_actions: None,
+        },
+        CombatTerminal::Loss => ExactCombatEvaluation {
+            evidence: exact_terminal_non_win("Loss"),
+            witness_actions: None,
+        },
+        CombatTerminal::Unresolved => evaluate_unresolved_position(
+            &step.position,
+            solve_work_per_candidate,
+            max_structured_alternatives,
+            max_engine_steps_per_transition,
+        )?,
     };
+    if matches!(
+        &evaluation.evidence,
+        ExactCombatEvidence::BudgetUnknown { .. }
+    ) && v2_teacher_wall_ms_per_candidate > 0
+    {
+        let deadline = Instant::now()
+            .checked_add(Duration::from_millis(v2_teacher_wall_ms_per_candidate))
+            .ok_or_else(|| "V2 teacher deadline overflowed".to_string())?;
+        if let Some(proposal) = oracle_search_witness_proposal_v1(
+            &step.position,
+            v2_teacher_max_nodes_per_candidate,
+            Some(deadline),
+        ) {
+            let replayed = replay_combat_inputs(
+                step.position.clone(),
+                &proposal.actions,
+                max_engine_steps_per_transition,
+            )?;
+            if EngineCombatStepper.terminal(&replayed) == CombatTerminal::Win
+                && !replayed.combat.runtime.combat_smoked
+            {
+                evaluation = ExactCombatEvaluation {
+                    evidence: known_exact_win(
+                        "v2_teacher_exact_replay",
+                        replayed.combat.entities.player.current_hp,
+                        proposal.actions.len(),
+                    ),
+                    witness_actions: Some(proposal.actions),
+                };
+            }
+        }
+    }
+    if is_known_witness_action {
+        evaluation = retain_verified_win_floor(
+            evaluation,
+            "verified_witness_floor_after_equal_work_search",
+            known_final_hp,
+            known_witness_continuation.to_vec(),
+        );
+    }
+    let evidence = evaluation.evidence;
+    let continuation_witness_actions = evaluation.witness_actions;
     if let Some(continuation) = continuation_witness_actions.as_ref() {
         let complete = std::iter::once(input.clone())
             .chain(continuation.iter().cloned())
@@ -428,6 +463,7 @@ fn build_candidate(
     }
     Ok(ActionSuccessorCandidate {
         canonical_index,
+        learning_candidate_ordinal,
         input: input.clone(),
         label: combat_action_label(root_position, input),
         action_key: combat_action_key(&root_position.combat, input),

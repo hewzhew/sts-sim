@@ -20,28 +20,45 @@ continued, replayed, compared, or learned from, it needs typed identity first.
 The maintained oracle command path has one compile-time dependency direction:
 
 ```text
-command hosts -> sts_oracle_runtime -> sts_oracle_eval -> sts_simulator
+oracle executable hosts -> sts_oracle_runtime -> sts_oracle_run_control
+                                              -> sts_oracle_eval -> sts_simulator
+learning callers -> sts_oracle_learning -> sts_oracle_learning_env
+                                      -> sts_oracle_run_control
+combat-search frontend -> capability worker -> sts_oracle_eval
 ```
 
 `sts_simulator` owns game content, state, engine transitions, simulation, and
-stable lower policy layers. `sts_oracle_eval` owns combat evaluation,
-exact-search orchestration, run-control, and their artifact contracts.
-`sts_oracle_runtime` consumes that public surface and owns branch execution,
-scheduling, persistence, and resident services. Command hosts contain only
-supported adapters and cross-layer integration contracts; they own no policy
-semantics. Lower layers must never import branch runtime or a command host.
+stable lower policy layers. `sts_oracle_eval` owns combat evaluation and
+exact-search orchestration. `sts_oracle_run_control` consumes that lower
+surface and owns exact run sessions, non-combat decisions, combat application,
+and run evidence. `sts_oracle_learning_env` consumes run-control and owns exact
+single-episode learning environments plus opaque combat-root artifacts.
+`sts_oracle_learning` is the downstream model-facing adapter and owns ragged
+model views and batched pools; neither learning crate owns a policy objective.
+`sts_oracle_runtime` consumes run-control
+and owns branch execution, scheduling, persistence, and resident services.
+Command hosts contain only supported adapters and cross-layer integration
+contracts; they own no policy semantics. A capability with a high edit rate
+may use a dependency-light frontend and a dedicated worker so help and syntax
+checks do not compile the engine. The worker still delegates semantic work to
+evaluation or a lower owner. Lower layers must never import learning,
+run-control, branch runtime, or a command host.
 
-Some evaluation, runtime, and command sources still live physically below the
-historical root `src/` tree and are attached from their single Cargo owner with
-explicit paths. `src/eval` is compiled only by `sts_oracle_eval`;
-`sts_oracle_runtime` re-exports its public module without compiling a second
-copy. That layout detail is not permission for a reverse dependency or
-duplicate owner.
+Some evaluation, run-control, learning-environment, learning-adapter, runtime,
+and command sources still live
+physically below the historical root `src/` tree and are attached from their
+single Cargo owner with explicit paths. `src/eval/mod.rs` is the combat-eval
+owner boundary; run-control and learning modules below the same physical tree
+are attached only by their named crates. Physical proximity is not permission
+for a reverse dependency, duplicate owner, or broad facade dependency.
 
 Use `cargo test-core` and `cargo test-control` for their respective unit-test
 harnesses, `cargo architecture` for dependency-free source-boundary checks,
-and `cargo check-workspace` for every target. Do not merge the harnesses again
-through test features or replace them with many integration-test executables.
+and `cargo check-workspace` for every target. `test-control` explicitly names
+combat eval, run-control, learning, runtime, and command owners; a dependency's
+private unit tests are never assumed to run transitively. Do not merge the
+harnesses again through test features or replace them with many integration-test
+executables.
 
 ## AI Layers
 

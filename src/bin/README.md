@@ -7,7 +7,7 @@ One-off experiments should not grow long-lived binaries here.
 These binaries are Cargo targets of the library-free `sts_oracle_tools`
 command package, even while their physical source paths remain under
 `src/bin`. Run or build them with `-p sts_oracle_tools`; semantic code belongs
-in `sts_oracle_runtime` or a lower crate.
+in a dedicated capability crate, `sts_oracle_runtime`, or a lower crate.
 
 Use [../../docs/RUNBOOK.md](../../docs/RUNBOOK.md) for command examples. This
 file only records binary ownership and boundaries.
@@ -19,7 +19,7 @@ file only records binary ownership and boundaries.
 | `branch_tiny` | Lightweight owner-audit runner with run capsules, frontier continuation, seed-panel diagnostics, and combat-case capture. |
 | `branch_panel` | Rust seed-panel scheduler for smoke/drain runs over multiple `branch_tiny` capsules. |
 | `combat_case_review` | Review ladder for saved `CombatCase` artifacts from branch-tiny combat gaps; CLI owns IO, `combat_case_review/review_pipeline.rs` owns probe orchestration. |
-| `combat_search_v2_driver` | Whole-combat search from start specs and captures, benchmark suites, the resumable Combat Laboratory V1, and the offline Campfire Threat Panel. |
+| `combat_search_v2_driver` | Thin compatibility adapter for `sts_combat_search_driver`; routine use goes through its lightweight `combat_search_v2` frontend and dedicated worker. |
 | `rl_dataset_export` | Offline decision-sample export for imitation/RL experiments, including typed planner capture datasets and coverage reports from `SessionTraceV1`; exported behavior is not truth. |
 | `oracle_run` | Bounded exact run explorer and continuation adapter over the runtime-owned oracle-run API. |
 
@@ -29,8 +29,9 @@ file only records binary ownership and boundaries.
   decisions without parsing rendered labels.
 - `branch_panel` schedules and resumes `branch_tiny` capsules. It should not
   reinterpret owner policy or combat strategy.
-- `combat_search_v2_driver` and `combat_case_review` are combat investigation
-  tools. They do not decide non-combat policy. Combat Laboratory and Campfire
+- `sts_combat_search_driver` (and the thin standalone compatibility adapter)
+  plus `combat_case_review` are combat investigation tools. They do not decide
+  non-combat policy. Combat Laboratory and Campfire
   Threat Panel artifacts are descriptive evidence and never feed live policy
   automatically.
 - `rl_dataset_export` may read journals, summaries, and capsules, but it should

@@ -183,6 +183,15 @@ environment, and complete logs below one fresh ignored
 `.oracle-lab/python-learning-bridge/` directory and prints only a compact
 summary plus that artifact location.
 
+This crate is deliberately a standalone Cargo workspace, so it declares its
+own release profiles instead of assuming the root workspace settings apply.
+Routine release wheels keep exact environments and the downstream model/pool
+and NumPy adapters in separate O2 units; `release-final` is the opt-in
+all-O3/thin-LTO deployment profile. Dev wheels remain the fast functional
+edit loop. Wheel codegen and the release Rust contract test share the ignored
+bridge Cargo target; each wheel, Python environment, and installation check is
+still freshly isolated.
+
 Passing `-InstallTarget` explicitly installs that exact wheel into the target
 Python with `--force-reinstall --no-deps`, but only after all isolated checks
 pass. Routine learning development should use

@@ -20,8 +20,9 @@ Tests are deliberately split across real Cargo packages:
 - `cargo test-planner <filter>` tests the exact complete-turn planner without
   linking the core crate's monolithic unit-test binary;
 - `cargo test-control <filter>` tests the retained combat-search capability
-  package plus evaluation, run-control, branch runtime, tools, and their shared
-  contracts;
+  package plus the separately compiled combat-evaluation, run-control, exact
+  learning-environment, learning-adapter, branch-runtime, tools, and
+  shared-contract owners;
 - `cargo architecture <filter>` runs dependency-free source-boundary checks.
 - `learning/dev.ps1 test` uses the explicitly configured Python 3.12 runtime
   and requires NumPy, PyTorch, the installed bridge, and the repository caller;

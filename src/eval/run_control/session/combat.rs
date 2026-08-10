@@ -27,7 +27,7 @@ impl RunControlSession {
         }
     }
 
-    pub(crate) fn current_combat_position_for_actions(&self) -> Result<CombatPosition, String> {
+    pub fn current_combat_position_for_actions(&self) -> Result<CombatPosition, String> {
         let active = self
             .active_combat
             .as_ref()
@@ -43,6 +43,14 @@ impl RunControlSession {
             }
         };
         Ok(CombatPosition::new(engine, active.combat_state.clone()))
+    }
+
+    pub fn rebase_current_combat_outcome_tracking_v1(
+        &mut self,
+    ) -> Result<(CombatPosition, u64), String> {
+        let position = self.current_combat_position_for_actions()?;
+        self.combat_outcomes.rebase_active(&position.combat);
+        Ok((position, self.combat_sequence))
     }
 
     pub(super) fn cleanup_inactive_combat(&mut self) {

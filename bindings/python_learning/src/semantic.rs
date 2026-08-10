@@ -19,7 +19,7 @@ use sts_oracle_eval::content::monsters::{factory::EncounterId, EnemyId};
 use sts_oracle_eval::content::potions::PotionId;
 use sts_oracle_eval::content::powers::PowerId;
 use sts_oracle_eval::content::relics::RelicId;
-use sts_oracle_eval::eval::run_control::{
+use sts_oracle_learning::eval::run_control::{
     LearningModelCandidateSemanticsV1, LearningModelDecisionV1, LearningModelObservationV1,
     LearningRunSelectionFamilyV1, LearningSelectionCandidateSemanticsV1,
     LearningSelectionDecisionV1, LearningSelectionDraftV1, LearningStrategicContextKindV1,
@@ -1645,7 +1645,7 @@ fn bool_value(value: bool) -> i64 {
 #[cfg(test)]
 mod tests {
     use sts_oracle_eval::content::cards::CardId;
-    use sts_oracle_eval::eval::run_control::{
+    use sts_oracle_learning::eval::run_control::{
         LearningEnvV1, LearningModelChoiceV1, LearningModelDecisionV1, LearningSelectionStepV1,
         RunControlConfig, RunControlSession,
     };

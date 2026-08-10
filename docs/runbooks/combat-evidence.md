@@ -234,11 +234,11 @@ evidence until their producer carries the original-case identity.
 
 ## Combat Laboratory V1
 
-The Combat Laboratory is an offline mode of `combat_search_v2_driver`. Run the
-maintained seed006-derived Reptomancer pilot with:
+The Combat Laboratory is an offline mode of the dedicated combat-search
+worker. Run the maintained seed006-derived Reptomancer pilot with:
 
 ```powershell
-cargo run -p sts_oracle_tools --bin combat_search_v2_driver -- --lab-spec fixtures/combat_lab/seed006_reptomancer_8x2.lab.json --lab-output artifacts/runs/combat-lab-seed006-pilot --lab-samples 8
+.\cs.cmd --lab-spec fixtures/combat_lab/seed006_reptomancer_8x2.lab.json --lab-output artifacts/runs/combat-lab-seed006-pilot --lab-samples 8
 ```
 
 Rerun the same command and output directory to resume journaled cells. Increase
@@ -265,7 +265,7 @@ declared public encounter pool with matched analysis RNG and shuffle samples.
 It never reads the live hidden encounter queue or changes Campfire policy.
 
 ```powershell
-cargo run -p sts_oracle_tools --release --bin combat_search_v2_driver -- --threat-panel-spec fixtures/campfire_threat_panel/seed006_pre_transient_reconstructed.panel.json --threat-panel-output artifacts/runs/campfire-threat-panel-seed006-pilot --threat-panel-samples 1
+.\cs.cmd --threat-panel-spec fixtures/campfire_threat_panel/seed006_pre_transient_reconstructed.panel.json --threat-panel-output artifacts/runs/campfire-threat-panel-seed006-pilot --threat-panel-samples 1
 ```
 
 The fixture is reconstructed from recorded public deck and resource state. It

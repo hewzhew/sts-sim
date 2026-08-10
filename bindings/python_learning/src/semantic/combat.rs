@@ -8,7 +8,7 @@ use sts_oracle_eval::ai::combat_public_observation::{
     HiddenInformationReasonV1, ObservationEvidenceKindV1,
 };
 use sts_oracle_eval::content::cards::CardType;
-use sts_oracle_eval::eval::run_control::{
+use sts_oracle_learning::eval::run_control::{
     LearningCombatAtomicActionV1, LearningCombatIndexedChoiceV1, LearningCombatModelObservationV1,
     LearningCombatMonsterV1, LearningCombatSelectionDomainSemanticsV1,
     LearningCombatSelectionFamilyV1, LearningModelCandidateSemanticsV1, LearningModelDecisionV1,
@@ -1068,7 +1068,7 @@ const _: () = {
 #[cfg(test)]
 mod tests {
     use sts_oracle_eval::content::cards::CardId;
-    use sts_oracle_eval::eval::run_control::{
+    use sts_oracle_learning::eval::run_control::{
         LearningEnvV1, LearningModelChoiceV1, LearningModelDecisionV1, LearningSelectionStepV1,
         RunControlConfig, RunControlSession,
     };

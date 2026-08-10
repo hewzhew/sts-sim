@@ -63,7 +63,7 @@ continuation examples, combat search drivers, and verification.
 | `oracle_lab_client` | lightweight typed client for repeated resident inspection and mutation |
 | `branch_tiny` / `branch_panel` | retained owner-audit/capsule diagnostics; not the current production oracle mainline |
 | `combat_case_review` | diagnostic review ladder for saved combat cases |
-| `combat_search_v2_driver` | fixed combat search from start specs, captures, or benchmark suites |
+| `combat_search_v2` / `combat_search_v2_worker` | lightweight CLI/help frontend plus a dedicated optimized worker for fixed combat search |
 | `rl_dataset_export` | offline decision-sample export for imitation/RL experiments |
 
 See [src/bin/README.md](src/bin/README.md) for binary ownership boundaries.
@@ -92,11 +92,15 @@ archaeology.
 | `src/runtime` | runtime support for run/combat execution |
 | `src/sim` | simulator-facing legal action and apply/search boundaries |
 | `src/ai` | policies, strategic facts, deck mutation, combat search, route/search work |
-| `src/eval` | run-control, benchmark artifacts, diagnostics, reports |
+| `src/eval` | Historical physical source tree for combat eval, run-control, and learning adapters; the crates below define their Cargo owners |
 | `src/bin` | maintained command entrypoints |
-| `crates/sts_oracle_eval` | Optimized Cargo owner for combat evaluation, exact-search orchestration, and run-control |
+| `crates/sts_oracle_eval` | Optimized Cargo owner for combat evaluation and exact-search orchestration |
+| `crates/sts_oracle_run_control` | Independent Cargo owner for exact run sessions, decision application, and run evidence |
+| `crates/sts_oracle_learning_env` | Optimized exact single-episode learning environments and opaque combat-root artifacts |
+| `crates/sts_oracle_learning` | Downstream Cargo owner for model inputs and batched learning adapters |
 | `crates/sts_oracle_runtime` | Cheaply rebuildable Cargo owner for branch execution, persistence, and service orchestration |
-| `crates/sts_oracle_tools` | Library-free Cargo host for maintained oracle command adapters and integration contracts |
+| `crates/sts_combat_search_driver` | Lightweight combat-search frontend and capability-scoped optimized worker |
+| `crates/sts_oracle_tools` | Library-free Cargo host for maintained legacy oracle command adapters and integration contracts |
 | `learning` | online-training callers, curricula, seed schedules, models, and evaluation accounting; never simulator mechanics |
 | `tools` | offline scripts, datasets, panels, and generated artifacts |
 | `docs` | maintained architecture, runbook, testing notes, and current drafts |

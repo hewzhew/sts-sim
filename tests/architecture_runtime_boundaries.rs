@@ -505,26 +505,62 @@ fn oracle_lab_names_its_runtime_dependency_directly() {
 }
 
 #[test]
-fn evaluation_and_branch_runtime_keep_distinct_compilation_owners() {
+fn combat_evaluation_run_control_learning_layers_and_runtime_keep_distinct_compilation_owners() {
     let eval_manifest =
         std::fs::read_to_string("crates/sts_oracle_eval/Cargo.toml").expect("read eval manifest");
+    let control_manifest = std::fs::read_to_string("crates/sts_oracle_run_control/Cargo.toml")
+        .expect("read run-control manifest");
+    let learning_env_manifest =
+        std::fs::read_to_string("crates/sts_oracle_learning_env/Cargo.toml")
+            .expect("read learning-environment manifest");
+    let learning_manifest = std::fs::read_to_string("crates/sts_oracle_learning/Cargo.toml")
+        .expect("read learning-adapter manifest");
     let runtime_manifest = std::fs::read_to_string("crates/sts_oracle_runtime/Cargo.toml")
         .expect("read branch runtime manifest");
     let eval_root =
         std::fs::read_to_string("crates/sts_oracle_eval/src/lib.rs").expect("read eval root");
+    let eval_modules =
+        std::fs::read_to_string("src/eval/mod.rs").expect("read combat-eval modules");
+    let control_eval_root = std::fs::read_to_string("crates/sts_oracle_run_control/src/eval.rs")
+        .expect("read run-control eval root");
+    let learning_env_eval_root =
+        std::fs::read_to_string("crates/sts_oracle_learning_env/src/eval/run_control.rs")
+            .expect("read learning-environment eval root");
+    let learning_eval_root =
+        std::fs::read_to_string("crates/sts_oracle_learning/src/eval/run_control.rs")
+            .expect("read learning-adapter eval root");
     let runtime_root =
         std::fs::read_to_string("crates/sts_oracle_runtime/src/lib.rs").expect("read runtime root");
 
     assert!(
         eval_manifest.contains("name = \"sts_oracle_eval\"")
+            && !eval_manifest.contains("sts_oracle_run_control")
             && !eval_manifest.contains("sts_oracle_runtime"),
-        "evaluation/run-control must remain a lower compilation owner independent of branch runtime"
+        "combat evaluation must remain independent of run-control and branch runtime"
+    );
+    assert!(
+        control_manifest.contains(
+            "sts_oracle_eval = { path = \"../sts_oracle_eval\", default-features = false }"
+        ),
+        "run-control must consume the explicit combat-evaluation package"
+    );
+    assert!(
+        learning_env_manifest.contains(
+            "sts_oracle_run_control = { path = \"../sts_oracle_run_control\", default-features = false }"
+        ),
+        "learning environments must consume run-control without entering its compilation unit"
+    );
+    assert!(
+        learning_manifest.contains(
+            "sts_oracle_learning_env = { path = \"../sts_oracle_learning_env\" }"
+        ) && !learning_manifest.contains("sts_oracle_run_control"),
+        "model-facing learning adapters must consume the exact environment owner directly"
     );
     assert!(
         runtime_manifest.contains(
-            "sts_oracle_eval = { path = \"../sts_oracle_eval\", default-features = false }"
-        ),
-        "branch runtime must consume the explicit evaluation package"
+            "sts_oracle_run_control = { path = \"../sts_oracle_run_control\", default-features = false }"
+        ) && !runtime_manifest.contains("sts_oracle_eval ="),
+        "branch runtime must consume run-control directly rather than a broad evaluation facade"
     );
     let workspace_manifest = std::fs::read_to_string("Cargo.toml").expect("read workspace manifest");
     let eval_profile = workspace_manifest
@@ -532,6 +568,21 @@ fn evaluation_and_branch_runtime_keep_distinct_compilation_owners() {
         .nth(1)
         .and_then(|tail| tail.split("\n[").next())
         .expect("release profile for oracle evaluation");
+    let control_profile = workspace_manifest
+        .split("[profile.release.package.sts_oracle_run_control]")
+        .nth(1)
+        .and_then(|tail| tail.split("\n[").next())
+        .expect("release profile for run-control");
+    let learning_profile = workspace_manifest
+        .split("[profile.release.package.sts_oracle_learning]")
+        .nth(1)
+        .and_then(|tail| tail.split("\n[").next())
+        .expect("release profile for oracle learning");
+    let learning_env_profile = workspace_manifest
+        .split("[profile.release.package.sts_oracle_learning_env]")
+        .nth(1)
+        .and_then(|tail| tail.split("\n[").next())
+        .expect("release profile for exact learning environments");
     let runtime_profile = workspace_manifest
         .split("[profile.release.package.sts_oracle_runtime]")
         .nth(1)
@@ -539,7 +590,16 @@ fn evaluation_and_branch_runtime_keep_distinct_compilation_owners() {
         .expect("release profile for branch runtime");
     assert!(
         eval_profile.contains("opt-level = 2") && eval_profile.contains("codegen-units = 64"),
-        "hot evaluation/run-control must retain its measured optimized release profile"
+        "hot combat evaluation must retain its measured optimized release profile"
+    );
+    assert!(
+        control_profile.contains("opt-level = 2")
+            && control_profile.contains("codegen-units = 64")
+            && learning_env_profile.contains("opt-level = 2")
+            && learning_env_profile.contains("codegen-units = 64")
+            && learning_profile.contains("opt-level = 2")
+            && learning_profile.contains("codegen-units = 64"),
+        "split run-control and learning owners must preserve their optimized behavior"
     );
     assert!(
         runtime_profile.contains("opt-level = 0")
@@ -548,9 +608,18 @@ fn evaluation_and_branch_runtime_keep_distinct_compilation_owners() {
     );
     assert!(
         eval_root.contains("#[path = \"../../../src/eval/mod.rs\"]")
+            && !eval_modules.contains("pub mod run_control;")
+            && control_eval_root.contains("src/eval/run_control/mod.rs")
+            && control_eval_root.contains("src/eval/combat_case.rs")
+            && learning_env_eval_root.contains("src/eval/run_control/learning_env.rs")
+            && learning_env_eval_root.contains("src/eval/run_control/combat_learning_env.rs")
+            && !learning_env_eval_root.contains("src/eval/run_control/learning_model_input.rs")
+            && learning_eval_root.contains("src/eval/run_control/learning_model_input.rs")
+            && learning_eval_root.contains("src/eval/run_control/learning_env_pool.rs")
+            && !learning_eval_root.contains("src/eval/run_control/learning_env.rs")
             && !runtime_root.contains("#[path = \"../../../src/eval/mod.rs\"]")
-            && runtime_root.contains("pub use sts_oracle_eval::"),
-        "src/eval must compile exactly once under sts_oracle_eval and be re-exported without a duplicate runtime owner"
+            && runtime_root.contains("pub use sts_oracle_run_control::"),
+        "combat eval, run-control, exact learning environments, and model adapters must each have one explicit Cargo owner"
     );
 
     let mut eval_sources = Vec::new();
@@ -573,7 +642,7 @@ fn evaluation_and_branch_runtime_keep_distinct_compilation_owners() {
         !root_build.contains("combat_action_imitation_build_contract")
             && eval_build.contains("combat_action_imitation_build_contract::emit")
             && !runtime_build.contains("combat_action_imitation_build_contract"),
-        "action/guidance build identity must invalidate only the package that compiles src/eval"
+        "action/guidance build identity must invalidate only the package that compiles combat eval"
     );
 }
 
@@ -1656,7 +1725,7 @@ fn typed_combat_strategy_facts_do_not_depend_on_or_leak_into_search_control() {
 }
 
 #[test]
-fn oracle_tools_are_a_library_free_command_host_over_the_runtime() {
+fn oracle_tools_keep_legacy_commands_thin_over_dedicated_owners() {
     let manifest = std::fs::read_to_string("crates/sts_oracle_tools/Cargo.toml")
         .expect("read oracle tools manifest");
     assert!(
@@ -1687,6 +1756,36 @@ fn oracle_tools_are_a_library_free_command_host_over_the_runtime() {
             "retired oracle-tools facade file '{retired_facade}' must not return"
         );
     }
+
+    let compatibility_binary =
+        std::fs::read_to_string("src/bin/combat_search_v2_driver/main.rs")
+            .expect("read combat search compatibility binary");
+    assert!(
+        compatibility_binary.contains("sts_combat_search_driver::run_from_env()"),
+        "standalone combat-search compatibility binary must remain a thin shared-command adapter"
+    );
+    let driver_manifest = std::fs::read_to_string("crates/sts_combat_search_driver/Cargo.toml")
+        .expect("read dedicated combat-search driver manifest");
+    assert!(
+        driver_manifest.contains("default = []")
+            && driver_manifest.contains("backend = [")
+            && driver_manifest.contains("optional = true")
+            && driver_manifest.contains("features = [\"combat-search-driver\"]"),
+        "combat-search help must not activate its optimized evaluation backend"
+    );
+    let eval_manifest = std::fs::read_to_string("crates/sts_oracle_eval/Cargo.toml")
+        .expect("read oracle evaluation manifest");
+    assert!(eval_manifest.contains("combat-search-driver = []"));
+    let eval_modules = std::fs::read_to_string("src/eval/mod.rs")
+        .expect("read oracle evaluation module boundary");
+    assert!(
+        !eval_modules.contains("pub mod run_control;")
+            && !eval_modules.contains("pub mod combat_case_context;")
+            && std::fs::read_to_string("crates/sts_oracle_run_control/Cargo.toml")
+                .expect("read run-control manifest")
+                .contains("sts_oracle_eval ="),
+        "combat-search builds must exclude run-control by Cargo ownership, not only by cfg"
+    );
 
     let mut command_sources = Vec::new();
     collect_rust_sources(std::path::Path::new("src/bin"), &mut command_sources);
@@ -2565,6 +2664,7 @@ fn python_learning_bridge_stays_outside_the_root_workspace_and_policy_layer() {
         .expect("read Python learning bridge manifest");
     assert!(bridge_manifest.contains("crate-type = [\"cdylib\"]"));
     assert!(bridge_manifest.contains("sts_oracle_eval"));
+    assert!(bridge_manifest.contains("sts_oracle_learning"));
 
     let source = [
         std::fs::read_to_string("bindings/python_learning/src/lib.rs")
@@ -2848,5 +2948,27 @@ fn python_learning_bridge_stays_outside_the_root_workspace_and_policy_layer() {
     assert!(
         !source.contains("sts_learning"),
         "the bridge must not import its online training caller"
+    );
+}
+
+#[test]
+fn python_learning_bridge_wheel_and_rust_tests_share_one_compatible_cargo_cache() {
+    let manifest = std::fs::read_to_string("bindings/python_learning/Cargo.toml")
+        .expect("read Python learning bridge manifest");
+    assert!(
+        manifest.contains("[profile.release.package.sts_oracle_learning_env]")
+            && manifest.contains("[profile.release.package.sts_oracle_learning]")
+            && manifest.contains("[profile.release.package.sts_learning_bridge]")
+            && !manifest.contains("panic ="),
+        "the standalone bridge must mirror learning owner profiles without making wheel and test panic strategies incompatible"
+    );
+
+    let verifier = std::fs::read_to_string("bindings/python_learning/verify.ps1")
+        .expect("read Python learning bridge verifier");
+    assert!(
+        verifier.contains("$bridgeTarget = Join-Path $bridgeRoot \"target\"")
+            && verifier.matches("--target-dir").count() == 2
+            && !verifier.contains("python-learning-rust-tests"),
+        "wheel codegen and Rust bridge contracts must reuse one Cargo cache while Python artifacts remain isolated"
     );
 }

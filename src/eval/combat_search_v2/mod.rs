@@ -8,7 +8,12 @@ mod root_proposal_probe;
 mod start;
 mod turn_plan_guidance_lab;
 
-pub(crate) use benchmark::validate_combat_search_v2_benchmark_schema_header;
+#[cfg(any(
+    not(feature = "combat-search-driver"),
+    feature = "oracle-lab",
+    feature = "control-full"
+))]
+pub use benchmark::validate_combat_search_v2_benchmark_schema_header;
 pub use benchmark::{
     load_combat_search_v2_benchmark, run_combat_search_v2_benchmark,
     CombatSearchV2BaselineComparison, CombatSearchV2BaselineOutcomeSpec,

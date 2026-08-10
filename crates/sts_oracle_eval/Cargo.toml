@@ -9,6 +9,7 @@ autotests = false
 
 [features]
 default = ["oracle-lab"]
+combat-search-driver = []
 control-full = []
 oracle-lab = []
 

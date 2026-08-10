@@ -26,7 +26,7 @@ use super::combat_trace_view::combat_action_label;
 use super::exact_combat_evidence::ExactCombatEvidence;
 use super::exact_turn_corridor::load_corpus as load_combat_action_imitation_corpus;
 
-const CORPUS_SCHEMA: &str = "ActionSuccessorReanalysisCorpusV1";
+const CORPUS_SCHEMA: &str = "ActionSuccessorReanalysisCorpusV2";
 
 #[derive(Debug, Args)]
 pub(crate) struct ActionReanalysisPolicyArgs {
@@ -259,7 +259,7 @@ fn load_reanalysis_corpus(path: &PathBuf) -> Result<LoadedReanalysisDecision, St
             path.display()
         )
     })?;
-    if corpus.schema_name != CORPUS_SCHEMA || corpus.schema_version != 1 {
+    if corpus.schema_name != CORPUS_SCHEMA || corpus.schema_version != 2 {
         return Err(format!(
             "unsupported action reanalysis corpus schema in {}",
             path.display()

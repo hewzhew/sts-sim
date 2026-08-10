@@ -4,6 +4,8 @@
 //! ids and schema labels from the inference view, keeps variable candidate
 //! sets ragged, and decodes symbolic combat or run selections without eagerly
 //! enumerating their combinatorial payloads.
+//! It is compiled downstream from exact episode transitions so model-view
+//! edits do not invalidate the optimized environment owner.
 
 use std::collections::BTreeSet;
 use std::fmt;
@@ -645,6 +647,30 @@ impl<'a> LearningModelDecisionV1<'a> {
                     | LearningCandidateResolutionV1::CombatSelectionFamily { .. } => return None,
                 };
                 (candidate_id == planner_candidate_id).then_some(ordinal)
+            });
+        let ordinal = matches.next()?;
+        matches.next().is_none().then_some(ordinal)
+    }
+
+    /// Resolves one exact atomic combat input against the model-facing surface.
+    ///
+    /// Exact-search laboratories use this typed join to bind counterfactual
+    /// successor evidence to the same ragged candidate ordinal consumed by a
+    /// learned policy. Inputs withheld by the learning policy prior, structured
+    /// selection families, and ambiguous duplicates remain unavailable.
+    pub fn combat_atomic_ordinal_for_input(&self, input: &ClientInput) -> Option<usize> {
+        let mut matches = self
+            .candidates
+            .iter()
+            .enumerate()
+            .filter_map(|(ordinal, candidate)| match candidate.resolution {
+                LearningCandidateResolutionV1::CombatAtomic {
+                    input: candidate_input,
+                } if candidate_input == input => Some(ordinal),
+                LearningCandidateResolutionV1::StrategicCandidate { .. }
+                | LearningCandidateResolutionV1::CombatAtomic { .. }
+                | LearningCandidateResolutionV1::CombatSelectionFamily { .. }
+                | LearningCandidateResolutionV1::RunSelectionFamily { .. } => None,
             });
         let ordinal = matches.next()?;
         matches.next().is_none().then_some(ordinal)
@@ -1892,6 +1918,46 @@ mod tests {
             decision.choose(0).expect("resolve first ordinal"),
             LearningModelChoiceV1::Apply(LearningActionV1::StrategicCandidate { .. })
         ));
+    }
+
+    #[test]
+    fn combat_model_view_resolves_an_exact_atomic_input_ordinal() {
+        let mut combat = crate::test_support::blank_test_combat();
+        combat
+            .entities
+            .monsters
+            .push(crate::test_support::test_monster(EnemyId::JawWorm));
+        let mut session = RunControlSession::new(RunControlConfig::default());
+        session.engine_state = EngineState::CombatPlayerTurn;
+        session.active_combat = Some(ActiveCombat::new(
+            EngineState::CombatPlayerTurn,
+            combat,
+            CombatContext::Room(RoomCombatContext {
+                room_type: RoomType::MonsterRoom,
+            }),
+        ));
+        let boundary = LearningEnvV1::from_session(session)
+            .observe()
+            .expect("combat boundary");
+        let decision =
+            LearningModelDecisionV1::from_boundary(&boundary).expect("combat model decision");
+
+        let ordinal = decision
+            .combat_atomic_ordinal_for_input(&ClientInput::EndTurn)
+            .expect("end turn ordinal");
+        assert!(matches!(
+            decision.choose(ordinal).expect("resolve end turn"),
+            LearningModelChoiceV1::Apply(LearningActionV1::CombatInput {
+                input: ClientInput::EndTurn,
+            })
+        ));
+        assert_eq!(
+            decision.combat_atomic_ordinal_for_input(&ClientInput::PlayCard {
+                card_index: usize::MAX,
+                target: None,
+            }),
+            None
+        );
     }
 
     #[test]

@@ -1,0 +1,13 @@
+[package]
+name = "sts_oracle_learning"
+version = "0.1.0"
+edition = "2021"
+publish = false
+autobins = false
+autotests = false
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+sts_oracle_learning_env = { path = "../sts_oracle_learning_env" }

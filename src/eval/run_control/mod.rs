@@ -14,9 +14,6 @@ mod combat_complete_line_repair;
 mod combat_complete_line_scoring;
 mod combat_complete_line_search;
 mod combat_complete_line_solver;
-mod combat_learning_env;
-mod combat_learning_env_pool;
-mod combat_learning_root_artifact;
 mod combat_line_adjudication;
 mod combat_line_executor;
 mod combat_line_outcome;
@@ -40,9 +37,6 @@ mod decision_transaction;
 mod exact_run_model;
 mod forced_transition;
 mod input_gate;
-mod learning_env;
-mod learning_env_pool;
-mod learning_model_input;
 mod next_hint;
 mod noncombat_boundary;
 mod noncombat_policy_annotation;
@@ -120,20 +114,6 @@ pub use combat_case_candidate_census::{
     CombatCaseCandidateCensusConclusionV1, CombatCaseCandidateOutcomeSummaryV1,
     CombatCaseCandidateReplayFailureV1, CombatCaseGainedCurseCountV1,
 };
-pub use combat_learning_env::{
-    CombatLearningBoundaryV1, CombatLearningEnvCheckpointV1, CombatLearningEnvV1,
-    CombatLearningEpisodeIdentityV1, CombatLearningResourceSnapshotV1, CombatLearningRootContextV1,
-    CombatLearningRootIdentityV1, CombatLearningRootV1, CombatLearningStepV1,
-    CombatLearningTerminalOutcomeV1,
-};
-pub use combat_learning_env_pool::{
-    CombatLearningEnvPoolError, CombatLearningEnvPoolModelBatchV1, CombatLearningEnvPoolSlotStepV1,
-    CombatLearningEnvPoolStepV1, CombatLearningEnvPoolV1,
-};
-pub use combat_learning_root_artifact::{
-    CombatLearningRootArtifactV1, CombatLearningRootBatchArtifactV1,
-    COMBAT_LEARNING_ROOT_ARTIFACT_FORMAT_VERSION, COMBAT_LEARNING_ROOT_ARTIFACT_MAGIC,
-};
 pub use combat_line_adjudication::{
     CombatLineAdjudicationV1, CombatLineCleanlinessV1, CombatLineObservedOutcomeV1,
     CombatLineRejectionReasonV1,
@@ -165,27 +145,6 @@ pub use exact_run_model::{exact_run_decision_successor_v1, ExactRunDecisionSucce
 pub use forced_transition::{
     RunForcedTransitionKindV1, RunForcedTransitionV1, RUN_FORCED_TRANSITION_SCHEMA_NAME,
     RUN_FORCED_TRANSITION_SCHEMA_VERSION,
-};
-pub use learning_env::{
-    LearningActionV1, LearningBoundaryKindV1, LearningBoundaryV1, LearningCombatBoundaryV1,
-    LearningEnvV1, LearningObservationCompletenessV1, LearningPublicRunContextV1, LearningStepV1,
-    LearningStrategicBoundaryV1, LearningStrategicContextKindV1, LearningTerminalOutcomeV1,
-};
-pub use learning_env_pool::{
-    LearningEnvPoolError, LearningEnvPoolModelBatchV1, LearningEnvPoolSlotStepV1,
-    LearningEnvPoolStepV1, LearningEnvPoolV1,
-};
-pub use learning_model_input::{
-    CombatLearningPotionPolicyV1, LearningCombatAtomicActionV1, LearningCombatIndexedChoiceV1,
-    LearningCombatModelObservationV1, LearningCombatMonsterV1, LearningCombatMonstersV1,
-    LearningCombatSelectionDomainSemanticsV1, LearningCombatSelectionDomainV1,
-    LearningCombatSelectionFamilyV1, LearningDenseActionMaskV1, LearningModelBatchV1,
-    LearningModelCandidateSemanticsV1, LearningModelCandidateV1, LearningModelChoiceV1,
-    LearningModelDecisionV1, LearningModelInputError, LearningModelObservationV1,
-    LearningRunSelectionFamilyV1, LearningSelectionCandidateSemanticsV1,
-    LearningSelectionCandidateV1, LearningSelectionDecisionV1, LearningSelectionDraftV1,
-    LearningSelectionModelBatchV1, LearningSelectionModelRowV1, LearningSelectionStepV1,
-    LearningStrategicModelObservationV1, LearningStrategicPotionSlotV1, LearningStrategicPotionV1,
 };
 pub use oracle_analysis_session::{
     OracleAnalysisAdvanceReportV1, OracleAnalysisAdvanceRequestV1, OracleAnalysisAdvanceStatusV1,
@@ -251,6 +210,13 @@ pub use outcome::{
     load_combat_baseline_outcome_v1, save_combat_baseline_outcome_v1, CombatBaselineOutcomeV1,
     COMBAT_BASELINE_OUTCOME_SCHEMA_NAME, COMBAT_BASELINE_OUTCOME_SCHEMA_VERSION,
 };
+
+pub fn learning_selection_input_is_allowed_v1(
+    session: &RunControlSession,
+    input: &crate::state::core::ClientInput,
+) -> Option<bool> {
+    selection_surface::current_selection_input_is_allowed(session, input)
+}
 pub use persistent_burden_cutpoint_probe::{
     probe_combat_case_persistent_burden_cutpoints_v1, CombatCasePersistentBurdenCutpointProbeV1,
     PersistentBurdenCutpointActionDomainV1, PersistentBurdenCutpointAggregateV1,

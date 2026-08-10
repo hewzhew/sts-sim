@@ -14,8 +14,8 @@ use crate::ai::combat_search_v2::{
     WHOLE_COMBAT_OUTCOME_CRITERIA,
 };
 use crate::eval::artifact::ArtifactTrustLevel;
+use crate::eval::combat_baseline_outcome::load_combat_baseline_outcome_v1;
 use crate::eval::fingerprint::StateFingerprintV2;
-use crate::eval::run_control::load_combat_baseline_outcome_v1;
 use crate::sim::combat::CombatTerminal;
 
 use super::benchmark_gate::{
@@ -299,9 +299,7 @@ pub fn load_combat_search_v2_benchmark(
     })
 }
 
-pub(crate) fn validate_combat_search_v2_benchmark_schema_header(
-    payload: &str,
-) -> Result<(), String> {
+pub fn validate_combat_search_v2_benchmark_schema_header(payload: &str) -> Result<(), String> {
     #[derive(Deserialize)]
     struct BenchmarkSchemaProbe {
         schema_name: Option<String>,

@@ -13,7 +13,7 @@ use sts_oracle_eval::ai::combat_learning_observation::{
     CombatLearningPowerV1,
 };
 use sts_oracle_eval::content::potions::PotionId;
-use sts_oracle_eval::eval::run_control::{
+use sts_oracle_learning::eval::run_control::{
     CombatLearningBoundaryV1, CombatLearningEnvPoolV1, CombatLearningPotionPolicyV1,
     CombatLearningRootContextV1, CombatLearningRootIdentityV1, CombatLearningRootV1,
     LearningActionV1,
@@ -785,7 +785,7 @@ mod tests {
     use sts_oracle_eval::content::cards::CardId;
     use sts_oracle_eval::content::monsters::exordium::jaw_worm::JawWorm;
     use sts_oracle_eval::content::monsters::{EnemyId, MonsterBehavior};
-    use sts_oracle_eval::eval::run_control::{LearningActionV1, RunControlSession};
+    use sts_oracle_learning::eval::run_control::{LearningActionV1, RunControlSession};
     use sts_oracle_eval::runtime::combat::CombatCard;
     use sts_oracle_eval::state::core::{
         ActiveCombat, ClientInput, CombatContext, EngineState, RoomCombatContext,

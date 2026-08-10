@@ -63,7 +63,7 @@ $smokeLog = Join-Path $runRoot "smoke.log"
 $learningTestLog = Join-Path $runRoot "learning-tests.log"
 $pytestToolLog = Join-Path $runRoot "pytest-tool.log"
 $targetInstallLog = Join-Path $runRoot "target-install.log"
-$rustTestTarget = Join-Path $repositoryRoot ".oracle-lab\target\python-learning-rust-tests"
+$bridgeTarget = Join-Path $bridgeRoot "target"
 $totalWatch = [Diagnostics.Stopwatch]::StartNew()
 $phaseWatch = [Diagnostics.Stopwatch]::new()
 $rustTestSeconds = 0.0
@@ -113,6 +113,7 @@ $maturinArgs = @(
     "-m", "maturin", "build",
     "--manifest-path", (Join-Path $bridgeRoot "Cargo.toml"),
     "--interpreter", $pythonPath,
+    "--target-dir", $bridgeTarget,
     "--out", $wheelRoot
 )
 if (-not $Fast) {
@@ -136,7 +137,7 @@ if (-not $Fast -and -not $SkipRustTests) {
         $phaseWatch.Restart()
         & cargo test `
             --manifest-path (Join-Path $bridgeRoot "Cargo.toml") `
-            --target-dir $rustTestTarget `
+            --target-dir $bridgeTarget `
             --release `
             --lib *> $rustTestLog
         $rustTestExit = $LASTEXITCODE

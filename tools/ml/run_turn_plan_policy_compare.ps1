@@ -19,19 +19,17 @@ param(
     [string] $Left = "diagnostic_only",
     [string] $Right = "tactical_enemy_turn_boundary_frontier_seed",
     [int] $MaxNodes = 5000,
-    [switch] $Build,
-    [ValidateSet("release-final", "release", "dev-opt", "debug")]
-    [string] $BuildProfile = "release"
+    [switch] $Build
 )
 
 $ErrorActionPreference = "Stop"
 
 $RepoRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
-$DriverExe = Join-Path $RepoRoot "target\$BuildProfile\combat_search_v2_driver.exe"
+$WorkerExe = Join-Path $RepoRoot "target\release\combat_search_v2_worker.exe"
 
-if ($Build -or -not (Test-Path -LiteralPath $DriverExe)) {
-    Write-Host "building combat_search_v2_driver profile=$BuildProfile"
-    cargo build -p sts_oracle_tools --profile $BuildProfile --bin combat_search_v2_driver
+if ($Build -or -not (Test-Path -LiteralPath $WorkerExe)) {
+    Write-Host "building the dedicated combat-search worker"
+    cargo build --locked --release -p sts_combat_search_driver --features backend --bin combat_search_v2_worker
 }
 
 if ($BenchmarkPath.Count -eq 0) {
@@ -67,7 +65,7 @@ foreach ($Benchmark in $BenchmarkPath) {
         Join-Path $RepoRoot $Benchmark
     }
     $Name = Split-Path (Split-Path $BenchmarkFullPath -Parent) -Leaf
-    $Report = & $DriverExe `
+    $Report = & $WorkerExe `
         --benchmark-spec $BenchmarkFullPath `
         --compare-turn-plan "$Left,$Right" `
         --max-nodes $MaxNodes |

@@ -98,6 +98,41 @@ pub(crate) fn exact_terminal_non_win(boundary: impl Into<String>) -> ExactCombat
     }
 }
 
+/// Preserve a replay-verified win after still charging the ordinary equal-work
+/// search used for every first-action successor. A better searched win remains
+/// authoritative; otherwise the verified line is the minimum known quality.
+pub(crate) fn retain_verified_win_floor(
+    evaluation: ExactCombatEvaluation,
+    source: &'static str,
+    final_hp: i32,
+    witness_actions: Vec<ClientInput>,
+) -> ExactCombatEvaluation {
+    if matches!(
+        &evaluation.evidence,
+        ExactCombatEvidence::ExactWin {
+            final_hp: searched_hp,
+            ..
+        } if *searched_hp >= final_hp
+    ) {
+        return evaluation;
+    }
+    let search_cost = match &evaluation.evidence {
+        ExactCombatEvidence::ExactWin { search_cost, .. } => search_cost.clone(),
+        ExactCombatEvidence::ExactRefutation { search_cost, .. }
+        | ExactCombatEvidence::BudgetUnknown { search_cost, .. } => Some(search_cost.clone()),
+        ExactCombatEvidence::ExactTerminalNonWin { .. } => None,
+    };
+    ExactCombatEvaluation {
+        evidence: ExactCombatEvidence::ExactWin {
+            source: source.to_string(),
+            final_hp,
+            suffix_action_count: witness_actions.len(),
+            search_cost,
+        },
+        witness_actions: Some(witness_actions),
+    }
+}
+
 pub(crate) fn evaluate_nonterminal_position(
     position: &CombatPosition,
     solve_work: usize,
@@ -112,7 +147,7 @@ pub(crate) fn evaluate_nonterminal_position(
         },
         generation_quantum_work: 4,
         max_turn_depth: 32,
-        satisfaction: OracleCombatWitnessSatisfaction::FirstWitness,
+        satisfaction: OracleCombatWitnessSatisfaction::BudgetOrExhaustion,
         max_potions_used: None,
         ..LocalTurnGraphWitnessConfig::default()
     };
@@ -133,7 +168,7 @@ pub(crate) fn evaluate_nonterminal_position(
     if let Some(witness) = report.witness.as_ref() {
         return Ok(ExactCombatEvaluation {
             evidence: ExactCombatEvidence::ExactWin {
-                source: "bounded_exact_search".to_string(),
+                source: "bounded_equal_work_search".to_string(),
                 final_hp: witness.final_position.combat.entities.player.current_hp,
                 suffix_action_count: witness.actions.len(),
                 search_cost: Some(search_cost(&report)),

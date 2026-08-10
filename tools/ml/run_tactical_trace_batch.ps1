@@ -26,8 +26,6 @@ param(
     [Nullable[int]] $TurnPlanProbeMaxEndStates = $null,
     [Nullable[int]] $TurnPlanProbePerBucketLimit = $null,
     [switch] $Build,
-    [ValidateSet("release-final", "release", "dev-opt", "debug")]
-    [string] $BuildProfile = "release",
     [switch] $RunBaseline,
     [ValidateSet("source", "group", "source-cv")]
     [string] $SplitMode = "source-cv",
@@ -47,14 +45,14 @@ param(
 $ErrorActionPreference = "Stop"
 
 $RepoRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
-$DriverExe = Join-Path $RepoRoot "target\$BuildProfile\combat_search_v2_driver.exe"
+$WorkerExe = Join-Path $RepoRoot "target\release\combat_search_v2_worker.exe"
 $Extractor = Join-Path $RepoRoot "tools\ml\combat_tactical_trace_extract.py"
 $Baseline = Join-Path $RepoRoot "tools\ml\combat_first_action_ranking_baseline.py"
 $OutputDir = Join-Path $RepoRoot $OutputRoot
 
-if ($Build -or -not (Test-Path -LiteralPath $DriverExe)) {
-    Write-Host "building combat_search_v2_driver profile=$BuildProfile"
-    cargo build -p sts_oracle_tools --profile $BuildProfile --bin combat_search_v2_driver
+if ($Build -or -not (Test-Path -LiteralPath $WorkerExe)) {
+    Write-Host "building the dedicated combat-search worker"
+    cargo build --locked --release -p sts_combat_search_driver --features backend --bin combat_search_v2_worker
 }
 
 if ($CleanOutput -and (Test-Path -LiteralPath $OutputDir)) {
@@ -109,13 +107,13 @@ foreach ($Benchmark in $BenchmarkPath) {
         "--probe-max-nodes", "$ProbeMaxNodes"
     ) + $TurnPlanProbeArgs + @("--output", "$LabPath")
     if ($CompactOutput) {
-        $DriverOutput = & $DriverExe @DriverArgs 2>&1
+        $DriverOutput = & $WorkerExe @DriverArgs 2>&1
         if ($LASTEXITCODE -ne 0) {
             $DriverOutput | ForEach-Object { Write-Host $_ }
             throw "turn-plan lab failed for $Name"
         }
     } else {
-        & $DriverExe @DriverArgs
+        & $WorkerExe @DriverArgs
     }
 
     Write-Host "[$Name] tactical episode"

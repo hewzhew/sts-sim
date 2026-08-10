@@ -195,7 +195,8 @@ impl LearningEnvV1 {
         RunControlSessionCheckpointV1::from_session(&self.session)
     }
 
-    pub(crate) fn fresh_run_config(&self, seed: u64) -> RunControlConfig {
+    #[doc(hidden)]
+    pub fn fresh_run_config(&self, seed: u64) -> RunControlConfig {
         self.session.fresh_run_config(seed)
     }
 
@@ -219,7 +220,8 @@ impl LearningEnvV1 {
         )
     }
 
-    pub(super) fn public_run_context(
+    #[doc(hidden)]
+    pub fn public_run_context(
         &self,
         boundary: &LearningBoundaryV1,
     ) -> Result<LearningPublicRunContextV1, String> {
@@ -344,7 +346,8 @@ impl LearningEnvV1 {
         self.step_prepared(prepared)
     }
 
-    pub(super) fn prepare_action(
+    #[doc(hidden)]
+    pub fn prepare_action(
         &self,
         action: LearningActionV1,
     ) -> Result<LearningPreparedActionV1, String> {
@@ -360,7 +363,8 @@ impl LearningEnvV1 {
         }
     }
 
-    pub(super) fn step_prepared(
+    #[doc(hidden)]
+    pub fn step_prepared(
         &mut self,
         action: LearningPreparedActionV1,
     ) -> Result<LearningStepV1, String> {
@@ -445,9 +449,7 @@ impl LearningEnvV1 {
                 )
             })?;
         let input = ClientInput::SubmitSelection(resolution.clone());
-        if super::selection_surface::current_selection_input_is_allowed(&self.session, &input)
-            != Some(true)
-        {
+        if super::learning_selection_input_is_allowed_v1(&self.session, &input) != Some(true) {
             return Err(
                 "run selection resolution is not legal at the current boundary".to_string(),
             );
@@ -479,7 +481,7 @@ pub(super) fn prepare_learning_combat_input_v1(
     let legal = surface.atomic_actions.contains(&input)
         || match &position.engine {
             EngineState::PendingChoice(choice) => {
-                pending_choice_input_is_legal(choice, &position.combat, &input)
+                pending_choice_input_is_legal(&choice, &position.combat, &input)
             }
             _ => false,
         };
@@ -490,7 +492,8 @@ pub(super) fn prepare_learning_combat_input_v1(
 }
 
 #[derive(Clone, Debug)]
-pub(super) enum LearningPreparedActionV1 {
+#[doc(hidden)]
+pub enum LearningPreparedActionV1 {
     StrategicCandidate {
         run_candidate_id: String,
     },
@@ -780,6 +783,3 @@ mod tests {
         );
     }
 }
-
-#[cfg(test)]
-mod smoke_tests;

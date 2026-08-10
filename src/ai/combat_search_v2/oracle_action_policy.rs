@@ -13,7 +13,6 @@ use crate::{
 };
 use serde::Serialize;
 
-use super::action_ordering::{order_indexed_action_choices_with_plugins, IndexedActionChoice};
 use super::frontier::SearchNode;
 use super::value::combat_search_state_value_for_state;
 
@@ -255,7 +254,7 @@ where
     I: Clone + ExactSizeIterator<Item = &'a ClientInput>,
 {
     let plugins = oracle_action_ordering_plugins(position);
-    let mut ranked = inputs
+    let ranked = inputs
         .clone()
         .enumerate()
         .map(|(original_action_id, input)| {
@@ -270,30 +269,7 @@ where
             )
         })
         .collect::<Vec<_>>();
-    if super::action_ordering::action_ordering_enabled(&position.engine) {
-        ranked.sort_by(|(left_id, left), (right_id, right)| {
-            super::action_ordering::compare_action_ordering_priorities(left, None, right, None)
-                .then_with(|| left_id.cmp(right_id))
-        });
-    }
-    let mut rank_by_input = vec![None; inputs.len()];
-    for (rank, (original_action_id, priority)) in ranked.into_iter().enumerate() {
-        rank_by_input[original_action_id] = Some((rank, priority.policy_log2_bias));
-    }
-    rank_by_input
-        .into_iter()
-        .zip(inputs)
-        .map(|(rank, input)| {
-            if matches!(input, ClientInput::UsePotion { .. })
-                && !super::potions::semantic_potion_action_allowed(&position.combat, input)
-            {
-                return 1.0e-6;
-            }
-            rank.map_or(1.0, |(rank, policy_log2_bias)| {
-                oracle_rank_weight_with_semantic_bias(rank, policy_log2_bias)
-            })
-        })
-        .collect()
+    oracle_atomic_action_policy_weights_from_ranked_priorities(position, inputs, ranked)
 }
 
 fn oracle_atomic_action_policy_weights_from_iter<'a, I>(
@@ -304,53 +280,73 @@ where
     I: Clone + ExactSizeIterator<Item = &'a ClientInput>,
 {
     let stepper = EngineCombatStepper;
-    let choices = inputs
+    let plugins = oracle_action_ordering_plugins(position);
+    let ranked = inputs
         .clone()
         .enumerate()
         .filter_map(|(original_action_id, input)| {
-            stepper
-                .choice_for_legal_input(position, input)
-                .map(|choice| IndexedActionChoice {
+            stepper.choice_for_legal_input(position, input).map(|_| {
+                (
                     original_action_id,
-                    choice,
-                })
+                    super::action_priority::priority_for_input_with_plugins(
+                        &position.engine,
+                        &position.combat,
+                        input,
+                        plugins,
+                    ),
+                )
+            })
         })
         .collect::<Vec<_>>();
-    let mut rank_by_input = vec![None; inputs.len()];
-    for (rank, choice) in order_indexed_action_choices_with_plugins(
-        &position.engine,
-        &position.combat,
-        choices,
-        oracle_action_ordering_plugins(position),
-    )
-    .choices
-    .into_iter()
-    .enumerate()
-    {
-        rank_by_input[choice.original_action_id] = Some(rank);
+    oracle_atomic_action_policy_weights_from_ranked_priorities(position, inputs, ranked)
+}
+
+fn oracle_atomic_action_policy_weights_from_ranked_priorities<'a, I>(
+    position: &CombatPosition,
+    inputs: I,
+    mut ranked: Vec<(usize, super::action_priority::ActionOrderingPriority)>,
+) -> Vec<f64>
+where
+    I: ExactSizeIterator<Item = &'a ClientInput>,
+{
+    if super::action_ordering::action_ordering_enabled(&position.engine) {
+        ranked.sort_by(|(left_id, left), (right_id, right)| {
+            super::action_ordering::compare_action_ordering_priorities(left, None, right, None)
+                .then_with(|| left_id.cmp(right_id))
+        });
     }
+
+    let mut rank_by_input = vec![None; inputs.len()];
+    let mut previous_priority = None;
+    let mut competition_rank = 0;
+    for (ordered_index, (original_action_id, priority)) in ranked.into_iter().enumerate() {
+        if previous_priority.is_some_and(|previous| {
+            super::action_ordering::compare_action_ordering_priorities(
+                &previous, None, &priority, None,
+            ) != std::cmp::Ordering::Equal
+        }) {
+            competition_rank = ordered_index;
+        }
+        rank_by_input[original_action_id] = Some((competition_rank, priority.policy_log2_bias));
+        previous_priority = Some(priority);
+    }
+
     rank_by_input
         .into_iter()
         .zip(inputs)
-        // The source is an ordinal action ordering, not a calibrated action
-        // probability.  Reciprocal rank keeps that ordering useful while
-        // preventing two locally non-greedy actions from acquiring an
-        // exponential path penalty before their turn-boundary successor can
-        // be evaluated.
+        // The source is a semantic action ordering, not a calibrated action
+        // probability. Reciprocal competition rank keeps that ordering useful
+        // without inventing distinctions between tied card instances or
+        // mechanically symmetric targets. The caller still owns normalization
+        // and its uniform exploration floor.
         .map(|(rank, input)| {
             if matches!(input, ClientInput::UsePotion { .. })
                 && !super::potions::semantic_potion_action_allowed(&position.combat, input)
             {
                 return 1.0e-6;
             }
-            rank.map_or(1.0, |rank| {
-                let priority = super::action_priority::priority_for_input_with_plugins(
-                    &position.engine,
-                    &position.combat,
-                    input,
-                    oracle_action_ordering_plugins(position),
-                );
-                oracle_rank_weight_with_semantic_bias(rank, priority.policy_log2_bias)
+            rank.map_or(1.0, |(rank, policy_log2_bias)| {
+                oracle_rank_weight_with_semantic_bias(rank, policy_log2_bias)
             })
         })
         .collect()
@@ -1083,6 +1079,104 @@ mod tests {
             oracle_legal_atomic_action_policy_weights_for_refs(&position, &input_refs),
             oracle_atomic_action_policy_weights(&position, &inputs)
         );
+    }
+
+    #[test]
+    fn equivalent_card_instances_share_one_policy_rank() {
+        let mut combat = crate::test_support::blank_test_combat();
+        combat.entities.monsters = vec![crate::test_support::test_monster(EnemyId::JawWorm)];
+        combat.zones.hand = vec![
+            CombatCard::new(CardId::Defend, 11),
+            CombatCard::new(CardId::Defend, 12),
+            CombatCard::new(CardId::Defend, 13),
+        ];
+        let position = CombatPosition::new(EngineState::CombatPlayerTurn, combat);
+        let inputs = vec![
+            ClientInput::PlayCard {
+                card_index: 0,
+                target: None,
+            },
+            ClientInput::PlayCard {
+                card_index: 1,
+                target: None,
+            },
+            ClientInput::PlayCard {
+                card_index: 2,
+                target: None,
+            },
+        ];
+        let input_refs = inputs.iter().collect::<Vec<_>>();
+
+        let validated = oracle_atomic_action_policy_weights(&position, &inputs);
+        let trusted = oracle_legal_atomic_action_policy_weights_for_refs(&position, &input_refs);
+
+        assert_eq!(validated, trusted);
+        assert_eq!(validated, vec![1.0, 1.0, 1.0]);
+    }
+
+    #[test]
+    fn symmetric_sentry_targets_share_one_policy_rank() {
+        let mut combat = crate::test_support::blank_test_combat();
+        let mut left = crate::test_support::planned_monster(EnemyId::Sentry, 1);
+        left.id = 1;
+        left.slot = 0;
+        left.logical_position = -1;
+        left.current_hp = 44;
+        left.max_hp = 44;
+        let mut middle = crate::test_support::planned_monster(EnemyId::Sentry, 2);
+        middle.id = 2;
+        middle.slot = 1;
+        middle.logical_position = 0;
+        middle.current_hp = 44;
+        middle.max_hp = 44;
+        let mut right = crate::test_support::planned_monster(EnemyId::Sentry, 1);
+        right.id = 3;
+        right.slot = 2;
+        right.logical_position = 1;
+        right.current_hp = 44;
+        right.max_hp = 44;
+        combat.entities.monsters = vec![left, middle, right];
+        combat.zones.hand = vec![CombatCard::new(CardId::Strike, 11)];
+        let position = CombatPosition::new(EngineState::CombatPlayerTurn, combat);
+        let inputs = vec![
+            ClientInput::PlayCard {
+                card_index: 0,
+                target: Some(1),
+            },
+            ClientInput::PlayCard {
+                card_index: 0,
+                target: Some(3),
+            },
+        ];
+        let input_refs = inputs.iter().collect::<Vec<_>>();
+
+        let validated = oracle_atomic_action_policy_weights(&position, &inputs);
+        let trusted = oracle_legal_atomic_action_policy_weights_for_refs(&position, &input_refs);
+
+        assert_eq!(validated, trusted);
+        assert_eq!(validated[0], validated[1]);
+    }
+
+    #[test]
+    fn distinct_semantic_priorities_still_receive_distinct_weights() {
+        let mut combat = crate::test_support::blank_test_combat();
+        let mut monster = crate::test_support::test_monster(EnemyId::JawWorm);
+        monster.current_hp = 6;
+        monster.max_hp = 6;
+        combat.entities.monsters = vec![monster];
+        combat.zones.hand = vec![CombatCard::new(CardId::Strike, 11)];
+        let position = CombatPosition::new(EngineState::CombatPlayerTurn, combat);
+        let inputs = vec![
+            ClientInput::PlayCard {
+                card_index: 0,
+                target: Some(1),
+            },
+            ClientInput::EndTurn,
+        ];
+
+        let weights = oracle_atomic_action_policy_weights(&position, &inputs);
+
+        assert!(weights[0] > weights[1], "weights={weights:?}");
     }
 
     #[test]

@@ -7,7 +7,7 @@ use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyDict, PyList};
 use serde::{Deserialize, Serialize};
-use sts_oracle_eval::eval::run_control::{
+use sts_oracle_learning::eval::run_control::{
     capture_planner_boundary_yield_v1, CombatLearningPotionPolicyV1,
     CombatLearningRootBatchArtifactV1, CombatLearningRootV1, LearningActionV1,
     LearningBoundaryKindV1, LearningBoundaryV1, LearningEnvPoolV1, LearningEnvV1,
@@ -1651,7 +1651,7 @@ mod checkpoint_tests {
     use sts_oracle_eval::content::cards::CardId;
     use sts_oracle_eval::content::monsters::EnemyId;
     use sts_oracle_eval::content::potions::{Potion, PotionId};
-    use sts_oracle_eval::eval::run_control::{
+    use sts_oracle_learning::eval::run_control::{
         CombatLearningRootBatchArtifactV1, LearningEnvV1, LearningModelChoiceV1,
         LearningModelDecisionV1, LearningSelectionStepV1, RunControlSession,
     };

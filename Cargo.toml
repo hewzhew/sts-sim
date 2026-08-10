@@ -15,12 +15,16 @@ members = [
     "crates/oracle_lab_client",
     "crates/sts_oracle_lab",
     "crates/sts_oracle_eval",
+    "crates/sts_oracle_learning",
+    "crates/sts_oracle_learning_env",
+    "crates/sts_oracle_run_control",
     "crates/sts_oracle_runtime",
     "crates/oracle_lab_protocol",
     "crates/sts_combat_legacy",
     "crates/sts_combat_knowledge",
     "crates/sts_combat_contract",
     "crates/sts_combat_planner",
+    "crates/sts_combat_search_driver",
     "crates/sts_combat_strategy",
     "crates/sts_oracle_tools",
     "tools/architecture_checks",
@@ -65,13 +69,35 @@ panic = "abort"
 opt-level = 0
 codegen-units = 256
 
+[profile.release.package.sts_combat_search_driver]
+opt-level = 0
+codegen-units = 256
+
 [profile.release.package.sts_oracle_lab]
 opt-level = 0
 codegen-units = 256
 
 [profile.release.package.sts_oracle_eval]
-# Evaluation and run-control contain hot exact-search orchestration. Keep their
-# optimized code generation independent from branch persistence and command IO.
+# Combat evaluation contains hot exact-search orchestration. Keep its optimized
+# code generation independent from run-control, branch persistence, and command IO.
+opt-level = 2
+codegen-units = 64
+
+[profile.release.package.sts_oracle_run_control]
+# Run-control consumes combat evaluation but owns a separate invalidation unit.
+# Preserve its existing optimized behavior while the remaining domains are split.
+opt-level = 2
+codegen-units = 64
+
+[profile.release.package.sts_oracle_learning]
+# Model projections and batched adapters retain optimized execution. Their
+# smaller downstream owner now rebuilds independently from exact environments.
+opt-level = 2
+codegen-units = 64
+
+[profile.release.package.sts_oracle_learning_env]
+# Exact environment transitions remain on the training hot path while model
+# projection edits compile in the downstream adapter package.
 opt-level = 2
 codegen-units = 64
 
@@ -109,11 +135,27 @@ panic = "abort"
 opt-level = 3
 codegen-units = 1
 
+[profile.release-final.package.sts_combat_search_driver]
+opt-level = 3
+codegen-units = 1
+
 [profile.release-final.package.sts_oracle_lab]
 opt-level = 3
 codegen-units = 1
 
 [profile.release-final.package.sts_oracle_eval]
+opt-level = 3
+codegen-units = 1
+
+[profile.release-final.package.sts_oracle_run_control]
+opt-level = 3
+codegen-units = 1
+
+[profile.release-final.package.sts_oracle_learning]
+opt-level = 3
+codegen-units = 1
+
+[profile.release-final.package.sts_oracle_learning_env]
 opt-level = 3
 codegen-units = 1
 
