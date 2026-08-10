@@ -539,6 +539,14 @@ fn combat_evaluation_run_control_learning_layers_and_runtime_keep_distinct_compi
         .unwrap_or(&combat_case_context);
     let combat_budget = std::fs::read_to_string("src/eval/run_control/oracle_combat_budget.rs")
         .expect("read combat budget contract");
+    let combat_work_contract =
+        std::fs::read_to_string("src/eval/run_control/oracle_combat_work_contract.rs")
+            .expect("read combat-work resume contract");
+    let combat_work = std::fs::read_to_string("src/eval/run_control/oracle_combat_work.rs")
+        .expect("read live combat-work owner");
+    let analysis_session =
+        std::fs::read_to_string("src/eval/run_control/oracle_analysis_session.rs")
+            .expect("read analysis session");
     let run_explorer = std::fs::read_to_string("src/eval/run_control/oracle_run_explorer.rs")
         .expect("read run explorer");
     let combat_search_driver =
@@ -640,9 +648,18 @@ fn combat_evaluation_run_control_learning_layers_and_runtime_keep_distinct_compi
             && !combat_case_context.contains("use crate::eval::combat_case::")
             && combat_budget.contains("pub struct OracleRunCombatBudgetsV1")
             && !run_explorer.contains("pub struct OracleRunCombatBudgetsV1")
+            && combat_work_contract.contains("pub struct OracleRunCombatWorkCheckpointV1")
+            && combat_work_contract.contains("pub enum OracleCombatLocalCandidateDispositionV1")
+            && !combat_work_contract.contains("LocalTurnGraphWitnessSession")
+            && !combat_work_contract.contains("PolicyDiscrepancySession")
+            && !combat_work.contains("pub struct OracleRunCombatWorkCheckpointV1")
+            && !run_explorer.contains("pub struct OracleRunCombatWorkCheckpointV1")
+            && analysis_session.contains("use super::oracle_combat_work_contract::{")
+            && run_explorer
+                .contains("oracle_combat_work_contract::OracleRunCombatWorkCheckpointV1")
             && combat_search_driver.contains("load_combat_case_core_v1")
             && !combat_search_driver.contains("CombatCasePositionInput"),
-        "combat-case core and owner budget data must stay independent from production envelopes, explorer queues, and ad-hoc frontend schemas"
+        "combat-case core plus owner budget and resume contracts must stay independent from production envelopes, live search state, explorer queues, and ad-hoc frontend schemas"
     );
 
     let mut eval_sources = Vec::new();

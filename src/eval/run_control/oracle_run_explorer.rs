@@ -6,7 +6,8 @@ use serde::{Deserialize, Serialize};
 use crate::state::core::{EngineState, RunResult};
 
 use super::oracle_combat_budget::{OracleRunCombatBudgetsV1, OracleRunCombatQualityPolicyV1};
-use super::oracle_combat_work::{OracleRunCombatWorkCheckpointV1, OracleRunCombatWorkV1};
+use super::oracle_combat_work::OracleRunCombatWorkV1;
+use super::oracle_combat_work_contract::OracleRunCombatWorkCheckpointV1;
 use super::oracle_selection_cursor::LazyUnorderedSelectionCursorV1;
 use super::{
     oracle_active_victory_potion_slot_mask_v1, NeowOracleExpansionV1,

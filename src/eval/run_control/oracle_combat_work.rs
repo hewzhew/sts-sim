@@ -7,12 +7,14 @@ use super::combat_line_executor::apply_oracle_combat_witness;
 use super::combat_search::RunControlCombatWorkAdvanceV1;
 use super::combat_search_setup::prepare_search_combat;
 use super::oracle_combat_policy::ExistingCombatKnowledgePolicy;
+use super::oracle_combat_work_contract::{
+    OracleCombatLocalCandidateDispositionV1, OracleRunCombatWorkCheckpointV1,
+};
 use super::progress_options::{RunControlCombatSearchQuantum, RunControlSearchCombatOptions};
 use super::session::{RunControlCombatSearchRejection, RunControlSession, RunProgressOutcome};
 use super::trace_annotation::CombatAutomationTrajectorySource;
 use crate::eval::combat_guidance_bundle::CombatGuidanceBundleV1;
 use crate::state::core::ClientInput;
-use serde::{Deserialize, Serialize};
 use sts_combat_planner::{
     combat_plan_state_guide_policy_v1, root_initial_expansion_work_for_budget, CombatDecisionRoot,
     LocalTurnGraphGuideServiceBias, LocalTurnGraphRootActionFamilySnapshot,
@@ -91,16 +93,6 @@ enum PortfolioWitnessSatisfactionV1 {
     BudgetOrExhaustion,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum OracleCombatLocalCandidateDispositionV1 {
-    SelectedIncumbent,
-    RejectedPotionSpendMissesSatisfaction,
-    RejectedPotionSpendLeavesUnrecoveredTheft,
-    RejectedOutsidePotionContract,
-    RejectedByPortfolioComparison,
-}
-
 impl PortfolioMemberV1 {
     fn other(self) -> Self {
         match self {
@@ -114,31 +106,6 @@ impl PortfolioMemberV1 {
 enum PortfolioStatusV1 {
     Local(LocalTurnGraphWitnessStatus),
     PolicyDiscrepancy(PolicyDiscrepancyStatus),
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct OracleRunCombatWorkCheckpointV1 {
-    pub consumed_nodes: u64,
-    pub remaining_nodes: usize,
-    pub remaining_engine_steps: usize,
-    pub remaining_wall_ms: Option<u64>,
-    pub quantum_count: usize,
-    pub restart_count: usize,
-    #[serde(default)]
-    pub incumbent_revision: u64,
-    #[serde(default)]
-    pub quanta_since_incumbent_improvement: usize,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub max_potions_used: Option<u32>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub allowed_potion_slots: Option<u64>,
-    /// When true, a verified potion-free incumbent is protected from a
-    /// higher-HP spending line that still misses the configured satisfaction.
-    #[serde(default)]
-    pub potion_spend_requires_satisfaction: bool,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub incumbent: Option<OracleCombatWitness>,
 }
 
 #[derive(Clone, Debug)]

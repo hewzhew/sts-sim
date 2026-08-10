@@ -44,6 +44,7 @@ mod oracle_analysis_session;
 mod oracle_combat_budget;
 mod oracle_combat_policy;
 mod oracle_combat_work;
+mod oracle_combat_work_contract;
 mod oracle_neow;
 mod oracle_run_explorer;
 mod oracle_selection_cursor;
@@ -186,7 +187,7 @@ pub use oracle_combat_policy::{
     authorized_potion_trial_policy_v1, existing_combat_guide_service_bias_v1,
     existing_combat_knowledge_policy_v1,
 };
-pub use oracle_combat_work::{
+pub use oracle_combat_work_contract::{
     OracleCombatLocalCandidateDispositionV1, OracleRunCombatWorkCheckpointV1,
 };
 pub use oracle_neow::{

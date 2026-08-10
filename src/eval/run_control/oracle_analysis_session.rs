@@ -18,9 +18,9 @@ use crate::eval::combat_case::{
 };
 use crate::eval::combat_case_context::capture_oracle_analysis_combat_case_production_context_v1;
 
-use super::oracle_combat_work::{
+use super::oracle_combat_work::{OracleRunCombatWorkProgressV1, OracleRunCombatWorkV1};
+use super::oracle_combat_work_contract::{
     OracleCombatLocalCandidateDispositionV1, OracleRunCombatWorkCheckpointV1,
-    OracleRunCombatWorkProgressV1, OracleRunCombatWorkV1,
 };
 use super::oracle_run_explorer::{
     seed_oracle_run_explorer_from_checkpoint_v1, LazyOracleRunDecisionV1,

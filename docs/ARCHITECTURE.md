@@ -1753,6 +1753,15 @@ and replayed from the unchanged root. Restored checkpoints may carry an
 already verified incumbent, but restoring one does not mint work or bypass the
 current potion and terminal contracts.
 
+`OracleRunCombatWorkCheckpointV1` is the small durable boundary shared by
+analysis jobs and the run explorer. It retains bounded allowance, continuity
+accounting, the exact potion contract, and at most one replay-exact incumbent.
+It never serializes a local-graph/discrepancy session, portfolio queue, planner
+snapshot, or analysis/explorer scheduling state. The live combat-work owner
+captures and restores this contract; restore rebuilds the tactical frontier
+from the enclosing branch's exact root and replays every incumbent action,
+including successor and terminal-position verification, before admitting it.
+
 ## Gap Semantics
 
 Gaps are typed stops, not verdicts:
