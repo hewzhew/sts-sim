@@ -1350,7 +1350,7 @@ fn execute_command(
                 json!({
                     "node_id": node,
                     "path": path,
-                    "combat": case.combat,
+                    "combat": case.core.combat,
                 }),
                 false,
                 false,

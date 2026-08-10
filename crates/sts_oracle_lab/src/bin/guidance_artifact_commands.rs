@@ -103,9 +103,10 @@ pub(super) fn build_action_imitation(
         max_engine_steps_per_transition,
         ..CombatActionImitationTrainingConfigV1::default()
     };
-    let artifact = train_combat_action_imitation_v1(&loaded.position, &actions, training_config)?;
+    let artifact =
+        train_combat_action_imitation_v1(&loaded.core.position, &actions, training_config)?;
     let training_audit = audit_combat_action_imitation_v1(
-        &loaded.position,
+        &loaded.core.position,
         &actions,
         &artifact,
         &UniformCombatActionPolicy,
@@ -218,7 +219,7 @@ pub(super) fn audit_action_imitation(
     let artifact_value = CombatActionImitationArtifactV1::load(artifact)?;
     let base_policy = existing_combat_knowledge_policy_v1();
     let audit = audit_combat_action_imitation_v1(
-        &loaded.position,
+        &loaded.core.position,
         &actions,
         &artifact_value,
         base_policy.as_ref(),

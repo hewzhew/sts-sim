@@ -122,7 +122,7 @@ mod tests {
         )
         .expect("fixture actions should decode");
         let final_position = replay_combat_inputs(
-            case.position.clone(),
+            case.core.position.clone(),
             &actions,
             MAX_ENGINE_STEPS_PER_TRANSITION,
         )
@@ -131,7 +131,7 @@ mod tests {
             EngineCombatStepper.terminal(&final_position),
             CombatTerminal::Win
         );
-        (case_path, case.position, actions, final_position)
+        (case_path, case.core.position, actions, final_position)
     }
 
     #[test]

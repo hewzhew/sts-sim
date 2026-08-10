@@ -88,7 +88,11 @@ pub(crate) fn run_config_search(
         .wall_time
         .map(|duration| duration.as_millis().min(u128::from(u64::MAX)) as u64)
         .unwrap_or_default();
-    let report = run_combat_search_v2(&case.position.engine, &case.position.combat, config);
+    let report = run_combat_search_v2(
+        &case.core.position.engine,
+        &case.core.position.combat,
+        config,
+    );
     let review = search_review(label, nodes, wall_ms, &report, action_preview_limit);
     (review, report)
 }

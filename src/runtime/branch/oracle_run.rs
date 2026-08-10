@@ -692,7 +692,7 @@ fn combat_case_for_branch(
         position,
     );
     case.production_context = Some(capture_oracle_analysis_combat_case_production_context_v1(
-        &case,
+        &case.core,
         &branch.session,
         &oracle_run_combat_budgets_v1(config),
     )?);

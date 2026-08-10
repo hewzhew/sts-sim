@@ -255,14 +255,14 @@ pub(super) fn run(args: CombatCaseLocalGraphArgs) -> Result<(), String> {
     } = args;
     let command_started = Instant::now();
     let mut loaded = load_combat_case(&case)?;
-    let original_hp = loaded.position.combat.entities.player.current_hp;
+    let original_hp = loaded.core.position.combat.entities.player.current_hp;
     if full_health {
-        loaded.position.combat.entities.player.current_hp =
-            loaded.position.combat.entities.player.max_hp;
+        loaded.core.position.combat.entities.player.current_hp =
+            loaded.core.position.combat.entities.player.max_hp;
         loaded.refresh_derived_summaries_and_clear_production_context();
     }
-    let initial_hp = loaded.position.combat.entities.player.current_hp;
-    let root_player_turn = loaded.position.combat.turn.turn_count;
+    let initial_hp = loaded.core.position.combat.entities.player.current_hp;
+    let root_player_turn = loaded.core.position.combat.turn.turn_count;
     if !potion_slot.is_empty() && max_potions_used == Some(0) {
         return Err("--potion-slot requires a positive --max-potions-used".to_string());
     }
@@ -303,7 +303,7 @@ pub(super) fn run(args: CombatCaseLocalGraphArgs) -> Result<(), String> {
         boost_guide_lane
             .map(|lane| LocalGraphGuideServiceBiasSpec::new(lane, boost_guide_extra_services)),
     );
-    let search_root_position = loaded.position.clone();
+    let search_root_position = loaded.core.position.clone();
     let watched_corridor = if watch_corridor_actions.is_empty() {
         None
     } else {
@@ -313,7 +313,7 @@ pub(super) fn run(args: CombatCaseLocalGraphArgs) -> Result<(), String> {
             max_engine_steps_per_transition,
         )?)
     };
-    let root = CombatDecisionRoot::new(loaded.position.clone())
+    let root = CombatDecisionRoot::new(loaded.core.position.clone())
         .map_err(|error| format!("invalid combat case root: {error:?}"))?;
     let satisfaction = if improve_incumbent {
         OracleCombatWitnessSatisfaction::BudgetOrExhaustion

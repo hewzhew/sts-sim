@@ -69,7 +69,7 @@ pub(super) fn save_combat_gap_case(
     );
     case.branch_evidence = Some(branch_evidence(branch));
     case.production_context = Some(capture_combat_case_production_context_v1(
-        &case,
+        &case.core,
         &branch.session,
     )?);
     save_combat_case(&path, &case)?;

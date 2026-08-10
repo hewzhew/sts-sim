@@ -24,7 +24,7 @@ pub(super) fn strategic_signals(
     }
     if context.no_win_after_review && site == CombatStrategicSite::ActBoss {
         push_signal(&mut signals, CombatStrategicSignal::ActBossNoWinAfterReview);
-        if case.run.act == 2 {
+        if case.core.run.act == 2 {
             push_signal(
                 &mut signals,
                 CombatStrategicSignal::Act2BossNoWinAfterReview,
@@ -35,7 +35,7 @@ pub(super) fn strategic_signals(
         push_signal(&mut signals, CombatStrategicSignal::LowHpAtCombatStart);
     }
     if context.no_win_after_review
-        && case.run.act >= 3
+        && case.core.run.act >= 3
         && site == CombatStrategicSite::EliteLike
         && context.low_hp_start
     {
@@ -81,7 +81,7 @@ pub(super) fn strategic_signals(
     }
     if context.no_win_after_review
         && context.exact_loss
-        && case.combat.enemies.len() > 1
+        && case.core.combat.enemies.len() > 1
         && matches!(
             static_deficit.aoe_or_minion_control,
             StrategicDeficitLevel::Adequate | StrategicDeficitLevel::Surplus

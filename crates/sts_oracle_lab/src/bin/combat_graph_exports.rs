@@ -49,7 +49,7 @@ pub(super) fn export_local_graph_paths(
     ) {
         (Some(path), Some(actions), Some(expected_final_position)) => {
             let manifest = export_verified_combat_witness(VerifiedCombatWitnessExport {
-                root_position: &base.position,
+                root_position: &base.core.position,
                 action_output: path,
                 actions,
                 expected_final_position,

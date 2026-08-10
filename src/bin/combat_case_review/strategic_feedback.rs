@@ -33,7 +33,7 @@ pub(super) fn combat_strategic_feedback(
         return None;
     }
 
-    let site = combat_site(&case.combat.enemies);
+    let site = combat_site(&case.core.combat.enemies);
     let progress = focus.map(|focus| &focus.progress);
     Some(CombatStrategicFeedbackReport {
         schema: "combat_strategic_feedback_v0",

@@ -22,7 +22,7 @@ pub(super) fn run_awakened_opening_probe(
     )
     .to_config();
     Some(run_combat_turn_pool_opening_report_v0(
-        &case.position,
+        &case.core.position,
         options.awakened_opening_probe_ms,
         options.awakened_opening_probe_turns,
         Some(&config),
@@ -30,7 +30,8 @@ pub(super) fn run_awakened_opening_probe(
 }
 
 fn has_awakened_one(case: &CombatCase) -> bool {
-    case.position
+    case.core
+        .position
         .combat
         .entities
         .monsters

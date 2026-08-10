@@ -118,7 +118,7 @@ pub(super) fn export_historical_combat(
     })
     .with_guidance_bundle(analysis.combat_guidance_bundle.clone());
     case.production_context = Some(capture_oracle_analysis_combat_case_production_context_v1(
-        &case,
+        &case.core,
         &historical,
         &owner_budgets,
     )?);
@@ -129,12 +129,12 @@ pub(super) fn export_historical_combat(
         .map(|action| action.input.clone())
         .collect::<Vec<_>>();
     let final_position = replay_combat_inputs(
-        case.position.clone(),
+        case.core.position.clone(),
         &actions,
         EVIDENCE_REPLAY_MAX_ENGINE_STEPS_PER_TRANSITION,
     )?;
     let root_exact_state_hash =
-        combat_exact_state_hash_v2(&case.position.engine, &case.position.combat);
+        combat_exact_state_hash_v2(&case.core.position.engine, &case.core.position.combat);
     let final_terminal = combat_terminal(&final_position.engine, &final_position.combat);
     let final_player_hp = final_position.combat.entities.player.current_hp;
     save_combat_case(case_output, &case)?;
@@ -184,6 +184,6 @@ pub(super) fn export_historical_combat(
         "manifest_output": manifest_output,
         "continuation_output": continuation_output,
         "action_count": resolution.trajectory.actions.len(),
-        "combat": case.combat,
+        "combat": case.core.combat,
     }))
 }

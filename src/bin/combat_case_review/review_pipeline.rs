@@ -73,7 +73,7 @@ pub(super) fn build_review(
         classify_gap_review(case.failed_search.as_ref(), &ladder, review_focus.as_ref());
     let review_focus_replay = if options.replay_focus {
         review_focus.as_ref().map(|focus| {
-            replay_combat_search_witness_line_v0(&case.position, &focus_witness_line(focus))
+            replay_combat_search_witness_line_v0(&case.core.position, &focus_witness_line(focus))
         })
     } else {
         None
@@ -98,7 +98,7 @@ pub(super) fn build_review(
     };
     let static_boss_matchup_audit_v0 = static_boss_matchup_audit_v0(&case);
     let boss_matchup_acquisition_pressure_v0 =
-        boss_matchup_acquisition_pressure_v0(&case.position.combat);
+        boss_matchup_acquisition_pressure_v0(&case.core.position.combat);
     let awakened_one_path_audit_v0 = awakened_one_path_audit_v0(&case);
     let awakened_one_failure_evidence =
         awakened_one_failure_evidence(&case, counterfactual_hp_probe.as_ref());
@@ -110,7 +110,7 @@ pub(super) fn build_review(
     };
     let champ_phase_audit = review_focus
         .as_ref()
-        .and_then(|focus| champ_phase_audit(&case.position, focus));
+        .and_then(|focus| champ_phase_audit(&case.core.position, focus));
     assemble_combat_case_review(
         case_path,
         case,

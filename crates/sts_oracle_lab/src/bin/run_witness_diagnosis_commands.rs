@@ -2,7 +2,6 @@ use std::path::Path;
 
 use serde_json::{json, Value};
 use sts_oracle_runtime::eval::combat_case::load_combat_case;
-use sts_oracle_runtime::eval::combat_case_context::combat_case_replay_identity_v1;
 use sts_oracle_runtime::eval::run_control::{
     exact_census_run_progress_journal_combat_roots_v1, exact_diagnose_run_progress_journal_v1,
     exact_replay_run_progress_journal_prefix_v1, RunControlSessionCheckpointV1,
@@ -190,13 +189,13 @@ fn match_combat_case_origin(
     replay_error: Option<&str>,
 ) -> Result<Value, String> {
     let case = load_combat_case(case_path)?;
-    if case.source.seed != seed || case.source.ascension != ascension {
+    if case.core.source.seed != seed || case.core.source.ascension != ascension {
         return Err(format!(
             "combat case origin mismatch: selected run is seed {seed} ascension {ascension}, but case is seed {} ascension {}",
-            case.source.seed, case.source.ascension
+            case.core.source.seed, case.core.source.ascension
         ));
     }
-    let case_identity = combat_case_replay_identity_v1(&case)?;
+    let case_identity = case.replay_identity_v1()?;
     let case_run_fingerprint = case_identity.run_session_fingerprint.as_deref().ok_or_else(|| {
         format!(
             "combat case {} has no exact production run-session fingerprint; state-only or derived cases cannot be matched to a run witness",
@@ -229,7 +228,8 @@ fn match_combat_case_origin(
             let candidates = roots
                 .iter()
                 .filter(|root| {
-                    root.resources.act == case.run.act && root.resources.floor == case.run.floor
+                    root.resources.act == case.core.run.act
+                        && root.resources.floor == case.core.run.floor
                 })
                 .take(8)
                 .map(|root| {

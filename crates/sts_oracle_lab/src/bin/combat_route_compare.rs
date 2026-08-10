@@ -245,7 +245,7 @@ pub(super) fn run(
         max_engine_steps_per_transition,
     } = args;
     let loaded = load_combat_case(&case)?;
-    let root = loaded.position;
+    let root = loaded.core.position;
     let root_exact_state_hash = exact_state_hash(&root);
     let route_a_inputs = load_action_segments(&route_a_actions)?;
     let route_b_inputs = load_action_segments(&route_b_actions)?;

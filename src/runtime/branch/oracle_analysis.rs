@@ -539,7 +539,7 @@ pub fn recover_oracle_analysis_combat_case_v1(
     })
     .with_guidance_bundle(artifact.combat_guidance_bundle.clone());
     case.production_context = Some(capture_oracle_analysis_combat_case_production_context_v1(
-        &case,
+        &case.core,
         &session,
         &owner_budgets,
     )?);

@@ -459,7 +459,7 @@ fn run_combat_contract(request: CombatContractRequestV2) -> Result<CombatContrac
     let started = Instant::now();
     let loaded = load_combat_case(&request.case)?;
     let root_exact_state_hash =
-        combat_exact_state_hash_v2(&loaded.position.engine, &loaded.position.combat);
+        combat_exact_state_hash_v2(&loaded.core.position.engine, &loaded.core.position.combat);
     if root_exact_state_hash != request.case_id {
         return Err(format!(
             "combat case root drifted: request expects {}, loaded case is {}",
@@ -467,9 +467,9 @@ fn run_combat_contract(request: CombatContractRequestV2) -> Result<CombatContrac
         ));
     }
     let (prefix_line, prefix_negative_log_policy) =
-        diagnostic_prefix::materialize(&request, &loaded.position)?;
+        diagnostic_prefix::materialize(&request, &loaded.core.position)?;
     let search_position = prefix_line.as_ref().map_or_else(
-        || loaded.position.clone(),
+        || loaded.core.position.clone(),
         |prefix| prefix.final_position.clone(),
     );
     if combat_terminal(&search_position.engine, &search_position.combat)
@@ -481,7 +481,7 @@ fn run_combat_contract(request: CombatContractRequestV2) -> Result<CombatContrac
         combat_exact_state_hash_v2(&search_position.engine, &search_position.combat);
     let prefix_potions_used = prefix_line.as_ref().map_or(0, |prefix| {
         exact_trajectory_potion_expenditures(
-            &loaded.position,
+            &loaded.core.position,
             &prefix.actions,
             &prefix.final_position,
         )
@@ -493,7 +493,7 @@ fn run_combat_contract(request: CombatContractRequestV2) -> Result<CombatContrac
         ));
     }
     let remaining_potion_budget = request.max_potions_used - prefix_potions_used;
-    let initial_hp = loaded.position.combat.entities.player.current_hp;
+    let initial_hp = loaded.core.position.combat.entities.player.current_hp;
     let root_player_turn = search_position.combat.turn.turn_count;
     let satisfaction = request
         .min_final_hp
@@ -551,7 +551,7 @@ fn run_combat_contract(request: CombatContractRequestV2) -> Result<CombatContrac
     let report = session.advance(search_quantum, &EngineCombatStepper);
     let search_elapsed = search_started.elapsed();
     let contract_witness_frontier = diagnostic_prefix::compose_witnesses(
-        &loaded.position,
+        &loaded.core.position,
         prefix_line.as_ref(),
         prefix_negative_log_policy,
         session.witness_frontier(),
@@ -570,7 +570,7 @@ fn run_combat_contract(request: CombatContractRequestV2) -> Result<CombatContrac
         .zip(&contract_witness_frontier)
         .map(|(suffix_outcome, witness)| {
             summarize_oracle_combat_witness_outcome(
-                &loaded.position,
+                &loaded.core.position,
                 witness,
                 suffix_outcome.selected_by_local_hp_view,
             )
@@ -581,7 +581,7 @@ fn run_combat_contract(request: CombatContractRequestV2) -> Result<CombatContrac
         .as_ref()
         .map(|witness| {
             diagnostic_prefix::compose_witness(
-                &loaded.position,
+                &loaded.core.position,
                 prefix_line.as_ref(),
                 prefix_negative_log_policy,
                 witness,
@@ -605,7 +605,7 @@ fn run_combat_contract(request: CombatContractRequestV2) -> Result<CombatContrac
     )?;
     let observation = capture_local_graph_observation(&session, &search_position, &[], None);
     let mut search_case = loaded.clone();
-    search_case.position = search_position.clone();
+    search_case.core.position = search_position.clone();
     search_case.refresh_derived_summaries_and_clear_production_context();
     let exports = export_local_graph_paths(
         &search_case,

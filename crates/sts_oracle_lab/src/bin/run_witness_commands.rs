@@ -114,9 +114,9 @@ pub(super) fn recover_combat_case(
         "workspace": workspace,
         "branch_id": branch,
         "output": output,
-        "source": case.source,
-        "run": case.run,
-        "combat": case.combat,
+        "source": case.core.source,
+        "run": case.core.run,
+        "combat": case.core.combat,
         "path_steps": case.path.len(),
     }))
 }

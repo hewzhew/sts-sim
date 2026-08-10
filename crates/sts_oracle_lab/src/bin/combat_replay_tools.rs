@@ -126,20 +126,20 @@ pub(super) fn export_descendant_combat_case(
     reason: &str,
 ) -> Result<PathBuf, String> {
     let position = replay_descendant_position(
-        base.position.clone(),
+        base.core.position.clone(),
         actions,
         max_engine_steps_per_transition,
     )?;
 
     let mut exported = base.clone();
-    exported.position = position;
+    exported.core.position = position;
     exported.refresh_derived_summaries_and_clear_production_context();
-    exported.gap.boundary = format!(
+    exported.core.gap.boundary = format!(
         "{} + {} exact descendant actions",
-        exported.gap.boundary,
+        exported.core.gap.boundary,
         actions.len()
     );
-    exported.gap.reason = reason.to_string();
+    exported.core.gap.reason = reason.to_string();
     exported.combat_search_attempts.clear();
     exported.failed_search = None;
     if let Some(parent) = output.parent() {

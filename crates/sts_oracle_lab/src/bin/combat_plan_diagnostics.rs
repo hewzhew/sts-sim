@@ -29,7 +29,7 @@ pub(super) fn run_annotations(args: CombatCasePlanAnnotationsArgs) -> Result<(),
     } = args;
     let case_path = case.clone();
     let loaded = load_combat_case(&case)?;
-    let position = loaded.position;
+    let position = loaded.core.position;
     let stepper = EngineCombatStepper;
     let surface = stepper.legal_action_surface(&position);
     let root_plan = combat_plan_projection_v1(&position);
@@ -118,7 +118,7 @@ pub(super) fn run_trace(args: CombatCasePlanTraceArgs) -> Result<(), String> {
     let inputs = load_combat_action_segments(&actions)?;
     let input_count = inputs.len();
     let stepper = EngineCombatStepper;
-    let mut position = loaded.position;
+    let mut position = loaded.core.position;
     let root_exact_state_hash = combat_exact_state_hash_v2(&position.engine, &position.combat);
     let root_plan = combat_plan_projection_v1(&position);
     let mut trace = Vec::new();

@@ -217,7 +217,7 @@ pub(super) fn build(args: ActionBoundaryEvidenceArgs) -> Result<Value, String> {
         ));
     }
     let final_position = replay_combat_inputs(
-        case.position.clone(),
+        case.core.position.clone(),
         &witness_actions,
         args.max_engine_steps_per_transition,
     )?;
@@ -227,7 +227,7 @@ pub(super) fn build(args: ActionBoundaryEvidenceArgs) -> Result<Value, String> {
         return Err("action-boundary source is not an exact non-smoke victory".to_string());
     }
     let root_position = replay_combat_inputs(
-        case.position,
+        case.core.position,
         &witness_actions[..args.through],
         args.max_engine_steps_per_transition,
     )?;

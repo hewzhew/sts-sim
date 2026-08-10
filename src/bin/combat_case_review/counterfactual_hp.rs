@@ -21,8 +21,8 @@ pub(super) fn run_counterfactual_hp_probe(
     options: &ReviewOptions,
     case: &CombatCase,
 ) -> CounterfactualHpProbe {
-    let original_hp = case.position.combat.entities.player.current_hp;
-    let max_hp = case.position.combat.entities.player.max_hp.max(1);
+    let original_hp = case.core.position.combat.entities.player.current_hp;
+    let max_hp = case.core.position.combat.entities.player.max_hp.max(1);
     let levels = counterfactual_hp_targets(&options.counterfactual_hp_levels, original_hp, max_hp)
         .into_iter()
         .map(|(label, hp)| run_counterfactual_hp_level(options, case, label, hp))

@@ -70,7 +70,7 @@ pub(super) fn load_root(
     artifact: &CombatContractArtifactV2,
 ) -> Result<CombatPosition, String> {
     let loaded = load_combat_case(&artifact.request.case)?;
-    let root = loaded.position;
+    let root = loaded.core.position;
     let root_exact_state_hash = combat_exact_state_hash_v2(&root.engine, &root.combat);
     if root_exact_state_hash != artifact.root_exact_state_hash
         || root_exact_state_hash != artifact.request.case_id

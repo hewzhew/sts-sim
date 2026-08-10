@@ -20,9 +20,9 @@ pub(super) fn feedback_observations(
         focus_hp_loss: progress.map(|progress| progress.hp_loss),
         focus_living_enemy_count: progress.map(|progress| progress.living_enemy_count),
         focus_total_enemy_hp: progress.map(|progress| progress.total_enemy_hp),
-        enemy_count: case.combat.enemies.len(),
-        hp_ratio_pct: if case.run.max_hp > 0 {
-            case.run.hp * 100 / case.run.max_hp
+        enemy_count: case.core.combat.enemies.len(),
+        hp_ratio_pct: if case.core.run.max_hp > 0 {
+            case.core.run.hp * 100 / case.core.run.max_hp
         } else {
             0
         },

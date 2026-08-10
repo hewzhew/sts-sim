@@ -163,7 +163,7 @@ pub fn run(args: ActionBoundaryRootRaceArgs) -> Result<Value, String> {
     let started = Instant::now();
     validate_args(&args)?;
     let loaded = load_combat_case(&args.case)?;
-    let root_position = loaded.position;
+    let root_position = loaded.core.position;
     if EngineCombatStepper.terminal(&root_position) != CombatTerminal::Unresolved {
         return Err("action-boundary root race requires a non-terminal combat case".to_string());
     }

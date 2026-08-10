@@ -19,10 +19,11 @@ pub(super) struct CombatCaseDerivedPayload {
 pub(super) fn derived_payload_from_case(case: &CombatCase) -> CombatCaseDerivedPayload {
     CombatCaseDerivedPayload {
         static_strategic_deficit: assess_deck_strategic_deficit(
-            &case.position.combat.meta.master_deck_snapshot,
+            &case.core.position.combat.meta.master_deck_snapshot,
             strategic_facts_from_case(case),
         ),
         deck: case
+            .core
             .position
             .combat
             .meta
@@ -31,6 +32,7 @@ pub(super) fn derived_payload_from_case(case: &CombatCase) -> CombatCaseDerivedP
             .map(card_summary)
             .collect(),
         relics: case
+            .core
             .position
             .combat
             .entities
@@ -40,6 +42,7 @@ pub(super) fn derived_payload_from_case(case: &CombatCase) -> CombatCaseDerivedP
             .map(|relic| format!("{:?}", relic.id))
             .collect(),
         potions: case
+            .core
             .position
             .combat
             .entities
@@ -57,15 +60,16 @@ pub(super) fn derived_payload_from_case(case: &CombatCase) -> CombatCaseDerivedP
 }
 
 fn strategic_facts_from_case(case: &CombatCase) -> RunStrategicFacts {
-    let deck = &case.position.combat.meta.master_deck_snapshot;
+    let deck = &case.core.position.combat.meta.master_deck_snapshot;
     RunStrategicFacts {
-        entering_act: case.run.act,
+        entering_act: case.core.run.act,
         starter_basic_count: deck.iter().filter(|card| is_starter_basic(card.id)).count(),
         curse_count: deck
             .iter()
             .filter(|card| get_card_definition(card.id).card_type == CardType::Curse)
             .count(),
         has_energy_relic: case
+            .core
             .position
             .combat
             .entities
@@ -74,6 +78,7 @@ fn strategic_facts_from_case(case: &CombatCase) -> RunStrategicFacts {
             .iter()
             .any(|relic| energy_master_delta(relic.id) > 0),
         has_runic_pyramid: case
+            .core
             .position
             .combat
             .entities

@@ -9,7 +9,7 @@ use crate::ai::combat_search_v2::{
 };
 use crate::ai::combat_state_key::combat_exact_state_hash_v2;
 use crate::content::monsters::factory::EncounterId;
-use crate::eval::combat_case::{combat_summary, CombatCase, CombatCaseRngSummary};
+use crate::eval::combat_case_core::{combat_summary, CombatCaseCoreV1, CombatCaseRngSummary};
 use crate::eval::combat_guidance_bundle::CombatGuidanceBundleV1;
 use crate::eval::run_control::{
     run_control_session_fingerprint_v2, OracleRunCombatBudgetsV1, OracleRunCombatQualityPolicyV1,
@@ -106,12 +106,12 @@ pub struct CombatCaseProductionContextV1 {
 }
 
 pub fn capture_combat_case_production_context_v1(
-    case: &CombatCase,
+    core: &CombatCaseCoreV1,
     session: &RunControlSession,
 ) -> Result<CombatCaseProductionContextV1, String> {
     let root_exact_state_hash =
-        combat_exact_state_hash_v2(&case.position.engine, &case.position.combat);
-    validate_case_against_session(case, session, &root_exact_state_hash)?;
+        combat_exact_state_hash_v2(&core.position.engine, &core.position.combat);
+    validate_core_against_session(core, session, &root_exact_state_hash)?;
 
     let mut run_session_checkpoint = RunControlSessionCheckpointV1::from_session(session);
     run_session_checkpoint.clear_combat_diagnostics_for_external_checkpoint();
@@ -128,16 +128,16 @@ pub fn capture_combat_case_production_context_v1(
         run_session_checkpoint,
         production_owner: None,
     };
-    validate_context_payload(case, &context)?;
+    validate_context_payload(core, &context)?;
     Ok(context)
 }
 
 pub fn capture_oracle_analysis_combat_case_production_context_v1(
-    case: &CombatCase,
+    core: &CombatCaseCoreV1,
     session: &RunControlSession,
     budgets: &OracleRunCombatBudgetsV1,
 ) -> Result<CombatCaseProductionContextV1, String> {
-    let mut context = capture_combat_case_production_context_v1(case, session)?;
+    let mut context = capture_combat_case_production_context_v1(core, session)?;
     let budgets = CombatCaseOracleCombatBudgetsV1::capture(budgets)?;
     context.production_owner = Some(CombatCaseProductionOwnerV1::OracleAnalysis {
         policy_fingerprint: owner_policy_fingerprint(&budgets),
@@ -147,12 +147,11 @@ pub fn capture_oracle_analysis_combat_case_production_context_v1(
 }
 
 pub fn restore_combat_case_oracle_analysis_owner_v1(
-    case: &CombatCase,
+    core: &CombatCaseCoreV1,
+    context: Option<&CombatCaseProductionContextV1>,
 ) -> Result<(RunControlSession, OracleRunCombatBudgetsV1), String> {
-    let session = restore_combat_case_production_session_v1(case)?;
-    let owner = case
-        .production_context
-        .as_ref()
+    let session = restore_combat_case_production_session_v1(core, context)?;
+    let owner = context
         .and_then(|context| context.production_owner.as_ref())
         .ok_or_else(|| {
             "combat case has exact production state but no production owner".to_string()
@@ -163,11 +162,12 @@ pub fn restore_combat_case_oracle_analysis_owner_v1(
 }
 
 pub fn combat_case_replay_identity_v1(
-    case: &CombatCase,
+    core: &CombatCaseCoreV1,
+    context: Option<&CombatCaseProductionContextV1>,
 ) -> Result<CombatCaseReplayIdentityV1, String> {
     let root_exact_state_hash =
-        combat_exact_state_hash_v2(&case.position.engine, &case.position.combat);
-    let Some(context) = case.production_context.as_ref() else {
+        combat_exact_state_hash_v2(&core.position.engine, &core.position.combat);
+    let Some(context) = context else {
         return Ok(CombatCaseReplayIdentityV1 {
             schema_name: COMBAT_CASE_REPLAY_IDENTITY_SCHEMA_NAME.to_string(),
             schema_version: COMBAT_CASE_REPLAY_IDENTITY_SCHEMA_VERSION,
@@ -177,7 +177,7 @@ pub fn combat_case_replay_identity_v1(
             owner_policy_fingerprint: None,
         });
     };
-    validate_context_payload(case, context)?;
+    validate_context_payload(core, context)?;
     let owner_policy_fingerprint = context.production_owner.as_ref().map(|owner| {
         let CombatCaseProductionOwnerV1::OracleAnalysis {
             policy_fingerprint, ..
@@ -290,41 +290,40 @@ impl CombatCaseSearchOptionsV1 {
     }
 }
 
-pub fn validate_combat_case_production_context_v1(case: &CombatCase) -> Result<(), String> {
-    let context = case
-        .production_context
-        .as_ref()
-        .ok_or_else(|| "combat case has no exact production context".to_string())?;
-    validate_context_payload(case, context).map(|_| ())
+pub fn validate_combat_case_production_context_v1(
+    core: &CombatCaseCoreV1,
+    context: Option<&CombatCaseProductionContextV1>,
+) -> Result<(), String> {
+    let context =
+        context.ok_or_else(|| "combat case has no exact production context".to_string())?;
+    validate_context_payload(core, context).map(|_| ())
 }
 
 pub fn restore_combat_case_production_session_v1(
-    case: &CombatCase,
+    core: &CombatCaseCoreV1,
+    context: Option<&CombatCaseProductionContextV1>,
 ) -> Result<RunControlSession, String> {
-    let context = case
-        .production_context
-        .as_ref()
-        .ok_or_else(|| "combat case supports isolated replay only".to_string())?;
-    validate_context_payload(case, context)
+    let context = context.ok_or_else(|| "combat case supports isolated replay only".to_string())?;
+    validate_context_payload(core, context)
 }
 
 fn validate_context_payload(
-    case: &CombatCase,
+    core: &CombatCaseCoreV1,
     context: &CombatCaseProductionContextV1,
 ) -> Result<RunControlSession, String> {
     validate_context_header(context)?;
     if let Some(owner) = context.production_owner.as_ref() {
         validate_production_owner(owner)?;
     }
-    let case_root = combat_exact_state_hash_v2(&case.position.engine, &case.position.combat);
+    let case_root = combat_exact_state_hash_v2(&core.position.engine, &core.position.combat);
     if context.root_exact_state_hash != case_root {
         return Err(format!(
             "combat case root hash mismatch: context {}, case {case_root}",
             context.root_exact_state_hash
         ));
     }
-    let session = restore_context_session(case, context)?;
-    validate_case_against_session(case, &session, &case_root)?;
+    let session = restore_context_session(core, context)?;
+    validate_core_against_session(core, &session, &case_root)?;
     let restored_fingerprint = run_control_session_fingerprint_v2(&session);
     if context.run_session_fingerprint != restored_fingerprint {
         return Err(format!(
@@ -357,7 +356,7 @@ fn owner_policy_fingerprint(budgets: &CombatCaseOracleCombatBudgetsV1) -> String
 }
 
 fn restore_context_session(
-    case: &CombatCase,
+    core: &CombatCaseCoreV1,
     context: &CombatCaseProductionContextV1,
 ) -> Result<RunControlSession, String> {
     let mut checkpoint = context.run_session_checkpoint.clone();
@@ -368,14 +367,14 @@ fn restore_context_session(
     }
     let active_combat = match context.encounter_id {
         Some(encounter_id) => ActiveCombat::new_for_encounter(
-            case.position.engine.clone(),
-            case.position.combat.clone(),
+            core.position.engine.clone(),
+            core.position.combat.clone(),
             encounter_id,
             context.combat_context.clone(),
         ),
         None => ActiveCombat::new(
-            case.position.engine.clone(),
-            case.position.combat.clone(),
+            core.position.engine.clone(),
+            core.position.combat.clone(),
             context.combat_context.clone(),
         ),
     };
@@ -395,8 +394,8 @@ fn validate_context_header(context: &CombatCaseProductionContextV1) -> Result<()
     Ok(())
 }
 
-fn validate_case_against_session(
-    case: &CombatCase,
+fn validate_core_against_session(
+    core: &CombatCaseCoreV1,
     session: &RunControlSession,
     expected_root: &str,
 ) -> Result<(), String> {
@@ -408,13 +407,13 @@ fn validate_case_against_session(
             "combat case active-combat hash mismatch: case {expected_root}, checkpoint {session_root}"
         ));
     }
-    if case.source.seed != session.run_state.seed
-        || case.source.ascension != session.run_state.ascension_level
+    if core.source.seed != session.run_state.seed
+        || core.source.ascension != session.run_state.ascension_level
     {
         return Err(format!(
             "combat case source mismatch: case seed {} A{}, checkpoint seed {} A{}",
-            case.source.seed,
-            case.source.ascension,
+            core.source.seed,
+            core.source.ascension,
             session.run_state.seed,
             session.run_state.ascension_level
         ));
@@ -431,22 +430,22 @@ fn validate_case_against_session(
         session.run_state.potions.len(),
     );
     let case_run = (
-        case.run.act,
-        case.run.floor,
-        case.run.hp,
-        case.run.max_hp,
-        case.run.gold,
-        case.run.deck_size,
-        case.run.relic_count,
-        case.run.potion_slots,
+        core.run.act,
+        core.run.floor,
+        core.run.hp,
+        core.run.max_hp,
+        core.run.gold,
+        core.run.deck_size,
+        core.run.relic_count,
+        core.run.potion_slots,
     );
     if case_run != expected_run {
         return Err("combat case run summary does not match production checkpoint".to_string());
     }
-    if case.combat != combat_summary(&case.position) {
+    if core.combat != combat_summary(&core.position) {
         return Err("combat case combat summary does not match its exact root".to_string());
     }
-    if case.run_rng != CombatCaseRngSummary::from_pool(&session.run_state.rng_pool) {
+    if core.run_rng != CombatCaseRngSummary::from_pool(&session.run_state.rng_pool) {
         return Err("combat case run RNG summary does not match production checkpoint".to_string());
     }
     Ok(())
@@ -455,7 +454,9 @@ fn validate_case_against_session(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::eval::combat_case::{CombatCaseGap, CombatCaseRunSummary, CombatCaseSource};
+    use crate::eval::combat_case::{
+        CombatCase, CombatCaseGap, CombatCaseRunSummary, CombatCaseSource,
+    };
     use crate::eval::run_control::{RunControlConfig, RunControlSession};
     use crate::state::core::{ActiveCombat, CombatContext, EngineState, RoomCombatContext};
     use crate::state::map::node::RoomType;
@@ -526,11 +527,12 @@ mod tests {
     fn exact_context_capture_round_trips_the_production_state() {
         let (mut case, session) = exact_fixture();
         case.production_context =
-            Some(capture_combat_case_production_context_v1(&case, &session).unwrap());
+            Some(capture_combat_case_production_context_v1(&case.core, &session).unwrap());
 
         let payload = serde_json::to_value(&case).unwrap();
         assert!(payload["production_context"]["run_session_checkpoint"][2].is_null());
         assert_eq!(payload["production_context"]["encounter_id"], "JawWorm");
+        case = serde_json::from_value(payload).expect("decode flat production combat case");
 
         assert_eq!(
             case.replay_capability_v1().unwrap(),
@@ -539,7 +541,7 @@ mod tests {
         let identity = case.replay_identity_v1().unwrap();
         assert_eq!(
             identity.root_exact_state_hash,
-            combat_exact_state_hash_v2(&case.position.engine, &case.position.combat)
+            combat_exact_state_hash_v2(&case.core.position.engine, &case.core.position.combat)
         );
         assert_eq!(
             identity.run_session_fingerprint.as_deref(),
@@ -548,7 +550,9 @@ mod tests {
                 .map(|context| context.run_session_fingerprint.as_str())
         );
         assert!(identity.owner_policy_fingerprint.is_none());
-        let restored = restore_combat_case_production_session_v1(&case).unwrap();
+        let restored =
+            restore_combat_case_production_session_v1(&case.core, case.production_context.as_ref())
+                .unwrap();
         assert_eq!(
             restored
                 .active_combat
@@ -566,11 +570,13 @@ mod tests {
     fn exact_context_rejects_a_changed_combat_root() {
         let (mut case, session) = exact_fixture();
         case.production_context =
-            Some(capture_combat_case_production_context_v1(&case, &session).unwrap());
-        case.position.combat.entities.player.current_hp -= 1;
-        case.combat = combat_summary(&case.position);
+            Some(capture_combat_case_production_context_v1(&case.core, &session).unwrap());
+        case.core.position.combat.entities.player.current_hp -= 1;
+        case.core.combat = combat_summary(&case.core.position);
 
-        let error = restore_combat_case_production_session_v1(&case).unwrap_err();
+        let error =
+            restore_combat_case_production_session_v1(&case.core, case.production_context.as_ref())
+                .unwrap_err();
         assert!(error.contains("root hash mismatch"), "{error}");
     }
 
@@ -590,8 +596,10 @@ mod tests {
         budgets.quality_policy = OracleRunCombatQualityPolicyV1::StrategicRun;
         budgets.initial_divisor = 3;
         case.production_context = Some(
-            capture_oracle_analysis_combat_case_production_context_v1(&case, &session, &budgets)
-                .unwrap(),
+            capture_oracle_analysis_combat_case_production_context_v1(
+                &case.core, &session, &budgets,
+            )
+            .unwrap(),
         );
 
         assert_eq!(
@@ -601,7 +609,11 @@ mod tests {
         let identity = case.replay_identity_v1().unwrap();
         assert!(identity.run_session_fingerprint.is_some());
         assert!(identity.owner_policy_fingerprint.is_some());
-        let (_, restored) = restore_combat_case_oracle_analysis_owner_v1(&case).unwrap();
+        let (_, restored) = restore_combat_case_oracle_analysis_owner_v1(
+            &case.core,
+            case.production_context.as_ref(),
+        )
+        .unwrap();
         assert_eq!(restored.hallway.max_nodes, Some(12_345));
         assert_eq!(restored.hallway.wall_ms, Some(678));
         assert_eq!(
@@ -620,8 +632,10 @@ mod tests {
         let (mut case, session) = exact_fixture();
         let budgets = OracleRunCombatBudgetsV1::uniform(RunControlSearchCombatOptions::default());
         case.production_context = Some(
-            capture_oracle_analysis_combat_case_production_context_v1(&case, &session, &budgets)
-                .unwrap(),
+            capture_oracle_analysis_combat_case_production_context_v1(
+                &case.core, &session, &budgets,
+            )
+            .unwrap(),
         );
         let owner = case
             .production_context
@@ -644,13 +658,15 @@ mod tests {
     fn exact_context_rejects_a_foreign_run_fingerprint() {
         let (mut case, session) = exact_fixture();
         case.production_context =
-            Some(capture_combat_case_production_context_v1(&case, &session).unwrap());
+            Some(capture_combat_case_production_context_v1(&case.core, &session).unwrap());
         case.production_context
             .as_mut()
             .unwrap()
             .run_session_fingerprint = "foreign".to_string();
 
-        let error = restore_combat_case_production_session_v1(&case).unwrap_err();
+        let error =
+            restore_combat_case_production_session_v1(&case.core, case.production_context.as_ref())
+                .unwrap_err();
         assert!(
             error.contains("run-context fingerprint mismatch"),
             "{error}"
@@ -668,11 +684,11 @@ mod tests {
         let identity = case.replay_identity_v1().unwrap();
         assert_eq!(
             identity.root_exact_state_hash,
-            combat_exact_state_hash_v2(&case.position.engine, &case.position.combat)
+            combat_exact_state_hash_v2(&case.core.position.engine, &case.core.position.combat)
         );
         assert!(identity.run_session_fingerprint.is_none());
         assert!(identity.owner_policy_fingerprint.is_none());
-        assert!(restore_combat_case_production_session_v1(&case)
+        assert!(restore_combat_case_production_session_v1(&case.core, None)
             .unwrap_err()
             .contains("isolated replay only"));
     }
@@ -681,13 +697,16 @@ mod tests {
     fn derived_position_refresh_clears_exact_production_context() {
         let (mut case, session) = exact_fixture();
         case.production_context =
-            Some(capture_combat_case_production_context_v1(&case, &session).unwrap());
-        case.position.combat.entities.player.current_hp -= 1;
+            Some(capture_combat_case_production_context_v1(&case.core, &session).unwrap());
+        case.core.position.combat.entities.player.current_hp -= 1;
 
         case.refresh_derived_summaries_and_clear_production_context();
 
         assert!(case.production_context.is_none());
-        assert_eq!(case.combat, combat_summary(&case.position));
-        assert_eq!(case.run.hp, case.position.combat.entities.player.current_hp);
+        assert_eq!(case.core.combat, combat_summary(&case.core.position));
+        assert_eq!(
+            case.core.run.hp,
+            case.core.position.combat.entities.player.current_hp
+        );
     }
 }

@@ -97,7 +97,8 @@ pub fn run_combat_case_owner_parity_v1(
         "combat case has exact production state but no production owner".to_string()
     })?;
     let root_exact_state_hash = identity.root_exact_state_hash;
-    let (session, budgets) = restore_combat_case_oracle_analysis_owner_v1(case)?;
+    let (session, budgets) =
+        restore_combat_case_oracle_analysis_owner_v1(&case.core, case.production_context.as_ref())?;
     let explorer = seed_oracle_run_explorer_from_session_v1(
         session,
         RunProgressJournalV1::default(),
@@ -271,7 +272,7 @@ mod tests {
     fn owner_parity_rejects_exact_state_without_owner_policy() {
         let (mut case, session, _) = fixture();
         case.production_context =
-            Some(capture_combat_case_production_context_v1(&case, &session).unwrap());
+            Some(capture_combat_case_production_context_v1(&case.core, &session).unwrap());
 
         let error =
             run_combat_case_owner_parity_v1(&case, CombatCaseOwnerParityRequestV1::default())
@@ -285,8 +286,10 @@ mod tests {
     fn owner_parity_serves_one_in_memory_attempt_and_returns_exact_inputs() {
         let (mut case, session, budgets) = fixture();
         case.production_context = Some(
-            capture_oracle_analysis_combat_case_production_context_v1(&case, &session, &budgets)
-                .unwrap(),
+            capture_oracle_analysis_combat_case_production_context_v1(
+                &case.core, &session, &budgets,
+            )
+            .unwrap(),
         );
 
         let result = run_combat_case_owner_parity_v1(

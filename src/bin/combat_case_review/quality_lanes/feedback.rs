@@ -23,7 +23,8 @@ pub(super) fn run_success_feedback_rerun(
     wall_ms: u64,
     action_preview_limit: usize,
 ) -> Option<CombatSuccessFeedbackRerun> {
-    let witness_prior = compile_combat_search_witness_prior_v0(&case.position, &source.witness);
+    let witness_prior =
+        compile_combat_search_witness_prior_v0(&case.core.position, &source.witness);
     if witness_prior.prior.is_empty() {
         return None;
     }

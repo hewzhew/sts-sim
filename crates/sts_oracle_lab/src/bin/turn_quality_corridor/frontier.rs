@@ -217,8 +217,10 @@ pub(crate) fn inspect_frontier(
         probe_next_turn_roots,
     } = args;
     let base_case = load_combat_case(&case)?;
-    let root_exact_state_hash =
-        combat_exact_state_hash_v2(&base_case.position.engine, &base_case.position.combat);
+    let root_exact_state_hash = combat_exact_state_hash_v2(
+        &base_case.core.position.engine,
+        &base_case.core.position.combat,
+    );
     let checkpoint_payload = load_checkpoint(&checkpoint)?;
     validate_checkpoint(
         &checkpoint_payload,
@@ -293,6 +295,7 @@ fn tracked_potion_identity(
 ) -> Option<TrackedPotionIdentityV1> {
     let slot = settings.potion_slot?;
     let potion = base_case
+        .core
         .position
         .combat
         .entities
@@ -662,18 +665,18 @@ fn export_representative_case(
     output: &PathBuf,
 ) -> Result<(), String> {
     let mut exported = base_case.clone();
-    exported.position = state.position.clone();
+    exported.core.position = state.position.clone();
     exported.refresh_derived_summaries_and_clear_production_context();
     exported.branch_evidence = None;
     exported.combat_search_attempts.clear();
     exported.failed_search = None;
     exported.path.clear();
-    exported.gap.boundary = format!("turn quality frontier depth {depth}");
-    exported.gap.reason = "oracle_lab_turn_quality_frontier_representative".to_string();
-    exported.gap.search_nodes = 0;
-    exported.gap.search_ms = 0;
-    exported.gap.rescue_search_nodes = 0;
-    exported.gap.rescue_search_ms = 0;
+    exported.core.gap.boundary = format!("turn quality frontier depth {depth}");
+    exported.core.gap.reason = "oracle_lab_turn_quality_frontier_representative".to_string();
+    exported.core.gap.search_nodes = 0;
+    exported.core.gap.search_ms = 0;
+    exported.core.gap.rescue_search_nodes = 0;
+    exported.core.gap.rescue_search_ms = 0;
     save_combat_case(output, &exported)
 }
 

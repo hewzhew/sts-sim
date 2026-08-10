@@ -54,7 +54,7 @@ pub(super) fn load(
 ) -> Result<ExactTurnCorridor, String> {
     let case = load_combat_case(case_path)?;
     let actions = load_action_segments(action_paths)?;
-    from_position_and_actions(case.position, actions, max_engine_steps_per_transition)
+    from_position_and_actions(case.core.position, actions, max_engine_steps_per_transition)
 }
 
 pub(super) fn from_position_and_actions(
@@ -196,7 +196,7 @@ pub(super) fn load_corpus(manifest_path: &Path) -> Result<Vec<LoadedDemonstratio
                 id: entry.id,
                 case_path,
                 action_paths,
-                position: case.position,
+                position: case.core.position,
                 actions,
             })
         })

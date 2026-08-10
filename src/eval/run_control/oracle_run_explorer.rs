@@ -1,12 +1,11 @@
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
-use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 
-use crate::eval::combat_guidance_bundle::CombatGuidanceBundleV1;
 use crate::state::core::{EngineState, RunResult};
 
+use super::oracle_combat_budget::{OracleRunCombatBudgetsV1, OracleRunCombatQualityPolicyV1};
 use super::oracle_combat_work::{OracleRunCombatWorkCheckpointV1, OracleRunCombatWorkV1};
 use super::oracle_selection_cursor::LazyUnorderedSelectionCursorV1;
 use super::{
@@ -234,55 +233,7 @@ pub struct OraclePendingCombatSummaryV1 {
     pub restart_count: usize,
 }
 
-#[derive(Clone, Debug)]
-pub struct OracleRunCombatBudgetsV1 {
-    pub hallway: RunControlSearchCombatOptions,
-    pub elite: RunControlSearchCombatOptions,
-    pub boss: RunControlSearchCombatOptions,
-    /// Determines whether each configured search satisfaction is used
-    /// literally or whether non-boss combat derives the shared strategic
-    /// quality target from the exact run state.
-    pub quality_policy: OracleRunCombatQualityPolicyV1,
-    /// A value greater than one enables a two-fidelity schedule. The first
-    /// exact attempt receives `1 / initial_divisor` of the configured
-    /// allowance. A budget-unknown result remains a live exact edge and may
-    /// later earn one full-budget restart.
-    pub initial_divisor: u32,
-    /// Optional immutable learned guidance. Exact simulation, legality,
-    /// terminal checks, and replay remain authoritative.
-    pub guidance_bundle: Option<Arc<CombatGuidanceBundleV1>>,
-}
-
-#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum OracleRunCombatQualityPolicyV1 {
-    /// Preserve the satisfaction carried by each configured search option.
-    #[default]
-    Configured,
-    /// Stop refinement once an exact witness satisfies the run's shared
-    /// survival-and-quality reserve. A boss that reaches a full act heal or
-    /// the requested run end keeps first-witness semantics after one complete
-    /// independent local-search challenge.
-    StrategicRun,
-}
-
 impl OracleRunCombatBudgetsV1 {
-    pub fn uniform(options: RunControlSearchCombatOptions) -> Self {
-        Self {
-            hallway: options.clone(),
-            elite: options.clone(),
-            boss: options,
-            quality_policy: OracleRunCombatQualityPolicyV1::Configured,
-            initial_divisor: 1,
-            guidance_bundle: None,
-        }
-    }
-
-    pub fn with_guidance_bundle(mut self, bundle: Option<CombatGuidanceBundleV1>) -> Self {
-        self.guidance_bundle = bundle.map(Arc::new);
-        self
-    }
-
     pub(super) fn for_session(&self, session: &RunControlSession) -> RunControlSearchCombatOptions {
         self.for_session_stage(session, 1)
     }

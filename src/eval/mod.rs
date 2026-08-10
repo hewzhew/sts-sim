@@ -15,6 +15,7 @@ pub mod campfire_threat_panel;
 pub mod combat_action_imitation;
 pub mod combat_baseline_outcome;
 pub mod combat_capture;
+pub mod combat_case_core;
 #[cfg(any(
     not(feature = "combat-search-driver"),
     feature = "oracle-lab",

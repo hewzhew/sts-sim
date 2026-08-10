@@ -154,7 +154,7 @@ pub(super) fn awakened_one_failure_evidence(
 }
 
 pub(super) fn awakened_one_path_audit_v0(case: &CombatCase) -> Option<AwakenedOnePathAuditV0> {
-    if !is_awakened_one_case(&case.position.combat) {
+    if !is_awakened_one_case(&case.core.position.combat) {
         return None;
     }
 
@@ -192,7 +192,7 @@ pub(super) fn awakened_one_path_audit_v0(case: &CombatCase) -> Option<AwakenedOn
 }
 
 pub(super) fn static_boss_matchup_audit_v0(case: &CombatCase) -> Option<StaticBossMatchupAuditV0> {
-    let frame = awakened_one_evidence_frame(&case.position.combat)?;
+    let frame = awakened_one_evidence_frame(&case.core.position.combat)?;
     let claims = evidence_claims_from_frame(&frame);
     let risk_summary = boss_matchup_static_risk_summary_v0(&frame);
     Some(StaticBossMatchupAuditV0 {
@@ -200,7 +200,7 @@ pub(super) fn static_boss_matchup_audit_v0(case: &CombatCase) -> Option<StaticBo
         contract:
             "shadow_static_boss_plan_claims_from_boss_deck_relic_potion_energy_no_combat_outcome",
         boss: "AwakenedOne",
-        start: start_evidence(&case.position.combat, &frame),
+        start: start_evidence(&case.core.position.combat, &frame),
         claims,
         risk_tags: risk_summary.risk_tags,
         conclusion: risk_summary.conclusion,

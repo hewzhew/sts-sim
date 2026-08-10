@@ -79,7 +79,7 @@ pub(super) fn run(args: TurnMembershipArgs) -> Result<(), String> {
                     &std::fs::read(actions).map_err(|error| error.to_string())?,
                 )
                 .map_err(|error| format!("invalid target action list: {error}"))?;
-                (case.position, target, None)
+                (case.core.position, target, None)
             }
             (None, corridor_actions, Some(rank)) if !corridor_actions.is_empty() => {
                 let corridor = load_exact_turn_corridor(

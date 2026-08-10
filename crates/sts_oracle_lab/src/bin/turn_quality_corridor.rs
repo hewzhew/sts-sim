@@ -223,7 +223,7 @@ pub(super) fn run(args: TurnQualityCorridorArgs) -> Result<TurnQualityCorridorRe
         max_frontier_states,
         max_engine_steps_per_transition,
     };
-    let position = load_combat_case(&case)?.position;
+    let position = load_combat_case(&case)?.core.position;
     let root_exact_state_hash = combat_exact_state_hash_v2(&position.engine, &position.combat);
     let initial_player_hp = position.combat.entities.player.current_hp;
     let (resumed_from_depth, analysis) = if let Some(path) = checkpoint_in.as_ref() {

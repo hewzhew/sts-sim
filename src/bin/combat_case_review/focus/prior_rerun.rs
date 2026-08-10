@@ -22,7 +22,7 @@ pub(crate) fn witness_prior_rerun(
         return None;
     }
     let witness_prior =
-        compile_combat_search_witness_prior_v0(&case.position, &focus_witness_line(focus));
+        compile_combat_search_witness_prior_v0(&case.core.position, &focus_witness_line(focus));
     if witness_prior.prior.is_empty() {
         return None;
     }

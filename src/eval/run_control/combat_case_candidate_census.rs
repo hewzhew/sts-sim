@@ -113,7 +113,7 @@ pub fn adjudicate_combat_case_candidates_v1(
         let action_count = retained.trajectory.actions.len();
         let line = CombatCandidateLine::from_search_trajectory(retained.trajectory);
         let evaluation =
-            evaluate_combat_candidate_line_outcome(&session, &case.position, config, line)
+            evaluate_combat_candidate_line_outcome(&session, &case.core.position, config, line)
                 .map(|evaluation| (retained.retained_index, evaluation.outcome))
                 .map_err(|error| CombatCaseCandidateReplayFailureV1 {
                     retained_index: retained.retained_index,

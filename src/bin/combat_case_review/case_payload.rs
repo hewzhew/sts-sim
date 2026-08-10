@@ -45,7 +45,7 @@ pub(super) fn assemble_combat_case_review(
         review_focus.as_ref(),
         &ladder,
     );
-    let key_card_lifecycle = key_card_lifecycle(&case.position, review_focus.as_ref());
+    let key_card_lifecycle = key_card_lifecycle(&case.core.position, review_focus.as_ref());
     CombatCaseReview {
         schema: "combat_case_review",
         case_path,
@@ -56,10 +56,10 @@ pub(super) fn assemble_combat_case_review(
         path_tail: derived.path_tail,
         saved_search: case.failed_search.clone(),
         adjudication_probe,
-        source: case.source,
-        gap: case.gap,
-        run: case.run,
-        combat: case.combat,
+        source: case.core.source,
+        gap: case.core.gap,
+        run: case.core.run,
+        combat: case.core.combat,
         ladder,
         classification,
         review_focus,

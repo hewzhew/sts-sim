@@ -37,7 +37,7 @@ pub(super) fn replay_pair(
     let inputs = load_action_segments(&candidate.action_paths)?;
     let action_hash = action_sequence_hash(&inputs)?;
     let stepper = EngineCombatStepper;
-    let mut position = loaded.position;
+    let mut position = loaded.core.position;
     let root_hash = combat_exact_state_hash_v2(&position.engine, &position.combat);
     let record_id = record_id(&root_hash, &action_hash);
     let supplied_action_count = inputs.len();

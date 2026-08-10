@@ -29,10 +29,13 @@ combat-search frontend -> capability worker -> sts_oracle_eval
 
 `sts_simulator` owns game content, state, engine transitions, simulation, and
 stable lower policy layers. `sts_oracle_eval` owns combat evaluation and
-exact-search orchestration. `sts_oracle_run_control` consumes that lower
-surface and owns exact run sessions, non-combat decisions, combat application,
-and run evidence. `sts_oracle_learning_env` consumes run-control and owns exact
-single-episode learning environments plus opaque combat-root artifacts.
+exact-search orchestration, including the production-independent typed
+`CombatCaseCoreV1` consumed by fixed-combat frontends.
+`sts_oracle_run_control` consumes that lower surface and owns exact run
+sessions, non-combat decisions, combat application, and the
+diagnostic/production envelopes surrounding that core.
+`sts_oracle_learning_env` consumes run-control and owns exact single-episode
+learning environments plus opaque combat-root artifacts.
 `sts_oracle_learning` is the downstream model-facing adapter and owns ragged
 model views and batched pools; neither learning crate owns a policy objective.
 `sts_oracle_runtime` consumes run-control
@@ -1451,6 +1454,15 @@ not by itself a deck-construction verdict.
 `CombatCase` is the preferred handoff from runner to combat investigation. If a
 branch-tiny combat gap cannot be investigated from a saved case, fix the case
 payload or the review entrypoint instead of creating another report format.
+
+The serialized case remains one flat artifact, but its Rust ownership is
+layered. `CombatCaseCoreV1` contains the exact position, typed source and gap,
+and the derived run/combat/RNG facts that can be consumed without run-control.
+Run-control adds diagnostic history and an optional production context around
+that core. Production-context capture and restoration receive the core and
+context explicitly; the context owner must not depend back on the full case or
+on analysis-session/explorer queues. The immutable owner combat-budget payload
+is a separate data contract from the run explorer methods that schedule it.
 
 A case without a validated typed `production_context` supports isolated combat
 replay only. Exact production-state restoration requires that context to bind

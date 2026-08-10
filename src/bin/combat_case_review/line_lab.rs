@@ -18,14 +18,14 @@ pub(super) fn run_line_lab(
     let config = line_lab_search_config(options);
     Some(match parent {
         Some(parent) => run_combat_line_lab_from_parent_v0(
-            &case.position,
+            &case.core.position,
             parent,
             config,
             options.line_lab_ms,
             options.line_lab_cuts,
         ),
         None => run_combat_line_lab_v0(
-            &case.position,
+            &case.core.position,
             config,
             options.line_lab_ms,
             options.line_lab_cuts,

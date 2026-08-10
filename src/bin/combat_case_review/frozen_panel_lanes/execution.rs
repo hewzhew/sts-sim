@@ -17,7 +17,7 @@ pub(super) fn run_frozen_panel_lane(
     let summary = FrozenPanelLaneConfigSummary::from_profile(profile);
     let (review, _) = run_profile_search(case, profile, options.action_preview_limit);
     let focus = review_focus(std::slice::from_ref(&review));
-    let key_card_lifecycle = key_card_lifecycle(&case.position, focus.as_ref());
+    let key_card_lifecycle = key_card_lifecycle(&case.core.position, focus.as_ref());
     FrozenPanelLaneResult {
         lane: spec.lane,
         search_config_summary: summary,

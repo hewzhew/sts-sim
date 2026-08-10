@@ -61,7 +61,7 @@ pub fn adjudicate_combat_case_line_v1(
         }
     };
     let line = CombatCandidateLine::from_search_trajectory(trajectory);
-    match evaluate_combat_candidate_line_outcome(&session, &case.position, config, line) {
+    match evaluate_combat_candidate_line_outcome(&session, &case.core.position, config, line) {
         Ok(evaluation) => {
             let observed_outcome = evaluation.outcome;
             CombatCaseAdjudicationProbeV1::Adjudicated {
@@ -82,27 +82,27 @@ pub fn adjudicate_combat_case_line_v1(
 }
 
 pub(super) fn project_combat_case_session(case: &CombatCase) -> Result<RunControlSession, String> {
-    let player_class = canonical_player_class(&case.position.combat.meta.player_class)?;
+    let player_class = canonical_player_class(&case.core.position.combat.meta.player_class)?;
     let mut session = RunControlSession::new(RunControlConfig {
-        seed: case.source.seed,
-        ascension_level: case.source.ascension,
-        final_act: case.run.act >= 4,
+        seed: case.core.source.seed,
+        ascension_level: case.core.source.ascension,
+        final_act: case.core.run.act >= 4,
         player_class,
         ..RunControlConfig::default()
     });
-    session.run_state.act_num = case.run.act;
-    session.run_state.floor_num = case.run.floor;
-    session.run_state.current_hp = case.run.hp;
-    session.run_state.max_hp = case.run.max_hp;
-    session.run_state.gold = case.run.gold;
-    session.run_state.master_deck = case.position.combat.meta.master_deck_snapshot.to_vec();
-    session.run_state.relics = case.position.combat.entities.player.relics.clone();
-    session.run_state.potions = case.position.combat.entities.potions.clone();
-    session.run_state.rng_pool = case.position.combat.rng.pool.clone();
-    session.engine_state = case.position.engine.clone();
+    session.run_state.act_num = case.core.run.act;
+    session.run_state.floor_num = case.core.run.floor;
+    session.run_state.current_hp = case.core.run.hp;
+    session.run_state.max_hp = case.core.run.max_hp;
+    session.run_state.gold = case.core.run.gold;
+    session.run_state.master_deck = case.core.position.combat.meta.master_deck_snapshot.to_vec();
+    session.run_state.relics = case.core.position.combat.entities.player.relics.clone();
+    session.run_state.potions = case.core.position.combat.entities.potions.clone();
+    session.run_state.rng_pool = case.core.position.combat.rng.pool.clone();
+    session.engine_state = case.core.position.engine.clone();
     session.active_combat = Some(ActiveCombat::new(
-        case.position.engine.clone(),
-        case.position.combat.clone(),
+        case.core.position.engine.clone(),
+        case.core.position.combat.clone(),
         CombatContext::Room(RoomCombatContext {
             room_type: projected_room_type(case),
         }),
@@ -111,9 +111,9 @@ pub(super) fn project_combat_case_session(case: &CombatCase) -> Result<RunContro
 }
 
 fn projected_room_type(case: &CombatCase) -> RoomType {
-    if case.position.combat.meta.is_boss_fight {
+    if case.core.position.combat.meta.is_boss_fight {
         RoomType::MonsterRoomBoss
-    } else if case.position.combat.meta.is_elite_fight {
+    } else if case.core.position.combat.meta.is_elite_fight {
         RoomType::MonsterRoomElite
     } else {
         RoomType::MonsterRoom
@@ -214,22 +214,22 @@ mod tests {
         assert_eq!(session.run_state.gold, 123);
         assert_eq!(
             session.run_state.master_deck,
-            case.position.combat.meta.master_deck_snapshot.as_ref()
+            case.core.position.combat.meta.master_deck_snapshot.as_ref()
         );
         assert_eq!(
             session.run_state.relics,
-            case.position.combat.entities.player.relics
+            case.core.position.combat.entities.player.relics
         );
         assert_eq!(
             session.run_state.potions,
-            case.position.combat.entities.potions
+            case.core.position.combat.entities.potions
         );
         assert_eq!(
             session
                 .active_combat
                 .as_ref()
                 .map(|active| &active.combat_state),
-            Some(&case.position.combat)
+            Some(&case.core.position.combat)
         );
     }
 

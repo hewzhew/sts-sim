@@ -54,7 +54,7 @@ pub(super) fn export_combat_case(
     Ok(json!({
         "node": node,
         "output": output,
-        "combat": case.combat,
+        "combat": case.core.combat,
     }))
 }
 

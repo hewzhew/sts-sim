@@ -111,20 +111,20 @@ pub(super) fn register_case(path: &Path) -> Result<CombatCaseCatalogEntryV2, Str
         )
     })?;
     let case = load_combat_case(&canonical_path)?;
-    let id = combat_exact_state_hash_v2(&case.position.engine, &case.position.combat);
+    let id = combat_exact_state_hash_v2(&case.core.position.engine, &case.core.position.combat);
     let entry = CombatCaseCatalogEntryV2 {
         schema_name: CASE_CATALOG_SCHEMA.to_owned(),
         schema_version: 2,
         id: id.clone(),
         path: canonical_path,
-        seed: case.source.seed,
-        ascension: case.source.ascension,
-        act: case.run.act,
-        floor: case.run.floor,
-        hp: case.run.hp,
-        max_hp: case.run.max_hp,
-        gold: case.run.gold,
-        enemies: case.combat.enemies,
+        seed: case.core.source.seed,
+        ascension: case.core.source.ascension,
+        act: case.core.run.act,
+        floor: case.core.run.floor,
+        hp: case.core.run.hp,
+        max_hp: case.core.run.max_hp,
+        gold: case.core.run.gold,
+        enemies: case.core.combat.enemies,
     };
     let existing = read_catalog()?;
     if existing.get(&id) == Some(&entry) {

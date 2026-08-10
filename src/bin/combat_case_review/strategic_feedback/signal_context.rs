@@ -32,7 +32,7 @@ impl CombatStrategicSignalContext {
                 progress.source == "rollout_frontier"
                     && progress.terminal == SearchTerminalLabel::Win
             }),
-            low_hp_start: case.run.hp * 100 <= case.run.max_hp * 20,
+            low_hp_start: case.core.run.hp * 100 <= case.core.run.max_hp * 20,
         }
     }
 }

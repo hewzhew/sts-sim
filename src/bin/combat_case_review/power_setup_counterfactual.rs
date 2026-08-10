@@ -108,7 +108,7 @@ pub(super) fn run_power_setup_counterfactual(
     options: &ReviewOptions,
     case: &CombatCase,
 ) -> PowerSetupCounterfactualProbe {
-    let power_cards = collect_power_cards(&case.position.combat);
+    let power_cards = collect_power_cards(&case.core.position.combat);
     let semantics = if options.power_setup_optimistic_only {
         vec![PowerSetupSemantics::OptimisticPreinstalled]
     } else {
@@ -170,7 +170,7 @@ fn run_variant(
     );
     let config = existential_search_config(
         profile.to_config(),
-        case.position.combat.entities.player.current_hp,
+        case.core.position.combat.entities.player.current_hp,
     );
     let (whole_combat_search, report) = run_config_search(
         semantics.label(),
@@ -180,7 +180,7 @@ fn run_variant(
     );
     let whole_combat_win_replay = report.best_win_trajectory.as_ref().map(|trajectory| {
         let witness = witness_line_from_trajectory(semantics.label(), trajectory);
-        replay_combat_search_witness_line_v0(&case.position, &witness)
+        replay_combat_search_witness_line_v0(&case.core.position, &witness)
     });
     let replayed_whole_combat_win = whole_combat_win_replay
         .as_ref()
@@ -188,7 +188,12 @@ fn run_variant(
     // Once ordinary-engine replay has proved a complete win, the fallback
     // turn-pool cannot add evidence for this existential probe.
     let turn_pool = should_run_fallback_turn_pool(replayed_whole_combat_win).then(|| {
-        run_combat_turn_pool_opening_report_v0(&case.position, options.slow_ms, 40, Some(&config))
+        run_combat_turn_pool_opening_report_v0(
+            &case.core.position,
+            options.slow_ms,
+            40,
+            Some(&config),
+        )
     });
     let turn_pool_win = turn_pool.as_ref().is_some_and(|turn_pool| {
         turn_pool
@@ -237,7 +242,7 @@ fn transform_case(
         return Err("no active-zone Power cards found".to_string());
     }
     if !matches!(
-        original.position.engine,
+        original.core.position.engine,
         sts_oracle_runtime::state::core::EngineState::CombatPlayerTurn
     ) {
         return Err("power setup counterfactual requires a player-turn combat root".to_string());
@@ -257,13 +262,13 @@ fn transform_case(
 
     let mut case = original.clone();
     for power in &applied_cards {
-        free_play_power(&mut case.position, power)?;
+        free_play_power(&mut case.core.position, power)?;
     }
     if matches!(semantics, PowerSetupSemantics::OptimisticPreinstalled) {
         remove_free_play_costs(original, &mut case);
     }
     case.refresh_derived_summaries_and_clear_production_context();
-    let setup = setup_snapshot(&case.position.combat, applied_cards);
+    let setup = setup_snapshot(&case.core.position.combat, applied_cards);
     Ok((case, setup))
 }
 
@@ -317,16 +322,24 @@ fn free_play_power(position: &mut CombatPosition, evidence: &PowerSetupCard) -> 
 }
 
 fn remove_free_play_costs(original: &CombatCase, transformed: &mut CombatCase) {
-    restore_monster_powers(&original.position.combat, &mut transformed.position.combat);
-    restore_player_vulnerable(&original.position.combat, &mut transformed.position.combat);
-    transformed.position.combat.turn.counters = original.position.combat.turn.counters.clone();
+    restore_monster_powers(
+        &original.core.position.combat,
+        &mut transformed.core.position.combat,
+    );
+    restore_player_vulnerable(
+        &original.core.position.combat,
+        &mut transformed.core.position.combat,
+    );
+    transformed.core.position.combat.turn.counters =
+        original.core.position.combat.turn.counters.clone();
     let berserk = store::power_amount(
-        &transformed.position.combat,
-        transformed.position.combat.entities.player.id,
+        &transformed.core.position.combat,
+        transformed.core.position.combat.entities.player.id,
         PowerId::Berserk,
     )
     .max(0);
-    transformed.position.combat.turn.energy = original
+    transformed.core.position.combat.turn.energy = original
+        .core
         .position
         .combat
         .turn

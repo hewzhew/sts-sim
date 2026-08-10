@@ -77,7 +77,7 @@ pub(super) fn run_counterfactual_hp_level(
     }
     let replay_on_original_hp = best.as_ref().map(|candidate| {
         let replay =
-            replay_combat_search_witness_line_v0(&original_case.position, &candidate.witness);
+            replay_combat_search_witness_line_v0(&original_case.core.position, &candidate.witness);
         CounterfactualHpReplay {
             terminal: replay.terminal,
             final_hp: replay.final_hp,

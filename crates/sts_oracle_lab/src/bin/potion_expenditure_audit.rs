@@ -813,8 +813,11 @@ pub(super) fn run(
             },
         )
     } else {
-        match restore_combat_case_oracle_analysis_owner_v1(&loaded)
-            .and_then(|(session, _)| reconstruct_oracle_combat_context_trace_v1(&session))
+        match restore_combat_case_oracle_analysis_owner_v1(
+            &loaded.core,
+            loaded.production_context.as_ref(),
+        )
+        .and_then(|(session, _)| reconstruct_oracle_combat_context_trace_v1(&session))
         {
             Ok(trace) => (
                 Some(trace),
@@ -832,12 +835,12 @@ pub(super) fn run(
             ),
         }
     };
-    let root = CombatDecisionRoot::new(loaded.position.clone())
+    let root = CombatDecisionRoot::new(loaded.core.position.clone())
         .map_err(|error| format!("invalid potion audit combat root: {error:?}"))?;
     let root_exact_state_hash = root.exact_state_hash().to_owned();
-    let initial_hp = loaded.position.combat.entities.player.current_hp;
-    let initial_player_turn = loaded.position.combat.turn.turn_count;
-    let root_potions = root_potion_resources(&loaded.position)?;
+    let initial_hp = loaded.core.position.combat.entities.player.current_hp;
+    let initial_player_turn = loaded.core.position.combat.turn.turn_count;
+    let root_potions = root_potion_resources(&loaded.core.position)?;
     let run_level_projection = project_saved_run_continuation_context_with_reconstructed(
         &loaded,
         reconstructed_context_trace.as_ref(),
@@ -866,15 +869,15 @@ pub(super) fn run(
         combat_victory_continuation_projection.clone();
     let strategic_hp_quality_projection_for_evidence = strategic_hp_quality_projection.clone();
     let continuation_context = potion_continuation_context(
-        loaded.run.act,
-        loaded.run.floor,
-        &loaded.position,
+        loaded.core.run.act,
+        loaded.core.run.floor,
+        &loaded.core.position,
         run_level_projection,
     );
     let restored_witness = restore_witness_actions
         .as_deref()
         .map(|path| {
-            load_exact_action_witness(&loaded.position, path, max_engine_steps_per_transition)
+            load_exact_action_witness(&loaded.core.position, path, max_engine_steps_per_transition)
         })
         .transpose()?;
     let lane_specs = build_lane_specs(&root_potions, max_combination_size, max_lanes)?;
@@ -887,7 +890,7 @@ pub(super) fn run(
         if authorized_root_potion_trial && lane.allowed_slot_mask != 0 {
             lane_policy = authorized_potion_trial_policy_v1(
                 lane_policy,
-                loaded.position.clone(),
+                loaded.core.position.clone(),
                 lane.allowed_slot_mask,
             );
         }
@@ -912,7 +915,7 @@ pub(super) fn run(
             .map(OracleCombatWitnessSatisfaction::HpLossAtMost)
             .unwrap_or(OracleCombatWitnessSatisfaction::BudgetOrExhaustion);
         let config = search_spec.planner_config(satisfaction);
-        let lane_root = CombatDecisionRoot::new(loaded.position.clone())
+        let lane_root = CombatDecisionRoot::new(loaded.core.position.clone())
             .map_err(|error| format!("invalid potion audit lane root: {error:?}"))?;
         if lane_root.exact_state_hash() != root_exact_state_hash {
             return Err(format!(
@@ -957,7 +960,7 @@ pub(super) fn run(
             .as_ref()
             .map(|witness| {
                 summarize_witness(
-                    &loaded.position,
+                    &loaded.core.position,
                     witness.actions.as_slice(),
                     &witness.final_position,
                     initial_hp,
@@ -1423,8 +1426,9 @@ fn project_saved_potion_continuation_pressure_with_reconstructed(
         let expected = potion_continuation_pressure_from_context_v1(
             context,
             PotionContinuationPressureInputsV1 {
-                current_gold: case.run.gold,
+                current_gold: case.core.run.gold,
                 coffee_dripper_blocks_rest: case
+                    .core
                     .position
                     .combat
                     .entities
@@ -1529,7 +1533,7 @@ fn project_saved_combat_victory_continuation_with_reconstructed(
                 .captured_context
                 .as_ref()
                 .expect("validated run continuation context");
-            if !case.position.combat.meta.is_boss_fight {
+            if !case.core.position.combat.meta.is_boss_fight {
                 mismatches.push(CombatVictoryContinuationMismatchV1 {
                     field: "combat_kind".to_owned(),
                     expected: "boss".to_owned(),
@@ -1543,11 +1547,11 @@ fn project_saved_combat_victory_continuation_with_reconstructed(
                     observed: context.act.to_string(),
                 });
             }
-            if case.position.combat.meta.ascension_level >= 5 {
+            if case.core.position.combat.meta.ascension_level >= 5 {
                 mismatches.push(CombatVictoryContinuationMismatchV1 {
                     field: "ascension".to_owned(),
                     expected: "ascension below 5".to_owned(),
-                    observed: case.position.combat.meta.ascension_level.to_string(),
+                    observed: case.core.position.combat.meta.ascension_level.to_string(),
                 });
             }
         }
@@ -1635,7 +1639,7 @@ fn project_saved_strategic_hp_quality_with_reconstructed(
             observed: facts.quality_evaluator.clone(),
         });
     }
-    let root_player = &case.position.combat.entities.player;
+    let root_player = &case.core.position.combat.entities.player;
     if facts.entry_current_hp != root_player.current_hp {
         mismatches.push(StrategicHpQualityMismatchV1 {
             field: "entry_current_hp".to_owned(),
@@ -1809,7 +1813,7 @@ fn validate_saved_run_continuation_context(
     case: &CombatCase,
     context: &PotionRunContinuationContextV1,
 ) -> Vec<PotionRunContinuationMismatchV1> {
-    let combat = &case.position.combat;
+    let combat = &case.core.position.combat;
     let expected_occupied_slots = combat
         .entities
         .potions
@@ -1835,8 +1839,8 @@ fn validate_saved_run_continuation_context(
         "before_combat_search",
         context.capture_boundary.as_str(),
     );
-    push_context_mismatch(&mut mismatches, "act", case.run.act, context.act);
-    push_context_mismatch(&mut mismatches, "floor", case.run.floor, context.floor);
+    push_context_mismatch(&mut mismatches, "act", case.core.run.act, context.act);
+    push_context_mismatch(&mut mismatches, "floor", case.core.run.floor, context.floor);
     push_context_mismatch(
         &mut mismatches,
         "current_hp",
@@ -4014,7 +4018,7 @@ mod tests {
         assert!(survival.candidate_crosses_from_unsatisfied_to_satisfied);
         assert!(quality.candidate_crosses_from_unsatisfied_to_satisfied);
         assert_eq!(facts.inventory.occupied_slots, 1);
-        assert_eq!(facts.shop.current_gold, case.run.gold);
+        assert_eq!(facts.shop.current_gold, case.core.run.gold);
         assert!(facts.future_potion_identity_unknown);
         assert_eq!(
             facts.route_ordering.future_known_combat_before_campfire,
@@ -4213,7 +4217,7 @@ mod tests {
     #[test]
     fn combat_victory_projection_rejects_structurally_impossible_full_heal_claim() {
         let mut case = combat_case_with_trace_run_context();
-        case.position.combat.meta.is_boss_fight = true;
+        case.core.position.combat.meta.is_boss_fight = true;
         let fact = CombatVictoryContinuationFactsV1::from_guaranteed_room_boss_full_heal(true);
         case.combat_search_attempts[0].combat_victory_continuation = Some(fact.clone());
         case.failed_search = Some(case.combat_search_attempts[0].clone());
@@ -4228,7 +4232,7 @@ mod tests {
         assert_eq!(validated.captured_facts, Some(fact));
         assert!(validated.mismatches.is_empty());
 
-        case.position.combat.meta.ascension_level = 5;
+        case.core.position.combat.meta.ascension_level = 5;
         let rejected = project_saved_combat_victory_continuation(&case, &run_projection);
         assert_eq!(
             rejected.status,
@@ -4273,7 +4277,7 @@ mod tests {
             .strategic_hp_quality
             .as_mut()
             .expect("captured strategic HP quality");
-        facts.entry_current_hp = case.position.combat.entities.player.current_hp;
+        facts.entry_current_hp = case.core.position.combat.entities.player.current_hp;
         facts.quality_hp_loss_limit = CombatSearchHpLossLimitV1::Unlimited;
         case.failed_search = Some(case.combat_search_attempts[0].clone());
         let rejected =

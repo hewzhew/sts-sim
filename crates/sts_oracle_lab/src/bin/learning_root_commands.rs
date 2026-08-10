@@ -330,7 +330,9 @@ pub(super) fn export_case(
         })?;
     let session = checkpoint.into_session()?;
     let mut case = combat_case_from_session(&session)?;
-    case.production_context = Some(capture_combat_case_production_context_v1(&case, &session)?);
+    case.production_context = Some(capture_combat_case_production_context_v1(
+        &case.core, &session,
+    )?);
     let replay_identity = case.replay_identity_v1()?;
     if replay_identity.root_exact_state_hash != identity.exact_combat_state_hash {
         return Err("learning root case changed the exact combat state".to_owned());
@@ -642,7 +644,8 @@ pub(super) fn recover(
         ));
     }
     let case = load_combat_case(case_path)?;
-    let session = restore_combat_case_production_session_v1(&case)?;
+    let session =
+        restore_combat_case_production_session_v1(&case.core, case.production_context.as_ref())?;
     let mut action_payload = Vec::new();
     File::open(actions_path)
         .map_err(|error| format!("failed to open {}: {error}", actions_path.display()))?
@@ -1067,8 +1070,9 @@ mod tests {
         let summary = export_case(&artifact_path, &case_path, 2, 1, 1024 * 1024)
             .expect("export selected root case");
         let case = load_combat_case(&case_path).expect("load selected case");
-        let restored = restore_combat_case_production_session_v1(&case)
-            .expect("restore exact production session");
+        let restored =
+            restore_combat_case_production_session_v1(&case.core, case.production_context.as_ref())
+                .expect("restore exact production session");
         let restored_position = restored
             .current_active_combat_position()
             .expect("restored exact position");
@@ -1188,7 +1192,7 @@ mod tests {
         let session = combat_root_session(12);
         let mut case = combat_case(&session);
         case.production_context = Some(
-            capture_combat_case_production_context_v1(&case, &session)
+            capture_combat_case_production_context_v1(&case.core, &session)
                 .expect("capture production context"),
         );
         save_combat_case(&case_path, &case).expect("save production case");

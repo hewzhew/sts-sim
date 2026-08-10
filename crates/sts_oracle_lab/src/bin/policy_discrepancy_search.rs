@@ -79,13 +79,13 @@ pub(super) fn run(args: CombatCasePolicyDiscrepancyArgs) -> Result<(), String> {
     let command_started = Instant::now();
     let case_path = case.clone();
     let case = load_combat_case(&case)?;
-    let root_position = case.position;
+    let root_position = case.core.position;
     let root = CombatDecisionRoot::new(root_position.clone())
         .map_err(|error| format!("invalid combat case root: {error:?}"))?;
     let initial_hp = root.position().combat.entities.player.current_hp;
     let watched_positions = watch_case
         .iter()
-        .map(|path| load_combat_case(path).map(|case| (path.clone(), case.position)))
+        .map(|path| load_combat_case(path).map(|case| (path.clone(), case.core.position)))
         .collect::<Result<Vec<_>, _>>()?;
     let policy = action_imitation_artifact
         .as_deref()

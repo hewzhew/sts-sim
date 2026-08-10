@@ -15,7 +15,7 @@ pub(super) fn collector_pressure_lens(
     ladder: &[SearchReview],
     line_lab: Option<&CombatLineLabReport>,
 ) -> Option<BossPressureLensReport> {
-    let combat = &case.position.combat;
+    let combat = &case.core.position.combat;
     let collector = find_enemy(combat, EnemyId::TheCollector)?;
     let start = collector_start_signals(combat, collector);
     let phase = collector_phase(start.turn);

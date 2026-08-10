@@ -77,7 +77,7 @@ fn export_fixture(
 fn ordinary_complete_win_exports_a_local_graph_manifest() {
     let (case_path, case, actions) = fixture();
     let final_position = replay_combat_inputs(
-        case.position.clone(),
+        case.core.position.clone(),
         &actions,
         MAX_ENGINE_STEPS_PER_TRANSITION,
     )
@@ -126,9 +126,10 @@ fn ordinary_complete_win_exports_a_local_graph_manifest() {
 #[test]
 fn full_health_counterfactual_exports_actions_without_claiming_the_original_case() {
     let (_, mut case, actions) = fixture();
-    case.position.combat.entities.player.current_hp = case.position.combat.entities.player.max_hp;
+    case.core.position.combat.entities.player.current_hp =
+        case.core.position.combat.entities.player.max_hp;
     let final_position = replay_combat_inputs(
-        case.position.clone(),
+        case.core.position.clone(),
         &actions,
         MAX_ENGINE_STEPS_PER_TRANSITION,
     )

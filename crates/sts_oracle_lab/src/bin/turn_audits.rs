@@ -191,7 +191,7 @@ pub(super) fn run_action(args: TurnActionAuditArgs) -> Result<(), String> {
     } = args;
     let case = load_combat_case(&case)?;
     let position = replay_optional_prefix(
-        case.position,
+        case.core.position,
         actions.as_deref(),
         through,
         max_engine_steps_per_transition,
@@ -501,8 +501,8 @@ pub(super) fn run_plan(args: TurnPlanAuditArgs) -> Result<(), String> {
         export_actions,
     } = args;
     let mut case = load_combat_case(&case)?;
-    case.position = replay_optional_prefix(
-        case.position,
+    case.core.position = replay_optional_prefix(
+        case.core.position,
         actions.as_deref(),
         through,
         max_engine_steps_per_transition,
@@ -511,8 +511,8 @@ pub(super) fn run_plan(args: TurnPlanAuditArgs) -> Result<(), String> {
         "actions": actions,
         "through": through,
         "position_hash": sts_oracle_runtime::ai::combat_state_key::combat_exact_state_hash_v2(
-            &case.position.engine,
-            &case.position.combat,
+            &case.core.position.engine,
+            &case.core.position.combat,
         ),
     });
     let mut config = sts_oracle_runtime::ai::combat_search_v2::CombatSearchV2Config::default();
@@ -530,8 +530,8 @@ pub(super) fn run_plan(args: TurnPlanAuditArgs) -> Result<(), String> {
     config.input_label = Some("oracle_lab_turn_plan_audit".to_string());
     let audit = sts_oracle_runtime::ai::combat_search_v2::
                 enumerate_combat_search_v2_turn_plan_probe_candidates_across_pending_choices(
-                    &case.position.engine,
-                    &case.position.combat,
+                    &case.core.position.engine,
+                    &case.core.position.combat,
                     &config,
                 );
     let exported_plan = if let Some(rank) = export_rank {
@@ -543,11 +543,13 @@ pub(super) fn run_plan(args: TurnPlanAuditArgs) -> Result<(), String> {
             .ok_or_else(|| format!("non-loss turn-plan rank {rank} is unavailable"))?;
         if let Some(path) = export_case.as_ref() {
             let mut exported = case.clone();
-            exported.position = candidate.position.clone();
+            exported.core.position = candidate.position.clone();
             exported.refresh_derived_summaries_and_clear_production_context();
-            exported.gap.boundary =
-                format!("{} + audited turn plan rank {rank}", exported.gap.boundary);
-            exported.gap.reason = "oracle_lab_turn_plan_audit_successor".to_string();
+            exported.core.gap.boundary = format!(
+                "{} + audited turn plan rank {rank}",
+                exported.core.gap.boundary
+            );
+            exported.core.gap.reason = "oracle_lab_turn_plan_audit_successor".to_string();
             exported.combat_search_attempts.clear();
             exported.failed_search = None;
             save_combat_case(path, &exported)?;

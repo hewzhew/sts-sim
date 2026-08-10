@@ -531,6 +531,19 @@ fn combat_evaluation_run_control_learning_layers_and_runtime_keep_distinct_compi
             .expect("read learning-adapter eval root");
     let runtime_root =
         std::fs::read_to_string("crates/sts_oracle_runtime/src/lib.rs").expect("read runtime root");
+    let combat_case_context = std::fs::read_to_string("src/eval/combat_case_context.rs")
+        .expect("read combat-case production context");
+    let combat_case_context = combat_case_context
+        .split("#[cfg(test)]")
+        .next()
+        .unwrap_or(&combat_case_context);
+    let combat_budget = std::fs::read_to_string("src/eval/run_control/oracle_combat_budget.rs")
+        .expect("read combat budget contract");
+    let run_explorer = std::fs::read_to_string("src/eval/run_control/oracle_run_explorer.rs")
+        .expect("read run explorer");
+    let combat_search_driver =
+        std::fs::read_to_string("crates/sts_combat_search_driver/src/lib.rs")
+            .expect("read combat-search driver");
 
     assert!(
         eval_manifest.contains("name = \"sts_oracle_eval\"")
@@ -608,6 +621,7 @@ fn combat_evaluation_run_control_learning_layers_and_runtime_keep_distinct_compi
     );
     assert!(
         eval_root.contains("#[path = \"../../../src/eval/mod.rs\"]")
+            && eval_modules.contains("pub mod combat_case_core;")
             && !eval_modules.contains("pub mod run_control;")
             && control_eval_root.contains("src/eval/run_control/mod.rs")
             && control_eval_root.contains("src/eval/combat_case.rs")
@@ -620,6 +634,15 @@ fn combat_evaluation_run_control_learning_layers_and_runtime_keep_distinct_compi
             && !runtime_root.contains("#[path = \"../../../src/eval/mod.rs\"]")
             && runtime_root.contains("pub use sts_oracle_run_control::"),
         "combat eval, run-control, exact learning environments, and model adapters must each have one explicit Cargo owner"
+    );
+    assert!(
+        combat_case_context.contains("use crate::eval::combat_case_core::")
+            && !combat_case_context.contains("use crate::eval::combat_case::")
+            && combat_budget.contains("pub struct OracleRunCombatBudgetsV1")
+            && !run_explorer.contains("pub struct OracleRunCombatBudgetsV1")
+            && combat_search_driver.contains("load_combat_case_core_v1")
+            && !combat_search_driver.contains("CombatCasePositionInput"),
+        "combat-case core and owner budget data must stay independent from production envelopes, explorer queues, and ad-hoc frontend schemas"
     );
 
     let mut eval_sources = Vec::new();

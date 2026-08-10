@@ -57,7 +57,7 @@ pub(super) fn run_turn(args: DepthBeamTurnAuditArgs) -> Result<(), String> {
         limit,
     } = args;
     let case = load_combat_case(&case)?;
-    let root = CombatDecisionRoot::new(case.position)
+    let root = CombatDecisionRoot::new(case.core.position)
         .map_err(|error| format!("invalid combat case root: {error:?}"))?;
     let policy = action_imitation_artifact
         .as_deref()

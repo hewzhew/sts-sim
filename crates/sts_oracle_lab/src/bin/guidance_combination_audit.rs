@@ -205,7 +205,7 @@ pub(super) fn run(
     let case = args.case.clone();
     let guidance_bundle_path = args.guidance_bundle.clone();
     let loaded = load_combat_case(&case)?;
-    let position = loaded.position;
+    let position = loaded.core.position;
     let root_player_turn = position.combat.turn.turn_count;
     let bundle = CombatGuidanceBundleV1::load(&guidance_bundle_path)?;
     let bundle_identity = bundle_identity(&guidance_bundle_path, &bundle)?;

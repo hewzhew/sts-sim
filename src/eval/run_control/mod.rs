@@ -41,6 +41,7 @@ mod next_hint;
 mod noncombat_boundary;
 mod noncombat_policy_annotation;
 mod oracle_analysis_session;
+mod oracle_combat_budget;
 mod oracle_combat_policy;
 mod oracle_combat_work;
 mod oracle_neow;
@@ -180,6 +181,7 @@ pub use oracle_analysis_session::{
     ORACLE_ANALYSIS_COMBAT_SCRATCH_SCHEMA_NAME, ORACLE_ANALYSIS_COMBAT_SCRATCH_SCHEMA_VERSION,
     ORACLE_ANALYSIS_SESSION_SCHEMA_NAME, ORACLE_ANALYSIS_SESSION_SCHEMA_VERSION,
 };
+pub use oracle_combat_budget::{OracleRunCombatBudgetsV1, OracleRunCombatQualityPolicyV1};
 pub use oracle_combat_policy::{
     authorized_potion_trial_policy_v1, existing_combat_guide_service_bias_v1,
     existing_combat_knowledge_policy_v1,
@@ -198,9 +200,8 @@ pub use oracle_run_explorer::{
     seed_oracle_run_explorer_v1, ExactDuplicateOracleRunBranchV1, LazyOracleRunDecisionV1,
     OracleCombatSearchResumeKindV1, OraclePendingCombatEnemyV1, OraclePendingCombatSummaryV1,
     OracleRunActiveCombatCheckpointV1, OracleRunBoundaryV1, OracleRunBranchCheckpointV1,
-    OracleRunBranchV1, OracleRunCheckpointPayloadsV1, OracleRunCombatBudgetsV1,
-    OracleRunCombatEdgeOrderFnV1, OracleRunCombatEdgeProbeV1, OracleRunCombatEvidenceKindV1,
-    OracleRunCombatQualityPolicyV1, OracleRunDecisionAnnotationFnV1,
+    OracleRunBranchV1, OracleRunCheckpointPayloadsV1, OracleRunCombatEdgeOrderFnV1,
+    OracleRunCombatEdgeProbeV1, OracleRunCombatEvidenceKindV1, OracleRunDecisionAnnotationFnV1,
     OracleRunDeferredCombatCheckpointV1, OracleRunExploreBudgetV1, OracleRunExploreResultV1,
     OracleRunExploreStopV1, OracleRunExplorerCheckpointV1, OracleRunExplorerV1,
     OracleRunJournalNodeCheckpointV1, OracleRunReplayStepV1, OracleRunSessionPayloadRefsV1,

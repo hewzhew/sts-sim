@@ -19,6 +19,8 @@ use sts_oracle_runtime::eval::campfire_threat_panel::{
 #[cfg(feature = "backend")]
 use sts_oracle_runtime::eval::combat_capture::load_combat_capture_v2;
 #[cfg(feature = "backend")]
+use sts_oracle_runtime::eval::combat_case_core::{load_combat_case_core_v1, CombatCaseCoreV1};
+#[cfg(feature = "backend")]
 use sts_oracle_runtime::eval::combat_lab_v1::{run_combat_lab_v1, CombatLabRunRequestV1};
 #[cfg(feature = "backend")]
 use sts_oracle_runtime::eval::combat_search_v2::{
@@ -699,7 +701,7 @@ mod backend {
             let loaded = if let Some(path) = args.combat_snapshot.as_ref() {
                 load_combat_search_v2_snapshot(path)?
             } else if let Some(path) = args.combat_case.as_ref() {
-                let case = load_combat_case_minimal(path)?;
+                let case = load_combat_case_core(path)?;
                 let position = case.position;
                 let fingerprints = combat_state_fingerprint_v2(&position);
                 CombatSearchV2LoadedStart {
@@ -756,23 +758,8 @@ mod backend {
         Ok(())
     }
 
-    #[derive(serde::Deserialize)]
-    struct CombatCasePositionInput {
-        schema: String,
-        source: serde_json::Value,
-        gap: serde_json::Value,
-        position: sts_oracle_runtime::sim::combat::CombatPosition,
-    }
-
-    fn load_combat_case_minimal(
-        path: &Path,
-    ) -> Result<CombatCasePositionInput, Box<dyn std::error::Error>> {
-        let payload = fs::read_to_string(path)?;
-        let case: CombatCasePositionInput = serde_json::from_str(&payload)?;
-        if case.schema != "combat_case" && case.schema != "combat_gap_case" {
-            return Err(format!("expected combat case, got {}", case.schema).into());
-        }
-        Ok(case)
+    fn load_combat_case_core(path: &Path) -> Result<CombatCaseCoreV1, Box<dyn std::error::Error>> {
+        load_combat_case_core_v1(path).map_err(Into::into)
     }
 
     /// Runs the standalone compatibility binary with clap's native exit behavior.
@@ -1497,7 +1484,7 @@ mod backend {
                 "summary": capture.summary,
             })
         } else if let Some(path) = args.combat_case.as_ref() {
-            let case = load_combat_case_minimal(path)?;
+            let case = load_combat_case_core(path)?;
             let fingerprints = combat_state_fingerprint_v2(&case.position);
             serde_json::json!({
                 "schema_name": "CombatSearchV2InputValidationReport",

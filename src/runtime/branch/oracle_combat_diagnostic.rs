@@ -45,7 +45,7 @@ pub fn oracle_live_combat_diagnostic_v1(
         .as_ref()
         .map(|progress| progress.deepest_survival_actions.as_slice())
         .unwrap_or_default();
-    let root_policy = combat_policy_surface(&case.position, 32);
+    let root_policy = combat_policy_surface(&case.core.position, 32);
     let root_action_families = workspace
         .session
         .combat_root_action_families(node)
@@ -53,7 +53,7 @@ pub fn oracle_live_combat_diagnostic_v1(
         .into_iter()
         .map(|family| {
             json!({
-                "action": combat_action_label(&case.position, &family.first_action),
+                "action": combat_action_label(&case.core.position, &family.first_action),
                 "best_root_negative_log_policy": family.best_root_negative_log_policy,
                 "completed_root_turn_options": family.completed_root_turn_options,
                 "terminal_wins": family.terminal_wins,
@@ -72,7 +72,7 @@ pub fn oracle_live_combat_diagnostic_v1(
         })
         .collect::<Vec<_>>();
     let deepest_progress_trace = replay_combat_path(
-        case.position.clone(),
+        case.core.position.clone(),
         progress_actions,
         max_engine_steps_per_transition,
     )?;
@@ -80,7 +80,7 @@ pub fn oracle_live_combat_diagnostic_v1(
         json!({"same_as": "deepest_progress_trace"})
     } else {
         replay_combat_path(
-            case.position.clone(),
+            case.core.position.clone(),
             survival_actions,
             max_engine_steps_per_transition,
         )?
@@ -99,11 +99,11 @@ pub fn oracle_live_combat_diagnostic_v1(
             "state_fingerprint": view.state_fingerprint,
         },
         "run": {
-            "deck": case.position.combat.meta.master_deck_snapshot.iter().map(card_label).collect::<Vec<_>>(),
-            "relics": case.position.combat.entities.player.relics.iter().map(|relic| format!("{:?}", relic.id)).collect::<Vec<_>>(),
-            "potions": case.position.combat.entities.potions.iter().map(|potion| potion.as_ref().map(|potion| format!("{:?}", potion.id))).collect::<Vec<_>>(),
+            "deck": case.core.position.combat.meta.master_deck_snapshot.iter().map(card_label).collect::<Vec<_>>(),
+            "relics": case.core.position.combat.entities.player.relics.iter().map(|relic| format!("{:?}", relic.id)).collect::<Vec<_>>(),
+            "potions": case.core.position.combat.entities.potions.iter().map(|potion| potion.as_ref().map(|potion| format!("{:?}", potion.id))).collect::<Vec<_>>(),
         },
-        "root": combat_position_snapshot(&case.position),
+        "root": combat_position_snapshot(&case.core.position),
         "root_policy": root_policy,
         "root_action_families": root_action_families,
         "search": compact_combat_progress(view.combat.as_ref()),

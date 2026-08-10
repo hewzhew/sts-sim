@@ -24,18 +24,18 @@ use super::oracle_combat_work::{
 };
 use super::oracle_run_explorer::{
     seed_oracle_run_explorer_from_checkpoint_v1, LazyOracleRunDecisionV1,
-    OracleCombatSearchResumeKindV1, OracleRunBoundaryV1, OracleRunCombatBudgetsV1,
-    OracleRunCombatEvidenceKindV1, OracleRunDecisionAnnotationFnV1, OracleRunExplorerCheckpointV1,
-    OracleRunExplorerV1, OracleRunReplayStepV1, OracleRunWorkKindV1,
+    OracleCombatSearchResumeKindV1, OracleRunBoundaryV1, OracleRunCombatEvidenceKindV1,
+    OracleRunDecisionAnnotationFnV1, OracleRunExplorerCheckpointV1, OracleRunExplorerV1,
+    OracleRunReplayStepV1, OracleRunWorkKindV1,
 };
 use super::{
     build_decision_surface, exact_campfire_policy_audit_v1, exact_card_reward_policy_audit_v1,
     exact_route_policy_audit_v1, exact_shop_policy_audit_v1, CombatAutomationMonsterStateV1,
     CombatAutomationTrajectoryRecordV1, ExactCampfirePolicyAuditV1, ExactCardRewardPolicyAuditV1,
-    ExactRoutePolicyAuditV1, ExactShopPolicyAuditV1, RunControlCombatSearchQuantum,
-    RunControlCombatWorkAdvanceV1, RunControlHpLossLimit, RunControlSessionCheckpointV1,
-    RunControlTraceAnnotationV1, RunDecisionAction, RunPolicyCandidateV1, RunPolicyPriorFnV1,
-    RunProgressJournalV1, RunProgressStepV1,
+    ExactRoutePolicyAuditV1, ExactShopPolicyAuditV1, OracleRunCombatBudgetsV1,
+    RunControlCombatSearchQuantum, RunControlCombatWorkAdvanceV1, RunControlHpLossLimit,
+    RunControlSessionCheckpointV1, RunControlTraceAnnotationV1, RunDecisionAction,
+    RunPolicyCandidateV1, RunPolicyPriorFnV1, RunProgressJournalV1, RunProgressStepV1,
 };
 
 mod card_reward_path;
@@ -976,7 +976,7 @@ impl OracleAnalysisSessionV1 {
             position,
         );
         case.production_context = Some(capture_oracle_analysis_combat_case_production_context_v1(
-            &case,
+            &case.core,
             &branch.session,
             &self.combat_budgets,
         )?);
