@@ -8,10 +8,12 @@ from learning.tests.torch_outcome_fixtures import (
     behavior_manifest_fixture,
     completed_attempt_fixture,
     decision_batch_fixture,
+    public_attempt_trajectory_fixture,
+    with_run_progress_fixture,
 )
 from sts_learning import (
+    CompletedAttemptExperience,
     CreditAssignmentError,
-    DecisionRunProgress,
     FloorProgressReturnConfig,
     compare_credit_assignment,
     matched_episode_floor_context_leave_one_out_advantages,
@@ -21,7 +23,7 @@ from sts_learning import (
 )
 
 
-def _attempt(
+def _completed_attempt(
     *,
     reward: int,
     terminal_floor: int,
@@ -31,22 +33,18 @@ def _attempt(
 ):
     manifest_id = behavior_manifest_fixture().identity
     batches = tuple(
-        replace(
+        with_run_progress_fixture(
             decision_batch_fixture(
                 slot=0,
                 semantic_row=index % 2,
                 selected_ordinal=0,
                 manifest_id=manifest_id,
             ),
-            run_progress=(
-                DecisionRunProgress(
-                    episode_seed=100,
-                    act=1,
-                    floor=floor,
-                    is_combat=(index % 2 == 0),
-                    strategic_context_kind=None if index % 2 == 0 else 3,
-                ),
-            ),
+            act=1,
+            floor=floor,
+            is_combat=(index % 2 == 0),
+            strategic_context_kind=None if index % 2 == 0 else 3,
+            identity_suffix=f"decision-{index}",
         )
         for index, floor in enumerate(decision_floors)
     )
@@ -82,13 +80,17 @@ def _attempt(
     )
 
 
+def _attempt(**kwargs):
+    return public_attempt_trajectory_fixture(_completed_attempt(**kwargs))
+
+
 def test_remaining_progress_assigns_stronger_blame_near_a_defeat() -> None:
     attempt = _attempt(reward=-1, terminal_floor=20, decision_floors=(0, 10, 20))
     config = FloorProgressReturnConfig(target_floor=52)
 
     targets = tuple(
-        remaining_floor_progress_return(attempt, batch.run_progress[0], config)
-        for batch in attempt.batches
+        remaining_floor_progress_return(attempt, decision.run_progress, config)
+        for decision in attempt.decisions
     )
 
     assert targets == pytest.approx((-12 / 52, -22 / 42, -1.0))
@@ -155,13 +157,18 @@ def test_credit_comparison_keeps_victory_reserved_and_groups_decision_floors() -
     )
 
 
-def test_credit_comparison_rejects_missing_or_impossible_progress() -> None:
-    missing = _attempt(reward=-1, terminal_floor=20, decision_floors=(0,))
+def test_credit_comparison_rejects_raw_or_impossible_progress() -> None:
+    missing = _completed_attempt(
+        reward=-1,
+        terminal_floor=20,
+        decision_floors=(0,),
+    )
+    assert isinstance(missing, CompletedAttemptExperience)
     missing = replace(
         missing,
         batches=(replace(missing.batches[0], run_progress=None),),
     )
-    with pytest.raises(CreditAssignmentError, match="decision-time"):
+    with pytest.raises(CreditAssignmentError, match="public attempt trajectories"):
         compare_credit_assignment((missing,), FloorProgressReturnConfig())
 
     impossible = _attempt(reward=-1, terminal_floor=4, decision_floors=(5,))

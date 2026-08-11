@@ -2,16 +2,15 @@ from __future__ import annotations
 
 import importlib.util
 import unittest
-from dataclasses import replace
 
 from learning.tests.torch_outcome_fixtures import (
     behavior_manifest_fixture,
     completed_attempt_fixture,
     decision_batch_fixture,
+    with_run_progress_fixture,
 )
 from sts_learning import (
     BehaviorManifestRegistry,
-    DecisionRunProgress,
     FloorProgressReturnConfig,
     OnPolicyObjectiveConfig,
     SelectionProbability,
@@ -69,7 +68,7 @@ class SynchronousPolicyTrainerTests(unittest.TestCase):
             POLICY_CONFIG,
             OBJECTIVE_CONFIG,
         )
-        batch = replace(
+        batch = with_run_progress_fixture(
             decision_batch_fixture(
                 slot=1,
                 semantic_row=0,
@@ -77,15 +76,10 @@ class SynchronousPolicyTrainerTests(unittest.TestCase):
                 manifest_id=manifest_id,
                 selection_probability=SelectionProbability.known(0.5),
             ),
-            run_progress=(
-                DecisionRunProgress(
-                    episode_seed=101,
-                    act=1,
-                    floor=12,
-                    is_combat=True,
-                    strategic_context_kind=None,
-                ),
-            ),
+            act=1,
+            floor=12,
+            is_combat=True,
+            strategic_context_kind=None,
         )
         delivery = AttemptAssemblyDelivery(
             completed=(
@@ -155,12 +149,18 @@ class SynchronousPolicyTrainerTests(unittest.TestCase):
             POLICY_CONFIG,
             OBJECTIVE_CONFIG,
         )
-        batch = decision_batch_fixture(
-            slot=1,
-            semantic_row=0,
-            selected_ordinal=0,
-            manifest_id=manifest.identity,
-            selection_probability=SelectionProbability.known(0.5),
+        batch = with_run_progress_fixture(
+            decision_batch_fixture(
+                slot=1,
+                semantic_row=0,
+                selected_ordinal=0,
+                manifest_id=manifest.identity,
+                selection_probability=SelectionProbability.known(0.5),
+            ),
+            act=1,
+            floor=0,
+            is_combat=True,
+            strategic_context_kind=None,
         )
         delivery = AttemptAssemblyDelivery(
             completed=(
@@ -204,12 +204,18 @@ class SynchronousPolicyTrainerTests(unittest.TestCase):
             POLICY_CONFIG,
             OBJECTIVE_CONFIG,
         )
-        batch = decision_batch_fixture(
-            slot=1,
-            semantic_row=0,
-            selected_ordinal=0,
-            manifest_id=manifest_id,
-            selection_probability=SelectionProbability.known(0.5),
+        batch = with_run_progress_fixture(
+            decision_batch_fixture(
+                slot=1,
+                semantic_row=0,
+                selected_ordinal=0,
+                manifest_id=manifest_id,
+                selection_probability=SelectionProbability.known(0.5),
+            ),
+            act=1,
+            floor=0,
+            is_combat=True,
+            strategic_context_kind=None,
         )
         delivery = AttemptAssemblyDelivery(
             completed=(

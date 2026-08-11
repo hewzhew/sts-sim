@@ -7,7 +7,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 
 from .attempts import CompletedAttemptExperience
-from .decision_progress import PublicDecisionSnapshot
+from .decision_progress import DecisionRunProgress, PublicDecisionSnapshot
 from .decision_rows import (
     DecisionRowError,
     PreparedDecisionRows,
@@ -29,6 +29,7 @@ class PublicTrajectoryDecisionV1:
 
     chronological_index: int
     lineage: DecisionLineage
+    run_progress: DecisionRunProgress
     public_snapshot: PublicDecisionSnapshot
     semantic_payload: Mapping[str, object]
     behavior_manifest_id: BehaviorManifestId
@@ -45,8 +46,18 @@ class PublicTrajectoryDecisionV1:
         )
         if not isinstance(self.lineage, DecisionLineage):
             raise PublicTrajectoryError("public trajectory lineage must be typed")
+        if not isinstance(self.run_progress, DecisionRunProgress):
+            raise PublicTrajectoryError("public trajectory progress must be typed")
         if not isinstance(self.public_snapshot, PublicDecisionSnapshot):
             raise PublicTrajectoryError("public trajectory snapshot must be typed")
+        if self.run_progress.public_snapshot != self.public_snapshot:
+            raise PublicTrajectoryError(
+                "public trajectory progress and snapshot disagree"
+            )
+        if self.run_progress.episode_seed != self.lineage.key.episode_seed:
+            raise PublicTrajectoryError(
+                "public trajectory progress seed disagrees with lineage"
+            )
         object.__setattr__(
             self,
             "semantic_payload",
@@ -222,6 +233,7 @@ def _build_public_decision(
     return PublicTrajectoryDecisionV1(
         chronological_index=chronological_index,
         lineage=attempt.lineage,
+        run_progress=progress,
         public_snapshot=snapshot,
         semantic_payload=batch.payload,
         behavior_manifest_id=batch.behavior_manifest_id,

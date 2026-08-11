@@ -1068,11 +1068,20 @@ teacher labels, or stored policy-score vectors. Explicit unknown remains
 unknown through row selection, segment rotation, and complete-attempt assembly.
 One complete attempt may then be projected into
 `PublicAttemptTrajectoryV1`. Every chronological row requires the aligned Rust
-public snapshot and retains its frozen semantic payload, exact lineage,
-behavior-manifest identity, selected ordinal, and selection probability.
+public snapshot and typed public run progress, and retains its frozen semantic
+payload, exact lineage, behavior-manifest identity, selected ordinal, and
+selection probability. The progress and snapshot must agree on decision domain,
+and the snapshot phase and ordered candidate count must agree with the frozen
+semantic row.
 Non-terminal rows carry raw environment reward `0`; only the final row carries
 the bridge terminal reward and `terminated = true`. This owner computes no
 floor shaping, return, advantage, value target, search target, or teacher label.
+`SynchronousPolicyTrainer` is the sole routine adapter from a delivered
+`CompletedAttemptExperience` to this immutable public trajectory, and performs
+that conversion exactly once per delivery. Credit diagnostics, rollout target
+projection, the first loss evaluation, and every later PPO epoch reuse those
+same trajectories. Those consumers do not accept collection batches or inspect
+opaque environment/session state.
 Behavior manifests are caller-owned, content-addressed records over typed
 SHA-256 identities for the external model checkpoint, model definition, model
 configuration, behavior-rule implementation, behavior-rule configuration,
@@ -1234,15 +1243,18 @@ caller that needs exact continuation across process restart must separately own
 and restore its random-stream state before resuming decisions.
 
 The first terminal objective is an on-policy categorical policy loss, not
-imitation or raw-logit value regression. It accepts only bounded
-complete-attempt deliveries, resolves every batch's exact behavior manifest,
+imitation or raw-logit value regression. It accepts only immutable public
+attempt trajectories produced from bounded complete-attempt deliveries,
+resolves every decision's exact behavior manifest,
 and applies `-advantage * log P(selected | state)` to each sampled decision.
 The typed advantage mode either uses the raw terminal return, subtracts the
 mean terminal return of every other attempt, or uses one of the explicit
 matched ablations described below. Every centered mode requires at least two
 independent attempts. Global leave-one-out preserves the on-policy expectation while
 removing the batch's common return level; it does not add a learned value model
-or shaped reward. The maintained floor-progress return reserves `+1` for
+or shaped reward. The maintained floor-progress return is an explicit,
+replaceable training-target projection over neutral trajectory facts. It
+reserves `+1` for
 victory and maps defeat floor
 `f` to `-1 + 2 * min(f, target_floor - 1) / target_floor`. Deeper failed runs
 therefore carry ordered progress evidence but never tie a victory. Negative
@@ -1257,10 +1269,10 @@ selection propensity from the current shadow scorer before mutation. Unknown
 or mismatched propensity is explicitly off-policy and rejected. Any future
 off-policy correction requires a separate objective with declared assumptions.
 The whole-run PPO-clip-value rule adds a scalar critic over the same decision
-state and requires the explicit decision-local GAE advantage mode. Complete-attempt
-batches are chronological environment steps; one attempt contributes at most
-one row to a batch, decision floors and acts cannot move backward, and the
-terminal row must match the exact lineage. Floor advancement is an additive
+state and requires the explicit decision-local GAE advantage mode. Public
+trajectory decisions are chronological environment steps; decision floors and
+acts cannot move backward, and the terminal record must match the exact lineage.
+Floor advancement is an additive
 transition reward of `2 * delta_floor / target_floor`, capped at
 `target_floor - 1`. Defeat adds `-1` on the final transition. Victory adds the
 exact terminal adjustment that makes the complete reward sum remain the
@@ -1283,7 +1295,7 @@ publication and trainer identity bind this return, GAE, actor-mask, and
 value-clipping contract. Earlier V2 publications do not bind that contract;
 in particular, their value PPO optimized a terminal-broadcast target. They are
 deliberately not recovered as the new algorithm.
-For whole-run batches that carry decision-time progress, the trainer also emits
+For whole-run public trajectories, the trainer also emits
 a bounded non-authoritative comparison against a remaining-horizon target. A
 defeat observed from decision floor `d` maps its later terminal floor `f` to
 `-1 + 2 * (min(f, target_floor - 1) - min(d, target_floor - 1)) /

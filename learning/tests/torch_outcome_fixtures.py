@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from dataclasses import replace
+
 import numpy as np
 
 from learning.tests.semantic_fixtures import semantic_batch_fixture
@@ -11,14 +13,18 @@ from sts_learning import (
     BehaviorRuleBinding,
     CompletedAttemptExperience,
     DETERMINISTIC_SELECTION,
+    DecisionRunProgress,
     DecisionExperienceBatch,
     DecisionLineage,
     ManifestArtifactId,
     ManifestArtifactKind,
     GREEDY_BEHAVIOR_RULE_V1,
+    PublicAttemptTrajectoryV1,
+    PublicDecisionSnapshot,
     SelectionProbability,
     TerminalAttemptOutcome,
     TerminalAttemptRecord,
+    build_public_attempt_trajectory,
     select_semantic_decision_rows,
 )
 
@@ -124,3 +130,67 @@ def completed_attempt_fixture(
         decision_count=sum(batch.decision_count for batch in batches),
         payload_bytes=sum(batch.payload_bytes for batch in batches),
     )
+
+
+def public_snapshot_fixture(
+    batch: DecisionExperienceBatch,
+    *,
+    is_combat: bool,
+    identity_suffix: str = "fixture",
+) -> PublicDecisionSnapshot:
+    """Build one sanitized public identity aligned to a fixture payload row."""
+
+    phase = int(np.asarray(batch.payload["phase"]).reshape(-1)[0])
+    candidate_count = int(
+        np.asarray(batch.payload["candidate_counts"]).reshape(-1)[0]
+    )
+    slot = batch.lineages[0].key.slot_index
+    identity = f"slot-{slot}-{identity_suffix}"
+    return PublicDecisionSnapshot(
+        phase=phase,
+        is_combat=is_combat,
+        snapshot_id=f"snapshot-{identity}",
+        observation_id=f"observation-{identity}",
+        history_snapshot_id=f"history-{identity}",
+        candidate_surface_id=f"surface-{identity}",
+        candidate_ids=tuple(
+            f"candidate-{identity}-{ordinal}"
+            for ordinal in range(candidate_count)
+        ),
+    )
+
+
+def with_run_progress_fixture(
+    batch: DecisionExperienceBatch,
+    *,
+    act: int,
+    floor: int,
+    is_combat: bool,
+    strategic_context_kind: int | None,
+    identity_suffix: str = "fixture",
+) -> DecisionExperienceBatch:
+    """Attach typed progress and a matching public snapshot to one fixture row."""
+
+    return replace(
+        batch,
+        run_progress=(
+            DecisionRunProgress(
+                episode_seed=batch.lineages[0].key.episode_seed,
+                act=act,
+                floor=floor,
+                is_combat=is_combat,
+                strategic_context_kind=strategic_context_kind,
+                public_snapshot=public_snapshot_fixture(
+                    batch,
+                    is_combat=is_combat,
+                    identity_suffix=identity_suffix,
+                ),
+            ),
+        ),
+    )
+
+
+def public_attempt_trajectory_fixture(
+    attempt: CompletedAttemptExperience,
+) -> PublicAttemptTrajectoryV1:
+    return build_public_attempt_trajectory(attempt)

@@ -1,21 +1,22 @@
 from __future__ import annotations
 
 import math
+from dataclasses import replace
 
-import numpy as np
 import pytest
 
 from learning.tests.policy_fixtures import BEHAVIOR_MANIFEST_ID
+from learning.tests.torch_outcome_fixtures import (
+    decision_batch_fixture,
+    public_attempt_trajectory_fixture,
+    with_run_progress_fixture,
+)
 from sts_learning import (
-    AttemptKey,
     CompletedAttemptExperience,
-    DecisionExperienceBatch,
-    DecisionLineage,
-    DecisionRunProgress,
     FloorProgressReturnConfig,
+    PublicAttemptTrajectoryV1,
     RunRolloutConfig,
     RunRolloutError,
-    SelectionProbability,
     TerminalAttemptOutcome,
     TerminalAttemptRecord,
     build_complete_run_rollout,
@@ -31,54 +32,44 @@ def _attempt(
     candidate_counts: tuple[int, ...] | None = None,
     terminal_floor: int,
     reward: int,
-) -> CompletedAttemptExperience:
+) -> PublicAttemptTrajectoryV1:
     if candidate_counts is None:
         candidate_counts = (2,) * len(decision_floors)
     assert len(candidate_counts) == len(decision_floors)
-    lineage = DecisionLineage(
-        key=AttemptKey(
-            slot_index=slot,
-            episode_seed=1000 + slot,
-            episode_generation=0,
-            attempt_index=1,
-        ),
-        recoveries_used=0,
-    )
-    batches = tuple(
-        DecisionExperienceBatch(
-            payload={
-                "slot_indices": np.array([slot], dtype=np.uint64),
-                "candidate_counts": np.array(
-                    [candidate_count],
-                    dtype=np.uint64,
-                ),
-            },
-            lineages=(lineage,),
-            selected_ordinals=(0,),
-            selection_probabilities=(
-                SelectionProbability.known(
-                    1.0 if candidate_count == 1 else 1.0 / candidate_count
-                ),
-            ),
-            behavior_manifest_id=BEHAVIOR_MANIFEST_ID,
-            decision_count=1,
-            payload_bytes=1,
-            run_progress=(
-                DecisionRunProgress(
-                    episode_seed=lineage.key.episode_seed,
-                    act=1,
-                    floor=floor,
-                    is_combat=True,
-                    strategic_context_kind=None,
-                ),
-            ),
+    batches = []
+    for decision_index, (floor, candidate_count) in enumerate(
+        zip(decision_floors, candidate_counts, strict=True)
+    ):
+        batch = decision_batch_fixture(
+            slot=slot,
+            semantic_row=1 if candidate_count == 3 else 0,
+            selected_ordinal=0,
+            manifest_id=BEHAVIOR_MANIFEST_ID,
         )
-        for floor, candidate_count in zip(
-            decision_floors,
-            candidate_counts,
-            strict=True,
+        if candidate_count == 1:
+            payload = dict(batch.payload)
+            counts = payload["candidate_counts"].copy()
+            counts[0] = 1
+            splits = payload["candidate_row_splits"].copy()
+            splits[1] = 1
+            semantic = dict(payload["semantic"])
+            semantic["candidate_token_indices"] = semantic[
+                "candidate_token_indices"
+            ][:1].copy()
+            payload["candidate_counts"] = counts
+            payload["candidate_row_splits"] = splits
+            payload["semantic"] = semantic
+            batch = replace(batch, payload=payload)
+        batch = with_run_progress_fixture(
+            batch,
+            act=1,
+            floor=floor,
+            is_combat=True,
+            strategic_context_kind=None,
+            identity_suffix=f"decision-{decision_index}",
         )
-    )
+        batches.append(batch)
+    lineage = batches[0].lineages[0]
     terminal = TerminalAttemptRecord(
         episode_seed=lineage.key.episode_seed,
         episode_generation=lineage.key.episode_generation,
@@ -94,13 +85,14 @@ def _attempt(
             terminal_gold=50,
         ),
     )
-    return CompletedAttemptExperience(
+    completed = CompletedAttemptExperience(
         lineage=lineage,
-        batches=batches,
+        batches=tuple(batches),
         terminal=terminal,
         decision_count=len(batches),
         payload_bytes=len(batches),
     )
+    return public_attempt_trajectory_fixture(completed)
 
 
 def test_defeat_rewards_credit_only_the_transition_that_reaches_a_floor() -> None:

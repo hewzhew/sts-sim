@@ -19,6 +19,7 @@ from sts_learning import (
     AttemptUpdateBatchLimits,
     BehaviorManifestCatalogLimits,
     BehaviorManifestRegistry,
+    BridgeDecisionProgressProvider,
     BoundedAttemptAssembler,
     BoundedAttemptUpdateBatcher,
     BoundedBehaviorManifestCatalog,
@@ -506,6 +507,11 @@ def _components(
         ),
         max_recoveries_per_episode=max_recoveries_per_episode,
     )
+    progress_provider = (
+        BridgeDecisionProgressProvider(population.env)
+        if callable(getattr(population.env, "public_run_contexts", None))
+        else None
+    )
     driver = OnlineBatchDriver(
         population,
         policy=controller,
@@ -517,6 +523,7 @@ def _components(
             )
         ),
         experience_sink=assembler,
+        decision_progress_provider=progress_provider,
     )
     return driver, assembler, batcher, trainer, controller, shadow
 

@@ -119,6 +119,10 @@ def test_raw_public_trajectory_preserves_behavior_and_sparse_environment_reward(
         "decision-0",
         "decision-1",
     )
+    assert tuple(row.run_progress for row in trajectory.decisions) == tuple(
+        batch.run_progress[0]  # type: ignore[index]
+        for batch in attempt.batches
+    )
     assert tuple(row.selected_ordinal for row in trajectory.decisions) == (1, 0)
     assert tuple(
         row.selection_probability.value for row in trajectory.decisions
@@ -181,4 +185,11 @@ def test_raw_public_trajectory_rejects_missing_or_misaligned_public_snapshot() -
     with pytest.raises(PublicTrajectoryError, match="candidates"):
         build_public_attempt_trajectory(
             replace(attempt, batches=(misaligned, attempt.batches[1]))
+        )
+
+    trajectory = build_public_attempt_trajectory(attempt)
+    with pytest.raises(PublicTrajectoryError, match="progress and snapshot"):
+        replace(
+            trajectory.decisions[0],
+            public_snapshot=trajectory.decisions[1].public_snapshot,
         )

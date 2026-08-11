@@ -6,8 +6,8 @@ import math
 from collections.abc import Callable, Hashable, Sequence
 from dataclasses import dataclass
 
-from .attempts import CompletedAttemptExperience
 from .decision_progress import DecisionRunProgress
+from .public_trajectory import PublicAttemptTrajectoryV1
 from .terminal_returns import (
     FloorProgressReturnConfig,
     floor_progress_terminal_return,
@@ -109,7 +109,7 @@ class _DecisionCreditRow:
 
 
 def compare_credit_assignment(
-    attempts: Sequence[CompletedAttemptExperience],
+    attempts: Sequence[PublicAttemptTrajectoryV1],
     config: FloorProgressReturnConfig,
 ) -> CreditAssignmentComparison:
     """Compare target distributions without changing the optimizer objective."""
@@ -320,7 +320,7 @@ def compare_credit_assignment(
 
 
 def matched_floor_leave_one_out_advantages(
-    attempts: Sequence[CompletedAttemptExperience],
+    attempts: Sequence[PublicAttemptTrajectoryV1],
     config: FloorProgressReturnConfig,
 ) -> tuple[tuple[tuple[float, ...], ...], ...]:
     """Return attempt/batch/row-aligned advantages from matched run floors."""
@@ -330,7 +330,7 @@ def matched_floor_leave_one_out_advantages(
 
 
 def matched_floor_context_leave_one_out_advantages(
-    attempts: Sequence[CompletedAttemptExperience],
+    attempts: Sequence[PublicAttemptTrajectoryV1],
     config: FloorProgressReturnConfig,
 ) -> tuple[tuple[tuple[float, ...], ...], ...]:
     """Return aligned advantages matched by floor and typed decision context."""
@@ -340,7 +340,7 @@ def matched_floor_context_leave_one_out_advantages(
 
 
 def matched_episode_floor_context_leave_one_out_advantages(
-    attempts: Sequence[CompletedAttemptExperience],
+    attempts: Sequence[PublicAttemptTrajectoryV1],
     config: FloorProgressReturnConfig,
 ) -> tuple[tuple[tuple[float, ...], ...], ...]:
     """Return aligned advantages matched by episode, floor, and context."""
@@ -350,38 +350,32 @@ def matched_episode_floor_context_leave_one_out_advantages(
 
 
 def _aligned_credit_rows(
-    attempts: Sequence[CompletedAttemptExperience],
+    attempts: Sequence[PublicAttemptTrajectoryV1],
     config: FloorProgressReturnConfig,
 ) -> tuple[
-    tuple[CompletedAttemptExperience, ...],
+    tuple[PublicAttemptTrajectoryV1, ...],
     tuple[tuple[tuple[_DecisionCreditRow, ...], ...], ...],
 ]:
     normalized = tuple(attempts)
     if not normalized:
         raise CreditAssignmentError("credit comparison requires complete attempts")
     if not all(
-        isinstance(attempt, CompletedAttemptExperience)
+        isinstance(attempt, PublicAttemptTrajectoryV1)
         for attempt in normalized
     ):
-        raise CreditAssignmentError("credit comparison accepts only complete attempts")
+        raise CreditAssignmentError(
+            "credit comparison accepts only public attempt trajectories"
+        )
     if not isinstance(config, FloorProgressReturnConfig):
         raise CreditAssignmentError("credit comparison requires a floor return config")
 
     aligned: list[tuple[tuple[_DecisionCreditRow, ...], ...]] = []
     for attempt in normalized:
         attempt_broadcast = floor_progress_terminal_return(attempt.terminal, config)
-        observed_decisions = 0
         attempt_batches: list[tuple[_DecisionCreditRow, ...]] = []
-        for batch in attempt.batches:
-            if batch.run_progress is None:
-                raise CreditAssignmentError(
-                    "credit comparison requires decision-time run progress"
-                )
-            if len(batch.run_progress) != batch.decision_count:
-                raise CreditAssignmentError(
-                    "decision-time run progress is misaligned with its batch"
-                )
-            batch_rows = tuple(
+        for decision in attempt.decisions:
+            progress = decision.run_progress
+            batch_rows = (
                 _DecisionCreditRow(
                     episode_seed=progress.episode_seed,
                     episode_generation=attempt.lineage.key.episode_generation,
@@ -394,8 +388,7 @@ def _aligned_credit_rows(
                         progress,
                         config,
                     ),
-                )
-                for progress in batch.run_progress
+                ),
             )
             if any(
                 row.episode_seed != attempt.lineage.key.episode_seed
@@ -405,10 +398,9 @@ def _aligned_credit_rows(
                     "decision-time seed disagrees with attempt lineage"
                 )
             attempt_batches.append(batch_rows)
-            observed_decisions += len(batch_rows)
-        if observed_decisions != attempt.decision_count:
+        if len(attempt_batches) != len(attempt.decisions):
             raise CreditAssignmentError(
-                "complete attempt progress rows disagree with its decision count"
+                "public attempt progress rows disagree with its decision count"
             )
         aligned.append(tuple(attempt_batches))
     return normalized, tuple(aligned)
@@ -491,7 +483,7 @@ def _matched_group_advantages(
 
 
 def remaining_floor_progress_return(
-    attempt: CompletedAttemptExperience,
+    attempt: PublicAttemptTrajectoryV1,
     progress: DecisionRunProgress,
     config: FloorProgressReturnConfig,
 ) -> float:
@@ -502,8 +494,10 @@ def remaining_floor_progress_return(
     floors approaches, but never reaches, ``+1``.
     """
 
-    if not isinstance(attempt, CompletedAttemptExperience):
-        raise CreditAssignmentError("remaining progress requires a complete attempt")
+    if not isinstance(attempt, PublicAttemptTrajectoryV1):
+        raise CreditAssignmentError(
+            "remaining progress requires a public attempt trajectory"
+        )
     if not isinstance(progress, DecisionRunProgress):
         raise CreditAssignmentError("remaining progress requires typed run progress")
     if not isinstance(config, FloorProgressReturnConfig):

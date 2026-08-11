@@ -10,11 +10,12 @@ from learning.tests.torch_outcome_fixtures import (  # noqa: E402
     behavior_manifest_fixture,
     completed_attempt_fixture,
     decision_batch_fixture,
+    public_attempt_trajectory_fixture,
+    with_run_progress_fixture,
 )
 from sts_learning import (  # noqa: E402
     BehaviorManifestId,
     BehaviorManifestRegistry,
-    DecisionRunProgress,
     FloorProgressReturnConfig,
     RunDecisionScope,
     SelectionProbability,
@@ -38,31 +39,28 @@ def _attempt(
     episode_seed: int | None = None,
 ):
     seed = 100 + slot if episode_seed is None else episode_seed
-    batch = replace(
-        decision_batch_fixture(
-            slot=slot,
-            semantic_row=0,
-            selected_ordinal=selected_ordinal,
-            manifest_id=manifest_id,
-            selection_probability=SelectionProbability.known(0.5),
-        ),
-        run_progress=(
-            DecisionRunProgress(
-                episode_seed=seed,
-                act=1,
-                floor=0,
-                is_combat=False,
-                strategic_context_kind=context,
-            ),
-        ),
+    batch = decision_batch_fixture(
+        slot=slot,
+        semantic_row=0,
+        selected_ordinal=selected_ordinal,
+        manifest_id=manifest_id,
+        selection_probability=SelectionProbability.known(0.5),
     )
     lineage = replace(
         batch.lineages[0],
         key=replace(batch.lineages[0].key, episode_seed=seed),
     )
     batch = replace(batch, lineages=(lineage,))
+    batch = with_run_progress_fixture(
+        batch,
+        act=1,
+        floor=0,
+        is_combat=False,
+        strategic_context_kind=context,
+        identity_suffix=f"context-{context}",
+    )
     attempt = completed_attempt_fixture(slot=slot, batches=(batch,), reward=-1)
-    return replace(
+    completed = replace(
         attempt,
         terminal=replace(
             attempt.terminal,
@@ -72,6 +70,7 @@ def _attempt(
             ),
         ),
     )
+    return public_attempt_trajectory_fixture(completed)
 
 
 def test_floor_context_objective_does_not_borrow_from_an_unlike_site() -> None:

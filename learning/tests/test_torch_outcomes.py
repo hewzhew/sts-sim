@@ -9,10 +9,11 @@ from learning.tests.torch_outcome_fixtures import (
     behavior_manifest_fixture,
     completed_attempt_fixture,
     decision_batch_fixture,
+    public_attempt_trajectory_fixture,
+    with_run_progress_fixture,
 )
 from sts_learning import (
     BehaviorManifestRegistry,
-    DecisionRunProgress,
     FloorProgressReturnConfig,
     RunDecisionScope,
     RunPolicyUpdateConfig,
@@ -117,7 +118,7 @@ class OnPolicyTerminalLossTests(unittest.TestCase):
 
         result = on_policy_terminal_loss(
             counted_scorer,
-            (short, long),
+            self._public(short, long),
             self.registry,
             CONCAT_LIMITS,
             self.config,
@@ -162,7 +163,7 @@ class OnPolicyTerminalLossTests(unittest.TestCase):
 
         result = on_policy_terminal_loss(
             scorer,
-            (short, long),
+            self._public(short, long),
             self.registry,
             CONCAT_LIMITS,
             self.config,
@@ -198,7 +199,7 @@ class OnPolicyTerminalLossTests(unittest.TestCase):
 
         attempts = []
         for slot, terminal_floor, ordinal in ((1, 10, 0), (2, 20, 1)):
-            batch = replace(
+            batch = with_run_progress_fixture(
                 decision_batch_fixture(
                     slot=slot,
                     semantic_row=0,
@@ -206,15 +207,10 @@ class OnPolicyTerminalLossTests(unittest.TestCase):
                     manifest_id=self.manifest_id,
                     selection_probability=SelectionProbability.known(0.5),
                 ),
-                run_progress=(
-                    DecisionRunProgress(
-                        episode_seed=100 + slot,
-                        act=1,
-                        floor=0,
-                        is_combat=True,
-                        strategic_context_kind=None,
-                    ),
-                ),
+                act=1,
+                floor=0,
+                is_combat=True,
+                strategic_context_kind=None,
             )
             attempt = completed_attempt_fixture(
                 slot=slot,
@@ -236,7 +232,7 @@ class OnPolicyTerminalLossTests(unittest.TestCase):
 
         result = on_policy_terminal_loss(
             scorer,
-            attempts,
+            self._public(*attempts),
             self.registry,
             CONCAT_LIMITS,
             self.config,
@@ -262,17 +258,13 @@ class OnPolicyTerminalLossTests(unittest.TestCase):
             )
 
         batches = tuple(
-            replace(
+            with_run_progress_fixture(
                 self._fixed_probability_batch(slot=1),
-                run_progress=(
-                    DecisionRunProgress(
-                        episode_seed=101,
-                        act=1,
-                        floor=1,
-                        is_combat=is_combat,
-                        strategic_context_kind=None if is_combat else 1,
-                    ),
-                ),
+                act=1,
+                floor=1,
+                is_combat=is_combat,
+                strategic_context_kind=None if is_combat else 1,
+                identity_suffix=f"scope-{int(is_combat)}",
             )
             for is_combat in (True, False)
         )
@@ -284,7 +276,7 @@ class OnPolicyTerminalLossTests(unittest.TestCase):
 
         result = on_policy_terminal_loss(
             scorer,
-            (attempt,),
+            self._public(attempt),
             self.registry,
             CONCAT_LIMITS,
             self.config,
@@ -389,7 +381,7 @@ class OnPolicyTerminalLossTests(unittest.TestCase):
 
         result = on_policy_terminal_loss(
             scorer,
-            (attempt,),
+            self._public(attempt),
             self.registry,
             CONCAT_LIMITS,
             self.config,
@@ -466,7 +458,7 @@ class OnPolicyTerminalLossTests(unittest.TestCase):
 
         first = on_policy_terminal_loss(
             scorer,
-            attempts,
+            self._public(*attempts),
             self.registry,
             CONCAT_LIMITS,
             self.config,
@@ -498,7 +490,7 @@ class OnPolicyTerminalLossTests(unittest.TestCase):
 
         second = on_policy_terminal_loss(
             scorer,
-            attempts,
+            self._public(*attempts),
             self.registry,
             CONCAT_LIMITS,
             self.config,
@@ -558,7 +550,7 @@ class OnPolicyTerminalLossTests(unittest.TestCase):
 
         result = on_policy_terminal_loss(
             scorer,
-            (short, long),
+            self._public(short, long),
             self.registry,
             CONCAT_LIMITS,
             self.config,
@@ -597,22 +589,18 @@ class OnPolicyTerminalLossTests(unittest.TestCase):
             ),
         )
         batches = tuple(
-            replace(
+            with_run_progress_fixture(
                 self._on_policy_batch(
                     scorer,
                     slot=1,
                     row=index,
                     ordinal=0,
                 ),
-                run_progress=(
-                    DecisionRunProgress(
-                        episode_seed=101,
-                        act=1,
-                        floor=floor,
-                        is_combat=True,
-                        strategic_context_kind=None,
-                    ),
-                ),
+                act=1,
+                floor=floor,
+                is_combat=True,
+                strategic_context_kind=None,
+                identity_suffix=f"value-{index}",
             )
             for index, floor in ((0, 0), (1, 10))
         )
@@ -624,7 +612,7 @@ class OnPolicyTerminalLossTests(unittest.TestCase):
 
         result = on_policy_terminal_loss(
             scorer,
-            (attempt,),
+            self._public(attempt),
             self.registry,
             CONCAT_LIMITS,
             self.config,
@@ -652,11 +640,14 @@ class OnPolicyTerminalLossTests(unittest.TestCase):
                 ),
             )
 
-        base = decision_batch_fixture(
-            slot=1,
-            semantic_row=0,
-            selected_ordinal=0,
-            manifest_id=self.manifest_id,
+        base = self._with_run_progress(
+            decision_batch_fixture(
+                slot=1,
+                semantic_row=0,
+                selected_ordinal=0,
+                manifest_id=self.manifest_id,
+            ),
+            floor=0,
         )
         for evidence in (
             SelectionProbability.unknown(),
@@ -673,7 +664,7 @@ class OnPolicyTerminalLossTests(unittest.TestCase):
             ):
                 on_policy_terminal_loss(
                     scorer,
-                    (attempt,),
+                    self._public(attempt),
                     self.registry,
                     CONCAT_LIMITS,
                     self.config,
@@ -685,12 +676,15 @@ class OnPolicyTerminalLossTests(unittest.TestCase):
         unregistered = behavior_manifest_fixture(
             behavior_rule=self.config.behavior_rule
         ).identity
-        batch = decision_batch_fixture(
-            slot=1,
-            semantic_row=0,
-            selected_ordinal=0,
-            manifest_id=unregistered,
-            selection_probability=SelectionProbability.known(0.5),
+        batch = self._with_run_progress(
+            decision_batch_fixture(
+                slot=1,
+                semantic_row=0,
+                selected_ordinal=0,
+                manifest_id=unregistered,
+                selection_probability=SelectionProbability.known(0.5),
+            ),
+            floor=0,
         )
 
         with self.assertRaisesRegex(TorchOutcomeError, "unknown behavior"):
@@ -699,7 +693,9 @@ class OnPolicyTerminalLossTests(unittest.TestCase):
                     values=torch.zeros(2),
                     row_splits=torch.tensor([0, 2]),
                 ),
-                (completed_attempt_fixture(slot=1, batches=(batch,), reward=1),),
+                self._public(
+                    completed_attempt_fixture(slot=1, batches=(batch,), reward=1)
+                ),
                 BehaviorManifestRegistry(capacity=1),
                 CONCAT_LIMITS,
                 self.config,
@@ -716,7 +712,7 @@ class OnPolicyTerminalLossTests(unittest.TestCase):
                 self.return_config,
                 TerminalAdvantageMode.RAW_RETURN,
             )
-        with self.assertRaisesRegex(TorchOutcomeError, "only complete"):
+        with self.assertRaisesRegex(TorchOutcomeError, "only public"):
             on_policy_terminal_loss(
                 lambda payload: None,
                 (object(),),  # type: ignore[arg-type]
@@ -742,33 +738,38 @@ class OnPolicyTerminalLossTests(unittest.TestCase):
                 dim=0,
             )[ordinal].item()
         )
-        return replace(
-            batch,
-            selection_probabilities=(SelectionProbability.known(probability),),
+        return self._with_run_progress(
+            replace(
+                batch,
+                selection_probabilities=(SelectionProbability.known(probability),),
+            ),
+            floor=0,
         )
 
     def _fixed_probability_batch(self, *, slot: int):
-        return decision_batch_fixture(
-            slot=slot,
-            semantic_row=0,
-            selected_ordinal=0,
-            manifest_id=self.manifest_id,
-            selection_probability=SelectionProbability.known(0.5),
+        return self._with_run_progress(
+            decision_batch_fixture(
+                slot=slot,
+                semantic_row=0,
+                selected_ordinal=0,
+                manifest_id=self.manifest_id,
+                selection_probability=SelectionProbability.known(0.5),
+            ),
+            floor=0,
         )
 
     def _with_run_progress(self, batch, *, floor: int):
-        return replace(
+        return with_run_progress_fixture(
             batch,
-            run_progress=(
-                DecisionRunProgress(
-                    episode_seed=batch.lineages[0].key.episode_seed,
-                    act=1,
-                    floor=floor,
-                    is_combat=True,
-                    strategic_context_kind=None,
-                ),
-            ),
+            act=1,
+            floor=floor,
+            is_combat=True,
+            strategic_context_kind=None,
+            identity_suffix=f"floor-{floor}",
         )
+
+    def _public(self, *attempts):
+        return tuple(public_attempt_trajectory_fixture(attempt) for attempt in attempts)
 
 
 if __name__ == "__main__":

@@ -10,15 +10,14 @@ weights remain equal per attempt.  See ``THIRD_PARTY_NOTICES.md``.
 from __future__ import annotations
 
 import math
-from collections.abc import Mapping, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass
 from numbers import Real
 
-from .attempts import CompletedAttemptExperience
 from .decision_progress import DecisionRunProgress
-from .decision_rows import DecisionRowError, normalize_integer_sequence
 from .experience import DecisionLineage
 from .policy import BehaviorManifestId, SelectionProbability
+from .public_trajectory import PublicAttemptTrajectoryV1
 from .recovery import TerminalAttemptRecord
 from .terminal_returns import (
     FloorProgressReturnConfig,
@@ -113,7 +112,7 @@ class EvaluatedRunRollout:
 
 
 def build_complete_run_rollout(
-    attempts: Sequence[CompletedAttemptExperience],
+    attempts: Sequence[PublicAttemptTrajectoryV1],
     return_config: FloorProgressReturnConfig,
 ) -> CompleteRunRollout:
     """Decompose terminal progress into exact decision-local rewards.
@@ -130,9 +129,9 @@ def build_complete_run_rollout(
     if not isinstance(return_config, FloorProgressReturnConfig):
         raise RunRolloutError("run rollout requires a floor-progress config")
     if not all(
-        isinstance(attempt, CompletedAttemptExperience) for attempt in normalized
+        isinstance(attempt, PublicAttemptTrajectoryV1) for attempt in normalized
     ):
-        raise RunRolloutError("run rollout accepts only complete attempts")
+        raise RunRolloutError("run rollout accepts only public attempt trajectories")
 
     attempt_count = len(normalized)
     rollouts: list[RunAttemptRollout] = []
@@ -326,7 +325,7 @@ def compute_complete_run_gae(
 
 
 def _attempt_rows(
-    attempt: CompletedAttemptExperience,
+    attempt: PublicAttemptTrajectoryV1,
 ) -> tuple[
     tuple[
         int,
@@ -339,14 +338,8 @@ def _attempt_rows(
     ],
     ...,
 ]:
-    if not attempt.batches:
-        raise RunRolloutError("complete attempt has no policy decisions")
-    if attempt.decision_count != len(attempt.batches):
-        raise RunRolloutError(
-            "complete attempt must contain one chronological row per batch"
-        )
-    if attempt.payload_bytes != sum(batch.payload_bytes for batch in attempt.batches):
-        raise RunRolloutError("complete attempt payload bytes disagree with batches")
+    if not attempt.decisions:
+        raise RunRolloutError("public attempt has no policy decisions")
     terminal = attempt.terminal
     key = attempt.lineage.key
     if (
@@ -361,18 +354,12 @@ def _attempt_rows(
     rows = []
     previous_floor = -1
     previous_act = -1
-    for batch_index, batch in enumerate(attempt.batches):
-        if batch.decision_count != 1:
-            raise RunRolloutError(
-                "one attempt may have only one row in one environment step"
-            )
-        if batch.lineages != (attempt.lineage,):
+    for batch_index, decision in enumerate(attempt.decisions):
+        if decision.chronological_index != batch_index:
+            raise RunRolloutError("public decisions are not chronological")
+        if decision.lineage != attempt.lineage:
             raise RunRolloutError("decision row disagrees with attempt lineage")
-        if batch.run_progress is None or len(batch.run_progress) != 1:
-            raise RunRolloutError(
-                "run rollout requires one decision-time progress row per batch"
-            )
-        progress = batch.run_progress[0]
+        progress = decision.run_progress
         if progress.episode_seed != key.episode_seed:
             raise RunRolloutError("decision progress seed changed within one attempt")
         if progress.floor < previous_floor:
@@ -381,40 +368,23 @@ def _attempt_rows(
             raise RunRolloutError("decision acts are not chronological")
         previous_floor = progress.floor
         previous_act = progress.act
-        if not isinstance(batch.payload, Mapping):
-            raise RunRolloutError("decision payload is malformed")
-        try:
-            slots = normalize_integer_sequence(
-                batch.payload["slot_indices"],
-                "slot_indices",
-            )
-            candidate_counts = normalize_integer_sequence(
-                batch.payload["candidate_counts"],
-                "candidate_counts",
-            )
-        except (KeyError, DecisionRowError) as error:
-            raise RunRolloutError("decision payload is malformed") from error
-        if len(slots) != 1 or len(candidate_counts) != 1:
-            raise RunRolloutError("attempt-local payload must contain one decision row")
-        if slots != (key.slot_index,):
-            raise RunRolloutError("decision payload slot disagrees with lineage")
-        candidate_count = candidate_counts[0]
+        candidate_count = len(decision.public_snapshot.candidate_ids)
         if candidate_count <= 0:
             raise RunRolloutError("decision row must have a legal candidate")
-        selected_ordinal = batch.selected_ordinals[0]
+        selected_ordinal = decision.selected_ordinal
         if not 0 <= selected_ordinal < candidate_count:
             raise RunRolloutError("selected ordinal is outside the ragged candidate row")
-        selection_probability = batch.selection_probabilities[0]
+        selection_probability = decision.selection_probability
         if not isinstance(selection_probability, SelectionProbability):
             raise RunRolloutError("selection probability must be typed")
-        if not isinstance(batch.behavior_manifest_id, BehaviorManifestId):
+        if not isinstance(decision.behavior_manifest_id, BehaviorManifestId):
             raise RunRolloutError("behavior manifest identity must be typed")
         rows.append(
             (
                 batch_index,
                 progress,
-                batch.lineages[0],
-                batch.behavior_manifest_id,
+                decision.lineage,
+                decision.behavior_manifest_id,
                 candidate_count,
                 selected_ordinal,
                 selection_probability,

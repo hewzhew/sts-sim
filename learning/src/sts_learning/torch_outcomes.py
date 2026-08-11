@@ -10,7 +10,6 @@ from typing import Protocol
 import torch
 from torch import Tensor
 
-from .attempts import CompletedAttemptExperience
 from .credit_assignment import (
     CreditAssignmentError,
     matched_episode_floor_context_leave_one_out_advantages,
@@ -35,9 +34,12 @@ from .combat_rollout import (
     CombatRolloutError,
     build_complete_combat_rollout,
 )
-from .experience import DecisionExperienceBatch, ExperienceError
 from .manifests import BehaviorManifestRegistry, BehaviorRuleBinding
 from .policy import BehaviorManifestId, SelectionProbability
+from .public_trajectory import (
+    PublicAttemptTrajectoryV1,
+    PublicTrajectoryDecisionV1,
+)
 from .run_rollout import RunRolloutError, build_complete_run_rollout
 from .semantic_concat import (
     SemanticBatchConcatLimits,
@@ -176,7 +178,7 @@ class _RunPolicyLoss:
 
 def on_policy_terminal_loss(
     scorer: CandidatePolicyScorer,
-    attempts: Sequence[CompletedAttemptExperience],
+    attempts: Sequence[PublicAttemptTrajectoryV1],
     registry: BehaviorManifestRegistry,
     concat_limits: SemanticBatchConcatLimits,
     policy_config: RaggedCategoricalPolicyConfig,
@@ -232,19 +234,14 @@ def on_policy_terminal_loss(
     normalized = tuple(attempts)
     if not normalized:
         raise TorchOutcomeError("policy objective requires at least one complete attempt")
-    if not all(isinstance(attempt, CompletedAttemptExperience) for attempt in normalized):
-        raise TorchOutcomeError("policy objective accepts only complete attempts")
-    progress_presence = {
-        batch.run_progress is not None
-        for attempt in normalized
-        for batch in attempt.batches
-    }
+    if not all(
+        isinstance(attempt, PublicAttemptTrajectoryV1) for attempt in normalized
+    ):
+        raise TorchOutcomeError(
+            "policy objective accepts only public attempt trajectories"
+        )
     rollout = None
     if update_config.uses_value_baseline:
-        if progress_presence != {True}:
-            raise TorchOutcomeError(
-                "run value PPO requires complete decision-time progress"
-            )
         try:
             rollout = build_complete_run_rollout(normalized, return_config)
         except RunRolloutError as error:
@@ -299,89 +296,65 @@ def on_policy_terminal_loss(
     actor_weights: list[float] = []
     total_decisions = 0
     for attempt_index, attempt in enumerate(normalized):
-        retained_decisions = sum(batch.decision_count for batch in attempt.batches)
-        if attempt.decision_count != retained_decisions or retained_decisions <= 0:
-            raise TorchOutcomeError(
-                "complete attempt decision count disagrees with retained batches"
-            )
+        retained_decisions = len(attempt.decisions)
+        if retained_decisions <= 0:
+            raise TorchOutcomeError("public attempt has no retained decisions")
 
-        scoped_batches: list[tuple[int, DecisionExperienceBatch, tuple[int, ...]]] = []
-        scoped_decisions = 0
-        for batch_index, batch in enumerate(attempt.batches):
-            _validate_batch(batch)
-            row_indices = _decision_scope_rows(batch, decision_scope)
-            if not row_indices:
-                continue
-            try:
-                scoped = (
-                    batch
-                    if len(row_indices) == batch.decision_count
-                    else batch.select_rows(row_indices)
-                )
-            except ExperienceError as error:
-                raise TorchOutcomeError(
-                    "cannot select configured whole-run decision scope"
-                ) from error
-            scoped_batches.append((batch_index, scoped, row_indices))
-            scoped_decisions += scoped.decision_count
+        scoped_decisions_with_indices = tuple(
+            (decision_index, decision)
+            for decision_index, decision in enumerate(attempt.decisions)
+            if _decision_in_scope(decision, decision_scope)
+        )
+        scoped_decisions = len(scoped_decisions_with_indices)
         if scoped_decisions == 0:
             raise TorchOutcomeError(
-                "complete attempt has no decisions in the configured scope"
+                "public attempt has no decisions in the configured scope"
             )
         scoped_actor_decisions = scoped_decisions
         if rollout is not None:
-            scoped_actor_decisions = 0
-            for batch_index, _batch, row_indices in scoped_batches:
-                if row_indices != (0,):
-                    raise TorchOutcomeError(
-                        "typed run rollout scope is not one-row batch aligned"
-                    )
-                scoped_actor_decisions += int(
+            scoped_actor_decisions = sum(
+                int(
                     rollout.attempts[attempt_index]
-                    .rows[batch_index]
+                    .rows[decision_index]
                     .actor_eligible
                 )
+                for decision_index, _decision in scoped_decisions_with_indices
+            )
 
         attempt_behavior_ids: list[BehaviorManifestId] = []
         attempt_probabilities: list[SelectionProbability] = []
-        for batch_index, batch, row_indices in scoped_batches:
+        for decision_index, decision in scoped_decisions_with_indices:
             try:
-                manifest = registry.resolve(batch.behavior_manifest_id)
+                manifest = registry.resolve(decision.behavior_manifest_id)
             except ValueError as error:
                 raise TorchOutcomeError(
-                    "complete attempt references an unknown behavior manifest"
+                    "public attempt references an unknown behavior manifest"
                 ) from error
             if manifest.behavior_rule != expected_behavior_rule:
                 raise TorchOutcomeError(
-                    "complete attempt behavior rule conflicts with policy config"
+                    "public attempt behavior rule conflicts with policy config"
                 )
-            attempt_behavior_ids.append(batch.behavior_manifest_id)
-            payloads.append(batch.payload)
-            selected_ordinals.extend(batch.selected_ordinals)
-            attempt_probabilities.extend(batch.selection_probabilities)
+            attempt_behavior_ids.append(decision.behavior_manifest_id)
+            payloads.append(decision.semantic_payload)
+            selected_ordinals.append(decision.selected_ordinal)
+            attempt_probabilities.append(decision.selection_probability)
             if rollout is not None:
-                rollout_row = rollout.attempts[attempt_index].rows[batch_index]
+                rollout_row = rollout.attempts[attempt_index].rows[decision_index]
                 batch_targets = (rollout_row.return_to_go,)
             elif matched_advantages is None:
                 assert advantages is not None
-                batch_targets = (advantages[attempt_index],) * batch.decision_count
+                batch_targets = (advantages[attempt_index],)
             else:
-                original_targets = matched_advantages[attempt_index][batch_index]
-                batch_targets = tuple(original_targets[row] for row in row_indices)
-                if len(batch_targets) != batch.decision_count:
+                original_targets = matched_advantages[attempt_index][decision_index]
+                if len(original_targets) != 1:
                     raise TorchOutcomeError(
-                        "matched targets are misaligned with decision rows"
+                        "matched target is not public-decision aligned"
                     )
+                batch_targets = original_targets
             targets.extend(batch_targets)
-            value_weights.extend(
-                [1.0 / (len(normalized) * scoped_decisions)]
-                * batch.decision_count
-            )
+            value_weights.append(1.0 / (len(normalized) * scoped_decisions))
             if rollout is None:
-                actor_weights.extend(
-                    [1.0 / (len(normalized) * scoped_decisions)]
-                    * batch.decision_count
-                )
+                actor_weights.append(1.0 / (len(normalized) * scoped_decisions))
             else:
                 actor_weights.append(
                     0.0
@@ -719,43 +692,15 @@ def _on_policy_combat_win_loss(
     )
 
 
-def _decision_scope_rows(
-    batch: DecisionExperienceBatch,
+def _decision_in_scope(
+    decision: PublicTrajectoryDecisionV1,
     scope: RunDecisionScope,
-) -> tuple[int, ...]:
+) -> bool:
+    if not isinstance(decision, PublicTrajectoryDecisionV1):
+        raise TorchOutcomeError("run objective decision must be public and typed")
     if scope is RunDecisionScope.ALL:
-        return tuple(range(batch.decision_count))
-    if batch.run_progress is None:
-        raise TorchOutcomeError(
-            "strategic decision scope requires decision-time run progress"
-        )
-    if len(batch.run_progress) != batch.decision_count:
-        raise TorchOutcomeError("decision scope progress rows are misaligned")
-    return tuple(
-        row
-        for row, progress in enumerate(batch.run_progress)
-        if not progress.is_combat
-    )
-
-
-def _validate_batch(batch: object) -> None:
-    if not isinstance(batch, DecisionExperienceBatch):
-        raise TorchOutcomeError(
-            "complete attempt batches must be DecisionExperienceBatch values"
-        )
-    if batch.decision_count != len(batch.selected_ordinals):
-        raise TorchOutcomeError("decision batch ordinals are misaligned")
-    if batch.decision_count != len(batch.selection_probabilities):
-        raise TorchOutcomeError(
-            "decision batch selection probabilities are misaligned"
-        )
-    if not all(
-        isinstance(probability, SelectionProbability)
-        for probability in batch.selection_probabilities
-    ):
-        raise TorchOutcomeError(
-            "decision batch selection probabilities must be typed"
-        )
+        return True
+    return not decision.public_snapshot.is_combat
 
 
 def _validate_combat_batch(batch: object) -> None:

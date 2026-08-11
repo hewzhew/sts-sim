@@ -16,6 +16,10 @@ from .credit_assignment import (
 )
 from .manifests import BehaviorManifestRegistry, BehaviorRuleBinding
 from .policy import BehaviorManifestId, SelectionProbability
+from .public_trajectory import (
+    PublicTrajectoryError,
+    build_public_attempt_trajectory,
+)
 from .semantic_concat import SemanticBatchConcatLimits
 from .terminal_returns import OnPolicyObjectiveConfig
 from .torch_outcomes import (
@@ -171,29 +175,25 @@ class SynchronousPolicyTrainer:
                 "completed attempts"
             )
 
-        progress_presence = {
-            batch.run_progress is not None
-            for attempt in delivery.completed
-            for batch in attempt.batches
-        }
-        if len(progress_presence) > 1:
-            raise TorchTrainingError(
-                "training delivery mixes present and missing decision progress"
+        try:
+            trajectories = tuple(
+                build_public_attempt_trajectory(attempt)
+                for attempt in delivery.completed
             )
-        credit_assignment = None
-        if progress_presence == {True}:
-            try:
-                credit_assignment = compare_credit_assignment(
-                    delivery.completed,
-                    self.objective_config.terminal_return,
-                )
-            except CreditAssignmentError as error:
-                raise TorchTrainingError(str(error)) from error
+        except PublicTrajectoryError as error:
+            raise TorchTrainingError(str(error)) from error
+        try:
+            credit_assignment = compare_credit_assignment(
+                trajectories,
+                self.objective_config.terminal_return,
+            )
+        except CreditAssignmentError as error:
+            raise TorchTrainingError(str(error)) from error
 
         training_started = time.perf_counter()
         objective = on_policy_terminal_loss(
             self.scorer,
-            delivery.completed,
+            trajectories,
             self.registry,
             self.concat_limits,
             self.policy_config,
@@ -226,7 +226,7 @@ class SynchronousPolicyTrainer:
                 if epoch > 0:
                     objective = on_policy_terminal_loss(
                         self.scorer,
-                        delivery.completed,
+                        trajectories,
                         self.registry,
                         self.concat_limits,
                         self.policy_config,

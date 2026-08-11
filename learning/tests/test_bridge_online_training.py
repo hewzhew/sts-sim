@@ -18,6 +18,7 @@ from sts_learning import (
     BoundedAttemptAssembler,
     BoundedAttemptUpdateBatcher,
     BoundedBehaviorManifestCatalog,
+    BridgeDecisionProgressProvider,
     ExperienceLimits,
     ExperienceSegmentBuffer,
     FloorProgressReturnConfig,
@@ -161,6 +162,7 @@ class RealBridgeOnlineTrainingTests(unittest.TestCase):
                 schedule=SeedSchedule(SeedPartition.HELD_OUT),
                 max_recoveries_per_episode=0,
             )
+            progress_provider = BridgeDecisionProgressProvider(population.env)
             driver = OnlineBatchDriver(
                 population,
                 policy=controller,
@@ -172,6 +174,7 @@ class RealBridgeOnlineTrainingTests(unittest.TestCase):
                     )
                 ),
                 experience_sink=assembler,
+                decision_progress_provider=progress_provider,
             )
             generation_runner = BoundedCategoricalGenerationRunner(
                 driver,
