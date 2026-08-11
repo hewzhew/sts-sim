@@ -1025,12 +1025,7 @@ impl OracleAnalysisSessionV1 {
         ) {
             Vec::new()
         } else {
-            self.explorer
-                .pending_decisions
-                .iter()
-                .filter(|work| work.parent_branch_id == branch.branch_id)
-                .cloned()
-                .collect()
+            self.explorer.decisions_for_branch(branch.branch_id)
         };
         choices.sort_by(|left, right| {
             left.path_discrepancy
@@ -1301,38 +1296,26 @@ impl OracleAnalysisSessionV1 {
     }
 
     pub fn try_choice(&mut self, requested_ref: &str) -> Result<usize, String> {
-        let (parent_node_id, _) = parse_choice_ref(requested_ref)?;
-        let parent = self.require_branch(parent_node_id)?;
-        let work = self
+        let (parent_node_id, stable_work_key) = parse_choice_ref(requested_ref)?;
+        let parent_branch_id = self.require_branch(parent_node_id)?.branch_id;
+        let committed = self
             .explorer
-            .pending_decisions
-            .iter()
-            .filter(|work| work.parent_branch_id == parent.branch_id)
-            .find(|work| choice_ref(work) == requested_ref)
-            .cloned()
+            .explicit_transactions()
+            .commit_decision(
+                parent_branch_id,
+                stable_work_key,
+                self.decision_annotation,
+                self.decision_prior,
+            )?
             .ok_or_else(|| {
                 format!("choice reference is stale or is not legal at node {parent_node_id}")
             })?;
-        let label = work.label.clone();
-        let selection_service = self
-            .explorer
-            .prepare_selection_member_release(&work.stable_work_key)?;
-        let decision = self
-            .explorer
-            .prepare_explicit_decision(work, self.decision_annotation)?;
-        let child_registration = self
-            .explorer
-            .prepare_explicit_decision_registration(&decision, self.decision_prior)?;
-        let child_node_id = self.explorer.commit_explicit_decision(decision);
-        self.explorer
-            .apply_explicit_decision_registration(child_registration);
-        self.explorer
-            .apply_selection_member_release(selection_service);
+        let child_node_id = committed.child_branch_id;
         let edge_id = self.record_edge(
             parent_node_id,
             child_node_id,
             OracleAnalysisEdgeKindV1::Decision,
-            label,
+            committed.label,
             Some(requested_ref.to_string()),
         );
         self.move_cursor_after_edge(parent_node_id, edge_id, child_node_id);
@@ -1813,36 +1796,22 @@ impl OracleAnalysisSessionV1 {
                 branch.boundary
             ));
         }
-        let prepared = self
+        let committed = self
             .explorer
-            .prepare_explicit_smoke_bomb_escape(source_node_id)?;
-        let prospective_child = prepared
-            .prospective_branch()
-            .expect("exact Smoke Bomb preparation must resolve a child");
-        let child_registration = self
-            .explorer
-            .prepare_explicit_branch_registration(prospective_child, self.decision_prior)?;
-        let child_node_id = self
-            .explorer
-            .commit_explicit_combat(prepared)?
+            .explicit_transactions()
+            .commit_smoke_bomb_escape(source_node_id, self.decision_prior)?;
+        let child_node_id = committed
+            .child_branch_id
             .expect("exact Smoke Bomb preparation must commit a child or exact survivor");
-        self.explorer
-            .apply_explicit_decision_registration(child_registration);
         self.combat_jobs.remove(&source_node_id);
-        let child = self
-            .explorer
-            .branches
-            .iter()
-            .find(|branch| branch.branch_id == child_node_id)
-            .expect("committed Smoke Bomb child or exact survivor must remain addressable");
+        let child_current_hp = committed
+            .child_current_hp
+            .expect("committed Smoke Bomb child must retain its HP fact");
         let edge_id = self.record_edge(
             source_node_id,
             child_node_id,
             OracleAnalysisEdgeKindV1::CombatWitness,
-            format!(
-                "Smoke Bomb escape -> {} HP",
-                child.session.run_state.current_hp
-            ),
+            format!("Smoke Bomb escape -> {child_current_hp} HP"),
             None,
         );
         self.move_cursor_after_edge(source_node_id, edge_id, child_node_id);
@@ -1934,8 +1903,7 @@ impl OracleAnalysisSessionV1 {
                 work,
             },
         );
-        self.explorer.combat_search_restarts =
-            self.explorer.combat_search_restarts.saturating_add(1);
+        self.explorer.record_combat_search_restart();
         Ok(true)
     }
 
@@ -1944,36 +1912,20 @@ impl OracleAnalysisSessionV1 {
         source_node_id: usize,
         work: &OracleResidentCombatJobV1,
     ) -> Result<Option<usize>, String> {
-        let prepared = self
+        let committed = self
             .explorer
-            .prepare_explicit_combat(source_node_id, work)?;
-        let child_registration = prepared
-            .prospective_branch()
-            .map(|branch| {
-                self.explorer
-                    .prepare_explicit_branch_registration(branch, self.decision_prior)
-            })
-            .transpose()?;
-        let child_node_id = self.explorer.commit_explicit_combat(prepared)?;
-        if let Some(child_registration) = child_registration {
-            self.explorer
-                .apply_explicit_decision_registration(child_registration);
-        }
+            .explicit_transactions()
+            .commit_verified_combat(source_node_id, work, self.decision_prior)?;
+        let child_node_id = committed.child_branch_id;
         if let Some(child_node_id) = child_node_id {
-            let child = self
-                .explorer
-                .branches
-                .iter()
-                .find(|branch| branch.branch_id == child_node_id)
-                .expect("committed combat child or exact survivor must remain addressable");
+            let child_current_hp = committed
+                .child_current_hp
+                .expect("committed combat child must retain its HP fact");
             let edge_id = self.record_edge(
                 source_node_id,
                 child_node_id,
                 OracleAnalysisEdgeKindV1::CombatWitness,
-                format!(
-                    "combat witness -> {} HP",
-                    child.session.run_state.current_hp
-                ),
+                format!("combat witness -> {child_current_hp} HP"),
                 None,
             );
             self.move_cursor_after_edge(source_node_id, edge_id, child_node_id);

@@ -1772,6 +1772,12 @@ that implementation type is confined to its owner and this facade.
 only accounting, queue counts, typed progress snapshots, and incumbent/candidate
 facts. Status labels are owned data, and the evidence carries no live session,
 frontier entry, borrowed implementation state, or mutation authority.
+Explicit analysis edits enter the run explorer through
+`OracleRunExplorerExplicitTransactionsV1`. The capability atomically commits a
+typed decision identity, a verified combat job, or a currently legal Smoke
+Bomb escape and returns only child identity, display label, and HP facts.
+Prepared branches, decision-supply registration, selection-family release,
+identity indexes, and commit ordering remain private to the explorer owner.
 
 ## Gap Semantics
 

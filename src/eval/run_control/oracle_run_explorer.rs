@@ -23,6 +23,7 @@ mod checkpoint_restore;
 mod combat_completion;
 mod decision_materialization;
 mod decision_supply;
+mod explicit_transactions;
 mod scheduling;
 
 pub use checkpoint::{
@@ -624,6 +625,18 @@ impl OracleRunExplorerV1 {
             *counts.entry(decision.path_discrepancy).or_insert(0) += 1;
         }
         counts
+    }
+
+    pub(super) fn decisions_for_branch(&self, branch_id: usize) -> Vec<LazyOracleRunDecisionV1> {
+        self.pending_decisions
+            .iter()
+            .filter(|work| work.parent_branch_id == branch_id)
+            .cloned()
+            .collect()
+    }
+
+    pub(super) fn record_combat_search_restart(&mut self) {
+        self.combat_search_restarts = self.combat_search_restarts.saturating_add(1);
     }
 
     pub fn deferred_combat_effective_discrepancy_counts(&self) -> BTreeMap<u64, usize> {

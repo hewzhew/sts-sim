@@ -555,6 +555,10 @@ fn combat_evaluation_run_control_learning_layers_and_runtime_keep_distinct_compi
             .expect("read analysis session");
     let run_explorer = std::fs::read_to_string("src/eval/run_control/oracle_run_explorer.rs")
         .expect("read run explorer");
+    let run_explorer_explicit_transactions = std::fs::read_to_string(
+        "src/eval/run_control/oracle_run_explorer/explicit_transactions.rs",
+    )
+    .expect("read run explorer explicit transactions");
     let combat_search_driver =
         std::fs::read_to_string("crates/sts_combat_search_driver/src/lib.rs")
             .expect("read combat-search driver");
@@ -671,11 +675,21 @@ fn combat_evaluation_run_control_learning_layers_and_runtime_keep_distinct_compi
             && !combat_work.contains("pub(super) struct OracleRunCombatWorkProgressV1")
             && !run_explorer.contains("pub struct OracleRunCombatWorkCheckpointV1")
             && analysis_session.contains("use super::oracle_combat_work_contract::{")
+            && analysis_session.contains(".explicit_transactions()")
+            && !analysis_session.contains("prepare_explicit_")
+            && !analysis_session.contains("commit_explicit_")
+            && !analysis_session.contains("apply_explicit_")
+            && !analysis_session.contains(".pending_decisions")
+            && run_explorer_explicit_transactions
+                .contains("struct OracleRunExplorerExplicitTransactionsV1")
+            && run_explorer_explicit_transactions.contains("pub fn commit_decision(")
+            && run_explorer_explicit_transactions.contains("pub fn commit_verified_combat(")
+            && run_explorer_explicit_transactions.contains("pub fn commit_smoke_bomb_escape(")
             && run_explorer
                 .contains("oracle_combat_work_contract::OracleRunCombatWorkCheckpointV1")
             && combat_search_driver.contains("load_combat_case_core_v1")
             && !combat_search_driver.contains("CombatCasePositionInput"),
-        "combat-case core plus owner budget and resume contracts must stay independent from production envelopes, live search state, explorer queues, and ad-hoc frontend schemas"
+        "combat-case core plus owner budget, resume, evidence, and explicit explorer transaction contracts must stay independent from production envelopes, live search state, explorer queues, and ad-hoc frontend schemas"
     );
 
     let mut eval_sources = Vec::new();
