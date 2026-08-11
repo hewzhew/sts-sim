@@ -6,7 +6,7 @@ without per-step JSON or one Python call per environment slot.
 
 The control surface exposes slot identity, decision phase, ragged candidate row
 splits, candidate counts, and an optional dense legal-action mask. Calling
-`decision_batch(semantic=True)` additionally returns semantic schema version 8
+`decision_batch(semantic=True)` additionally returns semantic schema version 9
 as five sparse, columnar NumPy table families:
 
 - `token`: token kinds plus per-decision row splits;
@@ -196,8 +196,10 @@ wheel without dependency mutation into a fresh isolated environment that can
 see the target Python's existing NumPy, and runs `tests/smoke.py` plus the
 separate online caller contracts under `learning/tests`. It keeps the wheel,
 environment, and complete logs below one fresh ignored
-`.oracle-lab/python-learning-bridge/` directory and prints only a compact
-summary plus that artifact location.
+`.oracle-lab/python-learning-bridge/` directory while a run is active. A failed
+run preserves that directory and reports the relevant log path; a successful
+run removes the disposable wheel, environment, and logs after printing its
+compact summary.
 
 This crate is deliberately a standalone Cargo workspace, so it declares its
 own release profiles instead of assuming the root workspace settings apply.
@@ -206,7 +208,7 @@ and NumPy adapters in separate O2 units; `release-final` is the opt-in
 all-O3/thin-LTO deployment profile. Dev wheels remain the fast functional
 edit loop. Wheel codegen and the release Rust contract test share the ignored
 bridge Cargo target; each wheel, Python environment, and installation check is
-still freshly isolated.
+still freshly isolated, without accumulating successful run sandboxes.
 
 Passing `-InstallTarget` explicitly installs that exact wheel into the target
 Python with `--force-reinstall --no-deps`, but only after all isolated checks

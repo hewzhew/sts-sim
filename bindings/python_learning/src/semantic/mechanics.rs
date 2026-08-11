@@ -1,4 +1,4 @@
-//! Shared identity-independent card and potion mechanics for semantic schema v8.
+//! Shared identity-independent card and potion mechanics for semantic schema v9.
 
 use sts_oracle_eval::content::cards::{
     get_card_definition,

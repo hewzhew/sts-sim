@@ -13,7 +13,7 @@ use std::fmt;
 
 use sts_oracle_eval::ai::planner_core::{
     PlannerAction, PlannerDecisionContext, PlannerDecisionSite, PlannerPlayerClass,
-    PlannerRewardDescriptor, PlannerRunGoal,
+    PlannerPublicMap, PlannerRewardDescriptor, PlannerRunGoal,
 };
 use sts_oracle_eval::content::cards::CardId;
 use sts_oracle_eval::content::monsters::{factory::EncounterId, EnemyId};
@@ -31,7 +31,7 @@ use sts_oracle_eval::state::events::{EventActionKind, EventId};
 use sts_oracle_eval::state::map::node::RoomType;
 use sts_oracle_eval::state::selection::{SelectionReason, SelectionScope};
 
-pub const SEMANTIC_SCHEMA_VERSION: u32 = 8;
+pub const SEMANTIC_SCHEMA_VERSION: u32 = 9;
 pub const NO_CANDIDATE_TOKEN: u64 = u64::MAX;
 pub const CARD_ID_VOCABULARY_SIZE: u64 = 371;
 pub const RELIC_ID_VOCABULARY_SIZE: u64 = 182;
@@ -49,7 +49,7 @@ pub(super) use mechanics::{
     POTION_CLASS_SCHEMA, POTION_MECHANIC_ROLE_SCHEMA, POTION_RARITY_SCHEMA,
 };
 
-// Domain identities use their fieldless enum ordinals inside schema v8. These
+// Domain identities use their fieldless enum ordinals inside schema v9. These
 // compile-time size sentinels catch vocabulary extension; any intentional
 // insertion or reordering also requires an explicit schema review and bump.
 const _: () = {
@@ -236,6 +236,7 @@ pub enum CategoricalField: u16 {
     PotionMechanicRole = 82,
     CardMechanicCoverage = 83,
     CardMechanicRole = 84,
+    CombatEncounterId = 85,
 }}
 
 numeric_schema_enum! {
@@ -695,6 +696,10 @@ pub const CATEGORICAL_VOCABULARY_SIZES: &[(u16, u64)] = &[
         CategoricalField::CardMechanicRole as u16,
         CARD_MECHANIC_ROLE_SCHEMA.len() as u64,
     ),
+    (
+        CategoricalField::CombatEncounterId as u16,
+        ENCOUNTER_ID_VOCABULARY_SIZE,
+    ),
 ];
 
 #[derive(Clone, Debug, Default)]
@@ -1047,22 +1052,41 @@ impl SemanticBatchBuilder {
             }
         }
 
+        let map_tokens = self.encode_public_map(root, observation.public_map)?;
+
+        let context = self.add_token(TokenKind::Context)?;
+        self.edge(root, RelationKind::ObservationHasContext, context);
+        self.encode_context(context, observation.context);
+
+        let history = self.add_token(TokenKind::History)?;
+        self.edge(root, RelationKind::ObservationHasHistory, history);
+        self.scalar(
+            history,
+            ScalarField::ShopPurgeCount,
+            observation.public_history.shop_purge_count,
+        );
+
+        Ok(StrategicTokenIndex {
+            root,
+            cards: card_tokens,
+            potions: potion_tokens,
+            map_nodes: map_tokens,
+        })
+    }
+
+    pub(super) fn encode_public_map(
+        &mut self,
+        root: u64,
+        public_map: &PlannerPublicMap,
+    ) -> Result<BTreeMap<(i32, i32), u64>, SemanticEncodingError> {
         let map = self.add_token(TokenKind::Map)?;
         self.edge(root, RelationKind::ObservationHasMap, map);
-        self.scalar(
-            map,
-            ScalarField::MapCurrentX,
-            observation.public_map.current_x,
-        );
-        self.scalar(
-            map,
-            ScalarField::MapCurrentY,
-            observation.public_map.current_y,
-        );
-        if let Some(boss) = observation.public_map.boss {
+        self.scalar(map, ScalarField::MapCurrentX, public_map.current_x);
+        self.scalar(map, ScalarField::MapCurrentY, public_map.current_y);
+        if let Some(boss) = public_map.boss {
             self.category(map, CategoricalField::BossEncounterId, boss as i64);
         }
-        let mut nodes = observation.public_map.nodes.iter().collect::<Vec<_>>();
+        let mut nodes = public_map.nodes.iter().collect::<Vec<_>>();
         nodes.sort_by_key(|node| (node.y, node.x));
         let mut map_tokens = BTreeMap::new();
         for node in &nodes {
@@ -1098,25 +1122,7 @@ impl SemanticBatchBuilder {
                 self.edge(source, RelationKind::MapPathTo, target);
             }
         }
-
-        let context = self.add_token(TokenKind::Context)?;
-        self.edge(root, RelationKind::ObservationHasContext, context);
-        self.encode_context(context, observation.context);
-
-        let history = self.add_token(TokenKind::History)?;
-        self.edge(root, RelationKind::ObservationHasHistory, history);
-        self.scalar(
-            history,
-            ScalarField::ShopPurgeCount,
-            observation.public_history.shop_purge_count,
-        );
-
-        Ok(StrategicTokenIndex {
-            root,
-            cards: card_tokens,
-            potions: potion_tokens,
-            map_nodes: map_tokens,
-        })
+        Ok(map_tokens)
     }
 
     fn encode_strategic_selection(

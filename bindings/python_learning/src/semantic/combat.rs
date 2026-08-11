@@ -1,4 +1,4 @@
-//! Complete combat-side encoding for semantic schema v8.
+//! Complete combat-side encoding for semantic schema v9.
 
 use sts_oracle_eval::ai::combat_learning_observation::{
     CombatLearningCardCollectionV1, CombatLearningCardV1, CombatLearningEnemyIdentityV1,
@@ -10,7 +10,8 @@ use sts_oracle_eval::ai::combat_public_observation::{
 use sts_oracle_eval::content::cards::CardType;
 use sts_oracle_learning::eval::run_control::{
     LearningCombatAtomicActionV1, LearningCombatIndexedChoiceV1, LearningCombatModelObservationV1,
-    LearningCombatMonsterV1, LearningCombatSelectionDomainSemanticsV1,
+    LearningCombatMonsterV1, LearningCombatPublicRunContextV1,
+    LearningCombatSelectionDomainSemanticsV1,
     LearningCombatSelectionFamilyV1, LearningModelCandidateSemanticsV1, LearningModelDecisionV1,
     LearningSelectionCandidateSemanticsV1, LearningSelectionDecisionV1, LearningSelectionDraftV1,
 };
@@ -151,6 +152,11 @@ impl SemanticBatchBuilder {
             CategoricalField::CombatIsElite,
             bool_value(observation.encounter.is_elite_fight),
         );
+        self.encode_combat_public_run_context(
+            root,
+            encounter,
+            observation.public_run_context,
+        )?;
 
         for reason in observation.hidden_reasons {
             let token = self.add_token(TokenKind::CombatHiddenReason)?;
@@ -352,6 +358,47 @@ impl SemanticBatchBuilder {
             potions,
             monsters: monster_tokens,
         })
+    }
+
+    fn encode_combat_public_run_context(
+        &mut self,
+        root: u64,
+        encounter: u64,
+        context: &LearningCombatPublicRunContextV1,
+    ) -> Result<(), SemanticEncodingError> {
+        let LearningCombatPublicRunContextV1::Available {
+            run_goal,
+            act,
+            floor,
+            keys,
+            public_map,
+            encounter_id,
+        } = context
+        else {
+            return Ok(());
+        };
+
+        let run = self.add_token(TokenKind::Run)?;
+        self.edge(root, RelationKind::ObservationHasRun, run);
+        self.category(run, CategoricalField::RunGoal, *run_goal as i64);
+        self.category(run, CategoricalField::RubyKey, bool_value(keys[0]));
+        self.category(run, CategoricalField::EmeraldKey, bool_value(keys[1]));
+        self.category(
+            run,
+            CategoricalField::SapphireKey,
+            bool_value(keys[2]),
+        );
+        self.scalar(run, ScalarField::Act, *act);
+        self.scalar(run, ScalarField::Floor, *floor);
+        if let Some(encounter_id) = encounter_id {
+            self.category(
+                encounter,
+                CategoricalField::CombatEncounterId,
+                *encounter_id as i64,
+            );
+        }
+        self.encode_public_map(root, public_map)?;
+        Ok(())
     }
 
     fn encode_turn_counters(
@@ -1090,6 +1137,7 @@ const _: () = {
 #[cfg(test)]
 mod tests {
     use sts_oracle_eval::content::cards::CardId;
+    use sts_oracle_eval::content::monsters::factory::EncounterId;
     use sts_oracle_learning::eval::run_control::{
         LearningEnvV1, LearningModelChoiceV1, LearningModelDecisionV1, LearningSelectionStepV1,
         RunControlConfig, RunControlSession,
@@ -1105,6 +1153,67 @@ mod tests {
         CategoricalField, CombatActionKind, IndexedChoiceReasonKind, RelationKind, ScalarField,
         SemanticBatchBuilder, SemanticCompleteness, TokenKind,
     };
+
+    #[test]
+    fn combat_semantics_include_available_public_run_context() {
+        let mut session = RunControlSession::new(RunControlConfig::default());
+        session.run_state.act_num = 2;
+        session.run_state.floor_num = 17;
+        session.run_state.keys = [true, false, true];
+        let mut combat = sts_oracle_eval::test_support::blank_test_combat();
+        combat.entities.monsters.push(
+            sts_oracle_eval::test_support::test_monster(
+                sts_oracle_eval::content::monsters::EnemyId::JawWorm,
+            ),
+        );
+        session.engine_state = EngineState::CombatPlayerTurn;
+        session.active_combat = Some(ActiveCombat::new_for_encounter(
+            EngineState::CombatPlayerTurn,
+            combat,
+            EncounterId::JawWorm,
+            CombatContext::Room(RoomCombatContext {
+                room_type: RoomType::MonsterRoom,
+            }),
+        ));
+        let boundary = LearningEnvV1::from_session(session)
+            .observe()
+            .expect("combat boundary");
+        let decision =
+            LearningModelDecisionV1::from_boundary(&boundary).expect("combat model decision");
+
+        let mut builder = SemanticBatchBuilder::new();
+        builder
+            .push_decision(&decision)
+            .expect("encode combat decision");
+        let batch = builder.finish();
+
+        assert!(batch.token_kinds.contains(&(TokenKind::Run as u16)));
+        assert!(batch.token_kinds.contains(&(TokenKind::Map as u16)));
+        assert!(batch
+            .categorical
+            .fields
+            .iter()
+            .copied()
+            .zip(batch.categorical.values.iter().copied())
+            .any(|(field, value)| {
+                field == CategoricalField::CombatEncounterId as u16
+                    && value == EncounterId::JawWorm as i64
+            }));
+        assert!(batch
+            .scalar
+            .fields
+            .iter()
+            .copied()
+            .zip(batch.scalar.values.iter().copied())
+            .any(|(field, value)| field == ScalarField::Act as u16 && value == 2.0));
+        assert!(batch
+            .scalar
+            .fields
+            .iter()
+            .copied()
+            .zip(batch.scalar.values.iter().copied())
+            .any(|(field, value)| field == ScalarField::Floor as u16 && value == 17.0));
+    }
 
     #[test]
     fn duplicate_defend_candidate_has_no_hand_position_features() {
