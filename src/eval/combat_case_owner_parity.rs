@@ -4,11 +4,14 @@ use crate::eval::combat_case::CombatCase;
 use crate::eval::combat_case_context::restore_combat_case_oracle_analysis_owner_v1;
 use crate::eval::run_control::{
     seed_oracle_run_explorer_from_session_v1, CombatAutomationTrajectorySource,
-    OracleAnalysisAdvanceReportV1, OracleAnalysisAdvanceRequestV1, OracleAnalysisAdvanceStatusV1,
-    OracleAnalysisCombatStageTraceV1, OracleAnalysisSessionCheckpointV1, OracleAnalysisSessionV1,
     RunProgressJournalV1,
 };
 use crate::state::core::ClientInput;
+
+use super::oracle_analysis_session::{
+    OracleAnalysisAdvanceReportV1, OracleAnalysisAdvanceRequestV1, OracleAnalysisAdvanceStatusV1,
+    OracleAnalysisCombatStageTraceV1, OracleAnalysisSessionCheckpointV1, OracleAnalysisSessionV1,
+};
 
 pub const COMBAT_CASE_OWNER_PARITY_REPORT_SCHEMA_NAME: &str = "CombatCaseOwnerParityReportV1";
 pub const COMBAT_CASE_OWNER_PARITY_REPORT_SCHEMA_VERSION: u32 = 1;

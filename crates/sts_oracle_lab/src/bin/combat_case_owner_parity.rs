@@ -3,11 +3,11 @@ use std::path::PathBuf;
 use clap::Args;
 use serde::Serialize;
 use sts_oracle_runtime::eval::combat_case::load_combat_case;
-use sts_oracle_runtime::eval::combat_case_owner_parity::{
+use sts_oracle_runtime::eval::combat_lab_v1::atomic_write_json;
+use sts_oracle_runtime::runtime::branch::combat_case_owner_parity::{
     run_combat_case_owner_parity_v1, CombatCaseOwnerParityReportV1, CombatCaseOwnerParityRequestV1,
 };
-use sts_oracle_runtime::eval::combat_lab_v1::atomic_write_json;
-use sts_oracle_runtime::eval::run_control::OracleAnalysisAdvanceRequestV1;
+use sts_oracle_runtime::runtime::branch::OracleAnalysisAdvanceRequestV1;
 
 #[derive(Debug, Args)]
 pub(super) struct CombatCaseOwnerParityArgs {

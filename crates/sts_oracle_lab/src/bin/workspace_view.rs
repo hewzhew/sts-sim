@@ -4,11 +4,10 @@ use std::path::Path;
 use serde_json::{json, Value};
 use sts_oracle_runtime::eval::combat_case::CombatCase;
 use sts_oracle_runtime::eval::run_control::{
-    exact_replay_run_progress_journal_identity_v1, OracleAnalysisNodeViewV1, RunProgressStepV1,
-    RunWitnessCombatRootOriginV1,
+    exact_replay_run_progress_journal_identity_v1, RunProgressStepV1, RunWitnessCombatRootOriginV1,
 };
 use sts_oracle_runtime::runtime::branch::{
-    current_oracle_candidate_order_v1, OracleAnalysisWorkspaceV1,
+    current_oracle_candidate_order_v1, OracleAnalysisNodeViewV1, OracleAnalysisWorkspaceV1,
 };
 
 pub(super) fn current_owner_order(

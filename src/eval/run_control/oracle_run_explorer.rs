@@ -35,6 +35,10 @@ pub use checkpoint_restore::seed_oracle_run_explorer_from_checkpoint_v1;
 use combat_completion::FinishedOracleCombatV1;
 pub use combat_completion::OracleRunCombatEvidenceKindV1;
 use decision_supply::decision_supply_for_branch;
+pub use explicit_transactions::{
+    OracleRunExplorerCombatCommitV1, OracleRunExplorerDecisionCommitV1,
+    OracleRunExplorerExplicitTransactionsV1,
+};
 use scheduling::PreparedScheduledOracleRunWorkV1;
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -236,11 +240,11 @@ pub struct OraclePendingCombatSummaryV1 {
 }
 
 impl OracleRunCombatBudgetsV1 {
-    pub(super) fn for_session(&self, session: &RunControlSession) -> RunControlSearchCombatOptions {
+    pub fn for_session(&self, session: &RunControlSession) -> RunControlSearchCombatOptions {
         self.for_session_stage(session, 1)
     }
 
-    pub(super) fn for_session_stage(
+    pub fn for_session_stage(
         &self,
         session: &RunControlSession,
         stage: u8,
@@ -290,7 +294,7 @@ impl OracleRunCombatBudgetsV1 {
         scale_combat_options(options, self.stage_divisor(stage))
     }
 
-    pub(super) fn for_session_stage_with_prior(
+    pub fn for_session_stage_with_prior(
         &self,
         session: &RunControlSession,
         stage: u8,
@@ -337,7 +341,7 @@ impl OracleRunCombatBudgetsV1 {
         options
     }
 
-    pub(super) fn for_session_stage_restore(
+    pub fn for_session_stage_restore(
         &self,
         session: &RunControlSession,
         stage: u8,
@@ -379,15 +383,12 @@ impl OracleRunCombatBudgetsV1 {
             .saturating_add(1)
     }
 
-    pub(super) fn has_identity_partitioned_potion_allowance(
-        &self,
-        session: &RunControlSession,
-    ) -> bool {
+    pub fn has_identity_partitioned_potion_allowance(&self, session: &RunControlSession) -> bool {
         self.uses_potion_conserving_primary(session, &self.for_session_stage(session, 1))
             && oracle_active_victory_potion_slot_mask_v1(session) != 0
     }
 
-    pub(super) fn has_later_stage(&self, session: &RunControlSession, stage: u8) -> bool {
+    pub fn has_later_stage(&self, session: &RunControlSession, stage: u8) -> bool {
         let uses_potion_stages =
             self.uses_potion_conserving_primary(session, &self.for_session_stage(session, 1));
         let active_potion_stages = if uses_potion_stages {
@@ -403,7 +404,7 @@ impl OracleRunCombatBudgetsV1 {
             || (stage == 0 && self.initial_divisor > 1)
     }
 
-    pub(super) fn needs_later_stage(
+    pub fn needs_later_stage(
         &self,
         session: &RunControlSession,
         stage: u8,
@@ -627,7 +628,7 @@ impl OracleRunExplorerV1 {
         counts
     }
 
-    pub(super) fn decisions_for_branch(&self, branch_id: usize) -> Vec<LazyOracleRunDecisionV1> {
+    pub fn decisions_for_branch(&self, branch_id: usize) -> Vec<LazyOracleRunDecisionV1> {
         self.pending_decisions
             .iter()
             .filter(|work| work.parent_branch_id == branch_id)
@@ -635,7 +636,7 @@ impl OracleRunExplorerV1 {
             .collect()
     }
 
-    pub(super) fn record_combat_search_restart(&mut self) {
+    pub fn record_combat_search_restart(&mut self) {
         self.combat_search_restarts = self.combat_search_restarts.saturating_add(1);
     }
 
@@ -761,7 +762,7 @@ impl OracleRunExplorerV1 {
         Some(branch_id)
     }
 
-    pub(super) fn drain_pending_combats(&mut self) -> Vec<(usize, u8, OracleResidentCombatJobV1)> {
+    pub fn drain_pending_combats(&mut self) -> Vec<(usize, u8, OracleResidentCombatJobV1)> {
         self.pending_combats
             .drain(..)
             .map(|pending| (pending.branch_id, pending.stage, pending.work))

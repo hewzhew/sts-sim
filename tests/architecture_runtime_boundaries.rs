@@ -531,6 +531,10 @@ fn combat_evaluation_run_control_learning_layers_and_runtime_keep_distinct_compi
             .expect("read learning-adapter eval root");
     let runtime_root =
         std::fs::read_to_string("crates/sts_oracle_runtime/src/lib.rs").expect("read runtime root");
+    let runtime_branch_root = std::fs::read_to_string("src/runtime/branch/mod.rs")
+        .expect("read runtime branch root");
+    let run_control_modules = std::fs::read_to_string("src/eval/run_control/mod.rs")
+        .expect("read run-control modules");
     let combat_case_context = std::fs::read_to_string("src/eval/combat_case_context.rs")
         .expect("read combat-case production context");
     let combat_case_context = combat_case_context
@@ -642,6 +646,10 @@ fn combat_evaluation_run_control_learning_layers_and_runtime_keep_distinct_compi
             && eval_modules.contains("pub mod combat_case_core;")
             && !eval_modules.contains("pub mod run_control;")
             && control_eval_root.contains("src/eval/run_control/mod.rs")
+            && !control_eval_root.contains("combat_case_owner_parity.rs")
+            && !run_control_modules.contains("mod oracle_analysis_session;")
+            && runtime_branch_root.contains("eval/run_control/oracle_analysis_session.rs")
+            && runtime_branch_root.contains("eval/combat_case_owner_parity.rs")
             && control_eval_root.contains("src/eval/combat_case.rs")
             && learning_env_eval_root.contains("src/eval/run_control/learning_env.rs")
             && learning_env_eval_root.contains("src/eval/run_control/combat_learning_env.rs")
@@ -664,7 +672,7 @@ fn combat_evaluation_run_control_learning_layers_and_runtime_keep_distinct_compi
             && !combat_work_contract.contains("PolicyDiscrepancySession")
             && !combat_work.contains("pub struct OracleRunCombatWorkCheckpointV1")
             && combat_work.contains("pub(super) struct OracleRunCombatWorkV1")
-            && resident_combat_job.contains("pub(super) struct OracleResidentCombatJobV1")
+            && resident_combat_job.contains("pub struct OracleResidentCombatJobV1")
             && !resident_combat_job.contains("LocalTurnGraphWitnessSession")
             && !resident_combat_job.contains("PolicyDiscrepancySession")
             && resident_combat_job_evidence
@@ -674,7 +682,7 @@ fn combat_evaluation_run_control_learning_layers_and_runtime_keep_distinct_compi
             && !resident_combat_job_evidence.contains("PolicyDiscrepancySession")
             && !combat_work.contains("pub(super) struct OracleRunCombatWorkProgressV1")
             && !run_explorer.contains("pub struct OracleRunCombatWorkCheckpointV1")
-            && analysis_session.contains("use super::oracle_combat_work_contract::{")
+            && analysis_session.contains("use crate::eval::run_control::{")
             && analysis_session.contains(".explicit_transactions()")
             && !analysis_session.contains("prepare_explicit_")
             && !analysis_session.contains("commit_explicit_")

@@ -110,7 +110,7 @@ fn card_reward_path_audit_batches_typed_boundaries_and_applied_identity() {
         .expect("typed Pommel Strike candidate");
     assert!(matches!(
         pommel.acquisition,
-        super::super::CardRewardPolicyAcquisitionV1::Card {
+        crate::eval::run_control::CardRewardPolicyAcquisitionV1::Card {
             card: crate::content::cards::CardId::PommelStrike,
             ..
         }

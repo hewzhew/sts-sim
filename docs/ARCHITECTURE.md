@@ -38,8 +38,11 @@ diagnostic/production envelopes surrounding that core.
 learning environments plus opaque combat-root artifacts.
 `sts_oracle_learning` is the downstream model-facing adapter and owns ragged
 model views and batched pools; neither learning crate owns a policy objective.
-`sts_oracle_runtime` consumes run-control
-and owns branch execution, scheduling, persistence, and resident services.
+`sts_oracle_runtime` consumes run-control and owns the interactive analysis
+session/workbench, production-owner parity, branch execution, scheduling,
+persistence, and resident services. Analysis source may remain physically below
+the historical `src/eval/` tree, but it is compiled only by this low-optimization
+orchestration owner.
 Command hosts contain only supported adapters and cross-layer integration
 contracts; they own no policy semantics. A capability with a high edit rate
 may use a dependency-light frontend and a dedicated worker so help and syntax
@@ -1778,6 +1781,10 @@ typed decision identity, a verified combat job, or a currently legal Smoke
 Bomb escape and returns only child identity, display label, and HP facts.
 Prepared branches, decision-supply registration, selection-family release,
 identity indexes, and commit ordering remain private to the explorer owner.
+The resident combat-job facade, its owned evidence, budget projection, explorer
+checkpoint, and this explicit transaction capability are the complete lower
+surface used by the runtime-owned analysis session. Moving that session out of
+run-control does not make live planner sessions or explorer registries public.
 
 ## Gap Semantics
 

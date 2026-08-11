@@ -1,8 +1,12 @@
 mod artifact_store;
 mod capsule_reuse;
+#[path = "../../eval/combat_case_owner_parity.rs"]
+pub mod combat_case_owner_parity;
 mod contract;
 mod oracle_analysis;
 mod oracle_analysis_service;
+#[path = "../../eval/run_control/oracle_analysis_session.rs"]
+mod oracle_analysis_session;
 mod oracle_analysis_workspace_contract;
 mod oracle_analysis_workspace_recovery;
 mod oracle_analysis_workspace_store;
@@ -22,6 +26,7 @@ pub use capsule_reuse::*;
 pub use contract::*;
 pub use oracle_analysis::*;
 pub use oracle_analysis_service::*;
+pub use oracle_analysis_session::*;
 pub use oracle_analysis_workspace_contract::*;
 pub use oracle_analysis_workspace_recovery::*;
 pub use oracle_analysis_workspace_store::*;

@@ -4,11 +4,12 @@ use std::time::Instant;
 
 use serde_json::{json, Value};
 
-use crate::eval::run_control::{
-    OracleAnalysisAdvanceRequestV1, OracleAnalysisNodeViewV1, OracleRunBoundaryV1,
-};
+use crate::eval::run_control::OracleRunBoundaryV1;
 
-use super::OracleAnalysisWorkspaceV1;
+use super::{
+    oracle_analysis_session::{OracleAnalysisAdvanceRequestV1, OracleAnalysisNodeViewV1},
+    OracleAnalysisWorkspaceV1,
+};
 
 pub(super) struct OwnerBatchResult {
     pub(super) applied_count: usize,
@@ -493,7 +494,7 @@ fn compact_run_node(node: &OracleAnalysisNodeViewV1) -> Value {
 }
 
 fn compact_run_combat_progress(
-    combat: Option<&crate::eval::run_control::OracleAnalysisCombatProgressV1>,
+    combat: Option<&super::oracle_analysis_session::OracleAnalysisCombatProgressV1>,
 ) -> Value {
     let Some(combat) = combat else {
         return Value::Null;
@@ -566,11 +567,13 @@ mod tests {
     use crate::content::potions::{Potion, PotionId};
     use crate::eval::run_control::{
         positive_ranked_run_policy_prior_v1, seed_oracle_run_explorer_from_session_v1,
-        OracleAnalysisSessionV1, RunControlConfig, RunControlSession, RunPolicyCandidateV1,
-        RunPolicyPriorV1, RunProgressJournalV1,
+        RunControlConfig, RunControlSession, RunPolicyCandidateV1, RunPolicyPriorV1,
+        RunProgressJournalV1,
     };
     use crate::runtime::branch::oracle_run::oracle_run_combat_budgets_v1;
-    use crate::runtime::branch::{OracleAnalysisWorkspaceV1, OracleRunBudget, OracleRunConfig};
+    use crate::runtime::branch::{
+        OracleAnalysisSessionV1, OracleAnalysisWorkspaceV1, OracleRunBudget, OracleRunConfig,
+    };
     use crate::state::core::EngineState;
     use crate::state::rewards::{RewardCard, RewardItem, RewardState};
     use crate::state::shop::ShopState;

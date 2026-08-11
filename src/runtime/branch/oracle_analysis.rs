@@ -3,13 +3,15 @@ use crate::eval::run_control::{
     exact_audit_run_progress_journal_policy_v1, expand_oracle_neow_candidates_v1,
     ordered_oracle_neow_root_candidate_ids_v1, seed_oracle_run_explorer_from_checkpoint_v1,
     seed_oracle_run_explorer_from_session_v1, seed_oracle_run_explorer_v1, NeowOracleExpansionV1,
-    OracleAnalysisAdvanceReportV1, OracleAnalysisAdvanceRequestV1,
-    OracleAnalysisCombatProbeReportV1, OracleAnalysisCombatProbeRequestV1,
-    OracleAnalysisNodeViewV1, OracleAnalysisSessionV1, RunControlConfig, RunControlSession,
-    RunDecisionAction,
+    RunControlConfig, RunControlSession, RunDecisionAction,
 };
 use crate::state::core::ClientInput;
 
+use super::oracle_analysis_session::{
+    OracleAnalysisAdvanceReportV1, OracleAnalysisAdvanceRequestV1,
+    OracleAnalysisCombatProbeReportV1, OracleAnalysisCombatProbeRequestV1,
+    OracleAnalysisNodeViewV1, OracleAnalysisSessionV1,
+};
 use super::oracle_analysis_workspace_contract::{
     OracleAnalysisWorkspaceArtifactV1, ORACLE_ANALYSIS_WORKSPACE_SCHEMA_NAME,
     ORACLE_ANALYSIS_WORKSPACE_SCHEMA_VERSION,

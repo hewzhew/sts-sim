@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
+use super::oracle_analysis_session::OracleAnalysisSessionCheckpointV1;
 use crate::eval::combat_guidance_bundle::CombatGuidanceBundleV1;
-use crate::eval::run_control::OracleAnalysisSessionCheckpointV1;
 
 use super::oracle_run::OracleRunBudget;
 

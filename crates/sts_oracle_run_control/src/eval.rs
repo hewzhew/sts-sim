@@ -6,8 +6,6 @@ pub use sts_oracle_eval::eval::*;
 pub mod combat_case;
 #[path = "../../../src/eval/combat_case_context.rs"]
 pub mod combat_case_context;
-#[path = "../../../src/eval/combat_case_owner_parity.rs"]
-pub mod combat_case_owner_parity;
 #[cfg(feature = "control-full")]
 #[path = "../../../src/eval/event_boundary_packet_v1.rs"]
 pub mod event_boundary_packet_v1;

@@ -82,13 +82,13 @@ Binary 边界见 [src/bin/README.md](src/bin/README.md)。
 | `src/runtime` | run/combat 执行时支持 |
 | `src/sim` | 面向模拟器的 legal action、apply、search 边界 |
 | `src/ai` | policy、strategic facts、deck mutation、combat search、route/search work |
-| `src/eval` | combat eval、run-control、learning adapter 的历史物理源码树；Cargo owner 由下列 crate 明确切分 |
+| `src/eval` | combat eval、run-control、analysis workbench、learning adapter 的历史物理源码树；Cargo owner 由下列 crate 明确切分 |
 | `src/bin` | 当前维护的命令入口 |
 | `crates/sts_oracle_eval` | combat evaluation 与精确搜索编排的优化 Cargo owner |
 | `crates/sts_oracle_run_control` | exact run session、决策应用与跑局证据的独立 Cargo owner |
 | `crates/sts_oracle_learning_env` | 优化的 exact 单 episode learning env 与 opaque combat-root artifact owner |
 | `crates/sts_oracle_learning` | model input 与批量 learning adapter 的下游 Cargo owner |
-| `crates/sts_oracle_runtime` | branch 执行、持久化和服务编排的快速重建 Cargo owner |
+| `crates/sts_oracle_runtime` | analysis session/workbench、owner parity、branch 执行、持久化和服务编排的快速重建 Cargo owner |
 | `crates/sts_combat_search_driver` | 轻量 combat-search 前端与 capability-scoped 优化 worker |
 | `crates/sts_oracle_tools` | 无 library facade 的旧 oracle 命令适配器与集成契约宿主 |
 | `learning` | 在线训练 caller、curriculum、seed 调度、模型和评估计账；不拥有模拟器机制 |

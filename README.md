@@ -92,13 +92,13 @@ archaeology.
 | `src/runtime` | runtime support for run/combat execution |
 | `src/sim` | simulator-facing legal action and apply/search boundaries |
 | `src/ai` | policies, strategic facts, deck mutation, combat search, route/search work |
-| `src/eval` | Historical physical source tree for combat eval, run-control, and learning adapters; the crates below define their Cargo owners |
+| `src/eval` | Historical physical source tree for combat eval, run-control, the analysis workbench, and learning adapters; the crates below define their Cargo owners |
 | `src/bin` | maintained command entrypoints |
 | `crates/sts_oracle_eval` | Optimized Cargo owner for combat evaluation and exact-search orchestration |
 | `crates/sts_oracle_run_control` | Independent Cargo owner for exact run sessions, decision application, and run evidence |
 | `crates/sts_oracle_learning_env` | Optimized exact single-episode learning environments and opaque combat-root artifacts |
 | `crates/sts_oracle_learning` | Downstream Cargo owner for model inputs and batched learning adapters |
-| `crates/sts_oracle_runtime` | Cheaply rebuildable Cargo owner for branch execution, persistence, and service orchestration |
+| `crates/sts_oracle_runtime` | Cheaply rebuildable Cargo owner for the analysis session/workbench, owner parity, branch execution, persistence, and service orchestration |
 | `crates/sts_combat_search_driver` | Lightweight combat-search frontend and capability-scoped optimized worker |
 | `crates/sts_oracle_tools` | Library-free Cargo host for maintained legacy oracle command adapters and integration contracts |
 | `learning` | online-training callers, curricula, seed schedules, models, and evaluation accounting; never simulator mechanics |

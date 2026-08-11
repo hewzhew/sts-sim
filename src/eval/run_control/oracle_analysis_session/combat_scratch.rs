@@ -7,11 +7,16 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use super::{OracleAnalysisSessionV1, OracleRunBoundaryV1};
 
+#[path = "combat_scratch/delta.rs"]
 mod delta;
+#[path = "combat_scratch/search.rs"]
 mod search;
 #[cfg(test)]
+#[path = "combat_scratch/tests.rs"]
 mod tests;
+#[path = "combat_scratch/types.rs"]
 mod types;
+#[path = "combat_scratch/view.rs"]
 mod view;
 
 pub use types::*;

@@ -2,13 +2,13 @@ use super::combat_completion::PreparedOracleRunCombatV1;
 use super::*;
 
 /// Facts returned after one explicit analyst decision commits atomically.
-pub(in super::super) struct OracleRunExplorerDecisionCommitV1 {
+pub struct OracleRunExplorerDecisionCommitV1 {
     pub child_branch_id: usize,
     pub label: String,
 }
 
 /// Facts returned after one explicit combat transaction commits atomically.
-pub(in super::super) struct OracleRunExplorerCombatCommitV1 {
+pub struct OracleRunExplorerCombatCommitV1 {
     pub child_branch_id: Option<usize>,
     pub child_current_hp: Option<i32>,
 }
@@ -19,14 +19,12 @@ pub(in super::super) struct OracleRunExplorerCombatCommitV1 {
 /// combat job. Prepared branches, registration supplies, selection-family
 /// release plans, and the explorer's private identity registries never cross
 /// this boundary.
-pub(in super::super) struct OracleRunExplorerExplicitTransactionsV1<'a> {
+pub struct OracleRunExplorerExplicitTransactionsV1<'a> {
     explorer: &'a mut OracleRunExplorerV1,
 }
 
 impl OracleRunExplorerV1 {
-    pub(in super::super) fn explicit_transactions(
-        &mut self,
-    ) -> OracleRunExplorerExplicitTransactionsV1<'_> {
+    pub fn explicit_transactions(&mut self) -> OracleRunExplorerExplicitTransactionsV1<'_> {
         OracleRunExplorerExplicitTransactionsV1 { explorer: self }
     }
 }

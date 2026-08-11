@@ -40,7 +40,6 @@ mod input_gate;
 mod next_hint;
 mod noncombat_boundary;
 mod noncombat_policy_annotation;
-mod oracle_analysis_session;
 mod oracle_combat_budget;
 mod oracle_combat_policy;
 mod oracle_combat_work;
@@ -150,40 +149,6 @@ pub use forced_transition::{
     RunForcedTransitionKindV1, RunForcedTransitionV1, RUN_FORCED_TRANSITION_SCHEMA_NAME,
     RUN_FORCED_TRANSITION_SCHEMA_VERSION,
 };
-pub use oracle_analysis_session::{
-    OracleAnalysisAdvanceReportV1, OracleAnalysisAdvanceRequestV1, OracleAnalysisAdvanceStatusV1,
-    OracleAnalysisCardRewardApplicationUnknownV1, OracleAnalysisCardRewardApplicationV1,
-    OracleAnalysisCardRewardPathAuditV1, OracleAnalysisCardRewardPathBoundaryV1,
-    OracleAnalysisChildViewV1, OracleAnalysisChoiceViewV1, OracleAnalysisCombatJobCheckpointV1,
-    OracleAnalysisCombatLineLabActionSummaryV1, OracleAnalysisCombatLineLabActionV1,
-    OracleAnalysisCombatLineLabBaselineSourceV1, OracleAnalysisCombatLineLabCardCandidateV1,
-    OracleAnalysisCombatLineLabCompareV1, OracleAnalysisCombatLineLabDecisionDeltaV1,
-    OracleAnalysisCombatLineLabDivergenceV1, OracleAnalysisCombatLineLabFrameV1,
-    OracleAnalysisCombatLineLabLineSummaryV1, OracleAnalysisCombatLineLabLineV1,
-    OracleAnalysisCombatLineLabLocationV1, OracleAnalysisCombatLineLabOpenV1,
-    OracleAnalysisCombatLineLabPlayCardResultV1, OracleAnalysisCombatLineLabPotionCandidateV1,
-    OracleAnalysisCombatLineLabTurnSummaryV1, OracleAnalysisCombatLineLabUsePotionResultV1,
-    OracleAnalysisCombatProbeReportV1, OracleAnalysisCombatProbeRequestV1,
-    OracleAnalysisCombatProbeStopV1, OracleAnalysisCombatProgressV1,
-    OracleAnalysisCombatScratchActionSelectorV1, OracleAnalysisCombatScratchActionSurfaceV1,
-    OracleAnalysisCombatScratchActionV1, OracleAnalysisCombatScratchCardV1,
-    OracleAnalysisCombatScratchCheckpointV1, OracleAnalysisCombatScratchContextV1,
-    OracleAnalysisCombatScratchDecisionActionV1,
-    OracleAnalysisCombatScratchDecisionSelectionFamilyV1,
-    OracleAnalysisCombatScratchDecisionViewV1, OracleAnalysisCombatScratchMonsterV1,
-    OracleAnalysisCombatScratchNodeCheckpointV1, OracleAnalysisCombatScratchPlayerV1,
-    OracleAnalysisCombatScratchPositionV1, OracleAnalysisCombatScratchSearchExitV1,
-    OracleAnalysisCombatScratchSearchReportV1, OracleAnalysisCombatScratchSearchRequestV1,
-    OracleAnalysisCombatScratchSelectionFamilyV1, OracleAnalysisCombatScratchTreeNodeV1,
-    OracleAnalysisCombatScratchTreeV1, OracleAnalysisCombatScratchViewV1,
-    OracleAnalysisCombatStageExitV1, OracleAnalysisCombatStageTraceV1, OracleAnalysisEdgeKindV1,
-    OracleAnalysisEdgeV1, OracleAnalysisNodeSummaryV1, OracleAnalysisNodeViewV1,
-    OracleAnalysisSessionCheckpointV1, OracleAnalysisSessionV1, OracleAnalysisTreeViewV1,
-    ORACLE_ANALYSIS_CARD_REWARD_PATH_AUDIT_SCHEMA_NAME,
-    ORACLE_ANALYSIS_CARD_REWARD_PATH_AUDIT_SCHEMA_VERSION,
-    ORACLE_ANALYSIS_COMBAT_SCRATCH_SCHEMA_NAME, ORACLE_ANALYSIS_COMBAT_SCRATCH_SCHEMA_VERSION,
-    ORACLE_ANALYSIS_SESSION_SCHEMA_NAME, ORACLE_ANALYSIS_SESSION_SCHEMA_VERSION,
-};
 pub use oracle_combat_budget::{OracleRunCombatBudgetsV1, OracleRunCombatQualityPolicyV1};
 pub use oracle_combat_policy::{
     authorized_potion_trial_policy_v1, existing_combat_guide_service_bias_v1,
@@ -197,6 +162,7 @@ pub use oracle_neow::{
     CompletedNeowCandidateV1, NeowOracleExpansionV1, NeowOracleReplayStepV1,
     UnresolvedNeowCandidateV1,
 };
+pub use oracle_resident_combat_job::OracleResidentCombatJobV1;
 pub use oracle_resident_combat_job_evidence::OracleResidentCombatJobEvidenceV1;
 pub use oracle_run_explorer::{
     drive_oracle_run_explorer_v1, run_control_session_fingerprint_v2,
@@ -207,9 +173,10 @@ pub use oracle_run_explorer::{
     OracleRunBranchV1, OracleRunCheckpointPayloadsV1, OracleRunCombatEdgeOrderFnV1,
     OracleRunCombatEdgeProbeV1, OracleRunCombatEvidenceKindV1, OracleRunDecisionAnnotationFnV1,
     OracleRunDeferredCombatCheckpointV1, OracleRunExploreBudgetV1, OracleRunExploreResultV1,
-    OracleRunExploreStopV1, OracleRunExplorerCheckpointV1, OracleRunExplorerV1,
-    OracleRunJournalNodeCheckpointV1, OracleRunReplayStepV1, OracleRunSessionPayloadRefsV1,
-    OracleRunUnresolvedCombatV1, OracleRunWorkKindV1,
+    OracleRunExploreStopV1, OracleRunExplorerCheckpointV1, OracleRunExplorerCombatCommitV1,
+    OracleRunExplorerDecisionCommitV1, OracleRunExplorerExplicitTransactionsV1,
+    OracleRunExplorerV1, OracleRunJournalNodeCheckpointV1, OracleRunReplayStepV1,
+    OracleRunSessionPayloadRefsV1, OracleRunUnresolvedCombatV1, OracleRunWorkKindV1,
 };
 pub use outcome::{
     load_combat_baseline_outcome_v1, save_combat_baseline_outcome_v1, CombatBaselineOutcomeV1,

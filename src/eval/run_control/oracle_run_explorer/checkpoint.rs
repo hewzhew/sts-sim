@@ -134,9 +134,7 @@ impl OracleRunExplorerV1 {
             .map(Some)
     }
 
-    pub(in crate::eval::run_control) fn analysis_checkpoint(
-        &self,
-    ) -> Result<OracleRunExplorerCheckpointV1, String> {
+    pub fn analysis_checkpoint(&self) -> Result<OracleRunExplorerCheckpointV1, String> {
         if !self.pending_combats.is_empty() {
             return Err(
                 "analysis checkpoint requires combat work to be owned by the analysis session"

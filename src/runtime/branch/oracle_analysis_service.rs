@@ -17,10 +17,11 @@ pub use oracle_lab_protocol::{
     ORACLE_ANALYSIS_SERVICE_PROTOCOL, ORACLE_ANALYSIS_SERVICE_PROTOCOL_VERSION,
 };
 
-use crate::eval::combat_lab_v1::atomic_write_json;
-use crate::eval::run_control::{
-    OracleAnalysisAdvanceRequestV1, OracleAnalysisCombatProbeRequestV1, OracleAnalysisNodeViewV1,
+use super::oracle_analysis_session::{
+    self as analysis_session, OracleAnalysisAdvanceRequestV1, OracleAnalysisCombatProbeRequestV1,
+    OracleAnalysisNodeViewV1,
 };
+use crate::eval::combat_lab_v1::atomic_write_json;
 
 use super::{
     oracle_autonomous_run::{
@@ -661,10 +662,10 @@ fn execute_command(
         } => {
             let baseline = match baseline {
                 OracleAnalysisCombatLabBaselineV1::Root => {
-                    crate::eval::run_control::OracleAnalysisCombatLineLabBaselineSourceV1::Root
+                    analysis_session::OracleAnalysisCombatLineLabBaselineSourceV1::Root
                 }
                 OracleAnalysisCombatLabBaselineV1::ResidentIncumbent => {
-                    crate::eval::run_control::OracleAnalysisCombatLineLabBaselineSourceV1::ResidentIncumbent
+                    analysis_session::OracleAnalysisCombatLineLabBaselineSourceV1::ResidentIncumbent
                 }
             };
             (
@@ -702,10 +703,10 @@ fn execute_command(
         } => {
             let line = match line {
                 OracleAnalysisCombatLabLineV1::Baseline => {
-                    crate::eval::run_control::OracleAnalysisCombatLineLabLineV1::Baseline
+                    analysis_session::OracleAnalysisCombatLineLabLineV1::Baseline
                 }
                 OracleAnalysisCombatLabLineV1::Current => {
-                    crate::eval::run_control::OracleAnalysisCombatLineLabLineV1::Current
+                    analysis_session::OracleAnalysisCombatLineLabLineV1::Current
                 }
             };
             (
@@ -771,7 +772,7 @@ fn execute_command(
             )?;
             let mutated = matches!(
                 result,
-                crate::eval::run_control::OracleAnalysisCombatLineLabPlayCardResultV1::Played { .. }
+                analysis_session::OracleAnalysisCombatLineLabPlayCardResultV1::Played { .. }
             );
             (to_value(result)?, mutated, false, false)
         }
@@ -793,7 +794,7 @@ fn execute_command(
             )?;
             let mutated = matches!(
                 result,
-                crate::eval::run_control::OracleAnalysisCombatLineLabUsePotionResultV1::Used { .. }
+                analysis_session::OracleAnalysisCombatLineLabUsePotionResultV1::Used { .. }
             );
             (to_value(result)?, mutated, false, false)
         }
@@ -831,7 +832,7 @@ fn execute_command(
             wall_ms,
         } => {
             let report = workspace.session.search_combat_line_lab(
-                crate::eval::run_control::OracleAnalysisCombatScratchSearchRequestV1 {
+                analysis_session::OracleAnalysisCombatScratchSearchRequestV1 {
                     max_quanta,
                     quantum_nodes,
                     quantum_ms,
@@ -876,7 +877,7 @@ fn execute_command(
             selection_limit,
         } => (
             to_value(
-                crate::eval::run_control::OracleAnalysisCombatScratchDecisionViewV1::from(
+                analysis_session::OracleAnalysisCombatScratchDecisionViewV1::from(
                     workspace.session.start_combat_scratch(
                         node,
                         max_engine_steps_per_transition,
@@ -938,7 +939,7 @@ fn execute_command(
         } => (
             play_combat_scratch_selector(
                 workspace,
-                crate::eval::run_control::OracleAnalysisCombatScratchActionSelectorV1::Atomic {
+                analysis_session::OracleAnalysisCombatScratchActionSelectorV1::Atomic {
                     scratch_node_id: scratch_node,
                     action_index,
                 },
@@ -960,7 +961,7 @@ fn execute_command(
         } => (
             play_combat_scratch_selector(
                 workspace,
-                crate::eval::run_control::OracleAnalysisCombatScratchActionSelectorV1::Card {
+                analysis_session::OracleAnalysisCombatScratchActionSelectorV1::Card {
                     scratch_node_id: scratch_node,
                     card_uuid,
                     target,
@@ -983,7 +984,7 @@ fn execute_command(
         } => (
             play_combat_scratch_selector(
                 workspace,
-                crate::eval::run_control::OracleAnalysisCombatScratchActionSelectorV1::HandCard {
+                analysis_session::OracleAnalysisCombatScratchActionSelectorV1::HandCard {
                     scratch_node_id: scratch_node,
                     hand_index,
                     target_index,
@@ -1006,7 +1007,7 @@ fn execute_command(
         } => (
             play_combat_scratch_selector(
                 workspace,
-                crate::eval::run_control::OracleAnalysisCombatScratchActionSelectorV1::Potion {
+                analysis_session::OracleAnalysisCombatScratchActionSelectorV1::Potion {
                     scratch_node_id: scratch_node,
                     potion_uuid,
                     target,
@@ -1029,7 +1030,7 @@ fn execute_command(
         } => (
             play_combat_scratch_selector(
                 workspace,
-                crate::eval::run_control::OracleAnalysisCombatScratchActionSelectorV1::PotionSlot {
+                analysis_session::OracleAnalysisCombatScratchActionSelectorV1::PotionSlot {
                     scratch_node_id: scratch_node,
                     potion_slot,
                     target_index,
@@ -1054,7 +1055,7 @@ fn execute_command(
             (
                 play_combat_scratch_selector(
                     workspace,
-                    crate::eval::run_control::OracleAnalysisCombatScratchActionSelectorV1::EndTurn {
+                    analysis_session::OracleAnalysisCombatScratchActionSelectorV1::EndTurn {
                         scratch_node_id: scratch_node,
                     },
                     full_observation,
@@ -1076,7 +1077,7 @@ fn execute_command(
         } => (
             play_combat_scratch_selector(
                 workspace,
-                crate::eval::run_control::OracleAnalysisCombatScratchActionSelectorV1::Selection {
+                analysis_session::OracleAnalysisCombatScratchActionSelectorV1::Selection {
                     scratch_node_id: scratch_node,
                     family_index,
                     input_index,
@@ -1096,7 +1097,7 @@ fn execute_command(
         } => (
             if full_observation {
                 to_value(
-                    crate::eval::run_control::OracleAnalysisCombatScratchDecisionViewV1::from(
+                    analysis_session::OracleAnalysisCombatScratchDecisionViewV1::from(
                         workspace
                             .session
                             .back_combat_scratch(selection_offset, selection_limit)?,
@@ -1117,7 +1118,7 @@ fn execute_command(
         } => (
             if full_observation {
                 to_value(
-                    crate::eval::run_control::OracleAnalysisCombatScratchDecisionViewV1::from(
+                    analysis_session::OracleAnalysisCombatScratchDecisionViewV1::from(
                         workspace.session.focus_combat_scratch_node(
                             scratch_node,
                             selection_offset,
@@ -1145,7 +1146,7 @@ fn execute_command(
             selection_limit,
         } => {
             let (report, view) = workspace.session.search_combat_scratch(
-                crate::eval::run_control::OracleAnalysisCombatScratchSearchRequestV1 {
+                analysis_session::OracleAnalysisCombatScratchSearchRequestV1 {
                     max_quanta,
                     quantum_nodes,
                     quantum_ms,
@@ -1157,7 +1158,7 @@ fn execute_command(
             (
                 json!({
                     "report": report,
-                    "view": crate::eval::run_control::OracleAnalysisCombatScratchDecisionViewV1::from(view),
+                    "view": analysis_session::OracleAnalysisCombatScratchDecisionViewV1::from(view),
                 }),
                 true,
                 false,
@@ -1463,7 +1464,7 @@ fn write_response<W: Write>(
 
 fn play_combat_scratch_selector(
     workspace: &mut OracleAnalysisWorkspaceV1,
-    selector: crate::eval::run_control::OracleAnalysisCombatScratchActionSelectorV1,
+    selector: analysis_session::OracleAnalysisCombatScratchActionSelectorV1,
     full_observation: bool,
     selection_offset: usize,
     selection_limit: usize,
@@ -1474,7 +1475,7 @@ fn play_combat_scratch_selector(
             selection_offset,
             selection_limit,
         )?;
-        to_value(crate::eval::run_control::OracleAnalysisCombatScratchDecisionViewV1::from(view))
+        to_value(analysis_session::OracleAnalysisCombatScratchDecisionViewV1::from(view))
     } else {
         to_value(workspace.session.play_combat_scratch_selector_delta(
             selector,

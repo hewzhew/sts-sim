@@ -16,12 +16,12 @@ use crate::state::core::ClientInput;
 /// Analysis and explorer orchestration may grant bounded work, inspect typed
 /// evidence, checkpoint, or commit a verified result. They never receive the
 /// live local-graph/discrepancy sessions or their private queues.
-pub(super) struct OracleResidentCombatJobV1 {
+pub struct OracleResidentCombatJobV1 {
     work: OracleRunCombatWorkV1,
 }
 
 impl OracleResidentCombatJobV1 {
-    pub(super) fn new(
+    pub fn new(
         session: &RunControlSession,
         options: RunControlSearchCombatOptions,
         guidance: Option<&CombatGuidanceBundleV1>,
@@ -30,7 +30,7 @@ impl OracleResidentCombatJobV1 {
             .map(|work| Self { work })
     }
 
-    pub(super) fn restore(
+    pub fn restore(
         session: &RunControlSession,
         options: RunControlSearchCombatOptions,
         checkpoint: OracleRunCombatWorkCheckpointV1,
@@ -42,7 +42,7 @@ impl OracleResidentCombatJobV1 {
         .map(|work| Self { work })
     }
 
-    pub(super) fn promote(
+    pub fn promote(
         session: &RunControlSession,
         options: RunControlSearchCombatOptions,
         checkpoint: OracleRunCombatWorkCheckpointV1,
@@ -54,7 +54,7 @@ impl OracleResidentCombatJobV1 {
         .map(|work| Self { work })
     }
 
-    pub(super) fn restart(
+    pub fn restart(
         session: &RunControlSession,
         options: RunControlSearchCombatOptions,
         guidance: Option<&CombatGuidanceBundleV1>,
@@ -63,7 +63,7 @@ impl OracleResidentCombatJobV1 {
             .map(|work| Self { work })
     }
 
-    pub(super) fn for_exact_actions(
+    pub fn for_exact_actions(
         session: &RunControlSession,
         options: RunControlSearchCombatOptions,
         guidance: Option<&CombatGuidanceBundleV1>,
@@ -72,15 +72,15 @@ impl OracleResidentCombatJobV1 {
             .map(|work| Self { work })
     }
 
-    pub(super) fn root_action_families(&self) -> Vec<LocalTurnGraphRootActionFamilySnapshot> {
+    pub fn root_action_families(&self) -> Vec<LocalTurnGraphRootActionFamilySnapshot> {
         self.work.root_action_families()
     }
 
-    pub(super) fn checkpoint(&self) -> OracleRunCombatWorkCheckpointV1 {
+    pub fn checkpoint(&self) -> OracleRunCombatWorkCheckpointV1 {
         self.work.checkpoint()
     }
 
-    pub(super) fn advance(
+    pub fn advance(
         &mut self,
         quantum: &RunControlCombatSearchQuantum,
         deadline: Option<Instant>,
@@ -88,7 +88,7 @@ impl OracleResidentCombatJobV1 {
         self.work.advance(quantum, deadline)
     }
 
-    pub(super) fn advance_improving_incumbent(
+    pub fn advance_improving_incumbent(
         &mut self,
         quantum: &RunControlCombatSearchQuantum,
         deadline: Option<Instant>,
@@ -96,7 +96,7 @@ impl OracleResidentCombatJobV1 {
         self.work.advance_improving_incumbent(quantum, deadline)
     }
 
-    pub(super) fn advance_current_stage_probe(
+    pub fn advance_current_stage_probe(
         &mut self,
         quantum: &RunControlCombatSearchQuantum,
         deadline: Option<Instant>,
@@ -104,7 +104,7 @@ impl OracleResidentCombatJobV1 {
         self.work.advance_current_stage_probe(quantum, deadline)
     }
 
-    pub(super) fn ensure_requested_allowance(
+    pub fn ensure_requested_allowance(
         &mut self,
         requested_nodes: usize,
         requested_wall_time: Option<Duration>,
@@ -113,66 +113,66 @@ impl OracleResidentCombatJobV1 {
             .ensure_requested_allowance(requested_nodes, requested_wall_time);
     }
 
-    pub(super) fn mark_search_resume_exact(&mut self) {
+    pub fn mark_search_resume_exact(&mut self) {
         self.work.mark_search_resume_exact();
     }
 
-    pub(super) fn search_resume_exact(&self) -> bool {
+    pub fn search_resume_exact(&self) -> bool {
         self.work.search_resume_exact()
     }
 
-    pub(super) fn has_verified_witness(&self) -> bool {
+    pub fn has_verified_witness(&self) -> bool {
         self.work.has_verified_witness()
     }
 
-    pub(super) fn verified_witness_inputs(&self) -> Option<Vec<ClientInput>> {
+    pub fn verified_witness_inputs(&self) -> Option<Vec<ClientInput>> {
         self.work.verified_witness_inputs()
     }
 
-    pub(super) fn incumbent_hp_loss(&self) -> Option<u32> {
+    pub fn incumbent_hp_loss(&self) -> Option<u32> {
         self.work.incumbent_hp_loss()
     }
 
-    pub(super) fn has_refinement_ending_witness(&self) -> bool {
+    pub fn has_refinement_ending_witness(&self) -> bool {
         self.work.has_refinement_ending_witness()
     }
 
-    pub(super) fn verify_and_restore_action_witness(
+    pub fn verify_and_restore_action_witness(
         &mut self,
         inputs: &[ClientInput],
     ) -> Result<(), String> {
         self.work.verify_and_restore_action_witness(inputs)
     }
 
-    pub(super) fn quantum_count(&self) -> usize {
+    pub fn quantum_count(&self) -> usize {
         self.work.quantum_count()
     }
 
-    pub(super) fn remaining_nodes(&self) -> usize {
+    pub fn remaining_nodes(&self) -> usize {
         self.work.remaining_nodes()
     }
 
-    pub(super) fn current_search_generation_work(&self) -> u64 {
+    pub fn current_search_generation_work(&self) -> u64 {
         self.work.current_search_generation_work()
     }
 
-    pub(super) fn remaining_wall_ms(&self) -> Option<u64> {
+    pub fn remaining_wall_ms(&self) -> Option<u64> {
         self.work.remaining_wall_ms()
     }
 
-    pub(super) fn max_potions_used(&self) -> Option<u32> {
+    pub fn max_potions_used(&self) -> Option<u32> {
         self.work.max_potions_used()
     }
 
-    pub(super) fn allowed_potion_slots(&self) -> Option<u64> {
+    pub fn allowed_potion_slots(&self) -> Option<u64> {
         self.work.allowed_potion_slots()
     }
 
-    pub(super) fn restart_count(&self) -> usize {
+    pub fn restart_count(&self) -> usize {
         self.work.restart_count()
     }
 
-    pub(super) fn evidence(&self) -> OracleResidentCombatJobEvidenceV1 {
+    pub fn evidence(&self) -> OracleResidentCombatJobEvidenceV1 {
         self.work.progress()
     }
 

@@ -1,8 +1,8 @@
 use serde_json::{json, Value};
 use sts_combat_planner::TurnOptionAction;
 
+use super::oracle_analysis_session::OracleAnalysisCombatProgressV1;
 use crate::content::{cards, monsters::EnemyId};
-use crate::eval::run_control::OracleAnalysisCombatProgressV1;
 use crate::runtime::combat::{CombatCard, CombatState, MonsterEntity};
 use crate::sim::combat::{CombatPosition, CombatStepLimits, CombatStepper, EngineCombatStepper};
 use crate::sim::combat_action::{combat_action_key, target_label};
