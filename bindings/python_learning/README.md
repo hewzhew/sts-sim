@@ -197,8 +197,9 @@ Run the maintained end-to-end verification with:
 ```
 
 The script builds a wheel, runs the Rust semantic contract tests, installs the
-wheel without dependency mutation into a fresh isolated environment that can
-see the target Python's existing NumPy, and runs `tests/smoke.py` plus the
+wheel without dependency mutation into a fresh isolated environment, binds the
+target Python's existing dependency directory after that isolated wheel, and
+runs `tests/smoke.py` plus the
 separate online caller contracts under `learning/tests`. It keeps the wheel,
 environment, and complete logs below one fresh ignored
 `.oracle-lab/python-learning-bridge/` directory while a run is active. A failed

@@ -80,6 +80,10 @@ $pythonRuntimeRoot = (& $pythonPath -c "import sys; print(sys.base_prefix)").Tri
 if ($LASTEXITCODE -ne 0 -or -not $pythonRuntimeRoot -or -not (Test-Path -LiteralPath $pythonRuntimeRoot -PathType Container)) {
     throw "failed to resolve target Python runtime root"
 }
+$pythonSitePackages = (& $pythonPath -c "import sysconfig; print(sysconfig.get_path('purelib'))").Trim()
+if ($LASTEXITCODE -ne 0 -or -not $pythonSitePackages -or -not (Test-Path -LiteralPath $pythonSitePackages -PathType Container)) {
+    throw "failed to resolve target Python dependency directory"
+}
 
 $learningProject = Join-Path $repositoryRoot "learning\pyproject.toml"
 $testRequirement = (& $pythonPath -c @'
@@ -201,7 +205,12 @@ $venvSite = (& $venvPython -c "import sysconfig; print(sysconfig.get_path('purel
 if ($LASTEXITCODE -ne 0 -or -not $venvSite) {
     throw "failed to resolve isolated wheel site-packages"
 }
-$env:PYTHONPATH = "$venvSite;$learningSource;$repositoryRoot"
+# The cached pytest tool venv intentionally owns only pytest. A venv created
+# from another venv inherits the base interpreter's system packages, not the
+# target venv's NumPy/Torch installation, so bind that dependency directory
+# explicitly. Keep the isolated wheel first so this verification cannot import
+# the already-installed target bridge.
+$env:PYTHONPATH = "$venvSite;$pythonSitePackages;$learningSource;$repositoryRoot"
 $ErrorActionPreference = "Continue"
 $phaseWatch.Restart()
 $bridgeProbe = @'
