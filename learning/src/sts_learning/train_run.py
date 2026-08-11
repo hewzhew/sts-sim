@@ -90,6 +90,32 @@ _RUN_POLICY_UPDATE_ARGUMENTS = {
     "ppo-clip-value": RunPolicyUpdateConfig.ppo_clip_value(),
 }
 
+_RUN_ADVANTAGE_NORMALIZATION_ARGUMENTS = ("auto", "on", "off")
+
+
+def _resolve_run_policy_update(
+    update_name: str,
+    normalization: str,
+) -> RunPolicyUpdateConfig:
+    try:
+        update = _RUN_POLICY_UPDATE_ARGUMENTS[update_name]
+    except KeyError as error:
+        raise RunTrainingCommandError(
+            f"unknown run policy update {update_name!r}"
+        ) from error
+    if normalization == "auto":
+        return update
+    if normalization not in _RUN_ADVANTAGE_NORMALIZATION_ARGUMENTS:
+        raise RunTrainingCommandError(
+            f"unknown run advantage normalization {normalization!r}"
+        )
+    normalize = normalization == "on"
+    if normalize and not update.uses_value_baseline:
+        raise RunTrainingCommandError(
+            "run advantage normalization requires value PPO"
+        )
+    return replace(update, normalize_advantage=normalize)
+
 
 @dataclass(frozen=True)
 class RunTrainingCommandConfig:
@@ -1162,6 +1188,15 @@ def _parser() -> argparse.ArgumentParser:
         default="reinforce",
     )
     parser.add_argument(
+        "--run-advantage-normalization",
+        choices=_RUN_ADVANTAGE_NORMALIZATION_ARGUMENTS,
+        default="auto",
+        help=(
+            "override value-PPO advantage normalization; auto preserves the "
+            "selected update profile"
+        ),
+    )
+    parser.add_argument(
         "--sampling-mode",
         choices=tuple(mode.value for mode in RunSamplingMode),
         default=RunSamplingMode.INDEPENDENT_COHORTS.value,
@@ -1207,9 +1242,10 @@ def main() -> int:
             combat_decision_rule=FrozenDecisionRule(
                 arguments.combat_decision_rule
             ),
-            policy_update=_RUN_POLICY_UPDATE_ARGUMENTS[
-                arguments.run_policy_update
-            ],
+            policy_update=_resolve_run_policy_update(
+                arguments.run_policy_update,
+                arguments.run_advantage_normalization,
+            ),
             sampling_mode=RunSamplingMode(arguments.sampling_mode),
             episode_root_attempts=arguments.episode_root_attempts,
             potion_lane=RunPotionLane(arguments.potion_lane),

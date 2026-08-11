@@ -24,6 +24,8 @@ param(
     [string]$CombatAllLossAxis = "none",
     [ValidateSet("reinforce", "ppo-clip-value")]
     [string]$RunPolicyUpdate = "reinforce",
+    [ValidateSet("auto", "on", "off")]
+    [string]$RunAdvantageNormalization = "auto",
     [long]$ModelSeed = 0,
     [long]$BehaviorSeedBase = 1000,
     [double]$CombatLearningRate = 0.001,
@@ -635,6 +637,7 @@ switch ($Command) {
                 --decision-scope $DecisionScope `
                 --combat-decision-rule $CombatDecisionRule `
                 --run-policy-update $RunPolicyUpdate `
+                --run-advantage-normalization $RunAdvantageNormalization `
                 --sampling-mode $SamplingMode `
                 @episodeRootArguments `
                 --potion-lane $RunPotionLane `

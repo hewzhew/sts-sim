@@ -26,13 +26,31 @@ from sts_learning.published_run_behavior import (
     recover_published_run_behavior,
 )
 from sts_learning.train_run import (
+    RunTrainingCommandError,
     RunTrainingCommandConfig,
+    _resolve_run_policy_update,
     run_run_training,
 )
 from sts_learning import (
     RunPolicyUpdateConfig,
     TerminalAdvantageMode,
 )
+
+
+def test_run_advantage_normalization_override_is_typed() -> None:
+    automatic = _resolve_run_policy_update("ppo-clip-value", "auto")
+    enabled = _resolve_run_policy_update("ppo-clip-value", "on")
+    disabled = _resolve_run_policy_update("ppo-clip-value", "off")
+
+    assert automatic.normalize_advantage is True
+    assert enabled.normalize_advantage is True
+    assert disabled.normalize_advantage is False
+    assert disabled.rule is automatic.rule
+    assert disabled.epochs == automatic.epochs
+    with pytest.raises(RunTrainingCommandError, match="requires value PPO"):
+        _resolve_run_policy_update("reinforce", "on")
+    with pytest.raises(RunTrainingCommandError, match="unknown"):
+        _resolve_run_policy_update("ppo-clip-value", "sideways")
 
 
 def test_run_evaluation_uses_frozen_combat_behavior_without_recovery(

@@ -180,6 +180,11 @@ Warm-start bounded whole-run on-policy training with:
   -HeldOutSeedStart 1000000
 ```
 
+Value-PPO defaults to its provenance-bound global advantage normalization.
+`-RunAdvantageNormalization off` is the explicit single-variable ablation;
+`auto` preserves the selected update profile. The journal records both the
+configured choice and the observed pre/post-normalization signal distributions.
+
 The session copies, rather than aliases, the combat scorer; generation zero
 then belongs to the whole-run terminal-floor objective and a new behavior
 manifest. Training and evaluation use the stable disjoint seed partitions,

@@ -1233,6 +1233,12 @@ normalization, whether normalization ran, and how many directions changed sign
 These are signal-formation facts, not automatic rejection criteria. Raw sign
 counts remain distinguishable from attempt-equal sign weight and weighted
 moments, so a long attempt cannot silently dominate the diagnostic.
+`-RunAdvantageNormalization auto` preserves the selected update profile. For a
+single-variable value-PPO ablation, `on` or `off` explicitly selects global
+attempt-weighted advantage normalization and is retained in trainer provenance
+and the journal. `on` is rejected for REINFORCE. This switch changes the policy
+gradient estimator, not the environment return or critic target; compare it on
+identical frozen training cohorts and disjoint held-out cohorts.
 It also aggregates the first four completed
 combats by ordinal:
 net post-combat HP already includes relic recovery such as Burning Blood, so
