@@ -4,11 +4,17 @@ import unittest
 from collections.abc import Mapping, Sequence
 from dataclasses import replace
 
-from learning.tests.driver_fixtures import FakeBatchEnv, RecordingPolicy
+from learning.tests.driver_fixtures import (
+    FakeBatchEnv,
+    NumpyWinningBatchEnv,
+    RecordingPolicy,
+)
 from learning.tests.policy_fixtures import BEHAVIOR_MANIFEST_ID
 from sts_learning import (
     BatchPolicyChoice,
     BehaviorManifestId,
+    AttemptAssemblyLimits,
+    ExperienceLimits,
     HeldOutEvaluationDelta,
     HeldOutEvaluationError,
     HeldOutEvaluationSpec,
@@ -17,6 +23,7 @@ from sts_learning import (
     SeedPartition,
     SeedSchedule,
     evaluate_held_out_behavior,
+    evaluate_held_out_behavior_with_public_trajectories,
     evaluate_paired_held_out_behaviors,
 )
 
@@ -31,6 +38,16 @@ class FixedOrdinalPolicy:
         assert isinstance(slots, Sequence)
         return BatchPolicyChoice.deterministic(
             [self.ordinal] * len(slots),
+            self.behavior_manifest_id,
+        )
+
+
+class NumpyFirstPolicy:
+    behavior_manifest_id = BEHAVIOR_MANIFEST_ID
+
+    def choose(self, decision_batch: Mapping[str, object]) -> BatchPolicyChoice:
+        return BatchPolicyChoice.deterministic(
+            [0] * len(decision_batch["slot_indices"]),  # type: ignore[arg-type]
             self.behavior_manifest_id,
         )
 
@@ -50,6 +67,65 @@ class OnlyOrdinalOneTerminatesEnv(FakeBatchEnv):
 
 
 class HeldOutEvaluationTests(unittest.TestCase):
+    def test_trajectory_evaluation_retains_only_complete_public_attempts(self) -> None:
+        result = evaluate_held_out_behavior_with_public_trajectories(
+            NumpyWinningBatchEnv,
+            NumpyFirstPolicy(),
+            schedule=SeedSchedule(SeedPartition.HELD_OUT),
+            spec=HeldOutEvaluationSpec(
+                slot_count=1,
+                terminal_attempt_target=2,
+                max_batch_steps=2,
+            ),
+            experience_limits=ExperienceLimits(
+                max_decisions=16,
+                max_payload_bytes=1024 * 1024,
+            ),
+            attempt_limits=AttemptAssemblyLimits(
+                max_open_attempts=1,
+                max_decisions_per_attempt=16,
+                max_payload_bytes_per_attempt=1024 * 1024,
+            ),
+        )
+
+        self.assertTrue(result.evaluation.complete)
+        self.assertEqual(len(result.trajectories), 2)
+        self.assertEqual(
+            tuple(row.terminal.terminal_reward for row in result.trajectories),
+            (1, 1),
+        )
+        self.assertTrue(
+            all(
+                decision.public_snapshot.is_combat
+                for trajectory in result.trajectories
+                for decision in trajectory.decisions
+            )
+        )
+
+    def test_trajectory_evaluation_retains_atomic_multi_slot_overshoot(self) -> None:
+        result = evaluate_held_out_behavior_with_public_trajectories(
+            NumpyWinningBatchEnv,
+            NumpyFirstPolicy(),
+            schedule=SeedSchedule(SeedPartition.HELD_OUT),
+            spec=HeldOutEvaluationSpec(
+                slot_count=2,
+                terminal_attempt_target=1,
+                max_batch_steps=1,
+            ),
+            experience_limits=ExperienceLimits(
+                max_decisions=16,
+                max_payload_bytes=1024 * 1024,
+            ),
+            attempt_limits=AttemptAssemblyLimits(
+                max_open_attempts=2,
+                max_decisions_per_attempt=16,
+                max_payload_bytes_per_attempt=1024 * 1024,
+            ),
+        )
+
+        self.assertEqual(result.evaluation.run.summary.terminal_attempts, 2)
+        self.assertEqual(len(result.trajectories), 2)
+
     def test_evaluation_reports_atomic_multi_terminal_outcomes(self) -> None:
         created: list[FakeBatchEnv] = []
 

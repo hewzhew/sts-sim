@@ -915,10 +915,22 @@ Behavior-neutral run-critic calibration is a separate trainer identity. It may
 train only the scalar value head over fixed shared semantic features; every
 encoder and actor tensor remains frozen and is audited against the original
 combat warm start before a later PPO session can consume the checkpoint. That
-later session still starts from the original combat behavior, names the
+maintained CLI profile uses one fixed complete-attempt cohort for 256 supervised
+optimizer steps by default, with unit value-loss weight, no value clipping, and
+no finite gradient clipping; its exact step count and optimizer contract remain
+part of trainer provenance. The later session still starts from the original
+combat behavior, names the
 calibration only as critic initialization, and collects a fresh on-policy actor
 cohort. Calibration trajectories are never relabeled as actor experience, and
 the calibration publication by itself is not evidence of improved behavior.
+
+The fixed-trajectory run-critic probe is a separate non-publishing diagnostic.
+It evaluates immutable public attempt trajectories from one frozen behavior,
+splits by complete episode rather than decision row, and may fit an ephemeral
+value head without mutating or publishing the actor. Constant and direct
+public-feature baselines remain explicit so a falling loss cannot hide a
+critic that only learned the cohort return mean. Probe output is not behavior,
+training experience for a later actor update, or a teacher action source.
 
 Python recovery curricula may hold explicit opaque single-slot checkpoints.
 Saving one clones that exact in-memory run-control state only when requested;

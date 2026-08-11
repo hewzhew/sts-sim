@@ -192,7 +192,8 @@ calibration in a fresh PPO cohort with:
 .\learning\dev.ps1 train-run `
   -Behavior <completed-combat-training-directory> `
   -Output <fresh-critic-calibration-directory> `
-  -RunPolicyUpdate critic-calibration `
+  -Slots 4 -Generations 1 -AttemptsPerUpdate 8 `
+  -RunPolicyUpdate critic-calibration -CriticFitSteps 256 `
   -DecisionScope strategic -CombatDecisionRule greedy `
   -RunPotionLane never -Ascension 20
 
@@ -206,12 +207,32 @@ calibration in a fresh PPO cohort with:
 ```
 
 The calibration optimizer owns the complete scorer but freezes every shared
-encoder and actor tensor, applies only scalar value loss, and publishes its
-distinct trainer identity. PPO accepts it only after verifying the source was
-critic-only, used the same ascension, potion lane, decision scope and combat
+encoder and actor tensor, reuses one fixed complete-attempt cohort for 256
+supervised value-head steps by default, applies unit scalar value loss without
+value or finite gradient clipping, and publishes its distinct trainer identity.
+PPO accepts it only after verifying the source was critic-only, used the same
+ascension, potion lane, decision scope and combat
 anchor, and still matches every actor tensor from `-Behavior`. The PPO command
 then starts a new seed/RNG cohort; the calibration attempts never become its
 actor experience.
+
+Before consuming a calibration in actor PPO, challenge its frozen critic on a
+fresh complete-attempt cohort without publishing another behavior:
+
+```powershell
+.\learning\dev.ps1 probe-run-critic `
+  -Behavior <completed-run-publication-with-scalar-critic> `
+  -Output <fresh-probe-directory> -Ascension 20 `
+  -ProbeTrainAttempts 24 -ProbeHeldOutAttempts 8 `
+  -ProbeHeadFitSteps 256 -MaxBatchSteps 32768 `
+  -BehaviorSeed 10000 -HeldOutSeedStart 1000000 `
+  -RunPotionLane never
+```
+
+The probe holds actor tensors fixed, splits only by complete attempts, and
+compares constant, direct public-run-feature ridge, published-critic, and
+ephemeral head-only predictions. Its output is learnability evidence, not a
+checkpoint or a capability claim.
 
 The session copies, rather than aliases, the combat scorer; generation zero
 then belongs to the whole-run terminal-floor objective and a new behavior
@@ -850,7 +871,8 @@ eliminating one small PyTorch forward per historical decision. The caller must
 inject semantic concat row and input-array-byte limits; batching is never an
 excuse for unbounded replay memory. The opt-in whole-run `ppo-clip-value`
 profile keeps that exact attempt-equal weighting, trains one state-value row
-against the attempt's final floor-progress return, and freezes the resulting
+per eligible decision against its unnormalized decision-local return-to-go,
+and freezes the resulting
 rollout advantage across its bounded PPO epochs. This is long-horizon credit,
 not a static HP reward: early combat HP, Burning Blood recovery, potions, and
 later route consequences remain part of the observed state and final outcome

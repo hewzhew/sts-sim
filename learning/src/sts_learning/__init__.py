@@ -137,9 +137,11 @@ from .evaluation import (
     HeldOutEvaluationError,
     HeldOutEvaluationResult,
     HeldOutEvaluationSpec,
+    HeldOutTrajectoryEvaluationResult,
     PairedHeldOutEvaluationResult,
     PairedHeldOutEvaluationSpec,
     evaluate_held_out_behavior,
+    evaluate_held_out_behavior_with_public_trajectories,
     evaluate_paired_held_out_behaviors,
 )
 from .manifests import (
@@ -352,6 +354,7 @@ __all__ = [
     "HeldOutEvaluationError",
     "HeldOutEvaluationResult",
     "HeldOutEvaluationSpec",
+    "HeldOutTrajectoryEvaluationResult",
     "InitialPopulation",
     "ManifestArtifactId",
     "ManifestArtifactKind",
@@ -424,6 +427,7 @@ __all__ = [
     "concatenate_semantic_decision_batches",
     "plan_semantic_decision_batch_chunks",
     "evaluate_held_out_behavior",
+    "evaluate_held_out_behavior_with_public_trajectories",
     "evaluate_paired_held_out_behaviors",
     "floor_progress_terminal_return",
     "iter_payload_arrays",

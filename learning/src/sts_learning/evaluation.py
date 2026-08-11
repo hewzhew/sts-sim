@@ -6,6 +6,11 @@ import operator
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
+from .attempts import (
+    AttemptAssemblyDelivery,
+    AttemptAssemblyLimits,
+    BoundedAttemptAssembler,
+)
 from .driver import (
     BatchEnvironment,
     BatchPolicy,
@@ -15,7 +20,12 @@ from .driver import (
     initialize_population,
 )
 from .decision_progress import BridgeDecisionProgressProvider
+from .experience import ExperienceLimits, ExperienceSegmentBuffer
 from .policy import BatchPolicyChoice, BehaviorManifestId
+from .public_trajectory import (
+    PublicAttemptTrajectoryV1,
+    build_public_attempt_trajectory,
+)
 from .recovery import RecoverySlotSnapshot, TerminalAccountingBatch
 from .seeds import SeedPartition, SeedSchedule
 
@@ -66,6 +76,33 @@ class HeldOutEvaluationResult:
     @property
     def step_limit_reached(self) -> bool:
         return self.run.step_limit_reached
+
+
+@dataclass(frozen=True)
+class HeldOutTrajectoryEvaluationResult:
+    """One frozen evaluation plus its bounded neutral public trajectories."""
+
+    evaluation: HeldOutEvaluationResult
+    trajectories: tuple[PublicAttemptTrajectoryV1, ...]
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.evaluation, HeldOutEvaluationResult):
+            raise HeldOutEvaluationError(
+                "trajectory evaluation requires a typed evaluation result"
+            )
+        trajectories = tuple(self.trajectories)
+        if not all(
+            isinstance(trajectory, PublicAttemptTrajectoryV1)
+            for trajectory in trajectories
+        ):
+            raise HeldOutEvaluationError(
+                "trajectory evaluation contains a malformed public trajectory"
+            )
+        if len(trajectories) != self.evaluation.run.summary.terminal_attempts:
+            raise HeldOutEvaluationError(
+                "public trajectory count disagrees with terminal attempts"
+            )
+        object.__setattr__(self, "trajectories", trajectories)
 
 
 @dataclass(frozen=True)
@@ -201,6 +238,27 @@ class _ManifestLockedPolicy:
         return choice
 
 
+class _PublicTrajectoryCollector:
+    """Convert one bounded all-terminal stream without retaining fragments."""
+
+    def __init__(self) -> None:
+        self.trajectories: list[PublicAttemptTrajectoryV1] = []
+
+    def __call__(self, delivery: AttemptAssemblyDelivery) -> None:
+        if not isinstance(delivery, AttemptAssemblyDelivery):
+            raise HeldOutEvaluationError(
+                "trajectory collector requires a typed attempt delivery"
+            )
+        if delivery.dropped:
+            raise HeldOutEvaluationError(
+                "held-out trajectory collection dropped a bounded attempt"
+            )
+        self.trajectories.extend(
+            build_public_attempt_trajectory(attempt)
+            for attempt in delivery.completed
+        )
+
+
 def evaluate_held_out_behavior(
     env_factory: Callable[[list[int]], BatchEnvironment],
     policy: BatchPolicy,
@@ -256,6 +314,100 @@ def evaluate_held_out_behavior(
         schedule_start=schedule,
         schedule_end=driver.schedule,
         run=run,
+    )
+
+
+def evaluate_held_out_behavior_with_public_trajectories(
+    env_factory: Callable[[list[int]], BatchEnvironment],
+    policy: BatchPolicy,
+    *,
+    schedule: SeedSchedule,
+    spec: HeldOutEvaluationSpec,
+    experience_limits: ExperienceLimits,
+    attempt_limits: AttemptAssemblyLimits,
+) -> HeldOutTrajectoryEvaluationResult:
+    """Evaluate one frozen behavior and retain only complete public attempts.
+
+    This diagnostic path keeps the evaluation behavior immutable and uses the
+    same no-recovery seed schedule as ordinary held-out evaluation.  It owns no
+    optimizer, publication, checkpoint, or teacher-label projection.
+    """
+
+    if not callable(env_factory):
+        raise HeldOutEvaluationError(
+            "trajectory evaluation environment factory must be callable"
+        )
+    if not callable(getattr(policy, "choose", None)):
+        raise HeldOutEvaluationError(
+            "trajectory evaluation policy must provide choose()"
+        )
+    manifest_id = getattr(policy, "behavior_manifest_id", None)
+    if not isinstance(manifest_id, BehaviorManifestId):
+        raise HeldOutEvaluationError(
+            "trajectory evaluation policy must expose a typed manifest identity"
+        )
+    if not isinstance(schedule, SeedSchedule):
+        raise HeldOutEvaluationError(
+            "trajectory evaluation schedule must be a SeedSchedule"
+        )
+    if schedule.partition is not SeedPartition.HELD_OUT:
+        raise HeldOutEvaluationError(
+            "trajectory evaluation requires a held-out seed schedule"
+        )
+    if not isinstance(spec, HeldOutEvaluationSpec):
+        raise HeldOutEvaluationError("trajectory evaluation spec must be typed")
+    if not isinstance(experience_limits, ExperienceLimits):
+        raise HeldOutEvaluationError(
+            "trajectory evaluation experience limits must be typed"
+        )
+    if not isinstance(attempt_limits, AttemptAssemblyLimits):
+        raise HeldOutEvaluationError(
+            "trajectory evaluation attempt limits must be typed"
+        )
+
+    population = initialize_population(
+        env_factory,
+        slot_count=spec.slot_count,
+        schedule=schedule,
+        max_recoveries_per_episode=0,
+    )
+    progress_provider = BridgeDecisionProgressProvider(population.env)
+    bind_progress = getattr(policy, "bind_progress_provider", None)
+    active_policy = (
+        bind_progress(progress_provider) if callable(bind_progress) else policy
+    )
+    if getattr(active_policy, "behavior_manifest_id", None) != manifest_id:
+        raise HeldOutEvaluationError(
+            "environment binding changed behavior manifest identity"
+        )
+    collector = _PublicTrajectoryCollector()
+    assembler = BoundedAttemptAssembler(attempt_limits, collector)
+    driver = OnlineBatchDriver(
+        population,
+        policy=_ManifestLockedPolicy(active_policy, manifest_id),
+        curriculum=_NoHeldOutRecovery(),
+        experience_buffer=ExperienceSegmentBuffer(experience_limits),
+        experience_sink=assembler,
+        decision_progress_provider=progress_provider,
+    )
+    run = driver.run_until_terminal_attempts(
+        terminal_attempts=spec.terminal_attempt_target,
+        max_batch_steps=spec.max_batch_steps,
+    )
+    driver.flush_experience()
+    evaluation = HeldOutEvaluationResult(
+        behavior_manifest_id=manifest_id,
+        schedule_start=schedule,
+        schedule_end=driver.schedule,
+        run=run,
+    )
+    if len(collector.trajectories) != run.summary.terminal_attempts:
+        raise HeldOutEvaluationError(
+            "trajectory evaluation did not retain every terminal attempt"
+        )
+    return HeldOutTrajectoryEvaluationResult(
+        evaluation=evaluation,
+        trajectories=tuple(collector.trajectories),
     )
 
 

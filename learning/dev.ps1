@@ -1,6 +1,6 @@
 param(
     [Parameter(Mandatory = $true, Position = 0)]
-    [ValidateSet("configure", "doctor", "test", "verify", "check-bridge", "refresh-bridge", "train-combat", "train-combat-recovery", "evaluate-combat", "evaluate-combat-potions", "audit-combat-policy", "compare-combat-paired", "evaluate-run", "evaluate-run-potions", "compare-run-paired", "collect-run-roots", "train-run")]
+    [ValidateSet("configure", "doctor", "test", "verify", "check-bridge", "refresh-bridge", "train-combat", "train-combat-recovery", "evaluate-combat", "evaluate-combat-potions", "audit-combat-policy", "compare-combat-paired", "evaluate-run", "evaluate-run-potions", "compare-run-paired", "probe-run-critic", "collect-run-roots", "train-run")]
     [string]$Command,
     [string]$Python,
     [string]$MaturinPython = "python",
@@ -46,6 +46,11 @@ param(
     [int]$EvaluationAttempts = 16,
     [int]$EvaluationMaxBatchSteps = 4096,
     [long]$EvaluationBehaviorSeed = 100000,
+    [int]$ProbeTrainAttempts = 24,
+    [int]$ProbeHeldOutAttempts = 8,
+    [int]$ProbeHeadFitSteps = 256,
+    [double]$ProbeHeadFitLearningRate = 0.001,
+    [int]$CriticFitSteps = 256,
     [int]$WallMs = 60000,
     [int]$MinFloor = 2,
     [Nullable[int]]$MaxFloor,
@@ -515,6 +520,31 @@ switch ($Command) {
             }
         }
     }
+    "probe-run-critic" {
+        if ($null -eq $Ascension) {
+            throw "probe-run-critic requires -Ascension 0..20"
+        }
+        $pythonPath = Get-ConfiguredPython
+        Invoke-Doctor $pythonPath
+        Invoke-WithLearningPath {
+            & $pythonPath -m sts_learning.run_critic_probe `
+                --behavior $Behavior `
+                --output $Output `
+                --ascension $Ascension `
+                --train-attempts $ProbeTrainAttempts `
+                --held-out-attempts $ProbeHeldOutAttempts `
+                --max-batch-steps $MaxBatchSteps `
+                --behavior-seed $BehaviorSeed `
+                --held-out-seed-start $HeldOutSeedStart `
+                --head-fit-steps $ProbeHeadFitSteps `
+                --head-fit-learning-rate $ProbeHeadFitLearningRate `
+                --model-seed $ModelSeed `
+                --potion-lane $RunPotionLane
+            if ($LASTEXITCODE -ne 0) {
+                throw "run critic probe command failed"
+            }
+        }
+    }
     "collect-run-roots" {
         if ($null -eq $Ascension) {
             throw "collect-run-roots requires -Ascension 0..20"
@@ -647,6 +677,7 @@ switch ($Command) {
                 --combat-decision-rule $CombatDecisionRule `
                 --run-policy-update $RunPolicyUpdate `
                 --run-advantage-normalization $RunAdvantageNormalization `
+                --critic-fit-steps $CriticFitSteps `
                 --sampling-mode $SamplingMode `
                 @episodeRootArguments `
                 --potion-lane $RunPotionLane `

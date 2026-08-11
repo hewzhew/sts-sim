@@ -88,15 +88,13 @@ class RunPolicyUpdateConfig:
         )
 
     @classmethod
-    def critic_calibration(cls) -> RunPolicyUpdateConfig:
+    def critic_calibration(cls, *, steps: int = 256) -> RunPolicyUpdateConfig:
         """Fit only the value head while leaving every actor tensor fixed."""
 
         return cls(
             rule=RunPolicyUpdateRule.CRITIC_CALIBRATION,
-            epochs=4,
-            max_grad_norm=0.5,
-            value_loss_coefficient=0.5,
-            value_clip_coefficient=0.2,
+            epochs=steps,
+            value_loss_coefficient=1.0,
         )
 
     @property
@@ -120,9 +118,14 @@ class RunPolicyUpdateConfig:
             ) from error
         if epochs <= 0:
             raise TerminalReturnError("run policy update epochs must be positive")
-        if epochs > 64:
+        maximum_epochs = (
+            1024
+            if self.rule is RunPolicyUpdateRule.CRITIC_CALIBRATION
+            else 64
+        )
+        if epochs > maximum_epochs:
             raise TerminalReturnError(
-                "run policy update epochs must not exceed 64"
+                f"run policy update epochs must not exceed {maximum_epochs}"
             )
         clip = _finite_float(self.clip_coefficient, "clip_coefficient")
         entropy = _finite_float(

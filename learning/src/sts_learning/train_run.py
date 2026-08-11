@@ -106,6 +106,8 @@ _RUN_ADVANTAGE_NORMALIZATION_ARGUMENTS = ("auto", "on", "off")
 def _resolve_run_policy_update(
     update_name: str,
     normalization: str,
+    *,
+    critic_fit_steps: int = 256,
 ) -> RunPolicyUpdateConfig:
     try:
         update = _RUN_POLICY_UPDATE_ARGUMENTS[update_name]
@@ -113,6 +115,13 @@ def _resolve_run_policy_update(
         raise RunTrainingCommandError(
             f"unknown run policy update {update_name!r}"
         ) from error
+    if update.rule is RunPolicyUpdateRule.CRITIC_CALIBRATION:
+        try:
+            update = RunPolicyUpdateConfig.critic_calibration(
+                steps=critic_fit_steps
+            )
+        except (TypeError, ValueError) as error:
+            raise RunTrainingCommandError(str(error)) from error
     if normalization == "auto":
         return update
     if normalization not in _RUN_ADVANTAGE_NORMALIZATION_ARGUMENTS:
@@ -1369,6 +1378,15 @@ def _parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--critic-fit-steps",
+        type=int,
+        default=256,
+        help=(
+            "fixed-cohort supervised value-head steps used only by "
+            "critic-calibration"
+        ),
+    )
+    parser.add_argument(
         "--sampling-mode",
         choices=tuple(mode.value for mode in RunSamplingMode),
         default=RunSamplingMode.INDEPENDENT_COHORTS.value,
@@ -1417,6 +1435,7 @@ def main() -> int:
             policy_update=_resolve_run_policy_update(
                 arguments.run_policy_update,
                 arguments.run_advantage_normalization,
+                critic_fit_steps=arguments.critic_fit_steps,
             ),
             sampling_mode=RunSamplingMode(arguments.sampling_mode),
             episode_root_attempts=arguments.episode_root_attempts,

@@ -651,8 +651,10 @@ Configure one stable Python 3.12 training runtime once, then use the small
 .\learning\dev.ps1 evaluate-run -Behavior <training-dir> -Output <fresh-dir> -Ascension <0..20> -Attempts 8 -MaxBatchSteps 4096 -BehaviorSeed 10000 -HeldOutSeedStart 0 -RunPotionLane trained
 .\learning\dev.ps1 evaluate-run-potions -Behavior <training-dir> -Output <fresh-dir> -Ascension <0..20> -Attempts 8 -MaxBatchSteps 4096 -BehaviorSeed 10000 -HeldOutSeedStart 0
 .\learning\dev.ps1 compare-run-paired -BaselineBehavior <baseline-dir> -CandidateBehavior <candidate-dir> [-StrategicBehavior <shared-strategic-dir>] -Output <fresh-dir> -Ascension <0..20> -Attempts 8 -MaxBatchSteps 4096 -BehaviorSeed 10000 -HeldOutSeedStart 0 -RunPotionLane never
+.\learning\dev.ps1 probe-run-critic -Behavior <completed-run-publication-with-scalar-critic> -Output <fresh-dir> -Ascension <0..20> -ProbeTrainAttempts 24 -ProbeHeldOutAttempts 8 -ProbeHeadFitSteps 256 -MaxBatchSteps 32768 -BehaviorSeed 10000 -HeldOutSeedStart 1000000 -RunPotionLane trained
 .\learning\dev.ps1 collect-run-roots -Behavior <training-dir-or-combat-anchor> [-StrategicBehavior <shared-strategic-dir>] -Output <fresh.bin> -Ascension <0..20> -Roots 2 -MaxBatchSteps 4096 -WallMs 60000 -BehaviorSeed 120000 -RootSeedStart 10000000 -RootSeedPartition training -RootHeldOutNumerator 1 -RootPartitionDenominator 10 -MinFloor 2 -MinUsablePotions 1 [-CombatFightClass any|ordinary|elite|boss] -RunPotionLane trained
 .\learning\dev.ps1 train-run -Behavior <combat-training-dir> -Output <fresh-dir> -Ascension <0..20> -Slots 4 -Generations 1 -AttemptsPerUpdate 32 -MaxBatchSteps 4096 -EvaluationAttempts 16 -HeldOutSeedStart 1000000 -AdvantageMode decision-local-gae -DecisionScope strategic -CombatDecisionRule greedy -SamplingMode independent-cohorts -RunPolicyUpdate ppo-clip-value -RunPotionLane trained
+.\learning\dev.ps1 train-run -Behavior <combat-training-dir> -Output <fresh-dir> -Ascension <0..20> -Slots 4 -Generations 1 -AttemptsPerUpdate 8 -MaxBatchSteps 4096 -EvaluationAttempts 4 -HeldOutSeedStart 1000000 -AdvantageMode decision-local-gae -DecisionScope strategic -CombatDecisionRule greedy -SamplingMode independent-cohorts -RunPolicyUpdate critic-calibration -CriticFitSteps 256 -RunPotionLane trained
 ```
 
 Every learning command that creates a fresh run requires an explicit
@@ -1243,13 +1245,33 @@ identical frozen training cohorts and disjoint held-out cohorts.
 uses the same decision-local return-to-go target but applies only scalar value
 loss: every shared semantic encoder and actor tensor is frozen, actor decision
 count and trained-decision count stay zero, and the publication receives a
-distinct trainer identity. It is calibration evidence, not a policy-improvement
-claim. A later `ppo-clip-value` run may name it explicitly with
-`-CriticInitializationBehavior`; that run still names the original combat
+distinct trainer identity. The maintained CLI profile uses one fixed complete-
+attempt cohort; `-CriticFitSteps` defaults to 256 supervised updates with value-
+loss coefficient `1.0`, no value clipping, and no finite gradient clipping.
+Values above 1024 are rejected. The journal's legacy `run_policy_epochs` and
+optimizer-step fields therefore mean critic fit steps for this profile; actor
+clip, entropy, and KL fields are inert. It is calibration evidence, not a
+policy-improvement claim. A later `ppo-clip-value` run may name it explicitly
+with `-CriticInitializationBehavior`; that run still names the original combat
 publication with `-Behavior`, verifies identical actor tensors plus matching
 ascension, potion lane, decision scope, combat rule and immutable combat anchor,
 then collects a fresh actor cohort under its own seeds and behavior RNG. No
 calibration attempt is reused as PPO actor experience.
+`probe-run-critic` is the non-publishing learnability diagnostic for that
+boundary. It collects one fixed no-recovery `HELD_OUT` cohort under the immutable
+published behavior, then splits its ordered complete attempts into probe-train
+and probe-held-out partitions without shuffling decision rows. It compares a
+constant predictor, a direct public run-feature ridge baseline, the published
+scalar critic, and a fresh head-only capacity fit over the unchanged actor
+encoder.
+The head-only fit may deliberately reuse its fixed training trajectories for
+the configured supervised steps because it never becomes behavior and writes
+no checkpoint. `challenge.json` reports attempt-equal train/held-out MSE,
+explained variance, prediction spread, and attempt-pair-equal concordance after
+collapsing repeated decisions within each attempt/floor/context group. Prediction
+ties contribute `0.5` to that concordance instead of being called discordant.
+It is a representation/optimization diagnostic, not an actor update or a
+capability publication.
 It also aggregates the first four completed
 combats by ordinal:
 net post-combat HP already includes relic recovery such as Burning Blood, so

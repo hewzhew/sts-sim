@@ -57,6 +57,18 @@ def test_run_advantage_normalization_override_is_typed() -> None:
         _resolve_run_policy_update("ppo-clip-value", "sideways")
     calibration = _resolve_run_policy_update("critic-calibration", "auto")
     assert calibration.updates_actor is False
+    assert calibration.epochs == 256
+    assert calibration.max_grad_norm is None
+    assert calibration.value_clip_coefficient is None
+    assert calibration.value_loss_coefficient == pytest.approx(1.0)
+    assert (
+        _resolve_run_policy_update(
+            "critic-calibration",
+            "auto",
+            critic_fit_steps=32,
+        ).epochs
+        == 32
+    )
     with pytest.raises(RunTrainingCommandError, match="no actor"):
         _resolve_run_policy_update("critic-calibration", "off")
 
@@ -482,7 +494,7 @@ def test_run_critic_calibration_is_actor_neutral_and_seeds_fresh_ppo(
             evaluation_behavior_seed=501,
             held_out_seed_start=1000,
             ascension_level=20,
-            policy_update=RunPolicyUpdateConfig.critic_calibration(),
+            policy_update=RunPolicyUpdateConfig.critic_calibration(steps=4),
         ),
         combat_bridge=combat_bridge,
         run_bridge=run_bridge,

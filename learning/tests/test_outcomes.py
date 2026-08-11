@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+from dataclasses import replace
 
 import numpy as np
 
@@ -178,6 +179,18 @@ class OnPolicyObjectiveConfigTests(unittest.TestCase):
                 advantage_mode=TerminalAdvantageMode.LEAVE_ONE_OUT,
                 policy_update=update,
             )
+
+    def test_critic_calibration_owns_a_larger_unclipped_supervised_budget(self) -> None:
+        update = RunPolicyUpdateConfig.critic_calibration()
+
+        self.assertEqual(update.epochs, 256)
+        self.assertIsNone(update.value_clip_coefficient)
+        self.assertIsNone(update.max_grad_norm)
+        self.assertEqual(update.value_loss_coefficient, 1.0)
+        with self.assertRaisesRegex(TerminalReturnError, "1024"):
+            RunPolicyUpdateConfig.critic_calibration(steps=1025)
+        with self.assertRaisesRegex(TerminalReturnError, "64"):
+            replace(RunPolicyUpdateConfig.ppo_clip_value(), epochs=65)
 
 
 if __name__ == "__main__":
