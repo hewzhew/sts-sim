@@ -27,10 +27,15 @@ from .published_combat_behavior import recover_compatible_combat_scorer
 from .semantic_concat import concatenate_semantic_decision_batches
 from .torch_combat_session_config import CombatSessionBridge, CombatWinSessionLimits
 from .torch_policy import (
+    RaggedCandidateLogits,
     RaggedCandidateScorer,
     ragged_cross_entropy,
 )
-from .torch_provenance import AdamTrainingConfig
+from .torch_provenance import (
+    AdamTrainingConfig,
+    COMBAT_SEARCH_DISTILLATION_LEGACY_LOSS,
+    COMBAT_SEARCH_DISTILLATION_PROPOSAL_KL_LOSS,
+)
 
 
 class CombatSearchDistillationError(RuntimeError):
@@ -132,7 +137,7 @@ def run_combat_search_distillation_spike(
         warm_start.source_manifest_id,
         rollout_limits,
     )
-    scorer, optimizer_config, update_losses, gradient_norms = (
+    scorer, optimizer_config, update_losses, gradient_norms, loss_components = (
         fit_combat_search_distillation_scorer(
             anchor,
             training,
@@ -140,6 +145,7 @@ def run_combat_search_distillation_spike(
             epochs=epochs,
             learning_rate=learning_rate,
             max_grad_norm=max_grad_norm,
+            loss=COMBAT_SEARCH_DISTILLATION_PROPOSAL_KL_LOSS,
         )
     )
 
@@ -174,6 +180,7 @@ def run_combat_search_distillation_spike(
             epochs=epochs,
             learning_rate=optimizer_config.learning_rate,
             max_grad_norm=max_grad_norm,
+            loss=COMBAT_SEARCH_DISTILLATION_PROPOSAL_KL_LOSS,
         )
         recovered_candidate = recover_combat_search_distillation_candidate(
             candidate_output,
@@ -229,7 +236,7 @@ def run_combat_search_distillation_spike(
             "learning_rate": learning_rate,
             "max_grad_norm": max_grad_norm,
             "optimizer": "fresh_adam",
-            "loss": "ragged_cross_entropy_on_strict_proposal_else_frozen_baseline",
+            "loss": COMBAT_SEARCH_DISTILLATION_PROPOSAL_KL_LOSS,
             "potion_lane": "never",
             "held_out_full_combat_replicates_per_root": 2,
             "held_out_full_combat_rule": "frozen_greedy_model_only_no_search_suffix",
@@ -237,6 +244,7 @@ def run_combat_search_distillation_spike(
         "updates": {
             "losses": tuple(update_losses),
             "gradient_norms": tuple(gradient_norms),
+            "loss_components": loss_components,
         },
         "initial": {
             "training": initial_training,
@@ -410,17 +418,26 @@ def fit_combat_search_distillation_scorer(
     epochs: int,
     learning_rate: float,
     max_grad_norm: float,
+    loss: str = COMBAT_SEARCH_DISTILLATION_PROPOSAL_KL_LOSS,
 ) -> tuple[
     RaggedCandidateScorer,
     AdamTrainingConfig,
     tuple[float, ...],
     tuple[float, ...],
+    tuple[dict[str, float], ...],
 ]:
-    """Apply the bounded proposal-else-baseline update to a frozen scorer."""
+    """Apply one explicit bounded search-distillation objective."""
 
     epochs = _positive(epochs, "epochs")
     learning_rate = _positive_float(learning_rate, "learning_rate")
     max_grad_norm = _positive_float(max_grad_norm, "max_grad_norm")
+    if loss not in {
+        COMBAT_SEARCH_DISTILLATION_LEGACY_LOSS,
+        COMBAT_SEARCH_DISTILLATION_PROPOSAL_KL_LOSS,
+    }:
+        raise CombatSearchDistillationError(
+            "unsupported combat search distillation loss"
+        )
     if not isinstance(anchor, RaggedCandidateScorer):
         raise CombatSearchDistillationError(
             "distillation requires a maintained anchor scorer"
@@ -436,20 +453,58 @@ def fit_combat_search_distillation_scorer(
     scorer.train()
     optimizer_config = AdamTrainingConfig(learning_rate=learning_rate)
     optimizer = optimizer_config.create(scorer.parameters())
-    training_batch, training_targets = combat_search_distillation_policy_batch(
-        training,
-        limits,
-    )
+    proposal_batch, proposal_targets = _proposal_batch(training, limits)
+    retained_batch = _retained_batch(training, limits)
+    retained_anchor_logits: RaggedCandidateLogits | None = None
+    if retained_batch is not None:
+        with torch.inference_mode():
+            retained_anchor_logits = anchor(retained_batch)
+        retained_anchor_logits = RaggedCandidateLogits(
+            values=retained_anchor_logits.values.detach().clone(),
+            row_splits=retained_anchor_logits.row_splits.detach().clone(),
+        )
+    legacy_batch: Mapping[str, object] | None = None
+    legacy_targets: tuple[int, ...] | None = None
+    if loss == COMBAT_SEARCH_DISTILLATION_LEGACY_LOSS:
+        legacy_batch, legacy_targets = combat_search_distillation_policy_batch(
+            training,
+            limits,
+        )
     update_losses: list[float] = []
     gradient_norms: list[float] = []
+    loss_components: list[dict[str, float]] = []
     for _ in range(epochs):
         optimizer.zero_grad(set_to_none=True)
-        loss = ragged_cross_entropy(scorer(training_batch), training_targets)
-        if not bool(torch.isfinite(loss)):
+        if legacy_batch is not None and legacy_targets is not None:
+            policy_cross_entropy = ragged_cross_entropy(
+                scorer(legacy_batch),
+                legacy_targets,
+            )
+            proposal_cross_entropy = ragged_cross_entropy(
+                scorer(proposal_batch),
+                proposal_targets,
+            )
+            retained_forward_kl = policy_cross_entropy.new_zeros(())
+            objective = policy_cross_entropy
+        else:
+            policy_cross_entropy = None
+            proposal_cross_entropy = ragged_cross_entropy(
+                scorer(proposal_batch),
+                proposal_targets,
+            )
+            if retained_batch is None or retained_anchor_logits is None:
+                retained_forward_kl = proposal_cross_entropy.new_zeros(())
+            else:
+                retained_forward_kl = _ragged_forward_kl(
+                    retained_anchor_logits,
+                    scorer(retained_batch),
+                )
+            objective = proposal_cross_entropy + retained_forward_kl
+        if not bool(torch.isfinite(objective)):
             raise CombatSearchDistillationError(
                 "distillation loss is not finite"
             )
-        loss.backward()
+        objective.backward()
         gradients = tuple(
             parameter.grad
             for parameter in scorer.parameters()
@@ -471,8 +526,39 @@ def fit_combat_search_distillation_scorer(
                 "distillation gradient norm is not finite"
             )
         optimizer.step()
-        update_losses.append(float(loss.detach().cpu().item()))
+        update_losses.append(float(objective.detach().cpu().item()))
         gradient_norms.append(float(norm.detach().cpu().item()))
+        with torch.no_grad():
+            proposal_after = ragged_cross_entropy(
+                scorer(proposal_batch),
+                proposal_targets,
+            )
+            if retained_batch is None or retained_anchor_logits is None:
+                retained_after = proposal_after.new_zeros(())
+            else:
+                retained_after = _ragged_forward_kl(
+                    retained_anchor_logits,
+                    scorer(retained_batch),
+                )
+        components = {
+            "proposal_cross_entropy_before_step": float(
+                proposal_cross_entropy.detach().cpu().item()
+            ),
+            "proposal_cross_entropy_after_step": float(
+                proposal_after.detach().cpu().item()
+            ),
+            "retained_forward_kl_before_step": float(
+                retained_forward_kl.detach().cpu().item()
+            ),
+            "retained_forward_kl_after_step": float(
+                retained_after.detach().cpu().item()
+            ),
+        }
+        if policy_cross_entropy is not None:
+            components["legacy_policy_cross_entropy_before_step"] = float(
+                policy_cross_entropy.detach().cpu().item()
+            )
+        loss_components.append(components)
     scorer.eval()
     scorer.requires_grad_(False)
     return (
@@ -480,6 +566,7 @@ def fit_combat_search_distillation_scorer(
         optimizer_config,
         tuple(update_losses),
         tuple(gradient_norms),
+        tuple(loss_components),
     )
 
 
@@ -597,6 +684,62 @@ def _proposal_batch(
         ),
         tuple(operator.index(record["proposal_ordinal"]) for record in records),
     )
+
+
+def _retained_batch(
+    partition: Mapping[str, object],
+    limits: CombatWinSessionLimits,
+) -> Mapping[str, object] | None:
+    records = tuple(
+        record
+        for record in partition["records"]
+        if record["proposal_ordinal"] is None
+    )
+    if not records:
+        return None
+    return concatenate_semantic_decision_batches(
+        [record["batch"] for record in records],
+        limits.concat,
+    )
+
+
+def _ragged_forward_kl(
+    teacher: RaggedCandidateLogits,
+    student: RaggedCandidateLogits,
+) -> torch.Tensor:
+    if not torch.equal(teacher.row_splits, student.row_splits):
+        raise CombatSearchDistillationError(
+            "retained teacher and candidate rows are misaligned"
+        )
+    if not bool(torch.all(torch.isfinite(teacher.values))) or not bool(
+        torch.all(torch.isfinite(student.values))
+    ):
+        raise CombatSearchDistillationError(
+            "retained teacher and candidate logits must be finite"
+        )
+    row_losses: list[torch.Tensor] = []
+    splits = teacher.row_splits.detach().cpu().tolist()
+    for start, end in zip(splits[:-1], splits[1:], strict=True):
+        teacher_log_probabilities = torch.log_softmax(
+            teacher.values[start:end],
+            dim=0,
+        )
+        student_log_probabilities = torch.log_softmax(
+            student.values[start:end],
+            dim=0,
+        )
+        teacher_probabilities = teacher_log_probabilities.exp()
+        row_losses.append(
+            torch.sum(
+                teacher_probabilities
+                * (teacher_log_probabilities - student_log_probabilities)
+            )
+        )
+    if not row_losses:
+        raise CombatSearchDistillationError(
+            "retained KL requires at least one decision row"
+        )
+    return torch.stack(row_losses).mean()
 
 
 def combat_search_distillation_policy_batch(

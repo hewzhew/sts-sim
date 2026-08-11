@@ -999,9 +999,11 @@ and terminal HP before writing the bounded suffix batch. The Python caller
 writes neither a `CombatCase` nor an action file. The witness never crosses
 into the training target; every suffix root receives a fresh equal-work search
 comparison. `combat_search_distillation_spike` may consume several such
-recovery artifact/search pairs plus disjoint natural held-out pairs. It trains
-the strict proposal where present and the frozen baseline otherwise. By default
-it writes no checkpoint. Pass `--candidate-output <fresh-dir>` only when the
+recovery artifact/search pairs plus disjoint natural held-out pairs. Strict
+proposal rows use cross-entropy; retained rows preserve the complete frozen
+baseline distribution through forward KL instead of contributing baseline-top
+hard labels. By default it writes no checkpoint. Pass
+`--candidate-output <fresh-dir>` only when the
 bounded update should be retained as an explicitly unqualified experiment. The
 candidate directory contains one exact checkpoint and greedy manifest plus
 `candidate.json`; it deliberately contains no production `training.jsonl` and
@@ -1024,11 +1026,11 @@ python -m sts_learning.train_combat_search_candidate `
 ```
 
 The default is one bounded Adam step at learning rate `3e-4`; larger epoch
-counts must be requested explicitly. On the first 39-row corpus, one step
-already recovered the full observed survival gain, while later epochs began
-overwriting unseen attack-vs-attack ordering. The command restores the written
-candidate and requires exact training logits and greedy ordinals before it
-returns. It performs no held-out evaluation and makes no teacher claim.
+counts must be requested explicitly because earlier feasibility runs showed
+that later epochs can overwrite unseen attack-vs-attack ordering. The command
+restores the written candidate and requires exact training logits and greedy ordinals before it
+returns. Its result records proposal cross-entropy and retained forward KL for
+every update. It performs no held-out evaluation and makes no teacher claim.
 
 After that parity check, collect a fresh natural root artifact and compare the
 reloaded candidate without running successor search:
@@ -1038,13 +1040,17 @@ python -m sts_learning.evaluate_combat_search_candidate `
   --artifact <fresh-natural-roots.bin> --roots <count> `
   --baseline-behavior <frozen-source-behavior> `
   --candidate <experimental-candidate-dir> `
-  --output <fresh-evaluation.json> --replicates 2
+  --output <fresh-evaluation.json> --replicates 2 `
+  [--max-experience-payload-bytes <explicit-bound>]
 ```
 
 Both scorers greedily play every complete combat with no search suffix and no
 potion actions. The result reports exact root audits, terminal outcomes, and
 win-first/final-HP comparisons. Search labels are neither needed nor accepted
-for this independent behavior check. The experiment remains
+for this independent behavior check. The default experience-payload bound is
+64 MiB; a larger explicit bound is recorded in the result, and an exhausted
+bound reports whether the baseline or candidate failed plus the exact root
+slot. The experiment remains
 `teacher_valid=false`; PPO remains out of scope until the operator is qualified
 over broader decks, relics, potions, encounters, and repeated independent
 cohorts.

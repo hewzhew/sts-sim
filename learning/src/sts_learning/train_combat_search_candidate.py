@@ -22,6 +22,7 @@ from .combat_search_distillation_spike import (
 )
 from .published_combat_behavior import recover_compatible_combat_scorer
 from .torch_combat_session_config import CombatSessionBridge, CombatWinSessionLimits
+from .torch_provenance import COMBAT_SEARCH_DISTILLATION_PROPOSAL_KL_LOSS
 
 
 class TrainCombatSearchCandidateError(RuntimeError):
@@ -84,7 +85,7 @@ def run_train_combat_search_candidate(
             training,
             limits,
         )
-        scorer, optimizer, losses, gradient_norms = (
+        scorer, optimizer, losses, gradient_norms, loss_components = (
             fit_combat_search_distillation_scorer(
                 warm_start.scorer,
                 training,
@@ -92,6 +93,7 @@ def run_train_combat_search_candidate(
                 epochs=epochs,
                 learning_rate=learning_rate,
                 max_grad_norm=max_grad_norm,
+                loss=COMBAT_SEARCH_DISTILLATION_PROPOSAL_KL_LOSS,
             )
         )
         final = combat_search_distillation_partition_metrics(
@@ -113,6 +115,7 @@ def run_train_combat_search_candidate(
             epochs=epochs,
             learning_rate=optimizer.learning_rate,
             max_grad_norm=max_grad_norm,
+            loss=COMBAT_SEARCH_DISTILLATION_PROPOSAL_KL_LOSS,
         )
         restored = recover_combat_search_distillation_candidate(
             candidate_path,
@@ -147,13 +150,12 @@ def run_train_combat_search_candidate(
             "epochs": epochs,
             "learning_rate": optimizer.learning_rate,
             "max_grad_norm": max_grad_norm,
-            "loss": (
-                "ragged_cross_entropy_on_strict_proposal_else_frozen_baseline"
-            ),
+            "loss": COMBAT_SEARCH_DISTILLATION_PROPOSAL_KL_LOSS,
         },
         "updates": {
             "losses": losses,
             "gradient_norms": gradient_norms,
+            "loss_components": loss_components,
         },
         "initial": initial,
         "final": final,

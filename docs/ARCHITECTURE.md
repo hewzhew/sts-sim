@@ -124,10 +124,17 @@ recover-search`; Rust binds root count, slot, root id, exact state hash,
 no-potion lane, candidate ordinal, witness length, and final HP before emitting
 any suffix root. No `CombatCase` or caller-written action file participates.
 The witness creates exact states only; its actions never become labels.
-Distillation still uses a strict
-search proposal where present and the frozen baseline otherwise, then evaluates
-the updated scorer by letting it choose every action in complete held-out
-combats with no search suffix. The command remains non-publishing by default.
+Distillation applies cross-entropy only to strict proposal rows. Roots without
+a strict improvement retain the complete frozen baseline distribution through
+forward `KL(anchor || candidate)` instead of turning the baseline argmax into a
+hard label. At the unchanged anchor the KL gradient is zero, so sparse proposal
+gradients are not diluted on the first bounded step; subsequent explicit steps
+pay for distribution drift on retained roots. The selected loss profile is
+part of both the candidate receipt and trainer manifest identity. Legacy
+proposal-else-baseline candidates remain exactly recoverable under their old
+identity but are not silently reinterpreted. Evaluation then lets the updated
+scorer choose every action in complete held-out combats with no search suffix.
+The command remains non-publishing by default.
 An explicit candidate output may retain one tensor-only checkpoint and exact
 greedy behavior manifest under an `experimental_unqualified` receipt. This
 candidate has no production training journal, so normal combat behavior

@@ -19,6 +19,8 @@ from .torch_combat_session_config import CombatSessionBridge, CombatWinSessionLi
 from .torch_policy import RaggedCandidateScorer, RaggedScorerConfig
 from .torch_provenance import (
     AdamTrainingConfig,
+    COMBAT_SEARCH_DISTILLATION_LEGACY_LOSS,
+    COMBAT_SEARCH_DISTILLATION_PROPOSAL_KL_LOSS,
     combat_search_distillation_manifest_template,
 )
 
@@ -49,6 +51,7 @@ class CombatSearchDistillationCandidate:
     epochs: int
     learning_rate: float
     max_grad_norm: float
+    loss: str
     scorer: RaggedCandidateScorer
 
     def __post_init__(self) -> None:
@@ -85,6 +88,7 @@ class CombatSearchDistillationCandidate:
         _positive(self.epochs, "epochs")
         _positive_float(self.learning_rate, "learning_rate")
         _positive_float(self.max_grad_norm, "max_grad_norm")
+        _loss(self.loss)
         if not isinstance(self.scorer, RaggedCandidateScorer):
             raise CombatSearchDistillationCandidateError(
                 "candidate did not restore the maintained scorer"
@@ -110,6 +114,7 @@ def publish_combat_search_distillation_candidate(
     epochs: int,
     learning_rate: float,
     max_grad_norm: float,
+    loss: str = COMBAT_SEARCH_DISTILLATION_PROPOSAL_KL_LOSS,
 ) -> dict[str, object]:
     """Write one fresh candidate root without creating a production publication."""
 
@@ -147,6 +152,7 @@ def publish_combat_search_distillation_candidate(
     normalized_epochs = _positive(epochs, "epochs")
     normalized_learning_rate = _positive_float(learning_rate, "learning_rate")
     normalized_grad_norm = _positive_float(max_grad_norm, "max_grad_norm")
+    normalized_loss = _loss(loss)
     optimizer = AdamTrainingConfig(learning_rate=normalized_learning_rate)
     template = combat_search_distillation_manifest_template(
         bridge.semantic_schema,
@@ -154,6 +160,7 @@ def publish_combat_search_distillation_candidate(
         optimizer,
         epochs=normalized_epochs,
         max_grad_norm=normalized_grad_norm,
+        loss=normalized_loss,
         device_type="cpu",
     )
 
@@ -197,9 +204,7 @@ def publish_combat_search_distillation_candidate(
         "training": {
             "epochs": normalized_epochs,
             "max_grad_norm": normalized_grad_norm,
-            "loss": (
-                "ragged_cross_entropy_on_strict_proposal_else_frozen_baseline"
-            ),
+            "loss": normalized_loss,
         },
     }
     payload["candidate_id"] = _candidate_identity(payload)
@@ -311,12 +316,7 @@ def recover_combat_search_distillation_candidate(
         training.get("max_grad_norm"),
         "max_grad_norm",
     )
-    if training.get("loss") != (
-        "ragged_cross_entropy_on_strict_proposal_else_frozen_baseline"
-    ):
-        raise CombatSearchDistillationCandidateError(
-            "candidate loss contract is unsupported"
-        )
+    loss = _loss(training.get("loss"))
 
     store = BoundedTorchCheckpointStore(
         candidate_root / "behavior-checkpoints",
@@ -341,6 +341,7 @@ def recover_combat_search_distillation_candidate(
         optimizer,
         epochs=epochs,
         max_grad_norm=max_grad_norm,
+        loss=loss,
         device_type="cpu",
     ).bind(checkpoint_id, training_step=epochs)
     if manifest != expected:
@@ -378,6 +379,7 @@ def recover_combat_search_distillation_candidate(
         epochs=epochs,
         learning_rate=optimizer.learning_rate,
         max_grad_norm=max_grad_norm,
+        loss=loss,
         scorer=scorer,
     )
 
@@ -507,6 +509,18 @@ def _nonnegative_float(value: object, name: str) -> float:
             f"{name} must be non-negative"
         )
     return normalized
+
+
+def _loss(value: object) -> str:
+    if value not in {
+        COMBAT_SEARCH_DISTILLATION_LEGACY_LOSS,
+        COMBAT_SEARCH_DISTILLATION_PROPOSAL_KL_LOSS,
+    }:
+        raise CombatSearchDistillationCandidateError(
+            "candidate loss contract is unsupported"
+        )
+    assert isinstance(value, str)
+    return value
 
 
 def _bool(value: object, name: str) -> bool:

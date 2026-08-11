@@ -62,7 +62,12 @@ _COMBAT_ALL_LOSS_WIN_OBJECTIVE_VERSION = 4
 _COMBAT_ALL_LOSS_PPO_TRAINER_IMPLEMENTATION_VERSION = 5
 _COMBAT_ALL_LOSS_PPO_OBJECTIVE_VERSION = 5
 _COMBAT_ALL_LOSS_VALUE_PPO_TRAINER_IMPLEMENTATION_VERSION = 3
-_COMBAT_SEARCH_DISTILLATION_TRAINER_IMPLEMENTATION_VERSION = 1
+COMBAT_SEARCH_DISTILLATION_LEGACY_LOSS = (
+    "ragged_cross_entropy_on_strict_proposal_else_frozen_baseline"
+)
+COMBAT_SEARCH_DISTILLATION_PROPOSAL_KL_LOSS = (
+    "strict_proposal_cross_entropy_plus_retained_forward_kl_v1"
+)
 _COMBAT_ALL_LOSS_VALUE_PPO_OBJECTIVE_VERSION = 3
 _MAX_SCHEMA_BYTES = 1 << 20
 _MAX_SCHEMA_DEPTH = 16
@@ -197,6 +202,7 @@ def combat_search_distillation_manifest_template(
     *,
     epochs: int,
     max_grad_norm: float,
+    loss: str,
     device_type: str,
 ) -> BehaviorManifestTemplate:
     """Bind the experimental search-distillation scorer and greedy rule exactly."""
@@ -214,16 +220,28 @@ def combat_search_distillation_manifest_template(
     normalized_grad_norm = _finite_float(max_grad_norm, "max_grad_norm")
     if normalized_grad_norm <= 0.0:
         raise TorchProvenanceError("max_grad_norm must be positive")
+    if loss == COMBAT_SEARCH_DISTILLATION_LEGACY_LOSS:
+        trainer_version = 1
+        loss_identity = (
+            b"RAGGED-CROSS-ENTROPY-STRICT-PROPOSAL-ELSE-FROZEN-BASELINE\x00"
+        )
+    elif loss == COMBAT_SEARCH_DISTILLATION_PROPOSAL_KL_LOSS:
+        trainer_version = 2
+        loss_identity = (
+            b"STRICT-PROPOSAL-CROSS-ENTROPY-PLUS-RETAINED-FORWARD-KL-V1\x00"
+        )
+    else:
+        raise TorchProvenanceError("unsupported combat search distillation loss")
     trainer = ManifestArtifactId.from_content(
         ManifestArtifactKind.TRAINER_IMPLEMENTATION,
         b"STS-COMBAT-SEARCH-TRAJECTORY-DISTILLATION\x00"
         + struct.pack(
             ">IQd",
-            _COMBAT_SEARCH_DISTILLATION_TRAINER_IMPLEMENTATION_VERSION,
+            trainer_version,
             normalized_epochs,
             normalized_grad_norm,
         )
-        + b"RAGGED-CROSS-ENTROPY-STRICT-PROPOSAL-ELSE-FROZEN-BASELINE\x00"
+        + loss_identity
         + _runtime_version_bytes(),
     )
     return _categorical_manifest_template(

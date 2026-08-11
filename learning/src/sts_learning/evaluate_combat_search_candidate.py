@@ -37,6 +37,7 @@ def run_combat_search_candidate_evaluation(
     output: Path,
     replicates: int,
     max_artifact_bytes: int,
+    max_experience_payload_bytes: int,
 ) -> dict[str, object]:
     """Let baseline and candidate each play every exact root without search."""
 
@@ -47,6 +48,10 @@ def run_combat_search_candidate_evaluation(
             "candidate evaluation requires at least two replicates"
         )
     artifact_limit = _positive(max_artifact_bytes, "max_artifact_bytes")
+    experience_payload_limit = _positive(
+        max_experience_payload_bytes,
+        "max_experience_payload_bytes",
+    )
     artifact_path = Path(artifact).resolve()
     output_path = Path(output).resolve()
     if output_path.exists() or not output_path.parent.is_dir():
@@ -82,29 +87,39 @@ def run_combat_search_candidate_evaluation(
         )
     rollout_limits = CombatExperienceLimits(
         max_decisions=4_096,
-        max_payload_bytes=64 * 1024 * 1024,
+        max_payload_bytes=experience_payload_limit,
         max_model_rounds=2_048,
         max_transitions=8_192,
     )
     started = time.perf_counter()
     rows: list[dict[str, object]] = []
     for slot, audit in enumerate(audits):
-        baseline_result = _play_root(
-            source,
-            slot,
-            replicate_count,
-            baseline.scorer,
-            baseline.source_manifest_id,
-            rollout_limits,
-        )
-        candidate_result = _play_root(
-            source,
-            slot,
-            replicate_count,
-            restored.scorer,
-            restored.manifest_id,
-            rollout_limits,
-        )
+        try:
+            baseline_result = _play_root(
+                source,
+                slot,
+                replicate_count,
+                baseline.scorer,
+                baseline.source_manifest_id,
+                rollout_limits,
+            )
+        except Exception as error:
+            raise CombatSearchCandidateEvaluationError(
+                f"baseline evaluation failed at root slot {slot}: {error}"
+            ) from error
+        try:
+            candidate_result = _play_root(
+                source,
+                slot,
+                replicate_count,
+                restored.scorer,
+                restored.manifest_id,
+                rollout_limits,
+            )
+        except Exception as error:
+            raise CombatSearchCandidateEvaluationError(
+                f"candidate evaluation failed at root slot {slot}: {error}"
+            ) from error
         if (
             baseline_result["root_id"] != candidate_result["root_id"]
             or baseline_result["exact_combat_state_hash"]
@@ -151,6 +166,7 @@ def run_combat_search_candidate_evaluation(
         "artifact_sha256": hashlib.sha256(payload).hexdigest(),
         "root_count": roots,
         "replicates_per_root": replicate_count,
+        "max_experience_payload_bytes": experience_payload_limit,
         "baseline_behavior": str(Path(baseline_behavior).resolve()),
         "baseline_manifest_id": baseline.source_manifest_id.digest.hex(),
         "candidate": str(Path(candidate).resolve()),
@@ -196,6 +212,7 @@ def run_combat_search_candidate_evaluation(
         "artifact": str(output_path),
         "root_count": roots,
         "replicates_per_root": replicate_count,
+        "max_experience_payload_bytes": experience_payload_limit,
         "baseline": result["baseline"],
         "candidate": result["candidate_result"],
         "comparison": result["comparison"],
@@ -341,6 +358,11 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--replicates", type=int, default=2)
     parser.add_argument("--max-artifact-bytes", type=int, default=16 * 1024 * 1024)
+    parser.add_argument(
+        "--max-experience-payload-bytes",
+        type=int,
+        default=64 * 1024 * 1024,
+    )
     return parser.parse_args(argv)
 
 
@@ -354,6 +376,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         output=arguments.output,
         replicates=arguments.replicates,
         max_artifact_bytes=arguments.max_artifact_bytes,
+        max_experience_payload_bytes=arguments.max_experience_payload_bytes,
     )
     return 0
 
