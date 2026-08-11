@@ -82,6 +82,7 @@ def published_behavior(
     root: Path,
     *,
     potion_lane: CombatPotionLane = CombatPotionLane.ALL,
+    model_seed: int = 41,
 ) -> tuple[Path, CombatSessionBridge, CategoricalSessionBridge]:
     artifact = root / "combat-roots.bin"
     artifact.write_bytes(b"opaque-combat-roots")
@@ -98,7 +99,7 @@ def published_behavior(
             root_count=2,
             replicate_count=2,
             updates=1,
-            model_seed=41,
+            model_seed=model_seed,
             behavior_seed_base=92,
             potion_lane=potion_lane,
         ),

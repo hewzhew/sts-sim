@@ -13,6 +13,7 @@ from learning.tests.driver_fixtures import NumpyWinningBatchEnv  # noqa: E402
 from learning.tests.run_training_fixtures import published_behavior  # noqa: E402
 from sts_learning.combat_potion_lane import CombatPotionLane  # noqa: E402
 from sts_learning.collect_run_combat_roots import (  # noqa: E402
+    CombatFightClass,
     EncounterQuota,
     RequiredPotionSlot,
     RunCombatRootCollectionError,
@@ -46,6 +47,7 @@ def test_curriculum_cli_defaults_combat_decisions_to_greedy(tmp_path: Path) -> N
     assert arguments.partition_denominator == 10
     assert arguments.max_floor is None
     assert arguments.required_prior_combats is None
+    assert arguments.fight_class == "any"
 
 
 class _RootCapturingWinningEnv(NumpyWinningBatchEnv):
@@ -177,6 +179,13 @@ class _WrongAscensionRootEnv(_PotionlessRootCapturingWinningEnv):
         return rows
 
 
+class _EliteRootEnv(_PotionlessRootCapturingWinningEnv):
+    def combat_root_audit(self, slot_index: int) -> SimpleNamespace:
+        audit = super().combat_root_audit(slot_index)
+        audit.is_elite_fight = True
+        return audit
+
+
 class _DelayedStrategicAuditRootEnv(_PotionlessRootCapturingWinningEnv):
     def public_run_contexts(self) -> list[tuple[int, SimpleNamespace]]:
         rows = super().public_run_contexts()
@@ -273,7 +282,7 @@ def test_collection_captures_one_potion_root_per_seed_and_merges_once(
     assert summary["required_potion_slot"] == 0
     assert summary["requested_run_potion_lane"] == "trained"
     assert summary["run_potion_lane"] == "never"
-    assert summary["schema"] == "sts-learning-run-combat-root-collection-v6"
+    assert summary["schema"] == "sts-learning-run-combat-root-collection-v7"
     assert summary["seed_partition"] == "training"
     assert summary["seed_partition_held_out_numerator"] == 1
     assert summary["seed_partition_denominator"] == 10
@@ -287,6 +296,8 @@ def test_collection_captures_one_potion_root_per_seed_and_merges_once(
     assert len({root["seed"] for root in roots}) == 2
     assert all(root["potion_ids"] == ("FearPotion", None, None) for root in roots)
     assert all(root["monster_ids"] == ("JawWorm",) for root in roots)
+    assert all(root["is_elite_fight"] is False for root in roots)
+    assert all(root["is_boss_fight"] is False for root in roots)
     assert all(root["ascension_level"] == 20 for root in roots)
     assert all(root["prior_combat_count"] == 0 for root in roots)
     assert all(root["relic_ids"] == ("BurningBlood",) for root in roots)
@@ -298,6 +309,136 @@ def test_collection_captures_one_potion_root_per_seed_and_merges_once(
     )
     assert all(root["prior_combats"] == () for root in roots)
     assert all(root["prior_strategic_decisions"] == () for root in roots)
+
+
+def test_scoped_collection_uses_a_distinct_verified_combat_anchor(
+    tmp_path: Path,
+) -> None:
+    strategic_root = tmp_path / "strategic"
+    anchor_root = tmp_path / "anchor"
+    strategic_root.mkdir()
+    anchor_root.mkdir()
+    strategic, combat_bridge, run_bridge = published_behavior(
+        strategic_root,
+        potion_lane=CombatPotionLane.NEVER,
+        model_seed=41,
+    )
+    anchor, _, _ = published_behavior(
+        anchor_root,
+        potion_lane=CombatPotionLane.NEVER,
+        model_seed=42,
+    )
+    run_bridge = replace(
+        run_bridge,
+        environment=_PotionlessRootCapturingWinningEnv,
+        environment_without_combat_potions=_PotionlessRootCapturingWinningEnv,
+        environment_from_checkpoint=(
+            _PotionlessRootCapturingWinningEnv.from_checkpoint_bytes
+        ),
+    )
+    output = tmp_path / "scoped-roots.bin"
+
+    summary = run_run_combat_root_collection(
+        RunCombatRootCollectionConfig(
+            behavior=anchor,
+            strategic_behavior=strategic,
+            output=output,
+            root_count=1,
+            max_batch_steps=1,
+            wall_ms=10_000,
+            behavior_seed=94,
+            seed_start=100,
+            ascension_level=20,
+            min_floor=2,
+            min_usable_potions=0,
+            potion_lane=RunPotionLane.NEVER,
+            max_artifact_bytes=1024,
+        ),
+        combat_bridge=combat_bridge,
+        run_bridge=run_bridge,
+        artifact_merger=lambda payloads, *, max_bytes: b"merged-scoped",
+    )
+
+    assert output.read_bytes() == b"merged-scoped"
+    assert summary["schema"] == "sts-learning-run-combat-root-collection-v7"
+    assert summary["collection_scope"] == (
+        "combat_anchor_greedy_strategic_source_sampled"
+    )
+    assert summary["strategic_behavior"] == str(strategic.resolve())
+    assert summary["strategic_source_manifest_id"] != summary[
+        "combat_anchor_manifest_id"
+    ]
+    assert len(summary["strategic_source_checkpoint_id"]) == 64
+    assert summary["behavior_manifest_id"] == summary["combat_anchor_manifest_id"]
+    assert summary["collection_manifest_id"] not in {
+        summary["strategic_source_manifest_id"],
+        summary["combat_anchor_manifest_id"],
+    }
+
+
+def test_scoped_collection_rejects_sampled_combat_or_implicit_potion_lane(
+    tmp_path: Path,
+) -> None:
+    behavior = tmp_path / "behavior"
+    strategic = tmp_path / "strategic"
+    behavior.mkdir()
+    strategic.mkdir()
+    base = dict(
+        behavior=behavior,
+        strategic_behavior=strategic,
+        output=tmp_path / "roots.bin",
+        root_count=1,
+        max_batch_steps=1,
+        wall_ms=10_000,
+        behavior_seed=94,
+        seed_start=100,
+        ascension_level=20,
+        min_floor=2,
+        min_usable_potions=0,
+        max_artifact_bytes=1024,
+    )
+
+    with pytest.raises(RunCombatRootCollectionError, match="requires greedy"):
+        RunCombatRootCollectionConfig(
+            **base,
+            combat_decision_rule=FrozenDecisionRule.SAMPLED,
+            potion_lane=RunPotionLane.NEVER,
+        )
+    with pytest.raises(RunCombatRootCollectionError, match="explicit whole-run"):
+        RunCombatRootCollectionConfig(
+            **base,
+            potion_lane=RunPotionLane.TRAINED,
+        )
+
+
+def test_fight_class_selects_mechanical_category_without_naming_an_encounter(
+    tmp_path: Path,
+) -> None:
+    behavior, _, _ = published_behavior(
+        tmp_path,
+        potion_lane=CombatPotionLane.NEVER,
+    )
+    config = RunCombatRootCollectionConfig(
+        behavior=behavior,
+        output=tmp_path / "ordinary-roots.bin",
+        root_count=1,
+        max_batch_steps=1,
+        wall_ms=10_000,
+        behavior_seed=94,
+        seed_start=100,
+        ascension_level=20,
+        min_floor=2,
+        min_usable_potions=0,
+        potion_lane=RunPotionLane.NEVER,
+        max_artifact_bytes=1024,
+        fight_class=CombatFightClass.ORDINARY,
+    )
+    elite = _EliteRootEnv([100], 20)
+    ordinary_only = _RootCaptureSink(config, None, (), lambda seed, act, floor: 0)
+
+    ordinary_only.observe(elite)
+
+    assert ordinary_only.roots == []
 
 
 def test_collection_uses_the_declared_seed_partition(tmp_path: Path) -> None:

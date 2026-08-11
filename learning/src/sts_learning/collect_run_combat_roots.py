@@ -9,6 +9,7 @@ import operator
 import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
+from enum import Enum
 from pathlib import Path
 from typing import Protocol, cast
 
@@ -48,12 +49,23 @@ from .strategic_decision_audit import (
     read_strategic_decision_audit,
 )
 from .torch_combat_session_config import CombatSessionBridge, CombatWinSessionLimits
-from .torch_behavior import FrozenCombatGreedyTorchPolicy, FrozenDecisionRule
+from .torch_behavior import (
+    FrozenCombatAnchor,
+    FrozenCombatGreedyTorchPolicy,
+    FrozenDecisionRule,
+)
 from .torch_session_config import CategoricalSessionBridge
 
 
 class RunCombatRootCollectionError(RuntimeError):
     """A bounded root collection lost identity, provenance, or a resource bound."""
+
+
+class CombatFightClass(str, Enum):
+    ANY = "any"
+    ORDINARY = "ordinary"
+    ELITE = "elite"
+    BOSS = "boss"
 
 
 class _RootExportEnvironment(BatchEnvironment, Protocol):
@@ -131,6 +143,8 @@ class RunCombatRootCollectionConfig:
     required_encounter_id: str | None = None
     distinct_encounters: bool = False
     encounter_quotas: tuple[EncounterQuota, ...] = ()
+    strategic_behavior: Path | None = None
+    fight_class: CombatFightClass = CombatFightClass.ANY
 
     def __post_init__(self) -> None:
         behavior = Path(self.behavior).resolve()
@@ -143,7 +157,24 @@ class RunCombatRootCollectionConfig:
             raise RunCombatRootCollectionError(
                 "root collection output must be a fresh file"
             )
-        if output == behavior or behavior in output.parents:
+        strategic_behavior = (
+            None
+            if self.strategic_behavior is None
+            else Path(self.strategic_behavior).resolve()
+        )
+        if strategic_behavior is not None and not strategic_behavior.is_dir():
+            raise RunCombatRootCollectionError(
+                "root collection strategic behavior is not a directory"
+            )
+        behavior_directories = (
+            (behavior,)
+            if strategic_behavior is None
+            else (behavior, strategic_behavior)
+        )
+        if any(
+            output == source or source in output.parents
+            for source in behavior_directories
+        ):
             raise RunCombatRootCollectionError(
                 "root collection output must stay outside the behavior directory"
             )
@@ -158,6 +189,24 @@ class RunCombatRootCollectionConfig:
         if not isinstance(self.combat_decision_rule, FrozenDecisionRule):
             raise RunCombatRootCollectionError(
                 "root collection combat decision rule must be typed"
+            )
+        if not isinstance(self.fight_class, CombatFightClass):
+            raise RunCombatRootCollectionError(
+                "root collection fight class must be typed"
+            )
+        if (
+            strategic_behavior is not None
+            and self.combat_decision_rule is not FrozenDecisionRule.GREEDY
+        ):
+            raise RunCombatRootCollectionError(
+                "scoped root collection requires greedy combat decisions"
+            )
+        if (
+            strategic_behavior is not None
+            and self.potion_lane is RunPotionLane.TRAINED
+        ):
+            raise RunCombatRootCollectionError(
+                "scoped root collection requires an explicit whole-run potion lane"
             )
         if not isinstance(self.seed_partition, SeedPartition):
             raise RunCombatRootCollectionError(
@@ -208,6 +257,7 @@ class RunCombatRootCollectionConfig:
             )
         object.__setattr__(self, "behavior", behavior)
         object.__setattr__(self, "output", output)
+        object.__setattr__(self, "strategic_behavior", strategic_behavior)
         root_count = _positive(self.root_count, "root_count")
         if root_count > 64:
             raise RunCombatRootCollectionError("root_count must be at most 64")
@@ -473,6 +523,8 @@ class _RootCaptureSink:
                 raise RunCombatRootCollectionError(
                     "combat root audit disagrees with root ascension"
                 )
+            if not _matches_fight_class(audit, self.config.fight_class):
+                continue
             master_deck_card_count = _root_integer(
                 root,
                 "master_deck_card_count",
@@ -737,6 +789,22 @@ def run_run_combat_root_collection(
             (config.behavior_seed,),
         )
         behavior_kind = "combat"
+    strategic_recovered: PublishedCombatBehavior | None = None
+    if config.strategic_behavior is not None:
+        if is_run_training_publication(config.behavior):
+            raise RunCombatRootCollectionError(
+                "scoped root collection combat anchor must be combat-trained"
+            )
+        if is_run_training_publication(config.strategic_behavior):
+            raise RunCombatRootCollectionError(
+                "scoped root collection strategic source must be combat-trained"
+            )
+        strategic_recovered = recover_published_combat_behavior(
+            config.strategic_behavior,
+            active_combat_bridge,
+            CombatWinSessionLimits(),
+            (config.behavior_seed,),
+        )
     potion_lane = resolve_run_potion_lane(config.potion_lane, recovered)
     environment_constructor = (
         active_run_bridge.environment
@@ -795,9 +863,16 @@ def run_run_combat_root_collection(
         schedule=schedule_start,
         max_recoveries_per_episode=0,
     )
-    collection_policy = recovered.policies[0]
     progress_provider = BridgeDecisionProgressProvider(population.env)
-    if isinstance(collection_policy, FrozenCombatGreedyTorchPolicy):
+    collection_policy = recovered.policies[0]
+    if strategic_recovered is not None:
+        anchor = FrozenCombatAnchor.from_behavior(recovered.policies[0])
+        collection_policy = FrozenCombatGreedyTorchPolicy.from_categorical(
+            strategic_recovered.policies[0],
+            progress_provider,
+            anchor,
+        )
+    elif isinstance(collection_policy, FrozenCombatGreedyTorchPolicy):
         collection_policy = collection_policy.bind_progress_provider(
             progress_provider
         )
@@ -846,10 +921,40 @@ def run_run_combat_root_collection(
     resource_trace = tracing_factory.trace
 
     summary: dict[str, object] = {
-        "schema": "sts-learning-run-combat-root-collection-v6",
+        "schema": "sts-learning-run-combat-root-collection-v7",
         "behavior": str(config.behavior),
         "behavior_training_kind": behavior_kind,
         "behavior_manifest_id": recovered.manifest_id.digest.hex(),
+        "collection_scope": (
+            "single_publication"
+            if strategic_recovered is None
+            else "combat_anchor_greedy_strategic_source_sampled"
+        ),
+        "strategic_behavior": (
+            None
+            if config.strategic_behavior is None
+            else str(config.strategic_behavior)
+        ),
+        "strategic_source_manifest_id": (
+            recovered.manifest_id.digest.hex()
+            if strategic_recovered is None
+            else strategic_recovered.manifest_id.digest.hex()
+        ),
+        "strategic_source_checkpoint_id": (
+            recovered.checkpoint_id.digest.hex()
+            if strategic_recovered is None
+            else strategic_recovered.checkpoint_id.digest.hex()
+        ),
+        "combat_anchor_manifest_id": (
+            None
+            if strategic_recovered is None
+            else recovered.manifest_id.digest.hex()
+        ),
+        "combat_anchor_checkpoint_id": (
+            None
+            if strategic_recovered is None
+            else recovered.checkpoint_id.digest.hex()
+        ),
         "combat_decision_rule": config.combat_decision_rule.value,
         "collection_manifest_id": (
             collection_policy.behavior_manifest_id.digest.hex()
@@ -871,6 +976,7 @@ def run_run_combat_root_collection(
         "required_prior_combat_count": config.required_prior_combat_count,
         "min_hp_percent": config.min_hp_percent,
         "min_usable_potions": config.min_usable_potions,
+        "fight_class": config.fight_class.value,
         "distinct_encounters": config.distinct_encounters,
         "encounter_quotas": sink.encounter_quota_progress,
         "required_potion_id": (
@@ -902,6 +1008,8 @@ def run_run_combat_root_collection(
                 "potion_ids": root.potion_ids,
                 "encounter_id": root.encounter_id,
                 "monster_ids": root.monster_ids,
+                "is_elite_fight": root.audit.is_elite_fight,
+                "is_boss_fight": root.audit.is_boss_fight,
                 "filled_potion_count": root.filled_potion_count,
                 "usable_potion_count": root.usable_potion_count,
                 "prior_combat_count": root.prior_combat_count,
@@ -936,6 +1044,19 @@ def _canonical_encounter_id(
             "run bridge returned a malformed canonical encounter identity"
         )
     return canonical
+
+
+def _matches_fight_class(
+    audit: CombatRootAudit,
+    expected: CombatFightClass,
+) -> bool:
+    if expected is CombatFightClass.ANY:
+        return True
+    if expected is CombatFightClass.BOSS:
+        return audit.is_boss_fight
+    if expected is CombatFightClass.ELITE:
+        return audit.is_elite_fight and not audit.is_boss_fight
+    return not audit.is_elite_fight and not audit.is_boss_fight
 
 
 def _prior_combat_rows(
@@ -1058,6 +1179,7 @@ def _parser() -> argparse.ArgumentParser:
         )
     )
     parser.add_argument("--behavior", type=Path, required=True)
+    parser.add_argument("--strategic-behavior", type=Path)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument(
         "--roots",
@@ -1094,6 +1216,11 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--required-prior-combats", type=int)
     parser.add_argument("--min-hp-percent", type=int, choices=range(101), default=0)
     parser.add_argument("--min-usable-potions", type=int, default=1)
+    parser.add_argument(
+        "--fight-class",
+        choices=tuple(kind.value for kind in CombatFightClass),
+        default=CombatFightClass.ANY.value,
+    )
     parser.add_argument("--required-potion-id")
     parser.add_argument("--required-potion-slot", type=int)
     encounter_selector = parser.add_mutually_exclusive_group()
@@ -1179,12 +1306,14 @@ def main() -> int:
             required_prior_combat_count=arguments.required_prior_combats,
             min_hp_percent=arguments.min_hp_percent,
             min_usable_potions=arguments.min_usable_potions,
+            fight_class=CombatFightClass(arguments.fight_class),
             potion_lane=RunPotionLane(arguments.potion_lane),
             max_artifact_bytes=arguments.max_artifact_bytes,
             required_potion=required_potion,
             required_encounter_id=arguments.required_encounter_id,
             distinct_encounters=arguments.distinct_encounters,
             encounter_quotas=encounter_quotas,
+            strategic_behavior=arguments.strategic_behavior,
         )
     )
     return 0

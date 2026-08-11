@@ -311,6 +311,18 @@ These are behavior facts, not teacher labels, and assign no potion value. The
 requested ascension is checked against every exact combat root before any
 artifact is published; a reset or import that changed difficulty is a hard
 collection failure.
+
+The collector may instead receive a candidate combat anchor through `-Behavior`
+and a fixed strategic source through `-StrategicBehavior`. This reproduces the
+combat-anchor-only run surface during curriculum collection: combat rows use
+the anchor greedily, while strategic rows keep the source categorical RNG.
+Scoped collection requires an explicit whole-run potion lane (`all` or `never`)
+and writes a V7 receipt binding the strategic, anchor, and combined manifests.
+It does not select roots by their later outcome.
+The independent `-CombatFightClass any|ordinary|elite|boss` axis uses typed
+mechanical flags, not an encounter-name list. This permits a lifecycle tier to
+learn across ordinary fights before elite and boss mechanisms are introduced as
+separate corpora.
 The minimum usable-potion filter accepts zero, allowing an ordinary
 run-derived combat corpus that is not biased toward potion-bearing paths.
 The model-facing strategic surface canonicalizes deterministic free reward

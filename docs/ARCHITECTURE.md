@@ -338,14 +338,20 @@ caller-byte-bounded, validates every root and exact root count before creating
 the pool, and exposes no session fields to Python. The bridge does not depend
 on runtime artifact types, guess continuation JSON fields, or read private
 branch cutpoint schemas.
-The bounded later-combat sampler advances one frozen published behavior over
-one explicit seed partition and stable seed-only partition spec, then inspects
-only the bridge's aligned public run context and undecoded combat-root context.
+The bounded later-combat sampler advances one frozen published behavior, or one
+explicit strategic-source/combat-anchor composition, over one seed partition
+and stable seed-only partition spec. It then inspects only the bridge's aligned
+public run context and undecoded combat-root context. In the composed scope,
+typed combat rows use the verified anchor greedily while strategic rows retain
+the source categorical rule and RNG; the two scorers must share model and
+semantic contracts. This scope requires an explicit whole-run potion lane so
+`trained` cannot ambiguously name two publication histories.
 It captures at most one qualifying root per seed, filters by typed minimum and
 optional maximum floor, exact prior-combat count, and usable-potion count, and may require
 one bridge-validated canonical potion identity in one exact slot. Encounter
-selection may require one canonical identity, one root per distinct identity,
-or an explicit fixed quota for each of several canonical identities. Those
+selection may first choose the broad typed ordinary, elite, boss, or any fight
+class, then require one canonical identity, one root per distinct identity, or
+an explicit fixed quota for each of several canonical identities. The identity
 modes are mutually exclusive; every quota must be complete before publication.
 It then asks Rust to
 merge canonical single-root payloads without exposing checkpoint fields. The
@@ -830,12 +836,15 @@ shop, or other strategic decisions; those candidates remain part of the tested
 policy surface and their weakness is part of the whole-run result.
 
 The run-derived combat-root collector may derive one explicit scoped behavior
-for curriculum construction. Typed public run context selects greedy argmax for
-combat rows while strategic rows retain the source categorical rule and RNG.
-The combined rule has its own manifest identity bound to the exact source
-sampling rule; it neither relabels the publication nor treats untrained
-strategic argmax as competence. Its purpose is to prevent exploratory combat
-mistakes from defining the HP distribution of later training roots.
+for curriculum construction. With one publication, typed public run context
+selects greedy argmax for combat rows while strategic rows retain that source's
+categorical rule and RNG. With a separately declared strategic publication and
+combat anchor, strategic rows remain owned by the former while combat argmax is
+scored only by the latter. The combined rule has its own manifest identity and
+the V7 receipt binds both source manifest/checkpoint identities. It neither
+relabels either publication nor treats untrained strategic argmax as competence.
+Its purpose is to keep later-root collection on the same scoped policy surface
+used by the combat-anchor-only whole-run diagnostic.
 
 Whole-run training may use the strategic decision scope with an anchored
 version of that mixed behavior. It imports the fully verified warm-start combat

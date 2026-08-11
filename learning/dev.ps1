@@ -50,6 +50,7 @@ param(
     [ValidateRange(0, 100)]
     [int]$MinHpPercent = 0,
     [int]$MinUsablePotions = 1,
+    [string]$CombatFightClass = "any",
     [int]$MaxArtifactBytes = 16777216,
     [string]$RequiredPotionId,
     [Nullable[int]]$RequiredPotionSlot,
@@ -519,6 +520,12 @@ switch ($Command) {
         $selectorArguments = @()
         $captureArguments = @()
         $rootArguments = @()
+        $collectorScopeArguments = @()
+        if ($StrategicBehavior) {
+            $collectorScopeArguments += @(
+                "--strategic-behavior", $StrategicBehavior
+            )
+        }
         if ($null -ne $RequiredPriorCombats) {
             $captureArguments += @(
                 "--required-prior-combats", $RequiredPriorCombats
@@ -570,6 +577,7 @@ switch ($Command) {
         Invoke-WithLearningPath {
             & $pythonPath -m sts_learning.collect_run_combat_roots `
                 --behavior $Behavior `
+                @collectorScopeArguments `
                 --output $Output `
                 @rootArguments `
                 --max-batch-steps $MaxBatchSteps `
@@ -584,6 +592,7 @@ switch ($Command) {
                 --min-floor $MinFloor `
                 --min-hp-percent $MinHpPercent `
                 --min-usable-potions $MinUsablePotions `
+                --fight-class $CombatFightClass `
                 --max-artifact-bytes $MaxArtifactBytes `
                 --potion-lane $RunPotionLane `
                 @captureArguments `

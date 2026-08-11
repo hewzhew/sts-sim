@@ -651,7 +651,7 @@ Configure one stable Python 3.12 training runtime once, then use the small
 .\learning\dev.ps1 evaluate-run -Behavior <training-dir> -Output <fresh-dir> -Ascension <0..20> -Attempts 8 -MaxBatchSteps 4096 -BehaviorSeed 10000 -HeldOutSeedStart 0 -RunPotionLane trained
 .\learning\dev.ps1 evaluate-run-potions -Behavior <training-dir> -Output <fresh-dir> -Ascension <0..20> -Attempts 8 -MaxBatchSteps 4096 -BehaviorSeed 10000 -HeldOutSeedStart 0
 .\learning\dev.ps1 compare-run-paired -BaselineBehavior <baseline-dir> -CandidateBehavior <candidate-dir> [-StrategicBehavior <shared-strategic-dir>] -Output <fresh-dir> -Ascension <0..20> -Attempts 8 -MaxBatchSteps 4096 -BehaviorSeed 10000 -HeldOutSeedStart 0 -RunPotionLane never
-.\learning\dev.ps1 collect-run-roots -Behavior <training-dir> -Output <fresh.bin> -Ascension <0..20> -Roots 2 -MaxBatchSteps 4096 -WallMs 60000 -BehaviorSeed 120000 -RootSeedStart 10000000 -RootSeedPartition training -RootHeldOutNumerator 1 -RootPartitionDenominator 10 -MinFloor 2 -MinUsablePotions 1 -RunPotionLane trained
+.\learning\dev.ps1 collect-run-roots -Behavior <training-dir-or-combat-anchor> [-StrategicBehavior <shared-strategic-dir>] -Output <fresh.bin> -Ascension <0..20> -Roots 2 -MaxBatchSteps 4096 -WallMs 60000 -BehaviorSeed 120000 -RootSeedStart 10000000 -RootSeedPartition training -RootHeldOutNumerator 1 -RootPartitionDenominator 10 -MinFloor 2 -MinUsablePotions 1 [-CombatFightClass any|ordinary|elite|boss] -RunPotionLane trained
 .\learning\dev.ps1 train-run -Behavior <combat-training-dir> -Output <fresh-dir> -Ascension <0..20> -Slots 4 -Generations 1 -AttemptsPerUpdate 32 -MaxBatchSteps 4096 -EvaluationAttempts 16 -HeldOutSeedStart 1000000 -AdvantageMode decision-local-gae -DecisionScope strategic -CombatDecisionRule greedy -SamplingMode independent-cohorts -RunPolicyUpdate ppo-clip-value -RunPotionLane trained
 ```
 
@@ -784,6 +784,19 @@ long event/shop route. Use direct `-MinFloor 2 -MaxFloor 2` collection only
 when that bounded inefficiency is acceptable.
 Use `-RootSeedPartition held-out` with the same numerator and denominator for a
 disjoint evaluation corpus; do not reconstruct the partition from outcomes.
+To collect from the same policy surface as a combat-anchor-only run comparison,
+pass the candidate combat publication as `-Behavior` and the fixed strategic
+publication as `-StrategicBehavior`. This scoped mode requires greedy combat
+decisions and an explicit `-RunPotionLane all|never`; `trained` is rejected
+because two publication histories cannot own one implicit lane. The V7 receipt
+records the strategic source, combat anchor, and combined collection manifest
+identities. Root admission remains seed/context based and does not become an
+outcome selector.
+Use `-CombatFightClass ordinary` for a general later-combat curriculum before
+introducing elite-specific mechanisms. The selector reads the simulator's typed
+elite/boss flags; it does not infer class from encounter names. `any` preserves
+the trajectory distribution, while `elite` and `boss` remain explicit separate
+corpora rather than silently entering an ordinary batch.
 Set `-MinUsablePotions 0` to collect ordinary run-derived combat roots without
 conditioning the corpus on potion ownership. An exact potion rescue corpus
 still supplies both `-RequiredPotionId` and `-RequiredPotionSlot`.
