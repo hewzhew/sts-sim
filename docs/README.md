@@ -46,10 +46,10 @@ notes are not kept searchable; use git history for archaeology.
   active oracle-mainline boundary between exact mechanics, policy guidance,
   state value, and lazy run search.
 - [Combat Search Improvement Contract V1](design/2026-08-11-combat-search-improvement-contract-v1.md):
-  partially implemented boundary. A public-equivalent independent-stream
-  chance sampler supports feasibility experiments; fair allocation, a
-  run-seed-consistent posterior, and teacher qualification remain missing. No
-  current witness engine is certified by it.
+  partially implemented boundary. Independent-stream and exact-upstream-
+  conditioned floor-chance samplers support feasibility experiments; fair
+  allocation, a public-history run-seed posterior, and teacher qualification
+  remain missing. No current witness engine is certified by it.
 
 ## Rules
 

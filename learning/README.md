@@ -343,6 +343,18 @@ selected source root while hidden draw order and combat RNG streams vary. The
 current sampler keeps RNG consumption counters but samples streams
 independently and rejects hidden current intents; it is not yet a
 run-seed-consistent posterior or a certified teacher source.
+`LearningBatchEnv.from_combat_entry_floor_chance_particles(...)` is the more
+physical natural-entry feasibility surface. It keeps the source run's exact
+upstream state and seven persistent RNG streams, varies the five floor-local
+streams through the production combat-start constructor, and rejects every
+candidate whose full public decision differs. Its accepted values are
+floor-seed bases, not claims that a complete run with that seed would produce
+the fixed deck, route, relics, and combat. It therefore remains conditioned
+floor-chance evidence rather than a public-history run-seed posterior or a
+teacher source. A bounded scan that cannot fill its requested population is
+`unknown`; exact multi-monster public boundaries may be too sparse for this
+rejection sampler. Persisting accepted floor seeds can avoid repeated work but
+does not upgrade them into a complete-run posterior.
 `learning-root select` derives one explicit ordered root subset from a
 canonical batch after revalidating its declared source width; selected slots
 stay opaque and duplicate or out-of-range slots publish nothing.

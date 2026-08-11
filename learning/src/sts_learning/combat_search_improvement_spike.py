@@ -1,4 +1,4 @@
-"""Single-root public-chance combat policy-improvement feasibility spike."""
+"""Single-root conditioned-chance combat policy-improvement feasibility spike."""
 
 from __future__ import annotations
 
@@ -94,7 +94,7 @@ def _rollout_action(
 
 def _evaluate_action(
     source: object,
-    particle_seeds: tuple[int, ...],
+    particle_provenance_seeds: tuple[int, ...],
     ordinal: int,
     policy: FrozenGreedyTorchPolicy,
     *,
@@ -103,7 +103,7 @@ def _evaluate_action(
 ) -> dict[str, object]:
     outcomes = [
         {
-            "particle_seed": seed,
+            "particle_provenance_seed": seed,
             **_rollout_action(
                 source,
                 particle_slot,
@@ -113,7 +113,7 @@ def _evaluate_action(
                 max_transitions=max_transitions,
             ),
         }
-        for particle_slot, seed in enumerate(particle_seeds)
+        for particle_slot, seed in enumerate(particle_provenance_seeds)
     ]
     terminal = [row for row in outcomes if row["status"] == "terminal"]
     wins = [row for row in terminal if row["won"]]
@@ -163,24 +163,24 @@ def _proposal(actions: list[dict[str, object]]) -> tuple[int | None, str]:
 
 
 def _paired_summary(
-    seeds: tuple[int, ...],
+    particle_provenance_seeds: tuple[int, ...],
     candidate: dict[str, object],
     baseline: dict[str, object],
 ) -> dict[str, object]:
     pairs = []
     for seed, candidate_row, baseline_row in zip(
-        seeds,
+        particle_provenance_seeds,
         candidate["outcomes"],
         baseline["outcomes"],
         strict=True,
     ):
         if candidate_row["status"] != "terminal" or baseline_row["status"] != "terminal":
-            pairs.append({"particle_seed": seed, "status": "unknown"})
+            pairs.append({"particle_provenance_seed": seed, "status": "unknown"})
             continue
         both_win = bool(candidate_row["won"] and baseline_row["won"])
         pairs.append(
             {
-                "particle_seed": seed,
+                "particle_provenance_seed": seed,
                 "status": "paired",
                 "candidate_won": bool(candidate_row["won"]),
                 "baseline_won": bool(baseline_row["won"]),
@@ -216,6 +216,84 @@ def _paired_summary(
     }
 
 
+def _load_chance_population(
+    LearningBatchEnv: object,
+    artifact: bytes,
+    *,
+    sampler: str,
+    expected_roots: int,
+    source_slot: int,
+    candidate_floor_seed_base_start: int,
+    particle_count: int,
+    max_candidates: int,
+    max_bytes: int,
+) -> tuple[object, tuple[int, ...], dict[str, object]]:
+    if sampler == "conditioned-floor-chance":
+        loader = getattr(
+            LearningBatchEnv,
+            "from_combat_entry_floor_chance_particles",
+            None,
+        )
+        if not callable(loader):
+            raise RuntimeError(
+                "installed learning bridge does not provide conditioned combat-entry floor particles"
+            )
+        loaded = loader(
+            artifact,
+            expected_roots=expected_roots,
+            source_slot=source_slot,
+            candidate_floor_seed_base_start=candidate_floor_seed_base_start,
+            max_candidates=max_candidates,
+            required_particles=particle_count,
+            max_bytes=max_bytes,
+        )
+        source, accepted, attempted, public_matches, duplicate_private_states = loaded
+        accepted_seed_bases = tuple(int(seed) for seed in accepted)
+        if len(accepted_seed_bases) != particle_count:
+            raise RuntimeError(
+                "conditioned combat-entry floor scan returned an incomplete population"
+            )
+        return (
+            source,
+            accepted_seed_bases,
+            {
+                "seed_semantics": "run_seed_base_applied_only_to_floor_local_streams",
+                "candidate_floor_seed_base_start": candidate_floor_seed_base_start,
+                "max_candidates": max_candidates,
+                "attempted_candidate_count": int(attempted),
+                "public_match_count": int(public_matches),
+                "duplicate_private_state_count": int(duplicate_private_states),
+                "accepted_particle_count": len(accepted_seed_bases),
+            },
+        )
+
+    loader = getattr(LearningBatchEnv, "from_combat_public_chance_particles", None)
+    if not callable(loader):
+        raise RuntimeError("installed learning bridge does not provide public-chance particles")
+    particle_seeds = tuple(
+        candidate_floor_seed_base_start + index for index in range(particle_count)
+    )
+    return (
+        loader(
+            artifact,
+            expected_roots=expected_roots,
+            source_slot=source_slot,
+            particle_seeds=list(particle_seeds),
+            max_bytes=max_bytes,
+        ),
+        particle_seeds,
+        {
+            "seed_semantics": "independent_hidden_stream_seed",
+            "candidate_particle_seed_start": candidate_floor_seed_base_start,
+            "max_candidates": particle_count,
+            "attempted_candidate_count": particle_count,
+            "public_match_count": particle_count,
+            "duplicate_private_state_count": 0,
+            "accepted_particle_count": particle_count,
+        },
+    )
+
+
 def run(args: argparse.Namespace) -> dict[str, object]:
     limits = CombatWinSessionLimits()
     artifact = read_combat_root_artifact(args.artifact, max_bytes=limits.max_artifact_bytes)
@@ -224,10 +302,6 @@ def run(args: argparse.Namespace) -> dict[str, object]:
         from sts_learning_bridge import LearningBatchEnv
     except ImportError as error:
         raise RuntimeError("standalone learning bridge wheel is not installed") from error
-    chance_loader = getattr(LearningBatchEnv, "from_combat_public_chance_particles", None)
-    if not callable(chance_loader):
-        raise RuntimeError("installed learning bridge does not provide public-chance particles")
-
     behavior = recover_published_combat_behavior(
         args.behavior,
         bridge,
@@ -254,16 +328,29 @@ def run(args: argparse.Namespace) -> dict[str, object]:
         raise RuntimeError("source root policy decision is not singular")
     baseline_ordinal = int(baseline_choice.ordinals[0])
 
-    selection_seeds = tuple(args.seed_base + index for index in range(args.selection_particles))
-    evaluation_seeds = tuple(
-        args.seed_base + args.selection_particles + index
-        for index in range(args.evaluation_particles)
-    )
-    selection_source = chance_loader(
+    selection_source, selection_seeds, selection_chance_scan = _load_chance_population(
+        LearningBatchEnv,
         artifact,
+        sampler=args.chance_sampler,
         expected_roots=args.root_count,
         source_slot=args.root_slot,
-        particle_seeds=list(selection_seeds),
+        candidate_floor_seed_base_start=args.floor_seed_base,
+        particle_count=args.selection_particles,
+        max_candidates=args.max_chance_candidates,
+        max_bytes=limits.max_artifact_bytes,
+    )
+    evaluation_floor_seed_base_start = (
+        args.floor_seed_base + args.max_chance_candidates
+    )
+    evaluation_source, evaluation_seeds, evaluation_chance_scan = _load_chance_population(
+        LearningBatchEnv,
+        artifact,
+        sampler=args.chance_sampler,
+        expected_roots=args.root_count,
+        source_slot=args.root_slot,
+        candidate_floor_seed_base_start=evaluation_floor_seed_base_start,
+        particle_count=args.evaluation_particles,
+        max_candidates=args.max_chance_candidates,
         max_bytes=limits.max_artifact_bytes,
     )
     selection_actions = [
@@ -284,13 +371,6 @@ def run(args: argparse.Namespace) -> dict[str, object]:
 
     evaluation: dict[str, object] | None = None
     if proposal_ordinal is not None:
-        evaluation_source = chance_loader(
-            artifact,
-            expected_roots=args.root_count,
-            source_slot=args.root_slot,
-            particle_seeds=list(evaluation_seeds),
-            max_bytes=limits.max_artifact_bytes,
-        )
         candidate_result = _evaluate_action(
             evaluation_source,
             evaluation_seeds,
@@ -319,18 +399,24 @@ def run(args: argparse.Namespace) -> dict[str, object]:
 
     return {
         "schema_name": "CombatSearchImprovementFeasibilitySpike",
-        "schema_version": 1,
+        "schema_version": 2,
         "teacher_valid": False,
-        "claim": "single_root_wiring_feasibility_only",
+        "claim": "single_root_combat_entry_improvement_feasibility_only",
         "artifact_sha256": hashlib.sha256(artifact).hexdigest(),
         "source_root_slot": args.root_slot,
         "source_root": _root_audit(exact_source, args.root_slot),
         "behavior_manifest_id": behavior.manifest_id.digest.hex(),
         "continuation_policy": "frozen_greedy_current_behavior",
-        "chance_sampler": "independent_hidden_stream_reseed_v1",
+        "chance_sampler": (
+            "conditioned_combat_entry_floor_seed_rejection_v1"
+            if args.chance_sampler == "conditioned-floor-chance"
+            else "independent_hidden_stream_reseed_v1"
+        ),
+        "selection_chance_scan": selection_chance_scan,
+        "evaluation_chance_scan": evaluation_chance_scan,
         "potion_lane": "never",
-        "selection_particle_seeds": selection_seeds,
-        "evaluation_particle_seeds": evaluation_seeds,
+        "selection_particle_provenance_seeds": selection_seeds,
+        "evaluation_particle_provenance_seeds": evaluation_seeds,
         "selection_evaluation_disjoint": set(selection_seeds).isdisjoint(evaluation_seeds),
         "baseline_ordinal": baseline_ordinal,
         "baseline_candidate": candidates[baseline_ordinal],
@@ -351,7 +437,13 @@ def main() -> None:
     parser.add_argument("--root-slot", type=int, default=0)
     parser.add_argument("--selection-particles", type=int, default=8)
     parser.add_argument("--evaluation-particles", type=int, default=8)
-    parser.add_argument("--seed-base", type=int, default=2026081101000)
+    parser.add_argument("--floor-seed-base", type=int, default=2026081101000)
+    parser.add_argument(
+        "--chance-sampler",
+        choices=("conditioned-floor-chance", "independent-streams"),
+        default="conditioned-floor-chance",
+    )
+    parser.add_argument("--max-chance-candidates", type=int, default=65_536)
     parser.add_argument("--policy-seed", type=int, default=2026081101999)
     parser.add_argument("--max-model-rounds", type=int, default=512)
     parser.add_argument("--max-transitions", type=int, default=512)
@@ -360,6 +452,7 @@ def main() -> None:
         "root_count",
         "selection_particles",
         "evaluation_particles",
+        "max_chance_candidates",
         "max_model_rounds",
         "max_transitions",
     ):

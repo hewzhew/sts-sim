@@ -1,6 +1,6 @@
 # CombatSearchImprovementContractV1
 
-Status: **Partially implemented: public-equivalent independent-stream chance sampling only**
+Status: **Partially implemented: two feasibility chance samplers, no qualified teacher**
 
 Qualification status: **No current witness engine is a certified teacher.**
 
@@ -97,7 +97,7 @@ environment randomness after their root action whenever the simulator can
 define that coupling without changing game semantics. Both then use the same
 declared continuation policy version.
 
-The current low-level feasibility primitive is
+The first low-level feasibility primitive is
 `combat_public_chance_particle_checkpoints_v1`. It preserves the complete
 model-visible combat boundary and legal candidate surface, independently
 resamples hidden draw order and combat-consumed RNG streams while retaining
@@ -105,6 +105,27 @@ their consumption counters, and rejects hidden current intents. Its streams
 are sampled independently rather than reconstructed as a run-seed-consistent
 posterior conditioned on public history. It is therefore suitable for wiring
 and sensitivity experiments only, not teacher qualification.
+
+The natural-entry feasibility primitive is
+`combat_entry_floor_chance_population_v1`. It accepts visible-intent,
+potion-empty room combats at turn zero, keeps the exact already-realized
+upstream run and all seven persistent RNG streams, re-seeds only the five
+floor-local streams, rebuilds the encounter through the production combat-start
+constructor, and retains only complete public-decision matches. This gives a
+seed-consistent sample of alternative floor-local combat-entry randomness
+conditioned on one exact upstream run. It does not regenerate alternative
+upstream histories and its candidate floor-seed bases are not complete run
+seeds. It is therefore more physically faithful than independent stream
+re-seeding but still not the public-history run-seed posterior required for
+teacher qualification.
+
+This strict floor-seed rejection path is the reference implementation for
+checking exact reconstruction and measuring conditional sparsity. It is not
+assumed to scale: a multi-monster public entry may admit no alternative in a
+large bounded interval even when the source seed reconstructs exactly. Such a
+scan is `unknown`, not a loss or permission to fall back silently to the
+realized future. An accepted-seed cache may save repeated scanning, but cannot
+replace the missing public-history posterior.
 
 ## Typed Root Candidate Identity
 
@@ -279,6 +300,7 @@ resource targets remain out of scope until this boundary is qualified.
 | --- | --- |
 | exact simulator and replay | Required foundation |
 | independent-stream public-chance sampler | Feasibility primitive; public-equivalent but not a run-seed-consistent posterior |
+| conditioned combat-entry floor-chance sampler | Feasibility primitive; production combat start with exact upstream state fixed, not a posterior over complete run histories |
 | typed public trajectory and legal candidates | Required foundation |
 | `AtomicExactV2` | Witness/challenger engine; not certified |
 | `LocalTurnGraphWitnessSession` | Witness/rescue/diagnostic engine; not certified |

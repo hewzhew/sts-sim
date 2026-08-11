@@ -102,10 +102,16 @@ policy-improvement operator. Before any search output becomes a learning
 target it must cross the separately owned public-information, chance-particle,
 fair-allocation, independent-evaluation, and qualification boundary in
 [`CombatSearchImprovementContractV1`](design/2026-08-11-combat-search-improvement-contract-v1.md).
-Only its independent-stream public-chance feasibility primitive is implemented;
-fair allocation, a run-seed-consistent conditioned sampler, qualification, and
-the teacher owner remain missing. `AtomicExactV2`, `TurnGraphPortfolioV1`, and
-their member engines are not certified teachers.
+Its independent-stream public-chance primitive and exact-upstream-conditioned
+combat-entry floor-chance primitive are implemented for feasibility work. The
+latter replays production combat start while varying only the five floor-local
+RNG streams; it is not a posterior over complete run seeds or alternative
+upstream histories. Exact public-boundary rejection is a bounded reference
+sampler, not the scalable default: multi-monster roots can make matching floor
+seeds too sparse for an improvement population. Fair allocation, a
+public-history run-seed posterior,
+qualification, and the teacher owner remain missing. `AtomicExactV2`,
+`TurnGraphPortfolioV1`, and their member engines are not certified teachers.
 
 Shared card mechanics used by that path belong to `content::cards::mechanics`,
 not to an analysis or reward-policy table. The profile owns upgrade-sensitive

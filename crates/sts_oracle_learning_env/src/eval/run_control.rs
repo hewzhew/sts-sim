@@ -10,10 +10,11 @@ mod combat_learning_root_artifact;
 mod learning_env;
 
 pub use combat_learning_env::{
-    combat_public_chance_particle_checkpoints_v1, CombatLearningBoundaryV1,
-    CombatLearningEnvCheckpointV1, CombatLearningEnvV1, CombatLearningEpisodeIdentityV1,
-    CombatLearningResourceSnapshotV1, CombatLearningRootContextV1, CombatLearningRootIdentityV1,
-    CombatLearningRootV1, CombatLearningStepV1, CombatLearningTerminalOutcomeV1,
+    combat_entry_floor_chance_population_v1, combat_public_chance_particle_checkpoints_v1,
+    CombatEntryFloorChancePopulationV1, CombatLearningBoundaryV1, CombatLearningEnvCheckpointV1,
+    CombatLearningEnvV1, CombatLearningEpisodeIdentityV1, CombatLearningResourceSnapshotV1,
+    CombatLearningRootContextV1, CombatLearningRootIdentityV1, CombatLearningRootV1,
+    CombatLearningStepV1, CombatLearningTerminalOutcomeV1,
 };
 pub use combat_learning_root_artifact::{
     CombatLearningRootArtifactV1, CombatLearningRootBatchArtifactV1,

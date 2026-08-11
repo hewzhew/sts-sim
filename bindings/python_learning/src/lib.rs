@@ -11,12 +11,12 @@ use sts_oracle_learning::ai::planner_core::{
     PublicDecisionDomainV1, PublicInformationSnapshotV1,
 };
 use sts_oracle_learning::eval::run_control::{
-    capture_planner_boundary_yield_v1, combat_public_chance_particle_checkpoints_v1,
-    CombatLearningPotionPolicyV1, CombatLearningRootBatchArtifactV1, CombatLearningRootV1,
-    LearningActionV1, LearningBoundaryKindV1, LearningBoundaryV1, LearningEnvPoolV1,
-    LearningEnvV1, LearningModelDecisionV1, LearningPublicRunContextV1,
-    LearningSelectionDraftV1, PlannerBoundaryYieldKindV1, RunControlConfig,
-    RunControlSessionCheckpointV1,
+    capture_planner_boundary_yield_v1, combat_entry_floor_chance_population_v1,
+    combat_public_chance_particle_checkpoints_v1, CombatLearningPotionPolicyV1,
+    CombatLearningRootBatchArtifactV1, CombatLearningRootV1, LearningActionV1,
+    LearningBoundaryKindV1, LearningBoundaryV1, LearningEnvPoolV1, LearningEnvV1,
+    LearningModelDecisionV1, LearningPublicRunContextV1, LearningSelectionDraftV1,
+    PlannerBoundaryYieldKindV1, RunControlConfig, RunControlSessionCheckpointV1,
 };
 
 mod bridge_decision;
@@ -61,6 +61,7 @@ const BATCH_CHECKPOINT_VERSION: u32 = 2;
 const CHECKPOINT_BANK_MAGIC: &[u8] = b"STS-LEARNING-BANK\0";
 const CHECKPOINT_BANK_VERSION: u32 = 2;
 const MAX_EXPORTED_COMBAT_ROOTS: usize = 64;
+const MAX_COMBAT_ENTRY_FLOOR_CHANCE_CANDIDATES: usize = 1_000_000;
 
 #[derive(Clone, Debug)]
 enum BridgeSlotState {
@@ -633,7 +634,7 @@ impl LearningBatchEnv {
         Self::decode_combat_root_artifact(payload, expected_roots, max_bytes).map_err(value_error)
     }
 
-    /// Construct an in-memory chance population from one opaque exact combat root.
+    /// Construct an independent-stream feasibility population from one opaque combat root.
     ///
     /// Every returned slot has the same public observation and legal candidates as the source,
     /// but independently sampled hidden draw order and future combat RNG. Particle seeds are
@@ -665,6 +666,75 @@ impl LearningBatchEnv {
             combat_public_chance_particle_checkpoints_v1(source, &particle_seeds)
                 .map_err(value_error)?;
         Self::from_combat_root_checkpoints(particles).map_err(value_error)
+    }
+
+    /// Reconstruct a public-conditioned combat-entry population from floor-local seed bases.
+    ///
+    /// Rust scans candidate floor seed bases through the production combat-start constructor and
+    /// retains only complete public-decision matches. Persistent RNG streams stay conditioned on
+    /// the exact upstream run. The returned seed list is private provenance and is not included in
+    /// model inputs. This first surface intentionally accepts only turn-0 room combats with visible
+    /// intent and an empty potion inventory.
+    #[staticmethod]
+    #[pyo3(signature = (payload, *, expected_roots, source_slot, candidate_floor_seed_base_start, max_candidates, required_particles, max_bytes))]
+    fn from_combat_entry_floor_chance_particles(
+        payload: &[u8],
+        expected_roots: usize,
+        source_slot: usize,
+        candidate_floor_seed_base_start: u64,
+        max_candidates: usize,
+        required_particles: usize,
+        max_bytes: usize,
+    ) -> PyResult<(Self, Vec<u64>, usize, usize, usize)> {
+        if required_particles == 0 || required_particles > MAX_EXPORTED_COMBAT_ROOTS {
+            return Err(PyValueError::new_err(format!(
+                "combat-entry floor chance population requires 1..={MAX_EXPORTED_COMBAT_ROOTS} particles"
+            )));
+        }
+        if max_candidates == 0 || max_candidates > MAX_COMBAT_ENTRY_FLOOR_CHANCE_CANDIDATES {
+            return Err(PyValueError::new_err(format!(
+                "combat-entry floor chance scan requires 1..={MAX_COMBAT_ENTRY_FLOOR_CHANCE_CANDIDATES} candidates"
+            )));
+        }
+        let artifact =
+            CombatLearningRootBatchArtifactV1::decode(payload, expected_roots, max_bytes)
+                .map_err(value_error)?;
+        let checkpoints = artifact.into_checkpoints().map_err(value_error)?;
+        let source = checkpoints.get(source_slot).cloned().ok_or_else(|| {
+            PyValueError::new_err(format!(
+                "combat public-chance source slot {source_slot} is out of range"
+            ))
+        })?;
+        let population = combat_entry_floor_chance_population_v1(
+            source,
+            candidate_floor_seed_base_start,
+            max_candidates,
+            required_particles,
+        )
+        .map_err(value_error)?;
+        if !population.is_complete(required_particles) {
+            return Err(PyValueError::new_err(format!(
+                "combat-entry floor chance scan accepted {}/{} unique particles after {} candidates (public matches {}, duplicate private states {})",
+                population.checkpoints().len(),
+                required_particles,
+                population.attempted_candidate_count,
+                population.public_match_count,
+                population.duplicate_private_state_count,
+            )));
+        }
+        let accepted_floor_seed_bases = population.accepted_floor_seed_bases.clone();
+        let attempted_candidate_count = population.attempted_candidate_count;
+        let public_match_count = population.public_match_count;
+        let duplicate_private_state_count = population.duplicate_private_state_count;
+        let env = Self::from_combat_root_checkpoints(population.into_checkpoints())
+            .map_err(value_error)?;
+        Ok((
+            env,
+            accepted_floor_seed_bases,
+            attempted_candidate_count,
+            public_match_count,
+            duplicate_private_state_count,
+        ))
     }
 
     /// Merge canonical single-root payloads while keeping checkpoints opaque.

@@ -2,11 +2,19 @@ use std::collections::BTreeSet;
 
 use serde::{Deserialize, Serialize};
 
+use crate::ai::combat_learning_observation::{
+    combat_learning_observation_v1, CombatLearningEnemyIdentityV1, CombatLearningObservationV1,
+};
 use crate::ai::combat_public_observation::ObservationEvidenceKindV1;
 use crate::ai::combat_state_key::combat_exact_state_hash_v2;
 use crate::content::potions::PotionId;
-use crate::runtime::rng::StsRng;
-use crate::state::core::ClientInput;
+use crate::runtime::combat::CombatState;
+use crate::runtime::rng::{RngPool, StsRng};
+use crate::sim::combat_action_equivalence::canonical_combat_action_representatives_v1;
+use crate::sim::combat_action_surface::combat_legal_action_surface_v2;
+use crate::sim::combat_start::build_natural_combat_start;
+use crate::state::core::{ActiveCombat, ClientInput, CombatContext, EngineState};
+use crate::state::run::RunState;
 
 use super::learning_env::{learning_combat_boundary_v1, prepare_learning_combat_input_v1};
 use super::{
@@ -129,6 +137,35 @@ pub struct CombatLearningRootV1 {
     previous_outcome: Option<CombatBaselineOutcomeV1>,
     enemy_start_hp: i32,
     combat_sequence: u64,
+}
+
+/// One bounded scan of alternative floor-local RNG seed bases at combat entry.
+///
+/// Seed bases stay private provenance. The already-realized upstream run and its persistent RNG
+/// streams remain fixed. Only checkpoints whose complete public decision equals the source
+/// decision are retained, and duplicate exact private states are counted rather than emitted
+/// twice.
+#[derive(Clone, Debug, PartialEq)]
+pub struct CombatEntryFloorChancePopulationV1 {
+    checkpoints: Vec<RunControlSessionCheckpointV1>,
+    pub accepted_floor_seed_bases: Vec<u64>,
+    pub attempted_candidate_count: usize,
+    pub public_match_count: usize,
+    pub duplicate_private_state_count: usize,
+}
+
+impl CombatEntryFloorChancePopulationV1 {
+    pub fn checkpoints(&self) -> &[RunControlSessionCheckpointV1] {
+        &self.checkpoints
+    }
+
+    pub fn into_checkpoints(self) -> Vec<RunControlSessionCheckpointV1> {
+        self.checkpoints
+    }
+
+    pub fn is_complete(&self, required_particles: usize) -> bool {
+        self.checkpoints.len() == required_particles
+    }
 }
 
 impl CombatLearningRootV1 {
@@ -280,6 +317,391 @@ pub fn combat_public_chance_particle_checkpoints_v1(
         .copied()
         .map(|seed| root.public_chance_particle_checkpoint_v1(seed))
         .collect()
+}
+
+/// Scan alternative floor-local RNG seed bases for public-equivalent natural combat entries.
+///
+/// This is deliberately limited to visible-intent, potion-empty, first-turn room combats. Each
+/// candidate reconstructs the whole combat entry through `build_natural_combat_start`. The exact
+/// persistent streams remain conditioned on the already-realized upstream run, while every
+/// floor-local stream shares the real `candidate_floor_seed_base + floor` seed. The fixed exact
+/// upstream run state is the conditioning boundary. Upstream map/deck history and persistent RNG
+/// streams are not regenerated, so this is not a posterior over complete run seeds.
+pub fn combat_entry_floor_chance_population_v1(
+    source: RunControlSessionCheckpointV1,
+    candidate_floor_seed_base_start: u64,
+    max_candidates: usize,
+    required_particles: usize,
+) -> Result<CombatEntryFloorChancePopulationV1, String> {
+    if required_particles == 0 {
+        return Err("combat-entry floor chance population requires particles".to_owned());
+    }
+    if max_candidates == 0 {
+        return Err("combat-entry floor chance scan requires candidates".to_owned());
+    }
+
+    let root = CombatLearningRootV1::from_checkpoint(source)?;
+    let source_session = root.session.clone().into_session()?;
+    let source_public = validate_combat_entry_floor_chance_source_v1(&source_session)?;
+
+    let reconstructed_source = rebuild_combat_entry_with_floor_seed_base_v1(
+        &source_session,
+        source_session.run_state.seed,
+    )?;
+    if learning_combat_boundary_v1(&reconstructed_source)? != source_public {
+        return Err(
+            "combat entry cannot be reconstructed from its recorded source seed and public run state"
+                .to_owned(),
+        );
+    }
+    let reconstructed_root = CombatLearningRootV1::from_session(reconstructed_source)?;
+    if reconstructed_root.identity.exact_combat_state_hash != root.identity.exact_combat_state_hash
+    {
+        return Err(
+            "combat entry source floor seed reconstructs the public decision but not the exact combat state"
+                .to_owned(),
+        );
+    }
+    if reconstructed_root.identity.root_id != root.identity.root_id {
+        return Err(
+            "combat entry source floor seed reconstructs the exact combat state but not the exact run-control checkpoint"
+                .to_owned(),
+        );
+    }
+
+    let mut checkpoints = Vec::with_capacity(required_particles);
+    let mut accepted_floor_seed_bases = Vec::with_capacity(required_particles);
+    let mut exact_root_ids = BTreeSet::new();
+    let mut attempted_candidate_count = 0usize;
+    let mut public_match_count = 0usize;
+    let mut duplicate_private_state_count = 0usize;
+
+    const SCAN_BATCH_SIZE: usize = 8_192;
+    while attempted_candidate_count < max_candidates && checkpoints.len() < required_particles {
+        let batch_len = SCAN_BATCH_SIZE.min(max_candidates - attempted_candidate_count);
+        let batch_start = candidate_floor_seed_base_start
+            .checked_add(
+                u64::try_from(attempted_candidate_count)
+                    .map_err(|_| "combat-entry floor chance offset exceeds u64".to_owned())?,
+            )
+            .ok_or_else(|| {
+                "combat-entry floor chance candidate seed range overflows u64".to_owned()
+            })?;
+        let public_matches = combat_entry_floor_public_matches_batch_v1(
+            &source_session,
+            &source_public,
+            batch_start,
+            batch_len,
+        )?;
+        attempted_candidate_count += batch_len;
+        public_match_count += public_matches.len();
+        for (candidate_floor_seed_base, candidate) in public_matches {
+            let candidate_root = CombatLearningRootV1::from_session(candidate)?;
+            if !exact_root_ids.insert(candidate_root.identity.root_id.clone()) {
+                duplicate_private_state_count += 1;
+                continue;
+            }
+            if checkpoints.len() < required_particles {
+                accepted_floor_seed_bases.push(candidate_floor_seed_base);
+                checkpoints.push(candidate_root.session);
+            }
+        }
+    }
+
+    Ok(CombatEntryFloorChancePopulationV1 {
+        checkpoints,
+        accepted_floor_seed_bases,
+        attempted_candidate_count,
+        public_match_count,
+        duplicate_private_state_count,
+    })
+}
+
+fn combat_entry_floor_public_matches_batch_v1(
+    source: &RunControlSession,
+    source_public: &LearningCombatBoundaryV1,
+    candidate_floor_seed_base_start: u64,
+    candidate_count: usize,
+) -> Result<Vec<(u64, RunControlSession)>, String> {
+    let worker_count = std::thread::available_parallelism()
+        .map(usize::from)
+        .unwrap_or(1)
+        .min(16)
+        .min(candidate_count.max(1));
+    let candidates_per_worker = candidate_count.div_ceil(worker_count);
+    std::thread::scope(|scope| {
+        let mut workers = Vec::with_capacity(worker_count);
+        for worker_index in 0..worker_count {
+            let first_offset = worker_index * candidates_per_worker;
+            let end_offset = (first_offset + candidates_per_worker).min(candidate_count);
+            if first_offset == end_offset {
+                continue;
+            }
+            workers.push(scope.spawn(move || {
+                let mut matches = Vec::new();
+                let mut candidate_run_state = source.run_state.clone();
+                for offset in first_offset..end_offset {
+                    let candidate_floor_seed_base = candidate_floor_seed_base_start
+                        .checked_add(u64::try_from(offset).map_err(|_| {
+                            "combat-entry floor chance offset exceeds u64".to_owned()
+                        })?)
+                        .ok_or_else(|| {
+                            "combat-entry floor chance candidate seed range overflows u64"
+                                .to_owned()
+                        })?;
+                    let (engine_state, combat_state) = build_combat_entry_with_floor_seed_base_v1(
+                        source,
+                        &mut candidate_run_state,
+                        candidate_floor_seed_base,
+                    )?;
+                    if combat_entry_candidate_may_match_public_shape_v1(
+                        &combat_state,
+                        &source_public.observation,
+                    ) && combat_entry_candidate_matches_public_boundary_v1(
+                        &engine_state,
+                        &combat_state,
+                        source_public,
+                    ) {
+                        let candidate = assemble_combat_entry_session_v1(
+                            source,
+                            candidate_run_state.clone(),
+                            engine_state,
+                            combat_state,
+                        )?;
+                        if learning_combat_boundary_v1(&candidate)? != *source_public {
+                            return Err(
+                                "combat-entry floor chance fast match disagrees with the complete public boundary"
+                                    .to_owned(),
+                            );
+                        }
+                        matches.push((candidate_floor_seed_base, candidate));
+                    }
+                }
+                Ok::<_, String>(matches)
+            }));
+        }
+
+        let mut matches = Vec::new();
+        for worker in workers {
+            matches.extend(
+                worker
+                    .join()
+                    .map_err(|_| "combat-entry floor chance scan worker panicked".to_owned())??,
+            );
+        }
+        Ok(matches)
+    })
+}
+
+fn validate_combat_entry_floor_chance_source_v1(
+    session: &RunControlSession,
+) -> Result<LearningCombatBoundaryV1, String> {
+    let boundary = learning_combat_boundary_v1(session)?;
+    if !matches!(session.engine_state, EngineState::CombatPlayerTurn) {
+        return Err(
+            "combat-entry floor chance sampling requires a stable player-turn entry".to_owned(),
+        );
+    }
+    let active = session
+        .active_combat
+        .as_ref()
+        .ok_or_else(|| "combat-entry floor chance sampling requires an active combat".to_owned())?;
+    if active.combat_state.turn.turn_count != 0 {
+        return Err(
+            "combat-entry floor chance sampling currently supports only combat-entry turn 0"
+                .to_owned(),
+        );
+    }
+    if active.encounter_id.is_none() {
+        return Err(
+            "combat-entry floor chance sampling requires a typed encounter identity".to_owned(),
+        );
+    }
+    if !matches!(active.context, CombatContext::Room(_)) {
+        return Err(
+            "combat-entry floor chance sampling currently supports only room combats".to_owned(),
+        );
+    }
+    if active
+        .combat_state
+        .entities
+        .potions
+        .iter()
+        .any(Option::is_some)
+    {
+        return Err(
+            "combat-entry floor chance sampling currently requires an empty potion inventory"
+                .to_owned(),
+        );
+    }
+    if boundary
+        .observation
+        .monsters
+        .iter()
+        .any(|monster| monster.intent.evidence != ObservationEvidenceKindV1::VisibleExact)
+    {
+        return Err(
+            "combat-entry floor chance sampling does not yet support a hidden current intent"
+                .to_owned(),
+        );
+    }
+    Ok(boundary)
+}
+
+fn rebuild_combat_entry_with_floor_seed_base_v1(
+    source: &RunControlSession,
+    candidate_floor_seed_base: u64,
+) -> Result<RunControlSession, String> {
+    let mut run_state = source.run_state.clone();
+    let (engine_state, combat_state) = build_combat_entry_with_floor_seed_base_v1(
+        source,
+        &mut run_state,
+        candidate_floor_seed_base,
+    )?;
+    assemble_combat_entry_session_v1(source, run_state, engine_state, combat_state)
+}
+
+fn build_combat_entry_with_floor_seed_base_v1(
+    source: &RunControlSession,
+    run_state: &mut RunState,
+    candidate_floor_seed_base: u64,
+) -> Result<(EngineState, CombatState), String> {
+    let source_active = source
+        .active_combat
+        .as_ref()
+        .ok_or_else(|| "combat-entry floor chance sampling requires an active combat".to_owned())?;
+    let encounter_id = source_active.encounter_id.ok_or_else(|| {
+        "combat-entry floor chance sampling requires a typed encounter identity".to_owned()
+    })?;
+    let CombatContext::Room(room_context) = &source_active.context else {
+        return Err(
+            "combat-entry floor chance sampling currently supports only room combats".to_owned(),
+        );
+    };
+
+    run_state.rng_pool = conditioned_combat_entry_floor_rng_pool_v1(
+        &source.run_state.rng_pool,
+        candidate_floor_seed_base,
+        source.run_state.floor_num,
+    );
+    let (engine_state, mut combat_state) =
+        build_natural_combat_start(run_state, encounter_id, room_context.room_type)?;
+    combat_state.clear_transition_observations();
+    Ok((engine_state, combat_state))
+}
+
+fn assemble_combat_entry_session_v1(
+    source: &RunControlSession,
+    run_state: RunState,
+    engine_state: EngineState,
+    combat_state: CombatState,
+) -> Result<RunControlSession, String> {
+    let source_active = source
+        .active_combat
+        .as_ref()
+        .ok_or_else(|| "combat-entry floor chance sampling requires an active combat".to_owned())?;
+    let encounter_id = source_active.encounter_id.ok_or_else(|| {
+        "combat-entry floor chance sampling requires a typed encounter identity".to_owned()
+    })?;
+
+    let mut candidate = source.clone();
+    candidate.engine_state = engine_state.clone();
+    candidate.run_state = run_state;
+    candidate.active_combat = Some(ActiveCombat::new_for_encounter(
+        engine_state,
+        combat_state,
+        encounter_id,
+        source_active.context.clone(),
+    ));
+    Ok(candidate)
+}
+
+fn combat_entry_candidate_matches_public_boundary_v1(
+    engine_state: &EngineState,
+    combat_state: &CombatState,
+    source: &LearningCombatBoundaryV1,
+) -> bool {
+    if combat_learning_observation_v1(combat_state) != source.observation {
+        return false;
+    }
+    let legal_actions = combat_legal_action_surface_v2(engine_state, combat_state);
+    if legal_actions != source.legal_actions {
+        return false;
+    }
+    canonical_combat_action_representatives_v1(
+        engine_state,
+        combat_state,
+        &legal_actions.atomic_actions,
+    ) == source.atomic_action_representatives
+}
+
+/// Cheap necessary conditions before projecting the complete learning boundary.
+///
+/// This intentionally accepts false positives. The full hidden-free observation, legal surface,
+/// representative mapping, and complete boundary are still checked before a particle is retained.
+fn combat_entry_candidate_may_match_public_shape_v1(
+    combat_state: &CombatState,
+    source: &CombatLearningObservationV1,
+) -> bool {
+    if combat_state.zones.hand.len() != source.cards.hand.cards.len()
+        || !combat_state
+            .zones
+            .hand
+            .iter()
+            .zip(&source.cards.hand.cards)
+            .all(|(candidate, source)| {
+                candidate.id == source.card_id
+                    && candidate.upgrades == source.upgrades
+                    && candidate.misc_value == source.misc_value
+                    && candidate.base_damage_override == source.base_damage_override
+                    && candidate.base_block_override == source.base_block_override
+                    && candidate.cost_modifier == source.cost_modifier
+                    && candidate.cost_for_turn == source.cost_for_turn
+                    && candidate.exhaust_override == source.exhaust_override
+                    && candidate.retain_override == source.retain_override
+                    && candidate.free_to_play_once == source.free_to_play_once
+                    && candidate.energy_on_use == source.energy_on_use
+            })
+    {
+        return false;
+    }
+    combat_state.entities.monsters.len() == source.monsters.len()
+        && combat_state
+            .entities
+            .monsters
+            .iter()
+            .zip(&source.monsters)
+            .all(|(candidate, source)| {
+                let same_enemy = match source.enemy {
+                    CombatLearningEnemyIdentityV1::Known { enemy_id } => {
+                        crate::content::monsters::EnemyId::from_id(candidate.monster_type)
+                            == Some(enemy_id)
+                    }
+                    CombatLearningEnemyIdentityV1::Unmapped { monster_type } => {
+                        candidate.monster_type == monster_type
+                    }
+                };
+                same_enemy
+                    && candidate.id == source.entity_id
+                    && candidate.slot == source.slot
+                    && candidate.current_hp == source.hp
+                    && candidate.max_hp == source.max_hp
+                    && candidate.block == source.block
+                    && candidate.is_alive_for_action() == source.alive
+                    && candidate.is_escaped == source.escaped
+                    && candidate.is_dying == source.dying
+                    && candidate.half_dead == source.half_dead
+            })
+}
+
+fn conditioned_combat_entry_floor_rng_pool_v1(
+    source: &RngPool,
+    candidate_floor_seed_base: u64,
+    floor: i32,
+) -> RngPool {
+    let mut pool = source.clone();
+    pool.generate_floor_seeds(candidate_floor_seed_base, floor);
+    pool
 }
 
 fn shuffle_hidden_draw_order_v1(
@@ -561,6 +983,7 @@ mod tests {
     use super::*;
     use crate::content::cards::CardId;
     use crate::content::monsters::exordium::jaw_worm::JawWorm;
+    use crate::content::monsters::factory::EncounterId;
     use crate::content::monsters::EnemyId;
     use crate::content::monsters::MonsterBehavior;
     use crate::content::potions::{Potion, PotionId};
@@ -720,6 +1143,28 @@ mod tests {
     }
 
     #[test]
+    fn combat_entry_floor_chance_preserves_consumed_persistent_streams() {
+        let seed = 2026081101;
+        let source = natural_combat_entry_session(seed, EncounterId::Cultist);
+        let source_root =
+            CombatLearningRootV1::from_session(source).expect("capture natural combat entry");
+
+        let population =
+            combat_entry_floor_chance_population_v1(source_root.session.clone(), seed, 1, 1)
+                .expect("reconstruct source seed through production combat start");
+
+        assert!(population.is_complete(1));
+        assert_eq!(population.accepted_floor_seed_bases, vec![seed]);
+        assert_eq!(population.attempted_candidate_count, 1);
+        assert_eq!(population.public_match_count, 1);
+        assert_eq!(population.duplicate_private_state_count, 0);
+        let reconstructed =
+            CombatLearningRootV1::from_checkpoint(population.into_checkpoints().pop().unwrap())
+                .expect("restore reconstructed particle");
+        assert_eq!(reconstructed.identity(), source_root.identity());
+    }
+
+    #[test]
     fn checkpoint_restores_current_decision_and_rejects_cross_episode_restore() {
         let root = combat_root_session(20);
         let first = CombatLearningEnvV1::from_root_session(root.clone(), 0)
@@ -842,6 +1287,37 @@ mod tests {
             CombatContext::Room(RoomCombatContext {
                 room_type: RoomType::MonsterRoom,
             }),
+        ));
+        session
+    }
+
+    fn natural_combat_entry_session(seed: u64, encounter_id: EncounterId) -> RunControlSession {
+        let mut session = RunControlSession::new(crate::eval::run_control::RunControlConfig {
+            seed,
+            ..Default::default()
+        });
+        let _ = session.run_state.rng_pool.card_rng.random(17);
+        let _ = session.run_state.rng_pool.event_rng.random_boolean();
+        session.run_state.floor_num = 1;
+        session
+            .run_state
+            .rng_pool
+            .generate_floor_seeds(seed, session.run_state.floor_num);
+        let room_type = RoomType::MonsterRoom;
+        let (engine_state, mut combat_state) =
+            crate::sim::combat_start::build_natural_combat_start(
+                &mut session.run_state,
+                encounter_id,
+                room_type,
+            )
+            .expect("build natural combat entry");
+        combat_state.clear_transition_observations();
+        session.engine_state = engine_state.clone();
+        session.active_combat = Some(ActiveCombat::new_for_encounter(
+            engine_state,
+            combat_state,
+            encounter_id,
+            CombatContext::Room(RoomCombatContext { room_type }),
         ));
         session
     }
