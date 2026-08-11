@@ -667,10 +667,27 @@ def _rollout_value_diagnostics(
         "gae_lambda": 1.0,
         "actor_mask": "multiple_candidates",
         "critic_residual_convention": "return_to_go_target_minus_prediction",
+        "pre_normalization_actor_advantage": (
+            None
+            if diagnostics.pre_normalization_actor_advantage is None
+            else signal(diagnostics.pre_normalization_actor_advantage)
+        ),
         "actor_advantage": (
             None
             if diagnostics.actor_advantage is None
             else signal(diagnostics.actor_advantage)
+        ),
+        "advantage_normalization_applied": (
+            diagnostics.advantage_normalization_applied
+        ),
+        "advantage_normalization_sign_changes": (
+            diagnostics.advantage_normalization_sign_changes
+        ),
+        "advantage_normalization_positive_from_nonpositive": (
+            diagnostics.advantage_normalization_positive_from_nonpositive
+        ),
+        "advantage_normalization_negative_from_nonnegative": (
+            diagnostics.advantage_normalization_negative_from_nonnegative
         ),
         "critic_prediction": signal(diagnostics.critic_prediction),
         "return_to_go_target": signal(diagnostics.return_to_go_target),

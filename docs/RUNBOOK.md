@@ -1227,8 +1227,12 @@ training journal records optimizer epochs, KL, actor/value clip fractions,
 entropy, value loss, gradient norm, and attempt-weighted explained variance.
 Its per-generation `rollout_value_diagnostics` identifies the active target as
 `decision_local_return_to_go`; there is no terminal-broadcast shadow optimizer.
-Raw sign counts remain distinguishable from attempt-equal sign weight and
-weighted moments, so a long attempt cannot silently dominate the diagnostic.
+The journal reports eligible actor residuals both before and after advantage
+normalization, whether normalization ran, and how many directions changed sign
+(including each positive-from-nonpositive and negative-from-nonnegative case).
+These are signal-formation facts, not automatic rejection criteria. Raw sign
+counts remain distinguishable from attempt-equal sign weight and weighted
+moments, so a long attempt cannot silently dominate the diagnostic.
 It also aggregates the first four completed
 combats by ordinal:
 net post-combat HP already includes relic recovery such as Burning Blood, so

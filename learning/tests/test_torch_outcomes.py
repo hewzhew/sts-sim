@@ -399,7 +399,10 @@ class OnPolicyTerminalLossTests(unittest.TestCase):
         self.assertEqual(result.approximate_kl, 0.0)
         self.assertEqual(result.clip_fraction, 0.0)
         self.assertEqual(result.entropy, 0.0)
+        self.assertIsNone(diagnostics.pre_normalization_actor_advantage)
         self.assertIsNone(diagnostics.actor_advantage)
+        self.assertFalse(diagnostics.advantage_normalization_applied)
+        self.assertEqual(diagnostics.advantage_normalization_sign_changes, 0)
         self.assertEqual(diagnostics.actor_decision_count, 0)
         self.assertEqual(diagnostics.forced_decision_count, 1)
         self.assertTrue(
@@ -561,8 +564,26 @@ class OnPolicyTerminalLossTests(unittest.TestCase):
 
         diagnostics = result.value_diagnostics
         assert diagnostics is not None
+        pre_normalization = diagnostics.pre_normalization_actor_advantage
+        assert pre_normalization is not None
         advantage = diagnostics.actor_advantage
         assert advantage is not None
+        self.assertEqual(pre_normalization.decision_count, 4)
+        self.assertEqual(pre_normalization.positive_decisions, 1)
+        self.assertEqual(pre_normalization.negative_decisions, 3)
+        self.assertAlmostEqual(pre_normalization.weighted_mean, 0.3)
+        self.assertAlmostEqual(pre_normalization.minimum, -0.6)
+        self.assertAlmostEqual(pre_normalization.maximum, 1.0)
+        self.assertTrue(diagnostics.advantage_normalization_applied)
+        self.assertEqual(diagnostics.advantage_normalization_sign_changes, 0)
+        self.assertEqual(
+            diagnostics.advantage_normalization_positive_from_nonpositive,
+            0,
+        )
+        self.assertEqual(
+            diagnostics.advantage_normalization_negative_from_nonnegative,
+            0,
+        )
         self.assertEqual(advantage.decision_count, 4)
         self.assertEqual(advantage.positive_decisions, 1)
         self.assertEqual(advantage.negative_decisions, 3)
@@ -576,6 +597,78 @@ class OnPolicyTerminalLossTests(unittest.TestCase):
         self.assertEqual(diagnostics.actor_decision_count, 4)
         self.assertEqual(diagnostics.forced_decision_count, 0)
         self.assertAlmostEqual(diagnostics.explained_variance, 0.0)
+
+    def test_value_diagnostics_identify_normalization_created_direction(self) -> None:
+        torch.manual_seed(45)
+        scorer = RaggedCandidateScorer.from_bridge_schema(
+            semantic_schema_fixture(),
+            RaggedScorerConfig(
+                hidden_dim=10,
+                relation_layers=1,
+                value_head=True,
+            ),
+        )
+        attempts = []
+        for slot, terminal_floor in ((1, 10), (2, 20)):
+            attempt = completed_attempt_fixture(
+                slot=slot,
+                batches=(
+                    self._with_run_progress(
+                        self._on_policy_batch(
+                            scorer,
+                            slot=slot,
+                            row=0,
+                            ordinal=0,
+                        ),
+                        floor=0,
+                    ),
+                ),
+                reward=-1,
+            )
+            attempts.append(
+                replace(
+                    attempt,
+                    terminal=replace(
+                        attempt.terminal,
+                        terminal=replace(
+                            attempt.terminal.terminal,
+                            terminal_floor=terminal_floor,
+                        ),
+                    ),
+                )
+            )
+
+        result = on_policy_terminal_loss(
+            scorer,
+            self._public(*attempts),
+            self.registry,
+            CONCAT_LIMITS,
+            self.config,
+            self.return_config,
+            TerminalAdvantageMode.DECISION_LOCAL_GAE,
+            update_config=RunPolicyUpdateConfig.ppo_clip_value(),
+        )
+
+        diagnostics = result.value_diagnostics
+        assert diagnostics is not None
+        raw = diagnostics.pre_normalization_actor_advantage
+        normalized = diagnostics.actor_advantage
+        assert raw is not None
+        assert normalized is not None
+        self.assertEqual(raw.negative_decisions, 2)
+        self.assertEqual(raw.positive_decisions, 0)
+        self.assertEqual(normalized.negative_decisions, 1)
+        self.assertEqual(normalized.positive_decisions, 1)
+        self.assertTrue(diagnostics.advantage_normalization_applied)
+        self.assertEqual(diagnostics.advantage_normalization_sign_changes, 1)
+        self.assertEqual(
+            diagnostics.advantage_normalization_positive_from_nonpositive,
+            1,
+        )
+        self.assertEqual(
+            diagnostics.advantage_normalization_negative_from_nonnegative,
+            0,
+        )
 
     def test_value_ppo_optimizes_decision_local_returns(
         self,

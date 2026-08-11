@@ -1290,7 +1290,12 @@ return-to-go under equal total attempt weight. Actor advantages, behavior
 probabilities, and pre-update value predictions remain frozen across bounded
 PPO epochs. Actor probability ratios and value changes are clipped separately;
 target KL may stop later epochs, and diagnostics include actor/value clip
-fractions plus attempt-weighted explained variance. The V3 whole-run
+fractions plus attempt-weighted explained variance. The diagnostics preserve
+the eligible actor residual both before and after configured advantage
+normalization and count every normalization-induced sign change, including
+positive-from-nonpositive and negative-from-nonnegative directions. This keeps
+environment return, critic residual, and optimizer signal distinct without
+declaring any one sign change correct or incorrect. The V3 whole-run
 publication and trainer identity bind this return, GAE, actor-mask, and
 value-clipping contract. Earlier V2 publications do not bind that contract;
 in particular, their value PPO optimized a terminal-broadcast target. They are

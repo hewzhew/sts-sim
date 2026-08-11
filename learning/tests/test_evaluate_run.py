@@ -408,7 +408,12 @@ def test_run_value_ppo_warm_starts_actor_and_publishes_diagnostics(
         == "return_to_go_target_minus_prediction"
     )
     assert rollout["critic_prediction"]["weighted_mean"] == pytest.approx(0.0)
+    assert rollout["pre_normalization_actor_advantage"] is not None
     assert rollout["actor_advantage"]["zero_weight"] == pytest.approx(1.0)
+    assert rollout["advantage_normalization_applied"] is True
+    assert rollout["advantage_normalization_sign_changes"] >= 0
+    assert rollout["advantage_normalization_positive_from_nonpositive"] >= 0
+    assert rollout["advantage_normalization_negative_from_nonnegative"] >= 0
     assert rollout["critic_residual"]["weighted_mean"] == pytest.approx(
         rollout["return_to_go_target"]["weighted_mean"]
     )

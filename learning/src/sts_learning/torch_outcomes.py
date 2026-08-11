@@ -113,7 +113,12 @@ class AttemptEqualSignalSummary:
 class RunValueDiagnostics:
     """Frozen rollout diagnostics for one whole-run actor-critic objective."""
 
+    pre_normalization_actor_advantage: AttemptEqualSignalSummary | None
     actor_advantage: AttemptEqualSignalSummary | None
+    advantage_normalization_applied: bool
+    advantage_normalization_sign_changes: int
+    advantage_normalization_positive_from_nonpositive: int
+    advantage_normalization_negative_from_nonnegative: int
     critic_prediction: AttemptEqualSignalSummary
     return_to_go_target: AttemptEqualSignalSummary
     critic_residual: AttemptEqualSignalSummary
@@ -901,11 +906,15 @@ def _run_policy_weighted_loss(
     )
     if predicted_values.shape != target_tensor.shape:
         raise TorchOutcomeError("run critic values are misaligned")
+    pre_normalization_actor_advantages: Tensor | None = None
+    advantage_normalization_applied = False
     if fixed_actor_advantages is None:
         actor_advantages = target_tensor - predicted_values.detach()
+        pre_normalization_actor_advantages = actor_advantages
         actor_weight = torch.sum(actor_weight_tensor)
         if update_config.normalize_advantage:
             if bool(actor_weight > 0.0):
+                advantage_normalization_applied = True
                 advantage_mean = (
                     torch.sum(actor_advantages * actor_weight_tensor) / actor_weight
                 )
@@ -1035,6 +1044,11 @@ def _run_policy_weighted_loss(
     )
     value_diagnostics = None
     if fixed_actor_advantages is None:
+        assert pre_normalization_actor_advantages is not None
+        detached_pre_normalization_advantages = tuple(
+            float(value)
+            for value in pre_normalization_actor_advantages.detach().cpu().tolist()
+        )
         detached_targets = tuple(
             float(value) for value in target_tensor.detach().cpu().tolist()
         )
@@ -1047,9 +1061,35 @@ def _run_policy_weighted_loss(
             )
         )
         value_diagnostics = RunValueDiagnostics(
+            pre_normalization_actor_advantage=_optional_actor_signal_summary(
+                detached_pre_normalization_advantages,
+                actor_weights,
+            ),
             actor_advantage=_optional_actor_signal_summary(
                 detached_advantages,
                 actor_weights,
+            ),
+            advantage_normalization_applied=advantage_normalization_applied,
+            advantage_normalization_sign_changes=_eligible_sign_changes(
+                detached_pre_normalization_advantages,
+                detached_advantages,
+                actor_weights,
+            ),
+            advantage_normalization_positive_from_nonpositive=(
+                _eligible_direction_changes(
+                    detached_pre_normalization_advantages,
+                    detached_advantages,
+                    actor_weights,
+                    positive=True,
+                )
+            ),
+            advantage_normalization_negative_from_nonnegative=(
+                _eligible_direction_changes(
+                    detached_pre_normalization_advantages,
+                    detached_advantages,
+                    actor_weights,
+                    positive=False,
+                )
             ),
             critic_prediction=_attempt_equal_signal_summary(
                 detached_predictions,
@@ -1165,6 +1205,58 @@ def _optional_actor_signal_summary(
         tuple(value for value, _weight in eligible),
         tuple(weight for _value, weight in eligible),
     )
+
+
+def _eligible_sign_changes(
+    before: Sequence[float],
+    after: Sequence[float],
+    weights: Sequence[float],
+) -> int:
+    if not (len(before) == len(after) == len(weights)):
+        raise TorchOutcomeError("run actor signal comparison is misaligned")
+    return sum(
+        _signal_sign(before_value) != _signal_sign(after_value)
+        for before_value, after_value, weight in zip(
+            before,
+            after,
+            weights,
+            strict=True,
+        )
+        if weight > 0.0
+    )
+
+
+def _eligible_direction_changes(
+    before: Sequence[float],
+    after: Sequence[float],
+    weights: Sequence[float],
+    *,
+    positive: bool,
+) -> int:
+    if not (len(before) == len(after) == len(weights)):
+        raise TorchOutcomeError("run actor direction comparison is misaligned")
+    if type(positive) is not bool:
+        raise TorchOutcomeError("run actor direction must be bool")
+    return sum(
+        (
+            before_value <= 0.0 and after_value > 0.0
+            if positive
+            else before_value >= 0.0 and after_value < 0.0
+        )
+        for before_value, after_value, weight in zip(
+            before,
+            after,
+            weights,
+            strict=True,
+        )
+        if weight > 0.0
+    )
+
+
+def _signal_sign(value: float) -> int:
+    if not math.isfinite(value):
+        raise TorchOutcomeError("run actor signal must be finite")
+    return int(value > 0.0) - int(value < 0.0)
 
 
 def _weighted_explained_variance(
