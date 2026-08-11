@@ -268,9 +268,11 @@ function Invoke-LearningTests([string]$PythonPath) {
         throw "learning tests failed; full log: $log"
     }
     $summary = Get-Content -LiteralPath $log | Where-Object { $_.Trim() } | Select-Object -Last 1
+    Remove-Item -LiteralPath $baseTemp -Recurse -Force
+    Remove-Item -LiteralPath $log -Force
     Write-Output $summary
     Write-Output "learning_tests=passed"
-    Write-Output ("log=" + $log)
+    Write-Output "success_artifacts=cleaned"
 }
 
 switch ($Command) {

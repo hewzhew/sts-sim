@@ -289,4 +289,5 @@ Write-Output (
     "target_install:" + [math]::Round($targetInstallSeconds, 3) + "," +
     "total:" + [math]::Round($totalWatch.Elapsed.TotalSeconds, 3)
 )
-Write-Output ("artifact_root=" + $runRoot)
+Remove-Item -LiteralPath $runRoot -Recurse -Force
+Write-Output "success_artifacts=cleaned"
