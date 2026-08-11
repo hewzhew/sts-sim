@@ -185,6 +185,10 @@ class TorchProvenanceTests(unittest.TestCase):
                 value_clip_coefficient=None,
             ),
         )
+        calibration = replace(
+            value,
+            policy_update=RunPolicyUpdateConfig.critic_calibration(),
+        )
 
         policy_template = categorical_training_manifest_template(
             schema,
@@ -243,6 +247,18 @@ class TorchProvenanceTests(unittest.TestCase):
             unclipped_value,
             device_type="cpu",
         )
+        calibration_template = categorical_training_manifest_template(
+            schema,
+            RaggedScorerConfig(
+                hidden_dim=4,
+                relation_layers=1,
+                value_head=True,
+            ),
+            behavior,
+            optimizer,
+            calibration,
+            device_type="cpu",
+        )
 
         self.assertNotEqual(
             value_template.model_definition,
@@ -270,6 +286,18 @@ class TorchProvenanceTests(unittest.TestCase):
         )
         self.assertNotEqual(
             unclipped_value_template.trainer_implementation,
+            value_template.trainer_implementation,
+        )
+        self.assertEqual(
+            calibration_template.model_definition,
+            value_template.model_definition,
+        )
+        self.assertEqual(
+            calibration_template.model_config,
+            value_template.model_config,
+        )
+        self.assertNotEqual(
+            calibration_template.trainer_implementation,
             value_template.trainer_implementation,
         )
 

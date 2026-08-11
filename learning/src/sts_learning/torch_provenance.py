@@ -48,6 +48,8 @@ _TRAINER_IMPLEMENTATION_VERSION = 4
 _TERMINAL_RETURN_CONFIG_VERSION = 1
 _RUN_VALUE_PPO_TRAINER_IMPLEMENTATION_VERSION = 3
 _RUN_VALUE_PPO_OBJECTIVE_VERSION = 3
+_RUN_CRITIC_CALIBRATION_TRAINER_IMPLEMENTATION_VERSION = 1
+_RUN_CRITIC_CALIBRATION_OBJECTIVE_VERSION = 1
 _COMBAT_WIN_TRAINER_IMPLEMENTATION_VERSION = 3
 _COMBAT_WIN_OBJECTIVE_VERSION = 3
 _COMBAT_PPO_TRAINER_IMPLEMENTATION_VERSION = 4
@@ -316,9 +318,15 @@ def categorical_trainer_implementation(
     max_grad_norm = update.max_grad_norm
     target_kl = update.target_kl
     value_clip = update.value_clip_coefficient
+    critic_calibration = update.rule is RunPolicyUpdateRule.CRITIC_CALIBRATION
+    objective_version = (
+        _RUN_CRITIC_CALIBRATION_OBJECTIVE_VERSION
+        if critic_calibration
+        else _RUN_VALUE_PPO_OBJECTIVE_VERSION
+    )
     objective_encoding = struct.pack(
         ">IQQBBBBQdddBdBdBddd",
-        _RUN_VALUE_PPO_OBJECTIVE_VERSION,
+        objective_version,
         objective_config.terminal_return.target_floor,
         objective_config.attempts_per_update,
         int(objective_config.advantage_mode),
@@ -338,11 +346,19 @@ def categorical_trainer_implementation(
         1.0,
         1.0,
     )
+    if critic_calibration:
+        trainer_marker = b"STS-SYNCHRONOUS-RUN-CRITIC-CALIBRATION-TRAINER\x00"
+        trainer_version = _RUN_CRITIC_CALIBRATION_TRAINER_IMPLEMENTATION_VERSION
+        objective_marker = b"STS-DECISION-LOCAL-FLOOR-RETURN-VALUE-HEAD-ONLY\x00"
+    else:
+        trainer_marker = b"STS-SYNCHRONOUS-RUN-DECISION-LOCAL-GAE-PPO-TRAINER\x00"
+        trainer_version = _RUN_VALUE_PPO_TRAINER_IMPLEMENTATION_VERSION
+        objective_marker = b"STS-DECISION-LOCAL-FLOOR-RETURN-GAE\x00"
     return ManifestArtifactId.from_content(
         ManifestArtifactKind.TRAINER_IMPLEMENTATION,
-        b"STS-SYNCHRONOUS-RUN-DECISION-LOCAL-GAE-PPO-TRAINER\x00"
-        + struct.pack(">I", _RUN_VALUE_PPO_TRAINER_IMPLEMENTATION_VERSION)
-        + b"STS-DECISION-LOCAL-FLOOR-RETURN-GAE\x00"
+        trainer_marker
+        + struct.pack(">I", trainer_version)
+        + objective_marker
         + objective_encoding
         + _runtime_version_bytes(),
     )

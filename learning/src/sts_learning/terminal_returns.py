@@ -57,6 +57,7 @@ class RunPolicyUpdateRule(IntEnum):
 
     REINFORCE = 0
     PPO_CLIP_VALUE = 1
+    CRITIC_CALIBRATION = 2
 
 
 @dataclass(frozen=True)
@@ -86,9 +87,25 @@ class RunPolicyUpdateConfig:
             value_clip_coefficient=0.2,
         )
 
+    @classmethod
+    def critic_calibration(cls) -> RunPolicyUpdateConfig:
+        """Fit only the value head while leaving every actor tensor fixed."""
+
+        return cls(
+            rule=RunPolicyUpdateRule.CRITIC_CALIBRATION,
+            epochs=4,
+            max_grad_norm=0.5,
+            value_loss_coefficient=0.5,
+            value_clip_coefficient=0.2,
+        )
+
     @property
     def uses_value_baseline(self) -> bool:
-        return self.rule is RunPolicyUpdateRule.PPO_CLIP_VALUE
+        return self.rule is not RunPolicyUpdateRule.REINFORCE
+
+    @property
+    def updates_actor(self) -> bool:
+        return self.rule is not RunPolicyUpdateRule.CRITIC_CALIBRATION
 
     def __post_init__(self) -> None:
         if not isinstance(self.rule, RunPolicyUpdateRule):
@@ -146,11 +163,18 @@ class RunPolicyUpdateConfig:
                 "run REINFORCE requires one epoch and no PPO regularization"
             )
         if (
-            self.rule is RunPolicyUpdateRule.PPO_CLIP_VALUE
-            and value_loss <= 0.0
+            self.uses_value_baseline and value_loss <= 0.0
         ):
             raise TerminalReturnError(
-                "run value PPO requires a positive value_loss_coefficient"
+                "run value training requires a positive value_loss_coefficient"
+            )
+        if self.rule is RunPolicyUpdateRule.CRITIC_CALIBRATION and (
+            entropy != 0.0
+            or target_kl is not None
+            or self.normalize_advantage
+        ):
+            raise TerminalReturnError(
+                "run critic calibration cannot configure actor regularization"
             )
         object.__setattr__(self, "epochs", epochs)
         object.__setattr__(self, "clip_coefficient", clip)

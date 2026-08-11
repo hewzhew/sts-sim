@@ -911,6 +911,15 @@ an optimizer-resume boundary, and evaluates it on the disjoint held-out
 partition with zero recovery. Full session resume remains stricter and rejects
 open attempts at asynchronous slot boundaries.
 
+Behavior-neutral run-critic calibration is a separate trainer identity. It may
+train only the scalar value head over fixed shared semantic features; every
+encoder and actor tensor remains frozen and is audited against the original
+combat warm start before a later PPO session can consume the checkpoint. That
+later session still starts from the original combat behavior, names the
+calibration only as critic initialization, and collects a fresh on-policy actor
+cohort. Calibration trajectories are never relabeled as actor experience, and
+the calibration publication by itself is not evidence of improved behavior.
+
 Python recovery curricula may hold explicit opaque single-slot checkpoints.
 Saving one clones that exact in-memory run-control state only when requested;
 restoring it also restores any unfinished symbolic decoder or already selected

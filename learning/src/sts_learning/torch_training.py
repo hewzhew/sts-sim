@@ -27,7 +27,12 @@ from .torch_outcomes import (
     RunValueDiagnostics,
     on_policy_terminal_loss,
 )
-from .torch_policy import RaggedCategoricalPolicyConfig
+from .torch_policy import (
+    RaggedCandidateScorer,
+    RaggedCategoricalPolicyConfig,
+    TorchPolicyError,
+    configure_critic_only_training,
+)
 
 
 class TorchTrainingError(RuntimeError):
@@ -60,6 +65,7 @@ class RunPolicyTrainingResult:
     optimizer_steps_after: int
     decision_count: int
     actor_decision_count: int
+    actor_update_applied: bool
     approximate_kl: float
     clip_fraction: float
     entropy: float
@@ -122,6 +128,15 @@ class SynchronousPolicyTrainer:
         self._last_credit_assignment: CreditAssignmentComparison | None = None
         self._last_result: RunPolicyTrainingResult | None = None
         self._poisoned = False
+        if not objective_config.policy_update.updates_actor:
+            if not isinstance(scorer, RaggedCandidateScorer):
+                raise TorchTrainingError(
+                    "critic calibration requires the maintained ragged scorer"
+                )
+            try:
+                configure_critic_only_training(scorer)
+            except TorchPolicyError as error:
+                raise TorchTrainingError(str(error)) from error
 
     @property
     def snapshot(self) -> SynchronousPolicyTrainerSnapshot:
@@ -299,6 +314,9 @@ class SynchronousPolicyTrainer:
             optimizer_steps_after=self._optimizer_steps,
             decision_count=objective.decision_count,
             actor_decision_count=objective.actor_decision_count,
+            actor_update_applied=(
+                self.objective_config.policy_update.updates_actor
+            ),
             approximate_kl=objective.approximate_kl,
             clip_fraction=objective.clip_fraction,
             entropy=objective.entropy,

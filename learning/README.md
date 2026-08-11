@@ -185,6 +185,34 @@ Value-PPO defaults to its provenance-bound global advantage normalization.
 `auto` preserves the selected update profile. The journal records both the
 configured choice and the observed pre/post-normalization signal distributions.
 
+Calibrate the scalar critic without changing actor logits, then consume that
+calibration in a fresh PPO cohort with:
+
+```powershell
+.\learning\dev.ps1 train-run `
+  -Behavior <completed-combat-training-directory> `
+  -Output <fresh-critic-calibration-directory> `
+  -RunPolicyUpdate critic-calibration `
+  -DecisionScope strategic -CombatDecisionRule greedy `
+  -RunPotionLane never -Ascension 20
+
+.\learning\dev.ps1 train-run `
+  -Behavior <same-completed-combat-training-directory> `
+  -CriticInitializationBehavior <fresh-critic-calibration-directory> `
+  -Output <fresh-actor-critic-training-directory> `
+  -RunPolicyUpdate ppo-clip-value `
+  -DecisionScope strategic -CombatDecisionRule greedy `
+  -RunPotionLane never -Ascension 20
+```
+
+The calibration optimizer owns the complete scorer but freezes every shared
+encoder and actor tensor, applies only scalar value loss, and publishes its
+distinct trainer identity. PPO accepts it only after verifying the source was
+critic-only, used the same ascension, potion lane, decision scope and combat
+anchor, and still matches every actor tensor from `-Behavior`. The PPO command
+then starts a new seed/RNG cohort; the calibration attempts never become its
+actor experience.
+
 The session copies, rather than aliases, the combat scorer; generation zero
 then belongs to the whole-run terminal-floor objective and a new behavior
 manifest. Training and evaluation use the stable disjoint seed partitions,

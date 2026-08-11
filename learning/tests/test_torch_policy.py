@@ -24,8 +24,10 @@ if _TORCH_AVAILABLE:
         RaggedScorerConfig,
         SemanticSchemaDimensions,
         TorchPolicyError,
+        configure_critic_only_training,
         load_scorer_warm_start,
         ragged_cross_entropy,
+        require_matching_actor_state,
         sample_ragged_categorical,
         sample_ragged_categorical_rows,
     )
@@ -149,6 +151,35 @@ class TorchPolicyTests(unittest.TestCase):
         for key, value in source.state_dict().items():
             if not key.startswith("value_head."):
                 torch.testing.assert_close(target.state_dict()[key], value)
+
+    def test_critic_only_scope_freezes_and_audits_every_actor_tensor(self) -> None:
+        schema = semantic_schema_fixture()
+        source = RaggedCandidateScorer.from_bridge_schema(
+            schema,
+            RaggedScorerConfig(hidden_dim=24, relation_layers=1),
+        )
+        calibrated = RaggedCandidateScorer.from_bridge_schema(
+            schema,
+            RaggedScorerConfig(
+                hidden_dim=24,
+                relation_layers=1,
+                value_head=True,
+            ),
+        )
+        load_scorer_warm_start(calibrated, source, actor_only=True)
+        require_matching_actor_state(source, calibrated)
+
+        configure_critic_only_training(calibrated)
+        for name, parameter in calibrated.named_parameters():
+            self.assertEqual(
+                parameter.requires_grad,
+                name.startswith("value_head."),
+            )
+
+        with torch.no_grad():
+            calibrated.scorer[-1].bias.add_(1.0)
+        with self.assertRaisesRegex(TorchPolicyError, "changed actor tensor"):
+            require_matching_actor_state(source, calibrated)
 
     def test_value_head_width_rejects_ambiguous_profiles(self) -> None:
         with self.assertRaisesRegex(TorchPolicyError, "disabled"):

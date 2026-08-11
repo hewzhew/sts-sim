@@ -1001,10 +1001,13 @@ def _run_policy_weighted_loss(
         -actor_advantages * clipped_ratio,
     )
     entropies = _ragged_entropies(logits, policy_config)
-    loss = torch.sum(policy_terms * actor_weight_tensor) - (
+    actor_loss = torch.sum(policy_terms * actor_weight_tensor) - (
         update_config.entropy_coefficient
         * torch.sum(entropies * actor_weight_tensor)
-    ) + update_config.value_loss_coefficient * value_loss
+    )
+    loss = update_config.value_loss_coefficient * value_loss
+    if update_config.updates_actor:
+        loss = actor_loss + loss
     actor_weight = torch.sum(actor_weight_tensor)
     if bool(actor_weight > 0.0):
         approximate_kl = torch.sum(
@@ -1028,6 +1031,7 @@ def _run_policy_weighted_loss(
     )
     diagnostics = (
         loss,
+        actor_loss,
         approximate_kl,
         clip_fraction,
         mean_entropy,
@@ -1115,7 +1119,11 @@ def _run_policy_weighted_loss(
         value_loss=float(value_loss.detach().item()),
         value_clip_fraction=float(value_clip_fraction.detach().item()),
         explained_variance=explained_variance,
-        actor_decision_count=sum(weight > 0.0 for weight in actor_weights),
+        actor_decision_count=(
+            sum(weight > 0.0 for weight in actor_weights)
+            if update_config.updates_actor
+            else 0
+        ),
         actor_advantages=detached_advantages,
         critic_predictions=detached_predictions,
         value_diagnostics=value_diagnostics,

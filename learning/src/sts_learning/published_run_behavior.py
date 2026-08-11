@@ -70,6 +70,10 @@ class PublishedRunBehavior:
     combat_anchor_checkpoint_id: ManifestArtifactId | None
     combat_anchor_scorer: RaggedScorerConfig | None
     objective: OnPolicyObjectiveConfig
+    critic_initialization_manifest_id: BehaviorManifestId | None
+    critic_initialization_checkpoint_id: ManifestArtifactId | None
+    critic_initialization_training_step: int | None
+    critic_initialization_policy_update: RunPolicyUpdateRule | None
     policies: tuple[
         CheckpointedCategoricalTorchPolicy | FrozenCombatGreedyTorchPolicy,
         ...,
@@ -149,6 +153,52 @@ class PublishedRunBehavior:
             )
         if not isinstance(self.objective, OnPolicyObjectiveConfig):
             raise PublishedRunBehaviorError("run behavior objective must be typed")
+        critic_initialization = (
+            self.critic_initialization_manifest_id,
+            self.critic_initialization_checkpoint_id,
+            self.critic_initialization_training_step,
+            self.critic_initialization_policy_update,
+        )
+        if any(value is None for value in critic_initialization) and not all(
+            value is None for value in critic_initialization
+        ):
+            raise PublishedRunBehaviorError(
+                "run critic initialization provenance is incomplete"
+            )
+        if self.critic_initialization_manifest_id is not None:
+            if not isinstance(
+                self.critic_initialization_manifest_id,
+                BehaviorManifestId,
+            ):
+                raise PublishedRunBehaviorError(
+                    "run critic initialization manifest id must be typed"
+                )
+            checkpoint = self.critic_initialization_checkpoint_id
+            if (
+                not isinstance(checkpoint, ManifestArtifactId)
+                or checkpoint.kind is not ManifestArtifactKind.MODEL_CHECKPOINT
+            ):
+                raise PublishedRunBehaviorError(
+                    "run critic initialization checkpoint id must be typed"
+                )
+            _nonnegative(
+                self.critic_initialization_training_step,
+                "critic_initialization_training_step",
+            )
+            if (
+                self.critic_initialization_policy_update
+                is not RunPolicyUpdateRule.CRITIC_CALIBRATION
+            ):
+                raise PublishedRunBehaviorError(
+                    "run critic initialization must name critic calibration"
+                )
+            if (
+                self.objective.policy_update.rule
+                is not RunPolicyUpdateRule.PPO_CLIP_VALUE
+            ):
+                raise PublishedRunBehaviorError(
+                    "only run PPO can consume critic initialization"
+                )
         expected_attempts = _episode_root_attempts(
             self.training_episode_root_attempts,
             self.training_sampling_mode,
@@ -339,6 +389,17 @@ def recover_published_run_behavior(
         raise PublishedRunBehaviorError(
             "combat anchor changed across publication"
         )
+    critic_initialization = _critic_initialization(
+        configuration,
+        "configuration",
+    )
+    if (
+        _critic_initialization(completed, "completed")
+        != critic_initialization
+    ):
+        raise PublishedRunBehaviorError(
+            "critic initialization changed across publication"
+        )
     (
         combat_anchor_manifest_id,
         combat_anchor_checkpoint_id,
@@ -430,6 +491,10 @@ def recover_published_run_behavior(
         combat_anchor_checkpoint_id=combat_anchor_checkpoint_id,
         combat_anchor_scorer=combat_anchor_scorer,
         objective=objective,
+        critic_initialization_manifest_id=critic_initialization[0],
+        critic_initialization_checkpoint_id=critic_initialization[1],
+        critic_initialization_training_step=critic_initialization[2],
+        critic_initialization_policy_update=critic_initialization[3],
         policies=policies,
     )
 
@@ -611,14 +676,58 @@ def _scorer_config(value: object, name: str) -> RaggedScorerConfig:
     )
 
 
+def _critic_initialization(
+    record: Mapping[str, object],
+    name: str,
+) -> tuple[
+    BehaviorManifestId | None,
+    ManifestArtifactId | None,
+    int | None,
+    RunPolicyUpdateRule | None,
+]:
+    raw_manifest = record.get("critic_initialization_manifest_id")
+    raw_checkpoint = record.get("critic_initialization_checkpoint_id")
+    raw_step = record.get("critic_initialization_training_step")
+    raw_update = record.get("critic_initialization_policy_update")
+    values = (raw_manifest, raw_checkpoint, raw_step, raw_update)
+    if all(value is None for value in values):
+        return None, None, None, None
+    if any(value is None for value in values):
+        raise PublishedRunBehaviorError(
+            f"{name} critic initialization provenance is incomplete"
+        )
+    if raw_update != RunPolicyUpdateRule.CRITIC_CALIBRATION.name.lower():
+        raise PublishedRunBehaviorError(
+            f"{name} critic initialization update is unsupported"
+        )
+    return (
+        BehaviorManifestId(
+            _digest(raw_manifest, f"{name} critic_initialization_manifest_id")
+        ),
+        ManifestArtifactId(
+            ManifestArtifactKind.MODEL_CHECKPOINT,
+            _digest(
+                raw_checkpoint,
+                f"{name} critic_initialization_checkpoint_id",
+            ),
+        ),
+        _nonnegative(raw_step, f"{name} critic_initialization_training_step"),
+        RunPolicyUpdateRule.CRITIC_CALIBRATION,
+    )
+
+
 def _run_policy_update(configuration: Mapping[str, object]) -> RunPolicyUpdateConfig:
     value = configuration.get("run_policy_update", "reinforce")
     if value == "reinforce":
         return RunPolicyUpdateConfig()
-    if value != "ppo_clip_value":
+    if value not in {"ppo_clip_value", "critic_calibration"}:
         raise PublishedRunBehaviorError("run policy update is unsupported")
     return RunPolicyUpdateConfig(
-        rule=RunPolicyUpdateRule.PPO_CLIP_VALUE,
+        rule=(
+            RunPolicyUpdateRule.PPO_CLIP_VALUE
+            if value == "ppo_clip_value"
+            else RunPolicyUpdateRule.CRITIC_CALIBRATION
+        ),
         epochs=_positive(configuration.get("run_policy_epochs"), "run_policy_epochs"),
         clip_coefficient=_finite_float(
             configuration.get("run_policy_clip_coefficient"),

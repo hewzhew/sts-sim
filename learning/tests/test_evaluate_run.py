@@ -10,6 +10,7 @@ pytest.importorskip("torch")
 
 from learning.tests.driver_fixtures import NumpyWinningBatchEnv
 from learning.tests.run_training_fixtures import published_behavior
+from sts_learning.combat_potion_lane import CombatPotionLane
 from sts_learning.evaluate_run import (
     RunEvaluationCommandConfig,
     RunPotionLane,
@@ -19,7 +20,7 @@ from sts_learning.evaluate_run_potions import (
     RunPotionComparisonCommandConfig,
     run_run_potion_comparison,
 )
-from sts_learning.combat_potion_lane import CombatPotionLane
+from sts_learning.published_combat_behavior import recover_published_combat_behavior
 from sts_learning.published_run_behavior import (
     PublishedRunBehaviorError,
     is_run_training_publication,
@@ -33,8 +34,11 @@ from sts_learning.train_run import (
 )
 from sts_learning import (
     RunPolicyUpdateConfig,
+    RunPolicyUpdateRule,
     TerminalAdvantageMode,
 )
+from sts_learning.torch_combat_session_config import CombatWinSessionLimits
+from sts_learning.torch_policy import require_matching_actor_state
 
 
 def test_run_advantage_normalization_override_is_typed() -> None:
@@ -51,6 +55,10 @@ def test_run_advantage_normalization_override_is_typed() -> None:
         _resolve_run_policy_update("reinforce", "on")
     with pytest.raises(RunTrainingCommandError, match="unknown"):
         _resolve_run_policy_update("ppo-clip-value", "sideways")
+    calibration = _resolve_run_policy_update("critic-calibration", "auto")
+    assert calibration.updates_actor is False
+    with pytest.raises(RunTrainingCommandError, match="no actor"):
+        _resolve_run_policy_update("critic-calibration", "off")
 
 
 def test_run_evaluation_uses_frozen_combat_behavior_without_recovery(
@@ -448,6 +456,125 @@ def test_run_value_ppo_warm_starts_actor_and_publishes_diagnostics(
         is TerminalAdvantageMode.DECISION_LOCAL_GAE
     )
     assert recovered.policies[0].frozen_scorer.config.value_head
+
+
+def test_run_critic_calibration_is_actor_neutral_and_seeds_fresh_ppo(
+    tmp_path: Path,
+) -> None:
+    # This crosses both durable publications so recovery cannot skip the exact
+    # actor-state audit between calibration and the fresh PPO session.
+    behavior, combat_bridge, run_bridge = published_behavior(tmp_path)
+    calibration_output = tmp_path / "run-critic-calibration"
+
+    calibration_summary = run_run_training(
+        RunTrainingCommandConfig(
+            warm_start_behavior=behavior,
+            output=calibration_output,
+            slot_count=2,
+            generations=1,
+            attempts_per_update=2,
+            max_batch_steps_per_generation=1,
+            model_seed=43,
+            behavior_seed=94,
+            training_seed_start=0,
+            evaluation_attempts=2,
+            evaluation_max_batch_steps=2,
+            evaluation_behavior_seed=501,
+            held_out_seed_start=1000,
+            ascension_level=20,
+            policy_update=RunPolicyUpdateConfig.critic_calibration(),
+        ),
+        combat_bridge=combat_bridge,
+        run_bridge=run_bridge,
+    )
+    records = tuple(
+        json.loads(line)
+        for line in (calibration_output / "training.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
+    )
+    generation = records[1]
+    assert calibration_summary["run_policy_update"] == "critic_calibration"
+    assert generation["actor_update_applied"] is False
+    assert generation["actor_decisions"] == 0
+    assert generation["trained_decisions"] == 0
+    assert generation["value_loss"] > 0.0
+
+    calibration = recover_published_run_behavior(
+        calibration_output,
+        run_bridge,
+        (777,),
+    )
+    assert (
+        calibration.objective.policy_update.rule
+        is RunPolicyUpdateRule.CRITIC_CALIBRATION
+    )
+    assert calibration.critic_initialization_manifest_id is None
+    combat_behavior = recover_published_combat_behavior(
+        behavior,
+        combat_bridge,
+        CombatWinSessionLimits(),
+        (777,),
+    )
+    require_matching_actor_state(
+        combat_behavior.policies[0].frozen_scorer,
+        calibration.policies[0].frozen_scorer,
+    )
+
+    actor_output = tmp_path / "run-ppo-from-calibrated-critic"
+    actor_summary = run_run_training(
+        RunTrainingCommandConfig(
+            warm_start_behavior=behavior,
+            critic_initialization_behavior=calibration_output,
+            output=actor_output,
+            slot_count=2,
+            generations=1,
+            attempts_per_update=2,
+            max_batch_steps_per_generation=1,
+            model_seed=43,
+            behavior_seed=194,
+            training_seed_start=2000,
+            evaluation_attempts=2,
+            evaluation_max_batch_steps=2,
+            evaluation_behavior_seed=601,
+            held_out_seed_start=3000,
+            ascension_level=20,
+            policy_update=RunPolicyUpdateConfig.ppo_clip_value(),
+        ),
+        combat_bridge=combat_bridge,
+        run_bridge=run_bridge,
+    )
+    assert actor_summary["critic_initialization_manifest_id"] == (
+        calibration.manifest_id.digest.hex()
+    )
+    assert actor_summary["critic_initialization_checkpoint_id"] == (
+        calibration.checkpoint_id.digest.hex()
+    )
+    actor_records = tuple(
+        json.loads(line)
+        for line in (actor_output / "training.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
+    )
+    assert actor_records[0]["critic_initialization_behavior"] == str(
+        calibration_output.resolve()
+    )
+    assert actor_records[1]["actor_update_applied"] is True
+    recovered_actor = recover_published_run_behavior(
+        actor_output,
+        run_bridge,
+        (888,),
+    )
+    assert recovered_actor.critic_initialization_manifest_id == (
+        calibration.manifest_id
+    )
+    assert recovered_actor.critic_initialization_checkpoint_id == (
+        calibration.checkpoint_id
+    )
+    assert (
+        recovered_actor.critic_initialization_policy_update
+        is RunPolicyUpdateRule.CRITIC_CALIBRATION
+    )
 
 
 def test_run_training_inherits_the_warm_start_potion_lane(

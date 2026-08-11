@@ -450,6 +450,29 @@ def _summary(
                 ),
             }
         ),
+        "behavior_run_critic_initialization_manifest_id": (
+            None
+            if combat_trained
+            or recovered.critic_initialization_manifest_id is None
+            else recovered.critic_initialization_manifest_id.digest.hex()
+        ),
+        "behavior_run_critic_initialization_checkpoint_id": (
+            None
+            if combat_trained
+            or recovered.critic_initialization_checkpoint_id is None
+            else recovered.critic_initialization_checkpoint_id.digest.hex()
+        ),
+        "behavior_run_critic_initialization_training_step": (
+            None
+            if combat_trained
+            else recovered.critic_initialization_training_step
+        ),
+        "behavior_run_critic_initialization_policy_update": (
+            None
+            if combat_trained
+            or recovered.critic_initialization_policy_update is None
+            else recovered.critic_initialization_policy_update.name.lower()
+        ),
         "behavior_run_objective": (
             None
             if combat_trained

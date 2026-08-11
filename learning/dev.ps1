@@ -9,6 +9,7 @@ param(
     [string]$BaselineBehavior,
     [string]$CandidateBehavior,
     [string]$StrategicBehavior,
+    [string]$CriticInitializationBehavior,
     [string]$Output,
     [int]$Roots,
     [int]$RootSlot = 0,
@@ -22,7 +23,7 @@ param(
     [string]$CombatPolicyUpdate = "reinforce",
     [ValidateSet("none", "enemy-hp-progress")]
     [string]$CombatAllLossAxis = "none",
-    [ValidateSet("reinforce", "ppo-clip-value")]
+    [ValidateSet("reinforce", "ppo-clip-value", "critic-calibration")]
     [string]$RunPolicyUpdate = "reinforce",
     [ValidateSet("auto", "on", "off")]
     [string]$RunAdvantageNormalization = "auto",
@@ -616,10 +617,18 @@ switch ($Command) {
                 $EpisodeRootAttempts
             )
         }
+        $criticInitializationArguments = @()
+        if ($CriticInitializationBehavior) {
+            $criticInitializationArguments = @(
+                "--critic-initialization-behavior",
+                $CriticInitializationBehavior
+            )
+        }
         Invoke-Doctor $pythonPath
         Invoke-WithLearningPath {
             & $pythonPath -m sts_learning.train_run `
                 --warm-start-behavior $Behavior `
+                @criticInitializationArguments `
                 --output $Output `
                 --slots $Slots `
                 --generations $Generations `

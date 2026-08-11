@@ -1239,6 +1239,17 @@ attempt-weighted advantage normalization and is retained in trainer provenance
 and the journal. `on` is rejected for REINFORCE. This switch changes the policy
 gradient estimator, not the environment return or critic target; compare it on
 identical frozen training cohorts and disjoint held-out cohorts.
+`-RunPolicyUpdate critic-calibration` is the behavior-neutral value warmup. It
+uses the same decision-local return-to-go target but applies only scalar value
+loss: every shared semantic encoder and actor tensor is frozen, actor decision
+count and trained-decision count stay zero, and the publication receives a
+distinct trainer identity. It is calibration evidence, not a policy-improvement
+claim. A later `ppo-clip-value` run may name it explicitly with
+`-CriticInitializationBehavior`; that run still names the original combat
+publication with `-Behavior`, verifies identical actor tensors plus matching
+ascension, potion lane, decision scope, combat rule and immutable combat anchor,
+then collects a fresh actor cohort under its own seeds and behavior RNG. No
+calibration attempt is reused as PPO actor experience.
 It also aggregates the first four completed
 combats by ordinal:
 net post-combat HP already includes relic recovery such as Burning Blood, so

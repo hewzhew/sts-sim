@@ -797,6 +797,60 @@ def load_scorer_warm_start(
         ) from error
 
 
+def configure_critic_only_training(scorer: RaggedCandidateScorer) -> None:
+    """Freeze the complete actor path and leave only the scalar value head live."""
+
+    if not isinstance(scorer, RaggedCandidateScorer):
+        raise TorchPolicyError("critic-only training requires a typed scorer")
+    if scorer.value_head is None or scorer.config.value_head_width != 1:
+        raise TorchPolicyError("critic-only training requires one scalar value head")
+    value_parameters = 0
+    for name, parameter in scorer.named_parameters():
+        is_value_parameter = name.startswith("value_head.")
+        parameter.requires_grad_(is_value_parameter)
+        value_parameters += int(is_value_parameter)
+    if value_parameters == 0:
+        raise TorchPolicyError("critic-only training found no value parameters")
+
+
+def require_matching_actor_state(
+    left: RaggedCandidateScorer,
+    right: RaggedCandidateScorer,
+) -> None:
+    """Reject a critic initialization that changed any actor-owned tensor."""
+
+    if not isinstance(left, RaggedCandidateScorer) or not isinstance(
+        right,
+        RaggedCandidateScorer,
+    ):
+        raise TorchPolicyError("actor-state comparison requires typed scorers")
+    if (
+        left.schema != right.schema
+        or left.config.hidden_dim != right.config.hidden_dim
+        or left.config.relation_layers != right.config.relation_layers
+    ):
+        raise TorchPolicyError("critic initialization changed the actor definition")
+    left_state = {
+        name: tensor
+        for name, tensor in left.state_dict().items()
+        if not name.startswith("value_head.")
+    }
+    right_state = {
+        name: tensor
+        for name, tensor in right.state_dict().items()
+        if not name.startswith("value_head.")
+    }
+    if left_state.keys() != right_state.keys():
+        raise TorchPolicyError("critic initialization changed actor state keys")
+    for name in left_state:
+        left_tensor = left_state[name].detach().cpu()
+        right_tensor = right_state[name].detach().cpu()
+        if not torch.equal(left_tensor, right_tensor):
+            raise TorchPolicyError(
+                f"critic initialization changed actor tensor {name!r}"
+            )
+
+
 class GreedyTorchPolicy:
     """Driver adapter that performs one batched scorer call per decision round."""
 

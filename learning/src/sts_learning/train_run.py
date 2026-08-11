@@ -26,7 +26,11 @@ from .published_combat_behavior import (
     PublishedCombatBehavior,
     recover_published_combat_behavior,
 )
-from .published_run_behavior import RUN_TRAINING_SCHEMA
+from .published_run_behavior import (
+    RUN_TRAINING_SCHEMA,
+    PublishedRunBehavior,
+    recover_published_run_behavior,
+)
 from .run_sampling import (
     EpisodeRootRetryCurriculum,
     RunSamplingMode,
@@ -41,6 +45,7 @@ from .terminal_returns import (
     OnPolicyObjectiveConfig,
     RunDecisionScope,
     RunPolicyUpdateConfig,
+    RunPolicyUpdateRule,
     TerminalAdvantageMode,
 )
 from .torch_combat_session_config import (
@@ -63,7 +68,11 @@ from .torch_session_config import (
     TorchSessionError,
     normalize_torch_device_type,
 )
-from .torch_policy import RaggedScorerConfig
+from .torch_policy import (
+    RaggedScorerConfig,
+    TorchPolicyError,
+    require_matching_actor_state,
+)
 from .torch_training import RunPolicyTrainingResult
 
 
@@ -88,6 +97,7 @@ _ADVANTAGE_MODE_ARGUMENTS = {
 _RUN_POLICY_UPDATE_ARGUMENTS = {
     "reinforce": RunPolicyUpdateConfig(),
     "ppo-clip-value": RunPolicyUpdateConfig.ppo_clip_value(),
+    "critic-calibration": RunPolicyUpdateConfig.critic_calibration(),
 }
 
 _RUN_ADVANTAGE_NORMALIZATION_ARGUMENTS = ("auto", "on", "off")
@@ -110,6 +120,10 @@ def _resolve_run_policy_update(
             f"unknown run advantage normalization {normalization!r}"
         )
     normalize = normalization == "on"
+    if update.rule is RunPolicyUpdateRule.CRITIC_CALIBRATION:
+        raise RunTrainingCommandError(
+            "critic calibration has no actor advantage normalization"
+        )
     if normalize and not update.uses_value_baseline:
         raise RunTrainingCommandError(
             "run advantage normalization requires value PPO"
@@ -141,6 +155,7 @@ class RunTrainingCommandConfig:
     episode_root_attempts: int | None = None
     potion_lane: RunPotionLane = RunPotionLane.TRAINED
     device_type: str = "cpu"
+    critic_initialization_behavior: Path | None = None
 
     def __post_init__(self) -> None:
         try:
@@ -169,6 +184,33 @@ class RunTrainingCommandConfig:
         if not isinstance(self.policy_update, RunPolicyUpdateConfig):
             raise RunTrainingCommandError(
                 "run training policy update must be typed"
+            )
+        critic_initialization = self.critic_initialization_behavior
+        if critic_initialization is not None:
+            critic_initialization = Path(critic_initialization).resolve()
+            if not critic_initialization.is_dir():
+                raise RunTrainingCommandError(
+                    "critic initialization behavior is not a directory"
+                )
+            if critic_initialization == behavior:
+                raise RunTrainingCommandError(
+                    "critic initialization must be distinct from the combat warm start"
+                )
+            if (
+                output == critic_initialization
+                or critic_initialization in output.parents
+            ):
+                raise RunTrainingCommandError(
+                    "run training output must stay outside critic initialization"
+                )
+            if self.policy_update.rule is not RunPolicyUpdateRule.PPO_CLIP_VALUE:
+                raise RunTrainingCommandError(
+                    "critic initialization is accepted only by actor-critic PPO"
+                )
+            object.__setattr__(
+                self,
+                "critic_initialization_behavior",
+                critic_initialization,
             )
         advantage_mode = self.advantage_mode
         if advantage_mode is None:
@@ -278,6 +320,76 @@ class RunTrainingCommandConfig:
         object.__setattr__(self, "ascension_level", ascension_level)
 
 
+def _recover_critic_initialization(
+    config: RunTrainingCommandConfig,
+    warm_start: PublishedCombatBehavior,
+    combat_anchor: FrozenCombatAnchor | None,
+    potion_lane: CombatPotionLane,
+    run_bridge: CategoricalSessionBridge,
+) -> PublishedRunBehavior | None:
+    source = config.critic_initialization_behavior
+    if source is None:
+        return None
+    recovered = recover_published_run_behavior(
+        source,
+        run_bridge,
+        (config.behavior_seed,),
+    )
+    if (
+        recovered.objective.policy_update.rule
+        is not RunPolicyUpdateRule.CRITIC_CALIBRATION
+    ):
+        raise RunTrainingCommandError(
+            "critic initialization was not published by critic calibration"
+        )
+    if recovered.training_ascension_level != config.ascension_level:
+        raise RunTrainingCommandError(
+            "critic initialization ascension differs from actor training"
+        )
+    if recovered.training_potion_lane is not potion_lane:
+        raise RunTrainingCommandError(
+            "critic initialization potion lane differs from actor training"
+        )
+    if recovered.training_sampling_mode is not RunSamplingMode.INDEPENDENT_COHORTS:
+        raise RunTrainingCommandError(
+            "critic initialization requires independent calibration cohorts"
+        )
+    if recovered.training_combat_decision_rule is not config.combat_decision_rule:
+        raise RunTrainingCommandError(
+            "critic initialization combat rule differs from actor training"
+        )
+    if recovered.objective.decision_scope is not config.decision_scope:
+        raise RunTrainingCommandError(
+            "critic initialization decision scope differs from actor training"
+        )
+    if combat_anchor is None:
+        if recovered.combat_anchor_manifest_id is not None:
+            raise RunTrainingCommandError(
+                "sampled critic initialization unexpectedly owns a combat anchor"
+            )
+    elif (
+        recovered.combat_anchor_manifest_id != combat_anchor.manifest_id
+        or recovered.combat_anchor_checkpoint_id != combat_anchor.checkpoint_id
+        or recovered.combat_anchor_scorer != combat_anchor.scorer.config
+    ):
+        raise RunTrainingCommandError(
+            "critic initialization changed the immutable combat anchor"
+        )
+    scorer = recovered.policies[0].frozen_scorer
+    if not scorer.config.value_head or scorer.config.value_head_width != 1:
+        raise RunTrainingCommandError(
+            "critic initialization does not contain one scalar value head"
+        )
+    try:
+        require_matching_actor_state(
+            warm_start.policies[0].frozen_scorer,
+            scorer,
+        )
+    except TorchPolicyError as error:
+        raise RunTrainingCommandError(str(error)) from error
+    return recovered
+
+
 def run_run_training(
     config: RunTrainingCommandConfig,
     *,
@@ -320,6 +432,13 @@ def run_run_training(
         else None
     )
     potion_lane = resolve_run_potion_lane(config.potion_lane, warm_start)
+    critic_initialization = _recover_critic_initialization(
+        config,
+        warm_start,
+        combat_anchor,
+        potion_lane,
+        active_run_bridge,
+    )
     base_training_run_bridge = _bridge_for_potion_lane(
         active_run_bridge,
         potion_lane,
@@ -404,8 +523,12 @@ def run_run_training(
     session = factory.new(
         model_seed=config.model_seed,
         behavior_seed=config.behavior_seed,
-        initial_scorer=warm_start.policies[0].frozen_scorer,
-        initial_scorer_actor_only=True,
+        initial_scorer=(
+            warm_start.policies[0].frozen_scorer
+            if critic_initialization is None
+            else critic_initialization.policies[0].frozen_scorer
+        ),
+        initial_scorer_actor_only=critic_initialization is None,
         combat_anchor=combat_anchor,
     )
     config.output.mkdir(parents=True, exist_ok=True)
@@ -413,7 +536,13 @@ def run_run_training(
     with journal_path.open("x", encoding="utf-8", newline="\n") as journal:
         _write(
             journal,
-            _configuration(config, warm_start, combat_anchor, potion_lane),
+            _configuration(
+                config,
+                warm_start,
+                combat_anchor,
+                critic_initialization,
+                potion_lane,
+            ),
         )
         for generation in range(config.generations):
             started = time.perf_counter()
@@ -493,6 +622,7 @@ def run_run_training(
             config,
             warm_start,
             combat_anchor,
+            critic_initialization,
             session,
             publication.checkpoint_id.digest.hex(),
             evaluation,
@@ -537,6 +667,7 @@ def _configuration(
     config: RunTrainingCommandConfig,
     warm_start: PublishedCombatBehavior,
     combat_anchor: FrozenCombatAnchor | None,
+    critic_initialization: PublishedRunBehavior | None,
     potion_lane: CombatPotionLane,
 ) -> dict[str, object]:
     return {
@@ -548,6 +679,12 @@ def _configuration(
         "warm_start_training_step": warm_start.training_step,
         "warm_start_artifact_sha256": warm_start.training_artifact_sha256,
         "warm_start_potion_lane": warm_start.training_potion_lane.value,
+        "critic_initialization_behavior": (
+            None
+            if config.critic_initialization_behavior is None
+            else str(config.critic_initialization_behavior)
+        ),
+        **_critic_initialization_record(critic_initialization),
         "requested_run_potion_lane": config.potion_lane.value,
         "run_potion_lane": potion_lane.value,
         "sampling_mode": config.sampling_mode.value,
@@ -650,6 +787,9 @@ def _generation(
         "actor_decisions": (
             None if training is None else training.actor_decision_count
         ),
+        "actor_update_applied": (
+            None if training is None else training.actor_update_applied
+        ),
         "gradient_norm": None if training is None else training.gradient_norm,
         "rollout_value_diagnostics": _rollout_value_diagnostics(training),
         "trained_decisions": trainer.trained_decisions,
@@ -728,6 +868,7 @@ def _summary(
     config: RunTrainingCommandConfig,
     warm_start: PublishedCombatBehavior,
     combat_anchor: FrozenCombatAnchor | None,
+    critic_initialization: PublishedRunBehavior | None,
     session: CategoricalOnlineSession,
     checkpoint_id: str,
     evaluation: HeldOutEvaluationResult,
@@ -742,6 +883,7 @@ def _summary(
         "kind": "completed",
         "warm_start_manifest_id": warm_start.manifest_id.digest.hex(),
         "warm_start_checkpoint_id": warm_start.checkpoint_id.digest.hex(),
+        **_critic_initialization_record(critic_initialization),
         "active_behavior_manifest_id": (
             session.active_behavior_manifest_id.digest.hex()
         ),
@@ -787,6 +929,27 @@ def _summary(
         "held_out_batch_steps": run.batch_steps,
         "held_out_slot_count": 1,
         "held_out_seed_end": evaluation.schedule_end.next_candidate,
+    }
+
+
+def _critic_initialization_record(
+    source: PublishedRunBehavior | None,
+) -> dict[str, object]:
+    return {
+        "critic_initialization_manifest_id": (
+            None if source is None else source.manifest_id.digest.hex()
+        ),
+        "critic_initialization_checkpoint_id": (
+            None if source is None else source.checkpoint_id.digest.hex()
+        ),
+        "critic_initialization_training_step": (
+            None if source is None else source.training_step
+        ),
+        "critic_initialization_policy_update": (
+            None
+            if source is None
+            else source.objective.policy_update.rule.name.lower()
+        ),
     }
 
 
@@ -868,6 +1031,7 @@ def _training_result_line(session: CategoricalOnlineSession) -> str:
         return "none"
     return (
         f"steps:{result.optimizer_steps_applied};"
+        f"actor_update:{str(result.actor_update_applied).lower()};"
         f"kl:{result.approximate_kl:.4g};"
         f"clip:{result.clip_fraction:.4g};"
         f"value_clip:{result.value_clip_fraction:.4g};"
@@ -1149,6 +1313,14 @@ def _parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument("--warm-start-behavior", type=Path, required=True)
+    parser.add_argument(
+        "--critic-initialization-behavior",
+        type=Path,
+        help=(
+            "verified critic-calibration publication whose value head seeds "
+            "actor-critic PPO"
+        ),
+    )
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--slots", type=int, default=4)
     parser.add_argument("--generations", type=int, default=1)
@@ -1250,6 +1422,9 @@ def main() -> int:
             episode_root_attempts=arguments.episode_root_attempts,
             potion_lane=RunPotionLane(arguments.potion_lane),
             device_type=arguments.device,
+            critic_initialization_behavior=(
+                arguments.critic_initialization_behavior
+            ),
         )
     )
     return 0
