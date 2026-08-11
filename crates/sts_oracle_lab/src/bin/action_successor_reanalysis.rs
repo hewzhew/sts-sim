@@ -14,7 +14,8 @@ use serde::Serialize;
 use serde_json::{json, Value};
 use sts_combat_planner::CombatPolicyChoice;
 use sts_oracle_learning::eval::run_control::{
-    LearningCombatBoundaryV1, LearningModelDecisionV1, LearningObservationCompletenessV1,
+    LearningCombatBoundaryV1, LearningCombatPublicRunContextGapV1,
+    LearningCombatPublicRunContextV1, LearningModelDecisionV1, LearningObservationCompletenessV1,
 };
 use sts_oracle_runtime::ai::combat_learning_observation::combat_learning_observation_v1;
 use sts_oracle_runtime::ai::combat_search_v2::oracle_search_witness_proposal_v1;
@@ -159,6 +160,9 @@ pub(crate) fn build(args: ActionSuccessorReanalysisArgs) -> Result<Value, String
         combat_legal_action_surface_v2(&root_position.engine, &root_position.combat);
     let learning_boundary = LearningCombatBoundaryV1 {
         observation: combat_learning_observation_v1(&root_position.combat),
+        public_run_context: LearningCombatPublicRunContextV1::Unavailable {
+            reason: LearningCombatPublicRunContextGapV1::DetachedExactCombatPosition,
+        },
         observation_completeness: LearningObservationCompletenessV1::Complete,
         atomic_action_representatives: canonical_combat_action_representatives_v1(
             &root_position.engine,

@@ -480,6 +480,7 @@ dependencies = [
 name = "sts_oracle_learning"
 version = "0.1.0"
 dependencies = [
+ "serde",
  "sts_oracle_learning_env",
 ]
 

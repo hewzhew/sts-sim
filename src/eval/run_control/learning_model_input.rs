@@ -1,9 +1,12 @@
 //! In-process model-facing views over [`LearningBoundaryV1`].
 //!
-//! This module deliberately does not serialize anything. It removes artifact
-//! ids and schema labels from the inference view, keeps variable candidate
-//! sets ragged, and decodes symbolic combat or run selections without eagerly
-//! enumerating their combinatorial payloads.
+//! This module deliberately does not serialize anything. Content-addressed
+//! public snapshots belong to the adjacent `public_information_snapshot`
+//! adapter, outside the model-input batching hot path.
+//!
+//! This module removes artifact ids and schema labels from the inference view,
+//! keeps variable candidate sets ragged, and decodes symbolic combat or run
+//! selections without eagerly enumerating their combinatorial payloads.
 //! It is compiled downstream from exact episode transitions so model-view
 //! edits do not invalidate the optimized environment owner.
 
@@ -31,7 +34,8 @@ use crate::state::core::{ClientInput, PileType};
 use crate::state::selection::{SelectionReason, SelectionResolution, SelectionScope};
 
 use super::{
-    LearningActionV1, LearningBoundaryV1, LearningCombatBoundaryV1, LearningStrategicBoundaryV1,
+    LearningActionV1, LearningBoundaryV1, LearningCombatBoundaryV1,
+    LearningCombatPublicRunContextV1, LearningStrategicBoundaryV1,
 };
 
 /// The semantic strategic state visible to a model.
@@ -113,6 +117,7 @@ impl LearningStrategicPotionV1<'_> {
 /// validation metadata rather than model inputs.
 #[derive(Clone, Copy, Debug)]
 pub struct LearningCombatModelObservationV1<'a> {
+    pub public_run_context: &'a LearningCombatPublicRunContextV1,
     pub potions: &'a [Option<CombatLearningPotionV1>],
     pub hidden_reasons: &'a [HiddenInformationReasonV1],
     pub encounter: &'a CombatLearningEncounterV1,
@@ -273,7 +278,7 @@ pub struct LearningCombatMonstersV1<'a> {
     monsters: &'a [CombatLearningMonsterStateV1],
 }
 
-impl LearningCombatMonstersV1<'_> {
+impl<'a> LearningCombatMonstersV1<'a> {
     pub fn len(&self) -> usize {
         self.monsters.len()
     }
@@ -282,7 +287,7 @@ impl LearningCombatMonstersV1<'_> {
         self.monsters.is_empty()
     }
 
-    pub fn get(&self, index: usize) -> Option<LearningCombatMonsterV1<'_>> {
+    pub fn get(&self, index: usize) -> Option<LearningCombatMonsterV1<'a>> {
         self.monsters
             .get(index)
             .map(|monster| LearningCombatMonsterV1 { monster })
@@ -303,7 +308,7 @@ pub struct LearningCombatMonsterV1<'a> {
     monster: &'a CombatLearningMonsterStateV1,
 }
 
-impl LearningCombatMonsterV1<'_> {
+impl<'a> LearningCombatMonsterV1<'a> {
     pub fn slot(&self) -> u8 {
         self.monster.slot
     }
@@ -340,23 +345,23 @@ impl LearningCombatMonsterV1<'_> {
         self.monster.half_dead
     }
 
-    pub fn intent(&self) -> &crate::ai::combat_learning_observation::CombatLearningIntentV1 {
+    pub fn intent(&self) -> &'a crate::ai::combat_learning_observation::CombatLearningIntentV1 {
         &self.monster.intent
     }
 
     pub fn executed_moves(
         &self,
-    ) -> &crate::ai::combat_learning_observation::CombatLearningMonsterMoveHistoryV1 {
+    ) -> &'a crate::ai::combat_learning_observation::CombatLearningMonsterMoveHistoryV1 {
         &self.monster.executed_moves
     }
 
     pub fn public_counters(
         &self,
-    ) -> &[crate::ai::combat_learning_observation::CombatLearningMonsterPublicCounterV1] {
+    ) -> &'a [crate::ai::combat_learning_observation::CombatLearningMonsterPublicCounterV1] {
         &self.monster.public_counters
     }
 
-    pub fn powers(&self) -> &[crate::ai::combat_learning_observation::CombatLearningPowerV1] {
+    pub fn powers(&self) -> &'a [crate::ai::combat_learning_observation::CombatLearningPowerV1] {
         &self.monster.powers
     }
 }
@@ -815,6 +820,7 @@ impl<'a> LearningModelDecisionV1<'a> {
 
         Ok(Self {
             observation: LearningModelObservationV1::Combat(LearningCombatModelObservationV1 {
+                public_run_context: &boundary.public_run_context,
                 potions: &observation.potions,
                 hidden_reasons: &observation.hidden_reasons,
                 encounter: &observation.encounter,
@@ -1725,6 +1731,7 @@ fn u64_to_usize(value: u64) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ai::planner_core::PublicDecisionDomainV1;
     use crate::content::cards::CardId;
     use crate::content::monsters::EnemyId;
     use crate::content::potions::{Potion, PotionId};
@@ -1808,6 +1815,202 @@ mod tests {
             }),
         ));
         LearningEnvV1::from_session(session)
+    }
+
+    #[test]
+    fn combat_information_snapshot_ignores_hidden_draw_order_but_respects_frozen_eye() {
+        fn combat_with_draw(draw: Vec<CombatCard>, frozen_eye: bool) -> CombatState {
+            let mut combat = crate::test_support::blank_test_combat();
+            combat
+                .entities
+                .monsters
+                .push(crate::test_support::test_monster(EnemyId::JawWorm));
+            combat.zones.hand = vec![
+                CombatCard::new(CardId::Defend, 10),
+                CombatCard::new(CardId::Strike, 11),
+            ];
+            combat.zones.draw_pile = draw.into();
+            if frozen_eye {
+                combat
+                    .entities
+                    .player
+                    .add_relic(RelicState::new(RelicId::FrozenEye));
+            }
+            combat
+        }
+
+        let forward = vec![
+            CombatCard::new(CardId::Bash, 20),
+            CombatCard::new(CardId::Defend, 21),
+        ];
+        let reverse = vec![
+            CombatCard::new(CardId::Defend, 21),
+            CombatCard::new(CardId::Bash, 20),
+        ];
+        let hidden_forward = combat_env_for_model_input(combat_with_draw(forward.clone(), false))
+            .observe()
+            .expect("hidden-order forward boundary");
+        let hidden_reverse = combat_env_for_model_input(combat_with_draw(reverse.clone(), false))
+            .observe()
+            .expect("hidden-order reverse boundary");
+        let visible_forward = combat_env_for_model_input(combat_with_draw(forward, true))
+            .observe()
+            .expect("visible-order forward boundary");
+        let visible_reverse = combat_env_for_model_input(combat_with_draw(reverse, true))
+            .observe()
+            .expect("visible-order reverse boundary");
+
+        let hidden_forward = super::super::learning_public_information_snapshot_v1(&hidden_forward)
+            .expect("hidden-order forward public snapshot");
+        let hidden_reverse = super::super::learning_public_information_snapshot_v1(&hidden_reverse)
+            .expect("hidden-order reverse public snapshot");
+        let visible_forward =
+            super::super::learning_public_information_snapshot_v1(&visible_forward)
+                .expect("visible-order forward public snapshot");
+        let visible_reverse =
+            super::super::learning_public_information_snapshot_v1(&visible_reverse)
+                .expect("visible-order reverse public snapshot");
+
+        assert_eq!(hidden_forward.snapshot_id, hidden_reverse.snapshot_id);
+        assert_ne!(visible_forward.snapshot_id, visible_reverse.snapshot_id);
+        assert_eq!(hidden_forward.domain, PublicDecisionDomainV1::Combat);
+        assert!(!hidden_forward
+            .history_snapshot
+            .history_snapshot_id
+            .is_empty());
+    }
+
+    #[test]
+    fn combat_information_snapshot_ignores_private_runtime_identities() {
+        fn snapshot(
+            monster_entity_id: usize,
+            potion_uuid: u32,
+            card_uuid: u32,
+        ) -> crate::ai::planner_core::PublicInformationSnapshotV1 {
+            let mut combat = crate::test_support::blank_test_combat();
+            let mut monster = crate::test_support::test_monster(EnemyId::JawWorm);
+            monster.id = monster_entity_id;
+            combat.entities.monsters.push(monster);
+            combat.entities.potions = vec![Some(Potion::new(PotionId::BlockPotion, potion_uuid))];
+            combat.zones.hand = vec![CombatCard::new(CardId::Bash, card_uuid)];
+            let boundary = combat_env_for_model_input(combat)
+                .observe()
+                .expect("combat boundary");
+            super::super::learning_public_information_snapshot_v1(&boundary)
+                .expect("public snapshot")
+        }
+
+        let first = snapshot(3_000_000_001, 101, 77);
+        let same_public_state = snapshot(3_000_000_099, 909, 707);
+
+        assert_eq!(first.observation, same_public_state.observation);
+        assert_eq!(first.candidate_surface, same_public_state.candidate_surface);
+        assert_eq!(first.snapshot_id, same_public_state.snapshot_id);
+    }
+
+    #[test]
+    fn strategic_information_snapshot_ignores_private_card_and_potion_uuids() {
+        fn snapshot(
+            card_uuid: u32,
+            potion_uuid: u32,
+        ) -> crate::ai::planner_core::PublicInformationSnapshotV1 {
+            use crate::ai::planner_core::{
+                CandidateCompletenessBasis, LegalCandidate, LegalCandidateSet,
+                PlannerCardObservation, PlannerDecisionContext, PlannerDecisionSite,
+                PlannerMechanicsManifest, PlannerObservation, PlannerPlayerClass,
+                PlannerPotionObservation, PlannerPotionSlotObservation, PlannerPublicHistory,
+                PlannerPublicMap, PlannerRunGoal, PlannerRunScalars,
+            };
+
+            let mechanics = PlannerMechanicsManifest {
+                mechanics_id: "test-mechanics".into(),
+                mechanics_version: 1,
+            };
+            let observation_id = format!("private-observation-{card_uuid}-{potion_uuid}");
+            let action = PlannerAction::Smith {
+                card_uuid,
+                card: CardId::Strike,
+                upgrades: 0,
+            };
+            let boundary = LearningBoundaryV1::Strategic {
+                boundary: LearningStrategicBoundaryV1 {
+                    observation: PlannerObservation {
+                        schema_name: "PlannerObservation".into(),
+                        schema_version: 1,
+                        observation_id: observation_id.clone(),
+                        mechanics: mechanics.clone(),
+                        run_goal: PlannerRunGoal::HeartVictory,
+                        decision_site: PlannerDecisionSite::Campfire,
+                        run: PlannerRunScalars {
+                            player_class: PlannerPlayerClass::Ironclad,
+                            ascension_level: 20,
+                            act: 1,
+                            floor: 8,
+                            current_hp: 50,
+                            max_hp: 80,
+                            gold: 99,
+                            keys: [false; 3],
+                            potion_capacity: 1,
+                        },
+                        cards: vec![PlannerCardObservation {
+                            card_uuid,
+                            card: CardId::Strike,
+                            upgrades: 0,
+                            misc_value: 0,
+                            base_damage_override: None,
+                            base_block_override: None,
+                            cost_modifier: 0,
+                        }],
+                        relics: Vec::new(),
+                        potions: vec![PlannerPotionSlotObservation {
+                            slot: 0,
+                            potion: Some(PlannerPotionObservation {
+                                potion: PotionId::BlockPotion,
+                                potion_uuid,
+                                can_use: true,
+                                can_discard: true,
+                                requires_target: false,
+                            }),
+                        }],
+                        public_map: PlannerPublicMap {
+                            current_x: 0,
+                            current_y: 7,
+                            boss: None,
+                            nodes: Vec::new(),
+                        },
+                        context: PlannerDecisionContext::Campfire,
+                        public_history: PlannerPublicHistory {
+                            shop_purge_count: 0,
+                        },
+                    },
+                    legal_candidates: LegalCandidateSet {
+                        schema_name: "LegalCandidateSet".into(),
+                        schema_version: 1,
+                        candidate_set_id: format!("private-candidate-set-{card_uuid}"),
+                        decision_id: format!("private-decision-{card_uuid}"),
+                        observation_id,
+                        site: PlannerDecisionSite::Campfire,
+                        candidates: vec![LegalCandidate {
+                            candidate_id: format!("private-candidate-{card_uuid}"),
+                            action,
+                            mechanics,
+                        }],
+                        completeness: CandidateSetCompleteness::Complete {
+                            basis: CandidateCompletenessBasis::RunControlBoundaryEnumerator,
+                        },
+                    },
+                },
+            };
+            super::super::learning_public_information_snapshot_v1(&boundary)
+                .expect("strategic public snapshot")
+        }
+
+        let first = snapshot(11, 21);
+        let same_public_state = snapshot(101, 202);
+
+        assert_eq!(first.observation, same_public_state.observation);
+        assert_eq!(first.candidate_surface, same_public_state.candidate_surface);
+        assert_eq!(first.snapshot_id, same_public_state.snapshot_id);
     }
 
     #[test]
@@ -2758,6 +2961,9 @@ mod tests {
                 observation: crate::ai::combat_learning_observation::combat_learning_observation_v1(
                     &combat,
                 ),
+                public_run_context: LearningCombatPublicRunContextV1::Unavailable {
+                    reason: super::super::LearningCombatPublicRunContextGapV1::DetachedExactCombatPosition,
+                },
                 observation_completeness: super::super::LearningObservationCompletenessV1::Complete,
                 atomic_action_representatives:
                     crate::sim::combat_action_equivalence::canonical_combat_action_representatives_v1(

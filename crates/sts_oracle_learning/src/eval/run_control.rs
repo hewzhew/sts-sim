@@ -8,6 +8,8 @@ mod combat_learning_env_pool;
 mod learning_env_pool;
 #[path = "../../../../src/eval/run_control/learning_model_input.rs"]
 mod learning_model_input;
+#[path = "../../../../src/eval/run_control/public_information_snapshot.rs"]
+mod public_information_snapshot;
 
 pub use combat_learning_env_pool::{
     CombatLearningEnvPoolError, CombatLearningEnvPoolModelBatchV1, CombatLearningEnvPoolSlotStepV1,
@@ -28,6 +30,17 @@ pub use learning_model_input::{
     LearningSelectionCandidateV1, LearningSelectionDecisionV1, LearningSelectionDraftV1,
     LearningSelectionModelBatchV1, LearningSelectionModelRowV1, LearningSelectionStepV1,
     LearningStrategicModelObservationV1, LearningStrategicPotionSlotV1, LearningStrategicPotionV1,
+};
+pub use public_information_snapshot::{
+    learning_public_information_snapshot_v1, LEARNING_PUBLIC_CANDIDATE_SURFACE_SCHEMA_NAME,
+    LEARNING_PUBLIC_CANDIDATE_SURFACE_SCHEMA_VERSION,
+    LEARNING_PUBLIC_COMBAT_HISTORY_SNAPSHOT_SCHEMA_NAME,
+    LEARNING_PUBLIC_COMBAT_OBSERVATION_SCHEMA_NAME,
+    LEARNING_PUBLIC_COMBAT_OBSERVATION_SCHEMA_VERSION,
+    LEARNING_PUBLIC_HISTORY_SNAPSHOT_SCHEMA_VERSION,
+    LEARNING_PUBLIC_STRATEGIC_HISTORY_SNAPSHOT_SCHEMA_NAME,
+    LEARNING_PUBLIC_STRATEGIC_OBSERVATION_SCHEMA_NAME,
+    LEARNING_PUBLIC_STRATEGIC_OBSERVATION_SCHEMA_VERSION,
 };
 
 #[cfg(test)]

@@ -6,8 +6,10 @@
 use blake2::{Blake2b512, Digest};
 use serde::Serialize;
 
+mod information_snapshot;
 mod types;
 
+pub use information_snapshot::*;
 pub use types::*;
 
 pub const PLANNER_OBSERVATION_SCHEMA_NAME: &str = "PlannerObservation";

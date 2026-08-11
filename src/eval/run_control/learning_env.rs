@@ -3,7 +3,10 @@ use serde::{Deserialize, Serialize};
 use crate::ai::combat_learning_observation::{
     combat_learning_observation_v1, CombatLearningObservationV1,
 };
-use crate::ai::planner_core::{LegalCandidateSet, PlannerDecisionContext, PlannerObservation};
+use crate::ai::planner_core::{
+    LegalCandidateSet, PlannerDecisionContext, PlannerObservation, PlannerPublicMap, PlannerRunGoal,
+};
+use crate::content::monsters::factory::EncounterId;
 use crate::content::potions::PotionId;
 use crate::sim::combat_action_equivalence::canonical_combat_action_representatives_v1;
 use crate::sim::combat_action_surface::{
@@ -34,6 +37,7 @@ pub struct LearningStrategicBoundaryV1 {
 #[serde(deny_unknown_fields)]
 pub struct LearningCombatBoundaryV1 {
     pub observation: CombatLearningObservationV1,
+    pub public_run_context: LearningCombatPublicRunContextV1,
     pub observation_completeness: LearningObservationCompletenessV1,
     /// One canonical legal-action ordinal for every complete atomic action.
     ///
@@ -42,6 +46,34 @@ pub struct LearningCombatBoundaryV1 {
     /// ordinal, while execution still resolves the retained original input.
     pub atomic_action_representatives: Vec<usize>,
     pub legal_actions: CombatLegalActionSurfaceV2,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(tag = "status", rename_all = "snake_case")]
+pub enum LearningCombatPublicRunContextV1 {
+    Available {
+        run_goal: PlannerRunGoal,
+        act: u8,
+        floor: i32,
+        keys: [bool; 3],
+        public_map: PlannerPublicMap,
+        encounter_id: Option<EncounterId>,
+    },
+    Unavailable {
+        reason: LearningCombatPublicRunContextGapV1,
+    },
+}
+
+impl LearningCombatPublicRunContextV1 {
+    pub fn is_available(&self) -> bool {
+        matches!(self, Self::Available { .. })
+    }
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum LearningCombatPublicRunContextGapV1 {
+    DetachedExactCombatPosition,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -480,10 +512,31 @@ pub(super) fn learning_combat_boundary_v1(
     );
     Ok(LearningCombatBoundaryV1 {
         observation: combat_learning_observation_v1(&position.combat),
+        public_run_context: learning_combat_public_run_context_v1(session),
         observation_completeness: LearningObservationCompletenessV1::Complete,
         atomic_action_representatives,
         legal_actions,
     })
+}
+
+fn learning_combat_public_run_context_v1(
+    session: &RunControlSession,
+) -> LearningCombatPublicRunContextV1 {
+    LearningCombatPublicRunContextV1::Available {
+        run_goal: if session.run_state.is_final_act_available {
+            PlannerRunGoal::HeartVictory
+        } else {
+            PlannerRunGoal::ActThreeVictory
+        },
+        act: session.run_state.act_num,
+        floor: session.run_state.floor_num,
+        keys: session.run_state.keys,
+        public_map: super::planner_public_map_v1(session),
+        encounter_id: session
+            .active_combat
+            .as_ref()
+            .and_then(|combat| combat.encounter_id),
+    }
 }
 
 pub(super) fn prepare_learning_combat_input_v1(
@@ -646,6 +699,13 @@ mod tests {
             boundary.observation_completeness,
             LearningObservationCompletenessV1::Complete
         );
+        assert!(matches!(
+            boundary.public_run_context,
+            LearningCombatPublicRunContextV1::Available {
+                encounter_id: Some(crate::content::monsters::factory::EncounterId::JawWorm),
+                ..
+            }
+        ));
         assert!(boundary
             .legal_actions
             .atomic_actions

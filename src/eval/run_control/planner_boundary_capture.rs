@@ -388,7 +388,7 @@ pub(in crate::eval::run_control) fn capture_planner_boundary_v1(
                 }),
             })
             .collect(),
-        public_map: planner_public_map(session),
+        public_map: planner_public_map_v1(session),
         context,
         public_history: PlannerPublicHistory {
             shop_purge_count: session.run_state.shop_purge_count,
@@ -871,7 +871,7 @@ fn planner_site_and_context(
     Ok(value)
 }
 
-fn planner_public_map(session: &RunControlSession) -> PlannerPublicMap {
+pub fn planner_public_map_v1(session: &RunControlSession) -> PlannerPublicMap {
     let mut nodes = session
         .run_state
         .map

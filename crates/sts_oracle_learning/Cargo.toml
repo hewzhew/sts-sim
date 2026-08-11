@@ -10,4 +10,5 @@ autotests = false
 path = "src/lib.rs"
 
 [dependencies]
+serde = { version = "1.0", features = ["derive"] }
 sts_oracle_learning_env = { path = "../sts_oracle_learning_env" }

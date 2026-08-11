@@ -169,6 +169,14 @@ or ordinary entity state, currently Hexaghost's active orbs and each
 Looter/Mugger's stolen gold. Private protocol flags, unrevealed random damage,
 and raw monster runtime bundles remain absent. With these fields the combat
 observation is complete for the maintained in-process learning environment.
+The combat-local observation is not a complete run-continuation state by
+itself. Every live `LearningCombatBoundaryV1` therefore also carries one typed
+public run context: declared run goal, act, floor, keys, revealed map, and the
+current encounter identity when known. A detached exact combat position marks
+that context explicitly unavailable instead of reconstructing it from a case
+name or exact checkpoint. The Rust model view retains this public context; its
+numeric bridge projection remains a separate schema migration and may not be
+silently inferred from combat-root collection metadata.
 
 `LearningModelDecisionV1` is the in-process model adapter over those
 boundaries. Its observation views omit schema labels, artifact identity, opaque
@@ -185,6 +193,21 @@ strategic parent observation, so autoregressive selection does not fall back to
 one backend call per environment slot. The adapter does not serialize per-step
 JSON and does not define a feature dictionary, network architecture, or policy
 objective.
+
+The first clean-room information boundary is capture-only.
+`PublicInformationSnapshotV1` content-addresses one typed, sanitized public
+observation, the history facts already folded into that snapshot, and the
+complete ordered candidate surface actually exposed to the deployed policy.
+Dedicated strategic and combat projectors remove card/potion UUIDs, monster
+entity ids, exact candidate ids, and other resolution handles before hashing;
+observation-local ordinals preserve distinct executable choices. The snapshot
+has no exact root id, combat-state hash, live RNG cursor, normalized trajectory
+prefix, or trajectory instance id, and it grants no search or training-label
+authority. In particular, there is intentionally no executable
+`ChanceEnsembleV1` or `SearchPolicyTargetV1` yet: those require a real public
+trajectory owner, a conditional sampler that covers every hidden chance source,
+and a typed information-set-search receipt rather than caller-supplied strings
+and aggregate visit counts.
 
 The Java-faithful engine action surface and the learning-policy candidate
 surface are intentionally distinct. A free `DiscardPotion` UI action remains

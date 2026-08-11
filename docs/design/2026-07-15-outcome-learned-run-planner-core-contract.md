@@ -31,6 +31,18 @@ journal. A selected visit records its typed selection source, but it does not
 pretend to be a trajectory-scoped behavior event until branch identity and
 continuation provenance can be attached faithfully.
 
+The first information-boundary slice is implemented as capture-only
+`PublicInformationSnapshotV1`. Live combat snapshots bind combat-local public
+facts to public run goal/map/keys/encounter context and the deployable semantic
+candidate surface; detached exact combat positions retain an explicit
+missing-context gap. Typed projectors remove strategic card/potion UUIDs and
+combat potion/monster runtime identities before content hashing. The snapshot
+deliberately lacks a normalized trajectory event prefix and cannot authorize a
+chance ensemble or search distillation. `ChanceEnsembleV1` and
+`SearchPolicyTargetV1` remain design obligations until a real trajectory owner,
+conditional sampler, and typed information-set-search receipt exist; generic
+string manifests and aggregate visit counts are not accepted substitutes.
+
 This document supersedes the assumption in the deletion-driven Campfire
 prospect design that Campfire should be the first production boundary or that a
 Campfire-specific prospect vocabulary should become the seed of a global
@@ -43,7 +55,7 @@ The next planning architecture will be built around four contracts:
 
 ```text
 public observation
-  -> complete legal candidate set
+  -> complete deployable policy candidate surface
   -> exact or public-chance successor kernel
   -> learned outcome distribution + bounded planning
 ```
@@ -122,7 +134,8 @@ the first slice.
 The core must:
 
 - represent the information available to a real player at a decision;
-- represent every legal candidate with stable typed identity;
+- represent every candidate in the bound policy surface with stable typed
+  identity;
 - distinguish deterministic, random, and random-then-decide transitions;
 - learn or estimate distributions of future outcomes rather than a universal
   hand-authored strategic score;
@@ -153,7 +166,9 @@ The first contract does not:
 1. The engine owns legality and mechanics.
 2. The planner observes only public information, even if the in-memory
    `RunState` also contains hidden queues or RNG state.
-3. Every legal candidate is representable before ordering or budget allocation.
+3. Every candidate in the bound policy surface is representable before
+   ordering or budget allocation; the surface states explicitly whether it is
+   the full engine-legal surface or a narrower deployable policy surface.
 4. Candidate labels and display text are never parsed for control flow.
 5. The current owner is recorded as a behavior policy, not a teacher.
 6. Realized behavior outcomes, simulated counterfactuals, search estimates,
@@ -706,7 +721,7 @@ Migration has four gates:
 ### Gate 1: Contract capture
 
 - hidden-free observations serialize deterministically;
-- every legal candidate at the measured sites has stable identity;
+- every candidate in the measured policy surfaces has stable identity;
 - behavior manifests and typed label provenance are present;
 - no live decision changes.
 
@@ -787,6 +802,11 @@ model or alter a decision:
    observation. The standalone Python bridge now carries complete strategic,
    combat-root, and symbolic-selection numeric rows without changing the
    environment's mechanics or action authority.
+8. **Complete for capture-only public snapshot identity.** Bind a sanitized
+   public observation, snapshot-local history facts, and the complete
+   deployable semantic candidate surface without exact-root/runtime identity.
+   Public trajectory events, conditional latent sampling, typed search
+   receipts, policy targets, and policy/value learning remain pending.
 
 The slice should prefer a transparent tabular or small-set baseline before a
 large neural model. Architecture is earned by data and ablation, not by model
@@ -797,6 +817,11 @@ size.
 Tests protect contracts rather than strategic opinions:
 
 - identical public states serialize identically;
+- hidden draw-order permutations share one public snapshot identity unless a
+  public mechanic such as Frozen Eye reveals the order;
+- changing only card/potion UUIDs or monster entity ids does not change public
+  snapshot or candidate-surface identity;
+- exact-root identity and live RNG state cannot enter the public snapshot;
 - public entity ordering whose mechanics are order-sensitive remains explicit;
 - hidden RNG cursors and future queues cannot affect the observation;
 - engine legality and recorded candidate completeness agree;

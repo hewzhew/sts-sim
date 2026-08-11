@@ -199,7 +199,7 @@ pub use persistent_burden_cutpoint_probe::{
 };
 pub use planner_boundary_capture::{
     build_planner_boundary_capture_coverage_report_v1, capture_planner_boundary_ticket_v1,
-    capture_planner_boundary_yield_v1, PlannerBoundaryCandidateLinkV1,
+    capture_planner_boundary_yield_v1, planner_public_map_v1, PlannerBoundaryCandidateLinkV1,
     PlannerBoundaryCaptureCoverageReportV1, PlannerBoundaryCaptureSegmentV1,
     PlannerBoundaryCaptureTicketV1, PlannerBoundaryMutationKindV1, PlannerBoundarySiteCoverageV1,
     PlannerBoundaryVisitOutcomeV1, PlannerBoundaryVisitV1, PlannerBoundaryYieldKindV1,
