@@ -221,6 +221,10 @@ impl CombatLearningRootV1 {
         &self.potion_uuids
     }
 
+    pub(super) fn session_checkpoint(&self) -> RunControlSessionCheckpointV1 {
+        self.session.clone()
+    }
+
     pub fn spawn(&self, replicate_index: u32) -> Result<CombatLearningEnvV1, String> {
         let env = CombatLearningEnvV1 {
             episode: CombatLearningEpisodeIdentityV1 {

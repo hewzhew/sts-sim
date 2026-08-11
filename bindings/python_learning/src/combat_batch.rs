@@ -6,7 +6,7 @@
 use numpy::PyArray1;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
-use pyo3::types::PyDict;
+use pyo3::types::{PyBytes, PyDict};
 use serde::Serialize;
 use sts_oracle_eval::ai::combat_learning_observation::{
     CombatLearningCardV1, CombatLearningEnemyIdentityV1, CombatLearningIntentV1,
@@ -15,8 +15,8 @@ use sts_oracle_eval::ai::combat_learning_observation::{
 use sts_oracle_eval::content::potions::PotionId;
 use sts_oracle_learning::eval::run_control::{
     CombatLearningBoundaryV1, CombatLearningEnvPoolV1, CombatLearningPotionPolicyV1,
-    CombatLearningRootContextV1, CombatLearningRootIdentityV1, CombatLearningRootV1,
-    LearningActionV1,
+    CombatLearningRootBatchArtifactV1, CombatLearningRootContextV1,
+    CombatLearningRootIdentityV1, CombatLearningRootV1, LearningActionV1,
 };
 use sts_oracle_eval::sim::combat::CombatTerminal;
 
@@ -204,6 +204,23 @@ impl CombatLearningRecoveryRoot {
         PyCombatLearningRootContextV1::from_context(*self.root.context())
     }
 
+    /// Persist this caller-selected exact decision boundary as one opaque root artifact.
+    ///
+    /// Python receives only the canonical bytes accepted by
+    /// ``LearningBatchEnv.from_combat_root_artifact_bytes``; runtime entity ids and the
+    /// run-control checkpoint remain private to Rust.
+    #[pyo3(signature = (*, max_bytes))]
+    fn combat_root_artifact_bytes<'py>(
+        &self,
+        py: Python<'py>,
+        max_bytes: usize,
+    ) -> PyResult<Bound<'py, PyBytes>> {
+        let payload = self
+            .encode_combat_root_artifact(max_bytes)
+            .map_err(value_error)?;
+        Ok(PyBytes::new(py, &payload))
+    }
+
     #[pyo3(signature = (replicate_count, potion_slots=None))]
     fn spawn_group(
         &self,
@@ -216,6 +233,12 @@ impl CombatLearningRecoveryRoot {
             potion_slots,
         )
         .map_err(value_error)
+    }
+}
+
+impl CombatLearningRecoveryRoot {
+    fn encode_combat_root_artifact(&self, max_bytes: usize) -> Result<Vec<u8>, String> {
+        CombatLearningRootBatchArtifactV1::from_roots([&self.root])?.encode(max_bytes)
     }
 }
 
@@ -820,6 +843,20 @@ mod tests {
         assert_eq!(recovered.replicate_count(), 2);
         assert_eq!(recovered.root_id(), recovery.root.identity().root_id);
         assert_eq!(recovered.potion_slots(), Some(vec![]));
+
+        let payload = recovery
+            .encode_combat_root_artifact(1024 * 1024)
+            .expect("encode caller-selected recovery root");
+        let restored = CombatLearningRootBatchArtifactV1::decode(&payload, 1, 1024 * 1024)
+            .expect("decode recovery root artifact")
+            .into_checkpoints()
+            .expect("recover opaque checkpoint");
+        let restored_root = CombatLearningRootV1::from_checkpoint(
+            restored.into_iter().next().expect("one recovery root"),
+        )
+        .expect("restore exact recovery root");
+        assert_eq!(restored_root.identity(), recovery.root.identity());
+        assert_eq!(restored_root.context(), recovery.root.context());
     }
 
     #[test]

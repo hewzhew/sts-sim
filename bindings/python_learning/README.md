@@ -130,6 +130,11 @@ replicate index, and `spawn_group(replicate_count)` derives a new same-root
 group without exposing the session. Partially decoded actions and terminal
 replicates are rejected. The group records no automatic history; bounded
 retention and replay verification remain caller-owned curriculum work.
+`recovery.combat_root_artifact_bytes(max_bytes=...)` persists that exact
+caller-selected boundary as one canonical opaque root. The returned bytes can
+be loaded by `LearningBatchEnv.from_combat_root_artifact_bytes` or passed to
+Rust search tooling; Python never maps observation-local monster indices back
+to private runtime entity ids.
 `group.combat_decision_audit_json(replicate_index)` is the read-only diagnostic
 companion to one current model row. It returns the complete ordered typed
 candidate surface, including card/potion identity and monster target semantics,

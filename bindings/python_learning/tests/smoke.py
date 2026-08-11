@@ -405,6 +405,26 @@ def _assert_same_root_combat_group(env: LearningBatchEnv, slot: int) -> None:
                     == recovery.exact_combat_state_hash
                 )
                 assert recovered_group.replicate_count == 2
+                recovery_payload = recovery.combat_root_artifact_bytes(
+                    max_bytes=16 * 1024 * 1024
+                )
+                restored_recovery = LearningBatchEnv.from_combat_root_artifact_bytes(
+                    recovery_payload,
+                    expected_roots=1,
+                    max_bytes=16 * 1024 * 1024,
+                )
+                restored_group = restored_recovery.combat_group(0, 1)
+                assert restored_group.root_id == recovery.root_id
+                assert (
+                    restored_group.exact_combat_state_hash
+                    == recovery.exact_combat_state_hash
+                )
+                assert (
+                    restored_recovery.combat_root_artifact_bytes(
+                        [0], max_bytes=16 * 1024 * 1024
+                    )
+                    == recovery_payload
+                )
                 recovery_checked = True
         rounds += 1
         assert rounds < 1_000

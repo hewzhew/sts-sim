@@ -261,6 +261,25 @@ attack-vs-attack ordering, potion use, deeper-run distributions, or the search
 operator as a whole are qualified; `teacher_valid` remains false and PPO is
 still unauthorized.
 
+An exact-prefix audit then separated that broad attack bias from target
+ordering. The later-combat policies first diverged only when the frozen source
+ended its turn and the candidate continued attacking. In the retained floor-one
+A20 seed `82000029` Two Louse root, however, both policies first played
+`Defend` and struck monster slot 0 before choosing the same remaining `Strike`
+against different targets. At root
+`2a6d268c572a65a3a2fd57f483cf830df3df69c33705fd58642cced84ec0e4ae`
+and exact combat hash
+`d692bda8e87957e5bb6d5cda94e9d9c6f5e5dbfcf878ed7ffe77856e7a60b868`,
+slot 0 had 6 HP plus 12 block while slot 1 had 12 HP, no block, and intended
+to gain 4 Strength. The candidate preferred slot 1 by only `0.000056` logit.
+The direct opaque recovery-root export gave end turn, striking the blocked
+Louse, and striking the unblocked Louse 5,000 LocalTurnGraph generation-work
+units each. All three searches completed with exact wins at respectively
+`71`, `71`, and `73` final HP. This is one real resource-preserving
+attack-target example and evidence that same-card/same-enemy candidates require
+ordered target state; it is not yet a target-order training distribution or a
+qualified teacher.
+
 ## Typed Root Candidate Identity
 
 The request owns one canonical ordered set of legal root candidates. Each

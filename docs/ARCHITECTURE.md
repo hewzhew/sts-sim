@@ -311,6 +311,13 @@ captured. No pool records automatic history, and no raw session payload crosses
 the bridge. Spawning a group from the recovery root therefore preserves both
 exact current-state identity and the otherwise-cross-slot parent lineage
 without weakening ordinary slot-bound checkpoint restore.
+The same recovery object may serialize that one caller-selected decision as a
+canonical single-root `CombatLearningRootBatchArtifactV1`. Rust captures the
+private checkpoint directly from the opaque root; Python receives only
+byte-bounded artifact bytes accepted by the ordinary root loader. This is the
+durable suffix-root boundary and must not be replaced by exporting a
+`CombatCase`, reconstructing runtime entity ids, or replaying a Python-built
+action witness.
 
 The Python bridge may derive one `CombatLearningBatchEnv` only from an
 undecoded combat-root slot in an existing typed batch. Python receives the

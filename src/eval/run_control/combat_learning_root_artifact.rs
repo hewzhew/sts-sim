@@ -42,6 +42,18 @@ pub struct CombatLearningRootBatchArtifactV1 {
 }
 
 impl CombatLearningRootBatchArtifactV1 {
+    /// Capture exact roots without exposing their private run-control checkpoints
+    /// to downstream callers.
+    pub fn from_roots<'a>(
+        roots: impl IntoIterator<Item = &'a CombatLearningRootV1>,
+    ) -> Result<Self, String> {
+        Self::from_checkpoints(
+            roots
+                .into_iter()
+                .map(CombatLearningRootV1::session_checkpoint),
+        )
+    }
+
     pub fn from_checkpoints(
         checkpoints: impl IntoIterator<Item = RunControlSessionCheckpointV1>,
     ) -> Result<Self, String> {
