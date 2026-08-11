@@ -26,6 +26,7 @@ use sts_oracle_runtime::sim::combat::{
     CombatPosition, CombatStepLimits, CombatStepper, CombatTerminal, EngineCombatStepper,
 };
 use sts_oracle_runtime::sim::combat_action::combat_action_key;
+use sts_oracle_runtime::sim::combat_action_equivalence::canonical_combat_action_representatives_v1;
 use sts_oracle_runtime::sim::combat_action_surface::combat_legal_action_surface_v2;
 use sts_oracle_runtime::state::core::ClientInput;
 
@@ -154,10 +155,17 @@ pub(crate) fn build(args: ActionSuccessorReanalysisArgs) -> Result<Value, String
         return Err("action-successor audit root has no materialized legal actions".to_string());
     }
 
+    let legal_actions =
+        combat_legal_action_surface_v2(&root_position.engine, &root_position.combat);
     let learning_boundary = LearningCombatBoundaryV1 {
         observation: combat_learning_observation_v1(&root_position.combat),
         observation_completeness: LearningObservationCompletenessV1::Complete,
-        legal_actions: combat_legal_action_surface_v2(&root_position.engine, &root_position.combat),
+        atomic_action_representatives: canonical_combat_action_representatives_v1(
+            &root_position.engine,
+            &root_position.combat,
+            &legal_actions.atomic_actions,
+        ),
+        legal_actions,
     };
     let learning_decision = LearningModelDecisionV1::from_combat_boundary(&learning_boundary)
         .map_err(|error| format!("cannot construct learning candidate surface: {error:?}"))?;

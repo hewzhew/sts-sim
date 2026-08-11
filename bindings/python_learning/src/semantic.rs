@@ -31,7 +31,7 @@ use sts_oracle_eval::state::events::{EventActionKind, EventId};
 use sts_oracle_eval::state::map::node::RoomType;
 use sts_oracle_eval::state::selection::{SelectionReason, SelectionScope};
 
-pub const SEMANTIC_SCHEMA_VERSION: u32 = 7;
+pub const SEMANTIC_SCHEMA_VERSION: u32 = 8;
 pub const NO_CANDIDATE_TOKEN: u64 = u64::MAX;
 pub const CARD_ID_VOCABULARY_SIZE: u64 = 371;
 pub const RELIC_ID_VOCABULARY_SIZE: u64 = 182;
@@ -49,7 +49,7 @@ pub(super) use mechanics::{
     POTION_CLASS_SCHEMA, POTION_MECHANIC_ROLE_SCHEMA, POTION_RARITY_SCHEMA,
 };
 
-// Domain identities use their fieldless enum ordinals inside schema v7. These
+// Domain identities use their fieldless enum ordinals inside schema v8. These
 // compile-time size sentinels catch vocabulary extension; any intentional
 // insertion or reordering also requires an explicit schema review and bump.
 const _: () = {

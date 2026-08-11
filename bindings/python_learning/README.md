@@ -6,7 +6,7 @@ without per-step JSON or one Python call per environment slot.
 
 The control surface exposes slot identity, decision phase, ragged candidate row
 splits, candidate counts, and an optional dense legal-action mask. Calling
-`decision_batch(semantic=True)` additionally returns semantic schema version 7
+`decision_batch(semantic=True)` additionally returns semantic schema version 8
 as five sparse, columnar NumPy table families:
 
 - `token`: token kinds plus per-decision row splits;
@@ -30,7 +30,7 @@ vocabulary sizes from the same Rust definitions that produce the arrays. A
 trainer therefore does not need a duplicate Python feature dictionary or a
 source-code lookup to interpret field ids.
 
-Schema v7 factors card and potion identity into shared mechanics plus an
+Schema v8 factors card and potion identity into shared mechanics plus an
 identity residual. Card tokens carry definition type, rarity, upgrade-sensitive
 effective target/exhaust/ethereal, base and upgrade numerics, multi-damage,
 innate, tags, explicit mechanic-role coverage, and reviewed positive roles.
@@ -39,9 +39,12 @@ tokens carry definition rarity, class, potency, thrown status, and composable
 effect roles such as direct damage, block, draw, or colorless discovery. The
 schema declares the CardId and PotionId categorical fields whose embeddings
 must start at zero; an identity absent from training therefore falls back to
-its mechanical facts instead of injecting a random vector. Schema v7 adds the
-card role projection and changes existing target/lifecycle fields from printed
-definition to effective upgraded behavior, so older checkpoints are rejected.
+its mechanical facts instead of injecting a random vector. It retains the v7
+card role and upgraded-behavior projections, and additionally removes physical
+hand indices from card and play-action features. Exact-state-equivalent starter
+Strike/Defend actions with the same target now share one canonical model
+candidate while the simulator retains every legal input. Older checkpoints are
+therefore rejected instead of consuming the changed categorical action surface.
 
 Strategic rows encode run facts, context/history, cards, relics, potion slots,
 the public map graph, every `PlannerAction` variant, and typed candidate target

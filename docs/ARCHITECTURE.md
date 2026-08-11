@@ -446,7 +446,7 @@ Changing an encoded field's meaning or turning a previously constant field into
 live information requires a semantic-schema version bump even when the table
 shape is unchanged. Checkpoints trained under the prior meaning must fail
 closed rather than silently consuming the new distribution.
-Semantic schema v7 also declares identity-residual categorical fields. Card
+Semantic schema v8 also declares identity-residual categorical fields. Card
 and potion identities are encoded alongside shared typed mechanics: card
 definition type, rarity, upgrade-sensitive effective target and lifecycle
 flags, base/upgrade numerics, multi-damage, explicit mechanic-role coverage,
@@ -458,6 +458,18 @@ vocabularies, so an identity not exercised by training contributes its shared
 mechanics but no random identity vector. Enemy, power, and relic identities
 remain ordinary embeddings until comparable mechanical projections exist;
 they must not be relabeled as residuals merely to hide missing semantics.
+The simulator's legal combat action surface remains complete. A separate
+exact-state equivalence projection maps only proven duplicate starter-basic
+plays (same complete runtime card signature and target) and supported
+single-card pending selections to a canonical original input. Search and the
+learning environment consume that shared projection; the model-facing combat
+surface retains one representative per class and executes its unchanged typed
+`ClientInput`. Duplicate non-starter cards, different targets, and different
+runtime card state remain separate. Schema v8 also omits physical hand position
+and play-card hand index from semantic features. Candidate-to-card graph edges
+retain the chosen mechanics without teaching categorical multiplicity or an
+unstable UI ordering; ordered draw/limbo evidence and potion/indexed-choice
+addresses keep their distinct semantics.
 The bridge still owns no policy, optimizer, automatic reset, or PyTorch
 dependency. Keeping the crate standalone prevents Python build dependencies
 from entering ordinary simulator checks.

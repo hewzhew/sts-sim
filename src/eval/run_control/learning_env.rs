@@ -5,6 +5,7 @@ use crate::ai::combat_learning_observation::{
 };
 use crate::ai::planner_core::{LegalCandidateSet, PlannerDecisionContext, PlannerObservation};
 use crate::content::potions::PotionId;
+use crate::sim::combat_action_equivalence::canonical_combat_action_representatives_v1;
 use crate::sim::combat_action_surface::{
     combat_legal_action_surface_v2, pending_choice_input_is_legal, CombatLegalActionSurfaceV2,
 };
@@ -34,6 +35,12 @@ pub struct LearningStrategicBoundaryV1 {
 pub struct LearningCombatBoundaryV1 {
     pub observation: CombatLearningObservationV1,
     pub observation_completeness: LearningObservationCompletenessV1,
+    /// One canonical legal-action ordinal for every complete atomic action.
+    ///
+    /// This projection never removes simulator legality.  A model-facing
+    /// adapter keeps only entries whose representative equals their own
+    /// ordinal, while execution still resolves the retained original input.
+    pub atomic_action_representatives: Vec<usize>,
     pub legal_actions: CombatLegalActionSurfaceV2,
 }
 
@@ -465,10 +472,17 @@ pub(super) fn learning_combat_boundary_v1(
     session: &RunControlSession,
 ) -> Result<LearningCombatBoundaryV1, String> {
     let position = session.current_combat_position_for_actions()?;
+    let legal_actions = combat_legal_action_surface_v2(&position.engine, &position.combat);
+    let atomic_action_representatives = canonical_combat_action_representatives_v1(
+        &position.engine,
+        &position.combat,
+        &legal_actions.atomic_actions,
+    );
     Ok(LearningCombatBoundaryV1 {
         observation: combat_learning_observation_v1(&position.combat),
         observation_completeness: LearningObservationCompletenessV1::Complete,
-        legal_actions: combat_legal_action_surface_v2(&position.engine, &position.combat),
+        atomic_action_representatives,
+        legal_actions,
     })
 }
 

@@ -777,13 +777,17 @@ impl<'a> LearningModelDecisionV1<'a> {
         potion_policy: &CombatLearningPotionPolicyV1,
     ) -> Result<Self, LearningModelInputError> {
         validate_indexed_choice_alignment(&boundary.legal_actions)?;
+        validate_atomic_action_representatives(boundary)?;
 
         let observation = &boundary.observation;
         let mut candidates = Vec::with_capacity(
             boundary.legal_actions.atomic_actions.len()
                 + boundary.legal_actions.selection_families.len(),
         );
-        for input in &boundary.legal_actions.atomic_actions {
+        for (atomic_ordinal, input) in boundary.legal_actions.atomic_actions.iter().enumerate() {
+            if boundary.atomic_action_representatives[atomic_ordinal] != atomic_ordinal {
+                continue;
+            }
             if !potion_policy.allows_input(observation, input) {
                 continue;
             }
@@ -1478,6 +1482,14 @@ pub enum LearningModelInputError {
     IndexedChoiceAtomicActionMissing {
         index: usize,
     },
+    AtomicActionRepresentativeCountMismatch {
+        action_count: usize,
+        representative_count: usize,
+    },
+    AtomicActionRepresentativeInvalid {
+        action_ordinal: usize,
+        representative_ordinal: usize,
+    },
     UnsupportedCombatAtomicInput,
     CombatTargetMissing,
     NoLegalCandidates,
@@ -1509,6 +1521,40 @@ fn ensure_nonempty(candidate_count: usize) -> Result<(), LearningModelInputError
     } else {
         Ok(())
     }
+}
+
+fn validate_atomic_action_representatives(
+    boundary: &LearningCombatBoundaryV1,
+) -> Result<(), LearningModelInputError> {
+    let action_count = boundary.legal_actions.atomic_actions.len();
+    let representative_count = boundary.atomic_action_representatives.len();
+    if representative_count != action_count {
+        return Err(
+            LearningModelInputError::AtomicActionRepresentativeCountMismatch {
+                action_count,
+                representative_count,
+            },
+        );
+    }
+    for (action_ordinal, representative_ordinal) in boundary
+        .atomic_action_representatives
+        .iter()
+        .copied()
+        .enumerate()
+    {
+        let representative_is_canonical = representative_ordinal <= action_ordinal
+            && boundary
+                .atomic_action_representatives
+                .get(representative_ordinal)
+                .is_some_and(|canonical| *canonical == representative_ordinal);
+        if !representative_is_canonical {
+            return Err(LearningModelInputError::AtomicActionRepresentativeInvalid {
+                action_ordinal,
+                representative_ordinal,
+            });
+        }
+    }
+    Ok(())
 }
 
 fn validate_indexed_choice_alignment(
@@ -1749,6 +1795,98 @@ mod tests {
             })
             .collect();
         (legal, policy)
+    }
+
+    fn combat_env_for_model_input(combat: CombatState) -> LearningEnvV1 {
+        let mut session = RunControlSession::new(RunControlConfig::default());
+        session.engine_state = EngineState::CombatPlayerTurn;
+        session.active_combat = Some(ActiveCombat::new(
+            EngineState::CombatPlayerTurn,
+            combat,
+            CombatContext::Room(RoomCombatContext {
+                room_type: RoomType::MonsterRoom,
+            }),
+        ));
+        LearningEnvV1::from_session(session)
+    }
+
+    #[test]
+    fn duplicate_defends_expose_one_executable_model_candidate() {
+        let mut combat = crate::test_support::blank_test_combat();
+        combat
+            .entities
+            .monsters
+            .push(crate::test_support::test_monster(EnemyId::JawWorm));
+        combat.zones.hand = vec![
+            CombatCard::new(CardId::Defend, 10),
+            CombatCard::new(CardId::Defend, 11),
+        ];
+        let env = combat_env_for_model_input(combat);
+        let boundary = env.observe().expect("combat boundary");
+        let decision = LearningModelDecisionV1::from_boundary(&boundary).expect("model decision");
+        let LearningModelObservationV1::Combat(observation) = decision.observation else {
+            panic!("expected combat observation");
+        };
+        let defend_candidates = decision
+            .candidates
+            .iter()
+            .enumerate()
+            .filter_map(|(ordinal, candidate)| {
+                let LearningModelCandidateSemanticsV1::CombatAtomic {
+                    action:
+                        LearningCombatAtomicActionV1::PlayCard {
+                            hand_index,
+                            target_monster_index: None,
+                        },
+                } = candidate.semantics
+                else {
+                    return None;
+                };
+                (observation.cards.hand.cards[hand_index].card_id == CardId::Defend)
+                    .then_some((ordinal, hand_index))
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(defend_candidates.len(), 1);
+        assert_eq!(defend_candidates[0].1, 0);
+        let LearningModelChoiceV1::Apply(action) = decision
+            .choose(defend_candidates[0].0)
+            .expect("choose representative")
+        else {
+            panic!("defend must resolve directly");
+        };
+        env.prepare_action(action)
+            .expect("canonical representative must remain a legal engine input");
+    }
+
+    #[test]
+    fn starter_basic_equivalence_preserves_targets_and_runtime_state() {
+        let mut combat = crate::test_support::blank_test_combat();
+        let mut first = crate::test_support::test_monster(EnemyId::LouseNormal);
+        first.id = 1;
+        let mut second = crate::test_support::test_monster(EnemyId::LouseNormal);
+        second.id = 2;
+        combat.entities.monsters = vec![first, second];
+        let mut free = CombatCard::new(CardId::Strike, 11);
+        free.free_to_play_once = true;
+        combat.zones.hand = vec![CombatCard::new(CardId::Strike, 10), free];
+        let env = combat_env_for_model_input(combat);
+        let boundary = env.observe().expect("combat boundary");
+        let decision = LearningModelDecisionV1::from_boundary(&boundary).expect("model decision");
+        let strike_candidates = decision
+            .candidates
+            .iter()
+            .filter(|candidate| {
+                matches!(
+                    candidate.semantics,
+                    LearningModelCandidateSemanticsV1::CombatAtomic {
+                        action: LearningCombatAtomicActionV1::PlayCard { .. },
+                    }
+                )
+            })
+            .count();
+
+        assert_eq!(strike_candidates, 4);
     }
 
     #[test]
@@ -2589,6 +2727,7 @@ mod tests {
             panic!("expected combat boundary");
         };
         boundary.legal_actions.atomic_actions = vec![ClientInput::SubmitDiscoverChoice(0)];
+        boundary.atomic_action_representatives = vec![0];
 
         assert_eq!(
             LearningModelDecisionV1::from_boundary(&LearningBoundaryV1::Combat { boundary })
@@ -2620,6 +2759,15 @@ mod tests {
                     &combat,
                 ),
                 observation_completeness: super::super::LearningObservationCompletenessV1::Complete,
+                atomic_action_representatives:
+                    crate::sim::combat_action_equivalence::canonical_combat_action_representatives_v1(
+                        &EngineState::PendingChoice(PendingChoice::ScrySelect {
+                            cards: vec![CardId::Strike, CardId::Defend],
+                            card_uuids: vec![7],
+                        }),
+                        &combat,
+                        &surface.atomic_actions,
+                    ),
                 legal_actions: surface,
             },
         };

@@ -1,4 +1,4 @@
-//! Complete combat-side encoding for semantic schema v7.
+//! Complete combat-side encoding for semantic schema v8.
 
 use sts_oracle_eval::ai::combat_learning_observation::{
     CombatLearningCardCollectionV1, CombatLearningCardV1, CombatLearningEnemyIdentityV1,
@@ -631,14 +631,19 @@ impl SemanticBatchBuilder {
             CategoricalField::EvidenceKind,
             collection.evidence as i64,
         );
-        let ordered = matches!(
+        let position_is_semantic = !matches!(kind, CardZoneKind::Hand)
+            && matches!(
             collection.evidence,
             ObservationEvidenceKindV1::VisibleExact
                 | ObservationEvidenceKindV1::PublicOrderedCollection
-        );
+            );
         let mut tokens = Vec::with_capacity(collection.cards.len());
         for (position, card) in collection.cards.iter().enumerate() {
-            let card = self.encode_combat_card(card, ordered.then_some(position), monsters)?;
+            let card = self.encode_combat_card(
+                card,
+                position_is_semantic.then_some(position),
+                monsters,
+            )?;
             self.edge(zone, RelationKind::ZoneHasCard, card);
             tokens.push(card);
         }
@@ -726,7 +731,6 @@ impl SemanticBatchBuilder {
                 target_monster_index,
             } => {
                 self.combat_action_kind(token, CombatActionKind::PlayCard);
-                self.scalar(token, ScalarField::ActionIndex, hand_index);
                 let card = tokens
                     .hand
                     .get(hand_index)
@@ -1098,9 +1102,90 @@ mod tests {
     use sts_oracle_eval::state::map::node::RoomType;
 
     use super::super::{
-        CategoricalField, IndexedChoiceReasonKind, RelationKind, SemanticBatchBuilder,
-        SemanticCompleteness, TokenKind,
+        CategoricalField, CombatActionKind, IndexedChoiceReasonKind, RelationKind, ScalarField,
+        SemanticBatchBuilder, SemanticCompleteness, TokenKind,
     };
+
+    #[test]
+    fn duplicate_defend_candidate_has_no_hand_position_features() {
+        let mut session = RunControlSession::new(RunControlConfig::default());
+        let mut combat = sts_oracle_eval::test_support::blank_test_combat();
+        combat.zones.hand = vec![
+            CombatCard::new(CardId::Defend, 11),
+            CombatCard::new(CardId::Defend, 12),
+        ];
+        combat.entities.monsters.push(
+            sts_oracle_eval::test_support::test_monster(
+                sts_oracle_eval::content::monsters::EnemyId::JawWorm,
+            ),
+        );
+        session.engine_state = EngineState::CombatPlayerTurn;
+        session.active_combat = Some(ActiveCombat::new(
+            EngineState::CombatPlayerTurn,
+            combat,
+            CombatContext::Room(RoomCombatContext {
+                room_type: RoomType::MonsterRoom,
+            }),
+        ));
+        let boundary = LearningEnvV1::from_session(session)
+            .observe()
+            .expect("combat boundary");
+        let decision =
+            LearningModelDecisionV1::from_boundary(&boundary).expect("combat model decision");
+        let defend_candidates = decision
+            .candidates
+            .iter()
+            .filter(|candidate| {
+                matches!(
+                    candidate.semantics,
+                    sts_oracle_learning::eval::run_control::LearningModelCandidateSemanticsV1::CombatAtomic {
+                        action: sts_oracle_learning::eval::run_control::LearningCombatAtomicActionV1::PlayCard { .. },
+                    }
+                )
+            })
+            .count();
+        assert_eq!(defend_candidates, 1);
+
+        let mut builder = SemanticBatchBuilder::new();
+        builder
+            .push_decision(&decision)
+            .expect("encode combat decision");
+        let batch = builder.finish();
+        let card_tokens = batch
+            .token_kinds
+            .iter()
+            .enumerate()
+            .filter_map(|(token, kind)| {
+                (*kind == TokenKind::CombatCard as u16).then_some(token as u64)
+            })
+            .collect::<Vec<_>>();
+        let play_candidate_tokens = batch
+            .categorical
+            .token_indices
+            .iter()
+            .copied()
+            .zip(batch.categorical.fields.iter().copied())
+            .zip(batch.categorical.values.iter().copied())
+            .filter_map(|((token, field), value)| {
+                (field == CategoricalField::CombatActionKind as u16
+                    && value == CombatActionKind::PlayCard as i64)
+                    .then_some(token)
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(play_candidate_tokens.len(), 1);
+        assert!(!batch
+            .scalar
+            .token_indices
+            .iter()
+            .copied()
+            .zip(batch.scalar.fields.iter().copied())
+            .any(|(token, field)| {
+                (card_tokens.contains(&token) && field == ScalarField::CollectionPosition as u16)
+                    || (play_candidate_tokens.contains(&token)
+                        && field == ScalarField::ActionIndex as u16)
+            }));
+    }
 
     #[test]
     fn symbolic_selection_rows_encode_parent_state_prefix_and_current_candidates() {
