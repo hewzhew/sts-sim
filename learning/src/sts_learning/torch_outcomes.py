@@ -42,6 +42,7 @@ from .run_rollout import RunRolloutError, build_complete_run_rollout
 from .semantic_concat import (
     SemanticBatchConcatLimits,
     concatenate_semantic_decision_batches,
+    plan_semantic_decision_batch_chunks,
 )
 from .terminal_returns import (
     FloorProgressReturnConfig,
@@ -150,9 +151,10 @@ class OnPolicyCombatWinLoss:
 @dataclass(frozen=True)
 class _CombatPolicyLoss:
     value: Tensor
-    approximate_kl: float
-    clip_fraction: float
-    entropy: float
+    diagnostic_weight: float
+    approximate_kl_weighted_sum: float
+    clipped_weight: float
+    entropy_weighted_sum: float
     value_loss: float
     actor_advantages: tuple[float, ...]
 
@@ -441,6 +443,59 @@ def on_policy_combat_win_loss(
     require_matching_propensities: bool = True,
     fixed_actor_advantages: Sequence[float] | None = None,
 ) -> OnPolicyCombatWinLoss:
+    """Construct one differentiable combat objective through bounded batches."""
+
+    return _on_policy_combat_win_loss(
+        scorer,
+        groups,
+        registry,
+        concat_limits,
+        policy_config,
+        objective_config,
+        require_matching_propensities=require_matching_propensities,
+        fixed_actor_advantages=fixed_actor_advantages,
+        backward_microbatches=False,
+    )
+
+
+def _backward_on_policy_combat_win_loss(
+    scorer: CandidatePolicyScorer,
+    groups: Sequence[CompletedCombatGroupExperience],
+    registry: BehaviorManifestRegistry,
+    concat_limits: SemanticBatchConcatLimits,
+    policy_config: RaggedCategoricalPolicyConfig,
+    objective_config: CombatWinObjectiveConfig,
+    *,
+    require_matching_propensities: bool = True,
+    fixed_actor_advantages: Sequence[float] | None = None,
+) -> OnPolicyCombatWinLoss:
+    """Backpropagate bounded microbatches without retaining all forward graphs."""
+
+    return _on_policy_combat_win_loss(
+        scorer,
+        groups,
+        registry,
+        concat_limits,
+        policy_config,
+        objective_config,
+        require_matching_propensities=require_matching_propensities,
+        fixed_actor_advantages=fixed_actor_advantages,
+        backward_microbatches=True,
+    )
+
+
+def _on_policy_combat_win_loss(
+    scorer: CandidatePolicyScorer,
+    groups: Sequence[CompletedCombatGroupExperience],
+    registry: BehaviorManifestRegistry,
+    concat_limits: SemanticBatchConcatLimits,
+    policy_config: RaggedCategoricalPolicyConfig,
+    objective_config: CombatWinObjectiveConfig,
+    *,
+    require_matching_propensities: bool,
+    fixed_actor_advantages: Sequence[float] | None,
+    backward_microbatches: bool,
+) -> OnPolicyCombatWinLoss:
     """Apply same-root win-first advantages with a typed all-win fallback.
 
     Every group has equal total weight. Inside a group, every replicate has
@@ -472,6 +527,10 @@ def on_policy_combat_win_loss(
     if type(require_matching_propensities) is not bool:
         raise TorchOutcomeError(
             "combat win objective propensity check must be bool"
+        )
+    if type(backward_microbatches) is not bool:
+        raise TorchOutcomeError(
+            "combat win objective backward_microbatches must be bool"
         )
     if (
         fixed_actor_advantages is not None
@@ -628,6 +687,7 @@ def on_policy_combat_win_loss(
         update_config=objective_config.policy_update,
         require_matching_propensities=require_matching_propensities,
         fixed_actor_advantages=fixed_actor_advantages,
+        backward_microbatches=backward_microbatches,
     )
     return OnPolicyCombatWinLoss(
         value=policy_loss.value,
@@ -646,9 +706,14 @@ def on_policy_combat_win_loss(
         decision_count=total_decisions,
         behavior_manifest_ids=tuple(behavior_ids),
         selection_probabilities=tuple(probability_evidence),
-        approximate_kl=policy_loss.approximate_kl,
-        clip_fraction=policy_loss.clip_fraction,
-        entropy=policy_loss.entropy,
+        approximate_kl=(
+            policy_loss.approximate_kl_weighted_sum
+            / policy_loss.diagnostic_weight
+        ),
+        clip_fraction=policy_loss.clipped_weight / policy_loss.diagnostic_weight,
+        entropy=(
+            policy_loss.entropy_weighted_sum / policy_loss.diagnostic_weight
+        ),
         value_loss=policy_loss.value_loss,
         actor_advantages=policy_loss.actor_advantages,
     )
@@ -1196,6 +1261,118 @@ def _combat_policy_weighted_loss(
     update_config: CombatPolicyUpdateConfig,
     require_matching_propensities: bool,
     fixed_actor_advantages: Sequence[float] | None,
+    backward_microbatches: bool,
+) -> _CombatPolicyLoss:
+    """Evaluate one objective through bounded, contiguous semantic batches."""
+
+    normalized_payloads = tuple(payloads)
+    chunks = plan_semantic_decision_batch_chunks(
+        normalized_payloads,
+        concat_limits,
+    )
+    decision_count = len(selected_ordinals)
+    if sum(chunk.row_count for chunk in chunks) != decision_count:
+        raise TorchOutcomeError(
+            "combat policy payload rows are misaligned with objective rows"
+        )
+    if fixed_actor_advantages is not None and (
+        len(fixed_actor_advantages) != decision_count
+        or not all(math.isfinite(value) for value in fixed_actor_advantages)
+    ):
+        raise TorchOutcomeError(
+            "fixed combat advantages are misaligned or non-finite"
+        )
+
+    parts: list[_CombatPolicyLoss] = []
+    row_start = 0
+    for chunk in chunks:
+        row_stop = row_start + chunk.row_count
+        fixed_chunk = (
+            None
+            if fixed_actor_advantages is None
+            else fixed_actor_advantages[row_start:row_stop]
+        )
+        part = _combat_policy_microbatch_loss(
+            scorer=scorer,
+            payloads=normalized_payloads[
+                chunk.start_batch_index : chunk.stop_batch_index
+            ],
+            selected_ordinals=selected_ordinals[row_start:row_stop],
+            selection_probabilities=selection_probabilities[row_start:row_stop],
+            targets=targets[row_start:row_stop],
+            weights=weights[row_start:row_stop],
+            value_head_indices=value_head_indices[row_start:row_stop],
+            concat_limits=concat_limits,
+            policy_config=policy_config,
+            update_config=update_config,
+            require_matching_propensities=require_matching_propensities,
+            fixed_actor_advantages=fixed_chunk,
+        )
+        if backward_microbatches:
+            part.value.backward()
+            part = _CombatPolicyLoss(
+                value=part.value.detach(),
+                diagnostic_weight=part.diagnostic_weight,
+                approximate_kl_weighted_sum=(
+                    part.approximate_kl_weighted_sum
+                ),
+                clipped_weight=part.clipped_weight,
+                entropy_weighted_sum=part.entropy_weighted_sum,
+                value_loss=part.value_loss,
+                actor_advantages=part.actor_advantages,
+            )
+        parts.append(part)
+        row_start = row_stop
+
+    value = parts[0].value
+    for part in parts[1:]:
+        value = value + part.value
+    diagnostic_weight = sum(part.diagnostic_weight for part in parts)
+    if not math.isfinite(diagnostic_weight) or diagnostic_weight <= 0.0:
+        raise TorchOutcomeError("combat policy diagnostic weight must be positive")
+    approximate_kl_weighted_sum = sum(
+        part.approximate_kl_weighted_sum for part in parts
+    )
+    clipped_weight = sum(part.clipped_weight for part in parts)
+    entropy_weighted_sum = sum(part.entropy_weighted_sum for part in parts)
+    value_loss = sum(part.value_loss for part in parts)
+    diagnostics = (
+        approximate_kl_weighted_sum,
+        clipped_weight,
+        entropy_weighted_sum,
+        value_loss,
+    )
+    if not all(math.isfinite(value) for value in diagnostics):
+        raise TorchOutcomeError("combat PPO accumulated diagnostics must be finite")
+    return _CombatPolicyLoss(
+        value=value,
+        diagnostic_weight=diagnostic_weight,
+        approximate_kl_weighted_sum=approximate_kl_weighted_sum,
+        clipped_weight=clipped_weight,
+        entropy_weighted_sum=entropy_weighted_sum,
+        value_loss=value_loss,
+        actor_advantages=tuple(
+            advantage
+            for part in parts
+            for advantage in part.actor_advantages
+        ),
+    )
+
+
+def _combat_policy_microbatch_loss(
+    *,
+    scorer: CandidatePolicyScorer,
+    payloads: Sequence[Mapping[str, object]],
+    selected_ordinals: Sequence[int],
+    selection_probabilities: Sequence[SelectionProbability],
+    targets: Sequence[float],
+    weights: Sequence[float],
+    value_head_indices: Sequence[int],
+    concat_limits: SemanticBatchConcatLimits,
+    policy_config: RaggedCategoricalPolicyConfig,
+    update_config: CombatPolicyUpdateConfig,
+    require_matching_propensities: bool,
+    fixed_actor_advantages: Sequence[float] | None,
 ) -> _CombatPolicyLoss:
     if not isinstance(update_config, CombatPolicyUpdateConfig):
         raise TorchOutcomeError("combat policy update config must be typed")
@@ -1214,9 +1391,10 @@ def _combat_policy_weighted_loss(
                 policy_config=policy_config,
                 objective_name="combat win-first",
             ),
-            approximate_kl=0.0,
-            clip_fraction=0.0,
-            entropy=0.0,
+            diagnostic_weight=float(sum(weights)),
+            approximate_kl_weighted_sum=0.0,
+            clipped_weight=0.0,
+            entropy_weighted_sum=0.0,
             value_loss=0.0,
             actor_advantages=tuple(float(target) for target in targets),
         )
@@ -1365,30 +1543,34 @@ def _combat_policy_weighted_loss(
         * torch.sum(entropies * weight_tensor)
     ) + update_config.value_loss_coefficient * value_loss
     diagnostic_weight = torch.sum(weight_tensor)
-    approximate_kl = torch.sum(
+    approximate_kl_weighted_sum = torch.sum(
         ((ratio - 1.0) - log_ratio) * weight_tensor
-    ) / diagnostic_weight
-    clip_fraction = torch.sum(
+    )
+    clipped_weight = torch.sum(
         ((ratio - 1.0).abs() > update_config.clip_coefficient).to(
             weight_tensor.dtype
         )
         * weight_tensor
-    ) / diagnostic_weight
-    mean_entropy = torch.sum(entropies * weight_tensor) / diagnostic_weight
+    )
+    entropy_weighted_sum = torch.sum(entropies * weight_tensor)
     diagnostics = (
         loss,
-        approximate_kl,
-        clip_fraction,
-        mean_entropy,
+        diagnostic_weight,
+        approximate_kl_weighted_sum,
+        clipped_weight,
+        entropy_weighted_sum,
         value_loss,
     )
     if not all(bool(torch.all(torch.isfinite(value))) for value in diagnostics):
         raise TorchOutcomeError("combat PPO objective must be finite")
     return _CombatPolicyLoss(
         value=loss,
-        approximate_kl=float(approximate_kl.detach().item()),
-        clip_fraction=float(clip_fraction.detach().item()),
-        entropy=float(mean_entropy.detach().item()),
+        diagnostic_weight=float(diagnostic_weight.detach().item()),
+        approximate_kl_weighted_sum=float(
+            approximate_kl_weighted_sum.detach().item()
+        ),
+        clipped_weight=float(clipped_weight.detach().item()),
+        entropy_weighted_sum=float(entropy_weighted_sum.detach().item()),
         value_loss=float(value_loss.detach().item()),
         actor_advantages=tuple(
             float(value)

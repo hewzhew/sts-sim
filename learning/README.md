@@ -298,8 +298,9 @@ under rarity or role heuristics.
 Their row projection attaches all three columns to each retained replicate
 decision without choosing a training axis or scalar weighting.
 `sts_learning.torch_outcomes.on_policy_combat_win_loss` is the first narrow
-training consumer. It batches complete distinct-root groups into one scorer
-call, verifies their exact behavior manifests and sampled propensities, and
+training consumer. It batches complete distinct-root groups into a bounded
+sequence of scorer calls, verifies their exact behavior manifests and sampled
+propensities, and
 selects one same-root advantage axis lexicographically. Any mixed win/loss
 group uses only win advantage. The typed all-win axis is either `NONE` for a
 strict win-only ablation or `TERMINAL_HP` so solved early combats continue
@@ -314,8 +315,13 @@ provenance.
 objective a separate provenance identity and consumes exactly the configured
 number of complete groups. No selected-axis signal and exactly zero policy
 gradient are typed no-update results; only a finite nonzero gradient performs
-one optimizer step. The trainer retains separate win/HP signal counters and
-bounded identity evidence, not group payloads.
+one optimizer step. Semantic concat row and byte limits apply to each
+materialized microbatch rather than silently capping the total decisions in an
+update. Microbatch losses retain the original group/replicate/decision weights,
+backward gradients accumulate in trajectory order, and each PPO epoch still
+performs at most one optimizer step. KL, clipping, entropy, and value-loss
+diagnostics are reduced under those same global row weights. The trainer retains
+separate win/HP signal counters and bounded identity evidence, not group payloads.
 `sts_learning.torch_combat_generation.BoundedCombatWinGenerationRunner` is the
 first bounded live composition. It fixes one exact source root, requires one
 group per update, validates the scorer/optimizer/registry/controller chain, and

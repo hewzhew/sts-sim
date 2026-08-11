@@ -22,7 +22,7 @@ from .semantic_concat import SemanticBatchConcatLimits
 from .torch_outcomes import (
     CandidatePolicyScorer,
     OnPolicyCombatWinLoss,
-    on_policy_combat_win_loss,
+    _backward_on_policy_combat_win_loss,
 )
 from .torch_policy import RaggedCategoricalPolicyConfig
 
@@ -179,64 +179,53 @@ class SynchronousCombatWinTrainer:
             )
 
         started = time.perf_counter()
-        objective = on_policy_combat_win_loss(
-            self.scorer,
-            normalized,
-            self.registry,
-            self.concat_limits,
-            self.policy_config,
-            self.objective_config,
-        )
-        if objective.value.ndim != 0 or not objective.value.requires_grad:
-            raise TorchCombatTrainingError(
-                "combat win-first objective must be a differentiable scalar"
-            )
-        loss = float(objective.value.detach().item())
-        if not math.isfinite(loss):
-            raise TorchCombatTrainingError("combat win-first loss must be finite")
-
-        if objective.signal_group_count == 0:
-            return self._finish(
-                objective,
-                loss,
-                CombatWinTrainingStatus.NO_OBJECTIVE_SIGNAL,
-                started,
-                optimizer_steps_applied=0,
-            )
-
         optimizer_steps_applied = 0
-        fixed_actor_advantages = (
-            objective.actor_advantages
-            if self.objective_config.policy_update.uses_value_baseline
-            else None
-        )
+        fixed_actor_advantages: tuple[float, ...] | None = None
+        objective: OnPolicyCombatWinLoss | None = None
+        loss = 0.0
         try:
             for epoch in range(self.objective_config.policy_update.epochs):
-                if epoch > 0:
-                    objective = on_policy_combat_win_loss(
-                        self.scorer,
-                        normalized,
-                        self.registry,
-                        self.concat_limits,
-                        self.policy_config,
-                        self.objective_config,
-                        require_matching_propensities=False,
-                        fixed_actor_advantages=fixed_actor_advantages,
+                self.optimizer.zero_grad(set_to_none=True)
+                objective = _backward_on_policy_combat_win_loss(
+                    self.scorer,
+                    normalized,
+                    self.registry,
+                    self.concat_limits,
+                    self.policy_config,
+                    self.objective_config,
+                    require_matching_propensities=epoch == 0,
+                    fixed_actor_advantages=fixed_actor_advantages,
+                )
+                if objective.value.ndim != 0:
+                    raise TorchCombatTrainingError(
+                        "combat win-first objective must be a scalar"
                     )
-                    loss = float(objective.value.detach().item())
-                    if not math.isfinite(loss):
-                        raise TorchCombatTrainingError(
-                            "combat win-first loss must be finite"
+                loss = float(objective.value.detach().item())
+                if not math.isfinite(loss):
+                    raise TorchCombatTrainingError(
+                        "combat win-first loss must be finite"
+                    )
+                if epoch == 0:
+                    if objective.signal_group_count == 0:
+                        self.optimizer.zero_grad(set_to_none=True)
+                        return self._finish(
+                            objective,
+                            loss,
+                            CombatWinTrainingStatus.NO_OBJECTIVE_SIGNAL,
+                            started,
+                            optimizer_steps_applied=0,
                         )
+                    if self.objective_config.policy_update.uses_value_baseline:
+                        fixed_actor_advantages = objective.actor_advantages
+                else:
                     target_kl = self.objective_config.policy_update.target_kl
                     if (
                         target_kl is not None
                         and objective.approximate_kl > target_kl
                     ):
+                        self.optimizer.zero_grad(set_to_none=True)
                         break
 
-                self.optimizer.zero_grad(set_to_none=True)
-                objective.value.backward()
                 gradients = tuple(
                     parameter.grad
                     for group in self.optimizer.param_groups
@@ -282,8 +271,12 @@ class SynchronousCombatWinTrainer:
                 optimizer_steps_applied += 1
                 self._optimizer_steps += 1
         except Exception:
+            self.optimizer.zero_grad(set_to_none=True)
             self._poisoned = True
             raise
+
+        if objective is None:
+            raise TorchCombatTrainingError("combat policy update has no epochs")
 
         self._trained_replicates += (
             objective.replicate_count * optimizer_steps_applied

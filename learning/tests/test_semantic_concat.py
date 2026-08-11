@@ -13,6 +13,7 @@ from sts_learning import (
     SemanticBatchConcatLimits,
     SemanticBatchError,
     concatenate_semantic_decision_batches,
+    plan_semantic_decision_batch_chunks,
     select_semantic_decision_rows,
 )
 
@@ -32,6 +33,30 @@ def _limits(*, rows: int = 16, array_bytes: int = 1024 * 1024):
 
 
 class SemanticBatchConcatTests(unittest.TestCase):
+    def test_chunk_plan_keeps_global_order_and_checks_cross_chunk_schema(self) -> None:
+        row = select_semantic_decision_rows(semantic_batch_fixture(), [0])
+        chunks = plan_semantic_decision_batch_chunks(
+            (row, row, row),
+            _limits(rows=2),
+        )
+
+        self.assertEqual(
+            tuple((chunk.start_batch_index, chunk.stop_batch_index) for chunk in chunks),
+            ((0, 2), (2, 3)),
+        )
+        self.assertEqual(tuple(chunk.row_count for chunk in chunks), (2, 1))
+
+        incompatible = select_semantic_decision_rows(
+            semantic_batch_fixture(),
+            [1],
+        )
+        incompatible["phase"] = incompatible["phase"].astype(np.int64)
+        with self.assertRaisesRegex(SemanticBatchError, "incompatible schemas"):
+            plan_semantic_decision_batch_chunks(
+                (row, incompatible),
+                _limits(rows=1),
+            )
+
     def test_rows_tokens_relations_and_candidates_are_reindexed_in_order(self) -> None:
         original = semantic_batch_fixture()
         second_row = select_semantic_decision_rows(original, [1])

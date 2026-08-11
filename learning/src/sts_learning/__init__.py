@@ -219,8 +219,10 @@ from .seeds import (
 )
 from .semantic_batch import SemanticBatchError, select_semantic_decision_rows
 from .semantic_concat import (
+    SemanticBatchConcatChunk,
     SemanticBatchConcatLimits,
     concatenate_semantic_decision_batches,
+    plan_semantic_decision_batch_chunks,
 )
 from .terminal_returns import (
     FloorProgressReturnConfig,
@@ -384,6 +386,7 @@ __all__ = [
     "SeedScheduleError",
     "SelectionProbability",
     "SemanticBatchError",
+    "SemanticBatchConcatChunk",
     "SemanticBatchConcatLimits",
     "EpisodeRootRetryCurriculum",
     "RunSamplingError",
@@ -407,6 +410,7 @@ __all__ = [
     "compute_complete_run_gae",
     "initialize_population",
     "concatenate_semantic_decision_batches",
+    "plan_semantic_decision_batch_chunks",
     "evaluate_held_out_behavior",
     "evaluate_paired_held_out_behaviors",
     "floor_progress_terminal_return",

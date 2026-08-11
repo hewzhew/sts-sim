@@ -31,6 +31,88 @@ class SemanticBatchConcatLimits:
         return 3 * self.max_input_array_bytes
 
 
+@dataclass(frozen=True)
+class SemanticBatchConcatChunk:
+    """One contiguous input span that fits one semantic materialization."""
+
+    start_batch_index: int
+    stop_batch_index: int
+    row_count: int
+    input_array_bytes: int
+
+
+def plan_semantic_decision_batch_chunks(
+    decision_batches: Sequence[Mapping[str, object]],
+    limits: SemanticBatchConcatLimits,
+) -> tuple[SemanticBatchConcatChunk, ...]:
+    """Partition compatible batches without weakening per-materialization bounds."""
+
+    if not isinstance(limits, SemanticBatchConcatLimits):
+        raise SemanticBatchError("semantic concatenation limits must be typed")
+    try:
+        batches = tuple(decision_batches)
+    except TypeError as error:
+        raise SemanticBatchError("decision_batches must be a sequence") from error
+    if not batches:
+        raise SemanticBatchError("at least one semantic decision batch is required")
+
+    chunks: list[SemanticBatchConcatChunk] = []
+    chunk_start = 0
+    chunk_rows = 0
+    chunk_bytes = 0
+    compatibility_signature: tuple[object, ...] | None = None
+    for batch_index, batch in enumerate(batches):
+        if not isinstance(batch, Mapping):
+            raise SemanticBatchError("each semantic decision batch must be a mapping")
+        slots = batch.get("slot_indices")
+        if not isinstance(slots, np.ndarray) or slots.ndim != 1:
+            raise SemanticBatchError("decision_batch.slot_indices must be a vector")
+        batch_rows = int(slots.size)
+        batch_bytes = _array_bytes(batch, set())
+        if batch_rows > limits.max_rows:
+            raise SemanticBatchError(
+                "one semantic decision batch exceeds its row limit"
+            )
+        if batch_bytes > limits.max_input_array_bytes:
+            raise SemanticBatchError(
+                "one semantic decision batch exceeds its input array byte limit"
+            )
+
+        signature = _compatibility_signature(batch)
+        if compatibility_signature is None:
+            compatibility_signature = signature
+        elif signature != compatibility_signature:
+            raise SemanticBatchError("semantic batches use incompatible schemas")
+
+        if chunk_rows and (
+            chunk_rows + batch_rows > limits.max_rows
+            or chunk_bytes + batch_bytes > limits.max_input_array_bytes
+        ):
+            chunks.append(
+                SemanticBatchConcatChunk(
+                    start_batch_index=chunk_start,
+                    stop_batch_index=batch_index,
+                    row_count=chunk_rows,
+                    input_array_bytes=chunk_bytes,
+                )
+            )
+            chunk_start = batch_index
+            chunk_rows = 0
+            chunk_bytes = 0
+        chunk_rows += batch_rows
+        chunk_bytes += batch_bytes
+
+    chunks.append(
+        SemanticBatchConcatChunk(
+            start_batch_index=chunk_start,
+            stop_batch_index=len(batches),
+            row_count=chunk_rows,
+            input_array_bytes=chunk_bytes,
+        )
+    )
+    return tuple(chunks)
+
+
 def concatenate_semantic_decision_batches(
     decision_batches: Sequence[Mapping[str, object]],
     limits: SemanticBatchConcatLimits,
@@ -298,6 +380,61 @@ def _mapping(value: object, name: str) -> Mapping[object, object]:
     if not isinstance(value, Mapping):
         raise SemanticBatchError(f"{name} must be a mapping")
     return value
+
+
+def _compatibility_signature(batch: Mapping[str, object]) -> tuple[object, ...]:
+    """Return the fields that one combined semantic model batch must share."""
+
+    semantic = _mapping(batch.get("semantic"), "semantic")
+    token = _mapping(semantic.get("token"), "semantic.token")
+    categorical = _mapping(
+        semantic.get("categorical"),
+        "semantic.categorical",
+    )
+    scalar = _mapping(semantic.get("scalar"), "semantic.scalar")
+    relation = _mapping(semantic.get("relation"), "semantic.relation")
+    arrays = (
+        _array(batch.get("slot_indices"), "slot_indices"),
+        _array(batch.get("phase"), "phase"),
+        _array(batch.get("candidate_counts"), "candidate_counts"),
+        _array(batch.get("candidate_row_splits"), "candidate_row_splits"),
+        _array(semantic.get("completeness"), "semantic.completeness"),
+        _array(token.get("row_splits"), "semantic.token.row_splits"),
+        _array(token.get("kind"), "semantic.token.kind"),
+        _array(
+            categorical.get("token_indices"),
+            "semantic.categorical.token_indices",
+        ),
+        _array(categorical.get("field"), "semantic.categorical.field"),
+        _array(categorical.get("value"), "semantic.categorical.value"),
+        _array(scalar.get("token_indices"), "semantic.scalar.token_indices"),
+        _array(scalar.get("field"), "semantic.scalar.field"),
+        _array(scalar.get("value"), "semantic.scalar.value"),
+        _array(
+            relation.get("source_token_indices"),
+            "semantic.relation.source_token_indices",
+        ),
+        _array(relation.get("relation"), "semantic.relation.relation"),
+        _array(
+            relation.get("target_token_indices"),
+            "semantic.relation.target_token_indices",
+        ),
+        _array(
+            semantic.get("candidate_token_indices"),
+            "semantic.candidate_token_indices",
+        ),
+    )
+    dense_mask = batch.get("dense_action_mask")
+    if dense_mask is None:
+        dense_signature: tuple[object, ...] = (False,)
+    else:
+        dense = _array(dense_mask, "dense_action_mask", ndim=2)
+        dense_signature = (True, dense.dtype.str, dense.shape[1])
+    return (
+        _non_negative(semantic.get("schema_version"), "semantic.schema_version"),
+        tuple(array.dtype.str for array in arrays),
+        dense_signature,
+    )
 
 
 def _array_bytes(value: object, seen_mappings: set[int]) -> int:

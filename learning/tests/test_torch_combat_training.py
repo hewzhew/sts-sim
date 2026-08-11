@@ -26,6 +26,7 @@ if _TORCH_AVAILABLE:
     from sts_learning.torch_policy import (
         RaggedCandidateLogits,
         RaggedCategoricalPolicyConfig,
+        RaggedMultiActorCriticOutput,
     )
 
 
@@ -50,6 +51,40 @@ if _TORCH_AVAILABLE:
                 row_splits=torch.as_tensor(
                     payload["candidate_row_splits"],
                     dtype=torch.long,
+                ),
+            )
+
+
+    class _SizedActorCritic(torch.nn.Module):
+        """A row-count-agnostic scorer for concat-boundary equivalence tests."""
+
+        def __init__(self) -> None:
+            super().__init__()
+            self.actor_scale = torch.nn.Parameter(torch.zeros(()))
+            self.value_columns = torch.nn.Parameter(torch.zeros(3))
+
+        def forward(self, payload):
+            row_splits = torch.as_tensor(
+                payload["candidate_row_splits"],
+                dtype=torch.long,
+            )
+            candidate_count = int(row_splits[-1])
+            features = torch.arange(
+                candidate_count,
+                dtype=self.actor_scale.dtype,
+            )
+            return RaggedCandidateLogits(
+                values=self.actor_scale * features,
+                row_splits=row_splits,
+            )
+
+        def actor_critic_multi(self, payload):
+            logits = self(payload)
+            return RaggedMultiActorCriticOutput(
+                logits=logits,
+                row_values=self.value_columns.unsqueeze(0).expand(
+                    logits.row_count,
+                    -1,
                 ),
             )
 
@@ -197,6 +232,63 @@ class SynchronousCombatWinTrainerTests(unittest.TestCase):
         self.assertGreater(result.entropy, 0.0)
         self.assertEqual(trainer.snapshot.trained_replicates, 8)
         self.assertEqual(trainer.snapshot.trained_decisions, 12)
+
+    def test_value_ppo_microbatches_match_one_materialized_objective(self) -> None:
+        objective = CombatWinObjectiveConfig(
+            policy_update=CombatPolicyUpdateConfig(
+                rule=CombatPolicyUpdateRule.PPO_CLIP_VALUE,
+                epochs=2,
+                clip_coefficient=0.2,
+                entropy_coefficient=0.01,
+                max_grad_norm=None,
+                target_kl=None,
+                value_loss_coefficient=0.5,
+            )
+        )
+        experience = (
+            combat_group_experience_fixture(
+                self.manifest_id,
+                wins=(True, False),
+            ),
+        )
+        full_scorer = _SizedActorCritic()
+        micro_scorer = _SizedActorCritic()
+        full = SynchronousCombatWinTrainer(
+            full_scorer,
+            torch.optim.SGD(full_scorer.parameters(), lr=0.01),
+            self.registry,
+            CONCAT_LIMITS,
+            self.policy_config,
+            objective,
+        ).train(experience)
+        micro = SynchronousCombatWinTrainer(
+            micro_scorer,
+            torch.optim.SGD(micro_scorer.parameters(), lr=0.01),
+            self.registry,
+            SemanticBatchConcatLimits(
+                max_rows=2,
+                max_input_array_bytes=1024 * 1024,
+            ),
+            self.policy_config,
+            objective,
+        ).train(experience)
+
+        self.assertEqual(full.optimizer_steps_applied, 2)
+        self.assertEqual(micro.optimizer_steps_applied, 2)
+        self.assertEqual(full.decision_count, micro.decision_count)
+        self.assertAlmostEqual(full.loss, micro.loss, places=7)
+        self.assertAlmostEqual(full.approximate_kl, micro.approximate_kl, places=7)
+        self.assertAlmostEqual(full.clip_fraction, micro.clip_fraction, places=7)
+        self.assertAlmostEqual(full.entropy, micro.entropy, places=7)
+        self.assertAlmostEqual(full.value_loss, micro.value_loss, places=7)
+        torch.testing.assert_close(
+            full_scorer.actor_scale,
+            micro_scorer.actor_scale,
+        )
+        torch.testing.assert_close(
+            full_scorer.value_columns,
+            micro_scorer.value_columns,
+        )
 
     def _trainer(self, scorer: _VectorScorer) -> SynchronousCombatWinTrainer:
         return SynchronousCombatWinTrainer(

@@ -539,8 +539,13 @@ axis, and potions. Groups have equal total weight,
 replicates have equal total weight inside a group regardless of combat length,
 and each replicate divides its weight across its own retained decisions. The
 objective rechecks exact behavior manifests and recorded selection propensities
-against the scorer in one concatenated model call. The baseline update rule is
-one exact REINFORCE step. The optional PPO-clip rule first performs that same
+against the scorer through contiguous semantic microbatches. Concat row and byte
+limits bound each materialization, while group-equal, replicate-equal, and
+decision-local weights remain global across the complete delivery. Backward
+gradients accumulate across those microbatches and one epoch performs at most
+one optimizer step; KL, clipping, entropy, and value-loss diagnostics use the
+same global weights. The baseline update rule is one exact REINFORCE step. The
+optional PPO-clip rule first performs that same
 on-policy check, then may reuse the immutable batch for a bounded number of
 optimizer epochs against its recorded behavior probabilities. Ratio clipping,
 gradient-norm clipping, entropy regularization, and a target-KL early stop are
