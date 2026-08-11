@@ -151,14 +151,43 @@ class PreparedDecisionBatch:
                 raise ExperienceError(
                     "decision progress rows must be DecisionRunProgress values"
                 )
-            for progress, lineage in zip(
-                normalized_progress,
-                lineages,
-                strict=True,
+            phases: tuple[int, ...] | None = None
+            for row_index, (progress, lineage, candidate_count) in enumerate(
+                zip(
+                    normalized_progress,
+                    lineages,
+                    rows.candidate_counts,
+                    strict=True,
+                )
             ):
                 if progress.episode_seed != lineage.key.episode_seed:
                     raise ExperienceError(
                         "decision progress seed does not match attempt lineage"
+                    )
+                public_snapshot = progress.public_snapshot
+                if public_snapshot is None:
+                    continue
+                if phases is None:
+                    try:
+                        phases = normalize_integer_sequence(
+                            rows.payload["phase"],
+                            "phase",
+                        )
+                    except (KeyError, DecisionRowError) as error:
+                        raise ExperienceError(
+                            "decision payload phase column is malformed"
+                        ) from error
+                    if len(phases) != rows.decision_count:
+                        raise ExperienceError(
+                            "decision payload phase rows are misaligned"
+                        )
+                if public_snapshot.phase != phases[row_index]:
+                    raise ExperienceError(
+                        "public decision snapshot phase disagrees with decision payload"
+                    )
+                if len(public_snapshot.candidate_ids) != candidate_count:
+                    raise ExperienceError(
+                        "public decision snapshot candidates disagree with decision payload"
                     )
         return cls(
             payload=rows.payload,

@@ -4,12 +4,15 @@
 //! prefixes, and prepares complete action batches. It owns no environment mutation or policy.
 
 use sts_oracle_learning::eval::run_control::{
-    CombatLearningBoundaryV1, CombatLearningEnvPoolV1, CombatLearningPotionPolicyV1,
-    LearningActionV1, LearningBoundaryV1, LearningCombatAtomicActionV1,
-    LearningCombatModelObservationV1, LearningCombatSelectionDomainSemanticsV1, LearningEnvPoolV1,
+    learning_public_information_snapshot_with_potion_policy_v1,
+    learning_public_selection_snapshot_v1, CombatLearningBoundaryV1, CombatLearningEnvPoolV1,
+    CombatLearningPotionPolicyV1, LearningActionV1, LearningBoundaryV1,
+    LearningCombatAtomicActionV1, LearningCombatModelObservationV1,
+    LearningCombatSelectionDomainSemanticsV1, LearningEnvPoolV1,
     LearningModelCandidateSemanticsV1, LearningModelChoiceV1, LearningModelDecisionV1,
     LearningModelObservationV1, LearningSelectionCandidateSemanticsV1, LearningSelectionStepV1,
 };
+use sts_oracle_learning::ai::planner_core::PublicInformationSnapshotV1;
 
 use super::semantic::{SemanticBatch, SemanticBatchBuilder};
 use super::{
@@ -201,6 +204,67 @@ pub(super) fn semantic_snapshot_from_source(
         }
     }
     Ok(builder.finish())
+}
+
+pub(super) struct BridgePublicDecisionSnapshotV1 {
+    pub(super) slot_index: usize,
+    pub(super) phase: u8,
+    pub(super) snapshot: PublicInformationSnapshotV1,
+}
+
+pub(super) fn public_information_snapshots_from_learning_source(
+    source: &LearningBatchDecisionSource<'_>,
+    states: &[BridgeSlotState],
+) -> Result<Vec<BridgePublicDecisionSnapshotV1>, String> {
+    if states.len() != source.pool.slot_count() {
+        return Err("bridge state count does not match its learning pool".to_owned());
+    }
+    let mut snapshots = Vec::new();
+    for (slot_index, state) in states.iter().enumerate() {
+        let boundary = source
+            .pool
+            .boundary(slot_index)
+            .ok_or_else(|| format!("missing pool slot {slot_index}"))?;
+        let (phase, snapshot) = match state {
+            BridgeSlotState::Root => {
+                let decision = source.bridge_root_decision(slot_index)?;
+                let phase = match decision.observation {
+                    LearningModelObservationV1::Strategic(_) => PHASE_STRATEGIC_ROOT,
+                    LearningModelObservationV1::Combat(_) => PHASE_COMBAT_ROOT,
+                };
+                let snapshot = learning_public_information_snapshot_with_potion_policy_v1(
+                    boundary,
+                    source.potion_policy,
+                )?;
+                (phase, snapshot)
+            }
+            BridgeSlotState::Selection { draft, .. } => (
+                PHASE_SELECTION,
+                learning_public_selection_snapshot_v1(
+                    boundary,
+                    source.potion_policy,
+                    draft,
+                )?,
+            ),
+            BridgeSlotState::Terminal | BridgeSlotState::Ready { .. } => continue,
+        };
+        let candidate_count = match state {
+            BridgeSlotState::Root => source.bridge_root_decision(slot_index)?.candidates.len(),
+            BridgeSlotState::Selection { draft, .. } => draft.decision().candidates.len(),
+            BridgeSlotState::Terminal | BridgeSlotState::Ready { .. } => unreachable!(),
+        };
+        if snapshot.candidate_surface.ordered_candidate_ids.len() != candidate_count {
+            return Err(format!(
+                "slot {slot_index} public snapshot candidate surface is misaligned"
+            ));
+        }
+        snapshots.push(BridgePublicDecisionSnapshotV1 {
+            slot_index,
+            phase,
+            snapshot,
+        });
+    }
+    Ok(snapshots)
 }
 
 pub(super) fn strategic_decision_audit_json_from_source(

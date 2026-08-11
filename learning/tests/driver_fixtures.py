@@ -223,6 +223,8 @@ class FakeBatchEnv:
 
 
 class NumpyFakeBatchEnv(FakeBatchEnv):
+    public_snapshot_phase = 0
+
     def decision_batch(self, *, semantic: bool = False) -> dict[str, object]:
         raw = super().decision_batch(semantic=semantic)
         slots = np.array(raw["slot_indices"], dtype=np.uint64)
@@ -250,6 +252,39 @@ class NumpyFakeBatchEnv(FakeBatchEnv):
                 ),
             },
         }
+
+    def public_information_snapshots(self) -> list[tuple[int, SimpleNamespace]]:
+        context_source = getattr(self, "public_run_contexts", None)
+        if not callable(context_source):
+            raise ValueError("fake environment has no public run contexts")
+        contexts = {slot: view for slot, view in context_source()}
+        rows = []
+        for slot, terminal in enumerate(self.terminal):
+            if terminal:
+                continue
+            view = contexts[slot]
+            identity = (
+                f"fake-{self.seeds[slot]}-{self.generations[slot]}-"
+                f"{self._round}-{slot}-{self.public_snapshot_phase}"
+            )
+            rows.append(
+                (
+                    slot,
+                    SimpleNamespace(
+                        phase=self.public_snapshot_phase,
+                        is_combat=view.is_combat,
+                        snapshot_id=f"snapshot-{identity}",
+                        observation_id=f"observation-{identity}",
+                        history_snapshot_id=f"history-{identity}",
+                        candidate_surface_id=f"surface-{identity}",
+                        candidate_ids=(
+                            f"candidate-{identity}-0",
+                            f"candidate-{identity}-1",
+                        ),
+                    ),
+                )
+            )
+        return rows
 
 
 class NumpyWinningBatchEnv(NumpyFakeBatchEnv):

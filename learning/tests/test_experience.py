@@ -15,6 +15,7 @@ from sts_learning import (
     ExperienceLimits,
     ExperienceSegmentBuffer,
     PreparedDecisionBatch,
+    PublicDecisionSnapshot,
     RecoverySlotSnapshot,
     RecoverySlotStatus,
     SegmentCloseReason,
@@ -102,6 +103,25 @@ def terminal(
     )
 
 
+def public_snapshot(
+    *,
+    phase: int,
+    is_combat: bool,
+    candidate_count: int,
+) -> PublicDecisionSnapshot:
+    return PublicDecisionSnapshot(
+        phase=phase,
+        is_combat=is_combat,
+        snapshot_id=f"snapshot-{phase}-{candidate_count}",
+        observation_id=f"observation-{phase}-{candidate_count}",
+        history_snapshot_id=f"history-{phase}-{candidate_count}",
+        candidate_surface_id=f"surface-{phase}-{candidate_count}",
+        candidate_ids=tuple(
+            f"candidate-{phase}-{ordinal}" for ordinal in range(candidate_count)
+        ),
+    )
+
+
 class ExperienceSegmentTests(unittest.TestCase):
     def test_capture_copies_only_read_only_array_payload_with_exact_lineage(self) -> None:
         source = decision_batch()
@@ -182,6 +202,67 @@ class ExperienceSegmentTests(unittest.TestCase):
                         is_combat=False,
                         strategic_context_kind=1,
                     )
+                ],
+            )
+
+    def test_capture_aligns_public_snapshot_phase_and_candidate_surface(self) -> None:
+        first = DecisionRunProgress(
+            episode_seed=104,
+            act=1,
+            floor=3,
+            is_combat=True,
+            strategic_context_kind=None,
+            public_snapshot=public_snapshot(
+                phase=1,
+                is_combat=True,
+                candidate_count=2,
+            ),
+        )
+        second = DecisionRunProgress(
+            episode_seed=109,
+            act=1,
+            floor=4,
+            is_combat=False,
+            strategic_context_kind=2,
+            public_snapshot=public_snapshot(
+                phase=2,
+                is_combat=False,
+                candidate_count=3,
+            ),
+        )
+
+        prepared = PreparedDecisionBatch.capture(
+            semantic_batch_fixture(),
+            [snapshot(4), snapshot(9)],
+            [first, second],
+        )
+        self.assertEqual(prepared.run_progress, (first, second))
+
+        with self.assertRaisesRegex(ExperienceError, "phase"):
+            PreparedDecisionBatch.capture(
+                semantic_batch_fixture(),
+                [snapshot(4), snapshot(9)],
+                [
+                    replace(
+                        first,
+                        public_snapshot=replace(first.public_snapshot, phase=0),
+                    ),
+                    second,
+                ],
+            )
+        with self.assertRaisesRegex(ExperienceError, "candidates"):
+            PreparedDecisionBatch.capture(
+                semantic_batch_fixture(),
+                [snapshot(4), snapshot(9)],
+                [
+                    replace(
+                        first,
+                        public_snapshot=replace(
+                            first.public_snapshot,
+                            candidate_ids=("candidate-only",),
+                        ),
+                    ),
+                    second,
                 ],
             )
 

@@ -71,6 +71,8 @@ class CombatFightClass(str, Enum):
 class _RootExportEnvironment(BatchEnvironment, Protocol):
     def public_run_contexts(self) -> Sequence[object]: ...
 
+    def public_information_snapshots(self) -> Sequence[object]: ...
+
     def combat_root_contexts(self) -> Sequence[object]: ...
 
     def combat_root_audit(self, slot_index: int) -> object: ...
@@ -660,6 +662,9 @@ class _CapturingEnvironment:
 
     def step(self) -> Mapping[str, object]:
         return self.env.step()
+
+    def public_information_snapshots(self) -> Sequence[object]:
+        return self.env.public_information_snapshots()
 
     def checkpoint_slots(self, slot_indices: list[int]):
         return self.env.checkpoint_slots(slot_indices)

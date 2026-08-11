@@ -13,6 +13,48 @@ class DecisionProgressError(ValueError):
 
 
 @dataclass(frozen=True)
+class PublicDecisionSnapshot:
+    """Sanitized Rust-owned identity aligned to one model decision row."""
+
+    phase: int
+    is_combat: bool
+    snapshot_id: str
+    observation_id: str
+    history_snapshot_id: str
+    candidate_surface_id: str
+    candidate_ids: tuple[str, ...]
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "phase", _integer(self.phase, "phase", minimum=0))
+        if type(self.is_combat) is not bool:
+            raise DecisionProgressError("public decision is_combat must be bool")
+        for name in (
+            "snapshot_id",
+            "observation_id",
+            "history_snapshot_id",
+            "candidate_surface_id",
+        ):
+            object.__setattr__(self, name, _nonempty_text(getattr(self, name), name))
+        try:
+            candidate_ids = tuple(self.candidate_ids)
+        except TypeError as error:
+            raise DecisionProgressError(
+                "public decision candidate_ids must be a sequence"
+            ) from error
+        if not candidate_ids:
+            raise DecisionProgressError(
+                "public decision candidate surface must not be empty"
+            )
+        if not all(isinstance(value, str) and value.strip() for value in candidate_ids):
+            raise DecisionProgressError(
+                "public decision candidate ids must be non-empty text"
+            )
+        if len(set(candidate_ids)) != len(candidate_ids):
+            raise DecisionProgressError("public decision candidate ids repeat")
+        object.__setattr__(self, "candidate_ids", candidate_ids)
+
+
+@dataclass(frozen=True)
 class DecisionRunProgress:
     """Minimal public run position aligned to one semantic decision row."""
 
@@ -21,6 +63,7 @@ class DecisionRunProgress:
     floor: int
     is_combat: bool
     strategic_context_kind: int | None
+    public_snapshot: PublicDecisionSnapshot | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(
@@ -48,6 +91,15 @@ class DecisionRunProgress:
                 "strategic_context_kind",
                 _integer(context, "strategic_context_kind", minimum=1),
             )
+        if self.public_snapshot is not None:
+            if not isinstance(self.public_snapshot, PublicDecisionSnapshot):
+                raise DecisionProgressError(
+                    "decision progress public_snapshot must be typed"
+                )
+            if self.public_snapshot.is_combat != self.is_combat:
+                raise DecisionProgressError(
+                    "public decision snapshot combat domain disagrees with progress"
+                )
 
 
 class DecisionProgressProvider(Protocol):
@@ -69,6 +121,13 @@ class BridgeDecisionProgressProvider:
                 "decision progress environment does not expose public_run_contexts()"
             )
         self._source = source
+        snapshot_source = getattr(environment, "public_information_snapshots", None)
+        if not callable(snapshot_source):
+            raise DecisionProgressError(
+                "decision progress environment does not expose "
+                "public_information_snapshots()"
+            )
+        self._snapshot_source = snapshot_source
 
     def capture(
         self,
@@ -86,6 +145,7 @@ class BridgeDecisionProgressProvider:
             raise DecisionProgressError(
                 "public_run_contexts() must return a sequence"
             )
+        public_snapshots = self._capture_public_snapshots(requested)
         contexts: dict[int, DecisionRunProgress] = {}
         for row in rows:
             if not isinstance(row, Sequence) or isinstance(row, (str, bytes)):
@@ -106,6 +166,7 @@ class BridgeDecisionProgressProvider:
                 floor=_attribute(view, "floor"),
                 is_combat=_attribute(view, "is_combat"),
                 strategic_context_kind=_attribute(view, "strategic_context_kind"),
+                public_snapshot=public_snapshots[slot],
             )
         try:
             return tuple(contexts[slot] for slot in slots)
@@ -113,6 +174,47 @@ class BridgeDecisionProgressProvider:
             raise DecisionProgressError(
                 f"decision slot {error.args[0]} has no public run context"
             ) from error
+
+    def _capture_public_snapshots(
+        self,
+        requested: set[int],
+    ) -> dict[int, PublicDecisionSnapshot]:
+        rows = self._snapshot_source()
+        if not isinstance(rows, Sequence) or isinstance(rows, (str, bytes)):
+            raise DecisionProgressError(
+                "public_information_snapshots() must return a sequence"
+            )
+        snapshots: dict[int, PublicDecisionSnapshot] = {}
+        for row in rows:
+            if not isinstance(row, Sequence) or isinstance(row, (str, bytes)):
+                raise DecisionProgressError("public information snapshot row must be a pair")
+            if len(row) != 2:
+                raise DecisionProgressError(
+                    "public information snapshot row must contain two values"
+                )
+            slot = _integer(row[0], "public information snapshot slot", minimum=0)
+            if slot not in requested:
+                continue
+            if slot in snapshots:
+                raise DecisionProgressError(
+                    "public information snapshots repeat a slot"
+                )
+            view = row[1]
+            snapshots[slot] = PublicDecisionSnapshot(
+                phase=_attribute(view, "phase"),
+                is_combat=_attribute(view, "is_combat"),
+                snapshot_id=_attribute(view, "snapshot_id"),
+                observation_id=_attribute(view, "observation_id"),
+                history_snapshot_id=_attribute(view, "history_snapshot_id"),
+                candidate_surface_id=_attribute(view, "candidate_surface_id"),
+                candidate_ids=tuple(_attribute(view, "candidate_ids")),
+            )
+        missing = requested - set(snapshots)
+        if missing:
+            raise DecisionProgressError(
+                f"decision slots {sorted(missing)} have no public information snapshots"
+            )
+        return snapshots
 
 
 def _attribute(source: object, name: str) -> object:
@@ -122,6 +224,12 @@ def _attribute(source: object, name: str) -> object:
         raise DecisionProgressError(
             f"public run context is missing {name}"
         ) from error
+
+
+def _nonempty_text(value: object, name: str) -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise DecisionProgressError(f"{name} must be non-empty text")
+    return value
 
 
 def _integer(value: object, name: str, *, minimum: int) -> int:

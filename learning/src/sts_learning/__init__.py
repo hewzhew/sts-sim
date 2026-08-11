@@ -95,6 +95,7 @@ from .decision_progress import (
     DecisionProgressError,
     DecisionProgressProvider,
     DecisionRunProgress,
+    PublicDecisionSnapshot,
 )
 from .run_sampling import (
     EpisodeRootRetryCurriculum,
@@ -170,6 +171,12 @@ from .policy import (
     DETERMINISTIC_SELECTION,
     PolicyChoiceError,
     SelectionProbability,
+)
+from .public_trajectory import (
+    PublicAttemptTrajectoryV1,
+    PublicTrajectoryDecisionV1,
+    PublicTrajectoryError,
+    build_public_attempt_trajectory,
 )
 from .recovery import (
     EpisodeResetTicket,
@@ -357,6 +364,10 @@ __all__ = [
     "PreparedBehaviorManifest",
     "PreparedResumePublication",
     "PolicyChoiceError",
+    "PublicAttemptTrajectoryV1",
+    "PublicDecisionSnapshot",
+    "PublicTrajectoryDecisionV1",
+    "PublicTrajectoryError",
     "RecoveryEvent",
     "RecoveryLedger",
     "RecoveryMode",
@@ -404,6 +415,7 @@ __all__ = [
     "build_combat_frontier_plan",
     "build_complete_combat_rollout",
     "build_complete_run_rollout",
+    "build_public_attempt_trajectory",
     "replay_winning_recovery_roots",
     "build_combat_signal_census",
     "compare_credit_assignment",

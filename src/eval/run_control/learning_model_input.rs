@@ -2660,6 +2660,125 @@ mod tests {
         );
     }
 
+    fn public_scry_selection_fixture(
+        card_uuids: Vec<u32>,
+    ) -> (LearningBoundaryV1, LearningSelectionDraftV1) {
+        let mut session = RunControlSession::new(RunControlConfig::default());
+        let mut combat = crate::test_support::blank_test_combat();
+        combat.zones.draw_pile = (card_uuids
+            .iter()
+            .copied()
+            .map(|uuid| CombatCard::new(CardId::Strike, uuid))
+            .collect::<Vec<_>>())
+        .into();
+        let choice = PendingChoice::ScrySelect {
+            cards: vec![CardId::Strike; card_uuids.len()],
+            card_uuids,
+        };
+        session.engine_state = EngineState::PendingChoice(choice.clone());
+        session.active_combat = Some(ActiveCombat::new(
+            EngineState::PendingChoice(choice),
+            combat,
+            CombatContext::Room(RoomCombatContext {
+                room_type: RoomType::MonsterRoom,
+            }),
+        ));
+        let boundary = LearningEnvV1::from_session(session)
+            .observe()
+            .expect("scry selection boundary");
+        let decision =
+            LearningModelDecisionV1::from_boundary(&boundary).expect("scry root decision");
+        let family_ordinal = decision
+            .candidates
+            .iter()
+            .position(|candidate| {
+                matches!(
+                    candidate.semantics,
+                    LearningModelCandidateSemanticsV1::CombatSelectionFamily { .. }
+                )
+            })
+            .expect("scry selection family candidate");
+        let LearningModelChoiceV1::DecodeSelection(draft) = decision
+            .choose(family_ordinal)
+            .expect("start public scry decoder")
+        else {
+            panic!("scry root must start a symbolic decoder");
+        };
+        (boundary, draft)
+    }
+
+    fn append_selection_domain(draft: &mut LearningSelectionDraftV1, domain_index: usize) {
+        let candidate_ordinal = draft
+            .decision()
+            .candidates
+            .iter()
+            .position(|candidate| {
+                matches!(
+                    candidate.semantics,
+                    LearningSelectionCandidateSemanticsV1::Append {
+                        domain_index: candidate_domain
+                    } if candidate_domain == domain_index
+                )
+            })
+            .expect("append candidate for public selection domain");
+        assert!(matches!(
+            draft
+                .choose(candidate_ordinal)
+                .expect("append public selection domain"),
+            LearningSelectionStepV1::Continue
+        ));
+    }
+
+    #[test]
+    fn public_selection_snapshot_binds_the_symbolic_prefix_and_candidate_surface() {
+        let (boundary, mut draft) = public_scry_selection_fixture(vec![11, 22, 33]);
+        let before = super::super::learning_public_selection_snapshot_v1(
+            &boundary,
+            &CombatLearningPotionPolicyV1::All,
+            &draft,
+        )
+        .expect("empty-prefix public snapshot");
+
+        append_selection_domain(&mut draft, 0);
+        let after = super::super::learning_public_selection_snapshot_v1(
+            &boundary,
+            &CombatLearningPotionPolicyV1::All,
+            &draft,
+        )
+        .expect("one-item-prefix public snapshot");
+
+        assert_ne!(before.snapshot_id, after.snapshot_id);
+        assert_ne!(before.observation, after.observation);
+        assert_ne!(before.history_snapshot, after.history_snapshot);
+        assert_ne!(before.candidate_surface, after.candidate_surface);
+        assert_eq!(
+            after.candidate_surface.ordered_candidate_ids.len(),
+            draft.decision().candidates.len()
+        );
+    }
+
+    #[test]
+    fn public_selection_snapshot_ignores_private_card_uuids() {
+        fn snapshot(card_uuids: Vec<u32>) -> crate::ai::planner_core::PublicInformationSnapshotV1 {
+            let (boundary, mut draft) = public_scry_selection_fixture(card_uuids);
+            append_selection_domain(&mut draft, 0);
+            super::super::learning_public_selection_snapshot_v1(
+                &boundary,
+                &CombatLearningPotionPolicyV1::All,
+                &draft,
+            )
+            .expect("public selection snapshot")
+        }
+
+        let first = snapshot(vec![11, 22, 33]);
+        let same_public_state = snapshot(vec![101, 202, 303]);
+
+        assert_eq!(first.observation, same_public_state.observation);
+        assert_eq!(first.history_snapshot, same_public_state.history_snapshot);
+        assert_eq!(first.candidate_surface, same_public_state.candidate_surface);
+        assert_eq!(first.snapshot_id, same_public_state.snapshot_id);
+    }
+
     #[test]
     fn symbolic_run_card_selection_applies_only_after_explicit_submit() {
         let mut session = RunControlSession::new(RunControlConfig::default());

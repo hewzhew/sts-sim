@@ -7,6 +7,9 @@ use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyDict, PyList};
 use serde::{Deserialize, Serialize};
+use sts_oracle_learning::ai::planner_core::{
+    PublicDecisionDomainV1, PublicInformationSnapshotV1,
+};
 use sts_oracle_learning::eval::run_control::{
     capture_planner_boundary_yield_v1, CombatLearningPotionPolicyV1,
     CombatLearningRootBatchArtifactV1, CombatLearningRootV1, LearningActionV1,
@@ -22,8 +25,8 @@ mod semantic;
 use bridge_decision::{
     bridge_states_ready, choose_bridge_ordinals, collect_ready_actions,
     combat_decision_audit_json_from_source, decision_snapshot_from_source, replay_bridge_state,
-    semantic_snapshot_from_source, states_from_source, strategic_decision_audit_json_from_source,
-    LearningBatchDecisionSource,
+    public_information_snapshots_from_learning_source, semantic_snapshot_from_source,
+    states_from_source, strategic_decision_audit_json_from_source, LearningBatchDecisionSource,
 };
 use combat_batch::{
     potion_id_names, CombatLearningBatchEnv, CombatLearningDecisionProgressV1,
@@ -325,6 +328,53 @@ struct ProductionBehaviorSnapshot {
 #[pyclass(frozen, name = "LearningPublicRunContextV1")]
 struct PyLearningPublicRunContextV1 {
     inner: LearningPublicRunContextV1,
+}
+
+#[pyclass(frozen, name = "LearningPublicDecisionSnapshotV1")]
+struct PyLearningPublicDecisionSnapshotV1 {
+    phase: u8,
+    inner: PublicInformationSnapshotV1,
+}
+
+#[pymethods]
+impl PyLearningPublicDecisionSnapshotV1 {
+    #[getter]
+    fn phase(&self) -> u8 {
+        self.phase
+    }
+
+    #[getter]
+    fn is_combat(&self) -> bool {
+        self.inner.domain == PublicDecisionDomainV1::Combat
+    }
+
+    #[getter]
+    fn snapshot_id(&self) -> String {
+        self.inner.snapshot_id.clone()
+    }
+
+    #[getter]
+    fn observation_id(&self) -> String {
+        self.inner.observation.observation_id.clone()
+    }
+
+    #[getter]
+    fn history_snapshot_id(&self) -> String {
+        self.inner.history_snapshot.history_snapshot_id.clone()
+    }
+
+    #[getter]
+    fn candidate_surface_id(&self) -> String {
+        self.inner.candidate_surface.candidate_surface_id.clone()
+    }
+
+    #[getter]
+    fn candidate_ids(&self) -> Vec<String> {
+        self.inner
+            .candidate_surface
+            .ordered_candidate_ids
+            .clone()
+    }
 }
 
 /// Compact, on-demand audit facts for one exact combat root.
@@ -658,6 +708,27 @@ impl LearningBatchEnv {
             semantic,
             production_behavior,
         )
+    }
+
+    /// Return one sanitized content identity for every current policy row.
+    /// Root and symbolic-selection rows are aligned to `decision_batch()`;
+    /// exact simulator handles remain private to the bridge resolution table.
+    fn public_information_snapshots<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyList>> {
+        let source = LearningBatchDecisionSource::new(&self.pool, &self.potion_policy);
+        let captured = public_information_snapshots_from_learning_source(&source, &self.states)
+            .map_err(value_error)?;
+        let snapshots = PyList::empty(py);
+        for captured in captured {
+            let view = Py::new(
+                py,
+                PyLearningPublicDecisionSnapshotV1 {
+                    phase: captured.phase,
+                    inner: captured.snapshot,
+                },
+            )?;
+            snapshots.append((captured.slot_index, view))?;
+        }
+        Ok(snapshots)
     }
 
     /// Return the exact typed strategic candidates for one current root decision.
@@ -1648,6 +1719,7 @@ fn _native(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_class::<PyCombatLearningRootContextV1>()?;
     module.add_class::<PyCombatLearningRootAuditV1>()?;
     module.add_class::<PyLearningPublicRunContextV1>()?;
+    module.add_class::<PyLearningPublicDecisionSnapshotV1>()?;
     module.add_class::<LearningBatchEnv>()?;
     module.add_class::<LearningCheckpointBatch>()?;
     module.add_class::<LearningSlotCheckpoint>()?;
@@ -1745,6 +1817,21 @@ mod checkpoint_tests {
             .decision_snapshot()
             .expect("all-potion decision")
             .candidate_counts[0];
+        let all_public = public_information_snapshots_from_learning_source(
+            &LearningBatchDecisionSource::new(&env.pool, &env.potion_policy),
+            &env.states,
+        )
+        .expect("all-potion public snapshot");
+        assert_eq!(all_public.len(), 1);
+        assert_eq!(all_public[0].phase, PHASE_COMBAT_ROOT);
+        assert_eq!(
+            all_public[0]
+                .snapshot
+                .candidate_surface
+                .ordered_candidate_ids
+                .len(),
+            all_candidates
+        );
         let snapshot = env.decision_snapshot().expect("combat decision");
         let behavior = env
             .production_behavior_snapshot(&snapshot)
@@ -1755,8 +1842,25 @@ mod checkpoint_tests {
             .decision_snapshot()
             .expect("no-potion decision")
             .candidate_counts[0];
+        let never_public = public_information_snapshots_from_learning_source(
+            &LearningBatchDecisionSource::new(&env.pool, &env.potion_policy),
+            &env.states,
+        )
+        .expect("no-potion public snapshot");
 
         assert!(never_candidates < all_candidates);
+        assert_eq!(
+            never_public[0]
+                .snapshot
+                .candidate_surface
+                .ordered_candidate_ids
+                .len(),
+            never_candidates
+        );
+        assert_ne!(
+            all_public[0].snapshot.candidate_surface,
+            never_public[0].snapshot.candidate_surface
+        );
         assert!(env.encode_cross_process_checkpoint(1024 * 1024).is_err());
     }
 
@@ -1792,6 +1896,11 @@ mod checkpoint_tests {
         };
 
         let boundary = env.pool.boundary(0).expect("selection boundary");
+        let root_public = public_information_snapshots_from_learning_source(
+            &LearningBatchDecisionSource::new(&env.pool, &env.potion_policy),
+            &env.states,
+        )
+        .expect("selection-root public snapshot");
         let decision =
             LearningModelDecisionV1::from_boundary(boundary).expect("build symbolic root decision");
         let LearningModelChoiceV1::DecodeSelection(mut draft) =
@@ -1812,6 +1921,24 @@ mod checkpoint_tests {
             },
         };
         env.states[0] = checkpoint.bridge_state.clone();
+        let prefix_public = public_information_snapshots_from_learning_source(
+            &LearningBatchDecisionSource::new(&env.pool, &env.potion_policy),
+            &env.states,
+        )
+        .expect("selection-prefix public snapshot");
+        assert_eq!(prefix_public[0].phase, PHASE_SELECTION);
+        assert_ne!(
+            root_public[0].snapshot.snapshot_id,
+            prefix_public[0].snapshot.snapshot_id
+        );
+        assert_eq!(
+            prefix_public[0]
+                .snapshot
+                .candidate_surface
+                .ordered_candidate_ids
+                .len(),
+            draft.decision().candidates.len()
+        );
         let payload = env
             .encode_cross_process_checkpoint(1024 * 1024)
             .expect("encode selection prefix");

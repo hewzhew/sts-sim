@@ -204,10 +204,11 @@ observation-local ordinals preserve distinct executable choices. The snapshot
 has no exact root id, combat-state hash, live RNG cursor, normalized trajectory
 prefix, or trajectory instance id, and it grants no search or training-label
 authority. In particular, there is intentionally no executable
-`ChanceEnsembleV1` or `SearchPolicyTargetV1` yet: those require a real public
-trajectory owner, a conditional sampler that covers every hidden chance source,
-and a typed information-set-search receipt rather than caller-supplied strings
-and aggregate visit counts.
+`ChanceEnsembleV1` or `SearchPolicyTargetV1` yet. The caller may assemble the
+capture-only snapshots into a neutral public behavior trajectory, but search
+targets additionally require a conditional sampler that covers every hidden
+chance source and a typed information-set-search receipt rather than
+caller-supplied strings and aggregate visit counts.
 
 The Java-faithful engine action surface and the learning-policy candidate
 surface are intentionally distinct. A free `DiscardPotion` UI action remains
@@ -1065,6 +1066,13 @@ decision batch also carries that exact behavior manifest identity. Lineage and
 public progress are provenance for credit diagnostics, not semantic features,
 teacher labels, or stored policy-score vectors. Explicit unknown remains
 unknown through row selection, segment rotation, and complete-attempt assembly.
+One complete attempt may then be projected into
+`PublicAttemptTrajectoryV1`. Every chronological row requires the aligned Rust
+public snapshot and retains its frozen semantic payload, exact lineage,
+behavior-manifest identity, selected ordinal, and selection probability.
+Non-terminal rows carry raw environment reward `0`; only the final row carries
+the bridge terminal reward and `terminated = true`. This owner computes no
+floor shaping, return, advantage, value target, search target, or teacher label.
 Behavior manifests are caller-owned, content-addressed records over typed
 SHA-256 identities for the external model checkpoint, model definition, model
 configuration, behavior-rule implementation, behavior-rule configuration,

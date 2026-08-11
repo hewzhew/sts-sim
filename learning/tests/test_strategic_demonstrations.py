@@ -69,6 +69,8 @@ class _ProductionStrategicWinningEnv(NumpyWinningBatchEnv):
 
 
 class _RetryCombatEnv(NumpyWinningBatchEnv):
+    public_snapshot_phase = PHASE_COMBAT_ROOT
+
     def __init__(self, seeds: list[int]) -> None:
         super().__init__(seeds)
         self.losses_remaining = 1

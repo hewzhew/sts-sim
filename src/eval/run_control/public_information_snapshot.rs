@@ -28,9 +28,11 @@ use crate::state::events::{EventActionKind, EventId};
 use crate::state::selection::{SelectionReason, SelectionScope};
 
 use super::learning_model_input::{
-    LearningCombatAtomicActionV1, LearningCombatModelObservationV1, LearningCombatMonsterV1,
-    LearningCombatSelectionDomainSemanticsV1, LearningModelCandidateSemanticsV1,
-    LearningModelCandidateV1, LearningModelDecisionV1, LearningModelObservationV1,
+    CombatLearningPotionPolicyV1, LearningCombatAtomicActionV1, LearningCombatModelObservationV1,
+    LearningCombatMonsterV1, LearningCombatSelectionDomainSemanticsV1,
+    LearningCombatSelectionFamilyV1, LearningModelCandidateSemanticsV1, LearningModelCandidateV1,
+    LearningModelDecisionV1, LearningModelObservationV1, LearningRunSelectionFamilyV1,
+    LearningSelectionCandidateSemanticsV1, LearningSelectionDraftV1,
     LearningStrategicModelObservationV1, LearningStrategicPotionSlotV1, LearningStrategicPotionV1,
 };
 use super::{LearningBoundaryV1, LearningCombatPublicRunContextV1};
@@ -41,12 +43,17 @@ pub const LEARNING_PUBLIC_STRATEGIC_OBSERVATION_SCHEMA_VERSION: u32 = 1;
 pub const LEARNING_PUBLIC_COMBAT_OBSERVATION_SCHEMA_NAME: &str =
     "LearningPublicCombatObservationV1";
 pub const LEARNING_PUBLIC_COMBAT_OBSERVATION_SCHEMA_VERSION: u32 = 1;
+pub const LEARNING_PUBLIC_SELECTION_OBSERVATION_SCHEMA_NAME: &str =
+    "LearningPublicSelectionObservationV1";
+pub const LEARNING_PUBLIC_SELECTION_OBSERVATION_SCHEMA_VERSION: u32 = 1;
 pub const LEARNING_PUBLIC_CANDIDATE_SURFACE_SCHEMA_NAME: &str = "LearningPublicCandidateSurfaceV1";
 pub const LEARNING_PUBLIC_CANDIDATE_SURFACE_SCHEMA_VERSION: u32 = 1;
 pub const LEARNING_PUBLIC_STRATEGIC_HISTORY_SNAPSHOT_SCHEMA_NAME: &str =
     "LearningPublicStrategicHistorySnapshotV1";
 pub const LEARNING_PUBLIC_COMBAT_HISTORY_SNAPSHOT_SCHEMA_NAME: &str =
     "LearningPublicCombatHistorySnapshotV1";
+pub const LEARNING_PUBLIC_SELECTION_HISTORY_SNAPSHOT_SCHEMA_NAME: &str =
+    "LearningPublicSelectionHistorySnapshotV1";
 pub const LEARNING_PUBLIC_HISTORY_SNAPSHOT_SCHEMA_VERSION: u32 = 1;
 
 impl LearningModelDecisionV1<'_> {
@@ -80,8 +87,85 @@ impl LearningModelDecisionV1<'_> {
 pub fn learning_public_information_snapshot_v1(
     boundary: &LearningBoundaryV1,
 ) -> Result<PublicInformationSnapshotV1, String> {
+    learning_public_information_snapshot_with_potion_policy_v1(
+        boundary,
+        &CombatLearningPotionPolicyV1::All,
+    )
+}
+
+pub fn learning_public_information_snapshot_with_potion_policy_v1(
+    boundary: &LearningBoundaryV1,
+    potion_policy: &CombatLearningPotionPolicyV1,
+) -> Result<PublicInformationSnapshotV1, String> {
     let model_decision =
-        LearningModelDecisionV1::from_boundary(boundary).map_err(|error| error.to_string())?;
+        LearningModelDecisionV1::from_boundary_with_potion_policy(boundary, potion_policy)
+            .map_err(|error| error.to_string())?;
+    learning_public_root_snapshot_from_model_v1(boundary, &model_decision)
+}
+
+pub fn learning_public_selection_snapshot_v1(
+    boundary: &LearningBoundaryV1,
+    potion_policy: &CombatLearningPotionPolicyV1,
+    draft: &LearningSelectionDraftV1,
+) -> Result<PublicInformationSnapshotV1, String> {
+    let model_decision =
+        LearningModelDecisionV1::from_boundary_with_potion_policy(boundary, potion_policy)
+            .map_err(|error| error.to_string())?;
+    let parent = learning_public_root_snapshot_from_model_v1(boundary, &model_decision)?;
+    let family = public_selection_family_identity_v1(model_decision.observation, draft)?;
+    let selected_domain_indices = draft.selected_domain_indices();
+    let observation = PublicObservationReferenceV1::from_sanitized_payload(
+        LEARNING_PUBLIC_SELECTION_OBSERVATION_SCHEMA_NAME,
+        LEARNING_PUBLIC_SELECTION_OBSERVATION_SCHEMA_VERSION,
+        parent.observation.scope,
+        &PublicSelectionObservationIdentityV1 {
+            parent_observation_id: &parent.observation.observation_id,
+            family,
+            selected_domain_indices,
+        },
+    )?;
+    let decision = draft.decision();
+    let candidate_ids = decision
+        .candidates
+        .iter()
+        .enumerate()
+        .map(|(ordinal, candidate)| {
+            stable_planner_id(
+                "learning_public_selection_candidate_v1",
+                &(
+                    observation.observation_id.as_str(),
+                    ordinal,
+                    PublicSelectionCandidateIdentityV1::from(candidate.semantics),
+                ),
+            )
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let candidate_surface = PublicCandidateSurfaceReferenceV1::from_candidate_ids(
+        LEARNING_PUBLIC_CANDIDATE_SURFACE_SCHEMA_NAME,
+        LEARNING_PUBLIC_CANDIDATE_SURFACE_SCHEMA_VERSION,
+        PublicCandidateSurfaceKindV1::DeployablePolicy,
+        candidate_ids,
+    )?;
+    let history_snapshot = PublicHistorySnapshotReferenceV1::from_sanitized_payload(
+        LEARNING_PUBLIC_SELECTION_HISTORY_SNAPSHOT_SCHEMA_NAME,
+        LEARNING_PUBLIC_HISTORY_SNAPSHOT_SCHEMA_VERSION,
+        &PublicSelectionHistorySnapshotIdentityV1 {
+            parent_history_snapshot_id: &parent.history_snapshot.history_snapshot_id,
+            selected_domain_indices,
+        },
+    )?;
+    PublicInformationSnapshotV1::new(
+        parent.domain,
+        observation,
+        history_snapshot,
+        candidate_surface,
+    )
+}
+
+fn learning_public_root_snapshot_from_model_v1(
+    boundary: &LearningBoundaryV1,
+    model_decision: &LearningModelDecisionV1<'_>,
+) -> Result<PublicInformationSnapshotV1, String> {
     match (boundary, model_decision.observation) {
         (
             LearningBoundaryV1::Strategic { boundary },
@@ -160,6 +244,102 @@ pub fn learning_public_information_snapshot_v1(
             Err("unsupported boundary has no public information snapshot".into())
         }
         _ => Err("learning boundary and model observation domains do not match".into()),
+    }
+}
+
+#[derive(Serialize)]
+#[serde(deny_unknown_fields)]
+struct PublicSelectionObservationIdentityV1<'a> {
+    parent_observation_id: &'a str,
+    family: PublicSelectionFamilyIdentityV1,
+    selected_domain_indices: &'a [usize],
+}
+
+#[derive(Serialize)]
+#[serde(deny_unknown_fields)]
+struct PublicSelectionHistorySnapshotIdentityV1<'a> {
+    parent_history_snapshot_id: &'a str,
+    selected_domain_indices: &'a [usize],
+}
+
+#[derive(Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+enum PublicSelectionFamilyIdentityV1 {
+    Combat {
+        family: PublicCombatSelectionFamilyIdentityV1,
+    },
+    Run {
+        family: PublicRunSelectionFamilyIdentityV1,
+    },
+}
+
+#[derive(Serialize)]
+#[serde(deny_unknown_fields)]
+struct PublicRunSelectionFamilyIdentityV1 {
+    scope: SelectionScope,
+    reason: SelectionReason,
+    declared_min: usize,
+    declared_max: usize,
+    effective_max: usize,
+    selectable_card_ordinals: Vec<usize>,
+}
+
+fn public_selection_family_identity_v1(
+    observation: LearningModelObservationV1<'_>,
+    draft: &LearningSelectionDraftV1,
+) -> Result<PublicSelectionFamilyIdentityV1, String> {
+    match (observation, draft.combat_family(), draft.run_family()) {
+        (LearningModelObservationV1::Combat(_), Some(family), None) => {
+            Ok(PublicSelectionFamilyIdentityV1::Combat {
+                family: public_combat_selection_family_identity_v1(family),
+            })
+        }
+        (LearningModelObservationV1::Strategic(observation), None, Some(family)) => {
+            Ok(PublicSelectionFamilyIdentityV1::Run {
+                family: public_run_selection_family_identity_v1(observation, family)?,
+            })
+        }
+        _ => Err("selection family does not match its public observation domain".into()),
+    }
+}
+
+fn public_run_selection_family_identity_v1(
+    observation: LearningStrategicModelObservationV1<'_>,
+    family: LearningRunSelectionFamilyV1<'_>,
+) -> Result<PublicRunSelectionFamilyIdentityV1, String> {
+    let selectable_card_ordinals = (0..family.domain_count())
+        .map(|index| {
+            let card_uuid = family
+                .domain_card_uuid(index)
+                .ok_or_else(|| "run selection domain is not aligned".to_string())?;
+            public_card_ordinal_v1(observation.cards, card_uuid)
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(PublicRunSelectionFamilyIdentityV1 {
+        scope: family.scope(),
+        reason: family.reason(),
+        declared_min: family.declared_min(),
+        declared_max: family.declared_max(),
+        effective_max: family.effective_max(),
+        selectable_card_ordinals,
+    })
+}
+
+#[derive(Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+enum PublicSelectionCandidateIdentityV1 {
+    Submit,
+    Append { domain_index: usize },
+}
+
+impl From<LearningSelectionCandidateSemanticsV1> for PublicSelectionCandidateIdentityV1 {
+    fn from(value: LearningSelectionCandidateSemanticsV1) -> Self {
+        match value {
+            LearningSelectionCandidateSemanticsV1::Submit => Self::Submit,
+            LearningSelectionCandidateSemanticsV1::Append { domain_index } => {
+                Self::Append { domain_index }
+            }
+        }
     }
 }
 
@@ -785,6 +965,28 @@ impl From<LearningCombatSelectionDomainSemanticsV1> for PublicCombatSelectionDom
     }
 }
 
+fn public_combat_selection_family_identity_v1(
+    family: LearningCombatSelectionFamilyV1<'_>,
+) -> PublicCombatSelectionFamilyIdentityV1 {
+    let domain = (0..family.domain_count())
+        .filter_map(|index| family.domain(index))
+        .map(|candidate| candidate.semantics().into())
+        .collect();
+    PublicCombatSelectionFamilyIdentityV1 {
+        input_encoding: family.input_encoding(),
+        reason: family.reason().clone(),
+        source_pile: family.source_pile(),
+        raw_domain_count: family.raw_domain_count(),
+        eligible_domain_count: family.eligible_domain_count(),
+        max_distinct_selection_count: family.max_distinct_selection_count(),
+        declared_min: family.declared_min(),
+        declared_max: family.declared_max(),
+        effective_max: family.effective_max(),
+        payload_language: family.payload_language(),
+        domain,
+    }
+}
+
 fn public_candidate_identity_payload_v1(
     observation: &LearningModelObservationV1<'_>,
     candidate: &LearningModelCandidateV1<'_>,
@@ -835,27 +1037,9 @@ fn public_candidate_identity_payload_v1(
         (
             LearningModelObservationV1::Combat(_),
             LearningModelCandidateSemanticsV1::CombatSelectionFamily { family },
-        ) => {
-            let domain = (0..family.domain_count())
-                .filter_map(|index| family.domain(index))
-                .map(|candidate| candidate.semantics().into())
-                .collect();
-            Ok(PublicCandidateIdentityPayloadV1::CombatSelectionFamily {
-                family: PublicCombatSelectionFamilyIdentityV1 {
-                    input_encoding: family.input_encoding(),
-                    reason: family.reason().clone(),
-                    source_pile: family.source_pile(),
-                    raw_domain_count: family.raw_domain_count(),
-                    eligible_domain_count: family.eligible_domain_count(),
-                    max_distinct_selection_count: family.max_distinct_selection_count(),
-                    declared_min: family.declared_min(),
-                    declared_max: family.declared_max(),
-                    effective_max: family.effective_max(),
-                    payload_language: family.payload_language(),
-                    domain,
-                },
-            })
-        }
+        ) => Ok(PublicCandidateIdentityPayloadV1::CombatSelectionFamily {
+            family: public_combat_selection_family_identity_v1(family),
+        }),
         _ => Err("model observation and candidate semantics domains do not match".into()),
     }
 }
