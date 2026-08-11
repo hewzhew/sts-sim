@@ -805,6 +805,7 @@ fn evaluate_successor(
         option.exact_successor(),
         solve_work_per_candidate,
         config.max_engine_steps_per_transition,
+        None,
     )?;
     if !matches!(&exact.evidence, ExactCombatEvidence::BudgetUnknown { .. })
         || config.v2_teacher_wall_ms_per_candidate == 0

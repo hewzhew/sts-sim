@@ -497,12 +497,17 @@ pub(crate) fn build_batch(args: ActionReanalysisBatchArgs) -> Result<Value, Stri
         ));
         let build_report = super::action_successor_reanalysis::build(
             super::action_successor_reanalysis::ActionSuccessorReanalysisArgs {
-                case: item.source_case.clone(),
+                case: Some(item.source_case.clone()),
+                artifact: None,
+                expected_roots: None,
+                root_slot: 0,
+                max_artifact_bytes: 16 * 1024 * 1024,
                 actions: item.source_actions.clone(),
                 through: item.through,
                 output: output.clone(),
                 solve_work_per_candidate: args.solve_work_per_candidate,
                 candidate_jobs: args.candidate_jobs,
+                no_potions: false,
                 v2_teacher_wall_ms_per_candidate: args.v2_teacher_wall_ms_per_candidate,
                 v2_teacher_max_nodes_per_candidate: args.v2_teacher_max_nodes_per_candidate,
                 max_structured_alternatives: args.max_structured_alternatives,

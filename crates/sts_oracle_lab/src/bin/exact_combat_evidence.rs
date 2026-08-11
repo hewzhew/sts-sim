@@ -137,6 +137,7 @@ pub(crate) fn evaluate_nonterminal_position(
     position: &CombatPosition,
     solve_work: usize,
     max_engine_steps_per_transition: usize,
+    max_potions_used: Option<u32>,
 ) -> Result<ExactCombatEvaluation, String> {
     let root = CombatDecisionRoot::new(position.clone())
         .map_err(|error| format!("invalid successor root: {error:?}"))?;
@@ -148,7 +149,7 @@ pub(crate) fn evaluate_nonterminal_position(
         generation_quantum_work: 4,
         max_turn_depth: 32,
         satisfaction: OracleCombatWitnessSatisfaction::BudgetOrExhaustion,
-        max_potions_used: None,
+        max_potions_used,
         ..LocalTurnGraphWitnessConfig::default()
     };
     let mut session = LocalTurnGraphWitnessSession::with_policy(
@@ -220,12 +221,14 @@ pub(crate) fn evaluate_unresolved_position(
     solve_work: usize,
     max_structured_alternatives: usize,
     max_engine_steps_per_transition: usize,
+    max_potions_used: Option<u32>,
 ) -> Result<ExactCombatEvaluation, String> {
     let EngineState::PendingChoice(choice) = &position.engine else {
         return evaluate_nonterminal_position(
             position,
             solve_work,
             max_engine_steps_per_transition,
+            max_potions_used,
         );
     };
     let Some(inputs) =
@@ -292,6 +295,7 @@ pub(crate) fn evaluate_unresolved_position(
             per_choice_work,
             max_structured_alternatives,
             max_engine_steps_per_transition,
+            max_potions_used,
         )?;
         match &evaluation.evidence {
             ExactCombatEvidence::ExactWin { .. } => {

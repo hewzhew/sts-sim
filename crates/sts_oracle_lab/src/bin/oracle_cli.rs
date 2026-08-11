@@ -267,7 +267,7 @@ pub(super) enum Command {
         #[arg(long, default_value_t = 250)]
         max_engine_steps_per_transition: usize,
     },
-    /// Reanalyse every bounded legal action at one exact witness state.
+    /// Reanalyse every bounded legal action at one exact case root or witness state.
     ///
     /// The offline corpus keeps exact wins, exact refutations, terminal
     /// non-wins, and budget-unknown successors as distinct evidence kinds.

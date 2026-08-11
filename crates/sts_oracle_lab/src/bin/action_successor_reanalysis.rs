@@ -1,10 +1,11 @@
-//! Action-level exact successor reanalysis at one replayed witness state.
+//! Action-level exact successor reanalysis at one exact combat state.
 //!
-//! This is the narrow DAgger/Expert-Iteration seam: replay to a state reached
-//! by a verified witness, independently search every bounded legal action
-//! successor, and preserve exact wins, exact refutations, and budget-unknown
-//! results as different evidence kinds. The command only writes an offline
-//! corpus; it cannot alter the production policy.
+//! This is the narrow DAgger/Expert-Iteration seam: optionally replay to a
+//! state reached by a verified witness, independently search every bounded
+//! legal action successor, and preserve exact wins, exact refutations, and
+//! budget-unknown results as different evidence kinds. A case-root audit does
+//! not privilege one action with a pre-existing witness floor. The command
+//! only writes an offline corpus; it cannot alter the production policy.
 
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
@@ -14,8 +15,9 @@ use serde::Serialize;
 use serde_json::{json, Value};
 use sts_combat_planner::CombatPolicyChoice;
 use sts_oracle_learning::eval::run_control::{
-    LearningCombatBoundaryV1, LearningCombatPublicRunContextGapV1,
-    LearningCombatPublicRunContextV1, LearningModelDecisionV1, LearningObservationCompletenessV1,
+    CombatLearningPotionPolicyV1, CombatLearningRootBatchArtifactV1, LearningCombatBoundaryV1,
+    LearningCombatPublicRunContextGapV1, LearningCombatPublicRunContextV1, LearningModelDecisionV1,
+    LearningObservationCompletenessV1,
 };
 use sts_oracle_runtime::ai::combat_learning_observation::combat_learning_observation_v1;
 use sts_oracle_runtime::ai::combat_search_v2::oracle_search_witness_proposal_v1;
@@ -44,14 +46,31 @@ const CORPUS_SCHEMA: &str = "ActionSuccessorReanalysisCorpusV2";
 
 #[derive(Debug, Args)]
 pub(crate) struct ActionSuccessorReanalysisArgs {
-    /// Exact combat case at the beginning of the verified witness.
+    /// Exact combat case at the beginning of the optional verified witness.
+    #[arg(
+        long,
+        required_unless_present = "artifact",
+        conflicts_with = "artifact"
+    )]
+    pub(crate) case: Option<PathBuf>,
+    /// Opaque production combat-root artifact used directly without a case export.
+    #[arg(long, required_unless_present = "case", conflicts_with = "case")]
+    pub(crate) artifact: Option<PathBuf>,
+    /// Declared root width of the opaque artifact.
     #[arg(long)]
-    pub(crate) case: PathBuf,
-    /// One or more consecutive exact action segments forming the witness.
-    #[arg(long, required = true)]
+    pub(crate) expected_roots: Option<usize>,
+    /// Exact root slot selected from the opaque artifact.
+    #[arg(long, default_value_t = 0)]
+    pub(crate) root_slot: usize,
+    /// Maximum accepted opaque artifact bytes.
+    #[arg(long, default_value_t = 16 * 1024 * 1024)]
+    pub(crate) max_artifact_bytes: usize,
+    /// Consecutive exact action segments forming an optional verified witness.
+    #[arg(long)]
     pub(crate) actions: Vec<PathBuf>,
     /// Number of witness actions replayed before auditing the next action.
-    #[arg(long)]
+    /// Must remain zero when no witness actions are supplied.
+    #[arg(long, default_value_t = 0)]
     pub(crate) through: usize,
     /// Destination for the typed offline evidence corpus.
     #[arg(long)]
@@ -62,6 +81,9 @@ pub(crate) struct ActionSuccessorReanalysisArgs {
     /// Maximum independent successor searches evaluated concurrently.
     #[arg(long, default_value_t = 4)]
     pub(crate) candidate_jobs: usize,
+    /// Exclude potion use/discard at the root and throughout successor search.
+    #[arg(long)]
+    pub(crate) no_potions: bool,
     /// Optional legacy-teacher allowance after the exact successor search
     /// returns BudgetUnknown. Zero disables the teacher. A proposal becomes
     /// ExactWin only after full replay from that action successor succeeds.
@@ -103,6 +125,7 @@ pub(crate) fn build(args: ActionSuccessorReanalysisArgs) -> Result<Value, String
         || args.candidate_jobs == 0
         || args.max_structured_alternatives == 0
         || args.max_engine_steps_per_transition == 0
+        || args.max_artifact_bytes == 0
     {
         return Err("action-successor reanalysis budgets must be positive".to_string());
     }
@@ -112,9 +135,18 @@ pub(crate) fn build(args: ActionSuccessorReanalysisArgs) -> Result<Value, String
                 .to_string(),
         );
     }
+    if args.no_potions && args.v2_teacher_wall_ms_per_candidate > 0 {
+        return Err("--no-potions is incompatible with the legacy V2 teacher".to_string());
+    }
 
-    let case = load_combat_case(&args.case)?;
+    let (source_seed, case_position, root_source_mode) = load_root_position(&args)?;
     let witness_actions = load_combat_action_segments(&args.actions)?;
+    if args.artifact.is_some() && !witness_actions.is_empty() {
+        return Err("opaque artifact roots do not accept external witness actions".to_string());
+    }
+    if witness_actions.is_empty() && args.through != 0 {
+        return Err("--through must be zero when no witness actions are supplied".to_string());
+    }
     if args.through > witness_actions.len() {
         return Err(format!(
             "--through {} exceeds the {} available witness actions",
@@ -122,32 +154,79 @@ pub(crate) fn build(args: ActionSuccessorReanalysisArgs) -> Result<Value, String
             witness_actions.len()
         ));
     }
-    let final_position = replay_combat_inputs(
-        case.core.position.clone(),
-        &witness_actions,
-        args.max_engine_steps_per_transition,
-    )?;
-    if EngineCombatStepper.terminal(&final_position) != CombatTerminal::Win
-        || final_position.combat.runtime.combat_smoked
-    {
-        return Err("action-successor source is not an exact non-smoke victory".to_string());
-    }
-    let root_position = replay_combat_inputs(
-        case.core.position,
-        &witness_actions[..args.through],
-        args.max_engine_steps_per_transition,
-    )?;
+    let (
+        root_position,
+        known_witness_action,
+        known_witness_continuation,
+        known_witness_final_hp,
+        source_mode,
+    ) = if witness_actions.is_empty() {
+        (case_position, None, Vec::new(), None, root_source_mode)
+    } else {
+        let final_position = replay_combat_inputs(
+            case_position.clone(),
+            &witness_actions,
+            args.max_engine_steps_per_transition,
+        )?;
+        if EngineCombatStepper.terminal(&final_position) != CombatTerminal::Win
+            || final_position.combat.runtime.combat_smoked
+        {
+            return Err("action-successor source is not an exact non-smoke victory".to_string());
+        }
+        (
+            replay_combat_inputs(
+                case_position,
+                &witness_actions[..args.through],
+                args.max_engine_steps_per_transition,
+            )?,
+            witness_actions.get(args.through).cloned(),
+            witness_actions
+                .get(args.through.saturating_add(1)..)
+                .unwrap_or_default()
+                .to_vec(),
+            Some(final_position.combat.entities.player.current_hp),
+            "verified_witness_prefix",
+        )
+    };
     if EngineCombatStepper.terminal(&root_position) != CombatTerminal::Unresolved {
         return Err("action-successor audit root is already terminal".to_string());
     }
-
-    let known_witness_action = witness_actions.get(args.through).cloned();
-    let known_witness_continuation = witness_actions
-        .get(args.through.saturating_add(1)..)
-        .unwrap_or_default();
+    let legal_actions =
+        combat_legal_action_surface_v2(&root_position.engine, &root_position.combat);
+    let atomic_action_representatives = canonical_combat_action_representatives_v1(
+        &root_position.engine,
+        &root_position.combat,
+        &legal_actions.atomic_actions,
+    );
     let mut inputs =
         concrete_combat_action_candidates_v1(&root_position, args.max_structured_alternatives);
+    inputs.retain(|input| {
+        let Some(atomic_ordinal) = legal_actions
+            .atomic_actions
+            .iter()
+            .position(|candidate| candidate == input)
+        else {
+            return true;
+        };
+        atomic_action_representatives[atomic_ordinal] == atomic_ordinal
+    });
+    if args.no_potions {
+        inputs.retain(|input| {
+            !matches!(
+                input,
+                ClientInput::UsePotion { .. } | ClientInput::DiscardPotion(_)
+            )
+        });
+    }
     if let Some(known) = &known_witness_action {
+        if args.no_potions
+            && matches!(
+                known,
+                ClientInput::UsePotion { .. } | ClientInput::DiscardPotion(_)
+            )
+        {
+            return Err("--no-potions rejects the verified witness root action".to_string());
+        }
         if !inputs.contains(known) {
             inputs.push(known.clone());
         }
@@ -156,26 +235,41 @@ pub(crate) fn build(args: ActionSuccessorReanalysisArgs) -> Result<Value, String
         return Err("action-successor audit root has no materialized legal actions".to_string());
     }
 
-    let legal_actions =
-        combat_legal_action_surface_v2(&root_position.engine, &root_position.combat);
     let learning_boundary = LearningCombatBoundaryV1 {
         observation: combat_learning_observation_v1(&root_position.combat),
         public_run_context: LearningCombatPublicRunContextV1::Unavailable {
             reason: LearningCombatPublicRunContextGapV1::DetachedExactCombatPosition,
         },
         observation_completeness: LearningObservationCompletenessV1::Complete,
-        atomic_action_representatives: canonical_combat_action_representatives_v1(
-            &root_position.engine,
-            &root_position.combat,
-            &legal_actions.atomic_actions,
-        ),
+        atomic_action_representatives,
         legal_actions,
     };
-    let learning_decision = LearningModelDecisionV1::from_combat_boundary(&learning_boundary)
-        .map_err(|error| format!("cannot construct learning candidate surface: {error:?}"))?;
+    let potion_policy = if args.no_potions {
+        CombatLearningPotionPolicyV1::never()
+    } else {
+        CombatLearningPotionPolicyV1::All
+    };
+    let learning_decision = LearningModelDecisionV1::from_combat_boundary_with_potion_policy(
+        &learning_boundary,
+        &potion_policy,
+    )
+    .map_err(|error| format!("cannot construct learning candidate surface: {error:?}"))?;
     let learning_ordinals = inputs
         .iter()
-        .map(|input| learning_decision.combat_atomic_ordinal_for_input(input))
+        .map(|input| {
+            let atomic_ordinal = learning_boundary
+                .legal_actions
+                .atomic_actions
+                .iter()
+                .position(|candidate| candidate == input)?;
+            let representative_ordinal =
+                learning_boundary.atomic_action_representatives[atomic_ordinal];
+            let representative_input = learning_boundary
+                .legal_actions
+                .atomic_actions
+                .get(representative_ordinal)?;
+            learning_decision.combat_atomic_ordinal_for_input(representative_input)
+        })
         .collect::<Vec<_>>();
 
     let policy = args
@@ -233,13 +327,13 @@ pub(crate) fn build(args: ActionSuccessorReanalysisArgs) -> Result<Value, String
             .map(|(chunk_index, chunk)| {
                 let root_position = &root_position;
                 let known_witness_action = &known_witness_action;
-                let known_witness_continuation = known_witness_continuation;
+                let known_witness_continuation = &known_witness_continuation;
+                let known_witness_final_hp = known_witness_final_hp;
                 let safe_weights = &safe_weights;
                 let probabilities = &probabilities;
                 let policy_ranks = &policy_ranks;
                 let learning_ordinals = &learning_ordinals;
                 let args = &args;
-                let final_hp = final_position.combat.entities.player.current_hp;
                 scope.spawn(move || {
                     chunk
                         .iter()
@@ -253,7 +347,7 @@ pub(crate) fn build(args: ActionSuccessorReanalysisArgs) -> Result<Value, String
                                 root_position,
                                 known_witness_action.as_ref(),
                                 known_witness_continuation,
-                                final_hp,
+                                known_witness_final_hp,
                                 safe_weights[canonical_index],
                                 probabilities[canonical_index],
                                 policy_ranks[canonical_index],
@@ -262,6 +356,7 @@ pub(crate) fn build(args: ActionSuccessorReanalysisArgs) -> Result<Value, String
                                 args.v2_teacher_max_nodes_per_candidate,
                                 args.max_structured_alternatives,
                                 args.max_engine_steps_per_transition,
+                                args.no_potions,
                             )
                         })
                         .collect::<Vec<_>>()
@@ -296,13 +391,17 @@ pub(crate) fn build(args: ActionSuccessorReanalysisArgs) -> Result<Value, String
         .copied()
         .collect::<std::collections::BTreeSet<_>>();
     let learning_surface_complete = learning_ordinals.iter().all(Option::is_some)
-        && aligned_learning_ordinals.len() == inputs.len()
-        && learning_decision.candidates.len() == inputs.len();
+        && aligned_learning_ordinals.len() == learning_decision.candidates.len();
     let corpus = json!({
         "schema_name": CORPUS_SCHEMA,
         "schema_version": 2,
         "runtime": oracle_lab_runtime_identity(),
+        "source_mode": source_mode,
+        "source_seed": source_seed,
         "source_case": args.case,
+        "source_artifact": args.artifact,
+        "source_expected_roots": args.expected_roots,
+        "source_root_slot": args.root_slot,
         "source_actions": args.actions,
         "through": args.through,
         "root_exact_state_hash": combat_exact_state_hash_v2(
@@ -311,11 +410,18 @@ pub(crate) fn build(args: ActionSuccessorReanalysisArgs) -> Result<Value, String
         ),
         "root_position": root_position,
         "known_witness_action": known_witness_action,
-        "known_witness_final_hp": final_position.combat.entities.player.current_hp,
+        "known_witness_final_hp": known_witness_final_hp,
         "action_imitation_artifact": args.action_imitation_artifact,
         "surface": {
             "materialized_candidates": candidates.len(),
             "atomic_actions": legal_surface.atomic_actions.len(),
+            "canonical_atomic_representatives": learning_boundary
+                .atomic_action_representatives
+                .iter()
+                .enumerate()
+                .filter(|(ordinal, representative)| *ordinal == **representative)
+                .count(),
+            "equivalence_compression": "model_canonical_representatives_v1",
             "structured_family_count": legal_surface.selection_families.len(),
             "max_structured_alternatives": args.max_structured_alternatives,
             "complete": legal_surface.selection_families.is_empty(),
@@ -329,6 +435,7 @@ pub(crate) fn build(args: ActionSuccessorReanalysisArgs) -> Result<Value, String
         "config": {
             "solve_work_per_candidate": args.solve_work_per_candidate,
             "candidate_jobs": jobs,
+            "no_potions": args.no_potions,
             "v2_teacher_wall_ms_per_candidate": args.v2_teacher_wall_ms_per_candidate,
             "v2_teacher_max_nodes_per_candidate": args.v2_teacher_max_nodes_per_candidate,
             "max_engine_steps_per_transition": args.max_engine_steps_per_transition,
@@ -356,6 +463,46 @@ pub(crate) fn build(args: ActionSuccessorReanalysisArgs) -> Result<Value, String
     }))
 }
 
+fn load_root_position(
+    args: &ActionSuccessorReanalysisArgs,
+) -> Result<(u64, CombatPosition, &'static str), String> {
+    if let Some(path) = args.case.as_deref() {
+        if args.expected_roots.is_some() || args.root_slot != 0 {
+            return Err("--expected-roots and nonzero --root-slot require --artifact".to_string());
+        }
+        let case = load_combat_case(path)?;
+        return Ok((case.core.source.seed, case.core.position, "exact_case_root"));
+    }
+    let path = args
+        .artifact
+        .as_deref()
+        .ok_or_else(|| "action-successor source is missing".to_string())?;
+    let expected_roots = args
+        .expected_roots
+        .ok_or_else(|| "--artifact requires --expected-roots".to_string())?;
+    if expected_roots == 0 {
+        return Err("--expected-roots must be positive".to_string());
+    }
+    if args.root_slot >= expected_roots {
+        return Err("--root-slot must be inside --expected-roots".to_string());
+    }
+    let payload = std::fs::read(path).map_err(|error| error.to_string())?;
+    let artifact = CombatLearningRootBatchArtifactV1::decode(
+        &payload,
+        expected_roots,
+        args.max_artifact_bytes,
+    )?;
+    let checkpoint = artifact
+        .into_checkpoints()?
+        .into_iter()
+        .nth(args.root_slot)
+        .ok_or_else(|| "opaque artifact root slot is out of range".to_string())?;
+    let session = checkpoint.into_session()?;
+    let source_seed = session.run_state.seed;
+    let position = session.current_active_combat_position()?;
+    Ok((source_seed, position, "opaque_combat_root_artifact"))
+}
+
 #[allow(clippy::too_many_arguments)]
 fn build_candidate(
     canonical_index: usize,
@@ -364,7 +511,7 @@ fn build_candidate(
     root_position: &CombatPosition,
     known_witness_action: Option<&ClientInput>,
     known_witness_continuation: &[ClientInput],
-    known_final_hp: i32,
+    known_final_hp: Option<i32>,
     raw_policy_weight: f64,
     policy_probability: f64,
     policy_rank: usize,
@@ -373,6 +520,7 @@ fn build_candidate(
     v2_teacher_max_nodes_per_candidate: usize,
     max_structured_alternatives: usize,
     max_engine_steps_per_transition: usize,
+    no_potions: bool,
 ) -> Result<ActionSuccessorCandidate, String> {
     let step = EngineCombatStepper.apply_to_stable(
         root_position,
@@ -412,6 +560,7 @@ fn build_candidate(
             solve_work_per_candidate,
             max_structured_alternatives,
             max_engine_steps_per_transition,
+            no_potions.then_some(0),
         )?,
     };
     if matches!(
@@ -446,7 +595,7 @@ fn build_candidate(
             }
         }
     }
-    if is_known_witness_action {
+    if let (true, Some(known_final_hp)) = (is_known_witness_action, known_final_hp) {
         evaluation = retain_verified_win_floor(
             evaluation,
             "verified_witness_floor_after_equal_work_search",

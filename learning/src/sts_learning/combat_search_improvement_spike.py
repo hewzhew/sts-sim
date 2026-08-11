@@ -12,6 +12,11 @@ from pathlib import Path
 
 from .combat_outcomes import CombatTerminalStepBatch
 from .combat_root_artifacts import load_combat_root_source, read_combat_root_artifact
+from .exact_successor_search import (
+    paired_search_comparison,
+    run_equal_work_successor_search,
+    select_complete_search_proposal,
+)
 from .published_combat_behavior import recover_published_combat_behavior
 from .torch_behavior import FrozenGreedyTorchPolicy
 from .torch_combat_session_config import CombatSessionBridge, CombatWinSessionLimits
@@ -294,6 +299,31 @@ def _load_chance_population(
     )
 
 
+def _write_chance_artifact(
+    source: object,
+    particle_count: int,
+    path: Path,
+    *,
+    max_bytes: int,
+) -> dict[str, object]:
+    payload = bytes(
+        source.combat_root_artifact_bytes(
+            list(range(particle_count)),
+            max_bytes=max_bytes,
+        )
+    )
+    if not payload or len(payload) > max_bytes:
+        raise RuntimeError("chance-particle root artifact violates its byte bound")
+    with path.open("xb") as destination:
+        destination.write(payload)
+    return {
+        "artifact": str(path),
+        "root_count": particle_count,
+        "artifact_bytes": len(payload),
+        "artifact_sha256": hashlib.sha256(payload).hexdigest(),
+    }
+
+
 def run(args: argparse.Namespace) -> dict[str, object]:
     limits = CombatWinSessionLimits()
     artifact = read_combat_root_artifact(args.artifact, max_bytes=limits.max_artifact_bytes)
@@ -353,6 +383,72 @@ def run(args: argparse.Namespace) -> dict[str, object]:
         max_candidates=args.max_chance_candidates,
         max_bytes=limits.max_artifact_bytes,
     )
+    chance_particle_artifacts: dict[str, object] | None = None
+    if args.chance_artifact_dir is not None:
+        chance_particle_artifacts = {
+            "selection": _write_chance_artifact(
+                selection_source,
+                args.selection_particles,
+                args.chance_artifact_dir / "selection.combat-roots.bin",
+                max_bytes=limits.max_artifact_bytes,
+            ),
+            "evaluation": _write_chance_artifact(
+                evaluation_source,
+                args.evaluation_particles,
+                args.chance_artifact_dir / "evaluation.combat-roots.bin",
+                max_bytes=limits.max_artifact_bytes,
+            ),
+        }
+    exact_successor_search: dict[str, object] | None = None
+    if args.oracle_binary is not None:
+        selection_search = run_equal_work_successor_search(
+            oracle_binary=args.oracle_binary,
+            artifact=args.chance_artifact_dir / "selection.combat-roots.bin",
+            root_count=args.selection_particles,
+            candidate_count=len(candidates),
+            output_dir=args.chance_artifact_dir / "selection-successors",
+            solve_work_per_candidate=args.solve_work_per_candidate,
+            candidate_jobs=args.candidate_jobs,
+            max_artifact_bytes=limits.max_artifact_bytes,
+            no_potions=True,
+        )
+        search_proposal_ordinal, search_proposal_rule = (
+            select_complete_search_proposal(
+                selection_search,
+                baseline_ordinal=baseline_ordinal,
+            )
+        )
+        evaluation_search = run_equal_work_successor_search(
+            oracle_binary=args.oracle_binary,
+            artifact=args.chance_artifact_dir / "evaluation.combat-roots.bin",
+            root_count=args.evaluation_particles,
+            candidate_count=len(candidates),
+            output_dir=args.chance_artifact_dir / "evaluation-successors",
+            solve_work_per_candidate=args.solve_work_per_candidate,
+            candidate_jobs=args.candidate_jobs,
+            max_artifact_bytes=limits.max_artifact_bytes,
+            no_potions=True,
+        )
+        exact_successor_search = {
+            "selection": selection_search,
+            "proposal_ordinal": search_proposal_ordinal,
+            "proposal_candidate": (
+                None
+                if search_proposal_ordinal is None
+                else candidates[search_proposal_ordinal]
+            ),
+            "proposal_rule": search_proposal_rule,
+            "evaluation": evaluation_search,
+            "paired": (
+                None
+                if search_proposal_ordinal is None
+                else paired_search_comparison(
+                    evaluation_search,
+                    candidate_ordinal=search_proposal_ordinal,
+                    baseline_ordinal=baseline_ordinal,
+                )
+            ),
+        }
     selection_actions = [
         {
             "candidate": candidates[ordinal],
@@ -399,14 +495,13 @@ def run(args: argparse.Namespace) -> dict[str, object]:
 
     return {
         "schema_name": "CombatSearchImprovementFeasibilitySpike",
-        "schema_version": 2,
+        "schema_version": 3,
         "teacher_valid": False,
         "claim": "single_root_combat_entry_improvement_feasibility_only",
         "artifact_sha256": hashlib.sha256(artifact).hexdigest(),
         "source_root_slot": args.root_slot,
         "source_root": _root_audit(exact_source, args.root_slot),
         "behavior_manifest_id": behavior.manifest_id.digest.hex(),
-        "continuation_policy": "frozen_greedy_current_behavior",
         "chance_sampler": (
             "conditioned_combat_entry_floor_seed_rejection_v1"
             if args.chance_sampler == "conditioned-floor-chance"
@@ -418,13 +513,20 @@ def run(args: argparse.Namespace) -> dict[str, object]:
         "selection_particle_provenance_seeds": selection_seeds,
         "evaluation_particle_provenance_seeds": evaluation_seeds,
         "selection_evaluation_disjoint": set(selection_seeds).isdisjoint(evaluation_seeds),
+        "chance_particle_artifacts": chance_particle_artifacts,
+        "exact_successor_search": exact_successor_search,
         "baseline_ordinal": baseline_ordinal,
         "baseline_candidate": candidates[baseline_ordinal],
-        "proposal_ordinal": proposal_ordinal,
-        "proposal_candidate": None if proposal_ordinal is None else candidates[proposal_ordinal],
-        "proposal_rule": proposal_rule,
-        "selection_actions": selection_actions,
-        "evaluation": evaluation,
+        "rollout": {
+            "continuation_policy": "frozen_greedy_current_behavior",
+            "proposal_ordinal": proposal_ordinal,
+            "proposal_candidate": (
+                None if proposal_ordinal is None else candidates[proposal_ordinal]
+            ),
+            "proposal_rule": proposal_rule,
+            "selection_actions": selection_actions,
+            "evaluation": evaluation,
+        },
     }
 
 
@@ -447,6 +549,10 @@ def main() -> None:
     parser.add_argument("--policy-seed", type=int, default=2026081101999)
     parser.add_argument("--max-model-rounds", type=int, default=512)
     parser.add_argument("--max-transitions", type=int, default=512)
+    parser.add_argument("--chance-artifact-dir", type=Path)
+    parser.add_argument("--oracle-binary", type=Path)
+    parser.add_argument("--solve-work-per-candidate", type=int, default=5_000)
+    parser.add_argument("--candidate-jobs", type=int, default=4)
     args = parser.parse_args()
     for name in (
         "root_count",
@@ -455,6 +561,8 @@ def main() -> None:
         "max_chance_candidates",
         "max_model_rounds",
         "max_transitions",
+        "solve_work_per_candidate",
+        "candidate_jobs",
     ):
         if getattr(args, name) <= 0:
             parser.error(f"--{name.replace('_', '-')} must be positive")
@@ -462,6 +570,15 @@ def main() -> None:
         parser.error("--root-slot must be inside --root-count")
     if args.output.exists():
         parser.error("--output must be a fresh path")
+    if args.chance_artifact_dir is not None:
+        if args.chance_artifact_dir.exists():
+            parser.error("--chance-artifact-dir must be a fresh path")
+        args.chance_artifact_dir.mkdir(parents=True)
+    if args.oracle_binary is not None:
+        if args.chance_artifact_dir is None:
+            parser.error("--oracle-binary requires --chance-artifact-dir")
+        if not args.oracle_binary.is_file():
+            parser.error("--oracle-binary must be an existing file")
 
     result = run(args)
     args.output.parent.mkdir(parents=True, exist_ok=True)
@@ -469,22 +586,38 @@ def main() -> None:
         json.dumps(result, ensure_ascii=False, indent=2, allow_nan=False) + "\n",
         encoding="utf-8",
     )
+    rollout = result["rollout"]
     paired = None
-    if result["evaluation"] is not None:
+    if rollout["evaluation"] is not None:
         paired = {
             key: value
-            for key, value in result["evaluation"]["paired"].items()
+            for key, value in rollout["evaluation"]["paired"].items()
+            if key != "pairs"
+        }
+    exact_search = result["exact_successor_search"]
+    search_paired = None
+    if exact_search is not None and exact_search["paired"] is not None:
+        search_paired = {
+            key: value
+            for key, value in exact_search["paired"].items()
             if key != "pairs"
         }
     print(
         json.dumps(
             {
                 "output": str(args.output),
-                "candidate_count": len(result["selection_actions"]),
+                "candidate_count": len(rollout["selection_actions"]),
                 "baseline_ordinal": result["baseline_ordinal"],
-                "proposal_ordinal": result["proposal_ordinal"],
-                "proposal_rule": result["proposal_rule"],
-                "paired": paired,
+                "rollout_proposal_ordinal": rollout["proposal_ordinal"],
+                "rollout_proposal_rule": rollout["proposal_rule"],
+                "rollout_paired": paired,
+                "search_proposal_ordinal": (
+                    None if exact_search is None else exact_search["proposal_ordinal"]
+                ),
+                "search_proposal_rule": (
+                    None if exact_search is None else exact_search["proposal_rule"]
+                ),
+                "search_paired": search_paired,
             },
             ensure_ascii=False,
             separators=(",", ":"),
