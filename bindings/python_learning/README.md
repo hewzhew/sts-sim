@@ -6,7 +6,7 @@ without per-step JSON or one Python call per environment slot.
 
 The control surface exposes slot identity, decision phase, ragged candidate row
 splits, candidate counts, and an optional dense legal-action mask. Calling
-`decision_batch(semantic=True)` additionally returns semantic schema version 5
+`decision_batch(semantic=True)` additionally returns semantic schema version 6
 as five sparse, columnar NumPy table families:
 
 - `token`: token kinds plus per-decision row splits;
@@ -29,6 +29,16 @@ random choice as a teacher label.
 vocabulary sizes from the same Rust definitions that produce the arrays. A
 trainer therefore does not need a duplicate Python feature dictionary or a
 source-code lookup to interpret field ids.
+
+Schema v6 factors card and potion identity into shared mechanics plus an
+identity residual. Card tokens carry definition type, rarity, target, base and
+upgrade numerics, multi-damage, exhaust, ethereal, innate, and tags. Potion
+tokens carry definition rarity, class, potency, thrown status, and composable
+effect roles such as direct damage, block, draw, or colorless discovery. The
+schema declares the CardId and PotionId categorical fields whose embeddings
+must start at zero; an identity absent from training therefore falls back to
+its mechanical facts instead of injecting a random vector. This is a breaking
+semantic migration and older checkpoints are rejected.
 
 Strategic rows encode run facts, context/history, cards, relics, potion slots,
 the public map graph, every `PlannerAction` variant, and typed candidate target

@@ -643,6 +643,13 @@ def main() -> None:
         ("SelectionCandidateKind", "selection_candidate_kind"),
         ("SelectionDomainKind", "selection_domain_kind"),
         ("CounterItemKind", "counter_item_kind"),
+        ("CardType", "card_type"),
+        ("CardRarity", "card_rarity"),
+        ("CardTarget", "card_target"),
+        ("CardTag", "card_tag"),
+        ("PotionRarity", "potion_rarity"),
+        ("PotionClass", "potion_class"),
+        ("PotionMechanicRole", "potion_mechanic_role"),
     ):
         field = schema["categorical_field"][field_name]
         assert max(schema[enum_name].values()) < schema[
@@ -655,6 +662,13 @@ def main() -> None:
         == schema["domain_vocabulary_size"]["card_id"]
         == 371
     )
+    assert set(schema["identity_residual_categorical_fields"]) == {
+        schema["categorical_field"]["CardId"],
+        schema["categorical_field"]["ActionCardId"],
+        schema["categorical_field"]["PotionId"],
+        schema["categorical_field"]["ActionPotionId"],
+    }
+    assert "DiscoverColorless" in schema["potion_mechanic_role"]
     assert schema["domain_vocabulary_size"]["enemy_id"] == 65
     assert schema["domain_vocabulary_size"]["power_id"] == 135
     _assert_explicit_checkpoint_replays_exactly()

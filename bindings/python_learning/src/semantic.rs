@@ -6,6 +6,7 @@
 //! categorical or scalar features.
 
 mod combat;
+mod mechanics;
 
 use std::collections::BTreeMap;
 use std::fmt;
@@ -30,7 +31,7 @@ use sts_oracle_eval::state::events::{EventActionKind, EventId};
 use sts_oracle_eval::state::map::node::RoomType;
 use sts_oracle_eval::state::selection::{SelectionReason, SelectionScope};
 
-pub const SEMANTIC_SCHEMA_VERSION: u32 = 5;
+pub const SEMANTIC_SCHEMA_VERSION: u32 = 6;
 pub const NO_CANDIDATE_TOKEN: u64 = u64::MAX;
 pub const CARD_ID_VOCABULARY_SIZE: u64 = 371;
 pub const RELIC_ID_VOCABULARY_SIZE: u64 = 182;
@@ -42,7 +43,13 @@ pub const POWER_ID_VOCABULARY_SIZE: u64 = 135;
 
 const RUN_SELECTION_DECK_CARD_UUID_INPUT_ENCODING: i64 = 3;
 
-// Domain identities use their fieldless enum ordinals inside schema v5. These
+pub(super) use mechanics::{
+    CARD_RARITY_SCHEMA, CARD_TAG_SCHEMA, CARD_TARGET_SCHEMA, CARD_TYPE_SCHEMA,
+    IDENTITY_RESIDUAL_CATEGORICAL_FIELDS, POTION_CLASS_SCHEMA, POTION_MECHANIC_ROLE_SCHEMA,
+    POTION_RARITY_SCHEMA,
+};
+
+// Domain identities use their fieldless enum ordinals inside schema v6. These
 // compile-time size sentinels catch vocabulary extension; any intentional
 // insertion or reordering also requires an explicit schema review and bump.
 const _: () = {
@@ -215,6 +222,18 @@ pub enum CategoricalField: u16 {
     SelectionDomainEligible = 68,
     CounterItemKind = 69,
     SelectionReasonFlag = 70,
+    CardType = 71,
+    CardRarity = 72,
+    CardTarget = 73,
+    CardIsMultiDamage = 74,
+    CardExhaust = 75,
+    CardEthereal = 76,
+    CardInnate = 77,
+    CardTag = 78,
+    PotionRarity = 79,
+    PotionClass = 80,
+    PotionIsThrown = 81,
+    PotionMechanicRole = 82,
 }}
 
 numeric_schema_enum! {
@@ -305,6 +324,14 @@ pub enum ScalarField: u16 {
     SelectionDomainAddress = 83,
     SelectionChosenPosition = 84,
     SelectionReasonAmount = 85,
+    CardBaseCost = 86,
+    CardDefinitionDamage = 87,
+    CardDefinitionBlock = 88,
+    CardDefinitionMagic = 89,
+    CardUpgradeDamage = 90,
+    CardUpgradeBlock = 91,
+    CardUpgradeMagic = 92,
+    PotionBasePotency = 93,
 }}
 
 numeric_schema_enum! {
@@ -631,6 +658,33 @@ pub const CATEGORICAL_VOCABULARY_SIZES: &[(u16, u64)] = &[
     (CategoricalField::SelectionDomainEligible as u16, 2),
     (CategoricalField::CounterItemKind as u16, 5),
     (CategoricalField::SelectionReasonFlag as u16, 2),
+    (CategoricalField::CardType as u16, CARD_TYPE_SCHEMA.len() as u64),
+    (
+        CategoricalField::CardRarity as u16,
+        CARD_RARITY_SCHEMA.len() as u64,
+    ),
+    (
+        CategoricalField::CardTarget as u16,
+        CARD_TARGET_SCHEMA.len() as u64,
+    ),
+    (CategoricalField::CardIsMultiDamage as u16, 2),
+    (CategoricalField::CardExhaust as u16, 2),
+    (CategoricalField::CardEthereal as u16, 2),
+    (CategoricalField::CardInnate as u16, 2),
+    (CategoricalField::CardTag as u16, CARD_TAG_SCHEMA.len() as u64),
+    (
+        CategoricalField::PotionRarity as u16,
+        POTION_RARITY_SCHEMA.len() as u64,
+    ),
+    (
+        CategoricalField::PotionClass as u16,
+        POTION_CLASS_SCHEMA.len() as u64,
+    ),
+    (CategoricalField::PotionIsThrown as u16, 2),
+    (
+        CategoricalField::PotionMechanicRole as u16,
+        POTION_MECHANIC_ROLE_SCHEMA.len() as u64,
+    ),
 ];
 
 #[derive(Clone, Debug, Default)]
@@ -899,7 +953,7 @@ impl SemanticBatchBuilder {
                 return Err(SemanticEncodingError::DuplicateCardIdentity(card.card_uuid));
             }
             self.edge(root, RelationKind::ObservationHasCard, token);
-            self.category(token, CategoricalField::CardId, card.card as i64);
+            self.card_identity_with_mechanics(token, CategoricalField::CardId, card.card);
             self.scalar(token, ScalarField::CardUpgrades, card.upgrades);
             self.scalar(token, ScalarField::CardMiscValue, card.misc_value);
             if let Some(value) = card.base_damage_override {
@@ -955,7 +1009,11 @@ impl SemanticBatchBuilder {
                         relation_key,
                     ));
                 }
-                self.category(token, CategoricalField::PotionId, potion.potion() as i64);
+                self.potion_identity_with_mechanics(
+                    token,
+                    CategoricalField::PotionId,
+                    potion.potion(),
+                );
                 self.category(
                     token,
                     CategoricalField::PotionCanUse,
@@ -1390,7 +1448,7 @@ impl SemanticBatchBuilder {
                 self.action_kind(token, ActionKind::BuyPotion);
                 self.scalar(token, ScalarField::ActionShopSlot, *shop_slot);
                 self.scalar(token, ScalarField::ActionPrice, *price);
-                self.category(token, CategoricalField::ActionPotionId, *potion as i64);
+                self.action_potion(token, *potion);
             }
             PlannerAction::UseRunPotion {
                 slot,
@@ -1398,7 +1456,7 @@ impl SemanticBatchBuilder {
                 potion_uuid: relation_key,
             } => {
                 self.action_kind(token, ActionKind::UseRunPotion);
-                self.category(token, CategoricalField::ActionPotionId, *potion as i64);
+                self.action_potion(token, *potion);
                 self.link_potion_target(
                     token,
                     *slot,
@@ -1413,7 +1471,7 @@ impl SemanticBatchBuilder {
                 potion_uuid: relation_key,
             } => {
                 self.action_kind(token, ActionKind::DiscardRunPotion);
-                self.category(token, CategoricalField::ActionPotionId, *potion as i64);
+                self.action_potion(token, *potion);
                 self.link_potion_target(
                     token,
                     *slot,
@@ -1507,7 +1565,7 @@ impl SemanticBatchBuilder {
                 for card in cards {
                     let token = self.add_token(TokenKind::OfferedCard)?;
                     self.edge(candidate, RelationKind::CandidateHasPayload, token);
-                    self.category(token, CategoricalField::CardId, card.card as i64);
+                    self.card_identity_with_mechanics(token, CategoricalField::CardId, card.card);
                     self.scalar(token, ScalarField::CardUpgrades, card.upgrades);
                 }
             }
@@ -1517,7 +1575,7 @@ impl SemanticBatchBuilder {
             }
             PlannerRewardDescriptor::Potion { potion } => {
                 self.reward_kind(candidate, RewardKind::Potion);
-                self.category(candidate, CategoricalField::ActionPotionId, *potion as i64);
+                self.action_potion(candidate, *potion);
             }
             PlannerRewardDescriptor::EmeraldKey => {
                 self.reward_kind(candidate, RewardKind::EmeraldKey)
@@ -1572,11 +1630,6 @@ impl SemanticBatchBuilder {
         if let Some(index) = index {
             self.scalar(token, ScalarField::ActionRewardItemIndex, index);
         }
-    }
-
-    fn action_card(&mut self, token: u64, card: CardId, upgrades: u8) {
-        self.category(token, CategoricalField::ActionCardId, card as i64);
-        self.scalar(token, ScalarField::ActionUpgrades, upgrades);
     }
 
     fn context_kind(&mut self, token: u64, kind: ContextKind) {
@@ -1644,7 +1697,8 @@ fn bool_value(value: bool) -> i64 {
 
 #[cfg(test)]
 mod tests {
-    use sts_oracle_eval::content::cards::CardId;
+    use sts_oracle_eval::content::cards::{CardId, CardType};
+    use sts_oracle_eval::content::potions::{PotionId, PotionMechanicRole};
     use sts_oracle_learning::eval::run_control::{
         LearningEnvV1, LearningModelChoiceV1, LearningModelDecisionV1, LearningSelectionStepV1,
         RunControlConfig, RunControlSession,
@@ -1657,6 +1711,53 @@ mod tests {
     use sts_oracle_eval::state::selection::{DomainEventSource, SelectionReason};
 
     use super::*;
+
+    #[test]
+    fn card_and_potion_identities_carry_shared_mechanics() {
+        let mut builder = SemanticBatchBuilder::new();
+        let card = builder
+            .add_token(TokenKind::CombatCard)
+            .expect("card token");
+        builder.card_identity_with_mechanics(card, CategoricalField::CardId, CardId::Strike);
+        let potion = builder
+            .add_token(TokenKind::PotionSlot)
+            .expect("potion token");
+        builder.potion_identity_with_mechanics(
+            potion,
+            CategoricalField::PotionId,
+            PotionId::ColorlessPotion,
+        );
+
+        let categories = builder
+            .categorical
+            .token_indices
+            .iter()
+            .copied()
+            .zip(builder.categorical.fields.iter().copied())
+            .zip(builder.categorical.values.iter().copied())
+            .map(|((token, field), value)| (token, field, value))
+            .collect::<Vec<_>>();
+        assert!(categories.contains(&(
+            card,
+            CategoricalField::CardType as u16,
+            CardType::Attack as i64,
+        )));
+        assert!(categories.contains(&(
+            potion,
+            CategoricalField::PotionMechanicRole as u16,
+            PotionMechanicRole::DiscoverColorless as i64,
+        )));
+        assert!(builder
+            .scalar
+            .token_indices
+            .iter()
+            .copied()
+            .zip(builder.scalar.fields.iter().copied())
+            .zip(builder.scalar.values.iter().copied())
+            .any(|((token, field), value)| {
+                token == card && field == ScalarField::CardDefinitionDamage as u16 && value == 6.0
+            }));
+    }
 
     #[test]
     fn run_selection_root_and_prefix_share_one_complete_strategic_encoding() {

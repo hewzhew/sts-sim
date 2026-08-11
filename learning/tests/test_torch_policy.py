@@ -49,6 +49,22 @@ class TorchPolicyTests(unittest.TestCase):
         self.assertEqual(dimensions.categorical_offsets, (0, 3))
         self.assertEqual(dimensions.categorical_vocabulary_size, 5)
 
+    def test_identity_residual_vocabularies_start_at_mechanical_fallback(self) -> None:
+        torch.manual_seed(17)
+        scorer = RaggedCandidateScorer.from_bridge_schema(
+            semantic_schema_fixture(identity_residual_fields=(1,))
+        )
+
+        weights = scorer.categorical_value.weight.detach()
+        self.assertTrue(bool(torch.any(weights[0:3] != 0)))
+        torch.testing.assert_close(weights[3:5], torch.zeros_like(weights[3:5]))
+
+    def test_identity_residual_fields_must_name_categorical_vocabularies(self) -> None:
+        with self.assertRaisesRegex(TorchPolicyError, "unknown field"):
+            SemanticSchemaDimensions.from_bridge_schema(
+                semantic_schema_fixture(identity_residual_fields=(2,))
+            )
+
     def test_ragged_logits_loss_and_parameter_update(self) -> None:
         assert _TORCH_AVAILABLE
         torch.manual_seed(7)

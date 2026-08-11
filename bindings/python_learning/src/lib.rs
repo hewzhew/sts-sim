@@ -36,10 +36,12 @@ use semantic::{
     EnemyIdentityKind, IndexedChoiceCandidateKind, IndexedChoiceReasonKind, IntentKind,
     PublicCounterKind, RelationKind, RewardKind, ScalarField, SelectionCandidateKind,
     SelectionDomainKind, SelectionReasonKind, SemanticBatch, SemanticCompleteness, TokenKind,
-    CARD_ID_VOCABULARY_SIZE, CATEGORICAL_VOCABULARY_SIZES, ENCOUNTER_ID_VOCABULARY_SIZE,
-    ENEMY_ID_VOCABULARY_SIZE, EVENT_ID_VOCABULARY_SIZE, NO_CANDIDATE_TOKEN,
-    POTION_ID_VOCABULARY_SIZE, POWER_ID_VOCABULARY_SIZE, RELIC_ID_VOCABULARY_SIZE,
-    SEMANTIC_SCHEMA_VERSION,
+    CARD_ID_VOCABULARY_SIZE, CARD_RARITY_SCHEMA, CARD_TAG_SCHEMA, CARD_TARGET_SCHEMA,
+    CARD_TYPE_SCHEMA, CATEGORICAL_VOCABULARY_SIZES, ENCOUNTER_ID_VOCABULARY_SIZE,
+    ENEMY_ID_VOCABULARY_SIZE, EVENT_ID_VOCABULARY_SIZE, IDENTITY_RESIDUAL_CATEGORICAL_FIELDS,
+    NO_CANDIDATE_TOKEN, POTION_CLASS_SCHEMA, POTION_ID_VOCABULARY_SIZE,
+    POTION_MECHANIC_ROLE_SCHEMA, POTION_RARITY_SCHEMA, POWER_ID_VOCABULARY_SIZE,
+    RELIC_ID_VOCABULARY_SIZE, SEMANTIC_SCHEMA_VERSION,
 };
 
 const PHASE_STRATEGIC_ROOT: u8 = 0;
@@ -1567,12 +1569,36 @@ fn semantic_schema(py: Python<'_>) -> PyResult<Bound<'_, PyDict>> {
         "counter_item_kind",
         numeric_schema_dict(py, CounterItemKind::SCHEMA)?,
     )?;
+    result.set_item("card_type", numeric_schema_dict(py, CARD_TYPE_SCHEMA)?)?;
+    result.set_item("card_rarity", numeric_schema_dict(py, CARD_RARITY_SCHEMA)?)?;
+    result.set_item("card_target", numeric_schema_dict(py, CARD_TARGET_SCHEMA)?)?;
+    result.set_item("card_tag", numeric_schema_dict(py, CARD_TAG_SCHEMA)?)?;
+    result.set_item(
+        "potion_rarity",
+        numeric_schema_dict(py, POTION_RARITY_SCHEMA)?,
+    )?;
+    result.set_item(
+        "potion_class",
+        numeric_schema_dict(py, POTION_CLASS_SCHEMA)?,
+    )?;
+    result.set_item(
+        "potion_mechanic_role",
+        numeric_schema_dict(py, POTION_MECHANIC_ROLE_SCHEMA)?,
+    )?;
 
     let vocabulary_sizes = PyDict::new(py);
     for (field, size) in CATEGORICAL_VOCABULARY_SIZES {
         vocabulary_sizes.set_item(*field, *size)?;
     }
     result.set_item("categorical_vocabulary_size", vocabulary_sizes)?;
+    let identity_residual_fields = PyDict::new(py);
+    for field in IDENTITY_RESIDUAL_CATEGORICAL_FIELDS {
+        identity_residual_fields.set_item(*field, 1_i64)?;
+    }
+    result.set_item(
+        "identity_residual_categorical_fields",
+        identity_residual_fields,
+    )?;
 
     let domains = PyDict::new(py);
     domains.set_item("card_id", CARD_ID_VOCABULARY_SIZE)?;

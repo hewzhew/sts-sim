@@ -3,7 +3,10 @@ from __future__ import annotations
 import numpy as np
 
 
-def semantic_schema_fixture() -> dict[str, object]:
+def semantic_schema_fixture(
+    *,
+    identity_residual_fields: tuple[int, ...] = (),
+) -> dict[str, object]:
     return {
         "version": 2,
         "token_kind": {"Observation": 0, "Candidate": 1, "Entity": 2},
@@ -11,6 +14,9 @@ def semantic_schema_fixture() -> dict[str, object]:
         "scalar_field": {"Amount": 0},
         "relation_kind": {"HasCandidate": 0, "Targets": 1},
         "categorical_vocabulary_size": {0: 3, 1: 2},
+        "identity_residual_categorical_fields": {
+            field: 1 for field in identity_residual_fields
+        },
     }
 
 

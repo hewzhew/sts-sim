@@ -693,6 +693,10 @@ injected `semantic_schema()` result; it does not copy enum names, card ids, or
 feature dictionaries into Python. Token kinds, categorical and scalar facts,
 relations, and row-pooled context produce one flat candidate-logit tensor whose
 boundaries are the unchanged bridge `candidate_row_splits`.
+For schema-declared CardId and PotionId residual fields, the scorer initializes
+the complete categorical slices to zero. Shared Rust-owned card and potion
+mechanics therefore define the initial representation, while training may add
+an identity-specific residual only for identities it actually observes.
 
 The optional module supplies a ragged cross-entropy loss and a greedy
 `BatchPolicy` adapter. It also supplies a temperature-scaled ragged categorical

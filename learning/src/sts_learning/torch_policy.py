@@ -50,6 +50,7 @@ class SemanticSchemaDimensions:
     categorical_offsets: tuple[int, ...]
     categorical_vocabulary_sizes: tuple[int, ...]
     categorical_vocabulary_size: int
+    identity_residual_categorical_fields: tuple[int, ...]
 
     @classmethod
     def from_bridge_schema(
@@ -91,6 +92,30 @@ class SemanticSchemaDimensions:
                 "categorical vocabulary fields do not match categorical_field ids"
             )
 
+        raw_identity_fields = _mapping(
+            _required(schema, "identity_residual_categorical_fields"),
+            "identity_residual_categorical_fields",
+        )
+        if any(
+            type(enabled) is not int or enabled != 1
+            for enabled in raw_identity_fields.values()
+        ):
+            raise TorchPolicyError(
+                "identity_residual_categorical_fields values must be integer one"
+            )
+        identity_fields = tuple(
+            _non_negative_integer(field, "identity residual categorical field")
+            for field in raw_identity_fields.keys()
+        )
+        if len(set(identity_fields)) != len(identity_fields):
+            raise TorchPolicyError(
+                "identity_residual_categorical_fields repeats a field"
+            )
+        if not set(identity_fields).issubset(expected_fields):
+            raise TorchPolicyError(
+                "identity_residual_categorical_fields contains an unknown field"
+            )
+
         offsets: list[int] = []
         sizes: list[int] = []
         next_offset = 0
@@ -113,6 +138,7 @@ class SemanticSchemaDimensions:
             categorical_offsets=tuple(offsets),
             categorical_vocabulary_sizes=tuple(sizes),
             categorical_vocabulary_size=next_offset,
+            identity_residual_categorical_fields=identity_fields,
         )
 
 
@@ -452,6 +478,11 @@ class RaggedCandidateScorer(nn.Module):
             schema.categorical_vocabulary_size,
             hidden_dim,
         )
+        with torch.no_grad():
+            for field in schema.identity_residual_categorical_fields:
+                start = schema.categorical_offsets[field]
+                end = start + schema.categorical_vocabulary_sizes[field]
+                self.categorical_value.weight[start:end].zero_()
         self.scalar_bias = nn.Embedding(schema.scalar_field_size, hidden_dim)
         self.scalar_weight = nn.Embedding(schema.scalar_field_size, hidden_dim)
         self.relation_layers = nn.ModuleList(

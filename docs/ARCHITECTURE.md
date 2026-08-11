@@ -429,6 +429,15 @@ Changing an encoded field's meaning or turning a previously constant field into
 live information requires a semantic-schema version bump even when the table
 shape is unchanged. Checkpoints trained under the prior meaning must fail
 closed rather than silently consuming the new distribution.
+Semantic schema v6 also declares identity-residual categorical fields. Card
+and potion identities are encoded alongside shared typed mechanics: card
+definition type, rarity, target, base/upgrade numerics, multi-damage and
+lifecycle flags; potion definition facts and composable effect roles. The
+PyTorch scorer zero-initializes only the declared CardId/PotionId residual
+vocabularies, so an identity not exercised by training contributes its shared
+mechanics but no random identity vector. Enemy, power, and relic identities
+remain ordinary embeddings until comparable mechanical projections exist;
+they must not be relabeled as residuals merely to hide missing semantics.
 The bridge still owns no policy, optimizer, automatic reset, or PyTorch
 dependency. Keeping the crate standalone prevents Python build dependencies
 from entering ordinary simulator checks.

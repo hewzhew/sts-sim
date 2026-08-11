@@ -70,6 +70,110 @@ pub enum PotionClass {
     Watcher,
 }
 
+/// Public, composable combat mechanics shared by potion identities.
+///
+/// A learned policy should not have to rediscover from an identity embedding
+/// that Fire Potion and Explosive Potion both deal direct damage, or that
+/// Speed Potion and Dexterity Potion both grant Dexterity.  These roles are a
+/// compact projection of the typed actions in `potion_effects`; a potion may
+/// expose more than one role when its effect is genuinely composite.
+#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq, Hash, Serialize)]
+#[repr(u8)]
+pub enum PotionMechanicRole {
+    DirectDamage = 0,
+    MultiTarget = 1,
+    ApplyPoison = 2,
+    ApplyWeak = 3,
+    ApplyVulnerable = 4,
+    GainBlock = 5,
+    Heal = 6,
+    GainEnergy = 7,
+    GainStrength = 8,
+    GainDexterity = 9,
+    Temporary = 10,
+    DrawCards = 11,
+    GainFocus = 12,
+    DiscoverAttack = 13,
+    DiscoverSkill = 14,
+    DiscoverPower = 15,
+    DiscoverColorless = 16,
+    AddCardToHand = 17,
+    UpgradeHand = 18,
+    GainArtifact = 19,
+    GainRegeneration = 20,
+    GainPlatedArmor = 21,
+    GainThorns = 22,
+    PlayTopCards = 23,
+    DuplicateCards = 24,
+    GainOrbSlots = 25,
+    RetrieveFromDiscard = 26,
+    DiscardAndDraw = 27,
+    ExhaustCards = 28,
+    ChooseStance = 29,
+    PreventDeath = 30,
+    EscapeCombat = 31,
+    GainMaxHp = 32,
+    GeneratePotions = 33,
+    RandomizeHandCosts = 34,
+    GainIntangible = 35,
+    GainMetallicize = 36,
+    GainRitual = 37,
+    EnterDivinity = 38,
+    ChannelDark = 39,
+}
+
+pub const POTION_MECHANIC_ROLE_COUNT: u64 = PotionMechanicRole::ChannelDark as u64 + 1;
+
+/// Returns the identity-independent mechanical roles of a potion.
+pub fn potion_mechanic_roles(id: PotionId) -> &'static [PotionMechanicRole] {
+    use PotionMechanicRole as Role;
+
+    match id {
+        PotionId::FirePotion => &[Role::DirectDamage],
+        PotionId::ExplosivePotion => &[Role::DirectDamage, Role::MultiTarget],
+        PotionId::PoisonPotion => &[Role::ApplyPoison],
+        PotionId::WeakenPotion => &[Role::ApplyWeak],
+        PotionId::FearPotion => &[Role::ApplyVulnerable],
+        PotionId::BlockPotion => &[Role::GainBlock],
+        PotionId::BloodPotion => &[Role::Heal],
+        PotionId::EnergyPotion => &[Role::GainEnergy],
+        PotionId::StrengthPotion => &[Role::GainStrength],
+        PotionId::DexterityPotion => &[Role::GainDexterity],
+        PotionId::SpeedPotion => &[Role::GainDexterity, Role::Temporary],
+        PotionId::SteroidPotion => &[Role::GainStrength, Role::Temporary],
+        PotionId::SwiftPotion => &[Role::DrawCards],
+        PotionId::FocusPotion => &[Role::GainFocus],
+        PotionId::AttackPotion => &[Role::DiscoverAttack],
+        PotionId::SkillPotion => &[Role::DiscoverSkill],
+        PotionId::PowerPotion => &[Role::DiscoverPower],
+        PotionId::ColorlessPotion => &[Role::DiscoverColorless],
+        PotionId::BottledMiracle => &[Role::AddCardToHand],
+        PotionId::BlessingOfTheForge => &[Role::UpgradeHand],
+        PotionId::AncientPotion => &[Role::GainArtifact],
+        PotionId::RegenPotion => &[Role::GainRegeneration],
+        PotionId::EssenceOfSteel => &[Role::GainPlatedArmor],
+        PotionId::LiquidBronze => &[Role::GainThorns],
+        PotionId::DistilledChaosPotion => &[Role::PlayTopCards],
+        PotionId::DuplicationPotion => &[Role::DuplicateCards],
+        PotionId::CunningPotion => &[Role::AddCardToHand],
+        PotionId::PotionOfCapacity => &[Role::GainOrbSlots],
+        PotionId::LiquidMemories => &[Role::RetrieveFromDiscard],
+        PotionId::GamblersBrew => &[Role::DiscardAndDraw],
+        PotionId::Elixir => &[Role::ExhaustCards],
+        PotionId::StancePotion => &[Role::ChooseStance],
+        PotionId::FairyPotion => &[Role::PreventDeath, Role::Heal],
+        PotionId::SmokeBomb => &[Role::EscapeCombat],
+        PotionId::FruitJuice => &[Role::GainMaxHp],
+        PotionId::EntropicBrew => &[Role::GeneratePotions],
+        PotionId::SneckoOil => &[Role::DrawCards, Role::RandomizeHandCosts],
+        PotionId::GhostInAJar => &[Role::GainIntangible],
+        PotionId::HeartOfIron => &[Role::GainMetallicize],
+        PotionId::CultistPotion => &[Role::GainRitual],
+        PotionId::Ambrosia => &[Role::EnterDivinity],
+        PotionId::EssenceOfDarkness => &[Role::ChannelDark],
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct PotionDefinition {
     pub id: PotionId,
@@ -779,6 +883,24 @@ mod tests {
     use crate::content::cards::CardId;
     use crate::runtime::action::{Action, AddTo};
     use crate::runtime::combat::{Power, PowerPayload};
+
+    #[test]
+    fn every_potion_exposes_bounded_shared_mechanics() {
+        for potion in ALL_POTIONS {
+            let roles = potion_mechanic_roles(*potion);
+            assert!(!roles.is_empty(), "{potion:?} has no mechanical fallback");
+            assert!(roles
+                .iter()
+                .all(|role| (*role as u64) < POTION_MECHANIC_ROLE_COUNT));
+        }
+        assert_eq!(
+            potion_mechanic_roles(PotionId::SneckoOil),
+            &[
+                PotionMechanicRole::DrawCards,
+                PotionMechanicRole::RandomizeHandCosts
+            ]
+        );
+    }
 
     #[test]
     fn potion_helper_pools_match_java_order_for_all_classes() {

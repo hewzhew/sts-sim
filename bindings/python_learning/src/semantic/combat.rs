@@ -1,4 +1,4 @@
-//! Complete combat-side encoding for semantic schema v5.
+//! Complete combat-side encoding for semantic schema v6.
 
 use sts_oracle_eval::ai::combat_learning_observation::{
     CombatLearningCardCollectionV1, CombatLearningCardV1, CombatLearningEnemyIdentityV1,
@@ -286,7 +286,11 @@ impl SemanticBatchBuilder {
                 bool_value(potion.is_some()),
             );
             if let Some(potion) = potion {
-                self.category(token, CategoricalField::PotionId, potion.potion_id as i64);
+                self.potion_identity_with_mechanics(
+                    token,
+                    CategoricalField::PotionId,
+                    potion.potion_id,
+                );
                 self.category(
                     token,
                     CategoricalField::PotionCanUse,
@@ -418,7 +422,7 @@ impl SemanticBatchBuilder {
             let token = self.add_token(TokenKind::CombatCounterItem)?;
             self.edge(counters, RelationKind::CountersHasItem, token);
             self.category(token, CategoricalField::CounterItemKind, kind as i64);
-            self.category(token, CategoricalField::CardId, card as i64);
+            self.card_identity_with_mechanics(token, CategoricalField::CardId, card);
             self.scalar(token, ScalarField::CollectionPosition, position);
         }
         Ok(())
@@ -648,7 +652,7 @@ impl SemanticBatchBuilder {
         monsters: &[u64],
     ) -> Result<u64, SemanticEncodingError> {
         let token = self.add_token(TokenKind::CombatCard)?;
-        self.category(token, CategoricalField::CardId, card.card_id as i64);
+        self.card_identity_with_mechanics(token, CategoricalField::CardId, card.card_id);
         self.scalar(token, ScalarField::CardUpgrades, card.upgrades);
         self.scalar(token, ScalarField::CardMiscValue, card.misc_value);
         if let Some(value) = card.base_damage_override {
@@ -844,8 +848,7 @@ impl SemanticBatchBuilder {
                     CategoricalField::IndexedChoiceCandidateKind,
                     IndexedChoiceCandidateKind::Card as i64,
                 );
-                self.category(token, CategoricalField::ActionCardId, *card_id as i64);
-                self.scalar(token, ScalarField::ActionUpgrades, *upgrades);
+                self.action_card(token, *card_id, *upgrades);
             }
             CombatIndexedChoiceCandidateV2::Stance { stance } => {
                 self.category(
@@ -941,7 +944,7 @@ impl SemanticBatchBuilder {
                     );
                     self.scalar(token, ScalarField::SelectionDomainAddress, ordinal);
                     if let Some(card_id) = card_id {
-                        self.category(token, CategoricalField::CardId, card_id as i64);
+                        self.card_identity_with_mechanics(token, CategoricalField::CardId, card_id);
                     }
                     if let Some(upgrades) = upgrades {
                         self.scalar(token, ScalarField::CardUpgrades, upgrades);
@@ -964,7 +967,7 @@ impl SemanticBatchBuilder {
                     );
                     self.scalar(token, ScalarField::SelectionDomainAddress, index);
                     if let Some(card_id) = card_id {
-                        self.category(token, CategoricalField::CardId, card_id as i64);
+                        self.card_identity_with_mechanics(token, CategoricalField::CardId, card_id);
                     }
                 }
             }
