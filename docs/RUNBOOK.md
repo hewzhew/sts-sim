@@ -1005,6 +1005,27 @@ normal combat behavior recovery rejects it. The command immediately restores
 the candidate and requires exact training/held-out logits, complete-combat
 greedy action traces, and terminal outcomes to match the live scorer.
 
+Once the training corpus is fixed, candidate creation does not need held-out
+search evidence. Use the training-only surface instead:
+
+```powershell
+python -m sts_learning.train_combat_search_candidate `
+  --training-artifact <recovery-roots.bin> `
+  --training-search <suffix-search/manifest.json> `
+  [--training-artifact <another.bin> `
+   --training-search <another/manifest.json>] `
+  --behavior <frozen-source-behavior> `
+  --candidate-output <fresh-candidate-dir> `
+  --output <fresh-training-result.json>
+```
+
+The default is one bounded Adam step at learning rate `3e-4`; larger epoch
+counts must be requested explicitly. On the first 39-row corpus, one step
+already recovered the full observed survival gain, while later epochs began
+overwriting unseen attack-vs-attack ordering. The command restores the written
+candidate and requires exact training logits and greedy ordinals before it
+returns. It performs no held-out evaluation and makes no teacher claim.
+
 After that parity check, collect a fresh natural root artifact and compare the
 reloaded candidate without running successor search:
 

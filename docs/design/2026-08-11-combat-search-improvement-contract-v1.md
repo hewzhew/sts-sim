@@ -218,6 +218,27 @@ independently reproduces the survival improvement while also exposing the
 remaining resource-preservation weakness. It does not qualify the search
 operator or authorize PPO.
 
+The Small Slimes regression starts at the first decision: the frozen scorer
+chooses `Immolate` and wins in one turn at 74 HP, while the 16-epoch scorer puts
+`Strike` ahead by only `0.058` logit and wins in six turns at 59 HP. The 39-row
+training corpus contains no `Immolate` surface at all. Its frozen targets are
+only 28 `Defend` and 11 `end_turn` choices; the 15 strict proposals are mostly
+`Strike` or `Bash`. The update therefore learned a useful broad attack bias but
+had no evidence for preserving unseen attack-vs-attack ordering.
+
+An epoch sweep on that diagnostic cohort separated useful learning from
+over-update. One optimizer step already produced the same `28/32` wins as 16
+steps and preserved all four baseline all-win A20 roots exactly. Regressions
+appeared only from epoch 8 onward. A second untouched 8-A0/8-A20 cohort then
+compared persisted one-step and 16-step candidates. Both won `28/32` versus the
+frozen source's `16/32`, but the one-step candidate had 8 improved, 8 equal,
+and 0 regressed exact roots; the 16-step candidate had 8 improved, 5 equal,
+and 3 regressed roots. The one-step candidate also had higher mean final HP at
+both ascensions (`67.625` versus `67.25` on A0 and `46.125` versus `44.875` on
+A20). Candidate generation therefore defaults to one bounded optimizer step.
+This is an evidence-backed trust bound, not HP reward shaping, and still does
+not qualify the search teacher.
+
 ## Typed Root Candidate Identity
 
 The request owns one canonical ordered set of legal root candidates. Each

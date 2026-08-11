@@ -16,6 +16,9 @@ from sts_learning.combat_search_distillation_candidate import (  # noqa: E402
     publish_combat_search_distillation_candidate,
     recover_combat_search_distillation_candidate,
 )
+from sts_learning.combat_search_distillation_spike import (  # noqa: E402
+    fit_combat_search_distillation_scorer,
+)
 from sts_learning.policy import BehaviorManifestId  # noqa: E402
 from sts_learning.published_combat_behavior import (  # noqa: E402
     PublishedCombatBehaviorError,
@@ -28,6 +31,10 @@ from sts_learning.torch_combat_session_config import (  # noqa: E402
 from sts_learning.torch_policy import (  # noqa: E402
     RaggedCandidateScorer,
     RaggedScorerConfig,
+)
+from sts_learning.semantic_batch import select_semantic_decision_rows  # noqa: E402
+from sts_learning.train_combat_search_candidate import (  # noqa: E402
+    _parse_args as parse_candidate_training_args,
 )
 
 
@@ -125,3 +132,71 @@ def test_candidate_receipt_cannot_claim_production_authority(tmp_path) -> None:
         match="unsupported authority",
     ):
         recover_combat_search_distillation_candidate(root, bridge, limits)
+
+
+def test_distillation_fit_is_one_bounded_frozen_update() -> None:
+    bridge = _bridge()
+    limits = CombatWinSessionLimits()
+    anchor = _scorer(bridge)
+    fixture = semantic_batch_fixture()
+    first = select_semantic_decision_rows(fixture, [0])
+    second = select_semantic_decision_rows(fixture, [1])
+    training = {
+        "records": (
+            {
+                "batch": first,
+                "baseline_ordinal": 0,
+                "proposal_ordinal": 1,
+            },
+            {
+                "batch": second,
+                "baseline_ordinal": 0,
+                "proposal_ordinal": 2,
+            },
+        )
+    }
+    with torch.inference_mode():
+        before = anchor(fixture).values.detach().clone()
+
+    fitted, optimizer, losses, gradient_norms = (
+        fit_combat_search_distillation_scorer(
+            anchor,
+            training,
+            limits,
+            epochs=1,
+            learning_rate=3e-4,
+            max_grad_norm=1.0,
+        )
+    )
+    with torch.inference_mode():
+        after = fitted(fixture).values
+
+    assert optimizer.learning_rate == 3e-4
+    assert len(losses) == len(gradient_norms) == 1
+    assert torch.isfinite(torch.tensor(losses + gradient_norms)).all()
+    assert not torch.equal(after, before)
+    assert not fitted.training
+    assert not any(parameter.requires_grad for parameter in fitted.parameters())
+    assert not anchor.training
+    assert not any(parameter.requires_grad for parameter in anchor.parameters())
+
+
+def test_candidate_training_defaults_to_one_step_without_held_out_inputs() -> None:
+    arguments = parse_candidate_training_args(
+        [
+            "--training-artifact",
+            "train.bin",
+            "--training-search",
+            "search/manifest.json",
+            "--behavior",
+            "baseline",
+            "--candidate-output",
+            "candidate",
+            "--output",
+            "result.json",
+        ]
+    )
+
+    assert arguments.epochs == 1
+    assert arguments.learning_rate == 3e-4
+    assert not hasattr(arguments, "held_out_artifact")

@@ -130,6 +130,11 @@ recovery rejects it; only the explicit candidate loader may restore it. Before
 returning, the distillation command requires byte-exact training and held-out
 logits, identical greedy complete-combat action traces, and identical terminal
 outcomes between the live scorer and a fresh disk restore. A separate
+training-only owner consumes the same fixed recovery-root/search pairs and
+publishes no evaluation verdict. Its default is one bounded optimizer step;
+multi-epoch fitting is explicit because the first corpus showed unchanged
+survival but increasing unseen action-order regressions after the first step.
+It verifies exact training logits after disk restore. A separate
 fresh-root evaluator compares that restored candidate with its frozen source
 behavior by letting both play complete no-potion combats; it consumes no search
 result or teacher label. This remains realized-private-future, non-production

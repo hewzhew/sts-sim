@@ -80,14 +80,14 @@ def run_combat_search_distillation_spike(
 
     bridge = CombatSessionBridge.installed()
     limits = CombatWinSessionLimits(max_artifact_bytes=max_artifact_bytes)
-    training = _load_partition(
+    training = load_combat_search_distillation_partition(
         training_pairs,
         bridge=bridge,
         limits=limits,
         max_artifact_bytes=max_artifact_bytes,
         require_unique_seeds=False,
     )
-    held_out = _load_partition(
+    held_out = load_combat_search_distillation_partition(
         held_out_pairs,
         bridge=bridge,
         limits=limits,
@@ -114,8 +114,12 @@ def run_combat_search_distillation_spike(
         raise CombatSearchDistillationError("recovered anchor must be frozen")
 
     started = time.perf_counter()
-    initial_training = _partition_metrics(anchor, training, limits)
-    initial_held_out = _partition_metrics(anchor, held_out, limits)
+    initial_training = combat_search_distillation_partition_metrics(
+        anchor, training, limits
+    )
+    initial_held_out = combat_search_distillation_partition_metrics(
+        anchor, held_out, limits
+    )
     rollout_limits = CombatExperienceLimits(
         max_decisions=2_048,
         max_payload_bytes=64 * 1024 * 1024,
@@ -128,47 +132,23 @@ def run_combat_search_distillation_spike(
         warm_start.source_manifest_id,
         rollout_limits,
     )
-    scorer = copy.deepcopy(anchor)
-    scorer.requires_grad_(True)
-    scorer.train()
-    optimizer_config = AdamTrainingConfig(learning_rate=learning_rate)
-    optimizer = optimizer_config.create(scorer.parameters())
-    training_batch, training_targets = _improved_policy_batch(training, limits)
-    update_losses: list[float] = []
-    gradient_norms: list[float] = []
-    for _ in range(epochs):
-        optimizer.zero_grad(set_to_none=True)
-        loss = ragged_cross_entropy(scorer(training_batch), training_targets)
-        if not bool(torch.isfinite(loss)):
-            raise CombatSearchDistillationError("distillation loss is not finite")
-        loss.backward()
-        gradients = tuple(
-            parameter.grad
-            for parameter in scorer.parameters()
-            if parameter.grad is not None
+    scorer, optimizer_config, update_losses, gradient_norms = (
+        fit_combat_search_distillation_scorer(
+            anchor,
+            training,
+            limits,
+            epochs=epochs,
+            learning_rate=learning_rate,
+            max_grad_norm=max_grad_norm,
         )
-        if not gradients or any(
-            not bool(torch.all(torch.isfinite(gradient))) for gradient in gradients
-        ):
-            raise CombatSearchDistillationError(
-                "distillation gradients are missing or non-finite"
-            )
-        norm = torch.nn.utils.clip_grad_norm_(
-            tuple(scorer.parameters()),
-            max_grad_norm,
-        )
-        if not bool(torch.isfinite(norm)):
-            raise CombatSearchDistillationError(
-                "distillation gradient norm is not finite"
-            )
-        optimizer.step()
-        update_losses.append(float(loss.detach().cpu().item()))
-        gradient_norms.append(float(norm.detach().cpu().item()))
-    scorer.eval()
-    scorer.requires_grad_(False)
+    )
 
-    final_training = _partition_metrics(scorer, training, limits)
-    final_held_out = _partition_metrics(scorer, held_out, limits)
+    final_training = combat_search_distillation_partition_metrics(
+        scorer, training, limits
+    )
+    final_held_out = combat_search_distillation_partition_metrics(
+        scorer, held_out, limits
+    )
     candidate_receipt: dict[str, object] | None = None
     recovered_candidate = None
     if candidate_output is None:
@@ -186,7 +166,9 @@ def run_combat_search_distillation_spike(
             bridge,
             limits,
             source_manifest_id=warm_start.source_manifest_id,
-            training_corpus_sha256=_training_corpus_sha256(training),
+            training_corpus_sha256=combat_search_distillation_corpus_sha256(
+                training
+            ),
             training_root_count=len(training["records"]),
             training_proposal_count=len(training["proposal_records"]),
             epochs=epochs,
@@ -239,8 +221,8 @@ def run_combat_search_distillation_spike(
         "claim": "bounded_search_trajectory_full_combat_feasibility_only",
         "training_source_manifest_id": warm_start.source_manifest_id.digest.hex(),
         "candidate": candidate_summary,
-        "training": _partition_receipt(training),
-        "held_out": _partition_receipt(held_out),
+        "training": combat_search_distillation_partition_receipt(training),
+        "held_out": combat_search_distillation_partition_receipt(held_out),
         "seed_overlap": tuple(sorted(overlap)),
         "config": {
             "epochs": epochs,
@@ -309,7 +291,7 @@ def run_combat_search_distillation_spike(
     return result
 
 
-def _load_partition(
+def load_combat_search_distillation_partition(
     pairs: Sequence[tuple[Path, Path]],
     *,
     bridge: CombatSessionBridge,
@@ -420,7 +402,88 @@ def _load_partition(
     }
 
 
-def _partition_metrics(
+def fit_combat_search_distillation_scorer(
+    anchor: RaggedCandidateScorer,
+    training: Mapping[str, object],
+    limits: CombatWinSessionLimits,
+    *,
+    epochs: int,
+    learning_rate: float,
+    max_grad_norm: float,
+) -> tuple[
+    RaggedCandidateScorer,
+    AdamTrainingConfig,
+    tuple[float, ...],
+    tuple[float, ...],
+]:
+    """Apply the bounded proposal-else-baseline update to a frozen scorer."""
+
+    epochs = _positive(epochs, "epochs")
+    learning_rate = _positive_float(learning_rate, "learning_rate")
+    max_grad_norm = _positive_float(max_grad_norm, "max_grad_norm")
+    if not isinstance(anchor, RaggedCandidateScorer):
+        raise CombatSearchDistillationError(
+            "distillation requires a maintained anchor scorer"
+        )
+    if anchor.training or any(
+        parameter.requires_grad for parameter in anchor.parameters()
+    ):
+        raise CombatSearchDistillationError(
+            "distillation anchor must be frozen"
+        )
+    scorer = copy.deepcopy(anchor)
+    scorer.requires_grad_(True)
+    scorer.train()
+    optimizer_config = AdamTrainingConfig(learning_rate=learning_rate)
+    optimizer = optimizer_config.create(scorer.parameters())
+    training_batch, training_targets = combat_search_distillation_policy_batch(
+        training,
+        limits,
+    )
+    update_losses: list[float] = []
+    gradient_norms: list[float] = []
+    for _ in range(epochs):
+        optimizer.zero_grad(set_to_none=True)
+        loss = ragged_cross_entropy(scorer(training_batch), training_targets)
+        if not bool(torch.isfinite(loss)):
+            raise CombatSearchDistillationError(
+                "distillation loss is not finite"
+            )
+        loss.backward()
+        gradients = tuple(
+            parameter.grad
+            for parameter in scorer.parameters()
+            if parameter.grad is not None
+        )
+        if not gradients or any(
+            not bool(torch.all(torch.isfinite(gradient)))
+            for gradient in gradients
+        ):
+            raise CombatSearchDistillationError(
+                "distillation gradients are missing or non-finite"
+            )
+        norm = torch.nn.utils.clip_grad_norm_(
+            tuple(scorer.parameters()),
+            max_grad_norm,
+        )
+        if not bool(torch.isfinite(norm)):
+            raise CombatSearchDistillationError(
+                "distillation gradient norm is not finite"
+            )
+        optimizer.step()
+        update_losses.append(float(loss.detach().cpu().item()))
+        gradient_norms.append(float(norm.detach().cpu().item()))
+    scorer.eval()
+    scorer.requires_grad_(False)
+    return (
+        scorer,
+        optimizer_config,
+        tuple(update_losses),
+        tuple(gradient_norms),
+    )
+
+
+def combat_search_distillation_partition_metrics(
     scorer: RaggedCandidateScorer,
     partition: Mapping[str, object],
     limits: CombatWinSessionLimits,
@@ -536,7 +599,7 @@ def _proposal_batch(
     )
 
 
-def _improved_policy_batch(
+def combat_search_distillation_policy_batch(
     partition: Mapping[str, object],
     limits: CombatWinSessionLimits,
 ) -> tuple[Mapping[str, object], tuple[int, ...]]:
@@ -766,13 +829,13 @@ def _candidate_reload_parity(
     original_full_combat: Mapping[str, object],
 ) -> dict[str, object]:
     logit_partitions = {
-        "training": _partition_logit_parity(
+        "training": combat_search_distillation_logit_parity(
             original,
             reloaded,
             training,
             limits,
         ),
-        "held_out": _partition_logit_parity(
+        "held_out": combat_search_distillation_logit_parity(
             original,
             reloaded,
             held_out,
@@ -839,7 +902,7 @@ def _candidate_reload_parity(
     }
 
 
-def _partition_logit_parity(
+def combat_search_distillation_logit_parity(
     original: RaggedCandidateScorer,
     reloaded: RaggedCandidateScorer,
     partition: Mapping[str, object],
@@ -878,7 +941,9 @@ def _tensor_sha256(value: torch.Tensor) -> str:
     return hashlib.sha256(header + tensor.numpy().tobytes()).hexdigest()
 
 
-def _training_corpus_sha256(partition: Mapping[str, object]) -> str:
+def combat_search_distillation_corpus_sha256(
+    partition: Mapping[str, object],
+) -> str:
     payload = {
         "sources": tuple(
             {
@@ -928,7 +993,9 @@ def _both_win_hp_delta(
     )
 
 
-def _partition_receipt(partition: Mapping[str, object]) -> dict[str, object]:
+def combat_search_distillation_partition_receipt(
+    partition: Mapping[str, object],
+) -> dict[str, object]:
     records = tuple(partition["records"])
     return {
         "root_count": len(records),
@@ -1051,7 +1118,7 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--behavior", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--candidate-output", type=Path)
-    parser.add_argument("--epochs", type=int, default=16)
+    parser.add_argument("--epochs", type=int, default=1)
     parser.add_argument("--learning-rate", type=float, default=3e-4)
     parser.add_argument("--max-grad-norm", type=float, default=1.0)
     parser.add_argument("--max-artifact-bytes", type=int, default=16 * 1024 * 1024)
