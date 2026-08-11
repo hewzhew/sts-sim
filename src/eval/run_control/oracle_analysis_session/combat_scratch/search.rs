@@ -3,7 +3,7 @@ use std::time::{Duration, Instant};
 use crate::sim::combat::{CombatStepper, CombatTerminal, EngineCombatStepper};
 
 use super::super::{
-    OracleAnalysisSessionV1, OracleRunCombatWorkV1, RunControlCombatSearchQuantum,
+    OracleAnalysisSessionV1, OracleResidentCombatJobV1, RunControlCombatSearchQuantum,
     RunControlCombatWorkAdvanceV1,
 };
 use super::view::exact_hash;
@@ -76,7 +76,7 @@ impl OracleAnalysisSessionV1 {
             Some(crate::ai::combat_search_v2::CombatSearchV2PotionPolicy::Never);
         options.max_potions_used = Some(0);
         options.allowed_potion_slots = Some(0);
-        let mut work = OracleRunCombatWorkV1::new_with_guidance(
+        let mut work = OracleResidentCombatJobV1::new(
             &trial,
             options,
             self.combat_budgets.guidance_bundle.as_deref(),
@@ -101,7 +101,7 @@ impl OracleAnalysisSessionV1 {
         }
 
         let witness_inputs = work.verified_witness_inputs();
-        let progress = work.progress();
+        let progress = work.evidence();
         let (exit, appended_action_count, first_appended, terminal_node) =
             if let Some(inputs) = witness_inputs {
                 let appended_action_count = inputs.len();

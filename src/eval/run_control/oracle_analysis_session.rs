@@ -18,9 +18,11 @@ use crate::eval::combat_case::{
 };
 use crate::eval::combat_case_context::capture_oracle_analysis_combat_case_production_context_v1;
 
-use super::oracle_combat_work::{OracleRunCombatWorkProgressV1, OracleRunCombatWorkV1};
 use super::oracle_combat_work_contract::{
     OracleCombatLocalCandidateDispositionV1, OracleRunCombatWorkCheckpointV1,
+};
+use super::oracle_resident_combat_job::{
+    OracleResidentCombatJobEvidenceV1, OracleResidentCombatJobV1,
 };
 use super::oracle_run_explorer::{
     seed_oracle_run_explorer_from_checkpoint_v1, LazyOracleRunDecisionV1,
@@ -550,7 +552,7 @@ pub struct OracleAnalysisSessionV1 {
 struct OracleAnalysisCombatJobV1 {
     stage: u8,
     completed_stage_trace: Vec<OracleAnalysisCombatStageTraceV1>,
-    work: OracleRunCombatWorkV1,
+    work: OracleResidentCombatJobV1,
 }
 
 impl OracleAnalysisSessionV1 {
@@ -646,7 +648,7 @@ impl OracleAnalysisSessionV1 {
                 })?;
             let options =
                 combat_budgets.for_session_stage_restore(&branch.session, saved.stage, &saved.work);
-            let work = OracleRunCombatWorkV1::restart_from_checkpoint_with_guidance(
+            let work = OracleResidentCombatJobV1::restore(
                 &branch.session,
                 options,
                 saved.work,
@@ -1365,7 +1367,7 @@ impl OracleAnalysisSessionV1 {
         let has_resident_search = self.combat_jobs.contains_key(&source_node_id);
         if !has_resident_search {
             let stage = 0;
-            let work = OracleRunCombatWorkV1::new_with_guidance(
+            let work = OracleResidentCombatJobV1::new(
                 &branch.session,
                 self.combat_budgets
                     .for_session_stage(&branch.session, stage),
@@ -1583,7 +1585,7 @@ impl OracleAnalysisSessionV1 {
         }
         if !self.combat_jobs.contains_key(&source_node_id) {
             let stage = 0;
-            let work = OracleRunCombatWorkV1::new_with_guidance(
+            let work = OracleResidentCombatJobV1::new(
                 &branch.session,
                 self.combat_budgets
                     .for_session_stage(&branch.session, stage),
@@ -1788,7 +1790,7 @@ impl OracleAnalysisSessionV1 {
         // Analyst-supplied exact actions are prepared in an isolated work
         // object. A failed replay or downstream decision supply therefore
         // leaves any resident tactical frontier byte-for-byte untouched.
-        let mut work = OracleRunCombatWorkV1::for_exact_action_witness_with_guidance(
+        let mut work = OracleResidentCombatJobV1::for_exact_actions(
             &branch.session,
             self.combat_budgets.for_session(&branch.session),
             self.combat_budgets.guidance_bundle.as_deref(),
@@ -1862,7 +1864,7 @@ impl OracleAnalysisSessionV1 {
                 ));
             }
             let stage = 0;
-            let work = OracleRunCombatWorkV1::restart_from_exact_state_with_guidance(
+            let work = OracleResidentCombatJobV1::restart(
                 &branch.session,
                 self.combat_budgets
                     .for_session_stage(&branch.session, stage),
@@ -1918,7 +1920,7 @@ impl OracleAnalysisSessionV1 {
                 next_stage,
                 &prior_work,
             );
-            OracleRunCombatWorkV1::restart_for_higher_fidelity_with_guidance(
+            OracleResidentCombatJobV1::promote(
                 &branch.session,
                 options,
                 prior_work,
@@ -1941,7 +1943,7 @@ impl OracleAnalysisSessionV1 {
     fn materialize_combat_work(
         &mut self,
         source_node_id: usize,
-        work: &OracleRunCombatWorkV1,
+        work: &OracleResidentCombatJobV1,
     ) -> Result<Option<usize>, String> {
         let prepared = self
             .explorer
@@ -2189,13 +2191,13 @@ fn combat_stage_trace_view(
     job: &OracleAnalysisCombatJobV1,
     exit: OracleAnalysisCombatStageExitV1,
 ) -> OracleAnalysisCombatStageTraceV1 {
-    let progress = job.work.progress();
+    let progress = job.work.evidence();
     combat_stage_trace_view_from_progress(job, &progress, exit)
 }
 
 fn combat_stage_trace_view_from_progress(
     job: &OracleAnalysisCombatJobV1,
-    progress: &OracleRunCombatWorkProgressV1,
+    progress: &OracleResidentCombatJobEvidenceV1,
     exit: OracleAnalysisCombatStageExitV1,
 ) -> OracleAnalysisCombatStageTraceV1 {
     OracleAnalysisCombatStageTraceV1 {
@@ -2244,7 +2246,7 @@ fn combat_progress_view_with_exit(
     stage_exit: OracleAnalysisCombatStageExitV1,
 ) -> OracleAnalysisCombatProgressV1 {
     let work = &job.work;
-    let progress: OracleRunCombatWorkProgressV1 = work.progress();
+    let progress: OracleResidentCombatJobEvidenceV1 = work.evidence();
     let mut stage_trace = job.completed_stage_trace.clone();
     stage_trace.push(combat_stage_trace_view_from_progress(
         job, &progress, stage_exit,

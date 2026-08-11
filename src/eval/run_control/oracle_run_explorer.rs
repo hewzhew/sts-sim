@@ -6,8 +6,8 @@ use serde::{Deserialize, Serialize};
 use crate::state::core::{EngineState, RunResult};
 
 use super::oracle_combat_budget::{OracleRunCombatBudgetsV1, OracleRunCombatQualityPolicyV1};
-use super::oracle_combat_work::OracleRunCombatWorkV1;
 use super::oracle_combat_work_contract::OracleRunCombatWorkCheckpointV1;
+use super::oracle_resident_combat_job::OracleResidentCombatJobV1;
 use super::oracle_selection_cursor::LazyUnorderedSelectionCursorV1;
 use super::{
     oracle_active_victory_potion_slot_mask_v1, NeowOracleExpansionV1,
@@ -406,7 +406,7 @@ impl OracleRunCombatBudgetsV1 {
         &self,
         session: &RunControlSession,
         stage: u8,
-        work: &OracleRunCombatWorkV1,
+        work: &OracleResidentCombatJobV1,
     ) -> bool {
         self.has_later_stage(session, stage) && !work.has_refinement_ending_witness()
     }
@@ -526,7 +526,7 @@ pub enum OracleRunExploreStopV1 {
 struct PendingOracleCombatV1 {
     branch_id: usize,
     stage: u8,
-    work: OracleRunCombatWorkV1,
+    work: OracleResidentCombatJobV1,
 }
 
 struct DeferredOracleCombatV1 {
@@ -674,7 +674,7 @@ impl OracleRunExplorerV1 {
                         max_hp: monster.max_hp,
                     })
                     .collect();
-                let progress = pending.work.progress();
+                let progress = pending.work.evidence();
                 Ok(OraclePendingCombatSummaryV1 {
                     branch_id: branch.branch_id,
                     act: branch.session.run_state.act_num,
@@ -748,7 +748,7 @@ impl OracleRunExplorerV1 {
         Some(branch_id)
     }
 
-    pub(super) fn drain_pending_combats(&mut self) -> Vec<(usize, u8, OracleRunCombatWorkV1)> {
+    pub(super) fn drain_pending_combats(&mut self) -> Vec<(usize, u8, OracleResidentCombatJobV1)> {
         self.pending_combats
             .drain(..)
             .map(|pending| (pending.branch_id, pending.stage, pending.work))

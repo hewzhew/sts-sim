@@ -59,7 +59,7 @@ impl OracleRunExplorerV1 {
     fn prepare_combat(
         &self,
         branch_id: usize,
-        work: &OracleRunCombatWorkV1,
+        work: &OracleResidentCombatJobV1,
     ) -> Result<PreparedOracleRunCombatV1, String> {
         let parent = self
             .branches
@@ -67,7 +67,7 @@ impl OracleRunExplorerV1 {
             .find(|branch| branch.branch_id == branch_id)
             .cloned()
             .ok_or_else(|| format!("missing oracle combat branch {branch_id}"))?;
-        let progress = work.progress();
+        let progress = work.evidence();
         let mut session = parent.session.clone();
         // Deadlines bound search advancement. Once a verified witness is
         // ready, its exact replay is an atomic prepare step and is never
@@ -171,7 +171,7 @@ impl OracleRunExplorerV1 {
     pub(in super::super) fn prepare_explicit_combat(
         &self,
         branch_id: usize,
-        work: &OracleRunCombatWorkV1,
+        work: &OracleResidentCombatJobV1,
     ) -> Result<PreparedOracleRunCombatV1, String> {
         self.prepare_combat(branch_id, work)
     }

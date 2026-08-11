@@ -544,6 +544,9 @@ fn combat_evaluation_run_control_learning_layers_and_runtime_keep_distinct_compi
             .expect("read combat-work resume contract");
     let combat_work = std::fs::read_to_string("src/eval/run_control/oracle_combat_work.rs")
         .expect("read live combat-work owner");
+    let resident_combat_job =
+        std::fs::read_to_string("src/eval/run_control/oracle_resident_combat_job.rs")
+            .expect("read resident combat-job facade");
     let analysis_session =
         std::fs::read_to_string("src/eval/run_control/oracle_analysis_session.rs")
             .expect("read analysis session");
@@ -653,6 +656,10 @@ fn combat_evaluation_run_control_learning_layers_and_runtime_keep_distinct_compi
             && !combat_work_contract.contains("LocalTurnGraphWitnessSession")
             && !combat_work_contract.contains("PolicyDiscrepancySession")
             && !combat_work.contains("pub struct OracleRunCombatWorkCheckpointV1")
+            && combat_work.contains("pub(super) struct OracleRunCombatWorkV1")
+            && resident_combat_job.contains("pub(super) struct OracleResidentCombatJobV1")
+            && !resident_combat_job.contains("LocalTurnGraphWitnessSession")
+            && !resident_combat_job.contains("PolicyDiscrepancySession")
             && !run_explorer.contains("pub struct OracleRunCombatWorkCheckpointV1")
             && analysis_session.contains("use super::oracle_combat_work_contract::{")
             && run_explorer
@@ -671,6 +678,17 @@ fn combat_evaluation_run_control_learning_layers_and_runtime_keep_distinct_compi
             "evaluation source '{}' must not recreate a dependency cycle into branch runtime",
             path.display()
         );
+        if source.contains("OracleRunCombatWorkV1") {
+            assert!(
+                path == std::path::Path::new("src/eval/run_control/oracle_combat_work.rs")
+                    || path
+                        == std::path::Path::new(
+                            "src/eval/run_control/oracle_resident_combat_job.rs"
+                        ),
+                "live combat-work implementation escaped its opaque resident-job facade through '{}'",
+                path.display()
+            );
+        }
     }
 
     let root_build = std::fs::read_to_string("build.rs").expect("read core build script");

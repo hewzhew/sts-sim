@@ -1762,6 +1762,13 @@ captures and restores this contract; restore rebuilds the tactical frontier
 from the enclosing branch's exact root and replays every incumbent action,
 including successor and terminal-position verification, before admitting it.
 
+Live orchestration holds `OracleResidentCombatJobV1`, an opaque capability over
+the tactical work owner. Analysis, scratch search, and the run explorer may
+start or restore a job, grant bounded work, request typed evidence, checkpoint
+it, or atomically finish a verified result. They cannot name the underlying
+`OracleRunCombatWorkV1` or access local-graph/discrepancy sessions and queues;
+that implementation type is confined to its owner and this facade.
+
 ## Gap Semantics
 
 Gaps are typed stops, not verdicts:

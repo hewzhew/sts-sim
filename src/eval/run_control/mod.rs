@@ -46,6 +46,7 @@ mod oracle_combat_policy;
 mod oracle_combat_work;
 mod oracle_combat_work_contract;
 mod oracle_neow;
+mod oracle_resident_combat_job;
 mod oracle_run_explorer;
 mod oracle_selection_cursor;
 pub mod outcome;

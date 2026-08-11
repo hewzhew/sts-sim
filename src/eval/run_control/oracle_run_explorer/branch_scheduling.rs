@@ -36,7 +36,7 @@ impl OracleRunExplorerV1 {
                 if self.registered_work_keys.contains(&work_key) {
                     return Ok(PreparedOracleRunBranchScheduleV1::None);
                 }
-                let work = OracleRunCombatWorkV1::new_with_guidance(
+                let work = OracleResidentCombatJobV1::new(
                     &branch.session,
                     combat_budgets.for_session_stage(&branch.session, 0),
                     combat_budgets.guidance_bundle.as_deref(),
@@ -114,7 +114,7 @@ impl OracleRunExplorerV1 {
                     deferred.branch_id
                 )
             })?;
-        let work = OracleRunCombatWorkV1::restart_for_higher_fidelity_with_guidance(
+        let work = OracleResidentCombatJobV1::promote(
             &branch.session,
             combat_budgets.for_session_stage_with_prior(
                 &branch.session,
