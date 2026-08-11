@@ -162,37 +162,44 @@ model information rows were also 2,048/2,048 unique in both censuses. Natural
 seed collisions are therefore rejected as a practical particle sampler; a
 repeated coarse model row must not be relabeled as public-history conditioning.
 
-The first 2026-08-12 natural-entry spike exported opaque roots directly from that
-census in declared seed-partition order, with no encounter or outcome filter.
-On two A0 Jaw Worm roots, four selection and four disjoint evaluation particles
-plus 5,000 equal generation-work units per action selected Bash over the frozen
-Defend and reproduced `+7` and `+1` mean winning-HP deltas on evaluation.
-Three other completed roots produced no strict improvement and therefore no
-proposal. The strict rejection sampler also accepted zero alternative public
-matches for one A20 Two Louse root after 1,000,000 floor-seed candidates.
-These are feasibility and sparsity measurements with `teacher_valid = false`;
-by themselves they neither qualify a teacher nor justify a policy update.
+The natural-root path treats independent production seeds as the sampling unit.
+`natural_combat_search_census` gives every no-potion model candidate exactly
+5,000 LocalTurnGraph generation-work units and records a proposal only when
+exact-win count and then winning final HP strictly exceed the frozen baseline.
+The no-potion contract covers the root candidate surface and the entire
+successor search; a potion-bearing A20 root exposed and fixed a previous
+mismatch where Rust searched potion actions hidden from the model.
 
-The subsequent natural-root path treats independent production seeds as the
-sampling unit instead. `natural_combat_search_census` gives every no-potion
-model candidate exactly 5,000 LocalTurnGraph generation-work units and records
-a proposal only when exact-win count and then winning final HP strictly exceed
-the frozen baseline. The no-potion contract covers the root candidate surface
-and the entire successor search; a potion-bearing A20 root exposed and fixed a
-previous mismatch where Rust searched potion actions hidden from the model.
+The first 8-A0/8-A20 update produced a small positive first-action result, but a
+larger 16-A0/16-A20 replication localized why that result was not yet a combat
+policy: only five training roots had strict proposals, and the evaluator let
+search provide the complete suffix after the model's first action. Alternative
+one-hot, KL-anchor, and set-valued entrance targets could change proposal
+agreement but did not produce a stable independent first-action update. Those
+failed development results are not teacher evidence.
 
-Across 8 natural A0 plus 8 natural A20 training roots, search produced five
-strict proposals and no budget-unknown result. A fixed 16-epoch, `3e-4`
-non-publishing distillation used the proposal action where strict improvement
-existed and otherwise anchored the frozen baseline. On a fresh disjoint
-8-A0/8-A20 held-out collection, the updated in-memory scorer selected two
-strictly better actions, fourteen equal actions, zero worse actions, and zero
-unknown actions under the same equal-work search evidence. The two improvements
-were `+2` and `+14` winning HP; mean held-out HP delta over all sixteen roots was
-`+1.0`, and mean best-search HP regret fell from `1.9375` to `0.9375`.
-This is the first positive evidence that cross-root search proposals form a
-learnable signal. It remains a small realized-private-future feasibility result:
-no model was published, `teacher_valid` remains false, and PPO is not
+`combat_search_trajectory_census` closes the more important execution gap. It
+takes a strict natural-root exact-win proposal, exports the opaque root as an
+exact production `CombatCase`, replays the complete winning witness, retains a
+bounded terminal-nearest chain of unique opaque decision roots, and then runs a
+fresh equal-work search on every retained root. The witness actions create
+states only; every label still comes from an independent search comparison at
+that state. Five A0/A20 source wins produced 39 decision roots and 15 strict
+proposals, raising useful target density from `5/32` entrance roots to `15/39`
+trajectory roots.
+
+With the original proposal-else-frozen-baseline cross-entropy target, fixed 16
+epochs, and learning rate `3e-4`, an in-memory scorer was evaluated on a final
+untouched 16-A0/16-A20 natural-root cohort. Unlike the entrance proxy, this
+evaluation let the scorer choose every combat action and used no search suffix.
+The frozen initialization won `16/64` deterministic replicates and the updated
+scorer won `54/64`: A0 improved from `8/32` to `32/32`, while A20 improved from
+`8/32` to `22/32`. At the exact-root level, 20 improved, 10 were equal, and two
+regressed only in both-win final HP (`-6` and `-10`); no winning root became a
+loss, and 19 roots changed from loss to win. This is the first positive evidence
+for search-derived multi-decision combat behavior rather than a search-completed
+first-action proxy. It is still a small realized-private-future feasibility
+result: no model was published, `teacher_valid` remains false, and PPO is not
 authorized.
 
 ## Typed Root Candidate Identity
@@ -371,7 +378,7 @@ resource targets remain out of scope until this boundary is qualified.
 | conditioned combat-entry floor-chance sampler | Feasibility primitive; production combat start with exact upstream state fixed, not a posterior over complete run histories |
 | finite-frame public-history run-seed scan | Exact for its declared seed frame; complete production replay; observed early-root posterior was source-only |
 | natural combat-entry information census/export | Seed-partition-ordered opaque bootstrap roots plus sparsity/model-input diagnostics; not a chance sampler or teacher evidence |
-| natural-root equal-work search/distillation spike | Positive cross-root learnability evidence; realized private futures, non-publishing, not a certified teacher |
+| multi-decision search-trajectory distillation spike | Positive independent full-combat learnability evidence; realized private futures, non-publishing, not a certified teacher |
 | typed public trajectory and legal candidates | Required foundation |
 | `AtomicExactV2` | Witness/challenger engine; not certified |
 | `LocalTurnGraphWitnessSession` | Witness/rescue/diagnostic engine; not certified |

@@ -974,12 +974,35 @@ python -m sts_learning.natural_combat_search_census `
 This command uses `potion_lane=never` for both the model candidate surface and
 the entire successor search. It records one strict proposal only when exact-win
 count and then winning final HP exceed the frozen greedy action; equal results
-retain the baseline. `combat_search_distillation_spike` may consume aligned
-training and disjoint held-out artifact/manifest pairs for one bounded
-in-memory cross-entropy update. It trains the strict proposal where present and
-the frozen baseline otherwise, writes no checkpoint, never publishes a model,
-and remains `teacher_valid=false`. PPO remains out of scope until a larger
-closed-loop evaluation qualifies the operator.
+retain the baseline. An entrance-only result is a first-action diagnostic, not
+a combat-policy result, because its measured suffix is still supplied by
+search.
+
+For a source root with a replayable exact-win proposal, expand the verified
+winning line into bounded suffix decision roots and independently search every
+derived root:
+
+```powershell
+python -m sts_learning.combat_search_trajectory_census `
+  --artifact <natural-roots.bin> --root-count <count> `
+  --search-manifest <natural-search/manifest.json> `
+  --root-slot <strict-proposal-slot> [--root-slot <another-slot>] `
+  --behavior <frozen-behavior> --oracle-binary target\release\oracle_lab.exe `
+  --output-dir <fresh-dir> --max-recovery-roots 8 `
+  --solve-work-per-candidate 5000 --candidate-jobs 4
+```
+
+The exact action witness is used only to reconstruct suffix states. It never
+crosses into the training target; every suffix root receives a fresh equal-work
+search comparison. `combat_search_distillation_spike` may consume several such
+recovery artifact/search pairs plus disjoint natural held-out pairs. It trains
+the strict proposal where present and the frozen baseline otherwise, writes no
+checkpoint, and reports both the old first-action lookup diagnostic and the
+authoritative `held_out_full_combat` result, where the frozen scorer chooses
+every action with no search suffix. The experiment remains
+`teacher_valid=false`; PPO remains out of scope until the operator is qualified
+over broader decks, relics, potions, encounters, and repeated independent
+cohorts.
 
 For a bounded fixed-behavior coverage check over every root, use
 `CombatWinSignalCensusRunner` with the same `expected_roots`, one shared model

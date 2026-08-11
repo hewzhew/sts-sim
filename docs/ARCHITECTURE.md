@@ -113,11 +113,19 @@ public candidate identities, and must reach the same combat snapshot. It never
 repairs or independently reseeds an RNG stream. In 2,048-seed A0 and A20 frames
 this exact conditioning retained only the source seed, so it establishes
 posterior degeneracy rather than manufacturing a multi-particle population.
-Natural-root equal-work search and a non-publishing distillation spike may test
-whether cross-root Expert Iteration carries signal, but they remain
-realized-private-future evidence. Qualification and the teacher owner are still
-missing. `AtomicExactV2`, `TurnGraphPortfolioV1`, and their member engines are
-not certified teachers.
+Natural-root equal-work search may seed a non-publishing Expert Iteration
+experiment, but an entrance-only update is not a combat-policy evaluation: if
+search supplies every continuation after the first action, the model has not
+played the combat. `combat_search_trajectory_census` therefore converts a
+replay-verified search win into bounded terminal-nearest opaque decision roots
+and independently searches every derived root. The witness creates exact
+states only; its actions never become labels. Distillation still uses a strict
+search proposal where present and the frozen baseline otherwise, then evaluates
+the updated scorer by letting it choose every action in complete held-out
+combats with no search suffix. This remains realized-private-future,
+non-publishing evidence. Qualification and the teacher owner are still missing;
+`AtomicExactV2`, `TurnGraphPortfolioV1`, and their member engines are not
+certified teachers.
 
 Shared card mechanics used by that path belong to `content::cards::mechanics`,
 not to an analysis or reward-policy table. The profile owns upgrade-sensitive
