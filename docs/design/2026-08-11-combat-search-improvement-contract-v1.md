@@ -239,6 +239,28 @@ A20). Candidate generation therefore defaults to one bounded optimizer step.
 This is an evidence-backed trust bound, not HP reward shaping, and still does
 not qualify the search teacher.
 
+The persisted one-step candidate was then tested beyond floor-one entry roots.
+A fresh held-out A0/A20 cohort required one completed production combat, its
+reward and non-combat decisions, at least 50% HP, and a distinct ordinary
+encounter. Across three roots per ascension, the frozen source won `4/12`
+deterministic replicates and the candidate won `12/12`. The two equal roots
+were Neow's Lament auto-resolutions; on all four roots that required combat
+decisions, the source lost and the candidate won. These roots included added
+cards and, at A20, a Pandora's Box deck, so the result is not a floor-one deck
+memorization check.
+
+Two further held-out sentinels required three already-completed combats, so
+Neow's Lament's three possible auto-resolutions were already consumed.
+On A0 seed `132000099`, the source lost a floor-five Gremlin Gang in nine turns
+while the candidate won in seven turns at 37 HP. On A20 seed `142000182`, both
+policies beat a floor-five Blue Slaver, but the candidate finished in six turns
+at 66 HP instead of thirteen turns at 39 HP. This is narrow positive evidence
+that the one-step search signal repairs the source's excessive passivity and
+can preserve resources in a later natural combat. It is not evidence that
+attack-vs-attack ordering, potion use, deeper-run distributions, or the search
+operator as a whole are qualified; `teacher_valid` remains false and PPO is
+still unauthorized.
+
 ## Typed Root Candidate Identity
 
 The request owns one canonical ordered set of legal root candidates. Each
