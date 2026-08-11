@@ -1,6 +1,6 @@
 # CombatSearchImprovementContractV1
 
-Status: **Not Implemented**
+Status: **Partially implemented: public-equivalent independent-stream chance sampling only**
 
 Qualification status: **No current witness engine is a certified teacher.**
 
@@ -96,6 +96,15 @@ For a given particle, candidate and baseline continuations should use matched
 environment randomness after their root action whenever the simulator can
 define that coupling without changing game semantics. Both then use the same
 declared continuation policy version.
+
+The current low-level feasibility primitive is
+`combat_public_chance_particle_checkpoints_v1`. It preserves the complete
+model-visible combat boundary and legal candidate surface, independently
+resamples hidden draw order and combat-consumed RNG streams while retaining
+their consumption counters, and rejects hidden current intents. Its streams
+are sampled independently rather than reconstructed as a run-seed-consistent
+posterior conditioned on public history. It is therefore suitable for wiring
+and sensitivity experiments only, not teacher qualification.
 
 ## Typed Root Candidate Identity
 
@@ -203,6 +212,16 @@ insufficient samples, censored work, and unresolved mechanics. Only
 `qualified` results may set `teacher_valid = true` in a future training
 record. Witness-engine identity alone can never do so.
 
+## Development Staging
+
+A0 may be used as a low-noise mechanism-development domain before the A20
+qualification collection. The useful claim there is only that public-chance
+sampling, fair root-action comparison, frozen continuation, and fresh paired
+evaluation work and can expose stable action differences. It is not an A0 PPO
+benchmark, a complete-run competence claim, or permission to train on noisy
+single-root proposals. Once that mechanism is stable, qualification transfers
+directly to natural early-act A20 roots; it need not climb every ascension.
+
 ## Natural A20 Qualification Collection
 
 The first collection samples natural combat roots from trajectories induced
@@ -259,6 +278,7 @@ resource targets remain out of scope until this boundary is qualified.
 | Current component | Status under this contract |
 | --- | --- |
 | exact simulator and replay | Required foundation |
+| independent-stream public-chance sampler | Feasibility primitive; public-equivalent but not a run-seed-consistent posterior |
 | typed public trajectory and legal candidates | Required foundation |
 | `AtomicExactV2` | Witness/challenger engine; not certified |
 | `LocalTurnGraphWitnessSession` | Witness/rescue/diagnostic engine; not certified |

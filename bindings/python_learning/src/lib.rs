@@ -11,11 +11,12 @@ use sts_oracle_learning::ai::planner_core::{
     PublicDecisionDomainV1, PublicInformationSnapshotV1,
 };
 use sts_oracle_learning::eval::run_control::{
-    capture_planner_boundary_yield_v1, CombatLearningPotionPolicyV1,
-    CombatLearningRootBatchArtifactV1, CombatLearningRootV1, LearningActionV1,
-    LearningBoundaryKindV1, LearningBoundaryV1, LearningEnvPoolV1, LearningEnvV1,
-    LearningModelDecisionV1, LearningPublicRunContextV1, LearningSelectionDraftV1,
-    PlannerBoundaryYieldKindV1, RunControlConfig, RunControlSessionCheckpointV1,
+    capture_planner_boundary_yield_v1, combat_public_chance_particle_checkpoints_v1,
+    CombatLearningPotionPolicyV1, CombatLearningRootBatchArtifactV1, CombatLearningRootV1,
+    LearningActionV1, LearningBoundaryKindV1, LearningBoundaryV1, LearningEnvPoolV1,
+    LearningEnvV1, LearningModelDecisionV1, LearningPublicRunContextV1,
+    LearningSelectionDraftV1, PlannerBoundaryYieldKindV1, RunControlConfig,
+    RunControlSessionCheckpointV1,
 };
 
 mod bridge_decision;
@@ -632,6 +633,40 @@ impl LearningBatchEnv {
         Self::decode_combat_root_artifact(payload, expected_roots, max_bytes).map_err(value_error)
     }
 
+    /// Construct an in-memory chance population from one opaque exact combat root.
+    ///
+    /// Every returned slot has the same public observation and legal candidates as the source,
+    /// but independently sampled hidden draw order and future combat RNG. Particle seeds are
+    /// caller-owned provenance and are never exposed to the model-facing decision batch.
+    #[staticmethod]
+    #[pyo3(signature = (payload, *, expected_roots, source_slot, particle_seeds, max_bytes))]
+    fn from_combat_public_chance_particles(
+        payload: &[u8],
+        expected_roots: usize,
+        source_slot: usize,
+        particle_seeds: Vec<u64>,
+        max_bytes: usize,
+    ) -> PyResult<Self> {
+        if particle_seeds.len() > MAX_EXPORTED_COMBAT_ROOTS {
+            return Err(PyValueError::new_err(format!(
+                "combat public-chance population exceeds {MAX_EXPORTED_COMBAT_ROOTS} particles"
+            )));
+        }
+        let artifact =
+            CombatLearningRootBatchArtifactV1::decode(payload, expected_roots, max_bytes)
+                .map_err(value_error)?;
+        let checkpoints = artifact.into_checkpoints().map_err(value_error)?;
+        let source = checkpoints.get(source_slot).cloned().ok_or_else(|| {
+            PyValueError::new_err(format!(
+                "combat public-chance source slot {source_slot} is out of range"
+            ))
+        })?;
+        let particles =
+            combat_public_chance_particle_checkpoints_v1(source, &particle_seeds)
+                .map_err(value_error)?;
+        Self::from_combat_root_checkpoints(particles).map_err(value_error)
+    }
+
     /// Merge canonical single-root payloads while keeping checkpoints opaque.
     #[staticmethod]
     #[pyo3(signature = (payloads, *, max_bytes))]
@@ -1210,8 +1245,13 @@ impl LearningBatchEnv {
     ) -> Result<Self, String> {
         let artifact =
             CombatLearningRootBatchArtifactV1::decode(payload, expected_roots, max_bytes)?;
-        let envs = artifact
-            .into_checkpoints()?
+        Self::from_combat_root_checkpoints(artifact.into_checkpoints()?)
+    }
+
+    fn from_combat_root_checkpoints(
+        checkpoints: Vec<RunControlSessionCheckpointV1>,
+    ) -> Result<Self, String> {
+        let envs = checkpoints
             .into_iter()
             .map(LearningEnvV1::from_checkpoint)
             .collect::<Result<Vec<_>, _>>()?;

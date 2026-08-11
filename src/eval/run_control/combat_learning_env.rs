@@ -1,7 +1,11 @@
+use std::collections::BTreeSet;
+
 use serde::{Deserialize, Serialize};
 
+use crate::ai::combat_public_observation::ObservationEvidenceKindV1;
 use crate::ai::combat_state_key::combat_exact_state_hash_v2;
 use crate::content::potions::PotionId;
+use crate::runtime::rng::StsRng;
 use crate::state::core::ClientInput;
 
 use super::learning_env::{learning_combat_boundary_v1, prepare_learning_combat_input_v1};
@@ -194,6 +198,129 @@ impl CombatLearningRootV1 {
         env.observe()?;
         Ok(env)
     }
+
+    /// Derive one exact private future from the same model-visible combat root.
+    ///
+    /// The current visible intent and every public/legal-action fact stay fixed. Hidden draw
+    /// order and RNG streams that combat mechanics may consume are sampled from `particle_seed`.
+    /// Hidden current intents are rejected until they have a conditional sampler of their own.
+    /// This first sampler treats hidden RNG streams independently; it is a feasibility primitive,
+    /// not yet a run-seed-consistent posterior suitable for teacher qualification.
+    pub(super) fn public_chance_particle_checkpoint_v1(
+        &self,
+        particle_seed: u64,
+    ) -> Result<RunControlSessionCheckpointV1, String> {
+        let mut session = self.session.clone().into_session()?;
+        let public_root = learning_combat_boundary_v1(&session)?;
+        if public_root
+            .observation
+            .monsters
+            .iter()
+            .any(|monster| monster.intent.evidence != ObservationEvidenceKindV1::VisibleExact)
+        {
+            return Err(
+                "combat public-chance sampling does not yet support a hidden current intent"
+                    .to_owned(),
+            );
+        }
+
+        let draw_evidence = public_root.observation.cards.draw.evidence;
+        let active = session
+            .active_combat
+            .as_mut()
+            .ok_or_else(|| "combat public-chance sampling requires an active combat".to_owned())?;
+        match draw_evidence {
+            ObservationEvidenceKindV1::PublicUnorderedCollection => {
+                shuffle_hidden_draw_order_v1(&mut active.combat_state, particle_seed)?;
+            }
+            ObservationEvidenceKindV1::PublicOrderedCollection
+            | ObservationEvidenceKindV1::VisibleExact => {}
+            ObservationEvidenceKindV1::Hidden => {
+                return Err(
+                    "combat public-chance sampling cannot condition an unobserved draw multiset"
+                        .to_owned(),
+                );
+            }
+        }
+        reseed_hidden_combat_futures_v1(&mut active.combat_state, particle_seed);
+        session.run_state.rng_pool = active.combat_state.rng.pool.clone();
+
+        let sampled_root = learning_combat_boundary_v1(&session)?;
+        if sampled_root != public_root {
+            return Err(
+                "combat public-chance sampling changed the public observation or legal actions"
+                    .to_owned(),
+            );
+        }
+        Ok(Self::from_session(session)?.session)
+    }
+}
+
+/// Expand one exact source checkpoint into an ordered public-equivalent chance population.
+pub fn combat_public_chance_particle_checkpoints_v1(
+    source: RunControlSessionCheckpointV1,
+    particle_seeds: &[u64],
+) -> Result<Vec<RunControlSessionCheckpointV1>, String> {
+    if particle_seeds.is_empty() {
+        return Err("combat public-chance population requires at least one seed".to_owned());
+    }
+    let mut distinct = BTreeSet::new();
+    if let Some(seed) = particle_seeds
+        .iter()
+        .copied()
+        .find(|seed| !distinct.insert(*seed))
+    {
+        return Err(format!(
+            "combat public-chance population repeats particle seed {seed}"
+        ));
+    }
+    let root = CombatLearningRootV1::from_checkpoint(source)?;
+    particle_seeds
+        .iter()
+        .copied()
+        .map(|seed| root.public_chance_particle_checkpoint_v1(seed))
+        .collect()
+}
+
+fn shuffle_hidden_draw_order_v1(
+    combat: &mut crate::runtime::combat::CombatState,
+    particle_seed: u64,
+) -> Result<(), String> {
+    let mut rng = StsRng::new(chance_stream_seed_v1(particle_seed, 0));
+    for right in (1..combat.zones.draw_pile.len()).rev() {
+        let bound = i32::try_from(right)
+            .map_err(|_| "combat draw pile is too large for chance sampling".to_owned())?;
+        let left = rng.random(bound) as usize;
+        combat.zones.draw_pile.swap(left, right);
+    }
+    Ok(())
+}
+
+fn reseed_hidden_combat_futures_v1(
+    combat: &mut crate::runtime::combat::CombatState,
+    particle_seed: u64,
+) {
+    let pool = &mut combat.rng.pool;
+    pool.ai_rng = resampled_combat_rng_v1(&pool.ai_rng, particle_seed, 1);
+    pool.shuffle_rng = resampled_combat_rng_v1(&pool.shuffle_rng, particle_seed, 2);
+    pool.card_random_rng = resampled_combat_rng_v1(&pool.card_random_rng, particle_seed, 3);
+    pool.misc_rng = resampled_combat_rng_v1(&pool.misc_rng, particle_seed, 4);
+    pool.math_rng = resampled_combat_rng_v1(&pool.math_rng, particle_seed, 5);
+    pool.monster_hp_rng = resampled_combat_rng_v1(&pool.monster_hp_rng, particle_seed, 6);
+    pool.card_rng = resampled_combat_rng_v1(&pool.card_rng, particle_seed, 7);
+    pool.potion_rng = resampled_combat_rng_v1(&pool.potion_rng, particle_seed, 8);
+}
+
+fn resampled_combat_rng_v1(source: &StsRng, particle_seed: u64, stream: u64) -> StsRng {
+    StsRng::new_with_counter(chance_stream_seed_v1(particle_seed, stream), source.counter)
+}
+
+fn chance_stream_seed_v1(particle_seed: u64, stream: u64) -> u64 {
+    let mut value =
+        particle_seed.wrapping_add(0x9e37_79b9_7f4a_7c15_u64.wrapping_mul(stream.wrapping_add(1)));
+    value = (value ^ (value >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
+    value = (value ^ (value >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
+    value ^ (value >> 31)
 }
 
 fn combat_learning_resources_from_combat_v1(
@@ -519,6 +646,77 @@ mod tests {
                 max_hp: 85,
             }
         );
+    }
+
+    #[test]
+    fn public_chance_particles_change_private_future_without_changing_the_decision() {
+        let mut session = combat_root_session(20);
+        let combat = &mut session.active_combat.as_mut().unwrap().combat_state;
+        combat.zones.draw_pile = vec![
+            CombatCard::new(CardId::Bash, 61),
+            CombatCard::new(CardId::Defend, 62),
+            CombatCard::new(CardId::Strike, 63),
+        ]
+        .into();
+        let _ = combat.rng.ai_rng.random(99);
+        let _ = combat.rng.potion_rng.random(99);
+        let _ = combat.rng.potion_rng.random(99);
+        let source = CombatLearningRootV1::from_session(session).expect("construct source root");
+        let CombatLearningBoundaryV1::Decision {
+            boundary: source_boundary,
+            ..
+        } = source.spawn(0).unwrap().observe().unwrap()
+        else {
+            panic!("source must be a combat decision");
+        };
+
+        let checkpoints =
+            combat_public_chance_particle_checkpoints_v1(source.session.clone(), &[101, 202])
+                .expect("sample public-equivalent private futures");
+        let particles = checkpoints
+            .into_iter()
+            .map(CombatLearningRootV1::from_checkpoint)
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+
+        for particle in &particles {
+            let CombatLearningBoundaryV1::Decision { boundary, .. } =
+                particle.spawn(0).unwrap().observe().unwrap()
+            else {
+                panic!("particle must be a combat decision");
+            };
+            assert_eq!(boundary, source_boundary);
+            let exact = particle.session.clone().into_session().unwrap();
+            let rng = &exact.active_combat.unwrap().combat_state.rng;
+            assert_eq!(rng.ai_rng.counter, 1);
+            assert_eq!(rng.potion_rng.counter, 2);
+        }
+        assert_ne!(particles[0].identity(), source.identity());
+        assert_ne!(particles[0].identity(), particles[1].identity());
+        assert!(
+            combat_public_chance_particle_checkpoints_v1(source.session.clone(), &[101, 101])
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn public_chance_sampling_rejects_a_hidden_current_intent() {
+        let mut session = combat_root_session(20);
+        session
+            .active_combat
+            .as_mut()
+            .unwrap()
+            .combat_state
+            .entities
+            .player
+            .relics
+            .push(RelicState::new(RelicId::RunicDome));
+        let source = CombatLearningRootV1::from_session(session).expect("construct source root");
+
+        let error = combat_public_chance_particle_checkpoints_v1(source.session, &[303])
+            .expect_err("hidden current intent needs its own conditional sampler");
+
+        assert!(error.contains("hidden current intent"));
     }
 
     #[test]

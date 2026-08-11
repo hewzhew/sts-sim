@@ -336,6 +336,13 @@ emits their first combats as one batch; `learning-root export` converts public
 continuations already at useful later combat boundaries. The caller reads those
 opaque bytes and constructs a fresh bridge batch with the exact expected root
 count; Rust revalidates every combat boundary and root identity first.
+For bounded search-improvement feasibility work,
+`LearningBatchEnv.from_combat_public_chance_particles(...)` derives an
+in-memory population whose public observation and legal candidates equal one
+selected source root while hidden draw order and combat RNG streams vary. The
+current sampler keeps RNG consumption counters but samples streams
+independently and rejects hidden current intents; it is not yet a
+run-seed-consistent posterior or a certified teacher source.
 `learning-root select` derives one explicit ordered root subset from a
 canonical batch after revalidating its declared source width; selected slots
 stay opaque and duplicate or out-of-range slots publish nothing.

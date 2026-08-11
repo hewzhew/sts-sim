@@ -102,7 +102,9 @@ policy-improvement operator. Before any search output becomes a learning
 target it must cross the separately owned public-information, chance-particle,
 fair-allocation, independent-evaluation, and qualification boundary in
 [`CombatSearchImprovementContractV1`](design/2026-08-11-combat-search-improvement-contract-v1.md).
-That contract is not implemented; `AtomicExactV2`, `TurnGraphPortfolioV1`, and
+Only its independent-stream public-chance feasibility primitive is implemented;
+fair allocation, a run-seed-consistent conditioned sampler, qualification, and
+the teacher owner remain missing. `AtomicExactV2`, `TurnGraphPortfolioV1`, and
 their member engines are not certified teachers.
 
 Shared card mechanics used by that path belong to `content::cards::mechanics`,
