@@ -547,6 +547,9 @@ fn combat_evaluation_run_control_learning_layers_and_runtime_keep_distinct_compi
     let resident_combat_job =
         std::fs::read_to_string("src/eval/run_control/oracle_resident_combat_job.rs")
             .expect("read resident combat-job facade");
+    let resident_combat_job_evidence =
+        std::fs::read_to_string("src/eval/run_control/oracle_resident_combat_job_evidence.rs")
+            .expect("read resident combat-job evidence");
     let analysis_session =
         std::fs::read_to_string("src/eval/run_control/oracle_analysis_session.rs")
             .expect("read analysis session");
@@ -660,6 +663,12 @@ fn combat_evaluation_run_control_learning_layers_and_runtime_keep_distinct_compi
             && resident_combat_job.contains("pub(super) struct OracleResidentCombatJobV1")
             && !resident_combat_job.contains("LocalTurnGraphWitnessSession")
             && !resident_combat_job.contains("PolicyDiscrepancySession")
+            && resident_combat_job_evidence
+                .contains("pub struct OracleResidentCombatJobEvidenceV1")
+            && !resident_combat_job_evidence.contains("OracleRunCombatWorkV1")
+            && !resident_combat_job_evidence.contains("LocalTurnGraphWitnessSession")
+            && !resident_combat_job_evidence.contains("PolicyDiscrepancySession")
+            && !combat_work.contains("pub(super) struct OracleRunCombatWorkProgressV1")
             && !run_explorer.contains("pub struct OracleRunCombatWorkCheckpointV1")
             && analysis_session.contains("use super::oracle_combat_work_contract::{")
             && run_explorer

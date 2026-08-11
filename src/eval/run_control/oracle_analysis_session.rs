@@ -21,9 +21,8 @@ use crate::eval::combat_case_context::capture_oracle_analysis_combat_case_produc
 use super::oracle_combat_work_contract::{
     OracleCombatLocalCandidateDispositionV1, OracleRunCombatWorkCheckpointV1,
 };
-use super::oracle_resident_combat_job::{
-    OracleResidentCombatJobEvidenceV1, OracleResidentCombatJobV1,
-};
+use super::oracle_resident_combat_job::OracleResidentCombatJobV1;
+use super::oracle_resident_combat_job_evidence::OracleResidentCombatJobEvidenceV1;
 use super::oracle_run_explorer::{
     seed_oracle_run_explorer_from_checkpoint_v1, LazyOracleRunDecisionV1,
     OracleCombatSearchResumeKindV1, OracleRunBoundaryV1, OracleRunCombatEvidenceKindV1,
@@ -288,7 +287,7 @@ pub struct OracleAnalysisCombatProgressV1 {
     pub remaining_wall_ms: Option<u64>,
     pub resume_kind: OracleCombatSearchResumeKindV1,
     pub restart_count: usize,
-    pub last_status: Option<&'static str>,
+    pub last_status: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -2236,7 +2235,7 @@ fn combat_stage_trace_view_from_progress(
         incumbent_ends_quality_refinement: progress.incumbent_ends_quality_refinement,
         remaining_nodes: job.work.remaining_nodes(),
         remaining_wall_ms: job.work.remaining_wall_ms(),
-        last_status: progress.last_status.map(str::to_owned),
+        last_status: progress.last_status.clone(),
         exit,
     }
 }

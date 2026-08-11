@@ -92,10 +92,10 @@ impl OracleRunExplorerV1 {
                     branch_id: parent.branch_id,
                     rejection,
                     evidence_kind: classify_unresolved_combat_evidence(
-                        progress.last_status,
+                        progress.last_status.as_deref(),
                         progress.generation_gap_count,
                     ),
-                    last_status: progress.last_status.map(str::to_string),
+                    last_status: progress.last_status.clone(),
                     generation_work: progress.generation_work,
                     exact_states: progress.exact_states,
                     applied_action_transitions: progress.applied_action_transitions,

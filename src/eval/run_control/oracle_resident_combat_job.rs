@@ -3,14 +3,13 @@ use std::time::{Duration, Instant};
 use sts_combat_planner::LocalTurnGraphRootActionFamilySnapshot;
 
 use super::combat_search::RunControlCombatWorkAdvanceV1;
-use super::oracle_combat_work::{OracleRunCombatWorkProgressV1, OracleRunCombatWorkV1};
+use super::oracle_combat_work::OracleRunCombatWorkV1;
 use super::oracle_combat_work_contract::OracleRunCombatWorkCheckpointV1;
+use super::oracle_resident_combat_job_evidence::OracleResidentCombatJobEvidenceV1;
 use super::progress_options::{RunControlCombatSearchQuantum, RunControlSearchCombatOptions};
 use super::session::{RunControlSession, RunProgressOutcome};
 use crate::eval::combat_guidance_bundle::CombatGuidanceBundleV1;
 use crate::state::core::ClientInput;
-
-pub(super) type OracleResidentCombatJobEvidenceV1 = OracleRunCombatWorkProgressV1;
 
 /// Opaque capability over one resident exact-combat search.
 ///

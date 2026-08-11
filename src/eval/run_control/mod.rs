@@ -47,6 +47,7 @@ mod oracle_combat_work;
 mod oracle_combat_work_contract;
 mod oracle_neow;
 mod oracle_resident_combat_job;
+mod oracle_resident_combat_job_evidence;
 mod oracle_run_explorer;
 mod oracle_selection_cursor;
 pub mod outcome;
@@ -196,6 +197,7 @@ pub use oracle_neow::{
     CompletedNeowCandidateV1, NeowOracleExpansionV1, NeowOracleReplayStepV1,
     UnresolvedNeowCandidateV1,
 };
+pub use oracle_resident_combat_job_evidence::OracleResidentCombatJobEvidenceV1;
 pub use oracle_run_explorer::{
     drive_oracle_run_explorer_v1, run_control_session_fingerprint_v2,
     seed_oracle_run_explorer_from_checkpoint_v1, seed_oracle_run_explorer_from_session_v1,

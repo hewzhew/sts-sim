@@ -227,7 +227,7 @@ pub struct OraclePendingCombatSummaryV1 {
     pub potion_spend_requires_satisfaction: bool,
     pub incumbent_revision: u64,
     pub quanta_since_incumbent_improvement: usize,
-    pub last_status: Option<&'static str>,
+    pub last_status: Option<String>,
     pub remaining_nodes: usize,
     pub remaining_wall_ms: Option<u64>,
     pub resume_kind: OracleCombatSearchResumeKindV1,

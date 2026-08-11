@@ -1768,6 +1768,10 @@ start or restore a job, grant bounded work, request typed evidence, checkpoint
 it, or atomically finish a verified result. They cannot name the underlying
 `OracleRunCombatWorkV1` or access local-graph/discrepancy sessions and queues;
 that implementation type is confined to its owner and this facade.
+`OracleResidentCombatJobEvidenceV1` is a separate owned snapshot containing
+only accounting, queue counts, typed progress snapshots, and incumbent/candidate
+facts. Status labels are owned data, and the evidence carries no live session,
+frontier entry, borrowed implementation state, or mutation authority.
 
 ## Gap Semantics
 

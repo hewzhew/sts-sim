@@ -138,7 +138,7 @@ pub fn run_combat_case_owner_parity_v1(
             incumbent_potion_slots: combat.incumbent_potion_slots,
             incumbent_satisfies_satisfaction: combat.incumbent_satisfies_satisfaction,
             incumbent_ends_quality_refinement: combat.incumbent_ends_quality_refinement,
-            last_status: combat.last_status.map(str::to_string),
+            last_status: combat.last_status.clone(),
         });
     let report = CombatCaseOwnerParityReportV1 {
         schema_name: COMBAT_CASE_OWNER_PARITY_REPORT_SCHEMA_NAME.to_string(),

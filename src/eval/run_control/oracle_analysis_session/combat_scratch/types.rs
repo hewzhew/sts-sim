@@ -949,7 +949,7 @@ pub struct OracleAnalysisCombatScratchSearchReportV1 {
     pub exact_states: usize,
     pub completed_turn_options: usize,
     pub max_player_turn: u32,
-    pub last_status: Option<&'static str>,
+    pub last_status: Option<String>,
     pub additional_potions_allowed: u32,
     pub appended_action_count: usize,
     pub first_appended_scratch_node_id: Option<u64>,
