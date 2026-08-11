@@ -36,12 +36,13 @@ use semantic::{
     EnemyIdentityKind, IndexedChoiceCandidateKind, IndexedChoiceReasonKind, IntentKind,
     PublicCounterKind, RelationKind, RewardKind, ScalarField, SelectionCandidateKind,
     SelectionDomainKind, SelectionReasonKind, SemanticBatch, SemanticCompleteness, TokenKind,
-    CARD_ID_VOCABULARY_SIZE, CARD_RARITY_SCHEMA, CARD_TAG_SCHEMA, CARD_TARGET_SCHEMA,
-    CARD_TYPE_SCHEMA, CATEGORICAL_VOCABULARY_SIZES, ENCOUNTER_ID_VOCABULARY_SIZE,
-    ENEMY_ID_VOCABULARY_SIZE, EVENT_ID_VOCABULARY_SIZE, IDENTITY_RESIDUAL_CATEGORICAL_FIELDS,
-    NO_CANDIDATE_TOKEN, POTION_CLASS_SCHEMA, POTION_ID_VOCABULARY_SIZE,
-    POTION_MECHANIC_ROLE_SCHEMA, POTION_RARITY_SCHEMA, POWER_ID_VOCABULARY_SIZE,
-    RELIC_ID_VOCABULARY_SIZE, SEMANTIC_SCHEMA_VERSION,
+    CARD_ID_VOCABULARY_SIZE, CARD_MECHANIC_COVERAGE_SCHEMA, CARD_MECHANIC_ROLE_SCHEMA,
+    CARD_RARITY_SCHEMA, CARD_TAG_SCHEMA, CARD_TARGET_SCHEMA, CARD_TYPE_SCHEMA,
+    CATEGORICAL_VOCABULARY_SIZES, ENCOUNTER_ID_VOCABULARY_SIZE, ENEMY_ID_VOCABULARY_SIZE,
+    EVENT_ID_VOCABULARY_SIZE, IDENTITY_RESIDUAL_CATEGORICAL_FIELDS, NO_CANDIDATE_TOKEN,
+    POTION_CLASS_SCHEMA, POTION_ID_VOCABULARY_SIZE, POTION_MECHANIC_ROLE_SCHEMA,
+    POTION_RARITY_SCHEMA, POWER_ID_VOCABULARY_SIZE, RELIC_ID_VOCABULARY_SIZE,
+    SEMANTIC_SCHEMA_VERSION,
 };
 
 const PHASE_STRATEGIC_ROOT: u8 = 0;
@@ -1573,6 +1574,14 @@ fn semantic_schema(py: Python<'_>) -> PyResult<Bound<'_, PyDict>> {
     result.set_item("card_rarity", numeric_schema_dict(py, CARD_RARITY_SCHEMA)?)?;
     result.set_item("card_target", numeric_schema_dict(py, CARD_TARGET_SCHEMA)?)?;
     result.set_item("card_tag", numeric_schema_dict(py, CARD_TAG_SCHEMA)?)?;
+    result.set_item(
+        "card_mechanic_coverage",
+        numeric_schema_dict(py, CARD_MECHANIC_COVERAGE_SCHEMA)?,
+    )?;
+    result.set_item(
+        "card_mechanic_role",
+        numeric_schema_dict(py, CARD_MECHANIC_ROLE_SCHEMA)?,
+    )?;
     result.set_item(
         "potion_rarity",
         numeric_schema_dict(py, POTION_RARITY_SCHEMA)?,

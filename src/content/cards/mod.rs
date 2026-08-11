@@ -3,6 +3,7 @@ pub mod curses;
 pub mod defect;
 pub mod hooks;
 pub mod ironclad;
+pub mod mechanics;
 pub mod silent;
 pub mod status;
 pub mod watcher;

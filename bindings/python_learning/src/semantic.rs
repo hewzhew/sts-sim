@@ -31,7 +31,7 @@ use sts_oracle_eval::state::events::{EventActionKind, EventId};
 use sts_oracle_eval::state::map::node::RoomType;
 use sts_oracle_eval::state::selection::{SelectionReason, SelectionScope};
 
-pub const SEMANTIC_SCHEMA_VERSION: u32 = 6;
+pub const SEMANTIC_SCHEMA_VERSION: u32 = 7;
 pub const NO_CANDIDATE_TOKEN: u64 = u64::MAX;
 pub const CARD_ID_VOCABULARY_SIZE: u64 = 371;
 pub const RELIC_ID_VOCABULARY_SIZE: u64 = 182;
@@ -44,12 +44,12 @@ pub const POWER_ID_VOCABULARY_SIZE: u64 = 135;
 const RUN_SELECTION_DECK_CARD_UUID_INPUT_ENCODING: i64 = 3;
 
 pub(super) use mechanics::{
-    CARD_RARITY_SCHEMA, CARD_TAG_SCHEMA, CARD_TARGET_SCHEMA, CARD_TYPE_SCHEMA,
-    IDENTITY_RESIDUAL_CATEGORICAL_FIELDS, POTION_CLASS_SCHEMA, POTION_MECHANIC_ROLE_SCHEMA,
-    POTION_RARITY_SCHEMA,
+    CARD_MECHANIC_COVERAGE_SCHEMA, CARD_MECHANIC_ROLE_SCHEMA, CARD_RARITY_SCHEMA, CARD_TAG_SCHEMA,
+    CARD_TARGET_SCHEMA, CARD_TYPE_SCHEMA, IDENTITY_RESIDUAL_CATEGORICAL_FIELDS,
+    POTION_CLASS_SCHEMA, POTION_MECHANIC_ROLE_SCHEMA, POTION_RARITY_SCHEMA,
 };
 
-// Domain identities use their fieldless enum ordinals inside schema v6. These
+// Domain identities use their fieldless enum ordinals inside schema v7. These
 // compile-time size sentinels catch vocabulary extension; any intentional
 // insertion or reordering also requires an explicit schema review and bump.
 const _: () = {
@@ -234,6 +234,8 @@ pub enum CategoricalField: u16 {
     PotionClass = 80,
     PotionIsThrown = 81,
     PotionMechanicRole = 82,
+    CardMechanicCoverage = 83,
+    CardMechanicRole = 84,
 }}
 
 numeric_schema_enum! {
@@ -685,6 +687,14 @@ pub const CATEGORICAL_VOCABULARY_SIZES: &[(u16, u64)] = &[
         CategoricalField::PotionMechanicRole as u16,
         POTION_MECHANIC_ROLE_SCHEMA.len() as u64,
     ),
+    (
+        CategoricalField::CardMechanicCoverage as u16,
+        CARD_MECHANIC_COVERAGE_SCHEMA.len() as u64,
+    ),
+    (
+        CategoricalField::CardMechanicRole as u16,
+        CARD_MECHANIC_ROLE_SCHEMA.len() as u64,
+    ),
 ];
 
 #[derive(Clone, Debug, Default)]
@@ -953,7 +963,12 @@ impl SemanticBatchBuilder {
                 return Err(SemanticEncodingError::DuplicateCardIdentity(card.card_uuid));
             }
             self.edge(root, RelationKind::ObservationHasCard, token);
-            self.card_identity_with_mechanics(token, CategoricalField::CardId, card.card);
+            self.card_identity_with_mechanics(
+                token,
+                CategoricalField::CardId,
+                card.card,
+                Some(card.upgrades),
+            );
             self.scalar(token, ScalarField::CardUpgrades, card.upgrades);
             self.scalar(token, ScalarField::CardMiscValue, card.misc_value);
             if let Some(value) = card.base_damage_override {
@@ -1565,7 +1580,12 @@ impl SemanticBatchBuilder {
                 for card in cards {
                     let token = self.add_token(TokenKind::OfferedCard)?;
                     self.edge(candidate, RelationKind::CandidateHasPayload, token);
-                    self.card_identity_with_mechanics(token, CategoricalField::CardId, card.card);
+                    self.card_identity_with_mechanics(
+                        token,
+                        CategoricalField::CardId,
+                        card.card,
+                        Some(card.upgrades),
+                    );
                     self.scalar(token, ScalarField::CardUpgrades, card.upgrades);
                 }
             }
@@ -1697,7 +1717,10 @@ fn bool_value(value: bool) -> i64 {
 
 #[cfg(test)]
 mod tests {
-    use sts_oracle_eval::content::cards::{CardId, CardType};
+    use sts_oracle_eval::content::cards::{
+        mechanics::{CardMechanicCoverage, CardMechanicRole},
+        CardId, CardType,
+    };
     use sts_oracle_eval::content::potions::{PotionId, PotionMechanicRole};
     use sts_oracle_learning::eval::run_control::{
         LearningEnvV1, LearningModelChoiceV1, LearningModelDecisionV1, LearningSelectionStepV1,
@@ -1718,7 +1741,21 @@ mod tests {
         let card = builder
             .add_token(TokenKind::CombatCard)
             .expect("card token");
-        builder.card_identity_with_mechanics(card, CategoricalField::CardId, CardId::Strike);
+        builder.card_identity_with_mechanics(
+            card,
+            CategoricalField::CardId,
+            CardId::Strike,
+            Some(0),
+        );
+        let thinking = builder
+            .add_token(TokenKind::CombatCard)
+            .expect("thinking-ahead token");
+        builder.card_identity_with_mechanics(
+            thinking,
+            CategoricalField::CardId,
+            CardId::ThinkingAhead,
+            Some(1),
+        );
         let potion = builder
             .add_token(TokenKind::PotionSlot)
             .expect("potion token");
@@ -1741,6 +1778,21 @@ mod tests {
             card,
             CategoricalField::CardType as u16,
             CardType::Attack as i64,
+        )));
+        assert!(categories.contains(&(
+            thinking,
+            CategoricalField::CardMechanicCoverage as u16,
+            CardMechanicCoverage::Complete as i64,
+        )));
+        assert!(categories.contains(&(
+            thinking,
+            CategoricalField::CardMechanicRole as u16,
+            CardMechanicRole::DrawPileControl as i64,
+        )));
+        assert!(categories.contains(&(
+            thinking,
+            CategoricalField::CardExhaust as u16,
+            0,
         )));
         assert!(categories.contains(&(
             potion,

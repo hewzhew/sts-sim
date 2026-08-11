@@ -889,28 +889,12 @@ pub fn make_constructed_temp_card_in_hand_action(
 /// Returns the card's intrinsic exhaust-on-play behavior after applying
 /// upgrade-sensitive card rules.
 pub fn exhausts_when_played(card: &CombatCard) -> bool {
-    match card.id {
-        CardId::CalculatedGamble => card.upgrades == 0,
-        CardId::LimitBreak => card.upgrades == 0,
-        CardId::Discovery => card.upgrades == 0,
-        CardId::SecretTechnique => card.upgrades == 0,
-        CardId::SecretWeapon => card.upgrades == 0,
-        CardId::ThinkingAhead => card.upgrades == 0,
-        CardId::Hologram => card.upgrades == 0,
-        CardId::Rainbow => card.upgrades == 0,
-        CardId::Impulse => card.upgrades == 0,
-        _ => get_card_definition(card.id).exhaust,
-    }
+    mechanics::card_exhausts_when_played(card.id, card.upgrades)
 }
 
 /// Returns the card's effective ethereal status after upgrade-sensitive overrides.
 pub fn is_ethereal(card: &CombatCard) -> bool {
-    match card.id {
-        CardId::Apparition => card.upgrades == 0,
-        CardId::EchoForm => card.upgrades == 0,
-        CardId::DevaForm => card.upgrades == 0,
-        _ => get_card_definition(card.id).ethereal,
-    }
+    mechanics::card_is_ethereal(card.id, card.upgrades)
 }
 
 pub fn is_self_retain(card: &CombatCard) -> bool {
@@ -1005,11 +989,7 @@ pub fn upgraded_base_cost_override(card: &CombatCard) -> Option<i8> {
 }
 
 pub fn effective_target(card: &CombatCard) -> CardTarget {
-    match card.id {
-        CardId::Blind if card.upgrades > 0 => CardTarget::AllEnemy,
-        CardId::Trip if card.upgrades > 0 => CardTarget::AllEnemy,
-        _ => get_card_definition(card.id).target,
-    }
+    mechanics::effective_card_target(card.id, card.upgrades)
 }
 
 /// Validates whether a card can be played based on energy, status locks, and curses like Normality.

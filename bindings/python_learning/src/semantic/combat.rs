@@ -1,4 +1,4 @@
-//! Complete combat-side encoding for semantic schema v6.
+//! Complete combat-side encoding for semantic schema v7.
 
 use sts_oracle_eval::ai::combat_learning_observation::{
     CombatLearningCardCollectionV1, CombatLearningCardV1, CombatLearningEnemyIdentityV1,
@@ -422,7 +422,7 @@ impl SemanticBatchBuilder {
             let token = self.add_token(TokenKind::CombatCounterItem)?;
             self.edge(counters, RelationKind::CountersHasItem, token);
             self.category(token, CategoricalField::CounterItemKind, kind as i64);
-            self.card_identity_with_mechanics(token, CategoricalField::CardId, card);
+            self.card_identity_with_mechanics(token, CategoricalField::CardId, card, None);
             self.scalar(token, ScalarField::CollectionPosition, position);
         }
         Ok(())
@@ -652,7 +652,12 @@ impl SemanticBatchBuilder {
         monsters: &[u64],
     ) -> Result<u64, SemanticEncodingError> {
         let token = self.add_token(TokenKind::CombatCard)?;
-        self.card_identity_with_mechanics(token, CategoricalField::CardId, card.card_id);
+        self.card_identity_with_mechanics(
+            token,
+            CategoricalField::CardId,
+            card.card_id,
+            Some(card.upgrades),
+        );
         self.scalar(token, ScalarField::CardUpgrades, card.upgrades);
         self.scalar(token, ScalarField::CardMiscValue, card.misc_value);
         if let Some(value) = card.base_damage_override {
@@ -944,7 +949,12 @@ impl SemanticBatchBuilder {
                     );
                     self.scalar(token, ScalarField::SelectionDomainAddress, ordinal);
                     if let Some(card_id) = card_id {
-                        self.card_identity_with_mechanics(token, CategoricalField::CardId, card_id);
+                        self.card_identity_with_mechanics(
+                            token,
+                            CategoricalField::CardId,
+                            card_id,
+                            upgrades,
+                        );
                     }
                     if let Some(upgrades) = upgrades {
                         self.scalar(token, ScalarField::CardUpgrades, upgrades);
@@ -967,7 +977,12 @@ impl SemanticBatchBuilder {
                     );
                     self.scalar(token, ScalarField::SelectionDomainAddress, index);
                     if let Some(card_id) = card_id {
-                        self.card_identity_with_mechanics(token, CategoricalField::CardId, card_id);
+                        self.card_identity_with_mechanics(
+                            token,
+                            CategoricalField::CardId,
+                            card_id,
+                            None,
+                        );
                     }
                 }
             }

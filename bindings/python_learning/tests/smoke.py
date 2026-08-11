@@ -647,6 +647,8 @@ def main() -> None:
         ("CardRarity", "card_rarity"),
         ("CardTarget", "card_target"),
         ("CardTag", "card_tag"),
+        ("CardMechanicCoverage", "card_mechanic_coverage"),
+        ("CardMechanicRole", "card_mechanic_role"),
         ("PotionRarity", "potion_rarity"),
         ("PotionClass", "potion_class"),
         ("PotionMechanicRole", "potion_mechanic_role"),
@@ -669,6 +671,8 @@ def main() -> None:
         schema["categorical_field"]["ActionPotionId"],
     }
     assert "DiscoverColorless" in schema["potion_mechanic_role"]
+    assert schema["card_mechanic_coverage"]["Complete"] == 2
+    assert "DrawOnStatus" in schema["card_mechanic_role"]
     assert schema["domain_vocabulary_size"]["enemy_id"] == 65
     assert schema["domain_vocabulary_size"]["power_id"] == 135
     _assert_explicit_checkpoint_replays_exactly()

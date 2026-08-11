@@ -98,6 +98,15 @@ strings, or search-private state. Existing owners may supply behavior
 trajectories, but their selected actions are provenance rather than teacher
 labels.
 
+Shared card mechanics used by that path belong to `content::cards::mechanics`,
+not to an analysis or reward-policy table. The profile owns upgrade-sensitive
+effective target, exhaust, and ethereal facts and exposes positive composable
+roles with explicit `DefinitionOnly`, `Partial`, or `Complete` coverage. An
+absent role is not a negative fact unless coverage is complete. Promoting a
+card to complete coverage requires a production play/trigger action test in
+the same change; learned adapters may project this domain contract but must not
+silently infer missing roles from policy heuristics.
+
 Do not add another scene-local strategic model when reward, shop, route, and
 branch retention need the same concept. Shared concepts belong in `analysis` or
 `strategy`; scene-specific button mapping belongs in `policy`; applying a
@@ -429,10 +438,13 @@ Changing an encoded field's meaning or turning a previously constant field into
 live information requires a semantic-schema version bump even when the table
 shape is unchanged. Checkpoints trained under the prior meaning must fail
 closed rather than silently consuming the new distribution.
-Semantic schema v6 also declares identity-residual categorical fields. Card
+Semantic schema v7 also declares identity-residual categorical fields. Card
 and potion identities are encoded alongside shared typed mechanics: card
-definition type, rarity, target, base/upgrade numerics, multi-damage and
-lifecycle flags; potion definition facts and composable effect roles. The
+definition type, rarity, upgrade-sensitive effective target and lifecycle
+flags, base/upgrade numerics, multi-damage, explicit mechanic-role coverage,
+and reviewed positive effect roles; potion definition facts and composable
+effect roles. Missing card roles remain unknown for definition-only and partial
+profiles rather than becoming negative features. The
 PyTorch scorer zero-initializes only the declared CardId/PotionId residual
 vocabularies, so an identity not exercised by training contributes its shared
 mechanics but no random identity vector. Enemy, power, and relic identities

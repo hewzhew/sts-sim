@@ -1,7 +1,11 @@
-//! Shared identity-independent card and potion mechanics for semantic schema v6.
+//! Shared identity-independent card and potion mechanics for semantic schema v7.
 
 use sts_oracle_eval::content::cards::{
-    get_card_definition, CardId, CardRarity, CardTag, CardTarget, CardType,
+    get_card_definition,
+    mechanics::{
+        card_mechanic_profile, CardMechanicCoverage, CardMechanicRole, CARD_MECHANIC_ROLE_COUNT,
+    },
+    CardId, CardRarity, CardTag, CardTarget, CardType,
 };
 use sts_oracle_eval::content::potions::{
     get_potion_definition, potion_mechanic_roles, PotionClass, PotionId, PotionMechanicRole,
@@ -50,6 +54,38 @@ pub(crate) const CARD_TAG_SCHEMA: &[(&str, i64)] = &[
     ("StarterDefend", CardTag::StarterDefend as i64),
     ("Healing", CardTag::Healing as i64),
     ("Empty", CardTag::Empty as i64),
+];
+pub(crate) const CARD_MECHANIC_COVERAGE_SCHEMA: &[(&str, i64)] = &[
+    (
+        "DefinitionOnly",
+        CardMechanicCoverage::DefinitionOnly as i64,
+    ),
+    ("Partial", CardMechanicCoverage::Partial as i64),
+    ("Complete", CardMechanicCoverage::Complete as i64),
+];
+pub(crate) const CARD_MECHANIC_ROLE_SCHEMA: &[(&str, i64)] = &[
+    ("DrawCards", CardMechanicRole::DrawCards as i64),
+    ("GainEnergy", CardMechanicRole::GainEnergy as i64),
+    ("ApplyWeak", CardMechanicRole::ApplyWeak as i64),
+    ("ApplyVulnerable", CardMechanicRole::ApplyVulnerable as i64),
+    (
+        "ExhaustOtherCards",
+        CardMechanicRole::ExhaustOtherCards as i64,
+    ),
+    ("SelectFromHand", CardMechanicRole::SelectFromHand as i64),
+    ("DiscardFromHand", CardMechanicRole::DiscardFromHand as i64),
+    ("DrawPileControl", CardMechanicRole::DrawPileControl as i64),
+    ("MultiHit", CardMechanicRole::MultiHit as i64),
+    ("RandomTarget", CardMechanicRole::RandomTarget as i64),
+    ("GenerateCard", CardMechanicRole::GenerateCard as i64),
+    ("SelfHpLoss", CardMechanicRole::SelfHpLoss as i64),
+    (
+        "EndTurnHandTrigger",
+        CardMechanicRole::EndTurnHandTrigger as i64,
+    ),
+    ("DrawOnStatus", CardMechanicRole::DrawOnStatus as i64),
+    ("HandSizeScaling", CardMechanicRole::HandSizeScaling as i64),
+    ("RandomOutcome", CardMechanicRole::RandomOutcome as i64),
 ];
 pub(crate) const POTION_RARITY_SCHEMA: &[(&str, i64)] = &[
     ("Common", PotionRarity::Common as i64),
@@ -139,6 +175,11 @@ const _: () = {
     assert!(CardTarget::None as usize + 1 == CARD_TARGET_SCHEMA.len());
     assert!(CardTag::Strike as i64 == 0);
     assert!(CardTag::Empty as usize + 1 == CARD_TAG_SCHEMA.len());
+    assert!(CardMechanicCoverage::DefinitionOnly as i64 == 0);
+    assert!(CardMechanicCoverage::Complete as usize + 1 == CARD_MECHANIC_COVERAGE_SCHEMA.len());
+    assert!(CardMechanicRole::DrawCards as i64 == 0);
+    assert!(CardMechanicRole::RandomOutcome as u64 + 1 == CARD_MECHANIC_ROLE_COUNT);
+    assert!(CARD_MECHANIC_ROLE_SCHEMA.len() as u64 == CARD_MECHANIC_ROLE_COUNT);
     assert!(PotionRarity::Common as i64 == 0);
     assert!(PotionRarity::Rare as usize + 1 == POTION_RARITY_SCHEMA.len());
     assert!(PotionClass::Any as i64 == 0);
@@ -154,9 +195,11 @@ impl SemanticBatchBuilder {
         token: u64,
         identity_field: CategoricalField,
         card: CardId,
+        upgrades: Option<u8>,
     ) {
         self.category(token, identity_field, card as i64);
         let definition = get_card_definition(card);
+        let profile = upgrades.map(|upgrades| card_mechanic_profile(card, upgrades));
         self.category(
             token,
             CategoricalField::CardType,
@@ -170,7 +213,9 @@ impl SemanticBatchBuilder {
         self.category(
             token,
             CategoricalField::CardTarget,
-            definition.target as i64,
+            profile
+                .map(|profile| profile.effective_target)
+                .unwrap_or(definition.target) as i64,
         );
         self.category(
             token,
@@ -180,12 +225,20 @@ impl SemanticBatchBuilder {
         self.category(
             token,
             CategoricalField::CardExhaust,
-            bool_value(definition.exhaust),
+            bool_value(
+                profile
+                    .map(|profile| profile.exhausts_when_played)
+                    .unwrap_or(definition.exhaust),
+            ),
         );
         self.category(
             token,
             CategoricalField::CardEthereal,
-            bool_value(definition.ethereal),
+            bool_value(
+                profile
+                    .map(|profile| profile.ethereal)
+                    .unwrap_or(definition.ethereal),
+            ),
         );
         self.category(
             token,
@@ -194,6 +247,18 @@ impl SemanticBatchBuilder {
         );
         for tag in definition.tags {
             self.category(token, CategoricalField::CardTag, *tag as i64);
+        }
+        self.category(
+            token,
+            CategoricalField::CardMechanicCoverage,
+            profile
+                .map(|profile| profile.coverage)
+                .unwrap_or(CardMechanicCoverage::DefinitionOnly) as i64,
+        );
+        if let Some(profile) = profile {
+            for role in profile.roles.iter() {
+                self.category(token, CategoricalField::CardMechanicRole, role as i64);
+            }
         }
         self.scalar(token, ScalarField::CardBaseCost, definition.cost);
         self.scalar(
@@ -262,7 +327,12 @@ impl SemanticBatchBuilder {
     }
 
     pub(super) fn action_card(&mut self, token: u64, card: CardId, upgrades: u8) {
-        self.card_identity_with_mechanics(token, CategoricalField::ActionCardId, card);
+        self.card_identity_with_mechanics(
+            token,
+            CategoricalField::ActionCardId,
+            card,
+            Some(upgrades),
+        );
         self.scalar(token, ScalarField::ActionUpgrades, upgrades);
     }
 

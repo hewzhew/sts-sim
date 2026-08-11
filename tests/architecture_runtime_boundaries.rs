@@ -2853,7 +2853,7 @@ fn python_learning_bridge_stays_outside_the_root_workspace_and_policy_layer() {
         "_policy_v1",
         "torch",
         "auto_reset",
-        "candidate_id",
+        "CandidateId =",
         "observation_id",
         "mechanics_id",
         "CardUuid =",
