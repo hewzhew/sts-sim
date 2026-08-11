@@ -996,10 +996,30 @@ The exact action witness is used only to reconstruct suffix states. It never
 crosses into the training target; every suffix root receives a fresh equal-work
 search comparison. `combat_search_distillation_spike` may consume several such
 recovery artifact/search pairs plus disjoint natural held-out pairs. It trains
-the strict proposal where present and the frozen baseline otherwise, writes no
-checkpoint, and reports both the old first-action lookup diagnostic and the
-authoritative `held_out_full_combat` result, where the frozen scorer chooses
-every action with no search suffix. The experiment remains
+the strict proposal where present and the frozen baseline otherwise. By default
+it writes no checkpoint. Pass `--candidate-output <fresh-dir>` only when the
+bounded update should be retained as an explicitly unqualified experiment. The
+candidate directory contains one exact checkpoint and greedy manifest plus
+`candidate.json`; it deliberately contains no production `training.jsonl` and
+normal combat behavior recovery rejects it. The command immediately restores
+the candidate and requires exact training/held-out logits, complete-combat
+greedy action traces, and terminal outcomes to match the live scorer.
+
+After that parity check, collect a fresh natural root artifact and compare the
+reloaded candidate without running successor search:
+
+```powershell
+python -m sts_learning.evaluate_combat_search_candidate `
+  --artifact <fresh-natural-roots.bin> --roots <count> `
+  --baseline-behavior <frozen-source-behavior> `
+  --candidate <experimental-candidate-dir> `
+  --output <fresh-evaluation.json> --replicates 2
+```
+
+Both scorers greedily play every complete combat with no search suffix and no
+potion actions. The result reports exact root audits, terminal outcomes, and
+win-first/final-HP comparisons. Search labels are neither needed nor accepted
+for this independent behavior check. The experiment remains
 `teacher_valid=false`; PPO remains out of scope until the operator is qualified
 over broader decks, relics, potions, encounters, and repeated independent
 cohorts.

@@ -18,6 +18,7 @@ from .combat_objective import (
 from .manifests import (
     BehaviorRuleBinding,
     BehaviorManifestTemplate,
+    GREEDY_BEHAVIOR_RULE_V1,
     ManifestArtifactId,
     ManifestArtifactKind,
 )
@@ -61,6 +62,7 @@ _COMBAT_ALL_LOSS_WIN_OBJECTIVE_VERSION = 4
 _COMBAT_ALL_LOSS_PPO_TRAINER_IMPLEMENTATION_VERSION = 5
 _COMBAT_ALL_LOSS_PPO_OBJECTIVE_VERSION = 5
 _COMBAT_ALL_LOSS_VALUE_PPO_TRAINER_IMPLEMENTATION_VERSION = 3
+_COMBAT_SEARCH_DISTILLATION_TRAINER_IMPLEMENTATION_VERSION = 1
 _COMBAT_ALL_LOSS_VALUE_PPO_OBJECTIVE_VERSION = 3
 _MAX_SCHEMA_BYTES = 1 << 20
 _MAX_SCHEMA_DEPTH = 16
@@ -185,6 +187,53 @@ def combat_win_training_manifest_template(
         optimizer_config,
         combat_win_trainer_implementation(objective_config),
         device_type=device_type,
+    )
+
+
+def combat_search_distillation_manifest_template(
+    semantic_schema: Mapping[str, object],
+    scorer_config: RaggedScorerConfig,
+    optimizer_config: AdamTrainingConfig,
+    *,
+    epochs: int,
+    max_grad_norm: float,
+    device_type: str,
+) -> BehaviorManifestTemplate:
+    """Bind the experimental search-distillation scorer and greedy rule exactly."""
+
+    if isinstance(epochs, bool):
+        raise TorchProvenanceError("distillation epochs must be an integer")
+    try:
+        normalized_epochs = operator.index(epochs)
+    except TypeError as error:
+        raise TorchProvenanceError(
+            "distillation epochs must be an integer"
+        ) from error
+    if normalized_epochs <= 0:
+        raise TorchProvenanceError("distillation epochs must be positive")
+    normalized_grad_norm = _finite_float(max_grad_norm, "max_grad_norm")
+    if normalized_grad_norm <= 0.0:
+        raise TorchProvenanceError("max_grad_norm must be positive")
+    trainer = ManifestArtifactId.from_content(
+        ManifestArtifactKind.TRAINER_IMPLEMENTATION,
+        b"STS-COMBAT-SEARCH-TRAJECTORY-DISTILLATION\x00"
+        + struct.pack(
+            ">IQd",
+            _COMBAT_SEARCH_DISTILLATION_TRAINER_IMPLEMENTATION_VERSION,
+            normalized_epochs,
+            normalized_grad_norm,
+        )
+        + b"RAGGED-CROSS-ENTROPY-STRICT-PROPOSAL-ELSE-FROZEN-BASELINE\x00"
+        + _runtime_version_bytes(),
+    )
+    return _categorical_manifest_template(
+        semantic_schema,
+        scorer_config,
+        RaggedCategoricalPolicyConfig(),
+        optimizer_config,
+        trainer,
+        device_type=device_type,
+        behavior_rule=GREEDY_BEHAVIOR_RULE_V1,
     )
 
 

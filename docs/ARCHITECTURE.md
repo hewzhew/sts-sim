@@ -122,8 +122,18 @@ and independently searches every derived root. The witness creates exact
 states only; its actions never become labels. Distillation still uses a strict
 search proposal where present and the frozen baseline otherwise, then evaluates
 the updated scorer by letting it choose every action in complete held-out
-combats with no search suffix. This remains realized-private-future,
-non-publishing evidence. Qualification and the teacher owner are still missing;
+combats with no search suffix. The command remains non-publishing by default.
+An explicit candidate output may retain one tensor-only checkpoint and exact
+greedy behavior manifest under an `experimental_unqualified` receipt. This
+candidate has no production training journal, so normal combat behavior
+recovery rejects it; only the explicit candidate loader may restore it. Before
+returning, the distillation command requires byte-exact training and held-out
+logits, identical greedy complete-combat action traces, and identical terminal
+outcomes between the live scorer and a fresh disk restore. A separate
+fresh-root evaluator compares that restored candidate with its frozen source
+behavior by letting both play complete no-potion combats; it consumes no search
+result or teacher label. This remains realized-private-future, non-production
+evidence. Qualification and the teacher owner are still missing;
 `AtomicExactV2`, `TurnGraphPortfolioV1`, and their member engines are not
 certified teachers.
 

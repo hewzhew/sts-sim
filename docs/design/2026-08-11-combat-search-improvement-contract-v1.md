@@ -202,6 +202,22 @@ first-action proxy. It is still a small realized-private-future feasibility
 result: no model was published, `teacher_valid` remains false, and PPO is not
 authorized.
 
+The same update now has an explicit non-production persistence boundary. Its
+tensor-only checkpoint and greedy behavior manifest restore with identical
+logit bytes on all 39 training and 32 held-out entry rows; all 32 held-out
+complete-combat greedy action traces and terminal outcomes also match the live
+scorer. The artifact is marked `experimental_unqualified`, has no production
+training journal, and is rejected by normal combat behavior recovery.
+
+One further untouched natural cohort used 8 A0 and 8 A20 roots and no successor
+search. The frozen source won `8/32` deterministic replicates; the reloaded
+candidate won `28/32`. A0 moved from `0/16` to `14/16` and A20 from `8/16` to
+`14/16`; 11 exact roots improved, four were equal, and one already-winning A20
+Small Slimes root regressed by 15 final HP per replicate without losing. This
+independently reproduces the survival improvement while also exposing the
+remaining resource-preservation weakness. It does not qualify the search
+operator or authorize PPO.
+
 ## Typed Root Candidate Identity
 
 The request owns one canonical ordered set of legal root candidates. Each
@@ -378,7 +394,7 @@ resource targets remain out of scope until this boundary is qualified.
 | conditioned combat-entry floor-chance sampler | Feasibility primitive; production combat start with exact upstream state fixed, not a posterior over complete run histories |
 | finite-frame public-history run-seed scan | Exact for its declared seed frame; complete production replay; observed early-root posterior was source-only |
 | natural combat-entry information census/export | Seed-partition-ordered opaque bootstrap roots plus sparsity/model-input diagnostics; not a chance sampler or teacher evidence |
-| multi-decision search-trajectory distillation spike | Positive independent full-combat learnability evidence; realized private futures, non-publishing, not a certified teacher |
+| multi-decision search-trajectory distillation spike | Positive independent full-combat learnability evidence; optional exact unqualified candidate with reload parity, not a production publication or certified teacher |
 | typed public trajectory and legal candidates | Required foundation |
 | `AtomicExactV2` | Witness/challenger engine; not certified |
 | `LocalTurnGraphWitnessSession` | Witness/rescue/diagnostic engine; not certified |

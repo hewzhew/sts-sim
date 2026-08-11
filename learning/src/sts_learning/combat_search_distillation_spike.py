@@ -18,15 +18,19 @@ import torch
 from .combat_driver import CombatGroupDriver
 from .combat_experience import CombatExperienceLimits
 from .combat_root_artifacts import load_combat_root_source, read_combat_root_artifact
-from .policy import BehaviorManifestId
+from .combat_search_distillation_candidate import (
+    publish_combat_search_distillation_candidate,
+    recover_combat_search_distillation_candidate,
+)
+from .policy import BatchPolicyChoice, BehaviorManifestId
 from .published_combat_behavior import recover_compatible_combat_scorer
 from .semantic_concat import concatenate_semantic_decision_batches
 from .torch_combat_session_config import CombatSessionBridge, CombatWinSessionLimits
 from .torch_policy import (
-    GreedyTorchPolicy,
     RaggedCandidateScorer,
     ragged_cross_entropy,
 )
+from .torch_provenance import AdamTrainingConfig
 
 
 class CombatSearchDistillationError(RuntimeError):
@@ -39,6 +43,7 @@ def run_combat_search_distillation_spike(
     held_out_pairs: Sequence[tuple[Path, Path]],
     behavior: Path,
     output: Path,
+    candidate_output: Path | None = None,
     epochs: int,
     learning_rate: float,
     max_grad_norm: float,
@@ -54,6 +59,19 @@ def run_combat_search_distillation_spike(
     if output.exists() or not output.parent.is_dir():
         raise CombatSearchDistillationError(
             "output must be a fresh file below an existing directory"
+        )
+    candidate_output = (
+        None if candidate_output is None else Path(candidate_output).resolve()
+    )
+    if candidate_output == output:
+        raise CombatSearchDistillationError(
+            "candidate output and result output must be distinct"
+        )
+    if candidate_output is not None and (
+        candidate_output.exists() or not candidate_output.parent.is_dir()
+    ):
+        raise CombatSearchDistillationError(
+            "candidate output must be fresh below an existing directory"
         )
     if not training_pairs or not held_out_pairs:
         raise CombatSearchDistillationError(
@@ -113,7 +131,8 @@ def run_combat_search_distillation_spike(
     scorer = copy.deepcopy(anchor)
     scorer.requires_grad_(True)
     scorer.train()
-    optimizer = torch.optim.Adam(scorer.parameters(), lr=learning_rate)
+    optimizer_config = AdamTrainingConfig(learning_rate=learning_rate)
+    optimizer = optimizer_config.create(scorer.parameters())
     training_batch, training_targets = _improved_policy_batch(training, limits)
     update_losses: list[float] = []
     gradient_norms: list[float] = []
@@ -150,29 +169,76 @@ def run_combat_search_distillation_spike(
 
     final_training = _partition_metrics(scorer, training, limits)
     final_held_out = _partition_metrics(scorer, held_out, limits)
-    candidate_manifest_id = BehaviorManifestId(
-        hashlib.sha256(
-            warm_start.source_manifest_id.digest
-            + b"combat-search-trajectory-distillation-spike-v2"
-            + str(output).encode("utf-8")
-        ).digest()
-    )
+    candidate_receipt: dict[str, object] | None = None
+    recovered_candidate = None
+    if candidate_output is None:
+        candidate_manifest_id = BehaviorManifestId(
+            hashlib.sha256(
+                warm_start.source_manifest_id.digest
+                + b"combat-search-trajectory-distillation-spike-v3"
+                + str(output).encode("utf-8")
+            ).digest()
+        )
+    else:
+        candidate_receipt = publish_combat_search_distillation_candidate(
+            candidate_output,
+            scorer,
+            bridge,
+            limits,
+            source_manifest_id=warm_start.source_manifest_id,
+            training_corpus_sha256=_training_corpus_sha256(training),
+            training_root_count=len(training["records"]),
+            training_proposal_count=len(training["proposal_records"]),
+            epochs=epochs,
+            learning_rate=optimizer_config.learning_rate,
+            max_grad_norm=max_grad_norm,
+        )
+        recovered_candidate = recover_combat_search_distillation_candidate(
+            candidate_output,
+            bridge,
+            limits,
+        )
+        candidate_manifest_id = recovered_candidate.manifest_id
     final_full_combat = _full_combat_metrics(
         scorer,
         held_out,
         candidate_manifest_id,
         rollout_limits,
     )
+    candidate_summary = None
+    if recovered_candidate is not None and candidate_receipt is not None:
+        reload_parity = _candidate_reload_parity(
+            scorer,
+            recovered_candidate.scorer,
+            training,
+            held_out,
+            candidate_manifest_id,
+            limits,
+            rollout_limits,
+            final_full_combat,
+        )
+        candidate_summary = {
+            "artifact": str(candidate_output),
+            "candidate_id": recovered_candidate.candidate_id,
+            "manifest_id": recovered_candidate.manifest_id.digest.hex(),
+            "checkpoint_id": recovered_candidate.checkpoint_id.digest.hex(),
+            "status": candidate_receipt["status"],
+            "teacher_valid": False,
+            "production_eligible": False,
+            "model_published": False,
+            "reload_parity": reload_parity,
+        }
     full_combat_delta = _compare_full_combat_metrics(
         initial_full_combat,
         final_full_combat,
     )
     result = {
-        "schema": "sts-learning-combat-search-distillation-spike-v2",
+        "schema": "sts-learning-combat-search-distillation-spike-v3",
         "teacher_valid": False,
         "model_published": False,
         "claim": "bounded_search_trajectory_full_combat_feasibility_only",
         "training_source_manifest_id": warm_start.source_manifest_id.digest.hex(),
+        "candidate": candidate_summary,
         "training": _partition_receipt(training),
         "held_out": _partition_receipt(held_out),
         "seed_overlap": tuple(sorted(overlap)),
@@ -228,6 +294,7 @@ def run_combat_search_distillation_spike(
         "schema": result["schema"],
         "teacher_valid": False,
         "model_published": False,
+        "candidate": candidate_summary,
         "training_proposals": result["training"]["proposal_count"],
         "held_out_proposals": result["held_out"]["proposal_count"],
         "initial_held_out": _without_rows(initial_held_out),
@@ -261,7 +328,10 @@ def _load_partition(
             artifact,
             max_bytes=max_artifact_bytes,
         )
-        manifest = _read_manifest(manifest_path)
+        manifest, manifest_digest = _read_manifest(
+            manifest_path,
+            max_bytes=max_artifact_bytes,
+        )
         source_receipt = _mapping(manifest.get("source"), "source")
         root_count = _positive(source_receipt.get("root_count"), "root_count")
         digest = hashlib.sha256(payload).hexdigest()
@@ -330,6 +400,7 @@ def _load_partition(
                 "artifact": str(artifact),
                 "artifact_sha256": digest,
                 "search_manifest": str(manifest_path),
+                "search_manifest_sha256": manifest_digest,
                 "root_count": root_count,
             }
         )
@@ -488,6 +559,28 @@ def _improved_policy_batch(
     )
 
 
+class _TracingGreedyPolicy:
+    """Greedy scorer adapter retaining only exact selected ordinal calls."""
+
+    def __init__(
+        self,
+        scorer: RaggedCandidateScorer,
+        behavior_manifest_id: BehaviorManifestId,
+    ) -> None:
+        self.scorer = scorer
+        self.behavior_manifest_id = behavior_manifest_id
+        self.calls: list[tuple[int, ...]] = []
+
+    def choose(self, decision_batch: Mapping[str, object]) -> BatchPolicyChoice:
+        with torch.inference_mode():
+            ordinals = tuple(self.scorer(decision_batch).greedy_ordinals())
+        self.calls.append(ordinals)
+        return BatchPolicyChoice.deterministic(
+            ordinals,
+            self.behavior_manifest_id,
+        )
+
+
 def _full_combat_metrics(
     scorer: RaggedCandidateScorer,
     partition: Mapping[str, object],
@@ -495,10 +588,10 @@ def _full_combat_metrics(
     limits: CombatExperienceLimits,
 ) -> dict[str, object]:
     scorer.eval()
-    policy = GreedyTorchPolicy(scorer, behavior_manifest_id)
     rows: list[dict[str, object]] = []
     replicate_count = 2
     for record in partition["records"]:
+        policy = _TracingGreedyPolicy(scorer, behavior_manifest_id)
         source = record["source_owner"]
         env = source.combat_group(
             operator.index(record["source_slot"]),
@@ -512,6 +605,10 @@ def _full_combat_metrics(
         winning_hps = tuple(
             outcome.final_hp for outcome in outcomes if outcome.won
         )
+        trace_payload = json.dumps(
+            policy.calls,
+            separators=(",", ":"),
+        ).encode("utf-8")
         rows.append(
             {
                 "root_id": record["root_id"],
@@ -525,9 +622,23 @@ def _full_combat_metrics(
                 "mean_winning_final_hp": (
                     statistics.fmean(winning_hps) if winning_hps else None
                 ),
+                "outcomes": tuple(
+                    {
+                        "won": bool(outcome.won),
+                        "final_hp": outcome.final_hp,
+                    }
+                    for outcome in outcomes
+                ),
                 "decision_count": run.experience.decision_count,
                 "model_rounds": run.model_rounds,
                 "transitions": run.transitions,
+                "greedy_action_call_count": len(policy.calls),
+                "greedy_action_ordinal_count": sum(
+                    len(call) for call in policy.calls
+                ),
+                "greedy_action_trace_sha256": hashlib.sha256(
+                    trace_payload
+                ).hexdigest(),
             }
         )
     result = _summarize_full_combat_rows(rows, replicate_count)
@@ -644,6 +755,156 @@ def _compare_full_combat_metrics(
     }
 
 
+def _candidate_reload_parity(
+    original: RaggedCandidateScorer,
+    reloaded: RaggedCandidateScorer,
+    training: Mapping[str, object],
+    held_out: Mapping[str, object],
+    manifest_id: BehaviorManifestId,
+    limits: CombatWinSessionLimits,
+    rollout_limits: CombatExperienceLimits,
+    original_full_combat: Mapping[str, object],
+) -> dict[str, object]:
+    logit_partitions = {
+        "training": _partition_logit_parity(
+            original,
+            reloaded,
+            training,
+            limits,
+        ),
+        "held_out": _partition_logit_parity(
+            original,
+            reloaded,
+            held_out,
+            limits,
+        ),
+    }
+    reloaded_full_combat = _full_combat_metrics(
+        reloaded,
+        held_out,
+        manifest_id,
+        rollout_limits,
+    )
+    original_rows = tuple(original_full_combat["rows"])
+    reloaded_rows = tuple(reloaded_full_combat["rows"])
+    action_keys = (
+        "root_id",
+        "greedy_action_call_count",
+        "greedy_action_ordinal_count",
+        "greedy_action_trace_sha256",
+    )
+    outcome_keys = (
+        "root_id",
+        "outcomes",
+        "decision_count",
+        "model_rounds",
+        "transitions",
+    )
+    action_projection = tuple(
+        tuple(row[key] for key in action_keys) for row in original_rows
+    )
+    reloaded_action_projection = tuple(
+        tuple(row[key] for key in action_keys) for row in reloaded_rows
+    )
+    outcome_projection = tuple(
+        tuple(row[key] for key in outcome_keys) for row in original_rows
+    )
+    reloaded_outcome_projection = tuple(
+        tuple(row[key] for key in outcome_keys) for row in reloaded_rows
+    )
+    logits_equal = all(
+        partition["logits_equal"] and partition["greedy_ordinals_equal"]
+        for partition in logit_partitions.values()
+    )
+    greedy_actions_equal = action_projection == reloaded_action_projection
+    full_combat_outcomes_equal = outcome_projection == reloaded_outcome_projection
+    if not logits_equal:
+        raise CombatSearchDistillationError(
+            "reloaded candidate changed logits or entry greedy actions"
+        )
+    if not greedy_actions_equal:
+        raise CombatSearchDistillationError(
+            "reloaded candidate changed complete-combat greedy actions"
+        )
+    if not full_combat_outcomes_equal:
+        raise CombatSearchDistillationError(
+            "reloaded candidate changed complete-combat outcomes"
+        )
+    return {
+        "verified": True,
+        "logits": logit_partitions,
+        "greedy_actions_equal": True,
+        "full_combat_outcomes_equal": True,
+        "full_combat_root_count": len(original_rows),
+    }
+
+
+def _partition_logit_parity(
+    original: RaggedCandidateScorer,
+    reloaded: RaggedCandidateScorer,
+    partition: Mapping[str, object],
+    limits: CombatWinSessionLimits,
+) -> dict[str, object]:
+    records = tuple(partition["records"])
+    batch = concatenate_semantic_decision_batches(
+        [record["batch"] for record in records],
+        limits.concat,
+    )
+    with torch.inference_mode():
+        original_logits = original(batch)
+        reloaded_logits = reloaded(batch)
+    row_splits_equal = torch.equal(
+        original_logits.row_splits,
+        reloaded_logits.row_splits,
+    )
+    values_equal = torch.equal(original_logits.values, reloaded_logits.values)
+    original_ordinals = tuple(original_logits.greedy_ordinals())
+    reloaded_ordinals = tuple(reloaded_logits.greedy_ordinals())
+    return {
+        "row_count": len(records),
+        "candidate_count": original_logits.values.numel(),
+        "logits_equal": row_splits_equal and values_equal,
+        "greedy_ordinals_equal": original_ordinals == reloaded_ordinals,
+        "original_logits_sha256": _tensor_sha256(original_logits.values),
+        "reloaded_logits_sha256": _tensor_sha256(reloaded_logits.values),
+    }
+
+
+def _tensor_sha256(value: torch.Tensor) -> str:
+    tensor = value.detach().cpu().contiguous()
+    header = (
+        f"{tensor.dtype}|{tuple(tensor.shape)}|".encode("ascii")
+    )
+    return hashlib.sha256(header + tensor.numpy().tobytes()).hexdigest()
+
+
+def _training_corpus_sha256(partition: Mapping[str, object]) -> str:
+    payload = {
+        "sources": tuple(
+            {
+                "artifact_sha256": source["artifact_sha256"],
+                "search_manifest_sha256": source["search_manifest_sha256"],
+                "root_count": source["root_count"],
+            }
+            for source in partition["sources"]
+        ),
+        "roots": tuple(
+            {
+                "root_id": record["root_id"],
+                "baseline_ordinal": record["baseline_ordinal"],
+                "proposal_ordinal": record["proposal_ordinal"],
+            }
+            for record in partition["records"]
+        ),
+    }
+    encoded = json.dumps(
+        payload,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
 def _action_quality(action: Mapping[str, object]) -> tuple[int, int] | None:
     if operator.index(action.get("budget_unknown_count")):
         return None
@@ -688,12 +949,21 @@ def _without_rows(value: Mapping[str, object]) -> dict[str, object]:
     return {key: item for key, item in value.items() if key != "rows"}
 
 
-def _read_manifest(path: Path) -> Mapping[str, object]:
+def _read_manifest(
+    path: Path,
+    *,
+    max_bytes: int,
+) -> tuple[Mapping[str, object], str]:
     if not path.is_file():
         raise CombatSearchDistillationError("search manifest does not exist")
     try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as error:
+        content = path.read_bytes()
+        if len(content) > max_bytes:
+            raise CombatSearchDistillationError(
+                "search manifest exceeds its byte limit"
+            )
+        payload = json.loads(content)
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
         raise CombatSearchDistillationError("cannot read search manifest") from error
     if not isinstance(payload, Mapping):
         raise CombatSearchDistillationError("search manifest must be an object")
@@ -702,7 +972,7 @@ def _read_manifest(path: Path) -> Mapping[str, object]:
         or payload.get("teacher_valid") is not False
     ):
         raise CombatSearchDistillationError("unsupported natural search manifest")
-    return payload
+    return payload, hashlib.sha256(content).hexdigest()
 
 
 def _mapping(value: object, name: str) -> Mapping[str, object]:
@@ -771,7 +1041,7 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
             "Fit strict search-trajectory proposals and evaluate complete held-out "
-            "combats without publishing a model"
+            "combats, optionally retaining an unqualified candidate"
         )
     )
     parser.add_argument("--training-artifact", type=Path, action="append", required=True)
@@ -780,6 +1050,7 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--held-out-search", type=Path, action="append", required=True)
     parser.add_argument("--behavior", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--candidate-output", type=Path)
     parser.add_argument("--epochs", type=int, default=16)
     parser.add_argument("--learning-rate", type=float, default=3e-4)
     parser.add_argument("--max-grad-norm", type=float, default=1.0)
@@ -802,6 +1073,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         ),
         behavior=args.behavior,
         output=args.output,
+        candidate_output=args.candidate_output,
         epochs=args.epochs,
         learning_rate=args.learning_rate,
         max_grad_norm=args.max_grad_norm,
