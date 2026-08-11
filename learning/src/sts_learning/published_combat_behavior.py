@@ -43,7 +43,7 @@ from .torch_combat_session_config import (
     CombatWinSessionProfile,
 )
 from .torch_policy import RaggedCandidateScorer, RaggedScorerConfig
-from .torch_provenance import combat_win_training_manifest_template
+from .torch_provenance import AdamTrainingConfig, combat_win_training_manifest_template
 from .train_combat import (
     COMBAT_TRAINING_SCHEMA,
     LEGACY_COMBAT_TRAINING_SCHEMA,
@@ -422,6 +422,7 @@ def _verified_combat_publication(
             policy_update=policy_update,
             all_loss_axis=all_loss_axis,
         ),
+        optimizer=_optimizer(configuration),
     )
     if configuration.get("all_win_axis") != profile.objective.all_win_axis.name:
         raise PublishedCombatBehaviorError(
@@ -654,6 +655,18 @@ def _policy_update(
             )
             if rule is CombatPolicyUpdateRule.PPO_CLIP_VALUE
             else 0.0
+        ),
+    )
+
+
+def _optimizer(configuration: Mapping[str, object]) -> AdamTrainingConfig:
+    learning_rate = configuration.get("optimizer_learning_rate")
+    if learning_rate is None:
+        return AdamTrainingConfig()
+    return AdamTrainingConfig(
+        learning_rate=_finite_float(
+            learning_rate,
+            "optimizer_learning_rate",
         ),
     )
 

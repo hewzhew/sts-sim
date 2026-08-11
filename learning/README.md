@@ -352,6 +352,7 @@ the configured Python runtime:
   -Updates <bounded-update-count> `
   -ModelSeed 0 `
   -BehaviorSeedBase 1000 `
+  -CombatLearningRate 0.001 `
   -PotionLane never `
   -CombatAllLossAxis none
 ```
@@ -366,6 +367,10 @@ selected frontier under one frozen behavior, applies at most one shared
 optimizer step, and immediately promotes only a real update.
 The command appends compact generation and per-root signal facts to
 `training.jsonl`, then explicitly publishes the final behavior checkpoint.
+The Adam learning rate is an explicit, provenance-bound training parameter;
+`-CombatLearningRate` defaults to `0.001`. Lowering it changes the destination
+optimizer identity and is the supported way to test whether one PPO epoch is
+moving farther than its post-step KL diagnostic can safely distinguish.
 Its configuration record also persists each exact root's seed, act/floor,
 actual ascension, entry HP, potion identities, encounter/monster and elite/boss
 facts, canonical card/upgrade counts, and relic identities. This audit is read

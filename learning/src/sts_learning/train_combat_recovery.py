@@ -17,6 +17,7 @@ from .torch_combat_session_config import (
     CombatWinSessionProfile,
 )
 from .torch_policy import RaggedScorerConfig
+from .torch_provenance import AdamTrainingConfig
 from .torch_session_config import CategoricalSessionBridge
 from .train_combat import (
     CombatTrainingCommandConfig,
@@ -66,6 +67,7 @@ def run_combat_recovery_training(
                 else 1
             ),
         ),
+        optimizer=config.optimizer,
         objective=CombatWinObjectiveConfig(
             groups_per_update=config.root_count,
             policy_update=config.policy_update,
@@ -168,6 +170,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--updates", type=int, required=True)
     parser.add_argument("--model-seed", type=int, default=0)
     parser.add_argument("--behavior-seed-base", type=int, default=1_000)
+    parser.add_argument("--learning-rate", type=float, default=1e-3)
     parser.add_argument("--source-expected-roots", type=int, default=1)
     parser.add_argument("--source-root-slot", type=int, default=0)
     parser.add_argument("--warm-start-behavior", type=Path)
@@ -200,6 +203,9 @@ def main() -> int:
             potion_slots=tuple(arguments.potion_slot),
             warm_start_behavior=arguments.warm_start_behavior,
             policy_update=_policy_update(arguments.policy_update),
+            optimizer=AdamTrainingConfig(
+                learning_rate=arguments.learning_rate,
+            ),
         ),
         source_expected_roots=arguments.source_expected_roots,
         source_root_slot=arguments.source_root_slot,

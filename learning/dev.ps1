@@ -25,6 +25,7 @@ param(
     [string]$RunPolicyUpdate = "reinforce",
     [long]$ModelSeed = 0,
     [long]$BehaviorSeedBase = 1000,
+    [double]$CombatLearningRate = 0.001,
     [int]$SourceExpectedRoots = 1,
     [int]$SourceRootSlot = 0,
     [int]$Slots = 4,
@@ -286,6 +287,7 @@ switch ($Command) {
                 --updates $Updates `
                 --model-seed $ModelSeed `
                 --behavior-seed-base $BehaviorSeedBase `
+                --learning-rate $CombatLearningRate `
                 --policy-update $CombatPolicyUpdate `
                 --all-loss-axis $CombatAllLossAxis `
                 @warmStartArguments `
@@ -311,6 +313,7 @@ switch ($Command) {
                 --updates $Updates `
                 --model-seed $ModelSeed `
                 --behavior-seed-base $BehaviorSeedBase `
+                --learning-rate $CombatLearningRate `
                 --source-expected-roots $SourceExpectedRoots `
                 --source-root-slot $SourceRootSlot `
                 --policy-update $CombatPolicyUpdate `

@@ -642,8 +642,8 @@ Configure one stable Python 3.12 training runtime once, then use the small
 .\learning\dev.ps1 refresh-bridge
 .\learning\dev.ps1 test
 .\learning\dev.ps1 verify -MaturinPython <python-with-maturin>
-.\learning\dev.ps1 train-combat -Artifact <roots.bin> -Behavior <optional-warm-start-dir> -Output <fresh-dir> -Roots <count> -Updates <count> -PotionLane never -CombatPolicyUpdate ppo-clip -CombatAllLossAxis none
-.\learning\dev.ps1 train-combat-recovery -Artifact <roots.bin> -SourceExpectedRoots <artifact-root-count> -SourceRootSlot <zero-based-slot> -Behavior <warm-start-dir> -Output <fresh-dir> -Roots 4 -Replicates 8 -Updates 1 -PotionLane root-slots -PotionSlots 0 -CombatPolicyUpdate ppo-clip
+.\learning\dev.ps1 train-combat -Artifact <roots.bin> -Behavior <optional-warm-start-dir> -Output <fresh-dir> -Roots <count> -Updates <count> -CombatLearningRate 0.001 -PotionLane never -CombatPolicyUpdate ppo-clip -CombatAllLossAxis none
+.\learning\dev.ps1 train-combat-recovery -Artifact <roots.bin> -SourceExpectedRoots <artifact-root-count> -SourceRootSlot <zero-based-slot> -Behavior <warm-start-dir> -Output <fresh-dir> -Roots 4 -Replicates 8 -Updates 1 -CombatLearningRate 0.001 -PotionLane root-slots -PotionSlots 0 -CombatPolicyUpdate ppo-clip
 .\learning\dev.ps1 evaluate-combat -Artifact <held-out-roots.bin> -Behavior <training-dir> -Output <fresh-dir> -Roots <count> -Replicates <count> [-CombatDecisionRule sampled|greedy] [-TraceReplicatesPerRoot 1]
 .\learning\dev.ps1 audit-combat-policy -Artifact <roots.bin> -BaselineBehavior <baseline-dir> -CandidateBehavior <candidate-dir> -Output <fresh-dir> -Roots <count> -RootSlot <slot> [-DecisionOrdinals <ordinal-prefix>] -PotionLane never
 .\learning\dev.ps1 compare-combat-paired -Artifact <held-out-roots.bin> -BaselineBehavior <baseline-dir> -CandidateBehavior <candidate-dir> -Output <fresh-dir> -Roots <count> -Replicates 2 -BehaviorSeedBase <seed> [-CombatDecisionRule greedy|sampled] -PotionLane never
@@ -671,6 +671,10 @@ model-definition, optimizer, or trainer-provenance digest differences are
 recorded as `warm_start_provenance_mismatches` and force an actor-only copy;
 they are compatibility evidence, not a resume claim. A fresh optimizer,
 destination critic, manifest, and step-zero training lineage are always used.
+Both commands bind `-CombatLearningRate` into the destination Adam optimizer
+and durable trainer provenance; its default is `0.001`. A smaller value is an
+explicit optimizer experiment, not an implicit continuation of the source
+optimizer or a change to reward semantics.
 `train-combat -Updates 0` publishes the seeded initialization without collecting
 experience or applying an optimizer step. Use it for a paired untrained
 baseline under the same schema, model seed, evaluation roots, and behavior RNG;

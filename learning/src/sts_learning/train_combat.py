@@ -50,6 +50,7 @@ from .torch_combat_session_config import (
     CombatWinSessionProfile,
 )
 from .torch_policy import RaggedCandidateScorer, RaggedScorerConfig
+from .torch_provenance import AdamTrainingConfig
 from .torch_session_config import CategoricalSessionBridge
 
 
@@ -96,6 +97,7 @@ class CombatTrainingCommandConfig:
     warm_start_behavior: Path | None = None
     policy_update: CombatPolicyUpdateConfig = CombatPolicyUpdateConfig()
     all_loss_axis: CombatAllLossAxis = CombatAllLossAxis.NONE
+    optimizer: AdamTrainingConfig = AdamTrainingConfig()
 
     def __post_init__(self) -> None:
         artifact = Path(self.artifact).resolve()
@@ -145,6 +147,10 @@ class CombatTrainingCommandConfig:
         if not isinstance(self.all_loss_axis, CombatAllLossAxis):
             raise CombatTrainingCommandError(
                 "combat training all_loss_axis must be typed"
+            )
+        if not isinstance(self.optimizer, AdamTrainingConfig):
+            raise CombatTrainingCommandError(
+                "combat training optimizer must be typed"
             )
         if root_count < 2:
             raise CombatTrainingCommandError(
@@ -198,6 +204,7 @@ def run_combat_training(
     census_profile = replace(
         CombatWinSessionProfile(),
         scorer=scorer_config,
+        optimizer=config.optimizer,
         objective=CombatWinObjectiveConfig(
             groups_per_update=1,
             policy_update=config.policy_update,
@@ -514,6 +521,7 @@ def _run_combat_training_session(
         "policy_value_loss_coefficient": (
             profile.objective.policy_update.value_loss_coefficient
         ),
+        "optimizer_learning_rate": profile.optimizer.learning_rate,
         "potion_lane": config.potion_lane.value,
         "potion_slots": config.potion_slots,
         "initialization": (
@@ -804,6 +812,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--updates", type=int, required=True)
     parser.add_argument("--model-seed", type=int, default=0)
     parser.add_argument("--behavior-seed-base", type=int, default=1_000)
+    parser.add_argument("--learning-rate", type=float, default=1e-3)
     parser.add_argument("--warm-start-behavior", type=Path)
     parser.add_argument(
         "--policy-update",
@@ -839,6 +848,9 @@ def main() -> int:
             potion_slots=tuple(arguments.potion_slot),
             warm_start_behavior=arguments.warm_start_behavior,
             policy_update=_policy_update(arguments.policy_update),
+            optimizer=AdamTrainingConfig(
+                learning_rate=arguments.learning_rate,
+            ),
             all_loss_axis=(
                 CombatAllLossAxis.ENEMY_HP_PROGRESS
                 if arguments.all_loss_axis == "enemy-hp-progress"

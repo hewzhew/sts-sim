@@ -25,6 +25,7 @@ from sts_learning.manifests import ManifestArtifactId
 import sts_learning.published_combat_behavior as published_combat_behavior_module
 from sts_learning.torch_combat_session_config import CombatSessionBridge
 from sts_learning.torch_combat_session_config import CombatWinSessionLimits
+from sts_learning.torch_provenance import AdamTrainingConfig
 from sts_learning.train_combat import (
     CombatTrainingCommandConfig,
     run_combat_training,
@@ -125,6 +126,7 @@ def test_training_command_runs_updates_journals_and_publishes(
             model_seed=41,
             behavior_seed_base=92,
             potion_lane=CombatPotionLane.NEVER,
+            optimizer=AdamTrainingConfig(learning_rate=2.5e-4),
         ),
         bridge=bridge,
     )
@@ -152,6 +154,7 @@ def test_training_command_runs_updates_journals_and_publishes(
     )
     assert records[0]["schema"] == "sts-learning-combat-training-v6"
     assert records[0]["policy_update_rule"] == "REINFORCE"
+    assert records[0]["optimizer_learning_rate"] == 2.5e-4
     assert records[0]["potion_lane"] == "never"
     assert records[0]["potion_slots"] == []
     assert records[0]["initialization"] == "random"
@@ -184,6 +187,13 @@ def test_training_command_runs_updates_journals_and_publishes(
     assert len(tuple((output / "behavior-manifests").iterdir())) == 1
     stdout = capsys.readouterr().out
     assert "root_wins=1,2 root_objectives=win,hp" in stdout
+    recovered = recover_published_combat_behavior(
+        output,
+        bridge,
+        CombatWinSessionLimits(),
+        (701,),
+    )
+    assert recovered.training_step == summary["optimizer_steps"]
 
 
 def test_training_command_can_publish_an_untrained_baseline(tmp_path: Path) -> None:
