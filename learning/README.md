@@ -106,6 +106,17 @@ target; budget exhaustion on either side remains explicit incomplete evidence.
 Equivalent policy RNG initial states remain a caller-owned input because the
 generic evaluator does not inspect opaque policy state.
 
+`sts_learning.paired_run_compare` is the maintained publication-level adapter
+for that contract. It runs two ordinary one-slot evaluators from the same
+held-out seed schedule, initial policy RNG seed, ascension, potion action
+surface, terminal target, and step bound. Before comparing, it requires equal
+model definition/configuration, behavior-rule implementation/configuration,
+and semantic schema identities, then aligns every completed terminal seed. It
+retains both complete `evaluation.json` files and writes only raw per-seed
+win, act/floor, HP, gold, combat-count, and potion differences. The shared RNG
+claim is deliberately limited to the same initial stream: after policies choose
+different paths, they may consume later random draws at different decisions.
+
 The maintained command for applying a published combat-trained scorer to that
 complete run evaluator is:
 
@@ -113,8 +124,19 @@ complete run evaluator is:
 .\learning\dev.ps1 evaluate-run `
   -Behavior <completed-combat-training-directory> `
   -Output <fresh-run-evaluation-directory> `
-  -Slots 4 -Attempts 8 -MaxBatchSteps 4096 `
+  -Ascension 20 -Attempts 8 -MaxBatchSteps 4096 `
   -BehaviorSeed 10000 -HeldOutSeedStart 0
+```
+
+Compare two publications on one exact complete-run prefix with:
+
+```powershell
+.\learning\dev.ps1 compare-run-paired `
+  -BaselineBehavior <baseline-directory> `
+  -CandidateBehavior <candidate-directory> `
+  -Output <fresh-paired-run-directory> `
+  -Ascension 20 -Attempts 8 -MaxBatchSteps 4096 `
+  -BehaviorSeed 10000 -HeldOutSeedStart 0 -RunPotionLane never
 ```
 
 It uses zero recovery, attaches no trainer, and writes only compact terminal

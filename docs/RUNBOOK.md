@@ -650,6 +650,7 @@ Configure one stable Python 3.12 training runtime once, then use the small
 .\learning\dev.ps1 evaluate-combat-potions -Artifact <held-out-roots.bin> -Behavior <training-dir> -Output <fresh-dir> -Roots <count> -Replicates <count>
 .\learning\dev.ps1 evaluate-run -Behavior <training-dir> -Output <fresh-dir> -Ascension <0..20> -Attempts 8 -MaxBatchSteps 4096 -BehaviorSeed 10000 -HeldOutSeedStart 0 -RunPotionLane trained
 .\learning\dev.ps1 evaluate-run-potions -Behavior <training-dir> -Output <fresh-dir> -Ascension <0..20> -Attempts 8 -MaxBatchSteps 4096 -BehaviorSeed 10000 -HeldOutSeedStart 0
+.\learning\dev.ps1 compare-run-paired -BaselineBehavior <baseline-dir> -CandidateBehavior <candidate-dir> -Output <fresh-dir> -Ascension <0..20> -Attempts 8 -MaxBatchSteps 4096 -BehaviorSeed 10000 -HeldOutSeedStart 0 -RunPotionLane never
 .\learning\dev.ps1 collect-run-roots -Behavior <training-dir> -Output <fresh.bin> -Ascension <0..20> -Roots 2 -MaxBatchSteps 4096 -WallMs 60000 -BehaviorSeed 120000 -RootSeedStart 10000000 -RootSeedPartition training -RootHeldOutNumerator 1 -RootPartitionDenominator 10 -MinFloor 2 -MinUsablePotions 1 -RunPotionLane trained
 .\learning\dev.ps1 train-run -Behavior <combat-training-dir> -Output <fresh-dir> -Ascension <0..20> -Slots 4 -Generations 1 -AttemptsPerUpdate 32 -MaxBatchSteps 4096 -EvaluationAttempts 16 -HeldOutSeedStart 1000000 -AdvantageMode decision-local-gae -DecisionScope strategic -CombatDecisionRule greedy -SamplingMode independent-cohorts -RunPolicyUpdate ppo-clip-value -RunPotionLane trained
 ```
@@ -1088,14 +1089,25 @@ It measures how much observed progress depends on combat potion access; it
 does not establish the value of a consumed identity. Root-slot lanes are not
 defined for complete runs. For the routine comparison, use
 `evaluate-run-potions`: it deliberately uses one environment slot so both
-lanes finish the exact same ordered episode seeds, retains both complete V4
+lanes finish the exact same ordered episode seeds, retains both complete V9
 evaluations, and writes a compact per-seed `potion-comparison.json`. A combat-
 trained scorer has not thereby learned non-combat strategy; the command is a
 bounded end-to-end diagnostic of that complete policy surface, not a claim that
 all decisions were trained.
+Use `compare-run-paired` for two different frozen publications. It runs the
+same ordinary one-slot evaluator on both sides under one held-out seed prefix,
+initial policy RNG seed, ascension, potion action surface, terminal target, and
+step bound. The command rejects mismatched executed model, behavior-rule, or
+semantic-schema identities, incomplete sides, and different terminal seed
+sets. It retains both V9 evaluations and writes a per-seed
+`paired-comparison.json` with win transitions and separate act/floor, HP, gold,
+combat-count, and potion facts. `-RunPotionLane never` is the default for this
+comparison. The policy RNG contract is the same initial stream on each side;
+after action paths diverge, subsequent draws may be consumed at different
+decisions and are not claimed as stepwise shared randomness.
 Run-trained publications are recovered directly from their completed V2
 training journal and durable behavior stores, so a new held-out seed block does
-not require repeating the optimizer update. Evaluation output V8 records
+not require repeating the optimizer update. Evaluation output V9 records
 whether the source behavior was combat- or run-trained, includes the run
 objective when applicable, records the immutable combat-anchor provenance for
 anchored run policies, and preserves each combat's typed encounter and monster

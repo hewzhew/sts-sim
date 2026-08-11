@@ -1,6 +1,6 @@
 param(
     [Parameter(Mandatory = $true, Position = 0)]
-    [ValidateSet("configure", "doctor", "test", "verify", "check-bridge", "refresh-bridge", "train-combat", "train-combat-recovery", "evaluate-combat", "evaluate-combat-potions", "audit-combat-policy", "compare-combat-paired", "evaluate-run", "evaluate-run-potions", "collect-run-roots", "train-run")]
+    [ValidateSet("configure", "doctor", "test", "verify", "check-bridge", "refresh-bridge", "train-combat", "train-combat-recovery", "evaluate-combat", "evaluate-combat-potions", "audit-combat-policy", "compare-combat-paired", "evaluate-run", "evaluate-run-potions", "compare-run-paired", "collect-run-roots", "train-run")]
     [string]$Command,
     [string]$Python,
     [string]$MaturinPython = "python",
@@ -472,6 +472,34 @@ switch ($Command) {
                 --held-out-seed-start $HeldOutSeedStart
             if ($LASTEXITCODE -ne 0) {
                 throw "run potion comparison command failed"
+            }
+        }
+    }
+    "compare-run-paired" {
+        if ($null -eq $Ascension) {
+            throw "compare-run-paired requires -Ascension 0..20"
+        }
+        $pythonPath = Get-ConfiguredPython
+        $pairedRunPotionLane = if ($PSBoundParameters.ContainsKey("RunPotionLane")) {
+            $RunPotionLane
+        }
+        else {
+            "never"
+        }
+        Invoke-Doctor $pythonPath
+        Invoke-WithLearningPath {
+            & $pythonPath -m sts_learning.paired_run_compare `
+                --baseline-behavior $BaselineBehavior `
+                --candidate-behavior $CandidateBehavior `
+                --output $Output `
+                --attempts $Attempts `
+                --max-batch-steps $MaxBatchSteps `
+                --behavior-seed $BehaviorSeed `
+                --ascension $Ascension `
+                --held-out-seed-start $HeldOutSeedStart `
+                --potion-lane $pairedRunPotionLane
+            if ($LASTEXITCODE -ne 0) {
+                throw "paired run comparison command failed"
             }
         }
     }

@@ -984,6 +984,17 @@ is comparable only when both sides complete the same terminal target. Either
 side exhausting its batch-step bound remains explicitly incomparable. Policy
 RNG equivalence is prepared by the caller and may be asserted before the call;
 the evaluator does not introspect or serialize opaque policy state.
+The publication-level paired-run adapter makes that preparation explicit. It
+runs the ordinary one-slot evaluator twice with one held-out schedule, initial
+policy RNG seed, ascension, potion action surface, terminal target, and step
+bound. Before aligning terminal seeds, it requires equal executed model
+definition/configuration, behavior-rule implementation/configuration, and
+semantic schema identities plus distinct executed behavior manifests. Both
+complete evaluations remain independently inspectable. The comparison contains
+only typed per-seed outcome/resource axes and fixed-direction arithmetic. Its
+RNG scope is the same initial stream per behavior; once actions diverge,
+path-dependent random-draw consumption is not described as stepwise common
+randomness.
 
 Optional online experience retention is one explicitly bounded segment, not a
 driver history. Before policy inference, the caller recursively copies and

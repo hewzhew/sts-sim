@@ -38,7 +38,7 @@ from .torch_combat_session_config import (
 from .torch_session_config import CategoricalSessionBridge
 
 
-RUN_EVALUATION_SCHEMA = "sts-learning-run-held-out-evaluation-v8"
+RUN_EVALUATION_SCHEMA = "sts-learning-run-held-out-evaluation-v9"
 
 
 class RunEvaluationCommandError(RuntimeError):
@@ -260,12 +260,32 @@ def _summary(
     run = result.run.summary
     progress = run.terminal_progress
     combat_trained = isinstance(recovered, PublishedCombatBehavior)
+    execution_manifest = recovered.policies[0].binding.manifest
     return {
         "schema": RUN_EVALUATION_SCHEMA,
         "kind": "completed" if result.complete else "step-limit",
         "behavior": str(config.behavior),
         "behavior_manifest_id": recovered.manifest_id.digest.hex(),
+        "execution_behavior_manifest_id": (
+            result.behavior_manifest_id.digest.hex()
+        ),
         "behavior_checkpoint_id": recovered.checkpoint_id.digest.hex(),
+        "execution_model_definition_id": (
+            execution_manifest.model_definition.digest.hex()
+        ),
+        "execution_model_config_id": execution_manifest.model_config.digest.hex(),
+        "execution_behavior_rule_implementation_id": (
+            execution_manifest.behavior_rule.implementation.digest.hex()
+        ),
+        "execution_behavior_rule_configuration_id": (
+            execution_manifest.behavior_rule.configuration.digest.hex()
+        ),
+        "execution_semantic_schema_id": (
+            execution_manifest.semantic_schema.digest.hex()
+        ),
+        "execution_semantic_schema_version": (
+            execution_manifest.semantic_schema_version
+        ),
         "behavior_training_step": recovered.training_step,
         "behavior_training_kind": "combat" if combat_trained else "run",
         "behavior_training_ascension_level": (
@@ -346,6 +366,10 @@ def _summary(
         "behavior_seed": config.behavior_seed,
         "ascension_level": config.ascension_level,
         "held_out_seed_start": config.held_out_seed_start,
+        "seed_partition_held_out_numerator": (
+            result.schedule_start.spec.held_out_numerator
+        ),
+        "seed_partition_denominator": result.schedule_start.spec.denominator,
         "requested_combat_potion_lane": config.potion_lane.value,
         "combat_potion_lane": potion_lane.value,
         "held_out_seed_end": result.schedule_end.next_candidate,
