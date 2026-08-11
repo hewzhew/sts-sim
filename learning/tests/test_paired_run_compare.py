@@ -11,6 +11,7 @@ from sts_learning.evaluate_run import RunPotionLane
 from sts_learning.paired_run_compare import (
     PairedRunComparisonConfig,
     PairedRunComparisonError,
+    RunComparisonScope,
     compare_completed_run_evaluations,
     run_paired_run_comparison,
 )
@@ -47,9 +48,10 @@ def _summary(
 ) -> dict[str, object]:
     wins = sum(seed["terminal_reward"] == 1 for seed in seeds)
     return {
-        "schema": "sts-learning-run-held-out-evaluation-v9",
+        "schema": "sts-learning-run-held-out-evaluation-v10",
         "kind": "completed",
         "target_reached": True,
+        "behavior_manifest_id": manifest_byte * 64,
         "execution_behavior_manifest_id": manifest_byte * 64,
         "behavior_checkpoint_id": manifest_byte.upper() * 64,
         "execution_model_definition_id": "a" * 64,
@@ -58,6 +60,14 @@ def _summary(
         "execution_behavior_rule_configuration_id": "d" * 64,
         "execution_semantic_schema_id": "e" * 64,
         "execution_semantic_schema_version": 7,
+        "execution_scope": "publication_sampled",
+        "execution_strategic_source_manifest_id": manifest_byte * 64,
+        "execution_combat_anchor_manifest_id": None,
+        "execution_combat_anchor_checkpoint_id": None,
+        "execution_combat_anchor_model_definition_id": None,
+        "execution_combat_anchor_model_config_id": None,
+        "execution_combat_anchor_semantic_schema_id": None,
+        "execution_combat_anchor_semantic_schema_version": None,
         "behavior_seed": 501,
         "ascension_level": 20,
         "held_out_seed_start": 1000,
@@ -126,6 +136,46 @@ def test_paired_run_comparison_rejects_rng_rule_or_terminal_seed_drift() -> None
     wrong_seed["combat_seed_summaries"][0]["seed"] = 1011
     with pytest.raises(PairedRunComparisonError, match="different terminal seeds"):
         compare_completed_run_evaluations(baseline, wrong_seed)
+
+
+def test_scoped_run_comparison_changes_only_the_combat_anchor() -> None:
+    baseline = _summary("1", [_seed(1001, won=False, floor=3, hp=0)])
+    candidate = _summary("2", [_seed(1001, won=False, floor=5, hp=0)])
+    strategic_manifest = "9" * 64
+    for summary, anchor_byte in ((baseline, "3"), (candidate, "4")):
+        summary["behavior_manifest_id"] = strategic_manifest
+        summary["execution_scope"] = (
+            "combat_anchor_greedy_strategic_source_sampled"
+        )
+        summary["execution_strategic_source_manifest_id"] = strategic_manifest
+        summary["execution_combat_anchor_manifest_id"] = anchor_byte * 64
+        summary["execution_combat_anchor_checkpoint_id"] = anchor_byte.upper() * 64
+        summary["execution_combat_anchor_model_definition_id"] = "a" * 64
+        summary["execution_combat_anchor_model_config_id"] = "b" * 64
+        summary["execution_combat_anchor_semantic_schema_id"] = "e" * 64
+        summary["execution_combat_anchor_semantic_schema_version"] = 7
+        summary["execution_behavior_rule_configuration_id"] = anchor_byte * 64
+
+    comparison = compare_completed_run_evaluations(
+        baseline,
+        candidate,
+        scope=RunComparisonScope.COMBAT_ANCHOR_ONLY,
+    )
+
+    assert comparison["contract"]["comparison_scope"] == "combat_anchor_only"
+    assert comparison["contract"]["strategic_source_manifest_sha256"] == (
+        strategic_manifest
+    )
+    assert comparison["contract"]["baseline_combat_anchor_manifest_sha256"] == (
+        "3" * 64
+    )
+    assert comparison["contract"]["candidate_combat_anchor_manifest_sha256"] == (
+        "4" * 64
+    )
+    assert comparison["contract"]["policy_rng_scope"] == (
+        "same_initial_strategic_stream_combat_greedy_consumes_no_rng"
+    )
+    assert comparison["aggregate"]["terminal_floor_sum_delta"] == 2
 
 
 def test_paired_run_command_retains_both_evaluations(

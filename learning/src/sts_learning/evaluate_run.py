@@ -35,10 +35,15 @@ from .torch_combat_session_config import (
     CombatSessionBridge,
     CombatWinSessionLimits,
 )
+from .torch_behavior import (
+    FrozenCategoricalTorchPolicy,
+    FrozenCombatAnchor,
+    FrozenCombatGreedyTorchPolicy,
+)
 from .torch_session_config import CategoricalSessionBridge
 
 
-RUN_EVALUATION_SCHEMA = "sts-learning-run-held-out-evaluation-v9"
+RUN_EVALUATION_SCHEMA = "sts-learning-run-held-out-evaluation-v10"
 
 
 class RunEvaluationCommandError(RuntimeError):
@@ -172,22 +177,70 @@ def run_run_evaluation(
             CombatWinSessionLimits(),
             (config.behavior_seed,),
         )
+    return run_recovered_run_evaluation(
+        config,
+        recovered,
+        recovered.policies[0],
+        run_bridge=active_run_bridge,
+    )
+
+
+def run_recovered_run_evaluation(
+    config: RunEvaluationCommandConfig,
+    recovered: PublishedCombatBehavior | PublishedRunBehavior,
+    policy: FrozenCategoricalTorchPolicy | FrozenCombatGreedyTorchPolicy,
+    *,
+    run_bridge: CategoricalSessionBridge,
+) -> dict[str, object]:
+    """Evaluate one already verified immutable policy over complete runs."""
+
+    if not isinstance(config, RunEvaluationCommandConfig):
+        raise RunEvaluationCommandError("run evaluation config must be typed")
+    if not isinstance(recovered, (PublishedCombatBehavior, PublishedRunBehavior)):
+        raise RunEvaluationCommandError(
+            "run evaluation recovered behavior must be typed"
+        )
+    if not isinstance(
+        policy,
+        (FrozenCategoricalTorchPolicy, FrozenCombatGreedyTorchPolicy),
+    ):
+        raise RunEvaluationCommandError("run evaluation policy must be frozen")
+    if not isinstance(run_bridge, CategoricalSessionBridge):
+        raise RunEvaluationCommandError(
+            "run evaluation environment bridge must be typed"
+        )
+    if (
+        isinstance(policy, FrozenCategoricalTorchPolicy)
+        and policy.behavior_manifest_id != recovered.manifest_id
+    ):
+        raise RunEvaluationCommandError(
+            "run evaluation sampled policy changed source behavior"
+        )
+    if (
+        isinstance(policy, FrozenCombatGreedyTorchPolicy)
+        and policy.binding.manifest_id != recovered.manifest_id
+        and policy.source_manifest_id != recovered.manifest_id
+    ):
+        raise RunEvaluationCommandError(
+            "run evaluation scoped policy changed strategic source behavior"
+        )
+
     potion_lane = resolve_run_potion_lane(config.potion_lane, recovered)
     schedule = SeedSchedule(
         SeedPartition.HELD_OUT,
         next_candidate=config.held_out_seed_start,
     )
     environment_constructor = (
-        active_run_bridge.environment
+        run_bridge.environment
         if potion_lane is CombatPotionLane.ALL
-        else active_run_bridge.environment_without_combat_potions
+        else run_bridge.environment_without_combat_potions
     )
     resource_factory = ResourceTracingEnvironmentFactory(
         lambda seeds: environment_constructor(seeds, config.ascension_level)
     )
     result = evaluate_held_out_behavior(
         resource_factory,
-        recovered.policies[0],
+        policy,
         schedule=schedule,
         spec=HeldOutEvaluationSpec(
             slot_count=config.slot_count,
@@ -202,6 +255,7 @@ def run_run_evaluation(
         result,
         resource_trace,
         potion_lane,
+        policy,
     )
     config.output.mkdir(parents=True, exist_ok=True)
     with (config.output / "evaluation.json").open(
@@ -256,11 +310,26 @@ def _summary(
     result: HeldOutEvaluationResult,
     resource_trace: RunResourceTrace,
     potion_lane: CombatPotionLane,
+    policy: FrozenCategoricalTorchPolicy | FrozenCombatGreedyTorchPolicy,
 ) -> dict[str, object]:
     run = result.run.summary
     progress = run.terminal_progress
     combat_trained = isinstance(recovered, PublishedCombatBehavior)
-    execution_manifest = recovered.policies[0].binding.manifest
+    execution_manifest = policy.binding.manifest
+    execution_anchor: FrozenCombatAnchor | None = (
+        policy.combat_anchor
+        if isinstance(policy, FrozenCombatGreedyTorchPolicy)
+        else None
+    )
+    execution_scope = (
+        "combat_anchor_greedy_strategic_source_sampled"
+        if execution_anchor is not None
+        else (
+            "combat_greedy_strategic_source_sampled"
+            if isinstance(policy, FrozenCombatGreedyTorchPolicy)
+            else "publication_sampled"
+        )
+    )
     return {
         "schema": RUN_EVALUATION_SCHEMA,
         "kind": "completed" if result.complete else "step-limit",
@@ -285,6 +354,42 @@ def _summary(
         ),
         "execution_semantic_schema_version": (
             execution_manifest.semantic_schema_version
+        ),
+        "execution_scope": execution_scope,
+        "execution_strategic_source_manifest_id": (
+            policy.source_manifest_id.digest.hex()
+            if isinstance(policy, FrozenCombatGreedyTorchPolicy)
+            else policy.behavior_manifest_id.digest.hex()
+        ),
+        "execution_combat_anchor_manifest_id": (
+            None
+            if execution_anchor is None
+            else execution_anchor.manifest_id.digest.hex()
+        ),
+        "execution_combat_anchor_checkpoint_id": (
+            None
+            if execution_anchor is None
+            else execution_anchor.checkpoint_id.digest.hex()
+        ),
+        "execution_combat_anchor_model_definition_id": (
+            None
+            if execution_anchor is None
+            else execution_anchor.binding.manifest.model_definition.digest.hex()
+        ),
+        "execution_combat_anchor_model_config_id": (
+            None
+            if execution_anchor is None
+            else execution_anchor.binding.manifest.model_config.digest.hex()
+        ),
+        "execution_combat_anchor_semantic_schema_id": (
+            None
+            if execution_anchor is None
+            else execution_anchor.binding.manifest.semantic_schema.digest.hex()
+        ),
+        "execution_combat_anchor_semantic_schema_version": (
+            None
+            if execution_anchor is None
+            else execution_anchor.binding.manifest.semantic_schema_version
         ),
         "behavior_training_step": recovered.training_step,
         "behavior_training_kind": "combat" if combat_trained else "run",

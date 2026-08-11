@@ -8,6 +8,7 @@ param(
     [string]$Behavior,
     [string]$BaselineBehavior,
     [string]$CandidateBehavior,
+    [string]$StrategicBehavior,
     [string]$Output,
     [int]$Roots,
     [int]$RootSlot = 0,
@@ -486,6 +487,12 @@ switch ($Command) {
         else {
             "never"
         }
+        $pairedRunScopeArguments = @()
+        if ($StrategicBehavior) {
+            $pairedRunScopeArguments += @(
+                "--strategic-behavior", $StrategicBehavior
+            )
+        }
         Invoke-Doctor $pythonPath
         Invoke-WithLearningPath {
             & $pythonPath -m sts_learning.paired_run_compare `
@@ -497,7 +504,8 @@ switch ($Command) {
                 --behavior-seed $BehaviorSeed `
                 --ascension $Ascension `
                 --held-out-seed-start $HeldOutSeedStart `
-                --potion-lane $pairedRunPotionLane
+                --potion-lane $pairedRunPotionLane `
+                @pairedRunScopeArguments
             if ($LASTEXITCODE -ne 0) {
                 throw "paired run comparison command failed"
             }

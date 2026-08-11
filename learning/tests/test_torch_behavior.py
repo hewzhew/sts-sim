@@ -411,6 +411,88 @@ class TorchBehaviorPublicationTests(unittest.TestCase):
                 source.behavior_manifest_id,
             )
 
+    def test_combat_scoped_policy_can_use_a_distinct_verified_anchor(self) -> None:
+        config = RaggedCategoricalPolicyConfig(temperature=0.75)
+
+        class _ProgressProvider:
+            def capture(self, slots):
+                assert tuple(slots) == (4, 9)
+                return (
+                    DecisionRunProgress(100, 1, 3, True, None),
+                    DecisionRunProgress(101, 1, 4, False, 2),
+                )
+
+        with tempfile.TemporaryDirectory() as root:
+            store = _store(Path(root, "checkpoints"))
+            catalog = _catalog(Path(root, "manifests"))
+            template = behavior_manifest_template_fixture(
+                behavior_rule=config.behavior_rule,
+            )
+            strategic_registry = BehaviorManifestRegistry(capacity=1)
+            combat_registry = BehaviorManifestRegistry(capacity=1)
+            with torch.random.fork_rng(devices=[]):
+                torch.manual_seed(1)
+                strategic_scorer = _scorer()
+                torch.manual_seed(2)
+                combat_scorer = _scorer()
+            strategic_publication = TorchBehaviorPublisher(
+                store,
+                catalog,
+                strategic_registry,
+                template,
+            ).publish(strategic_scorer, training_step=0)
+            combat_publication = TorchBehaviorPublisher(
+                store,
+                catalog,
+                combat_registry,
+                template,
+            ).publish(combat_scorer, training_step=0)
+            strategic = CheckpointedCategoricalTorchPolicy.promote(
+                strategic_publication,
+                store,
+                catalog,
+                strategic_registry,
+                _scorer,
+                config,
+                torch.Generator().manual_seed(55),
+            )
+            combat = CheckpointedCategoricalTorchPolicy.promote(
+                combat_publication,
+                store,
+                catalog,
+                combat_registry,
+                _scorer,
+                config,
+                torch.Generator().manual_seed(77),
+            )
+            sampled_reference = strategic.fork(torch.Generator().manual_seed(55))
+            anchor = FrozenCombatAnchor.from_behavior(combat)
+            scoped = FrozenCombatGreedyTorchPolicy.from_categorical(
+                strategic,
+                _ProgressProvider(),
+                anchor,
+            )
+            batch = semantic_batch_fixture()
+            choice = scoped.choose(batch)
+
+            self.assertEqual(
+                choice.ordinals[0],
+                anchor.scorer(batch).greedy_ordinals()[0],
+            )
+            self.assertEqual(
+                choice.ordinals[1],
+                sampled_reference.choose(batch).ordinals[1],
+            )
+            self.assertEqual(scoped.source_manifest_id, strategic.behavior_manifest_id)
+            self.assertEqual(scoped.combat_anchor.manifest_id, combat.behavior_manifest_id)
+            self.assertEqual(
+                scoped.binding.manifest.behavior_rule,
+                combat_anchored_greedy_strategic_sampled_rule_v1(
+                    config.behavior_rule,
+                    combat.behavior_manifest_id,
+                ),
+            )
+
     def test_combat_scoped_controller_publishes_and_recovers_exact_mixed_rule(
         self,
     ) -> None:

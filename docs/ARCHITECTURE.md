@@ -984,17 +984,29 @@ is comparable only when both sides complete the same terminal target. Either
 side exhausting its batch-step bound remains explicitly incomparable. Policy
 RNG equivalence is prepared by the caller and may be asserted before the call;
 the evaluator does not introspect or serialize opaque policy state.
-The publication-level paired-run adapter makes that preparation explicit. It
-runs the ordinary one-slot evaluator twice with one held-out schedule, initial
-policy RNG seed, ascension, potion action surface, terminal target, and step
-bound. Before aligning terminal seeds, it requires equal executed model
-definition/configuration, behavior-rule implementation/configuration, and
-semantic schema identities plus distinct executed behavior manifests. Both
-complete evaluations remain independently inspectable. The comparison contains
-only typed per-seed outcome/resource axes and fixed-direction arithmetic. Its
-RNG scope is the same initial stream per behavior; once actions diverge,
-path-dependent random-draw consumption is not described as stepwise common
-randomness.
+The publication-level paired-run adapter makes that preparation explicit. Its
+full-behavior scope runs the ordinary one-slot evaluator twice with one
+held-out schedule, initial policy RNG seed, ascension, potion action surface,
+terminal target, and step bound. Before aligning terminal seeds, it requires
+equal executed model definition/configuration, behavior-rule implementation and
+configuration, and semantic schema identities plus distinct executed behavior
+manifests. Its optional combat-anchor-only scope instead recovers one identical
+strategic publication for both sides and attaches two distinct verified combat
+anchors. Typed combat rows use the selected anchor greedily; route, reward,
+shop, event, and other strategic rows remain sampled from the shared strategic
+source. The two anchors must share the source model definition/configuration,
+semantic schema, and categorical behavior rule. The resulting composite
+behavior configurations are expected to differ only by anchor identity.
+
+Both complete evaluations remain independently inspectable. The comparison
+contains only typed per-seed outcome/resource axes and fixed-direction
+arithmetic. Full-behavior RNG scope is the same initial stream per behavior;
+once actions diverge, path-dependent random-draw consumption is not described
+as stepwise common randomness. Combat-anchor-only scope starts both sides from
+the same strategic RNG stream, while greedy combat selection consumes no policy
+RNG. This isolates the scorer used on combat rows, not game-state consequences:
+different combat outcomes can still expose different later strategic decisions
+and therefore different later stream positions.
 
 Optional online experience retention is one explicitly bounded segment, not a
 driver history. Before policy inference, the caller recursively copies and

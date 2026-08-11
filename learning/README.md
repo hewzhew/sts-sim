@@ -107,15 +107,27 @@ Equivalent policy RNG initial states remain a caller-owned input because the
 generic evaluator does not inspect opaque policy state.
 
 `sts_learning.paired_run_compare` is the maintained publication-level adapter
-for that contract. It runs two ordinary one-slot evaluators from the same
-held-out seed schedule, initial policy RNG seed, ascension, potion action
-surface, terminal target, and step bound. Before comparing, it requires equal
-model definition/configuration, behavior-rule implementation/configuration,
-and semantic schema identities, then aligns every completed terminal seed. It
-retains both complete `evaluation.json` files and writes only raw per-seed
-win, act/floor, HP, gold, combat-count, and potion differences. The shared RNG
-claim is deliberately limited to the same initial stream: after policies choose
-different paths, they may consume later random draws at different decisions.
+for that contract. Its default full-behavior scope runs two ordinary one-slot
+evaluators from the same held-out seed schedule, initial policy RNG seed,
+ascension, potion action surface, terminal target, and step bound. Before
+comparing, it requires equal model definition/configuration, behavior-rule
+implementation/configuration, and semantic schema identities, then aligns every
+completed terminal seed.
+
+Passing `-StrategicBehavior` selects the combat-anchor-only scope. Both sides
+recover the same strategic publication and strategic RNG seed; the baseline
+and candidate directories supply distinct verified combat anchors. Typed combat
+rows use their anchor greedily, while all strategic rows remain sampled from the
+shared source. Greedy combat selection consumes no policy RNG. This isolates
+which scorer owns combat rows, but it does not force later game states or
+strategic decision counts to remain equal after combat outcomes diverge.
+
+Both scopes retain complete V10 `evaluation.json` files and write only raw
+per-seed win, act/floor, HP, gold, combat-count, and potion differences. The V2
+comparison contract records its scope and the relevant strategic and combat
+manifest identities. The shared RNG claim is deliberately limited to the same
+initial stream: after paths diverge, later strategic draws may occur at
+different decisions.
 
 The maintained command for applying a published combat-trained scorer to that
 complete run evaluator is:
@@ -135,6 +147,19 @@ Compare two publications on one exact complete-run prefix with:
   -BaselineBehavior <baseline-directory> `
   -CandidateBehavior <candidate-directory> `
   -Output <fresh-paired-run-directory> `
+  -Ascension 20 -Attempts 8 -MaxBatchSteps 4096 `
+  -BehaviorSeed 10000 -HeldOutSeedStart 0 -RunPotionLane never
+```
+
+To change only the scorer used for combat rows, keep one strategic publication
+fixed and compare two combat anchors:
+
+```powershell
+.\learning\dev.ps1 compare-run-paired `
+  -BaselineBehavior <baseline-combat-anchor-directory> `
+  -CandidateBehavior <candidate-combat-anchor-directory> `
+  -StrategicBehavior <shared-strategic-directory> `
+  -Output <fresh-scoped-paired-run-directory> `
   -Ascension 20 -Attempts 8 -MaxBatchSteps 4096 `
   -BehaviorSeed 10000 -HeldOutSeedStart 0 -RunPotionLane never
 ```

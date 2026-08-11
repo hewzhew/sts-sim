@@ -57,7 +57,7 @@ def test_run_evaluation_uses_frozen_combat_behavior_without_recovery(
         run_bridge=run_bridge,
     )
 
-    assert summary["schema"] == "sts-learning-run-held-out-evaluation-v9"
+    assert summary["schema"] == "sts-learning-run-held-out-evaluation-v10"
     assert summary["execution_behavior_manifest_id"] == summary[
         "behavior_manifest_id"
     ]
@@ -67,6 +67,11 @@ def test_run_evaluation_uses_frozen_combat_behavior_without_recovery(
     assert len(summary["execution_behavior_rule_configuration_id"]) == 64
     assert len(summary["execution_semantic_schema_id"]) == 64
     assert summary["execution_semantic_schema_version"] > 0
+    assert summary["execution_scope"] == "publication_sampled"
+    assert summary["execution_strategic_source_manifest_id"] == summary[
+        "behavior_manifest_id"
+    ]
+    assert summary["execution_combat_anchor_manifest_id"] is None
     assert summary["seed_partition_held_out_numerator"] == 1
     assert summary["seed_partition_denominator"] == 10
     assert summary["ascension_level"] == 20

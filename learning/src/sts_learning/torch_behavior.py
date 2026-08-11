@@ -818,7 +818,8 @@ class FrozenCombatGreedyTorchPolicy:
     def from_categorical(
         cls,
         policy: FrozenCategoricalTorchPolicy,
-        progress_provider: DecisionProgressProvider,
+        progress_provider: DecisionProgressProvider | None,
+        combat_anchor: FrozenCombatAnchor | None = None,
     ) -> FrozenCombatGreedyTorchPolicy:
         if not isinstance(policy, FrozenCategoricalTorchPolicy):
             raise TorchBehaviorError(
@@ -828,10 +829,30 @@ class FrozenCombatGreedyTorchPolicy:
             raise TorchBehaviorError(
                 "categorical policy rule conflicts with its sampled configuration"
             )
+        if combat_anchor is not None:
+            if not isinstance(combat_anchor, FrozenCombatAnchor):
+                raise TorchBehaviorError("combat anchor must be typed")
+            source_manifest = policy.binding.manifest
+            anchor_manifest = combat_anchor.binding.manifest
+            for field in (
+                "model_definition",
+                "model_config",
+                "semantic_schema",
+                "semantic_schema_version",
+            ):
+                if getattr(source_manifest, field) != getattr(anchor_manifest, field):
+                    raise TorchBehaviorError(
+                        f"combat anchor {field} differs from strategic scorer"
+                    )
+            if anchor_manifest.behavior_rule != policy.config.behavior_rule:
+                raise TorchBehaviorError(
+                    "combat anchor behavior rule differs from strategic scorer"
+                )
         manifest = replace(
             policy.binding.manifest,
-            behavior_rule=combat_greedy_strategic_sampled_rule_v1(
-                policy.binding.manifest.behavior_rule
+            behavior_rule=_combat_scoped_behavior_rule(
+                policy.binding.manifest.behavior_rule,
+                combat_anchor,
             ),
         )
         binding = TorchBehaviorBinding(
@@ -846,7 +867,7 @@ class FrozenCombatGreedyTorchPolicy:
             policy.generator,
             progress_provider,
             policy.behavior_manifest_id,
-            None,
+            combat_anchor,
             _token=_PROMOTION_TOKEN,
         )
 

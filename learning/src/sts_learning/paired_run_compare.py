@@ -8,23 +8,33 @@ import json
 import operator
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from enum import Enum
 from pathlib import Path
 
 from .evaluate_run import (
     RunEvaluationCommandConfig,
     RunEvaluationCommandError,
     RunPotionLane,
+    run_recovered_run_evaluation,
     run_run_evaluation,
 )
+from .published_combat_behavior import recover_published_combat_behavior
+from .torch_behavior import FrozenCombatAnchor, FrozenCombatGreedyTorchPolicy
 from .torch_combat_session_config import CombatSessionBridge
+from .torch_combat_session_config import CombatWinSessionLimits
 from .torch_session_config import CategoricalSessionBridge
 
 
-PAIRED_RUN_SCHEMA = "sts-learning-paired-run-comparison-v1"
+PAIRED_RUN_SCHEMA = "sts-learning-paired-run-comparison-v2"
 
 
 class PairedRunComparisonError(RuntimeError):
     """Two whole-run evaluations are incomplete, mismatched, or incomparable."""
+
+
+class RunComparisonScope(str, Enum):
+    FULL_BEHAVIOR = "full_behavior"
+    COMBAT_ANCHOR_ONLY = "combat_anchor_only"
 
 
 @dataclass(frozen=True)
@@ -38,6 +48,7 @@ class PairedRunComparisonConfig:
     ascension_level: int
     held_out_seed_start: int = 0
     potion_lane: RunPotionLane = RunPotionLane.NEVER
+    strategic_behavior: Path | None = None
 
     def __post_init__(self) -> None:
         baseline = Path(self.baseline_behavior).resolve()
@@ -47,6 +58,15 @@ class PairedRunComparisonConfig:
             raise PairedRunComparisonError(
                 "paired run behaviors must be directories"
             )
+        strategic = (
+            None
+            if self.strategic_behavior is None
+            else Path(self.strategic_behavior).resolve()
+        )
+        if strategic is not None and not strategic.is_dir():
+            raise PairedRunComparisonError(
+                "paired run strategic behavior must be a directory"
+            )
         if baseline == candidate:
             raise PairedRunComparisonError(
                 "paired run comparison requires distinct behavior directories"
@@ -55,9 +75,14 @@ class PairedRunComparisonConfig:
             raise PairedRunComparisonError(
                 "paired run output must be absent or empty"
             )
+        behavior_directories = (
+            (baseline, candidate)
+            if strategic is None
+            else (baseline, candidate, strategic)
+        )
         if any(
             output == behavior or behavior in output.parents
-            for behavior in (baseline, candidate)
+            for behavior in behavior_directories
         ):
             raise PairedRunComparisonError(
                 "paired run output must stay outside behavior directories"
@@ -80,6 +105,7 @@ class PairedRunComparisonConfig:
         object.__setattr__(self, "baseline_behavior", baseline)
         object.__setattr__(self, "candidate_behavior", candidate)
         object.__setattr__(self, "output", output)
+        object.__setattr__(self, "strategic_behavior", strategic)
         object.__setattr__(self, "terminal_attempts", probe.terminal_attempts)
         object.__setattr__(self, "max_batch_steps", probe.max_batch_steps)
         object.__setattr__(self, "behavior_seed", probe.behavior_seed)
@@ -90,15 +116,27 @@ class PairedRunComparisonConfig:
             probe.held_out_seed_start,
         )
 
+    @property
+    def comparison_scope(self) -> RunComparisonScope:
+        return (
+            RunComparisonScope.FULL_BEHAVIOR
+            if self.strategic_behavior is None
+            else RunComparisonScope.COMBAT_ANCHOR_ONLY
+        )
+
 
 def compare_completed_run_evaluations(
     baseline: Mapping[str, object],
     candidate: Mapping[str, object],
+    *,
+    scope: RunComparisonScope = RunComparisonScope.FULL_BEHAVIOR,
 ) -> dict[str, object]:
     """Produce per-seed raw differences without declaring a better policy."""
 
     left = _mapping(baseline, "baseline evaluation")
     right = _mapping(candidate, "candidate evaluation")
+    if not isinstance(scope, RunComparisonScope):
+        raise PairedRunComparisonError("paired run comparison scope must be typed")
     for name, summary in (("baseline", left), ("candidate", right)):
         if summary.get("kind") != "completed" or summary.get("target_reached") is not True:
             raise PairedRunComparisonError(
@@ -109,7 +147,6 @@ def compare_completed_run_evaluations(
         "execution_model_definition_id",
         "execution_model_config_id",
         "execution_behavior_rule_implementation_id",
-        "execution_behavior_rule_configuration_id",
         "execution_semantic_schema_id",
         "execution_semantic_schema_version",
         "behavior_seed",
@@ -145,6 +182,30 @@ def compare_completed_run_evaluations(
         raise PairedRunComparisonError(
             "paired run evaluations use the same execution behavior manifest"
         )
+    baseline_anchor: str | None = None
+    candidate_anchor: str | None = None
+    if scope is RunComparisonScope.FULL_BEHAVIOR:
+        if _canonical(left.get("execution_behavior_rule_configuration_id")) != (
+            _canonical(right.get("execution_behavior_rule_configuration_id"))
+        ):
+            raise PairedRunComparisonError(
+                "paired run evaluations disagree on "
+                "execution_behavior_rule_configuration_id"
+            )
+    else:
+        _validate_scoped_combat_pair(left, right)
+        baseline_anchor = _sha256(
+            left.get("execution_combat_anchor_manifest_id"),
+            "baseline execution_combat_anchor_manifest_id",
+        )
+        candidate_anchor = _sha256(
+            right.get("execution_combat_anchor_manifest_id"),
+            "candidate execution_combat_anchor_manifest_id",
+        )
+        if baseline_anchor == candidate_anchor:
+            raise PairedRunComparisonError(
+                "scoped run comparison requires distinct combat anchors"
+            )
 
     baseline_seeds = _terminal_seeds(left, "baseline")
     candidate_seeds = _terminal_seeds(right, "candidate")
@@ -158,7 +219,8 @@ def compare_completed_run_evaluations(
     )
     aggregate = _aggregate(left, right, seed_comparisons)
     contract = {
-        "schema": "sts-learning-paired-run-contract-v1",
+        "schema": "sts-learning-paired-run-contract-v2",
+        "comparison_scope": scope.value,
         "ascension_level": left["ascension_level"],
         "held_out_seed_start": left["held_out_seed_start"],
         "held_out_seed_end": left["held_out_seed_end"],
@@ -172,6 +234,8 @@ def compare_completed_run_evaluations(
         "policy_rng_seed": left["behavior_seed"],
         "policy_rng_scope": (
             "same_initial_stream_per_behavior_path_dependent_consumption"
+            if scope is RunComparisonScope.FULL_BEHAVIOR
+            else "same_initial_strategic_stream_combat_greedy_consumes_no_rng"
         ),
         "execution_model_definition_id": left[
             "execution_model_definition_id"
@@ -180,7 +244,10 @@ def compare_completed_run_evaluations(
         "execution_behavior_rule_implementation_id": left[
             "execution_behavior_rule_implementation_id"
         ],
-        "execution_behavior_rule_configuration_id": left[
+        "baseline_execution_behavior_rule_configuration_id": left[
+            "execution_behavior_rule_configuration_id"
+        ],
+        "candidate_execution_behavior_rule_configuration_id": right[
             "execution_behavior_rule_configuration_id"
         ],
         "execution_semantic_schema_id": left["execution_semantic_schema_id"],
@@ -189,6 +256,16 @@ def compare_completed_run_evaluations(
         ],
         "baseline_manifest_sha256": baseline_manifest,
         "candidate_manifest_sha256": candidate_manifest,
+        "strategic_source_manifest_sha256": (
+            None
+            if scope is RunComparisonScope.FULL_BEHAVIOR
+            else _sha256(
+                left.get("execution_strategic_source_manifest_id"),
+                "execution_strategic_source_manifest_id",
+            )
+        ),
+        "baseline_combat_anchor_manifest_sha256": baseline_anchor,
+        "candidate_combat_anchor_manifest_sha256": candidate_anchor,
         "terminal_seeds": tuple(sorted(baseline_seeds)),
     }
     contract_id = _content_sha256(contract)
@@ -226,29 +303,23 @@ def run_paired_run_comparison(
     active_combat_bridge = combat_bridge or CombatSessionBridge.installed()
     active_run_bridge = run_bridge or CategoricalSessionBridge.installed()
     config.output.mkdir(parents=True, exist_ok=True)
-    summaries: dict[str, dict[str, object]] = {}
-    for name, behavior in (
-        ("baseline", config.baseline_behavior),
-        ("candidate", config.candidate_behavior),
-    ):
-        summaries[name] = run_run_evaluation(
-            RunEvaluationCommandConfig(
-                behavior=behavior,
-                output=config.output / name,
-                slot_count=1,
-                terminal_attempts=config.terminal_attempts,
-                max_batch_steps=config.max_batch_steps,
-                behavior_seed=config.behavior_seed,
-                ascension_level=config.ascension_level,
-                held_out_seed_start=config.held_out_seed_start,
-                potion_lane=config.potion_lane,
-            ),
-            combat_bridge=active_combat_bridge,
-            run_bridge=active_run_bridge,
+    summaries = (
+        _run_full_behavior_pair(
+            config,
+            active_combat_bridge,
+            active_run_bridge,
         )
+        if config.comparison_scope is RunComparisonScope.FULL_BEHAVIOR
+        else _run_scoped_combat_pair(
+            config,
+            active_combat_bridge,
+            active_run_bridge,
+        )
+    )
     comparison = compare_completed_run_evaluations(
         summaries["baseline"],
         summaries["candidate"],
+        scope=config.comparison_scope,
     )
     comparison["baseline_evaluation"] = "baseline/evaluation.json"
     comparison["candidate_evaluation"] = "candidate/evaluation.json"
@@ -278,6 +349,118 @@ def run_paired_run_comparison(
             flush=True,
         )
     return comparison
+
+
+def _run_full_behavior_pair(
+    config: PairedRunComparisonConfig,
+    combat_bridge: CombatSessionBridge,
+    run_bridge: CategoricalSessionBridge,
+) -> dict[str, dict[str, object]]:
+    summaries: dict[str, dict[str, object]] = {}
+    for name, behavior in (
+        ("baseline", config.baseline_behavior),
+        ("candidate", config.candidate_behavior),
+    ):
+        summaries[name] = run_run_evaluation(
+            _evaluation_config(config, behavior, name),
+            combat_bridge=combat_bridge,
+            run_bridge=run_bridge,
+        )
+    return summaries
+
+
+def _run_scoped_combat_pair(
+    config: PairedRunComparisonConfig,
+    combat_bridge: CombatSessionBridge,
+    run_bridge: CategoricalSessionBridge,
+) -> dict[str, dict[str, object]]:
+    if config.strategic_behavior is None:
+        raise AssertionError("scoped comparison lost its strategic behavior")
+    if not isinstance(combat_bridge, CombatSessionBridge):
+        raise PairedRunComparisonError(
+            "scoped run comparison combat bridge must be typed"
+        )
+    if not isinstance(run_bridge, CategoricalSessionBridge):
+        raise PairedRunComparisonError(
+            "scoped run comparison environment bridge must be typed"
+        )
+    if combat_bridge.semantic_schema != run_bridge.semantic_schema:
+        raise PairedRunComparisonError(
+            "scoped combat behavior and run environment schemas differ"
+        )
+    limits = CombatWinSessionLimits()
+    summaries: dict[str, dict[str, object]] = {}
+    for name, anchor_behavior in (
+        ("baseline", config.baseline_behavior),
+        ("candidate", config.candidate_behavior),
+    ):
+        strategic = recover_published_combat_behavior(
+            config.strategic_behavior,
+            combat_bridge,
+            limits,
+            (config.behavior_seed,),
+        )
+        anchor_source = recover_published_combat_behavior(
+            anchor_behavior,
+            combat_bridge,
+            limits,
+            (config.behavior_seed,),
+        )
+        anchor = FrozenCombatAnchor.from_behavior(anchor_source.policies[0])
+        policy = FrozenCombatGreedyTorchPolicy.from_categorical(
+            strategic.policies[0],
+            None,
+            anchor,
+        )
+        summaries[name] = run_recovered_run_evaluation(
+            _evaluation_config(config, config.strategic_behavior, name),
+            strategic,
+            policy,
+            run_bridge=run_bridge,
+        )
+    return summaries
+
+
+def _evaluation_config(
+    config: PairedRunComparisonConfig,
+    behavior: Path,
+    name: str,
+) -> RunEvaluationCommandConfig:
+    return RunEvaluationCommandConfig(
+        behavior=behavior,
+        output=config.output / name,
+        slot_count=1,
+        terminal_attempts=config.terminal_attempts,
+        max_batch_steps=config.max_batch_steps,
+        behavior_seed=config.behavior_seed,
+        ascension_level=config.ascension_level,
+        held_out_seed_start=config.held_out_seed_start,
+        potion_lane=config.potion_lane,
+    )
+
+
+def _validate_scoped_combat_pair(
+    baseline: Mapping[str, object],
+    candidate: Mapping[str, object],
+) -> None:
+    expected_scope = "combat_anchor_greedy_strategic_source_sampled"
+    for side, summary in (("baseline", baseline), ("candidate", candidate)):
+        if summary.get("execution_scope") != expected_scope:
+            raise PairedRunComparisonError(
+                f"{side} run evaluation is not combat-anchor scoped"
+            )
+    for field in (
+        "behavior_manifest_id",
+        "execution_strategic_source_manifest_id",
+        "execution_combat_anchor_model_definition_id",
+        "execution_combat_anchor_model_config_id",
+        "execution_combat_anchor_semantic_schema_id",
+        "execution_combat_anchor_semantic_schema_version",
+    ):
+        if _canonical(baseline.get(field)) != _canonical(candidate.get(field)):
+            raise PairedRunComparisonError(
+                f"scoped run evaluations disagree on {field}"
+            )
 
 
 def _terminal_seeds(
@@ -488,6 +671,7 @@ def _parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--baseline-behavior", type=Path, required=True)
     parser.add_argument("--candidate-behavior", type=Path, required=True)
+    parser.add_argument("--strategic-behavior", type=Path)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--attempts", type=int, default=8)
     parser.add_argument("--max-batch-steps", type=int, default=4096)
@@ -516,6 +700,7 @@ def main() -> int:
                 ascension_level=arguments.ascension,
                 held_out_seed_start=arguments.held_out_seed_start,
                 potion_lane=RunPotionLane(arguments.potion_lane),
+                strategic_behavior=arguments.strategic_behavior,
             )
         )
     except (PairedRunComparisonError, RunEvaluationCommandError) as error:
