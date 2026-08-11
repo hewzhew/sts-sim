@@ -650,7 +650,7 @@ Configure one stable Python 3.12 training runtime once, then use the small
 .\learning\dev.ps1 evaluate-combat-potions -Artifact <held-out-roots.bin> -Behavior <training-dir> -Output <fresh-dir> -Roots <count> -Replicates <count>
 .\learning\dev.ps1 evaluate-run -Behavior <training-dir> -Output <fresh-dir> -Ascension <0..20> -Attempts 8 -MaxBatchSteps 4096 -BehaviorSeed 10000 -HeldOutSeedStart 0 -RunPotionLane trained
 .\learning\dev.ps1 evaluate-run-potions -Behavior <training-dir> -Output <fresh-dir> -Ascension <0..20> -Attempts 8 -MaxBatchSteps 4096 -BehaviorSeed 10000 -HeldOutSeedStart 0
-.\learning\dev.ps1 collect-run-roots -Behavior <training-dir> -Output <fresh.bin> -Ascension <0..20> -Roots 2 -MaxBatchSteps 4096 -WallMs 60000 -BehaviorSeed 120000 -TrainingSeedStart 10000000 -MinFloor 2 -MinUsablePotions 1 -RunPotionLane trained
+.\learning\dev.ps1 collect-run-roots -Behavior <training-dir> -Output <fresh.bin> -Ascension <0..20> -Roots 2 -MaxBatchSteps 4096 -WallMs 60000 -BehaviorSeed 120000 -RootSeedStart 10000000 -RootSeedPartition training -RootHeldOutNumerator 1 -RootPartitionDenominator 10 -MinFloor 2 -MinUsablePotions 1 -RunPotionLane trained
 .\learning\dev.ps1 train-run -Behavior <combat-training-dir> -Output <fresh-dir> -Ascension <0..20> -Slots 4 -Generations 1 -AttemptsPerUpdate 32 -MaxBatchSteps 4096 -EvaluationAttempts 16 -HeldOutSeedStart 1000000 -AdvantageMode decision-local-gae -DecisionScope strategic -CombatDecisionRule greedy -SamplingMode independent-cohorts -RunPolicyUpdate ppo-clip-value -RunPotionLane trained
 ```
 
@@ -757,16 +757,32 @@ continuations or probing JSON:
   -Output <fresh.combat-roots.bin> `
   -Ascension <0..20> `
   -Roots 2 -MaxBatchSteps 4096 -WallMs 60000 `
-  -BehaviorSeed 120000 -TrainingSeedStart 10000000 `
+  -BehaviorSeed 120000 -RootSeedStart 10000000 `
+  -RootSeedPartition training `
+  -RootHeldOutNumerator 1 -RootPartitionDenominator 10 `
   -MinFloor 2 -MinUsablePotions 1 -RunPotionLane trained
 ```
 
-The command uses one run slot, captures at most one undecoded combat root from
-each seed, and keeps concrete inventory inside the opaque checkpoint even when
+The command uses one run slot, advances only seeds in the declared stable
+seed-only partition, captures at most one undecoded combat root from each seed,
+and keeps concrete inventory inside the opaque checkpoint even when
 the behavior's model-facing lane is `never`. Floor and usable-potion filters
 are typed root facts. It merges in Rust and writes only after all requested
 roots have been collected; an incomplete bound leaves the output absent. The
 single-line receipt reports seed/site/resource facts and artifact identity.
+`-RequiredPriorCombats` comes from the typed run resource trace, and
+`-MaxFloor` is an exact admission bound. These selectors do not currently
+abandon an active run after it has passed the bound, so a narrow ceiling can
+spend the remaining collection budget advancing an ineligible run. For a small
+strict tier, first collect a wider reservoir with the required prior-combat
+count, choose only receipt rows at the intended floor, then use
+`learning-root select` to publish those opaque slots as a fresh batch. For
+example, prior-combat count 1 plus selected floor-2 rows means the captured
+combat immediately follows exactly one completed combat without admitting a
+long event/shop route. Use direct `-MinFloor 2 -MaxFloor 2` collection only
+when that bounded inefficiency is acceptable.
+Use `-RootSeedPartition held-out` with the same numerator and denominator for a
+disjoint evaluation corpus; do not reconstruct the partition from outcomes.
 Set `-MinUsablePotions 0` to collect ordinary run-derived combat roots without
 conditioning the corpus on potion ownership. An exact potion rescue corpus
 still supplies both `-RequiredPotionId` and `-RequiredPotionSlot`.
@@ -799,7 +815,7 @@ fixed quotas instead of collecting and merging shards by hand:
   -Ascension <0..20> `
   -EncounterQuota ThreeSentries=4,Lagavulin=4,ExordiumThugs=4 `
   -MaxBatchSteps 4096 -WallMs 60000 `
-  -BehaviorSeed 120000 -TrainingSeedStart 10000000 `
+  -BehaviorSeed 120000 -RootSeedStart 10000000 `
   -MinFloor 6 -MinUsablePotions 0 -RunPotionLane trained
 ```
 

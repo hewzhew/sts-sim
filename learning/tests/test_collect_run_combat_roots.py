@@ -17,10 +17,12 @@ from sts_learning.collect_run_combat_roots import (  # noqa: E402
     RequiredPotionSlot,
     RunCombatRootCollectionError,
     RunCombatRootCollectionConfig,
+    _RootCaptureSink,
     _parser,
     run_run_combat_root_collection,
 )
 from sts_learning.evaluate_run import RunPotionLane  # noqa: E402
+from sts_learning.seeds import SeedPartition, SeedPartitionSpec  # noqa: E402
 from sts_learning.torch_behavior import FrozenDecisionRule  # noqa: E402
 
 
@@ -39,6 +41,11 @@ def test_curriculum_cli_defaults_combat_decisions_to_greedy(tmp_path: Path) -> N
     )
 
     assert arguments.combat_decision_rule == "greedy"
+    assert arguments.seed_partition == "training"
+    assert arguments.held_out_numerator == 1
+    assert arguments.partition_denominator == 10
+    assert arguments.max_floor is None
+    assert arguments.required_prior_combats is None
 
 
 class _RootCapturingWinningEnv(NumpyWinningBatchEnv):
@@ -242,7 +249,7 @@ def test_collection_captures_one_potion_root_per_seed_and_merges_once(
             max_batch_steps=2,
             wall_ms=10_000,
             behavior_seed=94,
-            training_seed_start=100,
+            seed_start=100,
             ascension_level=20,
             min_floor=2,
             min_hp_percent=80,
@@ -266,7 +273,11 @@ def test_collection_captures_one_potion_root_per_seed_and_merges_once(
     assert summary["required_potion_slot"] == 0
     assert summary["requested_run_potion_lane"] == "trained"
     assert summary["run_potion_lane"] == "never"
-    assert summary["schema"] == "sts-learning-run-combat-root-collection-v5"
+    assert summary["schema"] == "sts-learning-run-combat-root-collection-v6"
+    assert summary["seed_partition"] == "training"
+    assert summary["seed_partition_held_out_numerator"] == 1
+    assert summary["seed_partition_denominator"] == 10
+    assert summary["max_floor"] is None
     assert summary["ascension_level"] == 20
     assert summary["combat_decision_rule"] == "greedy"
     assert summary["collection_manifest_id"] != summary["behavior_manifest_id"]
@@ -277,6 +288,7 @@ def test_collection_captures_one_potion_root_per_seed_and_merges_once(
     assert all(root["potion_ids"] == ("FearPotion", None, None) for root in roots)
     assert all(root["monster_ids"] == ("JawWorm",) for root in roots)
     assert all(root["ascension_level"] == 20 for root in roots)
+    assert all(root["prior_combat_count"] == 0 for root in roots)
     assert all(root["relic_ids"] == ("BurningBlood",) for root in roots)
     assert roots[0]["deck"] == (
         {"card_id": "AscendersBane", "upgrades": 0, "count": 1},
@@ -286,6 +298,92 @@ def test_collection_captures_one_potion_root_per_seed_and_merges_once(
     )
     assert all(root["prior_combats"] == () for root in roots)
     assert all(root["prior_strategic_decisions"] == () for root in roots)
+
+
+def test_collection_uses_the_declared_seed_partition(tmp_path: Path) -> None:
+    behavior, combat_bridge, run_bridge = published_behavior(
+        tmp_path,
+        potion_lane=CombatPotionLane.NEVER,
+    )
+    run_bridge = replace(
+        run_bridge,
+        environment=_PotionlessRootCapturingWinningEnv,
+        environment_without_combat_potions=_PotionlessRootCapturingWinningEnv,
+        environment_from_checkpoint=(
+            _PotionlessRootCapturingWinningEnv.from_checkpoint_bytes
+        ),
+    )
+    spec = SeedPartitionSpec(held_out_numerator=1, denominator=2)
+    output = tmp_path / "held-out-roots.bin"
+    summary = run_run_combat_root_collection(
+        RunCombatRootCollectionConfig(
+            behavior=behavior,
+            output=output,
+            root_count=2,
+            max_batch_steps=2,
+            wall_ms=10_000,
+            behavior_seed=94,
+            seed_start=100,
+            ascension_level=20,
+            seed_partition=SeedPartition.HELD_OUT,
+            seed_partition_spec=spec,
+            min_floor=2,
+            min_usable_potions=0,
+            potion_lane=RunPotionLane.TRAINED,
+            max_artifact_bytes=1024,
+        ),
+        combat_bridge=combat_bridge,
+        run_bridge=run_bridge,
+        artifact_merger=lambda payloads, *, max_bytes: b"merged-held-out",
+    )
+
+    assert summary["seed_partition"] == "held_out"
+    assert summary["seed_partition_held_out_numerator"] == 1
+    assert summary["seed_partition_denominator"] == 2
+    assert all(
+        spec.classify(root["seed"]) is SeedPartition.HELD_OUT
+        for root in summary["roots"]
+    )
+
+
+def test_prior_combat_selector_is_an_exact_typed_boundary(tmp_path: Path) -> None:
+    behavior, _, _ = published_behavior(
+        tmp_path,
+        potion_lane=CombatPotionLane.NEVER,
+    )
+    config = RunCombatRootCollectionConfig(
+        behavior=behavior,
+        output=tmp_path / "second-combat-roots.bin",
+        root_count=1,
+        max_batch_steps=1,
+        wall_ms=10_000,
+        behavior_seed=94,
+        seed_start=100,
+        ascension_level=20,
+        min_floor=2,
+        required_prior_combat_count=1,
+        min_usable_potions=0,
+        potion_lane=RunPotionLane.TRAINED,
+        max_artifact_bytes=1024,
+    )
+    env = _PotionlessRootCapturingWinningEnv([100], 20)
+    blocked = _RootCaptureSink(config, None, (), lambda seed, act, floor: 0)
+    blocked.observe(env)
+    assert blocked.roots == []
+
+    floor_blocked = _RootCaptureSink(
+        replace(config, max_floor=2),
+        None,
+        (),
+        lambda seed, act, floor: 1,
+    )
+    floor_blocked.observe(env)
+    assert floor_blocked.roots == []
+
+    admitted = _RootCaptureSink(config, None, (), lambda seed, act, floor: 1)
+    admitted.observe(env)
+    assert len(admitted.roots) == 1
+    assert admitted.roots[0].prior_combat_count == 1
 
 
 def test_collection_binds_prior_strategic_candidates_to_the_chosen_ordinal(
@@ -310,7 +408,7 @@ def test_collection_binds_prior_strategic_candidates_to_the_chosen_ordinal(
             max_batch_steps=1,
             wall_ms=10_000,
             behavior_seed=94,
-            training_seed_start=100,
+            seed_start=100,
             ascension_level=20,
             min_floor=2,
             min_usable_potions=0,
@@ -357,7 +455,7 @@ def test_collection_rejects_a_root_that_changed_ascension(tmp_path: Path) -> Non
                 max_batch_steps=1,
                 wall_ms=10_000,
                 behavior_seed=94,
-                training_seed_start=100,
+                seed_start=100,
                 ascension_level=20,
                 min_floor=2,
                 min_usable_potions=0,
@@ -393,7 +491,7 @@ def test_collection_can_make_only_combat_decisions_greedy(tmp_path: Path) -> Non
             max_batch_steps=1,
             wall_ms=10_000,
             behavior_seed=94,
-            training_seed_start=100,
+            seed_start=100,
             ascension_level=20,
             combat_decision_rule=FrozenDecisionRule.GREEDY,
             min_floor=2,
@@ -430,7 +528,7 @@ def test_collection_can_capture_a_potionless_combat_root(tmp_path: Path) -> None
             max_batch_steps=1,
             wall_ms=10_000,
             behavior_seed=94,
-            training_seed_start=100,
+            seed_start=100,
             ascension_level=20,
             min_floor=2,
             min_usable_potions=0,
@@ -465,7 +563,7 @@ def test_collection_can_require_distinct_encounters(tmp_path: Path) -> None:
             max_batch_steps=2,
             wall_ms=10_000,
             behavior_seed=94,
-            training_seed_start=100,
+            seed_start=100,
             ascension_level=20,
             min_floor=2,
             min_usable_potions=0,
@@ -502,7 +600,7 @@ def test_collection_can_require_one_exact_encounter(tmp_path: Path) -> None:
             max_batch_steps=1,
             wall_ms=10_000,
             behavior_seed=94,
-            training_seed_start=100,
+            seed_start=100,
             ascension_level=20,
             min_floor=2,
             min_usable_potions=0,
@@ -538,7 +636,7 @@ def test_collection_fulfills_each_encounter_quota_from_distinct_seeds(
             max_batch_steps=4,
             wall_ms=10_000,
             behavior_seed=94,
-            training_seed_start=100,
+            seed_start=100,
             ascension_level=20,
             min_floor=2,
             min_usable_potions=0,
@@ -591,7 +689,7 @@ def test_incomplete_encounter_quota_publishes_no_artifact(tmp_path: Path) -> Non
                 max_batch_steps=3,
                 wall_ms=10_000,
                 behavior_seed=94,
-                training_seed_start=100,
+                seed_start=100,
                 ascension_level=20,
                 min_floor=2,
                 min_usable_potions=0,
@@ -635,7 +733,7 @@ def test_required_encounter_rejects_unsupported_identity_before_collection(
                 max_batch_steps=1,
                 wall_ms=10_000,
                 behavior_seed=94,
-                training_seed_start=100,
+                seed_start=100,
                 ascension_level=20,
                 min_floor=2,
                 min_usable_potions=0,
@@ -672,7 +770,7 @@ def test_bounded_unmatched_potion_collection_publishes_no_artifact(
                 max_batch_steps=1,
                 wall_ms=10_000,
                 behavior_seed=95,
-                training_seed_start=200,
+                seed_start=200,
                 ascension_level=20,
                 min_floor=2,
                 min_usable_potions=1,

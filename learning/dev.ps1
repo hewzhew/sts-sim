@@ -38,11 +38,14 @@ param(
     [int]$Generations = 1,
     [int]$AttemptsPerUpdate = 8,
     [long]$TrainingSeedStart = 0,
+    [long]$RootSeedStart = 0,
     [int]$EvaluationAttempts = 16,
     [int]$EvaluationMaxBatchSteps = 4096,
     [long]$EvaluationBehaviorSeed = 100000,
     [int]$WallMs = 60000,
     [int]$MinFloor = 2,
+    [Nullable[int]]$MaxFloor,
+    [Nullable[int]]$RequiredPriorCombats,
     [ValidateRange(0, 100)]
     [int]$MinHpPercent = 0,
     [int]$MinUsablePotions = 1,
@@ -66,6 +69,10 @@ param(
     [string]$RequiredEncounterId,
     [switch]$DistinctEncounters,
     [string[]]$EncounterQuota = @(),
+    [ValidateSet("training", "held-out")]
+    [string]$RootSeedPartition = "training",
+    [int]$RootHeldOutNumerator = 1,
+    [int]$RootPartitionDenominator = 10,
     [ValidateSet("dev", "release")]
     [string]$BridgeProfile = "release"
 )
@@ -474,7 +481,16 @@ switch ($Command) {
         }
         $pythonPath = Get-ConfiguredPython
         $selectorArguments = @()
+        $captureArguments = @()
         $rootArguments = @()
+        if ($null -ne $RequiredPriorCombats) {
+            $captureArguments += @(
+                "--required-prior-combats", $RequiredPriorCombats
+            )
+        }
+        if ($null -ne $MaxFloor) {
+            $captureArguments += @("--max-floor", $MaxFloor)
+        }
         if ($RequiredPotionId -or $null -ne $RequiredPotionSlot) {
             if (-not $RequiredPotionId -or $null -eq $RequiredPotionSlot) {
                 throw "collect-run-roots requires both -RequiredPotionId and -RequiredPotionSlot"
@@ -513,6 +529,7 @@ switch ($Command) {
         } else {
             "greedy"
         }
+        $collectorSeedPartition = $RootSeedPartition.Replace("-", "_")
         Invoke-Doctor $pythonPath
         Invoke-WithLearningPath {
             & $pythonPath -m sts_learning.collect_run_combat_roots `
@@ -522,7 +539,10 @@ switch ($Command) {
                 --max-batch-steps $MaxBatchSteps `
                 --wall-ms $WallMs `
                 --behavior-seed $BehaviorSeed `
-                --training-seed-start $TrainingSeedStart `
+                --seed-start $RootSeedStart `
+                --seed-partition $collectorSeedPartition `
+                --held-out-numerator $RootHeldOutNumerator `
+                --partition-denominator $RootPartitionDenominator `
                 --ascension $Ascension `
                 --combat-decision-rule $collectorCombatDecisionRule `
                 --min-floor $MinFloor `
@@ -530,6 +550,7 @@ switch ($Command) {
                 --min-usable-potions $MinUsablePotions `
                 --max-artifact-bytes $MaxArtifactBytes `
                 --potion-lane $RunPotionLane `
+                @captureArguments `
                 @selectorArguments
             if ($LASTEXITCODE -ne 0) {
                 throw "run combat-root collection failed"

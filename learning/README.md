@@ -248,9 +248,11 @@ bounded rehearsal corpus coexist with a new competence frontier without an
 ad-hoc binary concatenation or Python checkpoint decoding.
 `sts_learning.collect_run_combat_roots` supplies the bounded corpus path when
 useful later continuations do not yet exist. It advances one published frozen
-behavior over training-partition runs, aligns compact public run facts with
-undecoded combat-root contexts, and captures at most one typed floor- and
-usable-potion-qualified root per seed. Rust merges the canonical single-root
+behavior over one explicit seed partition and `SeedPartitionSpec`, aligns
+compact public run facts with undecoded combat-root contexts, and captures at
+most one typed floor-, prior-combat-count-, and usable-potion-qualified root per
+seed. A maximum floor can close a narrow causal tier instead of letting a
+minimum-floor selector silently admit much later routes. Rust merges the canonical single-root
 payloads without exposing their sessions. The command publishes one fresh
 opaque batch only after reaching its declared root target; a step/deadline,
 identity, alignment, or byte failure leaves no output. Its receipt records the

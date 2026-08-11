@@ -41,7 +41,7 @@ from .run_resource_trace import (
     ResourceTracingEnvironmentFactory,
     RunResourceTrace,
 )
-from .seeds import SeedPartition, SeedSchedule
+from .seeds import SeedPartition, SeedPartitionSpec, SeedSchedule
 from .strategic_decision_audit import (
     StrategicDecisionAudit,
     StrategicDecisionAuditError,
@@ -115,10 +115,14 @@ class RunCombatRootCollectionConfig:
     max_batch_steps: int
     wall_ms: int
     behavior_seed: int
-    training_seed_start: int
+    seed_start: int
     ascension_level: int
+    seed_partition: SeedPartition = SeedPartition.TRAINING
+    seed_partition_spec: SeedPartitionSpec = SeedPartitionSpec()
     combat_decision_rule: FrozenDecisionRule = FrozenDecisionRule.GREEDY
     min_floor: int = 2
+    max_floor: int | None = None
+    required_prior_combat_count: int | None = None
     min_hp_percent: int = 0
     min_usable_potions: int = 1
     potion_lane: RunPotionLane = RunPotionLane.TRAINED
@@ -154,6 +158,14 @@ class RunCombatRootCollectionConfig:
         if not isinstance(self.combat_decision_rule, FrozenDecisionRule):
             raise RunCombatRootCollectionError(
                 "root collection combat decision rule must be typed"
+            )
+        if not isinstance(self.seed_partition, SeedPartition):
+            raise RunCombatRootCollectionError(
+                "root collection seed partition must be typed"
+            )
+        if not isinstance(self.seed_partition_spec, SeedPartitionSpec):
+            raise RunCombatRootCollectionError(
+                "root collection seed partition spec must be typed"
             )
         if self.required_potion is not None and not isinstance(
             self.required_potion,
@@ -219,7 +231,24 @@ class RunCombatRootCollectionConfig:
         object.__setattr__(self, "root_count", root_count)
         for name in ("max_batch_steps", "wall_ms", "max_artifact_bytes"):
             object.__setattr__(self, name, _positive(getattr(self, name), name))
-        object.__setattr__(self, "min_floor", _nonnegative(self.min_floor, "min_floor"))
+        min_floor = _nonnegative(self.min_floor, "min_floor")
+        object.__setattr__(self, "min_floor", min_floor)
+        if self.max_floor is not None:
+            max_floor = _nonnegative(self.max_floor, "max_floor")
+            if max_floor < min_floor:
+                raise RunCombatRootCollectionError(
+                    "max_floor must be at least min_floor"
+                )
+            object.__setattr__(self, "max_floor", max_floor)
+        if self.required_prior_combat_count is not None:
+            object.__setattr__(
+                self,
+                "required_prior_combat_count",
+                _nonnegative(
+                    self.required_prior_combat_count,
+                    "required_prior_combat_count",
+                ),
+            )
         min_hp_percent = _nonnegative(self.min_hp_percent, "min_hp_percent")
         if min_hp_percent > 100:
             raise RunCombatRootCollectionError(
@@ -238,8 +267,8 @@ class RunCombatRootCollectionConfig:
         )
         object.__setattr__(
             self,
-            "training_seed_start",
-            _seed(self.training_seed_start, "training_seed_start"),
+            "seed_start",
+            _seed(self.seed_start, "seed_start"),
         )
         ascension_level = _nonnegative(self.ascension_level, "ascension_level")
         if ascension_level > 20:
@@ -262,6 +291,7 @@ class CapturedRunCombatRoot:
     monster_ids: tuple[str, ...]
     filled_potion_count: int
     usable_potion_count: int
+    prior_combat_count: int
     audit: CombatRootAudit
     prior_strategic_decisions: tuple[dict[str, object], ...]
 
@@ -272,12 +302,18 @@ class _RootCaptureSink:
         config: RunCombatRootCollectionConfig,
         required_encounter_id: str | None,
         encounter_quotas: tuple[EncounterQuota, ...],
+        prior_combat_count: Callable[[int, int, int], int],
     ) -> None:
         self.config = config
         self.required_encounter_id = required_encounter_id
         self.encounter_quotas = {
             quota.encounter_id: quota.root_count for quota in encounter_quotas
         }
+        if not callable(prior_combat_count):
+            raise RunCombatRootCollectionError(
+                "prior combat count source must be callable"
+            )
+        self._prior_combat_count = prior_combat_count
         self.payloads: list[bytes] = []
         self.roots: list[CapturedRunCombatRoot] = []
         self._captured_seeds: set[int] = set()
@@ -387,6 +423,18 @@ class _RootCaptureSink:
                 )
             if floor < self.config.min_floor:
                 continue
+            if self.config.max_floor is not None and floor > self.config.max_floor:
+                continue
+            prior_combat_count = _nonnegative(
+                self._prior_combat_count(context.seed, act, floor),
+                "prior combat count",
+            )
+            if (
+                self.config.required_prior_combat_count is not None
+                and prior_combat_count
+                != self.config.required_prior_combat_count
+            ):
+                continue
             if 100 * hp < self.config.min_hp_percent * max_hp:
                 continue
             if usable < self.config.min_usable_potions:
@@ -463,6 +511,7 @@ class _RootCaptureSink:
                     monster_ids=context.monster_ids,
                     filled_potion_count=filled,
                     usable_potion_count=usable,
+                    prior_combat_count=prior_combat_count,
                     audit=audit,
                     prior_strategic_decisions=tuple(
                         self._strategic_decisions.get(context.seed, ())
@@ -704,9 +753,20 @@ def run_run_combat_root_collection(
             "run bridge does not provide opaque combat-root merging"
         )
 
-    sink = _RootCaptureSink(config, required_encounter_id, encounter_quotas)
     tracing_factory = ResourceTracingEnvironmentFactory(
         lambda seeds: environment_constructor(seeds, config.ascension_level)
+    )
+    sink = _RootCaptureSink(
+        config,
+        required_encounter_id,
+        encounter_quotas,
+        lambda seed, act, floor: len(
+            tracing_factory.trace.completed_combats_before(
+                seed=seed,
+                act=act,
+                floor=floor,
+            )
+        ),
     )
 
     def capturing_factory(seeds: list[int]) -> _CapturingEnvironment:
@@ -725,8 +785,9 @@ def run_run_combat_root_collection(
         return _CapturingEnvironment(cast(_RootExportEnvironment, env), sink)
 
     schedule_start = SeedSchedule(
-        SeedPartition.TRAINING,
-        next_candidate=config.training_seed_start,
+        config.seed_partition,
+        spec=config.seed_partition_spec,
+        next_candidate=config.seed_start,
     )
     population = initialize_population(
         capturing_factory,
@@ -785,7 +846,7 @@ def run_run_combat_root_collection(
     resource_trace = tracing_factory.trace
 
     summary: dict[str, object] = {
-        "schema": "sts-learning-run-combat-root-collection-v5",
+        "schema": "sts-learning-run-combat-root-collection-v6",
         "behavior": str(config.behavior),
         "behavior_training_kind": behavior_kind,
         "behavior_manifest_id": recovered.manifest_id.digest.hex(),
@@ -798,9 +859,16 @@ def run_run_combat_root_collection(
         "ascension_level": config.ascension_level,
         "requested_run_potion_lane": config.potion_lane.value,
         "run_potion_lane": potion_lane.value,
-        "training_seed_start": config.training_seed_start,
-        "training_seed_end": driver.schedule.next_candidate,
+        "seed_partition": config.seed_partition.value,
+        "seed_partition_held_out_numerator": (
+            config.seed_partition_spec.held_out_numerator
+        ),
+        "seed_partition_denominator": config.seed_partition_spec.denominator,
+        "seed_start": config.seed_start,
+        "seed_end": driver.schedule.next_candidate,
         "min_floor": config.min_floor,
+        "max_floor": config.max_floor,
+        "required_prior_combat_count": config.required_prior_combat_count,
         "min_hp_percent": config.min_hp_percent,
         "min_usable_potions": config.min_usable_potions,
         "distinct_encounters": config.distinct_encounters,
@@ -836,6 +904,7 @@ def run_run_combat_root_collection(
                 "monster_ids": root.monster_ids,
                 "filled_potion_count": root.filled_potion_count,
                 "usable_potion_count": root.usable_potion_count,
+                "prior_combat_count": root.prior_combat_count,
                 "deck": root.audit.as_mapping()["deck"],
                 "relic_ids": root.audit.relic_ids,
                 "prior_combats": _prior_combat_rows(
@@ -985,7 +1054,7 @@ def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
             "Capture exact run-derived combat roots with typed resource context while "
-            "a frozen behavior advances training-partition runs."
+            "a frozen behavior advances one explicit seed partition."
         )
     )
     parser.add_argument("--behavior", type=Path, required=True)
@@ -1001,7 +1070,14 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--max-batch-steps", type=int, default=4096)
     parser.add_argument("--wall-ms", type=int, default=60_000)
     parser.add_argument("--behavior-seed", type=int, default=10_000)
-    parser.add_argument("--training-seed-start", type=int, default=10_000_000)
+    parser.add_argument("--seed-start", type=int, default=10_000_000)
+    parser.add_argument(
+        "--seed-partition",
+        choices=tuple(partition.value for partition in SeedPartition),
+        default=SeedPartition.TRAINING.value,
+    )
+    parser.add_argument("--held-out-numerator", type=int, default=1)
+    parser.add_argument("--partition-denominator", type=int, default=10)
     parser.add_argument(
         "--ascension",
         type=int,
@@ -1014,6 +1090,8 @@ def _parser() -> argparse.ArgumentParser:
         default=FrozenDecisionRule.GREEDY.value,
     )
     parser.add_argument("--min-floor", type=int, default=2)
+    parser.add_argument("--max-floor", type=int)
+    parser.add_argument("--required-prior-combats", type=int)
     parser.add_argument("--min-hp-percent", type=int, choices=range(101), default=0)
     parser.add_argument("--min-usable-potions", type=int, default=1)
     parser.add_argument("--required-potion-id")
@@ -1086,12 +1164,19 @@ def main() -> int:
             max_batch_steps=arguments.max_batch_steps,
             wall_ms=arguments.wall_ms,
             behavior_seed=arguments.behavior_seed,
-            training_seed_start=arguments.training_seed_start,
+            seed_start=arguments.seed_start,
             ascension_level=arguments.ascension,
+            seed_partition=SeedPartition(arguments.seed_partition),
+            seed_partition_spec=SeedPartitionSpec(
+                held_out_numerator=arguments.held_out_numerator,
+                denominator=arguments.partition_denominator,
+            ),
             combat_decision_rule=FrozenDecisionRule(
                 arguments.combat_decision_rule
             ),
             min_floor=arguments.min_floor,
+            max_floor=arguments.max_floor,
+            required_prior_combat_count=arguments.required_prior_combats,
             min_hp_percent=arguments.min_hp_percent,
             min_usable_potions=arguments.min_usable_potions,
             potion_lane=RunPotionLane(arguments.potion_lane),

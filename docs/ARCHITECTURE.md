@@ -339,9 +339,10 @@ the pool, and exposes no session fields to Python. The bridge does not depend
 on runtime artifact types, guess continuation JSON fields, or read private
 branch cutpoint schemas.
 The bounded later-combat sampler advances one frozen published behavior over
-training-partition runs and inspects only the bridge's aligned public run
-context and undecoded combat-root context. It captures at most one qualifying
-root per seed, filters by typed floor and usable-potion count, and may require
+one explicit seed partition and stable seed-only partition spec, then inspects
+only the bridge's aligned public run context and undecoded combat-root context.
+It captures at most one qualifying root per seed, filters by typed minimum and
+optional maximum floor, exact prior-combat count, and usable-potion count, and may require
 one bridge-validated canonical potion identity in one exact slot. Encounter
 selection may require one canonical identity, one root per distinct identity,
 or an explicit fixed quota for each of several canonical identities. Those
@@ -351,7 +352,8 @@ merge canonical single-root payloads without exposing checkpoint fields. The
 sampler writes one fresh batch only after the requested root count is complete;
 a deadline, step bound, duplicate root, incomplete encounter quota, context
 mismatch, or byte overflow
-publishes nothing. Its compact receipt is corpus provenance, not a policy
+publishes nothing. Its compact receipt binds the partition, partition spec,
+capture bounds, and observed prior-combat count as corpus provenance, not a policy
 label or a potion-value judgment. The receipt reuses the held-out resource
 trace owner to attach earlier same-seed combat HP, gold, and concrete potion
 transitions plus ordered canonical enemy identities; it does not retain
