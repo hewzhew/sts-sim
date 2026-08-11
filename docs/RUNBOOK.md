@@ -1049,6 +1049,31 @@ for this independent behavior check. The experiment remains
 over broader decks, relics, potions, encounters, and repeated independent
 cohorts.
 
+To discover where that reloaded candidate first changes attack ordering on
+several independent natural artifacts, follow only actions on which both frozen
+scorers have the same greedy ordinal:
+
+```powershell
+python -m sts_learning.combat_policy_divergence_collect `
+  --artifact <first-natural-roots.bin> --root-count <first-count> `
+  --artifact <second-natural-roots.bin> --root-count <second-count> `
+  --baseline-behavior <frozen-source-behavior> `
+  --candidate <experimental-candidate-dir> `
+  --output-dir <fresh-divergence-dir>
+```
+
+At the first differing ordinal, the collector retains only a same-card-profile
+different-target choice or two damaging card actions. It records both complete
+typed candidate surfaces, logits, ranks, margins, and the shared prefix, then
+exports the current boundary directly as one canonical opaque root. A shared
+structured-selection flow is identified by its enclosing exact combat root and
+typed selection prefix; it is never exported as an invented root. A first
+selection, defense, potion, or end-turn divergence rejects that source root
+instead of following one policy and searching for a later convenient
+disagreement. The merged `divergence-roots.bin` is discovery input for a fresh
+equal-work successor search, not a teacher corpus or evidence that the
+candidate action is better.
+
 For a bounded fixed-behavior coverage check over every root, use
 `CombatWinSignalCensusRunner` with the same `expected_roots`, one shared model
 seed, one explicit behavior seed per root, and `max_roots` equal to the intended
