@@ -372,7 +372,7 @@ fn current_stage_probe_is_a_separate_bounded_command() {
         "run.workspace.json",
         "--generation-work",
         "768",
-        "--quantum-nodes",
+        "--quantum-generation-work",
         "128",
         "--wall-ms",
         "250",
@@ -380,7 +380,7 @@ fn current_stage_probe_is_a_separate_bounded_command() {
     .expect("current-stage probe should parse");
     let Command::ProbeCombat {
         generation_work,
-        quantum_nodes,
+        quantum_generation_work,
         wall_ms,
         ..
     } = cli.command
@@ -388,7 +388,7 @@ fn current_stage_probe_is_a_separate_bounded_command() {
         panic!("expected probe-combat command");
     };
     assert_eq!(generation_work, 768);
-    assert_eq!(quantum_nodes, 128);
+    assert_eq!(quantum_generation_work, 128);
     assert_eq!(wall_ms, 250);
 }
 

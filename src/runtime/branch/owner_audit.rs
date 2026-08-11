@@ -6,6 +6,22 @@ use std::path::PathBuf;
 mod accepted_combat_attrition;
 #[path = "owner_audit/accepted_high_loss_diagnostic.rs"]
 mod accepted_high_loss_diagnostic;
+#[path = "owner_audit/atomic_combat_search_orchestrator.rs"]
+mod atomic_combat_search_orchestrator;
+#[path = "owner_audit/atomic_combat_search_report.rs"]
+mod atomic_combat_search_report;
+#[path = "owner_audit/atomic_combat_search_session_json.rs"]
+mod atomic_combat_search_session_json;
+#[path = "owner_audit/atomic_combat_search_session_output.rs"]
+mod atomic_combat_search_session_output;
+#[path = "owner_audit/atomic_combat_search_session_plan.rs"]
+mod atomic_combat_search_session_plan;
+#[path = "owner_audit/atomic_combat_search_session_result.rs"]
+mod atomic_combat_search_session_result;
+#[path = "owner_audit/atomic_combat_search_survival.rs"]
+mod atomic_combat_search_survival;
+#[path = "owner_audit/atomic_combat_search_trace_actions.rs"]
+mod atomic_combat_search_trace_actions;
 #[path = "owner_audit/boss_relic_owner.rs"]
 mod boss_relic_owner;
 #[path = "owner_audit/boundary_router.rs"]
@@ -44,22 +60,6 @@ mod card_reward_owner;
 mod cli_args;
 #[path = "owner_audit/combat_gap_case.rs"]
 mod combat_gap_case;
-#[path = "owner_audit/combat_search_orchestrator.rs"]
-mod combat_search_orchestrator;
-#[path = "owner_audit/combat_search_report.rs"]
-mod combat_search_report;
-#[path = "owner_audit/combat_search_session_json.rs"]
-mod combat_search_session_json;
-#[path = "owner_audit/combat_search_session_output.rs"]
-mod combat_search_session_output;
-#[path = "owner_audit/combat_search_session_plan.rs"]
-mod combat_search_session_plan;
-#[path = "owner_audit/combat_search_session_result.rs"]
-mod combat_search_session_result;
-#[path = "owner_audit/combat_search_survival.rs"]
-mod combat_search_survival;
-#[path = "owner_audit/combat_search_trace_actions.rs"]
-mod combat_search_trace_actions;
 #[path = "owner_audit/decision_delta.rs"]
 mod decision_delta;
 #[cfg(test)]
@@ -89,8 +89,8 @@ mod owner_routines;
 mod owners;
 #[path = "owner_audit/policy_expansion_plan.rs"]
 mod policy_expansion_plan;
-#[path = "owner_audit/primary_search_outcome.rs"]
-mod primary_search_outcome;
+#[path = "owner_audit/primary_atomic_witness.rs"]
+mod primary_atomic_witness;
 #[path = "owner_audit/render.rs"]
 mod render;
 #[path = "owner_audit/render_choice.rs"]
@@ -287,7 +287,7 @@ pub fn apply_oracle_production_noncombat_step_v1(
 /// production session; this helper never infers context from display text.
 pub fn reconstruct_oracle_combat_context_trace_v1(
     session: &sts_simulator::eval::run_control::RunControlSession,
-) -> Result<sts_simulator::eval::run_control::CombatSearchTraceSummary, String> {
+) -> Result<sts_simulator::eval::run_control::AtomicCombatSearchTraceSummaryV2, String> {
     let active_combat = session
         .active_combat
         .as_ref()
@@ -313,18 +313,20 @@ pub fn reconstruct_oracle_combat_context_trace_v1(
         sts_simulator::eval::run_control::CombatSearchStrategicHpQualityFactsV1::from_owner_limits(
             entry_current_hp,
             entry_max_hp,
-            combat_search_survival::owner_audit_hp_loss_limit(session),
-            combat_search_survival::owner_audit_search_quality_loss_target(session),
+            atomic_combat_search_survival::owner_audit_hp_loss_limit(session),
+            atomic_combat_search_survival::owner_audit_search_quality_loss_target(session),
         );
 
-    Ok(sts_simulator::eval::run_control::CombatSearchTraceSummary {
-        source: "reconstructed_exact_production_context".to_string(),
-        potion_continuation_context: Some(potion_continuation_context),
-        potion_continuation_pressure: Some(potion_continuation_pressure),
-        combat_victory_continuation: Some(combat_victory_continuation),
-        strategic_hp_quality: Some(strategic_hp_quality),
-        ..sts_simulator::eval::run_control::CombatSearchTraceSummary::default()
-    })
+    Ok(
+        sts_simulator::eval::run_control::AtomicCombatSearchTraceSummaryV2 {
+            source: "reconstructed_exact_production_context".to_string(),
+            potion_continuation_context: Some(potion_continuation_context),
+            potion_continuation_pressure: Some(potion_continuation_pressure),
+            combat_victory_continuation: Some(combat_victory_continuation),
+            strategic_hp_quality: Some(strategic_hp_quality),
+            ..sts_simulator::eval::run_control::AtomicCombatSearchTraceSummaryV2::default()
+        },
+    )
 }
 
 /// Adapts the current production owners into a complete positive-support
@@ -878,7 +880,7 @@ mod tests {
             .iter()
             .any(|artifact| {
                 artifact["kind"] == "frontier"
-                    && artifact["schema"] == "branch_tiny_frontier_checkpoint"
+                    && artifact["schema"] == "branch_tiny_frontier_checkpoint_v3"
             }));
         assert!(finished["artifact_refs"]
             .as_array()

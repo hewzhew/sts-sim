@@ -27,7 +27,6 @@ members = [
     "crates/sts_combat_search_driver",
     "crates/sts_combat_strategy",
     "crates/sts_oracle_tools",
-    "tools/architecture_checks",
 ]
 default-members = ["."]
 exclude = ["bindings/python_learning"]

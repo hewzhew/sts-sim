@@ -5,6 +5,9 @@ use crate::ai::combat_search_v2::{
 use crate::sim::combat::{CombatPosition, CombatStepper, CombatTerminal, EngineCombatStepper};
 use crate::state::core::ClientInput;
 
+use super::atomic_combat_search_render::{
+    render_complete_line_solver_application, render_search_application, render_segment_application,
+};
 use super::combat_candidate_line::{replay_candidate_line, CombatCandidateLine};
 use super::combat_line_trace::{
     combat_automation_answer_claims_v1, combat_automation_opportunity_state_v1,
@@ -14,9 +17,6 @@ use super::combat_line_trace::{
 };
 use super::combat_resolution::{
     RunCombatResolutionBoundaryV1, RunCombatResolutionKindV1, RunCombatResolutionV1,
-};
-use super::combat_search_render::{
-    render_complete_line_solver_application, render_search_application, render_segment_application,
 };
 use super::session::{RunControlSession, RunProgressOutcome};
 use super::trace_annotation::{

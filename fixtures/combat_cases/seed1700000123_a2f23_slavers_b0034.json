@@ -42,7 +42,7 @@
     "max_hp": 85,
     "turn": 0
   },
-  "failed_search": {
+  "failed_atomic_combat_search": {
     "act": 2,
     "combat_kind": "elite",
     "complete_trajectory_found": false,
@@ -62,8 +62,13 @@
   "gap": {
     "boundary": "Combat",
     "reason": "combat search did not find an executable complete win",
-    "search_ms": 1000,
-    "search_nodes": 100000
+    "witness_budget": {
+      "witness_engine": "atomic_exact_v2",
+      "primary_nodes": 100000,
+      "primary_wall_ms": 1000,
+      "rescue_nodes": 0,
+      "rescue_wall_ms": 0
+    }
   },
   "path": [
     {
@@ -1377,7 +1382,7 @@
     "shuffle_rng": 0,
     "treasure_rng": 15
   },
-  "schema": "combat_gap_case",
+  "schema": "combat_case_v1",
   "source": {
     "ascension": 0,
     "branch_id": 34,

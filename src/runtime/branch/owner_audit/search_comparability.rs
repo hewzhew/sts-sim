@@ -1,7 +1,9 @@
 use sts_simulator::ai::strategy::trajectory_comparison::{
     TrajectorySearchComparability, TrajectorySearchComparabilityStatus,
 };
-use sts_simulator::eval::run_control::{CombatLineAdjudicationV1, CombatSearchTraceSummary};
+use sts_simulator::eval::run_control::{
+    AtomicCombatSearchTraceSummaryV2, CombatLineAdjudicationV1,
+};
 
 #[derive(Clone, Copy)]
 enum AttemptComparability {
@@ -13,7 +15,7 @@ enum AttemptComparability {
 }
 
 pub(super) fn classify_search_comparability(
-    attempts: &[CombatSearchTraceSummary],
+    attempts: &[AtomicCombatSearchTraceSummaryV2],
 ) -> TrajectorySearchComparability {
     let mut result = TrajectorySearchComparability::comparable_without_attempts();
     for attempt in attempts {
@@ -46,7 +48,7 @@ pub(super) fn classify_search_comparability(
     result
 }
 
-fn classify_attempt(attempt: &CombatSearchTraceSummary) -> AttemptComparability {
+fn classify_attempt(attempt: &AtomicCombatSearchTraceSummaryV2) -> AttemptComparability {
     if matches!(
         attempt.execution_adjudication.as_ref(),
         Some(CombatLineAdjudicationV1::Accepted { .. })
@@ -94,16 +96,16 @@ mod tests {
         TrajectorySearchComparability, TrajectorySearchComparabilityStatus,
     };
     use sts_simulator::eval::run_control::{
-        CombatLineAdjudicationV1, CombatLineCleanlinessV1, CombatLineObservedOutcomeV1,
-        CombatLineRejectionReasonV1, CombatSearchTraceSummary,
+        AtomicCombatSearchTraceSummaryV2, CombatLineAdjudicationV1, CombatLineCleanlinessV1,
+        CombatLineObservedOutcomeV1, CombatLineRejectionReasonV1,
     };
     use sts_simulator::sim::combat::CombatTerminal;
 
-    fn attempt(coverage: &str) -> CombatSearchTraceSummary {
-        CombatSearchTraceSummary {
+    fn attempt(coverage: &str) -> AtomicCombatSearchTraceSummaryV2 {
+        AtomicCombatSearchTraceSummaryV2 {
             source: "test".to_string(),
             coverage_status: coverage.to_string(),
-            ..CombatSearchTraceSummary::default()
+            ..AtomicCombatSearchTraceSummaryV2::default()
         }
     }
 

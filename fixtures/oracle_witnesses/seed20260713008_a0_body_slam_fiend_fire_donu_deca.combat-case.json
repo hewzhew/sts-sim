@@ -1,5 +1,5 @@
 {
-  "schema": "combat_case",
+  "schema": "combat_case_v1",
   "source": {
     "seed": 20260713008,
     "ascension": 0,
@@ -9,10 +9,7 @@
   "gap": {
     "boundary": "Act 3 Floor 48 historical combat",
     "reason": "verified_run_witness_extraction",
-    "search_nodes": 0,
-    "search_ms": 0,
-    "rescue_search_nodes": 0,
-    "rescue_search_ms": 0
+    "witness_budget": {"witness_engine": "not_run"}
   },
   "run": {
     "act": 3,

@@ -550,8 +550,8 @@ pub(super) fn run_plan(args: TurnPlanAuditArgs) -> Result<(), String> {
                 exported.core.gap.boundary
             );
             exported.core.gap.reason = "oracle_lab_turn_plan_audit_successor".to_string();
-            exported.combat_search_attempts.clear();
-            exported.failed_search = None;
+            exported.atomic_combat_search_attempts.clear();
+            exported.failed_atomic_combat_search = None;
             save_combat_case(path, &exported)?;
         }
         if let Some(path) = export_actions.as_ref() {

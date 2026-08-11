@@ -3,10 +3,10 @@ use crate::state::core::{ClientInput, EngineState, RunResult};
 
 use super::combat_line_adjudication::{CombatLineAdjudicationV1, CombatLineRejectionReasonV1};
 use super::progress_options::{
-    RunControlAutoStepOptions, RunControlRouteAutomationMode, RunControlSearchCombatOptions,
+    AtomicCombatSearchOptionsV2, RunControlAutoStepOptions, RunControlRouteAutomationMode,
 };
 use super::session::{
-    RunControlAutoAppliedKindV1, RunControlAutoAppliedStepV1, RunControlCombatSearchRejection,
+    AtomicCombatSearchRejectionV2, RunControlAutoAppliedKindV1, RunControlAutoAppliedStepV1,
     RunControlDecisionParentSnapshotV1, RunControlSession, RunProgressOutcome,
 };
 use super::trace_annotation::RunControlTraceAnnotationV1;
@@ -150,7 +150,10 @@ pub(super) fn apply_guarded_auto_step(
         let mut no_potion_rejection_kind = None;
         let mut no_potion_adjudication = None;
         if let Some(no_potion_options) = auto_no_potion_first_options(session, &options.search) {
-            let outcome = super::combat_search::apply_search_combat(session, no_potion_options)?;
+            let outcome = super::atomic_combat_search::apply_atomic_combat_search_v2(
+                session,
+                no_potion_options,
+            )?;
             if let Some(result) = outcome.action_result.as_ref() {
                 applied.push_outcome(
                     RunControlAutoAppliedKindV1::CombatSearch,
@@ -171,12 +174,12 @@ pub(super) fn apply_guarded_auto_step(
             }
             decision_parent_snapshots.extend(outcome.decision_parent_snapshots);
             trace_annotations.extend(outcome.trace_annotations);
-            no_potion_rejection_kind = outcome.combat_search_rejection;
+            no_potion_rejection_kind = outcome.atomic_combat_search_rejection;
             no_potion_adjudication = outcome.execution_adjudication.clone();
             no_potion_rejection = Some(trim_search_rejection(&outcome.message));
         }
 
-        let outcome = super::combat_search::apply_search_combat(
+        let outcome = super::atomic_combat_search::apply_atomic_combat_search_v2(
             session,
             auto_search_options(session, options.search.clone()),
         )?;
@@ -200,12 +203,15 @@ pub(super) fn apply_guarded_auto_step(
             );
         }
         let fallback_rejection = trim_search_rejection(&outcome.message);
-        let fallback_rejection_kind = outcome.combat_search_rejection;
+        let fallback_rejection_kind = outcome.atomic_combat_search_rejection;
         let fallback_adjudication = outcome.execution_adjudication.clone();
         decision_parent_snapshots.extend(outcome.decision_parent_snapshots);
         trace_annotations.extend(outcome.trace_annotations);
         if let Some(rescue_options) = auto_potion_rescue_options(session, &options.search) {
-            let rescue = super::combat_search::apply_search_combat(session, rescue_options)?;
+            let rescue = super::atomic_combat_search::apply_atomic_combat_search_v2(
+                session,
+                rescue_options,
+            )?;
             if let Some(result) = rescue.action_result.as_ref() {
                 applied.push_outcome(
                     RunControlAutoAppliedKindV1::CombatSearch,
@@ -226,7 +232,7 @@ pub(super) fn apply_guarded_auto_step(
             }
             decision_parent_snapshots.extend(rescue.decision_parent_snapshots);
             trace_annotations.extend(rescue.trace_annotations);
-            let rescue_rejection_kind = rescue.combat_search_rejection;
+            let rescue_rejection_kind = rescue.atomic_combat_search_rejection;
             let rescue_adjudication = rescue.execution_adjudication.clone();
             return finish_auto_step(
                 session,
@@ -485,8 +491,8 @@ fn auto_capture_summaries(annotations: &[RunControlTraceAnnotationV1]) -> Vec<St
 
 fn auto_search_options(
     session: &RunControlSession,
-    mut options: RunControlSearchCombatOptions,
-) -> RunControlSearchCombatOptions {
+    mut options: AtomicCombatSearchOptionsV2,
+) -> AtomicCombatSearchOptionsV2 {
     let plan = super::combat_auto_policy::combat_auto_search_plan(session, &options);
     if should_apply_auto_default_wall_ms(&options) {
         options.wall_ms = plan.default_wall_ms;
@@ -502,8 +508,8 @@ fn auto_search_options(
 
 fn auto_no_potion_first_options(
     session: &RunControlSession,
-    options: &RunControlSearchCombatOptions,
-) -> Option<RunControlSearchCombatOptions> {
+    options: &AtomicCombatSearchOptionsV2,
+) -> Option<AtomicCombatSearchOptionsV2> {
     let plan = super::combat_auto_policy::combat_auto_search_plan(session, options);
     if !plan.no_potion_first {
         return None;
@@ -520,8 +526,8 @@ fn auto_no_potion_first_options(
 
 fn auto_potion_rescue_options(
     session: &RunControlSession,
-    options: &RunControlSearchCombatOptions,
-) -> Option<RunControlSearchCombatOptions> {
+    options: &AtomicCombatSearchOptionsV2,
+) -> Option<AtomicCombatSearchOptionsV2> {
     let plan = super::combat_auto_policy::combat_auto_search_plan(session, options);
     let Some(potion_policy) = plan.potion_rescue_policy else {
         return None;
@@ -536,13 +542,13 @@ fn auto_potion_rescue_options(
     Some(rescue)
 }
 
-fn should_apply_auto_default_wall_ms(options: &RunControlSearchCombatOptions) -> bool {
+fn should_apply_auto_default_wall_ms(options: &AtomicCombatSearchOptionsV2) -> bool {
     options.wall_ms.is_none() && options.profile.is_none()
 }
 
 fn high_stakes_auto_search_requires_hp_loss_gate(
     session: &RunControlSession,
-    options: &RunControlSearchCombatOptions,
+    options: &AtomicCombatSearchOptionsV2,
 ) -> bool {
     super::combat_auto_policy::combat_auto_search_plan(session, options)
         .requires_explicit_hp_loss_gate
@@ -974,7 +980,7 @@ fn finish_progress_outcome(
 }
 
 fn combat_search_stop_reason(
-    rejections: &[Option<RunControlCombatSearchRejection>],
+    rejections: &[Option<AtomicCombatSearchRejectionV2>],
     adjudications: &[Option<CombatLineAdjudicationV1>],
 ) -> String {
     if let Some(CombatLineAdjudicationV1::Rejected {
@@ -997,11 +1003,11 @@ fn combat_search_stop_reason(
             .flatten()
             .any(|rejection| *rejection == kind)
     };
-    if has(RunControlCombatSearchRejection::DirtyWinningCandidateRejected) {
+    if has(AtomicCombatSearchRejectionV2::DirtyWinningCandidateRejected) {
         "combat search rejected dirty winning line".to_string()
-    } else if has(RunControlCombatSearchRejection::HpLossLimitExceeded) {
+    } else if has(AtomicCombatSearchRejectionV2::HpLossLimitExceeded) {
         "combat search win exceeded hp-loss limit".to_string()
-    } else if has(RunControlCombatSearchRejection::InvalidCardIdentity) {
+    } else if has(AtomicCombatSearchRejectionV2::InvalidCardIdentity) {
         "combat search rejected invalid card identity".to_string()
     } else {
         "combat search did not find an executable complete win".to_string()
@@ -1074,10 +1080,9 @@ mod tests {
     };
     use crate::content::potions::{Potion, PotionId};
     use crate::eval::run_control::{
-        CombatLineAdjudicationV1, CombatLineObservedOutcomeV1, CombatLineRejectionReasonV1,
-        RunActionCardSnapshotV1, RunControlAutoStepOptions, RunControlConfig,
-        RunControlHpLossLimit, RunControlRouteAutomationMode, RunControlSearchCombatOptions,
-        RunControlSession,
+        AtomicCombatSearchOptionsV2, CombatLineAdjudicationV1, CombatLineObservedOutcomeV1,
+        CombatLineRejectionReasonV1, RunActionCardSnapshotV1, RunControlAutoStepOptions,
+        RunControlConfig, RunControlHpLossLimit, RunControlRouteAutomationMode, RunControlSession,
     };
     use crate::sim::combat::CombatTerminal;
     use crate::state::core::{ActiveCombat, CombatContext, EngineState, RoomCombatContext};
@@ -1118,16 +1123,16 @@ mod tests {
             ..RunControlConfig::default()
         });
 
-        let options = auto_search_options(&session, RunControlSearchCombatOptions::default());
+        let options = auto_search_options(&session, AtomicCombatSearchOptionsV2::default());
         assert_eq!(options.wall_ms, None);
         assert_eq!(options.turn_plan_policy, None);
 
         let options = auto_search_options(
             &session,
-            RunControlSearchCombatOptions {
+            AtomicCombatSearchOptionsV2 {
                 wall_ms: Some(500),
                 turn_plan_policy: Some(CombatSearchV2TurnPlanPolicy::DiagnosticOnly),
-                ..RunControlSearchCombatOptions::default()
+                ..AtomicCombatSearchOptionsV2::default()
             },
         );
         assert_eq!(options.wall_ms, Some(500));
@@ -1137,12 +1142,12 @@ mod tests {
         );
 
         let session = RunControlSession::new(RunControlConfig::default());
-        let options = auto_search_options(&session, RunControlSearchCombatOptions::default());
+        let options = auto_search_options(&session, AtomicCombatSearchOptionsV2::default());
         assert_eq!(options.wall_ms, Some(5_000));
 
         let profile_options = auto_search_options(
             &session,
-            RunControlSearchCombatOptions {
+            AtomicCombatSearchOptionsV2 {
                 profile: Some(CombatSearchProfile {
                     label: "test_profile_budget",
                     engine: CombatSearchEngineProfile {
@@ -1157,7 +1162,7 @@ mod tests {
                         artifacts: CombatSearchArtifactPluginId::PortfolioAttempt,
                     },
                 }),
-                ..RunControlSearchCombatOptions::default()
+                ..AtomicCombatSearchOptionsV2::default()
             },
         );
         assert_eq!(profile_options.wall_ms, None);
@@ -1196,7 +1201,7 @@ mod tests {
             }),
         ));
 
-        let options = auto_search_options(&session, RunControlSearchCombatOptions::default());
+        let options = auto_search_options(&session, AtomicCombatSearchOptionsV2::default());
 
         assert_eq!(
             options.potion_policy,
@@ -1218,7 +1223,7 @@ mod tests {
             }),
         ));
 
-        let options = auto_search_options(&session, RunControlSearchCombatOptions::default());
+        let options = auto_search_options(&session, AtomicCombatSearchOptionsV2::default());
 
         assert_eq!(
             options.potion_policy,
@@ -1238,7 +1243,7 @@ mod tests {
             }),
         ));
 
-        let options = auto_search_options(&session, RunControlSearchCombatOptions::default());
+        let options = auto_search_options(&session, AtomicCombatSearchOptionsV2::default());
 
         assert_eq!(options.potion_policy, None);
         assert_eq!(options.max_potions_used, None);
@@ -1260,15 +1265,15 @@ mod tests {
             }),
         ));
 
-        let options = auto_search_options(&session, RunControlSearchCombatOptions::default());
+        let options = auto_search_options(&session, AtomicCombatSearchOptionsV2::default());
         assert_eq!(options.potion_policy, None);
 
         let options = auto_search_options(
             &session,
-            RunControlSearchCombatOptions {
+            AtomicCombatSearchOptionsV2 {
                 potion_policy: Some(CombatSearchV2PotionPolicy::All),
                 max_potions_used: Some(1),
-                ..RunControlSearchCombatOptions::default()
+                ..AtomicCombatSearchOptionsV2::default()
             },
         );
         assert_eq!(options.potion_policy, Some(CombatSearchV2PotionPolicy::All));
@@ -1291,9 +1296,8 @@ mod tests {
             }),
         ));
 
-        let probe =
-            auto_no_potion_first_options(&session, &RunControlSearchCombatOptions::default())
-                .expect("hp-loss-limited boss auto combat should try no-potion first");
+        let probe = auto_no_potion_first_options(&session, &AtomicCombatSearchOptionsV2::default())
+            .expect("hp-loss-limited boss auto combat should try no-potion first");
 
         assert_eq!(probe.wall_ms, Some(5_000));
         assert_eq!(probe.potion_policy, Some(CombatSearchV2PotionPolicy::Never));
@@ -1310,7 +1314,7 @@ mod tests {
             }),
         ));
         assert_eq!(
-            auto_no_potion_first_options(&no_limit, &RunControlSearchCombatOptions::default()),
+            auto_no_potion_first_options(&no_limit, &AtomicCombatSearchOptionsV2::default()),
             None
         );
     }
@@ -1331,20 +1335,20 @@ mod tests {
 
         assert!(high_stakes_auto_search_requires_hp_loss_gate(
             &session,
-            &RunControlSearchCombatOptions::default()
+            &AtomicCombatSearchOptionsV2::default()
         ));
         assert!(!high_stakes_auto_search_requires_hp_loss_gate(
             &session,
-            &RunControlSearchCombatOptions {
+            &AtomicCombatSearchOptionsV2 {
                 max_hp_loss: Some(RunControlHpLossLimit::Limit(20)),
-                ..RunControlSearchCombatOptions::default()
+                ..AtomicCombatSearchOptionsV2::default()
             }
         ));
         assert!(!high_stakes_auto_search_requires_hp_loss_gate(
             &session,
-            &RunControlSearchCombatOptions {
+            &AtomicCombatSearchOptionsV2 {
                 max_hp_loss: Some(RunControlHpLossLimit::Unlimited),
-                ..RunControlSearchCombatOptions::default()
+                ..AtomicCombatSearchOptionsV2::default()
             }
         ));
 
@@ -1377,7 +1381,7 @@ mod tests {
 
         assert!(!high_stakes_auto_search_requires_hp_loss_gate(
             &session,
-            &RunControlSearchCombatOptions::default()
+            &AtomicCombatSearchOptionsV2::default()
         ));
     }
 
@@ -1398,9 +1402,8 @@ mod tests {
             }),
         ));
 
-        let rescue =
-            auto_potion_rescue_options(&session, &RunControlSearchCombatOptions::default())
-                .expect("hp-loss-limited ordinary combat with potion should allow rescue attempt");
+        let rescue = auto_potion_rescue_options(&session, &AtomicCombatSearchOptionsV2::default())
+            .expect("hp-loss-limited ordinary combat with potion should allow rescue attempt");
 
         assert_eq!(rescue.wall_ms, Some(5_000));
         assert_eq!(rescue.potion_policy, Some(CombatSearchV2PotionPolicy::All));
@@ -1422,14 +1425,14 @@ mod tests {
         ));
 
         assert_eq!(
-            auto_potion_rescue_options(&session, &RunControlSearchCombatOptions::default()),
+            auto_potion_rescue_options(&session, &AtomicCombatSearchOptionsV2::default()),
             None
         );
 
-        let blocked_by_explicit_policy = RunControlSearchCombatOptions {
+        let blocked_by_explicit_policy = AtomicCombatSearchOptionsV2 {
             max_hp_loss: Some(RunControlHpLossLimit::Limit(8)),
             potion_policy: Some(CombatSearchV2PotionPolicy::Never),
-            ..RunControlSearchCombatOptions::default()
+            ..AtomicCombatSearchOptionsV2::default()
         };
         assert_eq!(
             auto_potion_rescue_options(&session, &blocked_by_explicit_policy),
@@ -1467,7 +1470,7 @@ mod tests {
         assert_eq!(
             combat_search_stop_reason(
                 &[Some(
-                    super::RunControlCombatSearchRejection::DirtyWinningCandidateRejected,
+                    super::AtomicCombatSearchRejectionV2::DirtyWinningCandidateRejected,
                 )],
                 &[Some(adjudication)],
             ),

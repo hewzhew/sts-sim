@@ -44,7 +44,7 @@ pub struct OracleRunActiveCombatCheckpointV1 {
     pub branch_id: usize,
     #[serde(default)]
     pub stage: u8,
-    pub work: OracleRunCombatWorkCheckpointV1,
+    pub work: OracleCombatWitnessCheckpointV1,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -52,7 +52,7 @@ pub struct OracleRunActiveCombatCheckpointV1 {
 pub struct OracleRunDeferredCombatCheckpointV1 {
     pub branch_id: usize,
     pub stage: u8,
-    pub prior_work: OracleRunCombatWorkCheckpointV1,
+    pub prior_work: OracleCombatWitnessCheckpointV1,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]

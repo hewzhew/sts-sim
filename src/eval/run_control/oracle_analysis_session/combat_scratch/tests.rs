@@ -2,8 +2,8 @@ use super::*;
 
 use crate::content::relics::{RelicId, RelicState};
 use crate::eval::run_control::{
-    seed_oracle_run_explorer_from_session_v1, OracleRunCombatBudgetsV1, RunControlConfig,
-    RunControlSearchCombatOptions, RunControlSession, RunProgressJournalV1,
+    seed_oracle_run_explorer_from_session_v1, OracleCombatWitnessOptionsV1,
+    OracleRunCombatWitnessBudgetsV1, RunControlConfig, RunControlSession, RunProgressJournalV1,
 };
 use crate::runtime::combat::CombatCard;
 use crate::sim::combat::CombatTerminal;
@@ -31,7 +31,7 @@ fn scratch_analysis_at_engine(
         }),
     ));
     let combat_budgets =
-        OracleRunCombatBudgetsV1::uniform(RunControlSearchCombatOptions::default());
+        OracleRunCombatWitnessBudgetsV1::uniform(OracleCombatWitnessOptionsV1::default());
     let explorer = seed_oracle_run_explorer_from_session_v1(
         run,
         RunProgressJournalV1::default(),
@@ -607,7 +607,7 @@ fn combat_scratch_bounded_search_appends_a_verified_suffix_without_touching_run_
         .search_combat_scratch(
             OracleAnalysisCombatScratchSearchRequestV1 {
                 max_quanta: 4,
-                quantum_nodes: 64,
+                quantum_generation_work: 64,
                 quantum_ms: 100,
                 wall_ms: 500,
             },

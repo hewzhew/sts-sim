@@ -14,8 +14,8 @@ use crate::eval::run_control::transition_report::{
 };
 use crate::eval::run_control::view_model::CandidateAction;
 use crate::eval::run_control::{
-    RunControlAutoStepOptions, RunControlCombatSearchAttemptV1, RunControlHpLossLimit,
-    RunControlSearchCombatOptions,
+    AtomicCombatSearchAttemptV2, AtomicCombatSearchOptionsV2, RunControlAutoStepOptions,
+    RunControlHpLossLimit,
 };
 use crate::eval::run_control::{
     RunDecisionAction, RunDecisionBoundaryV1, RunDecisionSelectionSourceV1,
@@ -319,26 +319,28 @@ impl RunControlSession {
         super::super::auto_step::apply_guarded_auto_step(self, options)
     }
 
-    pub fn apply_combat_search(
+    pub fn apply_atomic_combat_search_v2(
         &mut self,
-        options: RunControlSearchCombatOptions,
+        options: AtomicCombatSearchOptionsV2,
     ) -> Result<RunProgressOutcome, String> {
-        super::super::combat_search::apply_search_combat(self, options)
+        super::super::atomic_combat_search::apply_atomic_combat_search_v2(self, options)
     }
 
-    pub fn search_combat_attempt(
+    pub fn atomic_combat_search_attempt_v2(
         &self,
-        options: RunControlSearchCombatOptions,
-    ) -> Result<RunControlCombatSearchAttemptV1, String> {
-        super::super::combat_search_attempt::run_search_combat_attempt(self, options)
+        options: AtomicCombatSearchOptionsV2,
+    ) -> Result<AtomicCombatSearchAttemptV2, String> {
+        super::super::atomic_combat_search_attempt::run_atomic_combat_search_attempt_v2(
+            self, options,
+        )
     }
 
-    pub fn apply_combat_search_attempt(
+    pub fn apply_atomic_combat_search_attempt_v2(
         &mut self,
-        attempt: RunControlCombatSearchAttemptV1,
+        attempt: AtomicCombatSearchAttemptV2,
         max_hp_loss: RunControlHpLossLimit,
     ) -> Result<RunProgressOutcome, String> {
-        super::super::combat_search_attempt::apply_search_combat_attempt(
+        super::super::atomic_combat_search_attempt::apply_atomic_combat_search_attempt_v2(
             self,
             attempt,
             Some(max_hp_loss),

@@ -5,10 +5,6 @@
 linker = "rust-lld"
 
 [alias]
-# Source-architecture checks deliberately live in a dependency-free helper
-# package. Keeping them out of the main package prevents a 0.9 MiB source scan
-# from compiling the entire simulator as an unused integration-test dependency.
-architecture = ["run", "--quiet", "-p", "sts_architecture_checks", "--"]
 test-core = ["test", "-p", "sts_simulator", "--lib"]
 test-planner = ["test", "-p", "sts_combat_planner", "--lib"]
 combat-contract = ["run", "--quiet", "--release", "-p", "sts_combat_contract", "--bin", "combat_contract", "--"]

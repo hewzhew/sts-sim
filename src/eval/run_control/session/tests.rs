@@ -88,7 +88,7 @@ fn run_control_search_combat_applies_complete_winning_trajectory() {
         .expect("map input should enter combat");
 
     let outcome = session
-        .apply_combat_search(crate::eval::run_control::RunControlSearchCombatOptions {
+        .apply_atomic_combat_search_v2(crate::eval::run_control::AtomicCombatSearchOptionsV2 {
             max_nodes: Some(2_000),
             wall_ms: Some(5_000),
             ..Default::default()
@@ -1370,7 +1370,7 @@ fn run_control_auto_step_resolves_one_starter_combat() {
 
     let outcome = session
         .apply_progress_step(crate::eval::run_control::RunControlAutoStepOptions {
-            search: crate::eval::run_control::RunControlSearchCombatOptions {
+            search: crate::eval::run_control::AtomicCombatSearchOptionsV2 {
                 max_nodes: Some(2_000),
                 wall_ms: Some(5_000),
                 ..Default::default()

@@ -4,7 +4,7 @@ use serde_json::{json, Value};
 use sts_oracle_runtime::ai::combat_state_key::combat_exact_state_hash_v2;
 use sts_oracle_runtime::eval::combat_case::{
     save_combat_case, CombatCase, CombatCaseGap, CombatCaseRngSummary, CombatCaseRunSummary,
-    CombatCaseSource,
+    CombatCaseSource, CombatCaseWitnessBudgetV1,
 };
 use sts_oracle_runtime::eval::combat_case_context::capture_oracle_analysis_combat_case_production_context_v1;
 use sts_oracle_runtime::eval::run_control::{
@@ -90,10 +90,7 @@ pub(super) fn export_historical_combat(
                 historical.run_state.act_num, historical.run_state.floor_num
             ),
             reason: "verified_run_witness_extraction".to_string(),
-            search_nodes: 0,
-            search_ms: 0,
-            rescue_search_nodes: 0,
-            rescue_search_ms: 0,
+            witness_budget: CombatCaseWitnessBudgetV1::NotRun,
         },
         CombatCaseRunSummary {
             act: historical.run_state.act_num,

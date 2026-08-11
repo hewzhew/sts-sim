@@ -3,21 +3,25 @@ use std::fs;
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
-use sts_simulator::eval::run_control::{CombatSearchTraceSummary, RunControlSessionCheckpointV1};
+use sts_simulator::eval::run_control::{
+    AtomicCombatSearchTraceSummaryV2, RunControlSessionCheckpointV1,
+};
 use sts_simulator::runtime::branch::RunTrajectoryHeadV1;
 
 use super::accepted_high_loss_diagnostic::AcceptedHighLossDiagnosticDraft;
 use super::branch_path::BranchPathStep;
 use super::branch_policy_lane::BranchPolicyLane;
 use super::run_contract::RunContract;
+use super::run_identity::{current_source_identity, SourceIdentity};
 use super::{Args, Branch, BranchStatus};
+
+const FRONTIER_CHECKPOINT_SCHEMA: &str = "branch_tiny_frontier_checkpoint_v3";
 
 #[derive(Clone, Deserialize, Serialize)]
 pub(super) struct FrontierCheckpoint {
     schema: String,
-    pub(super) args: Args,
-    #[serde(default)]
-    run_contract: Option<RunContract>,
+    source_identity: SourceIdentity,
+    pub(super) runtime_args: Args,
     pub(super) generation: usize,
     next_branch_id: usize,
     frontier: Vec<BranchCheckpoint>,
@@ -33,7 +37,7 @@ struct BranchCheckpoint {
     #[serde(default)]
     policy_lane: BranchPolicyLane,
     #[serde(default)]
-    combat_search_history: Vec<CombatSearchTraceSummary>,
+    atomic_combat_search_history: Vec<AtomicCombatSearchTraceSummaryV2>,
     #[serde(default)]
     comparison_search_start: Option<usize>,
     #[serde(default)]
@@ -50,9 +54,9 @@ pub(super) fn save(
     frontier: &VecDeque<Branch>,
 ) -> Result<(), String> {
     let checkpoint = FrontierCheckpoint {
-        schema: "branch_tiny_frontier_checkpoint".to_string(),
-        args,
-        run_contract: Some(RunContract::from_args(args)),
+        schema: FRONTIER_CHECKPOINT_SCHEMA.to_string(),
+        source_identity: current_source_identity(),
+        runtime_args: args,
         generation,
         next_branch_id,
         frontier: frontier
@@ -68,15 +72,39 @@ pub(super) fn save(
 pub(super) fn load(path: &Path) -> Result<FrontierCheckpoint, String> {
     let payload = fs::read_to_string(path)
         .map_err(|err| format!("failed to read {}: {err}", path.display()))?;
-    serde_json::from_str(&payload)
-        .map_err(|err| format!("failed to parse {}: {err}", path.display()))
+    let value: serde_json::Value = serde_json::from_str(&payload)
+        .map_err(|err| format!("failed to parse {}: {err}", path.display()))?;
+    let schema = value
+        .get("schema")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or("<missing>");
+    if schema != FRONTIER_CHECKPOINT_SCHEMA {
+        return Err(format!(
+            "unsupported frontier checkpoint schema at {}: expected {FRONTIER_CHECKPOINT_SCHEMA}, got {schema}",
+            path.display()
+        ));
+    }
+    let checkpoint: FrontierCheckpoint = serde_json::from_value(value)
+        .map_err(|err| format!("failed to parse {}: {err}", path.display()))?;
+    let current_source = current_source_identity();
+    if checkpoint.source_identity != current_source {
+        return Err(format!(
+            "frontier source identity mismatch at {}: checkpoint={:?}, current={current_source:?}",
+            path.display(),
+            checkpoint.source_identity
+        ));
+    }
+    Ok(checkpoint)
 }
 
 impl FrontierCheckpoint {
     #[allow(dead_code)]
     pub(super) fn run_contract(&self) -> RunContract {
-        self.run_contract
-            .unwrap_or_else(|| RunContract::from_args(self.args))
+        RunContract::from_args(self.runtime_args)
+    }
+
+    pub(super) fn source_identity(&self) -> &SourceIdentity {
+        &self.source_identity
     }
 
     pub(super) fn into_frontier(self) -> Result<(VecDeque<Branch>, usize), String> {
@@ -99,7 +127,7 @@ impl BranchCheckpoint {
             session,
             status: branch.status.clone(),
             policy_lane: branch.policy_lane.clone(),
-            combat_search_history: branch.combat_search_history.clone(),
+            atomic_combat_search_history: branch.atomic_combat_search_history.clone(),
             comparison_search_start: branch.comparison_search_start,
             accepted_high_loss_diagnostics: branch.accepted_high_loss_diagnostics.clone(),
             trajectory_head: branch.trajectory.checkpoint_head()?,
@@ -114,14 +142,14 @@ impl BranchCheckpoint {
             session: self.session.into_session()?,
             status: self.status,
             policy_lane: self.policy_lane,
-            combat_portfolio: None,
+            atomic_combat_search_session: None,
             recent_progress_journal: Default::default(),
             recent_planner_capture: Default::default(),
             trajectory: super::branch_trajectory::BranchTrajectoryState::from_checkpoint_head(
                 self.trajectory_head,
             ),
-            combat_search: Vec::new(),
-            combat_search_history: self.combat_search_history,
+            atomic_combat_search_attempts: Vec::new(),
+            atomic_combat_search_history: self.atomic_combat_search_history,
             comparison_search_start: self.comparison_search_start,
             accepted_high_loss_diagnostics: self.accepted_high_loss_diagnostics,
         })
@@ -135,49 +163,8 @@ mod tests {
     use sts_simulator::ai::strategy::candidate_pressure_response::CandidatePressureResponse;
     use sts_simulator::ai::strategy::challenger_policy_state::ChallengerPolicyState;
 
-    fn legacy_checkpoint_json() -> String {
-        serde_json::json!({
-            "schema": "branch_tiny_frontier_checkpoint",
-            "args": {
-                "seed": 44,
-                "ascension": 2,
-                "objective": "first_victory",
-                "generations": 6,
-                "max_branches": 4,
-                "auto_ops": 9,
-                "search_nodes": 10,
-                "search_ms": 20,
-                "rescue_search_nodes": 30,
-                "rescue_search_ms": 40,
-                "boss_search_nodes": 50,
-                "boss_search_ms": 60,
-                "wall_ms": 70
-            },
-            "generation": 1,
-            "next_branch_id": 2,
-            "frontier": []
-        })
-        .to_string()
-    }
-
     #[test]
-    fn legacy_checkpoint_without_run_contract_loads_contract_from_args() {
-        let path = std::env::temp_dir().join("branch_tiny_legacy_frontier_checkpoint.json");
-        fs::write(&path, legacy_checkpoint_json()).unwrap();
-
-        let checkpoint = load(&path).unwrap();
-        let contract = checkpoint.run_contract();
-
-        assert_eq!(contract.game.seed, 44);
-        assert_eq!(contract.game.ascension, 2);
-        assert_eq!(contract.branching.generations, 6);
-        assert_eq!(contract.slice.slice_ms, Some(70));
-
-        let _ = fs::remove_file(path);
-    }
-
-    #[test]
-    fn checkpoint_writer_includes_run_contract() {
+    fn checkpoint_writer_uses_v3_runtime_args_source_identity_and_derived_contract() {
         let args = Args {
             seed: 45,
             ascension: 1,
@@ -192,7 +179,7 @@ mod tests {
             boss_search_nodes: 8,
             boss_search_ms: 9,
             wall_ms: Some(10),
-            checkpoint_before_combat_portfolio: false,
+            checkpoint_before_atomic_combat_search_session: false,
             wall_capped_search_budget: false,
             wall_capped_boss_budget: false,
         };
@@ -203,10 +190,54 @@ mod tests {
         let value: serde_json::Value =
             serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
 
-        assert_eq!(value["run_contract"]["game"]["seed"], 45);
-        assert_eq!(value["run_contract"]["slice"]["slice_ms"], 10);
-        assert_eq!(value["args"]["wall_ms"], 10);
+        assert_eq!(value["schema"], FRONTIER_CHECKPOINT_SCHEMA);
+        assert_eq!(
+            value["source_identity"],
+            serde_json::to_value(current_source_identity()).unwrap()
+        );
+        assert_eq!(value["runtime_args"]["wall_ms"], 10);
+        assert!(value.get("args").is_none());
+        assert!(value.get("run_contract").is_none());
 
+        let checkpoint = load(&path).unwrap();
+        let contract = checkpoint.run_contract();
+        assert_eq!(contract.game.seed, 45);
+        assert_eq!(contract.slice.slice_ms, Some(10));
+
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn v2_checkpoint_is_rejected_instead_of_silently_upgraded() {
+        let path = std::env::temp_dir().join("branch_tiny_frontier_checkpoint_v2_rejected.json");
+        fs::write(&path, r#"{"schema":"branch_tiny_frontier_checkpoint_v2"}"#).unwrap();
+
+        let error = match load(&path) {
+            Ok(_) => panic!("V2 checkpoint unexpectedly loaded"),
+            Err(error) => error,
+        };
+
+        assert!(error.contains("unsupported frontier checkpoint schema"));
+        assert!(error.contains("branch_tiny_frontier_checkpoint_v2"));
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn mismatched_source_identity_is_rejected_before_resume() {
+        let args = crate::runtime::branch::default_branch_args(47);
+        let path = std::env::temp_dir().join("branch_tiny_frontier_source_mismatch.json");
+        save(&path, args, 0, 1, &VecDeque::new()).unwrap();
+        let mut value: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+        value["source_identity"]["git_commit"] = serde_json::json!("different-source");
+        fs::write(&path, serde_json::to_string_pretty(&value).unwrap()).unwrap();
+
+        let error = match load(&path) {
+            Ok(_) => panic!("mismatched source checkpoint unexpectedly loaded"),
+            Err(error) => error,
+        };
+
+        assert!(error.contains("frontier source identity mismatch"));
         let _ = fs::remove_file(path);
     }
 
@@ -226,7 +257,7 @@ mod tests {
             boss_search_nodes: 8,
             boss_search_ms: 9,
             wall_ms: None,
-            checkpoint_before_combat_portfolio: false,
+            checkpoint_before_atomic_combat_search_session: false,
             wall_capped_search_budget: false,
             wall_capped_boss_budget: false,
         };

@@ -50,8 +50,8 @@ fn test_explore_budget(wall_ms: Option<u64>) -> OracleRunExploreBudgetV1 {
     OracleRunExploreBudgetV1 {
         max_work_items: 1,
         wall_ms,
-        combat: OracleRunCombatBudgetsV1::uniform(RunControlSearchCombatOptions::default()),
-        combat_quantum_nodes: 1,
+        combat: OracleRunCombatWitnessBudgetsV1::uniform(OracleCombatWitnessOptionsV1::default()),
+        combat_quantum_generation_work: 1,
         combat_quantum_ms: None,
         decision_prior: None,
         decision_annotation: None,
@@ -119,7 +119,7 @@ fn legacy_inline_explorer_checkpoint_remains_readable_after_payload_pooling() {
         serde_json::from_slice(&encoded).expect("deserialize legacy inline checkpoint");
     let restored = seed_oracle_run_explorer_from_checkpoint_v1(
         decoded,
-        &OracleRunCombatBudgetsV1::uniform(RunControlSearchCombatOptions::default()),
+        &OracleRunCombatWitnessBudgetsV1::uniform(OracleCombatWitnessOptionsV1::default()),
     )
     .expect("restore legacy inline checkpoint");
 
@@ -203,7 +203,7 @@ fn branch_schedule_prior_failure_is_prepare_only() {
     let error = explorer
         .prepare_branch_schedule(
             &explorer.branches[0],
-            &OracleRunCombatBudgetsV1::uniform(RunControlSearchCombatOptions::default()),
+            &OracleRunCombatWitnessBudgetsV1::uniform(OracleCombatWitnessOptionsV1::default()),
             Some(reject_branch_schedule_prior),
         )
         .err()
@@ -280,7 +280,7 @@ fn combat_service_time_includes_exact_commit_and_child_scheduling() {
         })
         .expect("unique combat branch");
     let combat_budgets =
-        OracleRunCombatBudgetsV1::uniform(RunControlSearchCombatOptions::default());
+        OracleRunCombatWitnessBudgetsV1::uniform(OracleCombatWitnessOptionsV1::default());
     explorer
         .schedule_branch(branch_id, &combat_budgets, None)
         .expect("combat schedule");
@@ -298,7 +298,7 @@ fn combat_service_time_includes_exact_commit_and_child_scheduling() {
             max_work_items: 2,
             wall_ms: None,
             combat: combat_budgets,
-            combat_quantum_nodes: 64,
+            combat_quantum_generation_work: 64,
             combat_quantum_ms: None,
             decision_prior: Some(delayed_reward_prior),
             decision_annotation: None,
@@ -384,7 +384,7 @@ fn parameterized_run_selection_releases_one_exact_member_at_a_time() {
     explorer
         .schedule_branch(
             0,
-            &OracleRunCombatBudgetsV1::uniform(RunControlSearchCombatOptions::default()),
+            &OracleRunCombatWitnessBudgetsV1::uniform(OracleCombatWitnessOptionsV1::default()),
             None,
         )
         .unwrap();
@@ -441,7 +441,7 @@ fn analysis_selection_widens_without_mutating_parent_choices() {
     explorer
         .schedule_branch(
             0,
-            &OracleRunCombatBudgetsV1::uniform(RunControlSearchCombatOptions::default()),
+            &OracleRunCombatWitnessBudgetsV1::uniform(OracleCombatWitnessOptionsV1::default()),
             None,
         )
         .unwrap();
@@ -494,7 +494,7 @@ fn parameterized_run_selection_cursor_survives_frontier_checkpoint() {
     explorer
         .schedule_branch(
             0,
-            &OracleRunCombatBudgetsV1::uniform(RunControlSearchCombatOptions::default()),
+            &OracleRunCombatWitnessBudgetsV1::uniform(OracleCombatWitnessOptionsV1::default()),
             None,
         )
         .unwrap();
@@ -510,7 +510,7 @@ fn parameterized_run_selection_cursor_survives_frontier_checkpoint() {
     let decoded = serde_json::from_slice(&encoded).unwrap();
     let mut restored = seed_oracle_run_explorer_from_checkpoint_v1(
         decoded,
-        &OracleRunCombatBudgetsV1::uniform(RunControlSearchCombatOptions::default()),
+        &OracleRunCombatWitnessBudgetsV1::uniform(OracleCombatWitnessOptionsV1::default()),
     )
     .unwrap();
     assert_eq!(restored.pending_decisions.len(), 1);
@@ -610,10 +610,10 @@ fn shadow_key(enemy_hp_delta: i32, survival_margin: i32) -> StrategicProbeShadow
     }
 }
 
-fn empty_combat_work_checkpoint() -> OracleRunCombatWorkCheckpointV1 {
-    OracleRunCombatWorkCheckpointV1 {
-        consumed_nodes: 10,
-        remaining_nodes: 0,
+fn empty_combat_work_checkpoint() -> OracleCombatWitnessCheckpointV1 {
+    OracleCombatWitnessCheckpointV1 {
+        consumed_generation_work: 10,
+        remaining_generation_work: 0,
         remaining_engine_steps: 0,
         remaining_wall_ms: Some(0),
         quantum_count: 1,
@@ -629,44 +629,42 @@ fn empty_combat_work_checkpoint() -> OracleRunCombatWorkCheckpointV1 {
 
 #[test]
 fn staged_combat_budget_uses_a_cheap_first_pass_and_full_retry() {
-    let options = RunControlSearchCombatOptions {
-        max_nodes: Some(101),
+    let options = OracleCombatWitnessOptionsV1 {
+        max_generation_work: Some(101),
         wall_ms: Some(101),
-        ..RunControlSearchCombatOptions::default()
+        ..OracleCombatWitnessOptionsV1::default()
     };
-    let budgets = OracleRunCombatBudgetsV1 {
+    let budgets = OracleRunCombatWitnessBudgetsV1 {
         hallway: options.clone(),
         elite: options.clone(),
         boss: options,
-        quality_policy: OracleRunCombatQualityPolicyV1::Configured,
+        quality_policy: OracleRunCombatWitnessQualityPolicyV1::Configured,
         initial_divisor: 4,
         guidance_bundle: None,
     };
     let session = RunControlSession::new(RunControlConfig::default());
 
     let first = budgets.for_session_stage(&session, 0);
-    assert_eq!(first.max_nodes, Some(26));
+    assert_eq!(first.max_generation_work, Some(26));
     assert_eq!(first.wall_ms, Some(26));
     let retry = budgets.for_session_stage(&session, 1);
-    assert_eq!(retry.max_nodes, Some(101));
+    assert_eq!(retry.max_generation_work, Some(101));
     assert_eq!(retry.wall_ms, Some(101));
 }
 
 #[test]
 fn strategic_quality_policy_derives_a_nonboss_target_from_exact_run_state() {
-    let options = RunControlSearchCombatOptions {
-        max_nodes: Some(101),
+    let options = OracleCombatWitnessOptionsV1 {
+        max_generation_work: Some(101),
         wall_ms: Some(101),
-        satisfaction: Some(
-            crate::ai::combat_search_v2::CombatSearchV2Satisfaction::ZeroLossOrBudget,
-        ),
-        ..RunControlSearchCombatOptions::default()
+        satisfaction: Some(CombatWitnessSatisfactionV1::ZeroLossOrBudget),
+        ..OracleCombatWitnessOptionsV1::default()
     };
-    let budgets = OracleRunCombatBudgetsV1 {
+    let budgets = OracleRunCombatWitnessBudgetsV1 {
         hallway: options.clone(),
         elite: options.clone(),
         boss: options,
-        quality_policy: OracleRunCombatQualityPolicyV1::StrategicRun,
+        quality_policy: OracleRunCombatWitnessQualityPolicyV1::StrategicRun,
         initial_divisor: 1,
         guidance_bundle: None,
     };
@@ -686,7 +684,7 @@ fn strategic_quality_policy_derives_a_nonboss_target_from_exact_run_state() {
 
     assert_eq!(
         resolved.satisfaction,
-        Some(crate::ai::combat_search_v2::CombatSearchV2Satisfaction::HpLossAtMost(16))
+        Some(CombatWitnessSatisfactionV1::HpLossAtMost(16))
     );
 
     let combat = &mut session.active_combat.as_mut().unwrap().combat_state;
@@ -697,23 +695,23 @@ fn strategic_quality_policy_derives_a_nonboss_target_from_exact_run_state() {
     .into();
     assert_eq!(
         budgets.for_session(&session).satisfaction,
-        Some(crate::ai::combat_search_v2::CombatSearchV2Satisfaction::HpLossAtMost(0)),
+        Some(CombatWitnessSatisfactionV1::HpLossAtMost(0)),
         "an already-damaged run with combat healing should search for a net-zero line"
     );
 }
 
 #[test]
 fn strategic_nonboss_search_conserves_potions_before_exact_rescue() {
-    let options = RunControlSearchCombatOptions {
-        max_nodes: Some(101),
+    let options = OracleCombatWitnessOptionsV1 {
+        max_generation_work: Some(101),
         wall_ms: Some(101),
-        ..RunControlSearchCombatOptions::default()
+        ..OracleCombatWitnessOptionsV1::default()
     };
-    let budgets = OracleRunCombatBudgetsV1 {
+    let budgets = OracleRunCombatWitnessBudgetsV1 {
         hallway: options.clone(),
         elite: options.clone(),
         boss: options,
-        quality_policy: OracleRunCombatQualityPolicyV1::StrategicRun,
+        quality_policy: OracleRunCombatWitnessQualityPolicyV1::StrategicRun,
         initial_divisor: 1,
         guidance_bundle: None,
     };
@@ -735,7 +733,7 @@ fn strategic_nonboss_search_conserves_potions_before_exact_rescue() {
     assert_eq!(primary.max_potions_used, Some(0));
     assert_eq!(
         primary.potion_policy,
-        Some(crate::ai::combat_search_v2::CombatSearchV2PotionPolicy::Never)
+        Some(CombatWitnessPotionPolicyV1::Never)
     );
     assert!(budgets.has_later_stage(&session, 0));
 
@@ -743,23 +741,23 @@ fn strategic_nonboss_search_conserves_potions_before_exact_rescue() {
     assert_ne!(rescue.max_potions_used, Some(0));
     assert_ne!(
         rescue.potion_policy,
-        Some(crate::ai::combat_search_v2::CombatSearchV2PotionPolicy::Never)
+        Some(CombatWitnessPotionPolicyV1::Never)
     );
     assert!(!budgets.has_later_stage(&session, 1));
 }
 
 #[test]
 fn strategic_rescue_splits_allowance_across_concrete_potion_identities() {
-    let options = RunControlSearchCombatOptions {
-        max_nodes: Some(101),
+    let options = OracleCombatWitnessOptionsV1 {
+        max_generation_work: Some(101),
         wall_ms: Some(101),
-        ..RunControlSearchCombatOptions::default()
+        ..OracleCombatWitnessOptionsV1::default()
     };
-    let budgets = OracleRunCombatBudgetsV1 {
+    let budgets = OracleRunCombatWitnessBudgetsV1 {
         hallway: options.clone(),
         elite: options.clone(),
         boss: options,
-        quality_policy: OracleRunCombatQualityPolicyV1::StrategicRun,
+        quality_policy: OracleRunCombatWitnessQualityPolicyV1::StrategicRun,
         initial_divisor: 1,
         guidance_bundle: None,
     };
@@ -792,12 +790,12 @@ fn strategic_rescue_splits_allowance_across_concrete_potion_identities() {
     let explosive = budgets.for_session_stage_with_prior(&session, 2, &prior);
     let no_potion = budgets.for_session_stage(&session, 0);
 
-    assert_eq!(no_potion.max_nodes, Some(51));
+    assert_eq!(no_potion.max_generation_work, Some(51));
     assert_eq!(no_potion.wall_ms, Some(34));
     assert_eq!(skill.allowed_potion_slots, Some(0b001));
     assert_eq!(explosive.allowed_potion_slots, Some(0b010));
-    assert_eq!(skill.max_nodes, Some(51));
-    assert_eq!(explosive.max_nodes, Some(51));
+    assert_eq!(skill.max_generation_work, Some(51));
+    assert_eq!(explosive.max_generation_work, Some(51));
     assert_eq!(skill.wall_ms, Some(34));
     assert_eq!(explosive.wall_ms, Some(34));
     assert!(budgets.has_later_stage(&session, 0));
@@ -807,16 +805,16 @@ fn strategic_rescue_splits_allowance_across_concrete_potion_identities() {
 
 #[test]
 fn strategic_boss_search_isolates_identities_before_multi_potion_fallback() {
-    let options = RunControlSearchCombatOptions {
-        max_nodes: Some(101),
+    let options = OracleCombatWitnessOptionsV1 {
+        max_generation_work: Some(101),
         wall_ms: Some(101),
-        ..RunControlSearchCombatOptions::default()
+        ..OracleCombatWitnessOptionsV1::default()
     };
-    let budgets = OracleRunCombatBudgetsV1 {
+    let budgets = OracleRunCombatWitnessBudgetsV1 {
         hallway: options.clone(),
         elite: options.clone(),
         boss: options,
-        quality_policy: OracleRunCombatQualityPolicyV1::StrategicRun,
+        quality_policy: OracleRunCombatWitnessQualityPolicyV1::StrategicRun,
         initial_divisor: 1,
         guidance_bundle: None,
     };
@@ -845,23 +843,23 @@ fn strategic_boss_search_isolates_identities_before_multi_potion_fallback() {
     let fallback = budgets.for_session_stage_with_prior(&session, 4, &prior);
 
     assert_eq!(no_potion.max_potions_used, Some(0));
-    assert_eq!(no_potion.max_nodes, Some(26));
+    assert_eq!(no_potion.max_generation_work, Some(26));
     assert_eq!(no_potion.wall_ms, Some(21));
     assert_eq!(elixir.allowed_potion_slots, Some(0b001));
     assert_eq!(swift.allowed_potion_slots, Some(0b010));
     assert_eq!(speed.allowed_potion_slots, Some(0b100));
     for identity in [&elixir, &swift, &speed] {
         assert_eq!(identity.max_potions_used, Some(1));
-        assert_eq!(identity.max_nodes, Some(26));
+        assert_eq!(identity.max_generation_work, Some(26));
         assert_eq!(identity.wall_ms, Some(21));
     }
     assert_eq!(
         fallback.potion_policy,
-        Some(crate::ai::combat_search_v2::CombatSearchV2PotionPolicy::SemanticBudgeted)
+        Some(CombatWitnessPotionPolicyV1::SemanticBudgeted)
     );
     assert_eq!(fallback.max_potions_used, Some(2));
     assert_eq!(fallback.allowed_potion_slots, Some(0b111));
-    assert_eq!(fallback.max_nodes, Some(26));
+    assert_eq!(fallback.max_generation_work, Some(26));
     assert_eq!(fallback.wall_ms, Some(21));
     for stage in 0..4 {
         assert!(budgets.has_later_stage(&session, stage));
@@ -954,13 +952,13 @@ fn autonomous_quality_gated_rescue_can_inspect_continuation_sensitive_potions() 
 }
 
 #[test]
-fn strategic_staging_preserves_session_overrides_and_does_not_rescue_with_escape_only_inventory() {
-    let options = RunControlSearchCombatOptions::default();
-    let budgets = OracleRunCombatBudgetsV1 {
+fn strategic_staging_ignores_atomic_session_overrides_and_skips_escape_only_inventory() {
+    let options = OracleCombatWitnessOptionsV1::default();
+    let budgets = OracleRunCombatWitnessBudgetsV1 {
         hallway: options.clone(),
         elite: options.clone(),
         boss: options,
-        quality_policy: OracleRunCombatQualityPolicyV1::StrategicRun,
+        quality_policy: OracleRunCombatWitnessQualityPolicyV1::StrategicRun,
         initial_divisor: 1,
         guidance_bundle: None,
     };
@@ -1000,8 +998,7 @@ fn strategic_staging_preserves_session_overrides_and_does_not_rescue_with_escape
         "the conserving lane must count passive Fairy consumption even though Fairy is not an active rescue slot"
     );
 
-    session.search_potion_policy =
-        Some(crate::ai::combat_search_v2::CombatSearchV2PotionPolicy::All);
+    session.search_potion_policy = Some(CombatWitnessPotionPolicyV1::All);
     session
         .active_combat
         .as_mut()
@@ -1012,27 +1009,25 @@ fn strategic_staging_preserves_session_overrides_and_does_not_rescue_with_escape
         crate::content::potions::PotionId::BlockPotion,
         9,
     ))];
-    assert!(!budgets.has_later_stage(&session, 0));
-    assert_ne!(
+    assert!(budgets.has_later_stage(&session, 0));
+    assert_eq!(
         budgets.for_session_stage(&session, 0).max_potions_used,
         Some(0),
-        "an explicit session policy must not be replaced by the automatic conserving stage"
+        "resident witness staging must not inherit the atomic-v2 session override"
     );
 }
 
 #[test]
 fn strategic_quality_stops_when_an_a0_intermediate_boss_materializes_payoff() {
-    let options = RunControlSearchCombatOptions {
-        satisfaction: Some(
-            crate::ai::combat_search_v2::CombatSearchV2Satisfaction::FirstCompleteWin,
-        ),
-        ..RunControlSearchCombatOptions::default()
+    let options = OracleCombatWitnessOptionsV1 {
+        satisfaction: Some(CombatWitnessSatisfactionV1::FirstCompleteWin),
+        ..OracleCombatWitnessOptionsV1::default()
     };
-    let budgets = OracleRunCombatBudgetsV1 {
+    let budgets = OracleRunCombatWitnessBudgetsV1 {
         hallway: options.clone(),
         elite: options.clone(),
         boss: options,
-        quality_policy: OracleRunCombatQualityPolicyV1::StrategicRun,
+        quality_policy: OracleRunCombatWitnessQualityPolicyV1::StrategicRun,
         initial_divisor: 1,
         guidance_bundle: None,
     };
@@ -1056,7 +1051,7 @@ fn strategic_quality_stops_when_an_a0_intermediate_boss_materializes_payoff() {
     assert_eq!(
             budgets.for_session(&session).satisfaction,
             Some(
-                crate::ai::combat_search_v2::CombatSearchV2Satisfaction::PersistentRunValueGain
+                CombatWitnessSatisfactionV1::MaterializedPersistentPayoffGain
             ),
             "an A0 act heal removes combat HP pressure, but persistent payoff remains a finite exact target"
         );
@@ -1064,7 +1059,7 @@ fn strategic_quality_stops_when_an_a0_intermediate_boss_materializes_payoff() {
     session.run_state.act_num = 3;
     assert_eq!(
         budgets.for_session(&session).satisfaction,
-        Some(crate::ai::combat_search_v2::CombatSearchV2Satisfaction::FirstCompleteWin),
+        Some(CombatWitnessSatisfactionV1::FirstCompleteWin),
         "persistent payoff must not delay the requested terminal boss witness"
     );
 }
@@ -1148,7 +1143,7 @@ fn unresolved_combat_evidence_survives_a_live_frontier_checkpoint() {
         .unresolved_combats
         .push(OracleRunUnresolvedCombatV1 {
             branch_id: 0,
-            rejection: RunControlCombatSearchRejection::NoCompleteWinningCandidate,
+            failure: OracleCombatWitnessFailureV1::NoVerifiedCompleteWin,
             evidence_kind: OracleRunCombatEvidenceKindV1::BudgetUnknown,
             last_status: Some("partial".to_string()),
             generation_work: 10,
@@ -1188,12 +1183,15 @@ fn unresolved_combat_evidence_survives_a_live_frontier_checkpoint() {
         encoded_value["unresolved_combats"][0]["evidence_kind"],
         "budget_unknown"
     );
-    assert_eq!(encoded_value["unresolved_combats"][0]["nodes_expanded"], 10);
+    assert_eq!(
+        encoded_value["unresolved_combats"][0]["generation_work"],
+        10
+    );
     assert!(
         encoded_value["unresolved_combats"][0]
-            .get("generation_work")
+            .get("nodes_expanded")
             .is_none(),
-        "checkpoint schema keeps its legacy nodes_expanded key"
+        "resident checkpoint must not serialize atomic node vocabulary"
     );
 }
 
@@ -1619,14 +1617,11 @@ fn a_single_combat_remains_exactly_resumable_across_quanta() {
     };
     explorer.next_branch_id = 1;
     let branch_id = explorer.accept_branch(branch).expect("unique branch");
-    let combat_budgets = OracleRunCombatBudgetsV1::uniform(RunControlSearchCombatOptions {
-        max_nodes: Some(8),
+    let combat_budgets = OracleRunCombatWitnessBudgetsV1::uniform(OracleCombatWitnessOptionsV1 {
+        max_generation_work: Some(8),
         wall_ms: None,
-        rollout_policy: Some(crate::ai::combat_search_v2::CombatSearchV2RolloutPolicy::Disabled),
-        satisfaction: Some(
-            crate::ai::combat_search_v2::CombatSearchV2Satisfaction::BudgetOrExhaustion,
-        ),
-        ..RunControlSearchCombatOptions::default()
+        satisfaction: Some(CombatWitnessSatisfactionV1::BudgetOrExhaustion),
+        ..OracleCombatWitnessOptionsV1::default()
     });
     explorer
         .schedule_branch(branch_id, &combat_budgets, None)
@@ -1641,7 +1636,7 @@ fn a_single_combat_remains_exactly_resumable_across_quanta() {
             max_work_items: 2,
             wall_ms: None,
             combat: combat_budgets.clone(),
-            combat_quantum_nodes: 1,
+            combat_quantum_generation_work: 1,
             combat_quantum_ms: None,
             decision_prior: None,
             decision_annotation: None,
@@ -1679,13 +1674,13 @@ fn a_single_combat_remains_exactly_resumable_across_quanta() {
     );
     assert_eq!(pending[0].restart_count, 0);
     let pending_json = serde_json::to_value(&pending[0]).expect("serialize pending combat");
-    assert_eq!(pending_json["nodes_expanded"], pending[0].generation_work);
+    assert_eq!(pending_json["generation_work"], pending[0].generation_work);
     assert!(
-        pending_json.get("generation_work").is_none(),
-        "pending report schema keeps its legacy nodes_expanded key"
+        pending_json.get("nodes_expanded").is_none(),
+        "resident pending evidence must not serialize atomic node vocabulary"
     );
     let consumed_before_restart = pending[0].generation_work;
-    let remaining_before_restart = pending[0].remaining_nodes;
+    let remaining_before_restart = pending[0].remaining_generation_work;
 
     let checkpoint = result
         .explorer
@@ -1712,7 +1707,7 @@ fn a_single_combat_remains_exactly_resumable_across_quanta() {
         .expect("restored pending combat summary");
     assert_eq!(restored_pending[0].generation_work, consumed_before_restart);
     assert_eq!(
-        restored_pending[0].remaining_nodes,
+        restored_pending[0].remaining_generation_work,
         remaining_before_restart
     );
     assert_eq!(restored_pending[0].quantum_count, 2);

@@ -23,9 +23,9 @@ pub(super) fn expand_registered_owner(
     next_branch_id: &mut usize,
 ) -> Result<Vec<Branch>, String> {
     let mut children = Vec::new();
-    let comparison_search_start = branch
-        .comparison_search_start
-        .or_else(|| (policy_expansions.len() > 1).then_some(branch.combat_search_history.len()));
+    let comparison_search_start = branch.comparison_search_start.or_else(|| {
+        (policy_expansions.len() > 1).then_some(branch.atomic_combat_search_history.len())
+    });
     for expansion in policy_expansions.iter().cloned() {
         let choice_index = expansion.choice_index;
         let Some(choice) = choices.get(choice_index).cloned() else {
@@ -70,9 +70,9 @@ pub(super) fn expand_registered_owner(
             }
             Err(error) => (failed_advance(error), None),
         };
-        let combat_search = advance.combat_search;
-        let mut combat_search_history = branch.combat_search_history.clone();
-        combat_search_history.extend(combat_search.clone());
+        let atomic_combat_search_attempts = advance.atomic_combat_search_attempts;
+        let mut atomic_combat_search_history = branch.atomic_combat_search_history.clone();
+        atomic_combat_search_history.extend(atomic_combat_search_attempts.clone());
         let mut accepted_high_loss_diagnostics = branch.accepted_high_loss_diagnostics.clone();
         extend_unique_diagnostics(
             &mut accepted_high_loss_diagnostics,
@@ -102,12 +102,12 @@ pub(super) fn expand_registered_owner(
             session,
             status: advance.status,
             policy_lane: expansion.child_lane,
-            combat_portfolio: advance.combat_portfolio,
+            atomic_combat_search_session: advance.atomic_combat_search_session,
             recent_progress_journal: advance.progress_journal,
             recent_planner_capture: advance.planner_capture,
             trajectory: branch.trajectory.clone(),
-            combat_search,
-            combat_search_history,
+            atomic_combat_search_attempts,
+            atomic_combat_search_history,
             comparison_search_start,
             accepted_high_loss_diagnostics,
         };
@@ -143,10 +143,10 @@ fn prepend_progress_evidence(
 fn failed_advance(error: String) -> runner::AdvanceResult {
     runner::AdvanceResult {
         status: BranchStatus::ApplyFailed(error),
-        combat_portfolio: None,
+        atomic_combat_search_session: None,
         progress_journal: RunProgressJournalV1::default(),
         planner_capture: PlannerBoundaryCaptureSegmentV1::default(),
-        combat_search: Vec::new(),
+        atomic_combat_search_attempts: Vec::new(),
         accepted_high_loss_diagnostics: Vec::new(),
     }
 }
@@ -170,7 +170,7 @@ mod tests {
         DecisionCandidateKind, ExpansionPlan,
     };
     use sts_simulator::eval::run_control::{
-        CombatSearchTraceSummary, DecisionCandidateKey, RunDecisionAction,
+        AtomicCombatSearchTraceSummaryV2, DecisionCandidateKey, RunDecisionAction,
     };
 
     use super::super::branch_policy_lane::BranchPolicyLane;
@@ -219,7 +219,7 @@ mod tests {
             boss_search_nodes: 1,
             boss_search_ms: 1,
             wall_ms: None,
-            checkpoint_before_combat_portfolio: false,
+            checkpoint_before_atomic_combat_search_session: false,
             wall_capped_search_budget: false,
             wall_capped_boss_budget: false,
         }
@@ -239,16 +239,16 @@ mod tests {
                 boundary: "test".to_string(),
             },
             policy_lane: BranchPolicyLane::default(),
-            combat_portfolio: None,
+            atomic_combat_search_session: None,
             recent_progress_journal: Default::default(),
             recent_planner_capture: Default::default(),
             trajectory: Default::default(),
-            combat_search: Vec::new(),
-            combat_search_history: vec![CombatSearchTraceSummary {
+            atomic_combat_search_attempts: Vec::new(),
+            atomic_combat_search_history: vec![AtomicCombatSearchTraceSummaryV2 {
                 source: "shared-prefix".to_string(),
                 coverage_status: "TimeBudgetLimited".to_string(),
                 deadline_hit: true,
-                ..CombatSearchTraceSummary::default()
+                ..AtomicCombatSearchTraceSummaryV2::default()
             }],
             comparison_search_start: None,
             accepted_high_loss_diagnostics: Vec::new(),

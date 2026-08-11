@@ -3,18 +3,25 @@ use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 
+use crate::ai::combat_witness_contract::{
+    CombatWitnessPotionPolicyV1, CombatWitnessSatisfactionV1,
+};
 use crate::state::core::{EngineState, RunResult};
 
-use super::oracle_combat_budget::{OracleRunCombatBudgetsV1, OracleRunCombatQualityPolicyV1};
-use super::oracle_combat_work_contract::OracleRunCombatWorkCheckpointV1;
-use super::oracle_resident_combat_job::OracleResidentCombatJobV1;
+use super::oracle_combat_witness_budget::{
+    OracleRunCombatWitnessBudgetsV1, OracleRunCombatWitnessQualityPolicyV1,
+};
+use super::oracle_combat_witness_contract::{
+    OracleCombatWitnessCheckpointV1, OracleCombatWitnessFailureV1,
+};
+use super::oracle_resident_combat_witness_job::OracleResidentCombatWitnessJobV1;
 use super::oracle_selection_cursor::LazyUnorderedSelectionCursorV1;
 use super::{
-    oracle_active_victory_potion_slot_mask_v1, NeowOracleExpansionV1,
-    RunControlCombatSearchQuantum, RunControlCombatSearchRejection, RunControlCombatWorkAdvanceV1,
-    RunControlHpLossLimit, RunControlSearchCombatOptions, RunControlSession,
-    RunControlSessionCheckpointV1, RunControlTraceAnnotationV1, RunDecisionAction,
-    RunPolicyPriorFnV1, RunProgressJournalV1, RunProgressStepV1, StrategicProbeShadowOrderKeyV1,
+    oracle_active_victory_potion_slot_mask_v1, NeowOracleExpansionV1, OracleCombatWitnessAdvanceV1,
+    OracleCombatWitnessOptionsV1, OracleCombatWitnessQuantumV1, RunControlHpLossLimit,
+    RunControlSession, RunControlSessionCheckpointV1, RunControlTraceAnnotationV1,
+    RunDecisionAction, RunPolicyPriorFnV1, RunProgressJournalV1, RunProgressStepV1,
+    StrategicProbeShadowOrderKeyV1,
 };
 
 mod branch_scheduling;
@@ -159,12 +166,10 @@ pub struct ExactDuplicateOracleRunBranchV1 {
 #[serde(deny_unknown_fields)]
 pub struct OracleRunUnresolvedCombatV1 {
     pub branch_id: usize,
-    pub rejection: RunControlCombatSearchRejection,
+    pub failure: OracleCombatWitnessFailureV1,
     pub evidence_kind: OracleRunCombatEvidenceKindV1,
     pub last_status: Option<String>,
-    /// Exact generator work consumed. The serialized field name remains
-    /// `nodes_expanded` for checkpoint compatibility.
-    #[serde(rename = "nodes_expanded")]
+    /// Exact candidate-generation work consumed by the witness portfolio.
     pub generation_work: u64,
     pub exact_states: usize,
     pub applied_action_transitions: usize,
@@ -205,9 +210,7 @@ pub struct OraclePendingCombatSummaryV1 {
     pub elite: bool,
     pub boss: bool,
     pub enemies: Vec<OraclePendingCombatEnemyV1>,
-    /// Exact generator work consumed. The serialized field name remains
-    /// `nodes_expanded` for report compatibility.
-    #[serde(rename = "nodes_expanded")]
+    /// Exact candidate-generation work consumed by the witness portfolio.
     pub generation_work: u64,
     pub engine_steps: usize,
     pub exact_states: usize,
@@ -233,14 +236,14 @@ pub struct OraclePendingCombatSummaryV1 {
     pub incumbent_revision: u64,
     pub quanta_since_incumbent_improvement: usize,
     pub last_status: Option<String>,
-    pub remaining_nodes: usize,
+    pub remaining_generation_work: usize,
     pub remaining_wall_ms: Option<u64>,
     pub resume_kind: OracleCombatSearchResumeKindV1,
     pub restart_count: usize,
 }
 
-impl OracleRunCombatBudgetsV1 {
-    pub fn for_session(&self, session: &RunControlSession) -> RunControlSearchCombatOptions {
+impl OracleRunCombatWitnessBudgetsV1 {
+    pub fn for_session(&self, session: &RunControlSession) -> OracleCombatWitnessOptionsV1 {
         self.for_session_stage(session, 1)
     }
 
@@ -248,7 +251,7 @@ impl OracleRunCombatBudgetsV1 {
         &self,
         session: &RunControlSession,
         stage: u8,
-    ) -> RunControlSearchCombatOptions {
+    ) -> OracleCombatWitnessOptionsV1 {
         let Some(active) = session.active_combat.as_ref() else {
             return scale_combat_options(self.hallway.clone(), self.stage_divisor(stage));
         };
@@ -259,26 +262,25 @@ impl OracleRunCombatBudgetsV1 {
         } else {
             self.hallway.clone()
         };
-        if self.quality_policy == OracleRunCombatQualityPolicyV1::StrategicRun {
+        if self.quality_policy == OracleRunCombatWitnessQualityPolicyV1::StrategicRun {
             options.satisfaction = Some(
                 if super::strategic_combat_persistent_payoff_matters_v1(session) {
-                    crate::ai::combat_search_v2::CombatSearchV2Satisfaction::PersistentRunValueGain
+                    CombatWitnessSatisfactionV1::MaterializedPersistentPayoffGain
                 } else {
                     match super::strategic_combat_quality_hp_loss_limit_v1(session) {
-                    RunControlHpLossLimit::Limit(limit) => {
-                        crate::ai::combat_search_v2::CombatSearchV2Satisfaction::HpLossAtMost(limit)
-                    }
-                    RunControlHpLossLimit::Unlimited => {
-                        crate::ai::combat_search_v2::CombatSearchV2Satisfaction::FirstCompleteWin
-                    }
+                        RunControlHpLossLimit::Limit(limit) => {
+                            CombatWitnessSatisfactionV1::HpLossAtMost(limit)
+                        }
+                        RunControlHpLossLimit::Unlimited => {
+                            CombatWitnessSatisfactionV1::FirstCompleteWin
+                        }
                     }
                 },
             );
         }
         let uses_potion_stages = self.uses_potion_conserving_primary(session, &options);
         if stage == 0 && uses_potion_stages {
-            options.potion_policy =
-                Some(crate::ai::combat_search_v2::CombatSearchV2PotionPolicy::Never);
+            options.potion_policy = Some(CombatWitnessPotionPolicyV1::Never);
             options.max_potions_used = Some(0);
         }
         if stage == 0
@@ -298,16 +300,15 @@ impl OracleRunCombatBudgetsV1 {
         &self,
         session: &RunControlSession,
         stage: u8,
-        _prior: &OracleRunCombatWorkCheckpointV1,
-    ) -> RunControlSearchCombatOptions {
+        _prior: &OracleCombatWitnessCheckpointV1,
+    ) -> OracleCombatWitnessOptionsV1 {
         let mut options = self.for_session_stage(session, stage);
         if stage == 0
             || !self.uses_potion_conserving_primary(session, &self.for_session_stage(session, 1))
         {
             return options;
         }
-        options.potion_policy =
-            Some(crate::ai::combat_search_v2::CombatSearchV2PotionPolicy::SemanticBudgeted);
+        options.potion_policy = Some(CombatWitnessPotionPolicyV1::SemanticBudgeted);
         options.max_potions_used = Some(1);
         let active_slots = oracle_active_victory_potion_slot_mask_v1(session);
         if active_slots == 0 {
@@ -318,10 +319,9 @@ impl OracleRunCombatBudgetsV1 {
         // rescue, after cheaper clean and single-slot searches had an
         // independent chance to produce an exact witness.
         if boss_multi_potion_fallback_stage(session) == Some(stage) {
-            options.potion_policy =
-                Some(crate::ai::combat_search_v2::CombatSearchV2PotionPolicy::SemanticBudgeted);
+            options.potion_policy = Some(CombatWitnessPotionPolicyV1::SemanticBudgeted);
             options.max_potions_used = session.active_combat.as_ref().and_then(|active| {
-                crate::ai::combat_search_v2::high_stakes_semantic_potion_budget(
+                crate::ai::combat_witness_contract::high_stakes_semantic_witness_potion_budget_v1(
                     &active.combat_state,
                 )
             });
@@ -345,14 +345,13 @@ impl OracleRunCombatBudgetsV1 {
         &self,
         session: &RunControlSession,
         stage: u8,
-        checkpoint: &OracleRunCombatWorkCheckpointV1,
-    ) -> RunControlSearchCombatOptions {
+        checkpoint: &OracleCombatWitnessCheckpointV1,
+    ) -> OracleCombatWitnessOptionsV1 {
         let mut options = self.for_session_stage(session, stage);
         options.max_potions_used = checkpoint.max_potions_used;
         options.allowed_potion_slots = checkpoint.allowed_potion_slots;
         if checkpoint.allowed_potion_slots.is_some() && checkpoint.max_potions_used != Some(0) {
-            options.potion_policy =
-                Some(crate::ai::combat_search_v2::CombatSearchV2PotionPolicy::SemanticBudgeted);
+            options.potion_policy = Some(CombatWitnessPotionPolicyV1::SemanticBudgeted);
         }
         options
     }
@@ -408,7 +407,7 @@ impl OracleRunCombatBudgetsV1 {
         &self,
         session: &RunControlSession,
         stage: u8,
-        work: &OracleResidentCombatJobV1,
+        work: &OracleResidentCombatWitnessJobV1,
     ) -> bool {
         self.has_later_stage(session, stage) && !work.has_refinement_ending_witness()
     }
@@ -416,14 +415,12 @@ impl OracleRunCombatBudgetsV1 {
     fn uses_potion_conserving_primary(
         &self,
         session: &RunControlSession,
-        options: &RunControlSearchCombatOptions,
+        options: &OracleCombatWitnessOptionsV1,
     ) -> bool {
-        if self.quality_policy != OracleRunCombatQualityPolicyV1::StrategicRun
+        if self.quality_policy != OracleRunCombatWitnessQualityPolicyV1::StrategicRun
             || options.max_potions_used.is_some()
             || options.potion_policy.is_some()
             || options.allowed_potion_slots.is_some()
-            || session.search_max_potions_used.is_some()
-            || session.search_potion_policy.is_some()
         {
             return false;
         }
@@ -466,12 +463,12 @@ fn active_potion_slot_mask_for_stage(active_slots: u64, stage: u8) -> u64 {
 }
 
 fn scale_combat_options(
-    mut options: RunControlSearchCombatOptions,
+    mut options: OracleCombatWitnessOptionsV1,
     divisor: u32,
-) -> RunControlSearchCombatOptions {
+) -> OracleCombatWitnessOptionsV1 {
     let divisor = usize::try_from(divisor.max(1)).unwrap_or(usize::MAX);
-    options.max_nodes = options
-        .max_nodes
+    options.max_generation_work = options
+        .max_generation_work
         .map(|value| value.saturating_add(divisor - 1) / divisor)
         .map(|value| value.max(1));
     options.wall_ms = options
@@ -482,15 +479,16 @@ fn scale_combat_options(
 }
 
 fn scale_potion_stage_options(
-    mut options: RunControlSearchCombatOptions,
-    node_divisor: u32,
+    mut options: OracleCombatWitnessOptionsV1,
+    generation_work_divisor: u32,
     wall_divisor: u32,
-) -> RunControlSearchCombatOptions {
-    let node_divisor = usize::try_from(node_divisor.max(1)).unwrap_or(usize::MAX);
+) -> OracleCombatWitnessOptionsV1 {
+    let generation_work_divisor =
+        usize::try_from(generation_work_divisor.max(1)).unwrap_or(usize::MAX);
     let wall_divisor = u64::from(wall_divisor.max(1));
-    options.max_nodes = options
-        .max_nodes
-        .map(|value| value.saturating_add(node_divisor - 1) / node_divisor)
+    options.max_generation_work = options
+        .max_generation_work
+        .map(|value| value.saturating_add(generation_work_divisor - 1) / generation_work_divisor)
         .map(|value| value.max(1));
     options.wall_ms = options
         .wall_ms
@@ -503,8 +501,8 @@ fn scale_potion_stage_options(
 pub struct OracleRunExploreBudgetV1 {
     pub max_work_items: usize,
     pub wall_ms: Option<u64>,
-    pub combat: OracleRunCombatBudgetsV1,
-    pub combat_quantum_nodes: usize,
+    pub combat: OracleRunCombatWitnessBudgetsV1,
+    pub combat_quantum_generation_work: usize,
     pub combat_quantum_ms: Option<u64>,
     pub decision_prior: Option<RunPolicyPriorFnV1>,
     pub decision_annotation: Option<OracleRunDecisionAnnotationFnV1>,
@@ -528,13 +526,13 @@ pub enum OracleRunExploreStopV1 {
 struct PendingOracleCombatV1 {
     branch_id: usize,
     stage: u8,
-    work: OracleResidentCombatJobV1,
+    work: OracleResidentCombatWitnessJobV1,
 }
 
 struct DeferredOracleCombatV1 {
     branch_id: usize,
     stage: u8,
-    prior_work: OracleRunCombatWorkCheckpointV1,
+    prior_work: OracleCombatWitnessCheckpointV1,
 }
 
 pub struct OracleRunExplorerV1 {
@@ -724,7 +722,7 @@ impl OracleRunExplorerV1 {
                     incumbent_revision: progress.incumbent_revision,
                     quanta_since_incumbent_improvement: progress.quanta_since_incumbent_improvement,
                     last_status: progress.last_status,
-                    remaining_nodes: pending.work.remaining_nodes(),
+                    remaining_generation_work: pending.work.remaining_generation_work(),
                     remaining_wall_ms: pending.work.remaining_wall_ms(),
                     resume_kind: if pending.work.restart_count() == 0 {
                         OracleCombatSearchResumeKindV1::Fresh
@@ -762,7 +760,7 @@ impl OracleRunExplorerV1 {
         Some(branch_id)
     }
 
-    pub fn drain_pending_combats(&mut self) -> Vec<(usize, u8, OracleResidentCombatJobV1)> {
+    pub fn drain_pending_combats(&mut self) -> Vec<(usize, u8, OracleResidentCombatWitnessJobV1)> {
         self.pending_combats
             .drain(..)
             .map(|pending| (pending.branch_id, pending.stage, pending.work))
@@ -885,7 +883,7 @@ pub fn seed_oracle_run_explorer_v1(
 pub fn seed_oracle_run_explorer_from_session_v1(
     session: RunControlSession,
     journal: RunProgressJournalV1,
-    combat_budgets: &OracleRunCombatBudgetsV1,
+    combat_budgets: &OracleRunCombatWitnessBudgetsV1,
     decision_prior: Option<RunPolicyPriorFnV1>,
 ) -> Result<OracleRunExplorerV1, String> {
     let mut explorer = OracleRunExplorerV1::empty();
@@ -919,16 +917,16 @@ pub fn drive_oracle_run_explorer_v1(
     if budget.max_work_items == 0 {
         return Err("oracle run work budget must be positive".to_string());
     }
-    if budget.combat_quantum_nodes == 0 {
-        return Err("oracle combat quantum node budget must be positive".to_string());
+    if budget.combat_quantum_generation_work == 0 {
+        return Err("oracle combat quantum generation-work budget must be positive".to_string());
     }
     let started = Instant::now();
     let deadline = budget
         .wall_ms
         .and_then(|wall_ms| started.checked_add(Duration::from_millis(wall_ms)));
-    let quantum = RunControlCombatSearchQuantum {
+    let quantum = OracleCombatWitnessQuantumV1 {
         label: "oracle_run_quantum",
-        additional_nodes: budget.combat_quantum_nodes,
+        additional_generation_work: budget.combat_quantum_generation_work,
         soft_wall_ms: budget.combat_quantum_ms,
     };
     let mut work_items = 0usize;
@@ -966,15 +964,15 @@ pub fn drive_oracle_run_explorer_v1(
             combat_quanta = combat_quanta.saturating_add(1);
             let mut stop_after_service = None;
             match advance {
-                RunControlCombatWorkAdvanceV1::Pending => {
+                OracleCombatWitnessAdvanceV1::Pending => {
                     explorer.pending_combats.push_front(pending);
                 }
-                RunControlCombatWorkAdvanceV1::GlobalDeadlineReached => {
+                OracleCombatWitnessAdvanceV1::GlobalDeadlineReached => {
                     explorer.pending_combats.push_front(pending);
                     stop_after_service = Some(OracleRunExploreStopV1::WallDeadlineReached);
                 }
-                RunControlCombatWorkAdvanceV1::ReadyToFinish
-                | RunControlCombatWorkAdvanceV1::AllowanceExhausted => {
+                OracleCombatWitnessAdvanceV1::ReadyToFinish
+                | OracleCombatWitnessAdvanceV1::AllowanceExhausted => {
                     let stage = pending.stage;
                     let needs_later_stage = explorer
                         .branches

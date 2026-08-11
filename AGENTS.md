@@ -106,7 +106,10 @@ Use these principles unless stronger measured evidence replaces them:
 - For documentation-only changes, run `git diff --check`.
 - For code changes, use the maintained verification commands in
   `docs/RUNBOOK.md`. Before handoff, cover the affected compilation owners and
-  run broader checks in proportion to risk.
+  run broader checks only in proportion to a concrete failure risk.
+- Do not add source-text, file-size, module-placement, retired-name, or report
+  prose tests. Cargo dependency direction, owning behavior tests, and current
+  documentation are the maintained architecture controls.
 - Redirect large test/build output to `.oracle-lab/reports/` and surface only
   final counts and a short failure tail.
 - Run `cargo fmt --all -- --check` and `git diff --check` before committing.

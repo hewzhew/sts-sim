@@ -127,14 +127,14 @@ pub(super) fn execute(workspace: &Path, command: CombatScratchCommand) -> Result
         ),
         CombatScratchCommand::Search {
             max_quanta,
-            quantum_nodes,
+            quantum_generation_work,
             quantum_ms,
             wall_ms,
             page,
         } => search(
             workspace,
             max_quanta,
-            quantum_nodes,
+            quantum_generation_work,
             quantum_ms,
             wall_ms,
             page.selection_offset,
@@ -395,7 +395,7 @@ pub(super) fn tree(workspace: &Path) -> Result<Value, String> {
 pub(super) fn search(
     workspace: &Path,
     max_quanta: usize,
-    quantum_nodes: usize,
+    quantum_generation_work: usize,
     quantum_ms: u64,
     wall_ms: u64,
     selection_offset: usize,
@@ -405,7 +405,7 @@ pub(super) fn search(
         let (report, view) = analysis.session.search_combat_scratch(
             OracleAnalysisCombatScratchSearchRequestV1 {
                 max_quanta,
-                quantum_nodes,
+                quantum_generation_work,
                 quantum_ms,
                 wall_ms,
             },

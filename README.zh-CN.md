@@ -53,10 +53,10 @@ cargo run -p sts_oracle_tools --bin combat_case_review -- --case <case.json> --l
 
 | Binary | 用途 |
 | --- | --- |
-| `branch_tiny` | 轻量跑局 runner，用于 owner 覆盖、run capsule、frontier continuation 和 combat case capture |
+| `branch_tiny` | 保留的 atomic owner-audit/capsule 诊断入口；不是当前 production oracle 主线 |
 | `branch_panel` | Rust seed-panel scheduler，用于多 seed smoke/drain run |
 | `combat_case_review` | saved combat case 的诊断 review ladder |
-| `combat_search_v2` / `combat_search_v2_worker` | 轻量 CLI/help 前端与专用优化 worker，用于固定战斗搜索 |
+| `combat_search_v2` / `combat_search_v2_worker` | `AtomicExactV2` 固定根诊断/挑战搜索；不是 production resident witness engine |
 | `rl_dataset_export` | 离线 decision sample 导出，用于 imitation/RL 实验 |
 
 Binary 边界见 [src/bin/README.md](src/bin/README.md)。
@@ -96,6 +96,18 @@ Binary 边界见 [src/bin/README.md](src/bin/README.md)。
 | `docs` | 当前架构、runbook、测试说明和设计草稿 |
 
 生成物应放在 ignored 位置，例如 `target/` 和 `tools/artifacts/`。
+
+## 战斗搜索命名
+
+仓库没有一个按版本号排序的“最高级搜索”。当前 resident oracle 的 witness producer 使用
+`TurnGraphPortfolioV1`：run control 通过 `OracleResidentCombatWitnessJobV1` 组合
+完整回合边界的 `LocalTurnGraphWitnessSession` 与
+`PolicyDiscrepancySession`。`combat_search_v2` 则是逐原子动作的
+`AtomicExactV2`，用于固定根诊断、挑战、benchmark，以及旧
+`branch_tiny` owner-audit 兼容路径。两者的配置和证据身份已经分开；详见
+[战斗搜索所有权](docs/architecture/combat-search.md)。
+两套引擎目前都只产出 witness/诊断证据，不是经过认证的策略改进老师；尚未实现的资格契约见
+[`CombatSearchImprovementContractV1`](docs/design/2026-08-11-combat-search-improvement-contract-v1.md)。
 
 ## 开发卫生
 

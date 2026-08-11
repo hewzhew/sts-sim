@@ -61,12 +61,17 @@ pub(super) fn drive(
     output: Option<&Path>,
     max_steps: u16,
     max_quanta: usize,
-    quantum_nodes: usize,
+    quantum_generation_work: usize,
     quantum_ms: u64,
     wall_ms: u64,
     stop_at: Option<OracleRunBoundaryV1>,
 ) -> Result<Value, String> {
-    if max_steps == 0 || max_quanta == 0 || quantum_nodes == 0 || quantum_ms == 0 || wall_ms == 0 {
+    if max_steps == 0
+        || max_quanta == 0
+        || quantum_generation_work == 0
+        || quantum_ms == 0
+        || wall_ms == 0
+    {
         return Err("oracle drive requires positive step, quantum, and wall budgets".to_string());
     }
     if let Some(output) = output {
@@ -151,7 +156,7 @@ pub(super) fn drive(
         let source = compact_drive_source(&current);
         let (report, result) = analysis.advance(OracleAnalysisAdvanceRequestV1 {
             max_quanta,
-            quantum_nodes,
+            quantum_generation_work,
             quantum_ms: Some(quantum_ms),
             wall_ms: Some(remaining_wall_ms),
             improve_incumbent: false,

@@ -34,25 +34,25 @@ struct Cli {
     wall_ms: Option<u64>,
 
     #[arg(long, default_value_t = 250_000)]
-    hallway_nodes: usize,
+    hallway_generation_work: usize,
 
     #[arg(long, default_value_t = 5_000)]
     hallway_ms: u64,
 
     #[arg(long, default_value_t = 750_000)]
-    elite_nodes: usize,
+    elite_generation_work: usize,
 
     #[arg(long, default_value_t = 15_000)]
     elite_ms: u64,
 
     #[arg(long, default_value_t = 2_000_000)]
-    boss_nodes: usize,
+    boss_generation_work: usize,
 
     #[arg(long, default_value_t = 30_000)]
     boss_ms: u64,
 
     #[arg(long, default_value_t = 50_000)]
-    combat_quantum_nodes: usize,
+    combat_quantum_generation_work: usize,
 
     #[arg(long, default_value_t = 1_000)]
     combat_quantum_ms: u64,
@@ -299,13 +299,13 @@ fn main() -> Result<(), String> {
         budget: OracleRunBudget {
             max_work_items: cli.max_work_items,
             wall_ms: cli.wall_ms,
-            hallway_nodes: cli.hallway_nodes,
+            hallway_generation_work: cli.hallway_generation_work,
             hallway_ms: cli.hallway_ms,
-            elite_nodes: cli.elite_nodes,
+            elite_generation_work: cli.elite_generation_work,
             elite_ms: cli.elite_ms,
-            boss_nodes: cli.boss_nodes,
+            boss_generation_work: cli.boss_generation_work,
             boss_ms: cli.boss_ms,
-            combat_quantum_nodes: cli.combat_quantum_nodes,
+            combat_quantum_generation_work: cli.combat_quantum_generation_work,
             combat_quantum_ms: cli.combat_quantum_ms,
             combat_initial_divisor: cli.combat_initial_divisor,
         },

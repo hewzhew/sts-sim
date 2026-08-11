@@ -398,7 +398,7 @@ fn validate_analysis_config(config: &OracleRunConfig) -> Result<(), String> {
             config.ascension
         ));
     }
-    if config.budget.combat_quantum_nodes == 0 || config.budget.combat_quantum_ms == 0 {
+    if config.budget.combat_quantum_generation_work == 0 || config.budget.combat_quantum_ms == 0 {
         return Err("oracle analysis combat quantum must be positive".to_string());
     }
     Ok(())

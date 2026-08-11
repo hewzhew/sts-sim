@@ -127,8 +127,8 @@ pub enum OracleAnalysisServiceCommandV1 {
         boss_wall_ms: u64,
         #[serde(default = "default_run_max_quanta")]
         max_quanta: usize,
-        #[serde(default = "default_run_quantum_nodes")]
-        quantum_nodes: usize,
+        #[serde(default = "default_run_quantum_generation_work")]
+        quantum_generation_work: usize,
         #[serde(default = "default_run_quantum_ms")]
         quantum_ms: u64,
         #[serde(default = "default_run_max_boundaries")]
@@ -153,8 +153,8 @@ pub enum OracleAnalysisServiceCommandV1 {
     Advance {
         #[serde(default = "default_max_quanta")]
         max_quanta: usize,
-        #[serde(default = "default_quantum_nodes")]
-        quantum_nodes: usize,
+        #[serde(default = "default_quantum_generation_work")]
+        quantum_generation_work: usize,
         #[serde(default = "default_quantum_ms")]
         quantum_ms: u64,
         #[serde(default)]
@@ -169,8 +169,8 @@ pub enum OracleAnalysisServiceCommandV1 {
     ProbeCombat {
         #[serde(default = "default_probe_generation_work")]
         generation_work: usize,
-        #[serde(default = "default_probe_quantum_nodes")]
-        quantum_nodes: usize,
+        #[serde(default = "default_probe_quantum_generation_work")]
+        quantum_generation_work: usize,
         #[serde(default = "default_probe_wall_ms")]
         wall_ms: u64,
     },
@@ -257,8 +257,8 @@ pub enum OracleAnalysisServiceCommandV1 {
     CombatLabSearch {
         #[serde(default = "default_combat_scratch_max_quanta")]
         max_quanta: usize,
-        #[serde(default = "default_combat_scratch_quantum_nodes")]
-        quantum_nodes: usize,
+        #[serde(default = "default_combat_scratch_quantum_generation_work")]
+        quantum_generation_work: usize,
         #[serde(default = "default_combat_scratch_quantum_ms")]
         quantum_ms: u64,
         #[serde(default = "default_combat_scratch_wall_ms")]
@@ -395,8 +395,8 @@ pub enum OracleAnalysisServiceCommandV1 {
     CombatScratchSearch {
         #[serde(default = "default_combat_scratch_max_quanta")]
         max_quanta: usize,
-        #[serde(default = "default_combat_scratch_quantum_nodes")]
-        quantum_nodes: usize,
+        #[serde(default = "default_combat_scratch_quantum_generation_work")]
+        quantum_generation_work: usize,
         #[serde(default = "default_combat_scratch_quantum_ms")]
         quantum_ms: u64,
         #[serde(default = "default_combat_scratch_wall_ms")]
@@ -466,7 +466,7 @@ const fn default_combat_scratch_max_quanta() -> usize {
     4
 }
 
-const fn default_combat_scratch_quantum_nodes() -> usize {
+const fn default_combat_scratch_quantum_generation_work() -> usize {
     1_024
 }
 
@@ -570,7 +570,7 @@ pub fn validate_endpoint(endpoint: &OracleAnalysisServiceEndpointV1) -> Result<(
 const fn default_max_quanta() -> usize {
     1
 }
-const fn default_quantum_nodes() -> usize {
+const fn default_quantum_generation_work() -> usize {
     50_000
 }
 const fn default_quantum_ms() -> u64 {
@@ -579,7 +579,7 @@ const fn default_quantum_ms() -> u64 {
 const fn default_probe_generation_work() -> usize {
     4_096
 }
-const fn default_probe_quantum_nodes() -> usize {
+const fn default_probe_quantum_generation_work() -> usize {
     256
 }
 const fn default_probe_wall_ms() -> u64 {
@@ -600,7 +600,7 @@ const fn default_boss_wall_ms() -> u64 {
 const fn default_run_max_quanta() -> usize {
     100_000
 }
-const fn default_run_quantum_nodes() -> usize {
+const fn default_run_quantum_generation_work() -> usize {
     4_096
 }
 const fn default_run_quantum_ms() -> u64 {
@@ -887,7 +887,7 @@ mod tests {
             search,
             OracleAnalysisServiceCommandV1::CombatScratchSearch {
                 max_quanta: 4,
-                quantum_nodes: 1_024,
+                quantum_generation_work: 1_024,
                 quantum_ms: 100,
                 wall_ms: 1_000,
                 selection_offset: 0,
@@ -1087,7 +1087,7 @@ mod tests {
             probe,
             OracleAnalysisServiceCommandV1::ProbeCombat {
                 generation_work: 4_096,
-                quantum_nodes: 256,
+                quantum_generation_work: 256,
                 wall_ms: 1_000,
             }
         ));
@@ -1095,7 +1095,7 @@ mod tests {
         let explicit = serde_json::from_value::<OracleAnalysisServiceCommandV1>(json!({
             "command": "probe_combat",
             "generation_work": 768,
-            "quantum_nodes": 128,
+            "quantum_generation_work": 128,
             "wall_ms": 250,
         }))
         .expect("parse explicit current-stage probe command");
@@ -1103,7 +1103,7 @@ mod tests {
             explicit,
             OracleAnalysisServiceCommandV1::ProbeCombat {
                 generation_work: 768,
-                quantum_nodes: 128,
+                quantum_generation_work: 128,
                 wall_ms: 250,
             }
         ));
@@ -1160,7 +1160,7 @@ mod tests {
                 elite_wall_ms: 15_000,
                 boss_wall_ms: 30_000,
                 max_quanta: 100_000,
-                quantum_nodes: 4_096,
+                quantum_generation_work: 4_096,
                 quantum_ms: 100,
                 max_boundaries: 256,
                 run_wall_ms: None,

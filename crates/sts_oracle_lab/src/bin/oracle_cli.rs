@@ -458,7 +458,7 @@ pub(super) enum Command {
         #[arg(long, default_value_t = 32)]
         max_quanta: usize,
         #[arg(long, default_value_t = 50_000)]
-        quantum_nodes: usize,
+        quantum_generation_work: usize,
         #[arg(long, default_value_t = 1_000)]
         quantum_ms: u64,
         #[arg(long, default_value_t = 60_000)]
@@ -547,7 +547,7 @@ pub(super) enum Command {
         #[arg(long, default_value_t = 32)]
         max_quanta: usize,
         #[arg(long, default_value_t = 50_000)]
-        quantum_nodes: usize,
+        quantum_generation_work: usize,
         #[arg(long, default_value_t = 1_000)]
         quantum_ms: u64,
         #[arg(long)]
@@ -569,7 +569,7 @@ pub(super) enum Command {
         #[arg(long, default_value_t = 4_096)]
         generation_work: usize,
         #[arg(long, default_value_t = 256)]
-        quantum_nodes: usize,
+        quantum_generation_work: usize,
         #[arg(long, default_value_t = 1_000)]
         wall_ms: u64,
         /// Print the full tactical progress report and node view.

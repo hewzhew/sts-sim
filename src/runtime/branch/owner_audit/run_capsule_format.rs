@@ -9,7 +9,8 @@ use super::run_contract::RunContract;
 use super::run_identity::{RunIdentity, SourceIdentity};
 use super::trajectory_snapshot::FrontierTrajectoryEvaluation;
 use super::{
-    combat_search_session_json, run_state_json, trajectory_snapshot, Args, Branch, BranchStatus,
+    atomic_combat_search_session_json, run_state_json, trajectory_snapshot, Args, Branch,
+    BranchStatus,
 };
 
 pub(super) fn manifest_value(
@@ -23,7 +24,7 @@ pub(super) fn manifest_value(
     source_identity: &SourceIdentity,
 ) -> Value {
     json!({
-        "schema": "branch_tiny_run_capsule",
+        "schema": "branch_tiny_run_capsule_v5",
         "seed": args.seed,
         "ascension": args.ascension,
         "status": status,
@@ -35,8 +36,6 @@ pub(super) fn manifest_value(
         "run_contract": RunContract::from_args(args),
         "run_identity": RunIdentity::from_args(args),
         "source_identity": source_identity,
-        "args_schema": "legacy_args_projection_v1",
-        "args": args,
     })
 }
 
@@ -109,13 +108,13 @@ pub(super) fn branch_summary_value(
         "capsule_path": capsule_path.display().to_string(),
         "combat_case": combat_case,
         "accepted_high_loss_combat_diagnostics": accepted_high_loss_combat_diagnostics,
-        "combat_search": combat_search_telemetry_value(branch),
-        "execution_adjudication": super::primary_search_outcome::latest_execution_adjudication(
-            &branch.combat_search
+        "atomic_combat_search_telemetry": atomic_combat_search_telemetry_value(branch),
+        "execution_adjudication": super::primary_atomic_witness::latest_execution_adjudication(
+            &branch.atomic_combat_search_attempts
         ),
-        "primary_search": super::primary_search_outcome::primary_search_outcome_value(
-            &branch.combat_search,
-            branch.combat_portfolio.as_ref()
+        "primary_atomic_witness": super::primary_atomic_witness::primary_atomic_witness_value(
+            &branch.atomic_combat_search_attempts,
+            branch.atomic_combat_search_session.as_ref()
         ),
         "next_recommended_command": next_recommended_command,
         "next_recommended_reason": next_recommended_reason,
@@ -126,16 +125,16 @@ pub(super) fn branch_summary_value(
     value
 }
 
-fn combat_search_telemetry_value(branch: &Branch) -> Value {
-    let mut summary = sts_simulator::runtime::branch::CombatSearchTelemetrySummary::default();
-    for attempt in &branch.combat_search {
+fn atomic_combat_search_telemetry_value(branch: &Branch) -> Value {
+    let mut summary = sts_simulator::runtime::branch::AtomicCombatSearchTelemetryV2::default();
+    for attempt in &branch.atomic_combat_search_attempts {
         summary.record_attempt_with_timing(
-            combat_search_telemetry_source(attempt),
+            atomic_combat_search_telemetry_source(attempt),
             attempt.complete_win_found,
             attempt.terminal_wins,
             attempt.nodes_expanded,
             attempt.total_us,
-            sts_simulator::runtime::branch::CombatSearchTimingSummary {
+            sts_simulator::runtime::branch::AtomicCombatSearchTimingV2 {
                 rollout_us: attempt.rollout_us,
                 expansion_us: attempt.expansion_us,
                 engine_step_us: attempt.engine_step_us,
@@ -152,8 +151,8 @@ fn combat_search_telemetry_value(branch: &Branch) -> Value {
     serde_json::to_value(summary).unwrap_or(Value::Null)
 }
 
-fn combat_search_telemetry_source(
-    attempt: &sts_simulator::eval::run_control::CombatSearchTraceSummary,
+fn atomic_combat_search_telemetry_source(
+    attempt: &sts_simulator::eval::run_control::AtomicCombatSearchTraceSummaryV2,
 ) -> String {
     match attempt.lane.as_ref() {
         Some(lane) if lane != &attempt.source => format!("{lane}/{}", attempt.source),
@@ -244,7 +243,7 @@ pub(super) fn result_value(
     let run = &branch.session.run_state;
     let trajectory_snapshot = projected_trajectory_snapshot(branch, trajectory_evaluation);
     json!({
-        "schema": "branch_tiny_run_result_v4",
+        "schema": "branch_tiny_run_result_v5",
         "generation": generation,
         "branch_id": branch.id,
         "parent_id": branch.parent_id,
@@ -270,17 +269,17 @@ pub(super) fn result_value(
         "combat": active_combat_value(branch),
         "combat_case": combat_case,
         "accepted_high_loss_combat_diagnostics": accepted_high_loss_combat_diagnostics,
-        "combat_portfolio": branch.combat_portfolio.as_ref().map(combat_search_session_json::capsule_value),
-        "combat_search_attempts": &branch.combat_search,
-        "combat_search_history": &branch.combat_search_history,
-        "execution_adjudication": super::primary_search_outcome::latest_execution_adjudication(
-            &branch.combat_search
+        "atomic_combat_search_session": branch.atomic_combat_search_session.as_ref().map(atomic_combat_search_session_json::capsule_value),
+        "atomic_combat_search_attempts": &branch.atomic_combat_search_attempts,
+        "atomic_combat_search_history": &branch.atomic_combat_search_history,
+        "execution_adjudication": super::primary_atomic_witness::latest_execution_adjudication(
+            &branch.atomic_combat_search_attempts
         ),
-        "primary_search": super::primary_search_outcome::primary_search_outcome_value(
-            &branch.combat_search,
-            branch.combat_portfolio.as_ref()
+        "primary_atomic_witness": super::primary_atomic_witness::primary_atomic_witness_value(
+            &branch.atomic_combat_search_attempts,
+            branch.atomic_combat_search_session.as_ref()
         ),
-        "failed_search": branch.combat_search.last(),
+        "failed_atomic_combat_search": branch.atomic_combat_search_attempts.last(),
     })
 }
 
@@ -391,8 +390,8 @@ mod tests {
     };
     use sts_simulator::content::cards::CardId;
     use sts_simulator::eval::run_control::{
-        CombatLineAdjudicationV1, CombatLineCleanlinessV1, CombatLineObservedOutcomeV1,
-        CombatSearchTraceSummary, RunActionCardSnapshotV1, RunControlConfig, RunControlSession,
+        AtomicCombatSearchTraceSummaryV2, CombatLineAdjudicationV1, CombatLineCleanlinessV1,
+        CombatLineObservedOutcomeV1, RunActionCardSnapshotV1, RunControlConfig, RunControlSession,
     };
     use sts_simulator::sim::combat::CombatTerminal;
 
@@ -411,7 +410,7 @@ mod tests {
             boss_search_nodes: 500,
             boss_search_ms: 600,
             wall_ms: Some(700),
-            checkpoint_before_combat_portfolio: true,
+            checkpoint_before_atomic_combat_search_session: true,
             wall_capped_search_budget: true,
             wall_capped_boss_budget: true,
         }
@@ -428,12 +427,12 @@ mod tests {
                 reason: "diagnostic".to_string(),
             },
             policy_lane: super::super::branch_policy_lane::BranchPolicyLane::default(),
-            combat_portfolio: None,
+            atomic_combat_search_session: None,
             recent_progress_journal: Default::default(),
             recent_planner_capture: Default::default(),
             trajectory: Default::default(),
-            combat_search: Vec::new(),
-            combat_search_history: Vec::new(),
+            atomic_combat_search_attempts: Vec::new(),
+            atomic_combat_search_history: Vec::new(),
             comparison_search_start: None,
             accepted_high_loss_diagnostics: Vec::new(),
         }
@@ -471,11 +470,11 @@ mod tests {
             },
         };
         let mut branch = sample_branch();
-        branch.combat_search = vec![CombatSearchTraceSummary {
+        branch.atomic_combat_search_attempts = vec![AtomicCombatSearchTraceSummaryV2 {
             source: "search_combat".to_string(),
             lane: Some("primary".to_string()),
             execution_adjudication: Some(adjudication.clone()),
-            ..CombatSearchTraceSummary::default()
+            ..AtomicCombatSearchTraceSummaryV2::default()
         }];
         let trajectory_evaluation = evaluation(vec![branch.clone()]);
         let summary = branch_summary_value(
@@ -513,7 +512,7 @@ mod tests {
             &trajectory_evaluation,
         );
 
-        assert_eq!(value["schema"], "branch_tiny_run_result_v4");
+        assert_eq!(value["schema"], "branch_tiny_run_result_v5");
         assert!(value.get("trajectory_head").is_some());
         assert_eq!(
             value["trajectory_projection_index"],
@@ -592,14 +591,14 @@ mod tests {
     #[test]
     fn capsule_exposes_search_comparability_and_pair_eligibility() {
         let mut baseline = sample_branch();
-        baseline.combat_search_history = vec![CombatSearchTraceSummary {
+        baseline.atomic_combat_search_history = vec![AtomicCombatSearchTraceSummaryV2 {
             source: "primary".to_string(),
             coverage_status: "NodeBudgetLimited".to_string(),
             node_budget_hit: true,
-            ..CombatSearchTraceSummary::default()
+            ..AtomicCombatSearchTraceSummaryV2::default()
         }];
         let mut challenger = challenger_sample_branch(1);
-        challenger.combat_search_history = baseline.combat_search_history.clone();
+        challenger.atomic_combat_search_history = baseline.atomic_combat_search_history.clone();
         let trajectory_evaluation = evaluation(vec![baseline.clone(), challenger]);
         let summary = branch_summary_value(
             Path::new("target/test-capsule"),
@@ -669,45 +668,50 @@ mod tests {
         let combat = sts_simulator::test_support::blank_test_combat();
         let continuation = potion_run_continuation_context_v1(&branch.session.run_state, &combat);
         let pressure = potion_continuation_pressure_v1(&branch.session.run_state, &continuation);
-        let attempt = CombatSearchTraceSummary {
+        let attempt = AtomicCombatSearchTraceSummaryV2 {
             potion_continuation_context: Some(continuation),
             potion_continuation_pressure: Some(pressure),
-            ..CombatSearchTraceSummary::default()
+            ..AtomicCombatSearchTraceSummaryV2::default()
         };
-        branch.combat_search = vec![attempt.clone()];
-        branch.combat_search_history = vec![attempt];
+        branch.atomic_combat_search_attempts = vec![attempt.clone()];
+        branch.atomic_combat_search_history = vec![attempt];
         let trajectory_evaluation = evaluation(vec![branch.clone()]);
 
         let value = result_value(3, &branch, Value::Null, Value::Null, &trajectory_evaluation);
 
         assert_eq!(
-            value["combat_search_attempts"][0]["potion_continuation_context"]["capture_boundary"],
-            "before_combat_search"
+            value["atomic_combat_search_attempts"][0]["potion_continuation_context"]
+                ["capture_boundary"],
+            "before_atomic_combat_search"
         );
         assert_eq!(
-            value["combat_search_history"][0]["potion_continuation_context"]["capture_boundary"],
-            "before_combat_search"
+            value["atomic_combat_search_history"][0]["potion_continuation_context"]
+                ["capture_boundary"],
+            "before_atomic_combat_search"
         );
         assert_eq!(
-            value["failed_search"]["potion_continuation_context"]["capture_boundary"],
-            "before_combat_search"
+            value["failed_atomic_combat_search"]["potion_continuation_context"]["capture_boundary"],
+            "before_atomic_combat_search"
         );
         assert_eq!(
-            value["combat_search_attempts"][0]["potion_continuation_pressure"]["capture_boundary"],
-            "before_combat_search"
+            value["atomic_combat_search_attempts"][0]["potion_continuation_pressure"]
+                ["capture_boundary"],
+            "before_atomic_combat_search"
         );
         assert_eq!(
-            value["combat_search_history"][0]["potion_continuation_pressure"]["capture_boundary"],
-            "before_combat_search"
+            value["atomic_combat_search_history"][0]["potion_continuation_pressure"]
+                ["capture_boundary"],
+            "before_atomic_combat_search"
         );
         assert_eq!(
-            value["failed_search"]["potion_continuation_pressure"]["capture_boundary"],
-            "before_combat_search"
+            value["failed_atomic_combat_search"]["potion_continuation_pressure"]
+                ["capture_boundary"],
+            "before_atomic_combat_search"
         );
     }
 
     #[test]
-    fn manifest_writes_run_contract_and_legacy_args_projection() {
+    fn manifest_writes_only_the_typed_v5_run_contract() {
         let value = manifest_value(
             sample_args(),
             "running",
@@ -729,9 +733,13 @@ mod tests {
         assert_eq!(value["source_identity"]["git_dirty"], true);
         assert_eq!(value["run_contract"]["game"]["ascension"], 3);
         assert_eq!(value["run_contract"]["slice"]["slice_ms"], 700);
-        assert_eq!(value["run_contract"]["combat_search"]["boss_ms"], 600);
-        assert_eq!(value["args"]["wall_ms"], 700);
-        assert_eq!(value["args_schema"], "legacy_args_projection_v1");
+        assert_eq!(
+            value["run_contract"]["atomic_combat_search_budget"]["boss_ms"],
+            600
+        );
+        assert_eq!(value["schema"], "branch_tiny_run_capsule_v5");
+        assert!(value.get("args").is_none());
+        assert!(value.get("args_schema").is_none());
         assert!(value["run_contract"]["wall_capped_search_budget"].is_null());
     }
 
@@ -760,8 +768,8 @@ mod tests {
     }
 
     #[test]
-    fn primary_search_outcome_projects_profile_and_telemetry() {
-        let attempt = sts_simulator::eval::run_control::CombatSearchTraceSummary {
+    fn primary_atomic_witness_projects_profile_and_telemetry() {
+        let attempt = sts_simulator::eval::run_control::AtomicCombatSearchTraceSummaryV2 {
             source: "search_combat".to_string(),
             lane: Some("primary".to_string()),
             profile_id: None,
@@ -772,9 +780,9 @@ mod tests {
             profile_allowed_potion_slots: None,
             profile_internal_no_win_rescue_enabled: None,
             engine_fingerprint: None,
-            portfolio_candidate_tier: None,
-            portfolio_selected: None,
-            portfolio_decision: None,
+            atomic_stage_candidate_tier: None,
+            atomic_witness_selected: None,
+            atomic_stage_decision: None,
             potion_continuation_context: None,
             potion_continuation_pressure: None,
             combat_victory_continuation: None,
@@ -813,10 +821,11 @@ mod tests {
             shadow_audit_us: 37,
             root_turn_plan_diag_us: 41,
         };
-        let report = super::super::combat_search_report::CombatSearchSessionReport {
-            status: super::super::combat_search_report::CombatSearchSessionStatus::Failed(
-                "no_complete_winning_candidate".to_string(),
-            ),
+        let report = super::super::atomic_combat_search_report::AtomicCombatSearchSessionReportV2 {
+            status:
+                super::super::atomic_combat_search_report::AtomicCombatSearchSessionStatusV2::Failed(
+                    "no_complete_winning_candidate".to_string(),
+                ),
             profile_id: "canonical_combat_session",
             max_nodes: 1_000,
             wall_ms: 500,
@@ -824,7 +833,7 @@ mod tests {
             max_potions_used: Some(0),
             allowed_potion_slots: Some(0),
             work_quanta: vec![
-                super::super::combat_search_report::CombatSearchQuantumReport {
+                super::super::atomic_combat_search_report::AtomicCombatSearchQuantumReportV2 {
                     label: "initial",
                     additional_nodes: 1_000,
                     soft_wall_ms: Some(500),
@@ -841,7 +850,7 @@ mod tests {
             turns: None,
         };
 
-        let value = super::super::primary_search_outcome::primary_search_outcome_value(
+        let value = super::super::primary_atomic_witness::primary_atomic_witness_value(
             &[attempt],
             Some(&report),
         );
@@ -871,8 +880,8 @@ mod tests {
     }
 
     #[test]
-    fn primary_search_outcome_uses_trace_profile_when_portfolio_missing() {
-        let attempt = sts_simulator::eval::run_control::CombatSearchTraceSummary {
+    fn primary_atomic_witness_uses_trace_profile_when_portfolio_missing() {
+        let attempt = sts_simulator::eval::run_control::AtomicCombatSearchTraceSummaryV2 {
             source: "search_combat".to_string(),
             lane: Some("primary".to_string()),
             profile_id: Some("primary".to_string()),
@@ -883,9 +892,9 @@ mod tests {
             profile_allowed_potion_slots: Some(0),
             profile_internal_no_win_rescue_enabled: Some(false),
             engine_fingerprint: None,
-            portfolio_candidate_tier: None,
-            portfolio_selected: None,
-            portfolio_decision: None,
+            atomic_stage_candidate_tier: None,
+            atomic_witness_selected: None,
+            atomic_stage_decision: None,
             potion_continuation_context: None,
             potion_continuation_pressure: None,
             combat_victory_continuation: None,
@@ -926,7 +935,7 @@ mod tests {
         };
 
         let value =
-            super::super::primary_search_outcome::primary_search_outcome_value(&[attempt], None);
+            super::super::primary_atomic_witness::primary_atomic_witness_value(&[attempt], None);
 
         assert_eq!(value["status"], "no_accepted_line");
         assert_eq!(value["profile"]["profile_id"], "primary");
@@ -942,8 +951,8 @@ mod tests {
     }
 
     #[test]
-    fn primary_search_outcome_projects_attempt_economics() {
-        let attempt = sts_simulator::eval::run_control::CombatSearchTraceSummary {
+    fn primary_atomic_witness_projects_attempt_economics() {
+        let attempt = sts_simulator::eval::run_control::AtomicCombatSearchTraceSummaryV2 {
             source: "search_combat".to_string(),
             lane: Some("primary".to_string()),
             profile_id: Some("primary".to_string()),
@@ -954,9 +963,9 @@ mod tests {
             profile_allowed_potion_slots: Some(0),
             profile_internal_no_win_rescue_enabled: Some(false),
             engine_fingerprint: None,
-            portfolio_candidate_tier: None,
-            portfolio_selected: None,
-            portfolio_decision: None,
+            atomic_stage_candidate_tier: None,
+            atomic_witness_selected: None,
+            atomic_stage_decision: None,
             potion_continuation_context: None,
             potion_continuation_pressure: None,
             combat_victory_continuation: None,
@@ -997,7 +1006,7 @@ mod tests {
         };
 
         let value =
-            super::super::primary_search_outcome::primary_search_outcome_value(&[attempt], None);
+            super::super::primary_atomic_witness::primary_atomic_witness_value(&[attempt], None);
 
         assert_eq!(value["telemetry"]["us_per_node"], 250);
         assert_eq!(value["telemetry"]["rollout_pct"], 50);

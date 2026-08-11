@@ -234,8 +234,9 @@ evidence until their producer carries the original-case identity.
 
 ## Combat Laboratory V1
 
-The Combat Laboratory is an offline mode of the dedicated combat-search
-worker. Run the maintained seed006-derived Reptomancer pilot with:
+The Combat Laboratory is an offline mode of the dedicated fixed-root
+`AtomicExactV2` worker. It does not invoke the production resident portfolio.
+Run the maintained seed006-derived Reptomancer pilot with:
 
 ```powershell
 .\cs.cmd --lab-spec fixtures/combat_lab/seed006_reptomancer_8x2.lab.json --lab-output artifacts/runs/combat-lab-seed006-pilot --lab-samples 8

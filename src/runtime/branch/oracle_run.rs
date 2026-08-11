@@ -4,23 +4,24 @@ use std::time::{Instant, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 
-use crate::ai::combat_search_v2::{CombatSearchV2RolloutPolicy, CombatSearchV2Satisfaction};
+use crate::ai::combat_witness_contract::CombatWitnessSatisfactionV1;
 use crate::content::potions::Potion;
 use crate::content::relics::RelicState;
 use crate::eval::combat_case::{
     CombatCase, CombatCaseGap, CombatCaseRngSummary, CombatCaseRunSummary, CombatCaseSource,
+    CombatCaseWitnessBudgetV1,
 };
 use crate::eval::combat_case_context::capture_oracle_analysis_combat_case_production_context_v1;
 use crate::eval::run_control::{
     drive_oracle_run_explorer_v1, expand_oracle_neow_candidates_v1,
     seed_oracle_run_explorer_from_checkpoint_v1, seed_oracle_run_explorer_from_session_v1,
     seed_oracle_run_explorer_v1, CombatAutomationActionV1, DecisionCandidateKey,
-    NeowOracleExpansionV1, OraclePendingCombatSummaryV1, OracleRunBranchV1,
-    OracleRunCombatBudgetsV1, OracleRunCombatQualityPolicyV1, OracleRunExploreBudgetV1,
-    OracleRunExploreResultV1, OracleRunExploreStopV1, OracleRunExplorerCheckpointV1,
-    RewardAutomationConfig, RunControlConfig, RunControlHpLossLimit, RunControlSearchCombatOptions,
-    RunControlSession, RunControlSessionCheckpointV1, RunDecisionAction, RunProgressJournalV1,
-    RunProgressStepV1, StrategicProbeOwnerAuthorityV1, StrategicProbeSchedulingAuthorityV1,
+    NeowOracleExpansionV1, OracleCombatWitnessOptionsV1, OraclePendingCombatSummaryV1,
+    OracleRunBranchV1, OracleRunCombatWitnessBudgetsV1, OracleRunCombatWitnessQualityPolicyV1,
+    OracleRunExploreBudgetV1, OracleRunExploreResultV1, OracleRunExploreStopV1,
+    OracleRunExplorerCheckpointV1, RewardAutomationConfig, RunControlConfig, RunControlSession,
+    RunControlSessionCheckpointV1, RunDecisionAction, RunProgressJournalV1, RunProgressStepV1,
+    StrategicProbeOwnerAuthorityV1, StrategicProbeSchedulingAuthorityV1,
 };
 use crate::runtime::combat::CombatCard;
 use crate::sim::combat::CombatPosition;
@@ -36,13 +37,13 @@ pub const ORACLE_RUN_CONTINUATION_SCHEMA_VERSION: u32 = 1;
 pub struct OracleRunBudget {
     pub max_work_items: usize,
     pub wall_ms: Option<u64>,
-    pub hallway_nodes: usize,
+    pub hallway_generation_work: usize,
     pub hallway_ms: u64,
-    pub elite_nodes: usize,
+    pub elite_generation_work: usize,
     pub elite_ms: u64,
-    pub boss_nodes: usize,
+    pub boss_generation_work: usize,
     pub boss_ms: u64,
-    pub combat_quantum_nodes: usize,
+    pub combat_quantum_generation_work: usize,
     pub combat_quantum_ms: u64,
     #[serde(default = "default_combat_initial_divisor")]
     pub combat_initial_divisor: u32,
@@ -53,13 +54,13 @@ impl Default for OracleRunBudget {
         Self {
             max_work_items: 2_048,
             wall_ms: None,
-            hallway_nodes: 250_000,
+            hallway_generation_work: 250_000,
             hallway_ms: 5_000,
-            elite_nodes: 750_000,
+            elite_generation_work: 750_000,
             elite_ms: 15_000,
-            boss_nodes: 2_000_000,
+            boss_generation_work: 2_000_000,
             boss_ms: 30_000,
-            combat_quantum_nodes: 50_000,
+            combat_quantum_generation_work: 50_000,
             combat_quantum_ms: 1_000,
             combat_initial_divisor: 1,
         }
@@ -160,10 +161,10 @@ pub struct OracleNeowFrontierSummaryV1 {
 #[serde(deny_unknown_fields)]
 pub struct OracleUnresolvedCombatSummaryV1 {
     pub branch_id: usize,
-    pub rejection: String,
+    pub witness_failure: String,
     pub evidence_kind: String,
     pub last_status: Option<String>,
-    pub nodes_expanded: u64,
+    pub generation_work: u64,
     pub exact_states: usize,
     pub applied_action_transitions: usize,
     pub unique_successor_states: usize,
@@ -293,7 +294,7 @@ pub fn run_oracle_run(config: OracleRunConfig) -> Result<OracleRunReportV1, Stri
             max_work_items: config.budget.max_work_items,
             wall_ms: config.budget.wall_ms,
             combat: oracle_run_combat_budgets_v1(&config),
-            combat_quantum_nodes: config.budget.combat_quantum_nodes,
+            combat_quantum_generation_work: config.budget.combat_quantum_generation_work,
             combat_quantum_ms: Some(config.budget.combat_quantum_ms),
             decision_prior: Some(super::owner_audit::legacy_oracle_policy_prior_v1),
             decision_annotation: None,
@@ -341,7 +342,7 @@ pub fn run_oracle_run_from_continuation(
             max_work_items: config.budget.max_work_items,
             wall_ms: config.budget.wall_ms,
             combat: combat_budgets,
-            combat_quantum_nodes: config.budget.combat_quantum_nodes,
+            combat_quantum_generation_work: config.budget.combat_quantum_generation_work,
             combat_quantum_ms: Some(config.budget.combat_quantum_ms),
             decision_prior: Some(super::owner_audit::legacy_oracle_policy_prior_v1),
             decision_annotation: None,
@@ -459,10 +460,10 @@ fn finish_oracle_run_report(
             .iter()
             .map(|combat| OracleUnresolvedCombatSummaryV1 {
                 branch_id: combat.branch_id,
-                rejection: format!("{:?}", combat.rejection),
+                witness_failure: format!("{:?}", combat.failure),
                 evidence_kind: combat.evidence_kind.as_str().to_string(),
                 last_status: combat.last_status.clone(),
-                nodes_expanded: combat.generation_work,
+                generation_work: combat.generation_work,
                 exact_states: combat.exact_states,
                 applied_action_transitions: combat.applied_action_transitions,
                 unique_successor_states: combat.unique_successor_states,
@@ -634,7 +635,7 @@ fn first_unresolved_combat_case(
     combat_case_for_branch(
         config,
         branch,
-        format!("{:?}", unresolved.rejection),
+        format!("{:?}", unresolved.failure),
         unresolved.generation_work.min(usize::MAX as u64) as usize,
     )
 }
@@ -643,13 +644,13 @@ fn combat_case_for_branch(
     config: &OracleRunConfig,
     branch: &OracleRunBranchV1,
     reason: String,
-    search_nodes: usize,
+    generation_work: usize,
 ) -> Result<Option<CombatCase>, String> {
     let Some(active) = branch.session.active_combat.as_ref() else {
         return Ok(None);
     };
     let position = CombatPosition::new(active.engine_state.clone(), active.combat_state.clone());
-    let search_ms = if active.combat_state.meta.is_boss_fight {
+    let wall_ms = if active.combat_state.meta.is_boss_fight {
         config.budget.boss_ms
     } else if active.combat_state.meta.is_elite_fight {
         config.budget.elite_ms
@@ -670,10 +671,10 @@ fn combat_case_for_branch(
                 branch.session.run_state.act_num, branch.session.run_state.floor_num
             ),
             reason,
-            search_nodes,
-            search_ms,
-            rescue_search_nodes: 0,
-            rescue_search_ms: 0,
+            witness_budget: CombatCaseWitnessBudgetV1::TurnGraphPortfolioV1 {
+                generation_work,
+                wall_ms,
+            },
         },
         CombatCaseRunSummary {
             act: branch.session.run_state.act_num,
@@ -808,7 +809,7 @@ fn validate_config(config: &OracleRunConfig) -> Result<(), String> {
     if config.budget.max_work_items == 0 {
         return Err("oracle run requires at least one work item".to_string());
     }
-    if config.budget.combat_quantum_nodes == 0 || config.budget.combat_quantum_ms == 0 {
+    if config.budget.combat_quantum_generation_work == 0 || config.budget.combat_quantum_ms == 0 {
         return Err("oracle run combat quantum must be positive".to_string());
     }
     if config.budget.combat_initial_divisor == 0 {
@@ -841,34 +842,27 @@ fn validate_continuation(
     Ok(())
 }
 
-pub fn oracle_run_combat_budgets_v1(config: &OracleRunConfig) -> OracleRunCombatBudgetsV1 {
-    OracleRunCombatBudgetsV1 {
-        hallway: RunControlSearchCombatOptions {
-            max_nodes: Some(config.budget.hallway_nodes),
+pub fn oracle_run_combat_budgets_v1(config: &OracleRunConfig) -> OracleRunCombatWitnessBudgetsV1 {
+    OracleRunCombatWitnessBudgetsV1 {
+        hallway: OracleCombatWitnessOptionsV1 {
+            max_generation_work: Some(config.budget.hallway_generation_work),
             wall_ms: Some(config.budget.hallway_ms),
-            satisfaction: Some(CombatSearchV2Satisfaction::ZeroLossOrBudget),
-            max_hp_loss: Some(RunControlHpLossLimit::Unlimited),
-            enable_legacy_no_win_rescue: false,
-            ..RunControlSearchCombatOptions::default()
+            satisfaction: Some(CombatWitnessSatisfactionV1::ZeroLossOrBudget),
+            ..OracleCombatWitnessOptionsV1::default()
         },
-        elite: RunControlSearchCombatOptions {
-            max_nodes: Some(config.budget.elite_nodes),
+        elite: OracleCombatWitnessOptionsV1 {
+            max_generation_work: Some(config.budget.elite_generation_work),
             wall_ms: Some(config.budget.elite_ms),
-            satisfaction: Some(CombatSearchV2Satisfaction::ZeroLossOrBudget),
-            max_hp_loss: Some(RunControlHpLossLimit::Unlimited),
-            enable_legacy_no_win_rescue: false,
-            ..RunControlSearchCombatOptions::default()
+            satisfaction: Some(CombatWitnessSatisfactionV1::ZeroLossOrBudget),
+            ..OracleCombatWitnessOptionsV1::default()
         },
-        boss: RunControlSearchCombatOptions {
-            max_nodes: Some(config.budget.boss_nodes),
+        boss: OracleCombatWitnessOptionsV1 {
+            max_generation_work: Some(config.budget.boss_generation_work),
             wall_ms: Some(config.budget.boss_ms),
-            satisfaction: Some(CombatSearchV2Satisfaction::FirstCompleteWin),
-            max_hp_loss: Some(RunControlHpLossLimit::Unlimited),
-            rollout_policy: Some(CombatSearchV2RolloutPolicy::TurnBeamNoPotion),
-            enable_legacy_no_win_rescue: false,
-            ..RunControlSearchCombatOptions::default()
+            satisfaction: Some(CombatWitnessSatisfactionV1::FirstCompleteWin),
+            ..OracleCombatWitnessOptionsV1::default()
         },
-        quality_policy: OracleRunCombatQualityPolicyV1::StrategicRun,
+        quality_policy: OracleRunCombatWitnessQualityPolicyV1::StrategicRun,
         initial_divisor: config.budget.combat_initial_divisor,
         guidance_bundle: None,
     }
@@ -927,13 +921,7 @@ mod tests {
 
         assert_eq!(
             budgets.boss.satisfaction,
-            Some(CombatSearchV2Satisfaction::FirstCompleteWin)
+            Some(CombatWitnessSatisfactionV1::FirstCompleteWin)
         );
-        assert_eq!(
-            budgets.boss.rollout_policy,
-            Some(CombatSearchV2RolloutPolicy::TurnBeamNoPotion)
-        );
-        assert_eq!(budgets.hallway.rollout_policy, None);
-        assert_eq!(budgets.elite.rollout_policy, None);
     }
 }

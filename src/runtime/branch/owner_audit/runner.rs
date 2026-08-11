@@ -1,15 +1,15 @@
 use sts_simulator::eval::run_control::{
-    build_decision_surface, capture_planner_boundary_yield_v1, BoundedRunDriveStopV1,
-    BoundedRunDriver, BoundedRunStepContextV1, BoundedRunStepControlV1, CombatSearchTraceSummary,
+    build_decision_surface, capture_planner_boundary_yield_v1, AtomicCombatSearchTraceSummaryV2,
+    BoundedRunDriveStopV1, BoundedRunDriver, BoundedRunStepContextV1, BoundedRunStepControlV1,
     PlannerBoundaryCaptureSegmentV1, PlannerBoundaryYieldKindV1, RunControlAutoStepOptions,
     RunControlAutoStopKind, RunControlAutoStopV1, RunControlRouteAutomationMode, RunControlSession,
     RunProgressJournalV1, RunProgressStepV1,
 };
 
 use super::accepted_high_loss_diagnostic::AcceptedHighLossDiagnosticDraft;
-use super::combat_search_orchestrator;
-use super::combat_search_report::CombatSearchSessionReport;
-use super::combat_search_session_result::CombatSearchSessionResult;
+use super::atomic_combat_search_orchestrator;
+use super::atomic_combat_search_report::AtomicCombatSearchSessionReportV2;
+use super::atomic_combat_search_session_result::AtomicCombatSearchSessionResultV2;
 use super::owner_orchestrator::{orchestrate_owner_boundary, OwnerOrchestration};
 use super::run_cutpoint_recorder::RunCutpointRecorder;
 use super::run_deadline::RunDeadline;
@@ -17,16 +17,16 @@ use super::{Args, BranchStatus, TerminalOutcome};
 
 pub(super) struct AdvanceResult {
     pub(super) status: BranchStatus,
-    pub(super) combat_portfolio: Option<CombatSearchSessionReport>,
+    pub(super) atomic_combat_search_session: Option<AtomicCombatSearchSessionReportV2>,
     pub(super) progress_journal: RunProgressJournalV1,
     pub(super) planner_capture: PlannerBoundaryCaptureSegmentV1,
-    pub(super) combat_search: Vec<CombatSearchTraceSummary>,
+    pub(super) atomic_combat_search_attempts: Vec<AtomicCombatSearchTraceSummaryV2>,
     pub(super) accepted_high_loss_diagnostics: Vec<AcceptedHighLossDiagnosticDraft>,
 }
 
 #[derive(Default)]
 struct AdvanceLog {
-    combat_search: Vec<CombatSearchTraceSummary>,
+    atomic_combat_search_attempts: Vec<AtomicCombatSearchTraceSummaryV2>,
     accepted_high_loss_diagnostics: Vec<AcceptedHighLossDiagnosticDraft>,
 }
 
@@ -168,11 +168,12 @@ fn execute_one_owner_audit_step(
     let run_args = deadline.cap_args(args, 1);
     if let Some(recorder) = cutpoints.as_deref_mut() {
         recorder
-            .before_combat_search(session, &context)
+            .before_atomic_combat_search(session, &context)
             .map_err(|error| format!("cutpoint persistence failed: {error}"))?;
     }
-    let search = match combat_search_orchestrator::run_combat_search_session_step(session, run_args)
-    {
+    let search = match atomic_combat_search_orchestrator::run_atomic_combat_search_session_step(
+        session, run_args,
+    ) {
         Ok(search) => search,
         Err(error) => {
             if let Some(recorder) = cutpoints.as_deref_mut() {
@@ -188,7 +189,7 @@ fn execute_one_owner_audit_step(
     absorb_search_output(log, &search);
     let progress_steps = search.progress_steps.clone();
     if let Some(recorder) = cutpoints.as_deref_mut() {
-        if let Err(error) = recorder.after_combat_search(&search.status) {
+        if let Err(error) = recorder.after_atomic_combat_search(&search.status) {
             return Ok(BoundedRunStepControlV1::Stop {
                 progress_steps,
                 output: log.finish(
@@ -256,9 +257,9 @@ fn execute_one_noncombat_step(
     }
 }
 
-fn absorb_search_output(log: &mut AdvanceLog, search: &CombatSearchSessionResult) {
-    log.combat_search
-        .extend(search.combat_search.iter().cloned());
+fn absorb_search_output(log: &mut AdvanceLog, search: &AtomicCombatSearchSessionResultV2) {
+    log.atomic_combat_search_attempts
+        .extend(search.atomic_combat_search_attempts.iter().cloned());
     log.accepted_high_loss_diagnostics
         .extend(search.accepted_high_loss_diagnostics.iter().cloned());
 }
@@ -267,14 +268,14 @@ impl AdvanceLog {
     fn finish(
         &mut self,
         status: BranchStatus,
-        combat_portfolio: Option<CombatSearchSessionReport>,
+        atomic_combat_search_session: Option<AtomicCombatSearchSessionReportV2>,
         progress_journal: RunProgressJournalV1,
     ) -> AdvanceResult {
         advance_result(
             status,
-            combat_portfolio,
+            atomic_combat_search_session,
             progress_journal,
-            std::mem::take(&mut self.combat_search),
+            std::mem::take(&mut self.atomic_combat_search_attempts),
             std::mem::take(&mut self.accepted_high_loss_diagnostics),
         )
     }
@@ -282,17 +283,17 @@ impl AdvanceLog {
 
 fn advance_result(
     status: BranchStatus,
-    combat_portfolio: Option<CombatSearchSessionReport>,
+    atomic_combat_search_session: Option<AtomicCombatSearchSessionReportV2>,
     progress_journal: RunProgressJournalV1,
-    combat_search: Vec<CombatSearchTraceSummary>,
+    atomic_combat_search_attempts: Vec<AtomicCombatSearchTraceSummaryV2>,
     accepted_high_loss_diagnostics: Vec<AcceptedHighLossDiagnosticDraft>,
 ) -> AdvanceResult {
     AdvanceResult {
         status,
-        combat_portfolio,
+        atomic_combat_search_session,
         progress_journal,
         planner_capture: PlannerBoundaryCaptureSegmentV1::default(),
-        combat_search,
+        atomic_combat_search_attempts,
         accepted_high_loss_diagnostics,
     }
 }

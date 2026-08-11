@@ -5,9 +5,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use super::{
-    decide_manifest_reuse, Args, ArtifactRef, BranchArtifactStore, CapsuleReuseDecision,
-    CombatSearchTelemetrySummary, OwnerAuditRuntime, OwnerAuditSliceRequest, PanelLedgerEvent,
-    PrimarySearchOutcomeSummary, RunContract, RunSliceResult, SourceIdentity,
+    decide_manifest_reuse, Args, ArtifactRef, AtomicCombatSearchTelemetryV2, BranchArtifactStore,
+    CapsuleReuseDecision, OwnerAuditRuntime, OwnerAuditSliceRequest, PanelLedgerEvent,
+    PrimaryAtomicCombatWitnessV2, RunContract, RunSliceResult, SourceIdentity,
 };
 
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
@@ -36,7 +36,6 @@ pub enum PanelReuseDecision {
     ReuseRealStop,
     ContinueSoftPause,
     FreshReplacedCapsule,
-    RejectUnknownIdentity,
     RejectIncompatibleIdentity,
     RejectIncompleteCapsule,
     RejectMalformedCapsule,
@@ -180,8 +179,8 @@ pub struct PanelRow {
     pub summary_exists: bool,
     pub capsule_ledger_exists: bool,
     pub artifact_refs: Vec<ArtifactRef>,
-    pub combat_search: CombatSearchTelemetrySummary,
-    pub primary_search: PrimarySearchOutcomeSummary,
+    pub atomic_combat_search_telemetry: AtomicCombatSearchTelemetryV2,
+    pub primary_atomic_witness: PrimaryAtomicCombatWitnessV2,
     pub read_error: Option<String>,
     pub tool_error: Option<String>,
     pub archived_capsule_path: Option<String>,
@@ -214,11 +213,6 @@ pub fn decide_seed_capsule(
     };
     match decide_manifest_reuse(&manifest, expected_contract, expected_source) {
         CapsuleReuseDecision::Exact => exact_identity_decision(artifact_facts),
-        CapsuleReuseDecision::UnknownLegacy => PanelSeedDecision {
-            identity_status: PanelIdentityStatus::Unknown,
-            reuse_decision: PanelReuseDecision::RejectUnknownIdentity,
-            artifact_facts,
-        },
         CapsuleReuseDecision::Incompatible => PanelSeedDecision {
             identity_status: PanelIdentityStatus::Incompatible,
             reuse_decision: PanelReuseDecision::RejectIncompatibleIdentity,
@@ -260,8 +254,7 @@ impl PanelSeedResolution {
             PanelReuseDecision::FreshReplacedCapsule => PanelSeedAction::StartNew,
             PanelReuseDecision::ReuseRealStop => PanelSeedAction::ReuseRealStop,
             PanelReuseDecision::ContinueSoftPause => PanelSeedAction::ContinueCapsule,
-            PanelReuseDecision::RejectUnknownIdentity
-            | PanelReuseDecision::RejectIncompatibleIdentity
+            PanelReuseDecision::RejectIncompatibleIdentity
             | PanelReuseDecision::RejectIncompleteCapsule
             | PanelReuseDecision::RejectMalformedCapsule => PanelSeedAction::RejectCapsule,
         }
@@ -320,8 +313,8 @@ impl PanelInspectConfig {
         reuse_overrides: &BTreeMap<u64, PanelReuseDecision>,
         action_overrides: &BTreeMap<u64, PanelSeedAction>,
         artifact_refs: &BTreeMap<u64, Vec<ArtifactRef>>,
-        combat_search: &BTreeMap<u64, CombatSearchTelemetrySummary>,
-        primary_search: &BTreeMap<u64, PrimarySearchOutcomeSummary>,
+        atomic_combat_search_telemetry: &BTreeMap<u64, AtomicCombatSearchTelemetryV2>,
+        primary_atomic_witness: &BTreeMap<u64, PrimaryAtomicCombatWitnessV2>,
         archive_paths: &BTreeMap<u64, PathBuf>,
         options: PanelRunOptions,
     ) -> PanelSummary {
@@ -340,11 +333,11 @@ impl PanelInspectConfig {
                     let archived_capsule_path = archive_paths
                         .get(&resolution.seed)
                         .map(|path| path.display().to_string());
-                    let row_combat_search = combat_search
+                    let row_combat_search = atomic_combat_search_telemetry
                         .get(&resolution.seed)
                         .cloned()
                         .unwrap_or_default();
-                    let row_primary_search = primary_search
+                    let row_primary_search = primary_atomic_witness
                         .get(&resolution.seed)
                         .cloned()
                         .unwrap_or_default();
@@ -410,8 +403,8 @@ fn run_slices_with_executor(
     let mut reuse_overrides = BTreeMap::new();
     let mut action_overrides = BTreeMap::new();
     let mut artifact_refs = BTreeMap::new();
-    let mut combat_search = BTreeMap::<u64, CombatSearchTelemetrySummary>::new();
-    let mut primary_search = BTreeMap::<u64, PrimarySearchOutcomeSummary>::new();
+    let mut atomic_combat_search_telemetry = BTreeMap::<u64, AtomicCombatSearchTelemetryV2>::new();
+    let mut primary_atomic_witness = BTreeMap::<u64, PrimaryAtomicCombatWitnessV2>::new();
     let mut archive_paths = BTreeMap::new();
     let mut fresh_prepared = BTreeSet::new();
     for slice_index in 0..options.max_slices {
@@ -473,11 +466,11 @@ fn run_slices_with_executor(
                         slice_index,
                     )?;
                     status_overrides.insert(resolution.seed, row_status);
-                    combat_search
+                    atomic_combat_search_telemetry
                         .entry(resolution.seed)
                         .or_default()
                         .merge(telemetry);
-                    primary_search.insert(resolution.seed, primary);
+                    primary_atomic_witness.insert(resolution.seed, primary);
                     action_overrides.insert(resolution.seed, action);
                     reuse_overrides
                         .entry(resolution.seed)
@@ -502,11 +495,11 @@ fn run_slices_with_executor(
                         slice_index,
                     )?;
                     status_overrides.insert(resolution.seed, row_status);
-                    combat_search
+                    atomic_combat_search_telemetry
                         .entry(resolution.seed)
                         .or_default()
                         .merge(telemetry);
-                    primary_search.insert(resolution.seed, primary);
+                    primary_atomic_witness.insert(resolution.seed, primary);
                     action_overrides.insert(resolution.seed, action);
                     reuse_overrides
                         .entry(resolution.seed)
@@ -543,8 +536,8 @@ fn run_slices_with_executor(
         &reuse_overrides,
         &action_overrides,
         &artifact_refs,
-        &combat_search,
-        &primary_search,
+        &atomic_combat_search_telemetry,
+        &primary_atomic_witness,
         &archive_paths,
         options,
     ))
@@ -564,8 +557,8 @@ fn run_panel_seed_slice(
         Option<String>,
         Vec<ArtifactRef>,
         PanelRowStatus,
-        CombatSearchTelemetrySummary,
-        PrimarySearchOutcomeSummary,
+        AtomicCombatSearchTelemetryV2,
+        PrimaryAtomicCombatWitnessV2,
     ),
     String,
 > {
@@ -578,8 +571,8 @@ fn run_panel_seed_slice(
         Ok(result) => {
             let row_status = row_status_from_stop(&result.stop);
             let refs = result.artifacts.refs();
-            let telemetry = result.combat_search;
-            let primary = result.primary_search;
+            let telemetry = result.atomic_combat_search_telemetry;
+            let primary = result.primary_atomic_witness;
             append_panel_event(
                 config,
                 seed,
@@ -607,8 +600,8 @@ fn run_panel_seed_slice(
                 Some(error),
                 Vec::new(),
                 PanelRowStatus::ToolFailed,
-                CombatSearchTelemetrySummary::default(),
-                PrimarySearchOutcomeSummary::default(),
+                AtomicCombatSearchTelemetryV2::default(),
+                PrimaryAtomicCombatWitnessV2::default(),
             ))
         }
     }
@@ -647,8 +640,8 @@ impl PanelRow {
             None,
             None,
             Vec::new(),
-            CombatSearchTelemetrySummary::default(),
-            PrimarySearchOutcomeSummary::default(),
+            AtomicCombatSearchTelemetryV2::default(),
+            PrimaryAtomicCombatWitnessV2::default(),
             None,
             None,
         )
@@ -660,8 +653,8 @@ impl PanelRow {
         reuse_override: Option<PanelReuseDecision>,
         action_override: Option<PanelSeedAction>,
         artifact_refs: Vec<ArtifactRef>,
-        combat_search: CombatSearchTelemetrySummary,
-        primary_search: PrimarySearchOutcomeSummary,
+        atomic_combat_search_telemetry: AtomicCombatSearchTelemetryV2,
+        primary_atomic_witness: PrimaryAtomicCombatWitnessV2,
         tool_error: Option<String>,
         archived_capsule_path: Option<String>,
     ) -> Self {
@@ -687,8 +680,8 @@ impl PanelRow {
             summary_exists: artifacts.summary_exists,
             capsule_ledger_exists: artifacts.capsule_ledger_exists,
             artifact_refs,
-            combat_search,
-            primary_search,
+            atomic_combat_search_telemetry,
+            primary_atomic_witness,
             read_error: resolution.read_error,
             tool_error,
             archived_capsule_path,
@@ -826,9 +819,9 @@ mod tests {
 
     use super::*;
     use crate::runtime::branch::{
-        Args, ArtifactKind, CombatSearchTimingSummary, FrontierSummary,
-        PrimarySearchProfileSummary, PrimarySearchTelemetrySummary, RealStop, RunObjective,
-        RunSliceRequestKind, RunSliceResult, RunStop, SoftPause,
+        Args, ArtifactKind, AtomicCombatSearchPrimaryTelemetryV2,
+        AtomicCombatSearchProfileEvidenceV2, AtomicCombatSearchTimingV2, FrontierSummary, RealStop,
+        RunObjective, RunSliceRequestKind, RunSliceResult, RunStop, SoftPause,
     };
 
     fn args(seed: u64) -> Args {
@@ -846,7 +839,7 @@ mod tests {
             boss_search_nodes: 1,
             boss_search_ms: 1,
             wall_ms: Some(1),
-            checkpoint_before_combat_portfolio: false,
+            checkpoint_before_atomic_combat_search_session: false,
             wall_capped_search_budget: false,
             wall_capped_boss_budget: false,
         }
@@ -922,6 +915,7 @@ mod tests {
 
     fn exact_manifest(contract: RunContract) -> serde_json::Value {
         json!({
+            "schema": "branch_tiny_run_capsule_v5",
             "run_contract": contract,
             "source_identity": source_identity(),
             "status": "paused",
@@ -986,7 +980,7 @@ mod tests {
     }
 
     #[test]
-    fn legacy_capsule_is_not_silently_reused() {
+    fn capsule_without_current_identity_is_rejected_as_incompatible() {
         let artifacts = PanelSeedArtifacts {
             manifest: Some(json!({"args": {"seed": 1}, "status": "terminal"})),
             result_exists: true,
@@ -1002,9 +996,9 @@ mod tests {
 
         assert_eq!(
             decision.reuse_decision,
-            PanelReuseDecision::RejectUnknownIdentity
+            PanelReuseDecision::RejectIncompatibleIdentity
         );
-        assert_eq!(decision.identity_status, PanelIdentityStatus::Unknown);
+        assert_eq!(decision.identity_status, PanelIdentityStatus::Incompatible);
     }
 
     #[test]
@@ -1185,8 +1179,8 @@ mod tests {
                 summary_exists: true,
                 capsule_ledger_exists: true,
                 artifact_refs: Vec::new(),
-                combat_search: CombatSearchTelemetrySummary::default(),
-                primary_search: PrimarySearchOutcomeSummary::default(),
+                atomic_combat_search_telemetry: AtomicCombatSearchTelemetryV2::default(),
+                primary_atomic_witness: PrimaryAtomicCombatWitnessV2::default(),
                 read_error: None,
                 tool_error: None,
                 archived_capsule_path: None,
@@ -1206,8 +1200,8 @@ mod tests {
                 summary_exists: false,
                 capsule_ledger_exists: false,
                 artifact_refs: Vec::new(),
-                combat_search: CombatSearchTelemetrySummary::default(),
-                primary_search: PrimarySearchOutcomeSummary::default(),
+                atomic_combat_search_telemetry: AtomicCombatSearchTelemetryV2::default(),
+                primary_atomic_witness: PrimaryAtomicCombatWitnessV2::default(),
                 read_error: None,
                 tool_error: None,
                 archived_capsule_path: None,
@@ -1242,8 +1236,8 @@ mod tests {
             summary_exists: false,
             capsule_ledger_exists: false,
             artifact_refs: Vec::new(),
-            combat_search: CombatSearchTelemetrySummary::default(),
-            primary_search: PrimarySearchOutcomeSummary::default(),
+            atomic_combat_search_telemetry: AtomicCombatSearchTelemetryV2::default(),
+            primary_atomic_witness: PrimaryAtomicCombatWitnessV2::default(),
             read_error: None,
             tool_error: None,
             archived_capsule_path: None,
@@ -1381,7 +1375,7 @@ mod tests {
         );
         assert_eq!(
             ledger_row["artifact_refs"][1]["schema"],
-            serde_json::json!("branch_tiny_frontier_checkpoint")
+            serde_json::json!("branch_tiny_frontier_checkpoint_v3")
         );
         assert_eq!(
             summary.rows[0].artifact_refs[1].kind,
@@ -1409,7 +1403,7 @@ mod tests {
                 &mut self,
                 request: OwnerAuditSliceRequest,
             ) -> Result<RunSliceResult, String> {
-                let mut telemetry = CombatSearchTelemetrySummary::default();
+                let mut telemetry = AtomicCombatSearchTelemetryV2::default();
                 telemetry.record_attempt("primary", true, 3, 44, 55);
                 telemetry.record_attempt_with_timing(
                     "quality",
@@ -1417,7 +1411,7 @@ mod tests {
                     0,
                     6,
                     70,
-                    CombatSearchTimingSummary {
+                    AtomicCombatSearchTimingV2 {
                         rollout_us: 40,
                         expansion_us: 5,
                         engine_step_us: 7,
@@ -1430,9 +1424,9 @@ mod tests {
                         unattributed_us: 13,
                     },
                 );
-                let primary = super::PrimarySearchOutcomeSummary {
+                let primary = super::PrimaryAtomicCombatWitnessV2 {
                     status: "no_accepted_line".to_string(),
-                    profile: PrimarySearchProfileSummary {
+                    profile: AtomicCombatSearchProfileEvidenceV2 {
                         profile_id: Some("primary".to_string()),
                         stakes: Some("hallway".to_string()),
                         max_nodes: Some(100),
@@ -1442,7 +1436,7 @@ mod tests {
                         allowed_potion_slots: Some(0),
                         internal_no_win_rescue_enabled: false,
                     },
-                    telemetry: PrimarySearchTelemetrySummary {
+                    telemetry: AtomicCombatSearchPrimaryTelemetryV2 {
                         elapsed_ms: Some(125),
                         deadline_hit: Some(true),
                         expanded_nodes: Some(44),
@@ -1469,8 +1463,8 @@ mod tests {
                     execution_adjudication: None,
                 };
                 Ok(ok_slice_result(request.args)
-                    .with_combat_search_telemetry(telemetry)
-                    .with_primary_search_outcome(primary))
+                    .with_atomic_combat_search_telemetry(telemetry)
+                    .with_primary_atomic_witness(primary))
             }
         }
 
@@ -1486,7 +1480,7 @@ mod tests {
         let summary =
             run_slices_with_executor(config, PanelRunOptions::smoke(1), TelemetryExecutor).unwrap();
 
-        let search = &summary.rows[0].combat_search;
+        let search = &summary.rows[0].atomic_combat_search_telemetry;
         assert_eq!(search.attempt_count, 2);
         assert_eq!(search.complete_win_count, 1);
         assert_eq!(search.terminal_win_count, 3);
@@ -1504,13 +1498,23 @@ mod tests {
         assert_eq!(search.by_source[1].total_us, 70);
         assert_eq!(search.by_source[1].timing.engine_step_us, 7);
         assert_eq!(search.by_source[1].timing.root_turn_plan_diag_us, 19);
-        assert_eq!(summary.rows[0].primary_search.status, "no_accepted_line");
         assert_eq!(
-            summary.rows[0].primary_search.profile.profile_id.as_deref(),
+            summary.rows[0].primary_atomic_witness.status,
+            "no_accepted_line"
+        );
+        assert_eq!(
+            summary.rows[0]
+                .primary_atomic_witness
+                .profile
+                .profile_id
+                .as_deref(),
             Some("primary")
         );
         assert_eq!(
-            summary.rows[0].primary_search.telemetry.first_win_node,
+            summary.rows[0]
+                .primary_atomic_witness
+                .telemetry
+                .first_win_node,
             Some(17)
         );
 

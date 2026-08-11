@@ -1,6 +1,6 @@
 use serde::Serialize;
 use sts_oracle_runtime::ai::combat_search_v2::SearchTerminalLabel;
-use sts_oracle_runtime::eval::run_control::CombatSearchTraceSummary;
+use sts_oracle_runtime::eval::run_control::AtomicCombatSearchTraceSummaryV2;
 
 use super::focus::CombatReviewFocus;
 use super::search_types::{SearchDiagnosticProgressFacts, SearchReview};
@@ -13,15 +13,17 @@ pub(super) struct CombatGapReviewClassification {
 }
 
 pub(super) fn classify_gap_review(
-    saved_search: Option<&CombatSearchTraceSummary>,
+    saved_atomic_combat_search: Option<&AtomicCombatSearchTraceSummaryV2>,
     ladder: &[SearchReview],
     focus: Option<&CombatReviewFocus>,
 ) -> CombatGapReviewClassification {
-    if saved_search.is_some_and(|search| search.complete_win_found || search.best_win.is_some()) {
+    if saved_atomic_combat_search
+        .is_some_and(|search| search.complete_win_found || search.best_win.is_some())
+    {
         return classification(
             "SavedCompleteWinRejectedByPolicy",
             "saved_complete_win_present_in_case",
-            Some("saved_search"),
+            Some("saved_atomic_combat_search"),
         );
     }
     if ladder.is_empty() {
@@ -109,11 +111,14 @@ fn rollout_pct(review: &SearchReview) -> f64 {
 #[cfg(test)]
 mod tests {
     use serde_json::json;
-    use sts_oracle_runtime::eval::run_control::CombatSearchTraceSummary;
+    use sts_oracle_runtime::eval::run_control::AtomicCombatSearchTraceSummaryV2;
 
     use super::*;
 
-    fn saved_search(complete_win_found: bool, include_best_win: bool) -> CombatSearchTraceSummary {
+    fn saved_atomic_combat_search(
+        complete_win_found: bool,
+        include_best_win: bool,
+    ) -> AtomicCombatSearchTraceSummaryV2 {
         let best_win = include_best_win.then(|| {
             json!({
                 "terminal": SearchTerminalLabel::Win,
@@ -156,18 +161,21 @@ mod tests {
 
     #[test]
     fn saved_complete_win_precedes_missing_ladder_win() {
-        let saved = saved_search(true, true);
+        let saved = saved_atomic_combat_search(true, true);
 
         let classification = classify_gap_review(Some(&saved), &[], None);
 
         assert_eq!(classification.kind, "SavedCompleteWinRejectedByPolicy");
         assert_eq!(classification.reason, "saved_complete_win_present_in_case");
-        assert_eq!(classification.basis_review, Some("saved_search"));
+        assert_eq!(
+            classification.basis_review,
+            Some("saved_atomic_combat_search")
+        );
     }
 
     #[test]
     fn legacy_best_win_proves_saved_complete_win() {
-        let saved = saved_search(false, true);
+        let saved = saved_atomic_combat_search(false, true);
 
         let classification = classify_gap_review(Some(&saved), &[], None);
 
@@ -175,8 +183,8 @@ mod tests {
     }
 
     #[test]
-    fn saved_search_without_win_preserves_existing_classification() {
-        let saved = saved_search(false, false);
+    fn saved_atomic_combat_search_without_win_preserves_existing_classification() {
+        let saved = saved_atomic_combat_search(false, false);
 
         let classification = classify_gap_review(Some(&saved), &[], None);
 

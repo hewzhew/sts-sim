@@ -24,7 +24,7 @@ pub(super) fn complete_search_action_keys(
 fn is_complete_search_source(source: CombatAutomationTrajectorySource) -> bool {
     matches!(
         source,
-        CombatAutomationTrajectorySource::SearchCombat
+        CombatAutomationTrajectorySource::AtomicExactV2
             | CombatAutomationTrajectorySource::CompleteLineSolver
             | CombatAutomationTrajectorySource::TurnPlanRescue
             | CombatAutomationTrajectorySource::TurnPoolRescue

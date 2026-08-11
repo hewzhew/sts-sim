@@ -16,7 +16,7 @@ pub(super) struct CombatCaseOwnerParityArgs {
     #[arg(long, default_value_t = 32)]
     max_quanta: usize,
     #[arg(long, default_value_t = 50_000)]
-    quantum_nodes: usize,
+    quantum_generation_work: usize,
     #[arg(long, default_value_t = 1_000)]
     quantum_ms: u64,
     #[arg(long)]
@@ -47,7 +47,7 @@ pub(super) fn run(
         CombatCaseOwnerParityRequestV1 {
             advance: OracleAnalysisAdvanceRequestV1 {
                 max_quanta: args.max_quanta,
-                quantum_nodes: args.quantum_nodes,
+                quantum_generation_work: args.quantum_generation_work,
                 quantum_ms: Some(args.quantum_ms),
                 wall_ms: args.wall_ms,
                 improve_incumbent: args.improve_incumbent,

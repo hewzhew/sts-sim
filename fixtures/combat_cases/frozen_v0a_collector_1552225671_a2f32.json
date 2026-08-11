@@ -1,5 +1,5 @@
 {
-  "schema": "combat_case",
+  "schema": "combat_case_v1",
   "source": {
     "seed": 1552225671,
     "ascension": 0,
@@ -10,10 +10,13 @@
   "gap": {
     "boundary": "Combat",
     "reason": "combat search did not find an executable complete win",
-    "search_nodes": 50000,
-    "search_ms": 500,
-    "rescue_search_nodes": 200000,
-    "rescue_search_ms": 3000
+    "witness_budget": {
+      "witness_engine": "atomic_exact_v2",
+      "primary_nodes": 50000,
+      "primary_wall_ms": 500,
+      "rescue_nodes": 200000,
+      "rescue_wall_ms": 3000
+    }
   },
   "run": {
     "act": 2,
@@ -61,7 +64,7 @@
     "discard_count": 0,
     "exhaust_count": 0
   },
-  "combat_search_attempts": [
+  "atomic_combat_search_attempts": [
     {
       "source": "search_combat_rejected",
       "act": 2,
@@ -121,7 +124,7 @@
       "total_us": 8115666
     }
   ],
-  "failed_search": {
+  "failed_atomic_combat_search": {
     "source": "search_combat_rejected",
     "act": 2,
     "floor": 32,

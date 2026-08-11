@@ -16,7 +16,8 @@ impl RolloutNodeEstimate {
             evaluated: true,
             terminal: terminal_label(&node.engine, &node.combat),
             final_hp: node.combat.entities.player.current_hp,
-            persistent_run_value: super::super::external_payoff::persistent_run_value(&node.combat),
+            persistent_run_value:
+                super::super::external_payoff::materialized_persistent_payoff_score_v1(&node.combat),
             external_burden_count: super::super::outcome_score::external_burden_count(&node.combat),
             unrecovered_stolen_gold: super::super::external_payoff::unrecovered_stolen_gold(
                 &node.combat,

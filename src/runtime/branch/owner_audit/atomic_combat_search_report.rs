@@ -4,15 +4,15 @@ use super::branch_status_view;
 use super::{BranchStatus, TerminalOutcome};
 
 #[derive(Clone)]
-pub(super) struct CombatSearchSessionReport {
-    pub(super) status: CombatSearchSessionStatus,
+pub(super) struct AtomicCombatSearchSessionReportV2 {
+    pub(super) status: AtomicCombatSearchSessionStatusV2,
     pub(super) profile_id: &'static str,
     pub(super) max_nodes: usize,
     pub(super) wall_ms: u64,
     pub(super) potion_policy: &'static str,
     pub(super) max_potions_used: Option<u32>,
     pub(super) allowed_potion_slots: Option<u64>,
-    pub(super) work_quanta: Vec<CombatSearchQuantumReport>,
+    pub(super) work_quanta: Vec<AtomicCombatSearchQuantumReportV2>,
     pub(super) action_keys: Vec<String>,
     pub(super) semantics_fingerprint: String,
     pub(super) candidate_tier: Option<String>,
@@ -25,20 +25,20 @@ pub(super) struct CombatSearchSessionReport {
 }
 
 #[derive(Clone)]
-pub(super) struct CombatSearchQuantumReport {
+pub(super) struct AtomicCombatSearchQuantumReportV2 {
     pub(super) label: &'static str,
     pub(super) additional_nodes: usize,
     pub(super) soft_wall_ms: Option<u64>,
 }
 
 #[derive(Clone)]
-pub(super) enum CombatSearchSessionStatus {
+pub(super) enum AtomicCombatSearchSessionStatusV2 {
     Failed(String),
     Advanced(String),
     Terminal(TerminalOutcome),
 }
 
-pub(super) struct CombatSearchSessionReportInput {
+pub(super) struct AtomicCombatSearchSessionReportInputV2 {
     pub(super) status: BranchStatus,
     pub(super) profile_id: &'static str,
     pub(super) max_nodes: usize,
@@ -46,7 +46,7 @@ pub(super) struct CombatSearchSessionReportInput {
     pub(super) potion_policy: CombatSearchV2PotionPolicy,
     pub(super) max_potions_used: Option<u32>,
     pub(super) allowed_potion_slots: Option<u64>,
-    pub(super) work_quanta: Vec<CombatSearchQuantumReport>,
+    pub(super) work_quanta: Vec<AtomicCombatSearchQuantumReportV2>,
     pub(super) action_keys: Vec<String>,
     pub(super) semantics_fingerprint: String,
     pub(super) candidate_tier: Option<String>,
@@ -58,11 +58,11 @@ pub(super) struct CombatSearchSessionReportInput {
     pub(super) turns: Option<u32>,
 }
 
-pub(super) fn combat_search_session_report(
-    input: CombatSearchSessionReportInput,
-) -> CombatSearchSessionReport {
-    CombatSearchSessionReport {
-        status: combat_search_session_status(&input.status),
+pub(super) fn atomic_combat_search_session_report(
+    input: AtomicCombatSearchSessionReportInputV2,
+) -> AtomicCombatSearchSessionReportV2 {
+    AtomicCombatSearchSessionReportV2 {
+        status: atomic_combat_search_session_status(&input.status),
         profile_id: input.profile_id,
         max_nodes: input.max_nodes,
         wall_ms: input.wall_ms,
@@ -82,20 +82,22 @@ pub(super) fn combat_search_session_report(
     }
 }
 
-fn combat_search_session_status(status: &BranchStatus) -> CombatSearchSessionStatus {
+fn atomic_combat_search_session_status(status: &BranchStatus) -> AtomicCombatSearchSessionStatusV2 {
     match status {
-        BranchStatus::CombatGap { reason, .. } => CombatSearchSessionStatus::Failed(reason.clone()),
+        BranchStatus::CombatGap { reason, .. } => {
+            AtomicCombatSearchSessionStatusV2::Failed(reason.clone())
+        }
         BranchStatus::ApplyFailed(err)
         | BranchStatus::AdvanceFailed(err)
         | BranchStatus::OperationBudgetExhausted { reason: err, .. }
         | BranchStatus::BudgetGap { reason: err, .. } => {
-            CombatSearchSessionStatus::Failed(err.clone())
+            AtomicCombatSearchSessionStatusV2::Failed(err.clone())
         }
         BranchStatus::Terminal(TerminalOutcome::Defeat) => {
-            CombatSearchSessionStatus::Failed("combat search ended in defeat".to_string())
+            AtomicCombatSearchSessionStatusV2::Failed("combat search ended in defeat".to_string())
         }
-        BranchStatus::Terminal(result) => CombatSearchSessionStatus::Terminal(*result),
-        _ => CombatSearchSessionStatus::Advanced(
+        BranchStatus::Terminal(result) => AtomicCombatSearchSessionStatusV2::Terminal(*result),
+        _ => AtomicCombatSearchSessionStatusV2::Advanced(
             branch_status_view::status_boundary(status).to_string(),
         ),
     }
@@ -115,7 +117,7 @@ mod tests {
 
     #[test]
     fn session_report_has_one_search_identity_and_incremental_work() {
-        let report = combat_search_session_report(CombatSearchSessionReportInput {
+        let report = atomic_combat_search_session_report(AtomicCombatSearchSessionReportInputV2 {
             status: BranchStatus::AwaitingAuto {
                 boundary: "PostCombat".to_string(),
                 reason: "accepted".to_string(),
@@ -127,12 +129,12 @@ mod tests {
             max_potions_used: Some(2),
             allowed_potion_slots: Some(3),
             work_quanta: vec![
-                CombatSearchQuantumReport {
+                AtomicCombatSearchQuantumReportV2 {
                     label: "initial",
                     additional_nodes: 10,
                     soft_wall_ms: Some(100),
                 },
-                CombatSearchQuantumReport {
+                AtomicCombatSearchQuantumReportV2 {
                     label: "refine",
                     additional_nodes: 20,
                     soft_wall_ms: Some(200),

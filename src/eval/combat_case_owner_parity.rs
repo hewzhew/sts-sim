@@ -173,20 +173,25 @@ mod tests {
     use crate::content::monsters::EnemyId;
     use crate::eval::combat_case::{
         CombatCaseGap, CombatCaseRngSummary, CombatCaseRunSummary, CombatCaseSource,
+        CombatCaseWitnessBudgetV1,
     };
     use crate::eval::combat_case_context::{
         capture_combat_case_production_context_v1,
         capture_oracle_analysis_combat_case_production_context_v1,
     };
     use crate::eval::run_control::{
-        OracleRunCombatBudgetsV1, RunControlConfig, RunControlSearchCombatOptions,
+        OracleCombatWitnessOptionsV1, OracleRunCombatWitnessBudgetsV1, RunControlConfig,
         RunControlSession,
     };
     use crate::runtime::combat::CombatCard;
     use crate::state::core::{ActiveCombat, CombatContext, EngineState, RoomCombatContext};
     use crate::state::map::node::RoomType;
 
-    fn fixture() -> (CombatCase, RunControlSession, OracleRunCombatBudgetsV1) {
+    fn fixture() -> (
+        CombatCase,
+        RunControlSession,
+        OracleRunCombatWitnessBudgetsV1,
+    ) {
         let mut combat = crate::test_support::blank_test_combat();
         let mut monster = crate::test_support::test_monster(EnemyId::JawWorm);
         let plan = crate::content::monsters::roll_monster_turn_plan(
@@ -239,10 +244,12 @@ mod tests {
             CombatCaseGap {
                 boundary: "test".to_string(),
                 reason: "owner_parity_contract".to_string(),
-                search_nodes: 128,
-                search_ms: 1_000,
-                rescue_search_nodes: 0,
-                rescue_search_ms: 0,
+                witness_budget: CombatCaseWitnessBudgetV1::AtomicExactV2 {
+                    primary_nodes: 128,
+                    primary_wall_ms: 1_000,
+                    rescue_nodes: 0,
+                    rescue_wall_ms: 0,
+                },
             },
             CombatCaseRunSummary {
                 act: 1,
@@ -260,13 +267,13 @@ mod tests {
             CombatCaseRngSummary::from_pool(&session.run_state.rng_pool),
             position,
         );
-        let budgets = OracleRunCombatBudgetsV1::uniform(RunControlSearchCombatOptions {
-            max_nodes: Some(128),
+        let budgets = OracleRunCombatWitnessBudgetsV1::uniform(OracleCombatWitnessOptionsV1 {
+            max_generation_work: Some(128),
             wall_ms: Some(1_000),
             satisfaction: Some(
-                crate::ai::combat_search_v2::CombatSearchV2Satisfaction::FirstCompleteWin,
+                crate::ai::combat_witness_contract::CombatWitnessSatisfactionV1::FirstCompleteWin,
             ),
-            ..RunControlSearchCombatOptions::default()
+            ..OracleCombatWitnessOptionsV1::default()
         });
         (case, session, budgets)
     }
@@ -300,7 +307,7 @@ mod tests {
             CombatCaseOwnerParityRequestV1 {
                 advance: OracleAnalysisAdvanceRequestV1 {
                     max_quanta: 2,
-                    quantum_nodes: 128,
+                    quantum_generation_work: 128,
                     quantum_ms: None,
                     wall_ms: None,
                     improve_incumbent: false,

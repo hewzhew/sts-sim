@@ -10,7 +10,7 @@ use sts_oracle_runtime::eval::combat_case::{
     CombatCaseRunSummary, CombatCaseSource,
 };
 use sts_oracle_runtime::eval::run_control::{
-    CombatCaseAdjudicationProbeV1, CombatSearchTraceSummary,
+    AtomicCombatSearchTraceSummaryV2, CombatCaseAdjudicationProbeV1,
 };
 
 use super::super::awakened_one_evidence::{
@@ -41,7 +41,7 @@ pub(crate) struct CombatCaseReview {
     pub(super) relics: Vec<String>,
     pub(super) potions: Vec<Option<String>>,
     pub(super) path_tail: Vec<CombatCasePathStep>,
-    pub(super) saved_search: Option<CombatSearchTraceSummary>,
+    pub(super) saved_atomic_combat_search: Option<AtomicCombatSearchTraceSummaryV2>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) adjudication_probe: Option<CombatCaseAdjudicationProbeV1>,
     pub(super) ladder: Vec<SearchReview>,

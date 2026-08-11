@@ -1,18 +1,18 @@
 use sts_simulator::ai::combat_search_v2::{
-    high_stakes_semantic_potion_budget, CombatSearchAcceptancePluginId,
-    CombatSearchArtifactPluginId, CombatSearchAttemptPolicy, CombatSearchBudgetSpec,
-    CombatSearchChildRolloutPluginId, CombatSearchEngineProfile, CombatSearchPhaseGuardPluginId,
-    CombatSearchPluginStack, CombatSearchPotionPlugin, CombatSearchProfile,
-    CombatSearchRolloutPluginId, CombatSearchTurnPlanPluginId, CombatSearchV2PotionPolicy,
-    CombatSearchV2Satisfaction,
+    CombatSearchAcceptancePluginId, CombatSearchArtifactPluginId, CombatSearchAttemptPolicy,
+    CombatSearchBudgetSpec, CombatSearchChildRolloutPluginId, CombatSearchEngineProfile,
+    CombatSearchPhaseGuardPluginId, CombatSearchPluginStack, CombatSearchPotionPlugin,
+    CombatSearchProfile, CombatSearchRolloutPluginId, CombatSearchTurnPlanPluginId,
+    CombatSearchV2PotionPolicy, CombatSearchV2Satisfaction,
 };
+use sts_simulator::ai::combat_witness_contract::high_stakes_semantic_witness_potion_budget_v1;
 use sts_simulator::eval::run_control::{
     oracle_active_victory_potion_slot_mask_v1, strategic_combat_victory_reaches_full_heal_v1,
-    RunControlCombatSearchQuantum, RunControlHpLossLimit, RunControlSearchCombatOptions,
+    AtomicCombatSearchOptionsV2, AtomicCombatSearchQuantumV2, RunControlHpLossLimit,
     RunControlSession,
 };
 
-use super::combat_search_survival::{
+use super::atomic_combat_search_survival::{
     owner_audit_hp_loss_limit, owner_audit_search_quality_loss_target,
 };
 use super::Args;
@@ -21,17 +21,17 @@ const HALLWAY_REFINEMENT_MAX_NODES: usize = 300_000;
 const HALLWAY_REFINEMENT_MAX_MS: u64 = 5_000;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(super) enum CombatSearchStakes {
+pub(super) enum AtomicCombatSearchStakesV2 {
     Hallway,
     Elite,
     Boss,
 }
 
-pub(super) struct CombatSearchSessionPlan {
-    pub(super) search: RunControlSearchCombatOptions,
+pub(super) struct AtomicCombatSearchSessionPlanV2 {
+    pub(super) search: AtomicCombatSearchOptionsV2,
     pub(super) profile_id: &'static str,
-    pub(super) stage: CombatSearchSessionStage,
-    pub(super) stakes: CombatSearchStakes,
+    pub(super) stage: AtomicCombatSearchSessionStageV2,
+    pub(super) stakes: AtomicCombatSearchStakesV2,
     pub(super) total_nodes: usize,
     pub(super) total_wall_ms: u64,
     pub(super) potion_policy: CombatSearchV2PotionPolicy,
@@ -47,7 +47,7 @@ pub(super) enum PotionRescueKind {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(super) enum CombatSearchSessionStage {
+pub(super) enum AtomicCombatSearchSessionStageV2 {
     Canonical,
     NoPotionPrimary,
     NoPotionRefinement,
@@ -55,7 +55,7 @@ pub(super) enum CombatSearchSessionStage {
     FindAnyWin,
 }
 
-impl CombatSearchSessionStage {
+impl AtomicCombatSearchSessionStageV2 {
     pub(super) fn label(self) -> &'static str {
         match self {
             Self::Canonical => "canonical",
@@ -77,37 +77,38 @@ impl CombatSearchSessionStage {
     }
 }
 
-impl CombatSearchSessionPlan {
+impl AtomicCombatSearchSessionPlanV2 {
     pub(super) fn should_checkpoint_before_search(&self, args: Args) -> bool {
-        self.stakes == CombatSearchStakes::Boss && args.checkpoint_before_combat_portfolio
+        self.stakes == AtomicCombatSearchStakesV2::Boss
+            && args.checkpoint_before_atomic_combat_search_session
     }
 }
 
-pub(super) fn canonical_combat_search_session_plan(
+pub(super) fn canonical_atomic_combat_search_session_plan(
     session: &RunControlSession,
     args: Args,
-) -> CombatSearchSessionPlan {
-    let stakes = combat_search_stakes(session);
+) -> AtomicCombatSearchSessionPlanV2 {
+    let stakes = atomic_combat_search_stakes(session);
     let quanta = work_quanta(stakes, args);
     let (potion_policy, max_potions_used) = canonical_potion_surface(session, stakes);
-    build_combat_search_session_plan(
+    build_atomic_combat_search_session_plan(
         session,
         stakes,
         quanta,
-        CombatSearchSessionStage::Canonical,
+        AtomicCombatSearchSessionStageV2::Canonical,
         potion_policy,
         max_potions_used,
         None,
         RunControlHpLossLimit::Unlimited,
-        stakes != CombatSearchStakes::Boss,
+        stakes != AtomicCombatSearchStakesV2::Boss,
     )
 }
 
 pub(super) fn potion_conserving_primary_search_session_plan(
     session: &RunControlSession,
     args: Args,
-) -> Option<CombatSearchSessionPlan> {
-    let stakes = combat_search_stakes(session);
+) -> Option<AtomicCombatSearchSessionPlanV2> {
+    let stakes = atomic_combat_search_stakes(session);
     if !potion_conserving_staging_allowed(session, stakes)
         || oracle_active_victory_potion_slot_mask_v1(session) == 0
     {
@@ -118,11 +119,11 @@ pub(super) fn potion_conserving_primary_search_session_plan(
         return None;
     }
     quanta.truncate(1);
-    Some(build_combat_search_session_plan(
+    Some(build_atomic_combat_search_session_plan(
         session,
         stakes,
         quanta,
-        CombatSearchSessionStage::NoPotionPrimary,
+        AtomicCombatSearchSessionStageV2::NoPotionPrimary,
         CombatSearchV2PotionPolicy::Never,
         Some(0),
         Some(0),
@@ -135,8 +136,8 @@ pub(super) fn potion_conserving_refinement_search_session_plan(
     session: &RunControlSession,
     args: Args,
     rescue_kind: PotionRescueKind,
-) -> Option<CombatSearchSessionPlan> {
-    let stakes = combat_search_stakes(session);
+) -> Option<AtomicCombatSearchSessionPlanV2> {
+    let stakes = atomic_combat_search_stakes(session);
     if !potion_conserving_staging_allowed(session, stakes) {
         return None;
     }
@@ -150,14 +151,14 @@ pub(super) fn potion_conserving_refinement_search_session_plan(
     let allowed_potion_slots = oracle_active_victory_potion_slot_mask_v1(session);
     let (stage, potion_policy, max_potions_used) = if allowed_potion_slots == 0 {
         (
-            CombatSearchSessionStage::NoPotionRefinement,
+            AtomicCombatSearchSessionStageV2::NoPotionRefinement,
             CombatSearchV2PotionPolicy::Never,
             Some(0),
         )
-    } else if stakes == CombatSearchStakes::Boss {
+    } else if stakes == AtomicCombatSearchStakesV2::Boss {
         let (potion_policy, max_potions_used) = canonical_potion_surface(session, stakes);
         (
-            CombatSearchSessionStage::FindAnyWin,
+            AtomicCombatSearchSessionStageV2::FindAnyWin,
             potion_policy,
             max_potions_used,
         )
@@ -165,9 +166,9 @@ pub(super) fn potion_conserving_refinement_search_session_plan(
         (
             match rescue_kind {
                 PotionRescueKind::ImproveVerifiedWinQualityGated => {
-                    CombatSearchSessionStage::ImproveVerifiedWin
+                    AtomicCombatSearchSessionStageV2::ImproveVerifiedWin
                 }
-                PotionRescueKind::FindAnyWin => CombatSearchSessionStage::FindAnyWin,
+                PotionRescueKind::FindAnyWin => AtomicCombatSearchSessionStageV2::FindAnyWin,
             },
             // The outer staged contract has already selected exact potion
             // identities. Reapplying the legacy tactical gate here would
@@ -180,7 +181,7 @@ pub(super) fn potion_conserving_refinement_search_session_plan(
         PotionRescueKind::ImproveVerifiedWinQualityGated => RunControlHpLossLimit::Unlimited,
         PotionRescueKind::FindAnyWin => owner_audit_hp_loss_limit(session),
     };
-    Some(build_combat_search_session_plan(
+    Some(build_atomic_combat_search_session_plan(
         session,
         stakes,
         quanta,
@@ -195,23 +196,24 @@ pub(super) fn potion_conserving_refinement_search_session_plan(
 
 fn potion_conserving_staging_allowed(
     session: &RunControlSession,
-    stakes: CombatSearchStakes,
+    stakes: AtomicCombatSearchStakesV2,
 ) -> bool {
-    stakes != CombatSearchStakes::Boss || strategic_combat_victory_reaches_full_heal_v1(session)
+    stakes != AtomicCombatSearchStakesV2::Boss
+        || strategic_combat_victory_reaches_full_heal_v1(session)
 }
 
 #[allow(clippy::too_many_arguments)]
-fn build_combat_search_session_plan(
+fn build_atomic_combat_search_session_plan(
     session: &RunControlSession,
-    stakes: CombatSearchStakes,
-    quanta: Vec<RunControlCombatSearchQuantum>,
-    stage: CombatSearchSessionStage,
+    stakes: AtomicCombatSearchStakesV2,
+    quanta: Vec<AtomicCombatSearchQuantumV2>,
+    stage: AtomicCombatSearchSessionStageV2,
     potion_policy: CombatSearchV2PotionPolicy,
     max_potions_used: Option<u32>,
     allowed_potion_slots: Option<u64>,
     max_hp_loss: RunControlHpLossLimit,
     allow_smoke_bomb_survival_fallback: bool,
-) -> CombatSearchSessionPlan {
+) -> AtomicCombatSearchSessionPlanV2 {
     let total_nodes = quanta.iter().fold(0usize, |total, quantum| {
         total.saturating_add(quantum.additional_nodes)
     });
@@ -246,9 +248,10 @@ fn build_combat_search_session_plan(
         },
     };
     let satisfaction = match (stage, owner_audit_search_quality_loss_target(session)) {
-        (CombatSearchSessionStage::ImproveVerifiedWin, RunControlHpLossLimit::Limit(limit)) => {
-            CombatSearchV2Satisfaction::PotionFreeHpLossAtMostWithoutNewExternalBurden(limit)
-        }
+        (
+            AtomicCombatSearchSessionStageV2::ImproveVerifiedWin,
+            RunControlHpLossLimit::Limit(limit),
+        ) => CombatSearchV2Satisfaction::PotionFreeHpLossAtMostWithoutNewExternalBurden(limit),
         (_, RunControlHpLossLimit::Limit(limit)) => {
             CombatSearchV2Satisfaction::HpLossAtMostWithoutNewExternalBurden(limit)
         }
@@ -260,7 +263,7 @@ fn build_combat_search_session_plan(
     // A canonical session must be the only search owner. The old complete-line,
     // turn-plan, and turn-pool root searches are therefore not invoked after a
     // gap. Smoke Bomb remains a direct legal survival action, not another search.
-    let search = RunControlSearchCombatOptions {
+    let search = AtomicCombatSearchOptionsV2 {
         profile: Some(profile),
         satisfaction: Some(satisfaction),
         max_hp_loss: Some(max_hp_loss),
@@ -270,10 +273,10 @@ fn build_combat_search_session_plan(
         work_quanta: quanta,
         enable_legacy_no_win_rescue: false,
         allow_smoke_bomb_survival_fallback,
-        ..RunControlSearchCombatOptions::default()
+        ..AtomicCombatSearchOptionsV2::default()
     };
 
-    CombatSearchSessionPlan {
+    AtomicCombatSearchSessionPlanV2 {
         search,
         profile_id,
         stage,
@@ -287,24 +290,24 @@ fn build_combat_search_session_plan(
     }
 }
 
-fn combat_search_stakes(session: &RunControlSession) -> CombatSearchStakes {
+fn atomic_combat_search_stakes(session: &RunControlSession) -> AtomicCombatSearchStakesV2 {
     session
         .active_combat
         .as_ref()
-        .map_or(CombatSearchStakes::Hallway, |active| {
+        .map_or(AtomicCombatSearchStakesV2::Hallway, |active| {
             if active.combat_state.meta.is_boss_fight {
-                CombatSearchStakes::Boss
+                AtomicCombatSearchStakesV2::Boss
             } else if active.combat_state.meta.is_elite_fight {
-                CombatSearchStakes::Elite
+                AtomicCombatSearchStakesV2::Elite
             } else {
-                CombatSearchStakes::Hallway
+                AtomicCombatSearchStakesV2::Hallway
             }
         })
 }
 
-fn work_quanta(stakes: CombatSearchStakes, args: Args) -> Vec<RunControlCombatSearchQuantum> {
+fn work_quanta(stakes: AtomicCombatSearchStakesV2, args: Args) -> Vec<AtomicCombatSearchQuantumV2> {
     let refinement = match stakes {
-        CombatSearchStakes::Hallway => RunControlCombatSearchQuantum {
+        AtomicCombatSearchStakesV2::Hallway => AtomicCombatSearchQuantumV2 {
             label: "refine",
             additional_nodes: args
                 .boss_search_nodes
@@ -316,18 +319,18 @@ fn work_quanta(stakes: CombatSearchStakes, args: Args) -> Vec<RunControlCombatSe
                     .max(args.rescue_search_ms),
             ),
         },
-        CombatSearchStakes::Elite => RunControlCombatSearchQuantum {
+        AtomicCombatSearchStakesV2::Elite => AtomicCombatSearchQuantumV2 {
             label: "refine",
             additional_nodes: args.rescue_search_nodes,
             soft_wall_ms: Some(args.rescue_search_ms),
         },
-        CombatSearchStakes::Boss => RunControlCombatSearchQuantum {
+        AtomicCombatSearchStakesV2::Boss => AtomicCombatSearchQuantumV2 {
             label: "refine",
             additional_nodes: args.boss_search_nodes,
             soft_wall_ms: Some(args.boss_search_ms),
         },
     };
-    let mut quanta = vec![RunControlCombatSearchQuantum {
+    let mut quanta = vec![AtomicCombatSearchQuantumV2 {
         label: "initial",
         additional_nodes: args.search_nodes,
         soft_wall_ms: Some(args.search_ms),
@@ -340,7 +343,7 @@ fn work_quanta(stakes: CombatSearchStakes, args: Args) -> Vec<RunControlCombatSe
 
 fn canonical_potion_surface(
     session: &RunControlSession,
-    stakes: CombatSearchStakes,
+    stakes: AtomicCombatSearchStakesV2,
 ) -> (CombatSearchV2PotionPolicy, Option<u32>) {
     let Some(combat) = session
         .active_combat
@@ -359,12 +362,16 @@ fn canonical_potion_surface(
         return (CombatSearchV2PotionPolicy::Never, Some(0));
     }
     match stakes {
-        CombatSearchStakes::Hallway => (CombatSearchV2PotionPolicy::SemanticBudgeted, Some(1)),
-        CombatSearchStakes::Elite => (CombatSearchV2PotionPolicy::SemanticBudgeted, Some(1)),
-        CombatSearchStakes::Boss => (
+        AtomicCombatSearchStakesV2::Hallway => {
+            (CombatSearchV2PotionPolicy::SemanticBudgeted, Some(1))
+        }
+        AtomicCombatSearchStakesV2::Elite => {
+            (CombatSearchV2PotionPolicy::SemanticBudgeted, Some(1))
+        }
+        AtomicCombatSearchStakesV2::Boss => (
             CombatSearchV2PotionPolicy::All,
             Some(
-                high_stakes_semantic_potion_budget(combat)
+                high_stakes_semantic_witness_potion_budget_v1(combat)
                     .unwrap_or_default()
                     .max(3),
             ),
@@ -396,7 +403,7 @@ mod tests {
             boss_search_nodes: 30,
             boss_search_ms: 300,
             wall_ms: None,
-            checkpoint_before_combat_portfolio: false,
+            checkpoint_before_atomic_combat_search_session: false,
             wall_capped_search_budget: false,
             wall_capped_boss_budget: false,
         }
@@ -430,7 +437,7 @@ mod tests {
 
     #[test]
     fn canonical_hallway_fallback_uses_one_potion_cap_across_two_quanta() {
-        let plan = canonical_combat_search_session_plan(&hallway_session(), args());
+        let plan = canonical_atomic_combat_search_session_plan(&hallway_session(), args());
 
         assert_eq!(plan.search.work_quanta.len(), 2);
         assert_eq!(plan.search.work_quanta[0].label, "initial");
@@ -463,7 +470,10 @@ mod tests {
         )
         .expect("refinement");
 
-        assert_eq!(primary.stage, CombatSearchSessionStage::NoPotionPrimary);
+        assert_eq!(
+            primary.stage,
+            AtomicCombatSearchSessionStageV2::NoPotionPrimary
+        );
         assert_eq!(primary.search.work_quanta.len(), 1);
         assert_eq!(primary.search.work_quanta[0].label, "initial");
         assert_eq!(primary.potion_policy, CombatSearchV2PotionPolicy::Never);
@@ -477,7 +487,7 @@ mod tests {
 
         assert_eq!(
             refinement.stage,
-            CombatSearchSessionStage::ImproveVerifiedWin
+            AtomicCombatSearchSessionStageV2::ImproveVerifiedWin
         );
         assert_eq!(refinement.search.work_quanta.len(), 1);
         assert_eq!(refinement.search.work_quanta[0].label, "refine");
@@ -507,7 +517,7 @@ mod tests {
         ));
         assert_eq!(
             primary.total_nodes.saturating_add(refinement.total_nodes),
-            canonical_combat_search_session_plan(&session, args()).total_nodes
+            canonical_atomic_combat_search_session_plan(&session, args()).total_nodes
         );
     }
 
@@ -535,7 +545,10 @@ mod tests {
         )
         .expect("survival refinement");
 
-        assert_eq!(improve.stage, CombatSearchSessionStage::ImproveVerifiedWin);
+        assert_eq!(
+            improve.stage,
+            AtomicCombatSearchSessionStageV2::ImproveVerifiedWin
+        );
         assert_eq!(improve.search.allowed_potion_slots, Some(1));
         assert_eq!(improve.max_potions_used, Some(1));
         assert!(!improve.search.allow_smoke_bomb_survival_fallback);
@@ -543,7 +556,7 @@ mod tests {
             improve.search.satisfaction,
             Some(CombatSearchV2Satisfaction::PotionFreeHpLossAtMostWithoutNewExternalBurden(_))
         ));
-        assert_eq!(survival.stage, CombatSearchSessionStage::FindAnyWin);
+        assert_eq!(survival.stage, AtomicCombatSearchSessionStageV2::FindAnyWin);
         assert_eq!(survival.search.allowed_potion_slots, Some(1));
         assert_eq!(survival.max_potions_used, Some(1));
         assert!(matches!(
@@ -569,8 +582,11 @@ mod tests {
         )
         .expect("boss rescue");
 
-        assert_eq!(primary.stakes, CombatSearchStakes::Boss);
-        assert_eq!(primary.stage, CombatSearchSessionStage::NoPotionPrimary);
+        assert_eq!(primary.stakes, AtomicCombatSearchStakesV2::Boss);
+        assert_eq!(
+            primary.stage,
+            AtomicCombatSearchSessionStageV2::NoPotionPrimary
+        );
         assert_eq!(primary.potion_policy, CombatSearchV2PotionPolicy::Never);
         assert_eq!(primary.max_potions_used, Some(0));
         assert_eq!(primary.search.allowed_potion_slots, Some(0));
@@ -578,13 +594,13 @@ mod tests {
             primary.search.max_hp_loss,
             Some(RunControlHpLossLimit::Unlimited)
         );
-        assert_eq!(rescue.stage, CombatSearchSessionStage::FindAnyWin);
+        assert_eq!(rescue.stage, AtomicCombatSearchSessionStageV2::FindAnyWin);
         assert_eq!(rescue.potion_policy, CombatSearchV2PotionPolicy::All);
         assert!(rescue.max_potions_used.is_some_and(|limit| limit >= 3));
         assert_eq!(rescue.search.allowed_potion_slots, Some(1));
         assert_eq!(
             primary.total_nodes.saturating_add(rescue.total_nodes),
-            canonical_combat_search_session_plan(&session, args()).total_nodes
+            canonical_atomic_combat_search_session_plan(&session, args()).total_nodes
         );
     }
 
@@ -600,8 +616,8 @@ mod tests {
         )
         .is_none());
         assert_eq!(
-            canonical_combat_search_session_plan(&session, args()).stage,
-            CombatSearchSessionStage::Canonical
+            canonical_atomic_combat_search_session_plan(&session, args()).stage,
+            AtomicCombatSearchSessionStageV2::Canonical
         );
     }
 
@@ -611,7 +627,7 @@ mod tests {
         args.rescue_search_ms = 0;
         args.boss_search_ms = 0;
 
-        let plan = canonical_combat_search_session_plan(&hallway_session(), args);
+        let plan = canonical_atomic_combat_search_session_plan(&hallway_session(), args);
 
         assert_eq!(plan.search.work_quanta.len(), 1);
         assert_eq!(plan.search.work_quanta[0].label, "initial");

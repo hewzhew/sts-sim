@@ -487,7 +487,7 @@ fn execute_command(
             elite_wall_ms,
             boss_wall_ms,
             max_quanta,
-            quantum_nodes,
+            quantum_generation_work,
             quantum_ms,
             max_boundaries,
             run_wall_ms,
@@ -500,7 +500,7 @@ fn execute_command(
                     elite_wall_ms,
                     boss_wall_ms,
                     max_quanta,
-                    quantum_nodes,
+                    quantum_generation_work,
                     quantum_ms,
                     max_boundaries,
                     run_wall_ms,
@@ -590,20 +590,20 @@ fn execute_command(
         }
         OracleAnalysisServiceCommandV1::Advance {
             max_quanta,
-            quantum_nodes,
+            quantum_generation_work,
             quantum_ms,
             wall_ms,
             improve_incumbent,
         } => {
-            if max_quanta == 0 || quantum_nodes == 0 || quantum_ms == 0 {
+            if max_quanta == 0 || quantum_generation_work == 0 || quantum_ms == 0 {
                 return Err(
-                    "advance max_quanta, quantum_nodes, and quantum_ms must be positive"
+                    "advance max_quanta, quantum_generation_work, and quantum_ms must be positive"
                         .to_string(),
                 );
             }
             let (report, view) = workspace.advance(OracleAnalysisAdvanceRequestV1 {
                 max_quanta,
-                quantum_nodes,
+                quantum_generation_work,
                 quantum_ms: Some(quantum_ms),
                 wall_ms,
                 improve_incumbent,
@@ -617,18 +617,18 @@ fn execute_command(
         }
         OracleAnalysisServiceCommandV1::ProbeCombat {
             generation_work,
-            quantum_nodes,
+            quantum_generation_work,
             wall_ms,
         } => {
-            if generation_work == 0 || quantum_nodes == 0 || wall_ms == 0 {
+            if generation_work == 0 || quantum_generation_work == 0 || wall_ms == 0 {
                 return Err(
-                    "probe_combat requires positive generation_work, quantum_nodes, and wall_ms"
+                    "probe_combat requires positive generation_work, quantum_generation_work, and wall_ms"
                         .to_string(),
                 );
             }
             let (report, view) = workspace.probe_combat(OracleAnalysisCombatProbeRequestV1 {
                 generation_work,
-                quantum_nodes,
+                quantum_generation_work,
                 wall_ms,
             })?;
             (
@@ -827,14 +827,14 @@ fn execute_command(
         ),
         OracleAnalysisServiceCommandV1::CombatLabSearch {
             max_quanta,
-            quantum_nodes,
+            quantum_generation_work,
             quantum_ms,
             wall_ms,
         } => {
             let report = workspace.session.search_combat_line_lab(
                 analysis_session::OracleAnalysisCombatScratchSearchRequestV1 {
                     max_quanta,
-                    quantum_nodes,
+                    quantum_generation_work,
                     quantum_ms,
                     wall_ms,
                 },
@@ -1139,7 +1139,7 @@ fn execute_command(
         ),
         OracleAnalysisServiceCommandV1::CombatScratchSearch {
             max_quanta,
-            quantum_nodes,
+            quantum_generation_work,
             quantum_ms,
             wall_ms,
             selection_offset,
@@ -1148,7 +1148,7 @@ fn execute_command(
             let (report, view) = workspace.session.search_combat_scratch(
                 analysis_session::OracleAnalysisCombatScratchSearchRequestV1 {
                     max_quanta,
-                    quantum_nodes,
+                    quantum_generation_work,
                     quantum_ms,
                     wall_ms,
                 },
@@ -1324,27 +1324,36 @@ fn execute_command(
         ),
         OracleAnalysisServiceCommandV1::ExportCombatCase { node, path } => {
             let view = workspace.session.view_node(node)?;
-            let (search_nodes, search_ms) = if view
+            let (generation_work, wall_ms) = if view
                 .encounter
                 .as_ref()
                 .is_some_and(|encounter| encounter.is_boss)
             {
-                (workspace.budget.boss_nodes, workspace.budget.boss_ms)
+                (
+                    workspace.budget.boss_generation_work,
+                    workspace.budget.boss_ms,
+                )
             } else if view
                 .encounter
                 .as_ref()
                 .is_some_and(|encounter| encounter.is_elite)
             {
-                (workspace.budget.elite_nodes, workspace.budget.elite_ms)
+                (
+                    workspace.budget.elite_generation_work,
+                    workspace.budget.elite_ms,
+                )
             } else {
-                (workspace.budget.hallway_nodes, workspace.budget.hallway_ms)
+                (
+                    workspace.budget.hallway_generation_work,
+                    workspace.budget.hallway_ms,
+                )
             };
             let case = workspace.session.combat_case(
                 node,
                 workspace.seed,
                 workspace.ascension,
-                search_nodes,
-                search_ms,
+                generation_work,
+                wall_ms,
             )?;
             crate::eval::combat_case::save_combat_case(&path, &case)?;
             (

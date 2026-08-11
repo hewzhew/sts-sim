@@ -23,7 +23,8 @@ impl RunCutpointStore {
     }
 
     pub(super) fn latest_pre_combat_frontier_path(&self) -> PathBuf {
-        self.root.join("latest_pre_combat_search.frontier.json")
+        self.root
+            .join("latest_pre_atomic_combat_search.frontier.json")
     }
 
     pub(super) fn commit_cutpoint_trajectory(&self, branch: &mut Branch) -> Result<(), String> {
@@ -45,7 +46,8 @@ impl RunCutpointStore {
     }
 
     pub(super) fn latest_pre_combat_manifest_path(&self) -> PathBuf {
-        self.root.join("latest_pre_combat_search.manifest.json")
+        self.root
+            .join("latest_pre_atomic_combat_search.manifest.json")
     }
 
     pub(super) fn inflight_pre_combat_frontier_path(&self, branch_id: usize) -> PathBuf {

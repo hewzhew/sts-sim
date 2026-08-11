@@ -44,17 +44,17 @@ pub(super) fn prepare_branch_work(
             &mut cutpoints,
         );
         branch.status = advance.status;
-        branch.combat_portfolio = advance.combat_portfolio;
+        branch.atomic_combat_search_session = advance.atomic_combat_search_session;
         branch.recent_progress_journal = advance.progress_journal;
         branch.recent_planner_capture = advance.planner_capture;
         branch.capture_recent_trajectory(generation)?;
         if let Some(capsule) = capsule {
             artifacts.merge(capsule.commit_branch_trajectory(&mut branch)?);
         }
-        branch.combat_search = advance.combat_search;
+        branch.atomic_combat_search_attempts = advance.atomic_combat_search_attempts;
         branch
-            .combat_search_history
-            .extend(branch.combat_search.clone());
+            .atomic_combat_search_history
+            .extend(branch.atomic_combat_search_attempts.clone());
         extend_unique_diagnostics(
             &mut branch.accepted_high_loss_diagnostics,
             advance.accepted_high_loss_diagnostics,

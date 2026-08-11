@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use serde_json::{to_value, Value};
 use sts_simulator::eval::combat_case::{
     living_enemy_names, save_combat_case, CombatCase, CombatCaseBranchEvidence, CombatCaseGap,
-    CombatCaseRngSummary, CombatCaseRunSummary, CombatCaseSource,
+    CombatCaseRngSummary, CombatCaseRunSummary, CombatCaseSource, CombatCaseWitnessBudgetV1,
 };
 use sts_simulator::eval::combat_case_context::capture_combat_case_production_context_v1;
 use sts_simulator::runtime::combat::CombatState;
@@ -46,10 +46,12 @@ pub(super) fn save_combat_gap_case(
         CombatCaseGap {
             boundary: boundary.to_string(),
             reason: reason.to_string(),
-            search_nodes: args.search_nodes,
-            search_ms: args.search_ms,
-            rescue_search_nodes: args.rescue_search_nodes,
-            rescue_search_ms: args.rescue_search_ms,
+            witness_budget: CombatCaseWitnessBudgetV1::AtomicExactV2 {
+                primary_nodes: args.search_nodes,
+                primary_wall_ms: args.search_ms,
+                rescue_nodes: args.rescue_search_nodes,
+                rescue_wall_ms: args.rescue_search_ms,
+            },
         },
         CombatCaseRunSummary {
             act: branch.session.run_state.act_num,
@@ -61,8 +63,8 @@ pub(super) fn save_combat_gap_case(
             relic_count: branch.session.run_state.relics.len(),
             potion_slots: branch.session.run_state.potions.len(),
         },
-        branch.combat_search.clone(),
-        branch.combat_search.last().cloned(),
+        branch.atomic_combat_search_attempts.clone(),
+        branch.atomic_combat_search_attempts.last().cloned(),
         Vec::new(),
         CombatCaseRngSummary::from_pool(&branch.session.run_state.rng_pool),
         position,
@@ -154,12 +156,12 @@ mod tests {
                 reason: "no win".to_string(),
             },
             policy_lane: BranchPolicyLane::challenger(ChallengerPolicyState::new(1)),
-            combat_portfolio: None,
+            atomic_combat_search_session: None,
             recent_progress_journal: Default::default(),
             recent_planner_capture: Default::default(),
             trajectory: Default::default(),
-            combat_search: Vec::new(),
-            combat_search_history: Vec::new(),
+            atomic_combat_search_attempts: Vec::new(),
+            atomic_combat_search_history: Vec::new(),
             comparison_search_start: None,
             accepted_high_loss_diagnostics: Vec::new(),
         }

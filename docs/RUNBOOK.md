@@ -191,6 +191,14 @@ Continuation may inherit run-contract values such as `wall_ms` from the
 capsule manifest. Override them only when the investigation needs a different
 contract.
 
+Current continuation is deliberately breaking: `frontier.json` must use
+`branch_tiny_frontier_checkpoint_v3` and embeds the source identity that wrote
+the exact checkpoint. `--continue-capsule` additionally requires a V5 manifest
+whose run contract and source identity match that frontier before the old
+trajectory run id is inherited. Earlier frontiers/capsules are not upgraded;
+start a fresh capsule or import the exact state through a maintained case
+surface.
+
 ## Combat Case Work
 
 Start a diagnostic review from one saved case:
@@ -333,6 +341,11 @@ fresh-case capture, potion interpretation, and laboratory artifacts.
 
 ## Atomic Combat Search
 
+This is the fixed-root `AtomicExactV2` diagnostic/challenger surface. It does
+not run the production resident `TurnGraphPortfolioV1`; see
+[Combat Search Ownership](architecture/combat-search.md) before comparing its
+budgets or results with an oracle run.
+
 Use the capability-scoped combat-search frontend for fixed starts, captures,
 and benchmark suites:
 
@@ -415,7 +428,7 @@ the witness:
 
 ```powershell
 .\ol-live.cmd live --session seed009 probe-combat `
-  --generation-work 4096 --quantum-nodes 256 --wall-ms 1000
+  --generation-work 4096 --quantum-generation-work 256 --wall-ms 1000
 ```
 
 The result reports `work_budget_reached`, `wall_reached`, `stage_exhausted`, or
@@ -431,7 +444,7 @@ Offline parity is available for a single invocation:
 ```powershell
 cargo oracle-lab probe-combat `
   --workspace .oracle-lab/cases/seed009.workspace.json `
-  --generation-work 4096 --quantum-nodes 256 --wall-ms 1000
+  --generation-work 4096 --quantum-generation-work 256 --wall-ms 1000
 ```
 
 At an exact combat node, open one resident combat line lab from the complete
@@ -448,7 +461,7 @@ typed card ids; it never requires scratch node ids or action-list JSON:
 .\ol-live.cmd live --session seed009 lab potion --potion FearPotion [--copy <occurrence>] [--target <monster-index>]
 .\ol-live.cmd live --session seed009 lab select --indices 0,2,3
 .\ol-live.cmd live --session seed009 lab end
-.\ol-live.cmd live --session seed009 lab search --max-quanta 4 --quantum-nodes 1024 --wall-ms 1000
+.\ol-live.cmd live --session seed009 lab search --max-quanta 4 --quantum-generation-work 1024 --wall-ms 1000
 .\ol-live.cmd live --session seed009 lab compare
 .\ol-live.cmd live --session seed009 lab commit
 ```
@@ -510,7 +523,7 @@ the current line only when manual play needs help:
 
 ```powershell
 .\ol-live.cmd live --session seed009 lab search `
-  --max-quanta 4 --quantum-nodes 1024 --wall-ms 1000
+  --max-quanta 4 --quantum-generation-work 1024 --wall-ms 1000
 ```
 
 A found suffix is appended to the line lab; a missing bounded witness remains
@@ -625,7 +638,6 @@ cargo fmt --all -- --check
 cargo check-workspace
 cargo test-core
 cargo test-control
-cargo architecture
 cargo check --workspace --release --all-targets
 cargo test -p sts_combat_search_driver --lib
 cargo check -p sts_combat_search_driver --features backend --bin combat_search_v2_worker

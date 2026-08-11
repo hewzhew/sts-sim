@@ -80,7 +80,7 @@ enum LiveCommand {
         #[arg(long, default_value_t = 100_000)]
         max_quanta: usize,
         #[arg(long, default_value_t = 4_096)]
-        quantum_nodes: usize,
+        quantum_generation_work: usize,
         #[arg(long, default_value_t = 100)]
         quantum_ms: u64,
         #[arg(long, default_value_t = 10_000)]
@@ -96,7 +96,7 @@ enum LiveCommand {
         #[arg(long, default_value_t = 4_096)]
         generation_work: usize,
         #[arg(long, default_value_t = 256)]
-        quantum_nodes: usize,
+        quantum_generation_work: usize,
         #[arg(long, default_value_t = 1_000)]
         wall_ms: u64,
     },
@@ -165,7 +165,7 @@ enum LiveCommand {
         #[arg(long, default_value_t = 100_000)]
         max_quanta: usize,
         #[arg(long, default_value_t = 4_096)]
-        quantum_nodes: usize,
+        quantum_generation_work: usize,
         #[arg(long, default_value_t = 100)]
         quantum_ms: u64,
         #[arg(long, default_value_t = 256)]
@@ -335,7 +335,7 @@ enum LiveLabCommand {
         #[arg(long, default_value_t = 4)]
         max_quanta: usize,
         #[arg(long, default_value_t = 1_024)]
-        quantum_nodes: usize,
+        quantum_generation_work: usize,
         #[arg(long, default_value_t = 100)]
         quantum_ms: u64,
         #[arg(long, default_value_t = 1_000)]
@@ -446,7 +446,7 @@ enum LiveScratchCommand {
         #[arg(long, default_value_t = 4)]
         max_quanta: usize,
         #[arg(long, default_value_t = 1_024)]
-        quantum_nodes: usize,
+        quantum_generation_work: usize,
         #[arg(long, default_value_t = 100)]
         quantum_ms: u64,
         #[arg(long, default_value_t = 1_000)]
@@ -505,7 +505,7 @@ fn run_live_command(endpoint: &Path, command: LiveCommand) -> Result<(), String>
         }
         LiveCommand::Advance {
             max_quanta,
-            quantum_nodes,
+            quantum_generation_work,
             quantum_ms,
             wall_ms,
             improve_incumbent,
@@ -518,7 +518,7 @@ fn run_live_command(endpoint: &Path, command: LiveCommand) -> Result<(), String>
                 endpoint,
                 OracleAnalysisServiceCommandV1::Advance {
                     max_quanta,
-                    quantum_nodes,
+                    quantum_generation_work,
                     quantum_ms,
                     wall_ms: Some(wall_ms),
                     improve_incumbent,
@@ -528,7 +528,7 @@ fn run_live_command(endpoint: &Path, command: LiveCommand) -> Result<(), String>
         }
         LiveCommand::ProbeCombat {
             generation_work,
-            quantum_nodes,
+            quantum_generation_work,
             wall_ms,
         } => {
             let before = live_call(
@@ -539,7 +539,7 @@ fn run_live_command(endpoint: &Path, command: LiveCommand) -> Result<(), String>
                 endpoint,
                 OracleAnalysisServiceCommandV1::ProbeCombat {
                     generation_work,
-                    quantum_nodes,
+                    quantum_generation_work,
                     wall_ms,
                 },
             )?;
@@ -634,7 +634,7 @@ fn run_live_command(endpoint: &Path, command: LiveCommand) -> Result<(), String>
             elite_wall_ms,
             boss_wall_ms,
             max_quanta,
-            quantum_nodes,
+            quantum_generation_work,
             quantum_ms,
             max_boundaries,
             run_wall_ms,
@@ -646,7 +646,7 @@ fn run_live_command(endpoint: &Path, command: LiveCommand) -> Result<(), String>
                 elite_wall_ms,
                 boss_wall_ms,
                 max_quanta,
-                quantum_nodes,
+                quantum_generation_work,
                 quantum_ms,
                 max_boundaries,
                 run_wall_ms,
@@ -846,14 +846,14 @@ fn run_live_command(endpoint: &Path, command: LiveCommand) -> Result<(), String>
             )?),
             LiveLabCommand::Search {
                 max_quanta,
-                quantum_nodes,
+                quantum_generation_work,
                 quantum_ms,
                 wall_ms,
             } => print_json(&live_call(
                 endpoint,
                 OracleAnalysisServiceCommandV1::CombatLabSearch {
                     max_quanta,
-                    quantum_nodes,
+                    quantum_generation_work,
                     quantum_ms,
                     wall_ms,
                 },
@@ -1035,7 +1035,7 @@ fn run_live_command(endpoint: &Path, command: LiveCommand) -> Result<(), String>
             )?),
             LiveScratchCommand::Search {
                 max_quanta,
-                quantum_nodes,
+                quantum_generation_work,
                 quantum_ms,
                 wall_ms,
                 page,
@@ -1043,7 +1043,7 @@ fn run_live_command(endpoint: &Path, command: LiveCommand) -> Result<(), String>
                 endpoint,
                 OracleAnalysisServiceCommandV1::CombatScratchSearch {
                     max_quanta,
-                    quantum_nodes,
+                    quantum_generation_work,
                     quantum_ms,
                     wall_ms,
                     selection_offset: page.selection_offset,
@@ -1350,7 +1350,7 @@ fn compact_combat_progress(combat: Option<&Value>) -> Value {
         "incumbent_ends_quality_refinement": combat.get("incumbent_ends_quality_refinement"),
         "last_status": combat.get("last_status"),
         "quantum_count": combat.get("quantum_count"),
-        "remaining_nodes": combat.get("remaining_nodes"),
+        "remaining_generation_work": combat.get("remaining_generation_work"),
         "remaining_wall_ms": combat.get("remaining_wall_ms"),
         "resume_kind": combat.get("resume_kind"),
         "restart_count": combat.get("restart_count"),
@@ -2314,7 +2314,7 @@ mod tests {
             "probe-combat",
             "--generation-work",
             "768",
-            "--quantum-nodes",
+            "--quantum-generation-work",
             "128",
             "--wall-ms",
             "250",
@@ -2325,7 +2325,7 @@ mod tests {
             Command::Live {
                 command: LiveCommand::ProbeCombat {
                     generation_work: 768,
-                    quantum_nodes: 128,
+                    quantum_generation_work: 128,
                     wall_ms: 250,
                 },
                 ..

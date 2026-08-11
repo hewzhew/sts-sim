@@ -1,13 +1,22 @@
-# Combat Search V2 Module Map
+# Atomic Exact Combat Search V2 Module Map
 
-This directory is the combat-search mainline. Before adding a new module, check
-this map and extend an existing boundary when one already exists.
+This directory owns the `AtomicExactV2` fixed-root engine. It is a maintained
+diagnostic/challenger and still backs the legacy `branch_tiny` owner-audit
+path; it is not the production resident `TurnGraphPortfolioV1`.
+
+The resident oracle composes `LocalTurnGraphWitnessSession` and
+`PolicyDiscrepancySession` from `sts_combat_planner` behind
+`OracleResidentCombatWitnessJobV1`. See
+[`docs/architecture/combat-search.md`](../../../docs/architecture/combat-search.md)
+before comparing the engines or adding a shared option. Before adding an
+atomic-v2 module, check this map and extend an existing boundary when one
+already exists.
 
 ## Module Layer Contract
 
 | Layer | Modules | Runner effect | Rule |
 | --- | --- | --- | --- |
-| Mainline exact search | `search/`, `frontier/`, `transition.rs`, `action_equivalence/`, `turn_local_dominance/` | Yes | May prune or schedule exact branches only inside its documented safety boundary. |
+| Atomic exact kernel | `search/`, `frontier/`, `transition.rs`, `action_equivalence/`, `turn_local_dominance/` | Yes | May prune or schedule exact atomic-v2 branches only inside its documented safety boundary. |
 | Deployable rescue/candidates | `turn_pool_rescue/`, replayable witness helpers | Yes, after replay/check | May propose a concrete line, but must keep its own engine, ranking, and report schema separate. |
 | Estimate/value evidence | `value/`, `rollout/`, `rollout_*`, `pressure_value.rs`, `enemy_phase_value.rs` | Indirect | May order or estimate; must not claim a terminal result unless replayed by exact search. |
 | Report-only diagnostics | `diagnostics/`, `decision_microscope/`, `turn_plan_probe*`, `trajectory_report.rs` | No | May explain behavior; must not become a strategy entrance. |

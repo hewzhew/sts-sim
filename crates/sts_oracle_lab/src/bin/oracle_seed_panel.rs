@@ -40,21 +40,21 @@ pub struct OracleSeedPanelArgs {
     #[arg(long, default_value_t = 600_000)]
     invocation_wall_ms: u64,
     #[arg(long, default_value_t = 250_000)]
-    hallway_nodes: usize,
+    hallway_generation_work: usize,
     #[arg(long, default_value_t = 5_000)]
     hallway_ms: u64,
     #[arg(long, default_value_t = 750_000)]
-    elite_nodes: usize,
+    elite_generation_work: usize,
     #[arg(long, default_value_t = 15_000)]
     elite_ms: u64,
     #[arg(long, default_value_t = 2_000_000)]
-    boss_nodes: usize,
+    boss_generation_work: usize,
     #[arg(long, default_value_t = 30_000)]
     boss_ms: u64,
     #[arg(long, default_value_t = 100_000)]
     max_quanta: usize,
     #[arg(long, default_value_t = 4_096)]
-    quantum_nodes: usize,
+    quantum_generation_work: usize,
     #[arg(long, default_value_t = 100)]
     quantum_ms: u64,
     #[arg(long, default_value_t = 256)]
@@ -185,7 +185,7 @@ pub fn run(args: OracleSeedPanelArgs) -> Result<Value, String> {
                 elite_wall_ms: args.elite_ms,
                 boss_wall_ms: args.boss_ms,
                 max_quanta: args.max_quanta,
-                quantum_nodes: args.quantum_nodes,
+                quantum_generation_work: args.quantum_generation_work,
                 quantum_ms: args.quantum_ms,
                 max_boundaries: args.max_boundaries,
                 run_wall_ms: Some(current_seed_wall_ms(&args, panel_started)),
@@ -336,14 +336,14 @@ pub fn run(args: OracleSeedPanelArgs) -> Result<Value, String> {
 
 fn validate_args(args: &OracleSeedPanelArgs) -> Result<(), String> {
     if args.run_wall_ms == 0
-        || args.hallway_nodes == 0
+        || args.hallway_generation_work == 0
         || args.hallway_ms == 0
-        || args.elite_nodes == 0
+        || args.elite_generation_work == 0
         || args.elite_ms == 0
-        || args.boss_nodes == 0
+        || args.boss_generation_work == 0
         || args.boss_ms == 0
         || args.max_quanta == 0
-        || args.quantum_nodes == 0
+        || args.quantum_generation_work == 0
         || args.quantum_ms == 0
         || args.max_boundaries == 0
     {
@@ -354,11 +354,11 @@ fn validate_args(args: &OracleSeedPanelArgs) -> Result<(), String> {
 
 fn run_budget(args: &OracleSeedPanelArgs) -> OracleRunBudget {
     OracleRunBudget {
-        hallway_nodes: args.hallway_nodes,
+        hallway_generation_work: args.hallway_generation_work,
         hallway_ms: args.hallway_ms,
-        elite_nodes: args.elite_nodes,
+        elite_generation_work: args.elite_generation_work,
         elite_ms: args.elite_ms,
-        boss_nodes: args.boss_nodes,
+        boss_generation_work: args.boss_generation_work,
         boss_ms: args.boss_ms,
         ..OracleRunBudget::default()
     }
@@ -497,14 +497,14 @@ fn panel_summary(
         "budgets": {
             "run_wall_ms": args.run_wall_ms,
             "invocation_wall_ms": args.invocation_wall_ms,
-            "hallway_nodes": args.hallway_nodes,
+            "hallway_generation_work": args.hallway_generation_work,
             "hallway_ms": args.hallway_ms,
-            "elite_nodes": args.elite_nodes,
+            "elite_generation_work": args.elite_generation_work,
             "elite_ms": args.elite_ms,
-            "boss_nodes": args.boss_nodes,
+            "boss_generation_work": args.boss_generation_work,
             "boss_ms": args.boss_ms,
             "max_quanta": args.max_quanta,
-            "quantum_nodes": args.quantum_nodes,
+            "quantum_generation_work": args.quantum_generation_work,
             "quantum_ms": args.quantum_ms,
             "max_boundaries": args.max_boundaries,
         },

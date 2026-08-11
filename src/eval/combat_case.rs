@@ -9,13 +9,13 @@ use crate::eval::combat_case_context::{
     combat_case_replay_identity_v1, CombatCaseProductionContextV1, CombatCaseReplayCapabilityV1,
     CombatCaseReplayIdentityV1,
 };
-use crate::eval::run_control::CombatSearchTraceSummary;
+use crate::eval::run_control::AtomicCombatSearchTraceSummaryV2;
 use crate::sim::combat::CombatPosition;
 
 pub use crate::eval::combat_case_core::{
     card_summary, combat_summary, living_enemy_names, CombatCaseCardSummary,
     CombatCaseCombatSummary, CombatCaseCoreV1, CombatCaseGap, CombatCaseRngSummary,
-    CombatCaseRunSummary, CombatCaseSource, COMBAT_CASE_SCHEMA,
+    CombatCaseRunSummary, CombatCaseSource, CombatCaseWitnessBudgetV1, COMBAT_CASE_SCHEMA,
 };
 
 #[derive(Clone, Debug)]
@@ -23,8 +23,8 @@ pub struct CombatCase {
     pub core: CombatCaseCoreV1,
     pub branch_evidence: Option<CombatCaseBranchEvidence>,
     pub production_context: Option<CombatCaseProductionContextV1>,
-    pub combat_search_attempts: Vec<CombatSearchTraceSummary>,
-    pub failed_search: Option<CombatSearchTraceSummary>,
+    pub atomic_combat_search_attempts: Vec<AtomicCombatSearchTraceSummaryV2>,
+    pub failed_atomic_combat_search: Option<AtomicCombatSearchTraceSummaryV2>,
     pub path: Vec<CombatCasePathStep>,
 }
 
@@ -40,9 +40,9 @@ struct CombatCaseWireV1 {
     #[serde(default)]
     production_context: Option<CombatCaseProductionContextV1>,
     #[serde(default)]
-    combat_search_attempts: Vec<CombatSearchTraceSummary>,
+    atomic_combat_search_attempts: Vec<AtomicCombatSearchTraceSummaryV2>,
     #[serde(default)]
-    failed_search: Option<CombatSearchTraceSummary>,
+    failed_atomic_combat_search: Option<AtomicCombatSearchTraceSummaryV2>,
     #[serde(default)]
     path: Vec<CombatCasePathStep>,
     run_rng: CombatCaseRngSummary,
@@ -61,9 +61,9 @@ struct CombatCaseWireRefV1<'a> {
     #[serde(skip_serializing_if = "Option::is_none")]
     production_context: Option<&'a CombatCaseProductionContextV1>,
     #[serde(skip_serializing_if = "slice_ref_is_empty")]
-    combat_search_attempts: &'a [CombatSearchTraceSummary],
+    atomic_combat_search_attempts: &'a [AtomicCombatSearchTraceSummaryV2],
     #[serde(skip_serializing_if = "Option::is_none")]
-    failed_search: Option<&'a CombatSearchTraceSummary>,
+    failed_atomic_combat_search: Option<&'a AtomicCombatSearchTraceSummaryV2>,
     #[serde(skip_serializing_if = "slice_ref_is_empty")]
     path: &'a [CombatCasePathStep],
     run_rng: &'a CombatCaseRngSummary,
@@ -88,8 +88,8 @@ impl<'de> Deserialize<'de> for CombatCase {
             },
             branch_evidence: wire.branch_evidence,
             production_context: wire.production_context,
-            combat_search_attempts: wire.combat_search_attempts,
-            failed_search: wire.failed_search,
+            atomic_combat_search_attempts: wire.atomic_combat_search_attempts,
+            failed_atomic_combat_search: wire.failed_atomic_combat_search,
             path: wire.path,
         })
     }
@@ -108,8 +108,8 @@ impl Serialize for CombatCase {
             combat: &self.core.combat,
             branch_evidence: self.branch_evidence.as_ref(),
             production_context: self.production_context.as_ref(),
-            combat_search_attempts: &self.combat_search_attempts,
-            failed_search: self.failed_search.as_ref(),
+            atomic_combat_search_attempts: &self.atomic_combat_search_attempts,
+            failed_atomic_combat_search: self.failed_atomic_combat_search.as_ref(),
             path: &self.path,
             run_rng: &self.core.run_rng,
             position: &self.core.position,
@@ -144,8 +144,8 @@ impl CombatCase {
         source: CombatCaseSource,
         gap: CombatCaseGap,
         run: CombatCaseRunSummary,
-        combat_search_attempts: Vec<CombatSearchTraceSummary>,
-        failed_search: Option<CombatSearchTraceSummary>,
+        atomic_combat_search_attempts: Vec<AtomicCombatSearchTraceSummaryV2>,
+        failed_atomic_combat_search: Option<AtomicCombatSearchTraceSummaryV2>,
         path: Vec<CombatCasePathStep>,
         run_rng: CombatCaseRngSummary,
         position: CombatPosition,
@@ -154,8 +154,8 @@ impl CombatCase {
             core: CombatCaseCoreV1::new(source, gap, run, run_rng, position),
             branch_evidence: None,
             production_context: None,
-            combat_search_attempts,
-            failed_search,
+            atomic_combat_search_attempts,
+            failed_atomic_combat_search,
             path,
         }
     }
@@ -246,10 +246,12 @@ mod tests {
             CombatCaseGap {
                 boundary: "Combat".to_string(),
                 reason: "no win".to_string(),
-                search_nodes: 100,
-                search_ms: 10,
-                rescue_search_nodes: 200,
-                rescue_search_ms: 20,
+                witness_budget: CombatCaseWitnessBudgetV1::AtomicExactV2 {
+                    primary_nodes: 100,
+                    primary_wall_ms: 10,
+                    rescue_nodes: 200,
+                    rescue_wall_ms: 20,
+                },
             },
             CombatCaseRunSummary {
                 act: 3,
@@ -283,7 +285,7 @@ mod tests {
     }
 
     #[test]
-    fn legacy_case_without_branch_evidence_still_deserializes() {
+    fn isolated_case_without_production_context_remains_replayable() {
         let value = serde_json::to_value(sample_case()).unwrap();
         let mut object = value.as_object().unwrap().clone();
         object.remove("branch_evidence");
@@ -337,7 +339,7 @@ mod tests {
     }
 
     #[test]
-    fn production_independent_core_keeps_the_existing_flat_case_schema() {
+    fn production_independent_core_keeps_the_flat_v1_case_schema() {
         let case = sample_case();
         let payload = serde_json::to_value(&case).expect("serialize combat case");
 
@@ -363,41 +365,42 @@ mod tests {
         let combat = crate::test_support::blank_test_combat();
         let continuation = potion_run_continuation_context_v1(&run, &combat);
         let pressure = potion_continuation_pressure_v1(&run, &continuation);
-        let attempt = CombatSearchTraceSummary {
+        let attempt = AtomicCombatSearchTraceSummaryV2 {
             potion_continuation_context: Some(continuation),
             potion_continuation_pressure: Some(pressure),
-            ..CombatSearchTraceSummary::default()
+            ..AtomicCombatSearchTraceSummaryV2::default()
         };
         let mut case = sample_case();
-        case.combat_search_attempts = vec![attempt.clone()];
-        case.failed_search = Some(attempt);
+        case.atomic_combat_search_attempts = vec![attempt.clone()];
+        case.failed_atomic_combat_search = Some(attempt);
 
         let payload = serde_json::to_value(&case).expect("serialize combat case");
         assert_eq!(
-            payload["combat_search_attempts"][0]["potion_continuation_context"]["capture_boundary"],
-            "before_combat_search"
+            payload["atomic_combat_search_attempts"][0]["potion_continuation_context"]
+                ["capture_boundary"],
+            "before_atomic_combat_search"
         );
         assert_eq!(
-            payload["combat_search_attempts"][0]["potion_continuation_pressure"]
+            payload["atomic_combat_search_attempts"][0]["potion_continuation_pressure"]
                 ["capture_boundary"],
-            "before_combat_search"
+            "before_atomic_combat_search"
         );
 
         let restored: CombatCase =
             serde_json::from_value(payload).expect("deserialize combat case");
-        assert!(restored.combat_search_attempts[0]
+        assert!(restored.atomic_combat_search_attempts[0]
             .potion_continuation_context
             .is_some());
         assert!(restored
-            .failed_search
+            .failed_atomic_combat_search
             .as_ref()
             .and_then(|attempt| attempt.potion_continuation_context.as_ref())
             .is_some());
-        assert!(restored.combat_search_attempts[0]
+        assert!(restored.atomic_combat_search_attempts[0]
             .potion_continuation_pressure
             .is_some());
         assert!(restored
-            .failed_search
+            .failed_atomic_combat_search
             .as_ref()
             .and_then(|attempt| attempt.potion_continuation_pressure.as_ref())
             .is_some());

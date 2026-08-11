@@ -54,7 +54,7 @@ pub(super) fn assemble_combat_case_review(
         relics: derived.relics,
         potions: derived.potions,
         path_tail: derived.path_tail,
-        saved_search: case.failed_search.clone(),
+        saved_atomic_combat_search: case.failed_atomic_combat_search.clone(),
         adjudication_probe,
         source: case.core.source,
         gap: case.core.gap,

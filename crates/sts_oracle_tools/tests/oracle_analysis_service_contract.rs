@@ -384,7 +384,7 @@ fn resident_service_keeps_combat_scratch_alive_across_typed_calls() {
 #[test]
 fn analysis_workspace_either_resumes_or_materializes_a_verified_combat_witness() {
     let mut budget = OracleRunBudget::default();
-    budget.hallway_nodes = 1;
+    budget.hallway_generation_work = 1;
     budget.hallway_ms = 100;
     let mut workspace = OracleAnalysisWorkspaceV1::new(OracleRunConfig {
         seed: SEED,
@@ -415,7 +415,7 @@ fn analysis_workspace_either_resumes_or_materializes_a_verified_combat_witness()
 
     let request = OracleAnalysisAdvanceRequestV1 {
         max_quanta: 1,
-        quantum_nodes: 2,
+        quantum_generation_work: 2,
         quantum_ms: Some(100),
         wall_ms: Some(100),
         improve_incumbent: false,
@@ -426,9 +426,9 @@ fn analysis_workspace_either_resumes_or_materializes_a_verified_combat_witness()
         first_progress
             .generation_work
             .saturating_add(
-                u64::try_from(first_progress.remaining_nodes).expect("remaining nodes fit u64"),
+                u64::try_from(first_progress.remaining_generation_work).expect("remaining nodes fit u64"),
             )
-            >= u64::try_from(request.quantum_nodes).expect("requested nodes fit u64"),
+            >= u64::try_from(request.quantum_generation_work).expect("requested nodes fit u64"),
         "the first advance request must enlarge the default combat allowance just like a resumed request"
     );
     assert_eq!(first_progress.restart_count, 0);

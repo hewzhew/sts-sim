@@ -1,33 +1,36 @@
 use sts_simulator::eval::run_control::{
-    CombatLineAdjudicationV1, CombatLineCleanlinessV1, CombatSearchTerminalLineSummary,
-    CombatSearchTraceSummary,
+    AtomicCombatSearchTraceSummaryV2, CombatLineAdjudicationV1, CombatLineCleanlinessV1,
+    CombatSearchTerminalLineSummary,
 };
 use sts_simulator::runtime::branch::{
-    PrimarySearchLineSummary, PrimarySearchOutcomeSummary, PrimarySearchProfileSummary,
-    PrimarySearchTelemetrySummary,
+    AtomicCombatSearchLineEvidenceV2, AtomicCombatSearchPrimaryTelemetryV2,
+    AtomicCombatSearchProfileEvidenceV2, PrimaryAtomicCombatWitnessV2,
 };
 
+use super::atomic_combat_search_report::AtomicCombatSearchSessionReportV2;
 use super::branch_model::Branch;
-use super::combat_search_report::CombatSearchSessionReport;
 
-pub(super) fn primary_search_outcome_from_branch(branch: &Branch) -> PrimarySearchOutcomeSummary {
-    primary_search_outcome(&branch.combat_search, branch.combat_portfolio.as_ref())
+pub(super) fn primary_atomic_witness_from_branch(branch: &Branch) -> PrimaryAtomicCombatWitnessV2 {
+    primary_atomic_witness(
+        &branch.atomic_combat_search_attempts,
+        branch.atomic_combat_search_session.as_ref(),
+    )
 }
 
-pub(super) fn primary_search_outcome_value(
-    attempts: &[CombatSearchTraceSummary],
-    portfolio: Option<&CombatSearchSessionReport>,
+pub(super) fn primary_atomic_witness_value(
+    attempts: &[AtomicCombatSearchTraceSummaryV2],
+    session: Option<&AtomicCombatSearchSessionReportV2>,
 ) -> serde_json::Value {
-    serde_json::to_value(primary_search_outcome(attempts, portfolio))
+    serde_json::to_value(primary_atomic_witness(attempts, session))
         .unwrap_or(serde_json::Value::Null)
 }
 
-fn primary_search_outcome(
-    attempts: &[CombatSearchTraceSummary],
-    portfolio: Option<&CombatSearchSessionReport>,
-) -> PrimarySearchOutcomeSummary {
+fn primary_atomic_witness(
+    attempts: &[AtomicCombatSearchTraceSummaryV2],
+    session: Option<&AtomicCombatSearchSessionReportV2>,
+) -> PrimaryAtomicCombatWitnessV2 {
     let primary_attempt = primary_attempt(attempts);
-    let profile_attempt = primary_profile_attempt(portfolio);
+    let profile_attempt = primary_profile_attempt(session);
     let execution_adjudication =
         primary_attempt.and_then(|attempt| attempt.execution_adjudication.clone());
     let accepted_line = matches!(
@@ -40,9 +43,9 @@ fn primary_search_outcome(
             .map(primary_line_summary)
     })
     .flatten();
-    PrimarySearchOutcomeSummary {
-        status: primary_search_status(primary_attempt).to_string(),
-        profile: PrimarySearchProfileSummary {
+    PrimaryAtomicCombatWitnessV2 {
+        status: primary_atomic_witness_status(primary_attempt).to_string(),
+        profile: AtomicCombatSearchProfileEvidenceV2 {
             profile_id: profile_attempt
                 .map(|profile| profile.profile_id.to_string())
                 .or_else(|| primary_attempt.and_then(|attempt| attempt.profile_id.clone())),
@@ -74,7 +77,7 @@ fn primary_search_outcome(
                 })
                 .unwrap_or(false),
         },
-        telemetry: primary_search_telemetry(primary_attempt, profile_attempt),
+        telemetry: primary_atomic_witness_telemetry(primary_attempt, profile_attempt),
         accepted_line,
         best_complete_line: primary_attempt
             .and_then(|attempt| attempt.best_complete.as_ref())
@@ -85,7 +88,7 @@ fn primary_search_outcome(
 }
 
 pub(super) fn latest_execution_adjudication(
-    attempts: &[CombatSearchTraceSummary],
+    attempts: &[AtomicCombatSearchTraceSummaryV2],
 ) -> Option<CombatLineAdjudicationV1> {
     attempts
         .iter()
@@ -93,30 +96,28 @@ pub(super) fn latest_execution_adjudication(
         .find_map(|attempt| attempt.execution_adjudication.clone())
 }
 
-fn primary_attempt(attempts: &[CombatSearchTraceSummary]) -> Option<&CombatSearchTraceSummary> {
+fn primary_attempt(
+    attempts: &[AtomicCombatSearchTraceSummaryV2],
+) -> Option<&AtomicCombatSearchTraceSummaryV2> {
     attempts
         .iter()
-        .find(|attempt| attempt.portfolio_selected == Some(true))
+        .find(|attempt| attempt.atomic_witness_selected == Some(true))
         .or_else(|| {
             attempts
                 .iter()
                 .find(|attempt| attempt.lane.as_deref() == Some("primary"))
         })
-        .or_else(|| {
-            attempts
-                .iter()
-                .rev()
-                .find(|attempt| attempt.source == "search_combat")
-        })
 }
 
 fn primary_profile_attempt(
-    search_session: Option<&CombatSearchSessionReport>,
-) -> Option<&CombatSearchSessionReport> {
+    search_session: Option<&AtomicCombatSearchSessionReportV2>,
+) -> Option<&AtomicCombatSearchSessionReportV2> {
     search_session
 }
 
-fn primary_search_status(attempt: Option<&CombatSearchTraceSummary>) -> &'static str {
+fn primary_atomic_witness_status(
+    attempt: Option<&AtomicCombatSearchTraceSummaryV2>,
+) -> &'static str {
     match attempt.and_then(|attempt| attempt.execution_adjudication.as_ref()) {
         Some(CombatLineAdjudicationV1::Accepted {
             cleanliness: CombatLineCleanlinessV1::Clean,
@@ -132,18 +133,18 @@ fn primary_search_status(attempt: Option<&CombatSearchTraceSummary>) -> &'static
             .and_then(|attempt| attempt.best_win.as_ref())
             .is_some() =>
         {
-            "legacy_unknown"
+            "unadjudicated_witness"
         }
         None => "no_accepted_line",
     }
 }
 
-fn primary_search_telemetry(
-    attempt: Option<&CombatSearchTraceSummary>,
-    profile: Option<&CombatSearchSessionReport>,
-) -> PrimarySearchTelemetrySummary {
+fn primary_atomic_witness_telemetry(
+    attempt: Option<&AtomicCombatSearchTraceSummaryV2>,
+    profile: Option<&AtomicCombatSearchSessionReportV2>,
+) -> AtomicCombatSearchPrimaryTelemetryV2 {
     let total_us = attempt.map(|attempt| attempt.total_us).unwrap_or(0);
-    PrimarySearchTelemetrySummary {
+    AtomicCombatSearchPrimaryTelemetryV2 {
         elapsed_ms: attempt.map(|attempt| attempt.total_us / 1_000),
         deadline_hit: attempt.map(|attempt| attempt.deadline_hit),
         expanded_nodes: attempt.map(|attempt| attempt.nodes_expanded),
@@ -194,8 +195,10 @@ fn percent_of_total(part_us: u64, total_us: u64) -> Option<u64> {
     }
 }
 
-fn primary_line_summary(line: &CombatSearchTerminalLineSummary) -> PrimarySearchLineSummary {
-    PrimarySearchLineSummary {
+fn primary_line_summary(
+    line: &CombatSearchTerminalLineSummary,
+) -> AtomicCombatSearchLineEvidenceV2 {
+    AtomicCombatSearchLineEvidenceV2 {
         terminal: format!("{:?}", line.terminal),
         line_len: line.action_count,
         final_player_hp: line.final_hp,
@@ -219,7 +222,7 @@ mod tests {
     };
     use sts_simulator::sim::combat::CombatTerminal;
 
-    fn search_attempt_fixture() -> CombatSearchTraceSummary {
+    fn search_attempt_fixture() -> AtomicCombatSearchTraceSummaryV2 {
         let line = CombatSearchTerminalLineSummary {
             terminal: SearchTerminalLabel::Win,
             final_hp: 44,
@@ -230,8 +233,8 @@ mod tests {
             potions_discarded: 0,
             action_count: 32,
         };
-        CombatSearchTraceSummary {
-            source: "search_combat".to_string(),
+        AtomicCombatSearchTraceSummaryV2 {
+            source: "atomic_exact_v2".to_string(),
             lane: Some("primary".to_string()),
             profile_id: Some("primary".to_string()),
             combat_kind: "hallway".to_string(),
@@ -239,7 +242,7 @@ mod tests {
             complete_win_found: true,
             best_complete: Some(line.clone()),
             best_win: Some(line),
-            ..CombatSearchTraceSummary::default()
+            ..AtomicCombatSearchTraceSummaryV2::default()
         }
     }
 
@@ -265,21 +268,21 @@ mod tests {
     }
 
     #[test]
-    fn primary_search_distinguishes_execution_acceptance_from_legacy_raw_win() {
+    fn primary_atomic_witness_distinguishes_execution_acceptance_from_raw_witness() {
         let mut accepted = search_attempt_fixture();
         accepted.execution_adjudication = Some(dirty_accepted_adjudication());
-        let accepted_value = primary_search_outcome_value(&[accepted], None);
+        let accepted_value = primary_atomic_witness_value(&[accepted], None);
         assert_eq!(accepted_value["status"], "accepted_dirty_win");
         assert_eq!(
             accepted_value["execution_adjudication"]["observed_outcome"]["gained_curses"][0]["id"],
             "Parasite"
         );
 
-        let mut legacy = search_attempt_fixture();
-        legacy.execution_adjudication = None;
-        let legacy_value = primary_search_outcome_value(&[legacy], None);
-        assert_eq!(legacy_value["status"], "legacy_unknown");
-        assert!(legacy_value["accepted_line"].is_null());
+        let mut unadjudicated = search_attempt_fixture();
+        unadjudicated.execution_adjudication = None;
+        let unadjudicated_value = primary_atomic_witness_value(&[unadjudicated], None);
+        assert_eq!(unadjudicated_value["status"], "unadjudicated_witness");
+        assert!(unadjudicated_value["accepted_line"].is_null());
     }
 
     #[test]
@@ -288,16 +291,16 @@ mod tests {
         no_potion.lane = Some("no_potion_primary".to_string());
         no_potion.profile_id = Some("canonical_combat_no_potion_primary".to_string());
         no_potion.profile_allowed_potion_slots = Some(0);
-        no_potion.portfolio_selected = Some(false);
+        no_potion.atomic_witness_selected = Some(false);
 
         let mut rescue = search_attempt_fixture();
         rescue.lane = Some("improve_verified_win".to_string());
         rescue.profile_id = Some("canonical_combat_bounded_potion_rescue".to_string());
         rescue.profile_allowed_potion_slots = Some(1);
-        rescue.portfolio_selected = Some(true);
+        rescue.atomic_witness_selected = Some(true);
         rescue.execution_adjudication = Some(dirty_accepted_adjudication());
 
-        let value = primary_search_outcome_value(&[no_potion, rescue], None);
+        let value = primary_atomic_witness_value(&[no_potion, rescue], None);
 
         assert_eq!(value["status"], "accepted_dirty_win");
         assert_eq!(

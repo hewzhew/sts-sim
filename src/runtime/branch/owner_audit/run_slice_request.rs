@@ -35,20 +35,24 @@ pub(super) struct ContinueSliceRequest {
 impl ContinueSliceRequest {
     pub(super) fn prepare(self) -> Result<RunSliceRequest, String> {
         let started = Instant::now();
-        let run_capsule = RunCapsule::new(self.capsule_path.clone());
         let mut effective_args = self.args;
         let mut capsule_args;
         let mut generation_start = 0usize;
+        let mut resume_identity = None;
         let resume_frontier = self.resume.then(|| self.capsule_path.join("frontier.json"));
         let (mut frontier, next_branch_id) = if let Some(path) = resume_frontier.as_ref() {
             let checkpoint = frontier_checkpoint::load(path)?;
+            resume_identity = Some((
+                checkpoint.run_contract(),
+                checkpoint.source_identity().clone(),
+            ));
             let requested_slice_generations = self
                 .overrides
                 .generations
-                .unwrap_or(checkpoint.args.generations);
-            capsule_args = checkpoint.args;
+                .unwrap_or(checkpoint.runtime_args.generations);
+            capsule_args = checkpoint.runtime_args;
             self.overrides.apply_to(&mut capsule_args);
-            effective_args = checkpoint.args;
+            effective_args = checkpoint.runtime_args;
             self.overrides.apply_to(&mut effective_args);
             if effective_args.wall_ms.is_none() {
                 effective_args.wall_ms = self.args.wall_ms;
@@ -61,6 +65,11 @@ impl ContinueSliceRequest {
             self.overrides.apply_to(&mut effective_args);
             capsule_args = effective_args;
             branch_runtime::BranchRuntime::initial_frontier(effective_args, started)
+        };
+        let run_capsule = if let Some((contract, source_identity)) = resume_identity {
+            RunCapsule::resume(self.capsule_path.clone(), contract, &source_identity)?
+        } else {
+            RunCapsule::new(self.capsule_path.clone())
         };
         run_capsule.prepare_trajectory_frontier(capsule_args, generation_start, &mut frontier)?;
         let artifact_writes = run_capsule.write_running_manifest(capsule_args)?;
@@ -118,7 +127,7 @@ mod tests {
             boss_search_nodes: 1,
             boss_search_ms: 1,
             wall_ms: Some(5_000),
-            checkpoint_before_combat_portfolio: false,
+            checkpoint_before_atomic_combat_search_session: false,
             wall_capped_search_budget: false,
             wall_capped_boss_budget: false,
         }
@@ -150,35 +159,16 @@ mod tests {
         let capsule = std::env::temp_dir().join("branch_tiny_continue_slice_request_resume_budget");
         let _ = fs::remove_dir_all(&capsule);
         fs::create_dir_all(&capsule).unwrap();
-        let checkpoint = serde_json::json!({
-            "schema": "branch_tiny_frontier_checkpoint",
-            "args": {
-                "seed": 123,
-                "ascension": 0,
-                "objective": "first_victory",
-                "generations": 2,
-                "max_branches": 1,
-                "auto_ops": 64,
-                "search_nodes": 1,
-                "search_ms": 1,
-                "rescue_search_nodes": 1,
-                "rescue_search_ms": 1,
-                "boss_search_nodes": 1,
-                "boss_search_ms": 1,
-                "wall_ms": 5000
-            },
-            "generation": 2,
-            "next_branch_id": 3,
-            "frontier": []
-        });
-        fs::write(
-            capsule.join("frontier.json"),
-            serde_json::to_string_pretty(&checkpoint).unwrap(),
-        )
-        .unwrap();
+        let mut args = sample_args(123);
+        args.generations = 2;
+        frontier_checkpoint::save(&capsule.join("frontier.json"), args, 2, 3, &VecDeque::new())
+            .unwrap();
+        RunCapsule::new(capsule.clone())
+            .write_running_manifest(args)
+            .unwrap();
 
         let request = ContinueSliceRequest {
-            args: sample_args(123),
+            args,
             overrides: ArgsOverrides::default(),
             capsule_path: capsule.clone(),
             resume: true,
@@ -202,6 +192,42 @@ mod tests {
                 .unwrap();
         assert_eq!(manifest["run_contract"]["branching"]["generations"], 2);
 
+        let _ = fs::remove_dir_all(capsule);
+    }
+
+    #[test]
+    fn resume_rejects_mismatched_manifest_before_overwriting_it() {
+        let capsule =
+            std::env::temp_dir().join("branch_tiny_continue_slice_request_manifest_mismatch");
+        let _ = fs::remove_dir_all(&capsule);
+        fs::create_dir_all(&capsule).unwrap();
+        let args = sample_args(124);
+        frontier_checkpoint::save(&capsule.join("frontier.json"), args, 2, 3, &VecDeque::new())
+            .unwrap();
+        let run_capsule = RunCapsule::new(capsule.clone());
+        run_capsule.write_running_manifest(args).unwrap();
+        let manifest_path = capsule.join("manifest.json");
+        let mut manifest: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(&manifest_path).unwrap()).unwrap();
+        manifest["run_contract"]["game"]["seed"] = serde_json::json!(999);
+        let tampered = serde_json::to_string_pretty(&manifest).unwrap();
+        fs::write(&manifest_path, &tampered).unwrap();
+
+        let error = match (ContinueSliceRequest {
+            args,
+            overrides: ArgsOverrides::default(),
+            capsule_path: capsule.clone(),
+            resume: true,
+            human_output: false,
+        })
+        .prepare()
+        {
+            Ok(_) => panic!("mismatched capsule manifest unexpectedly resumed"),
+            Err(error) => error,
+        };
+
+        assert!(error.contains("capsule manifest identity mismatch"));
+        assert_eq!(fs::read_to_string(&manifest_path).unwrap(), tampered);
         let _ = fs::remove_dir_all(capsule);
     }
 }

@@ -16,7 +16,8 @@ pub(super) struct CombatOutcomeScore {
 
 impl CombatOutcomeScore {
     pub(super) fn from_node(node: &SearchNode) -> Self {
-        let persistent_run_value = super::external_payoff::persistent_run_value(&node.combat);
+        let persistent_run_value =
+            super::external_payoff::materialized_persistent_payoff_score_v1(&node.combat);
         Self {
             terminal_rank: terminal_rank(terminal_label(&node.engine, &node.combat)),
             run_hygiene: -super::external_payoff::external_burden_count(&node.combat),

@@ -135,13 +135,7 @@ pub(super) fn manifest_wall_ms(capsule: &Path) -> Result<Option<u64>, String> {
         .get("run_contract")
         .and_then(|contract| contract.get("slice"))
         .and_then(|slice| slice.get("slice_ms"))
-        .and_then(Value::as_u64)
-        .or_else(|| {
-            value
-                .get("args")
-                .and_then(|args| args.get("wall_ms"))
-                .and_then(Value::as_u64)
-        }))
+        .and_then(Value::as_u64))
 }
 
 fn read_json(path: &Path) -> Result<Value, String> {
@@ -173,8 +167,7 @@ mod tests {
             serde_json::json!({
                 "run_contract": {
                     "slice": { "slice_ms": 1234 }
-                },
-                "args": { "wall_ms": 9999 }
+                }
             }),
         );
 
@@ -184,15 +177,13 @@ mod tests {
     }
 
     #[test]
-    fn manifest_wall_ms_falls_back_to_legacy_args() {
+    fn manifest_without_typed_run_contract_has_no_wall_allowance() {
         let dir = write_manifest(
-            "branch_tiny_manifest_legacy_wall",
-            serde_json::json!({
-                "args": { "wall_ms": 4321 }
-            }),
+            "branch_tiny_manifest_missing_contract_wall",
+            serde_json::json!({"schema": "branch_tiny_run_capsule_v5"}),
         );
 
-        assert_eq!(manifest_wall_ms(&dir).unwrap(), Some(4321));
+        assert_eq!(manifest_wall_ms(&dir).unwrap(), None);
 
         let _ = fs::remove_dir_all(dir);
     }

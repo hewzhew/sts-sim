@@ -67,7 +67,7 @@ mod tests {
 
     fn trajectory(observed_hp: &[Option<i32>]) -> CombatAutomationTrajectoryRecordV1 {
         CombatAutomationTrajectoryRecordV1::new(
-            CombatAutomationTrajectorySource::SearchCombat,
+            CombatAutomationTrajectorySource::AtomicExactV2,
             observed_hp
                 .iter()
                 .enumerate()

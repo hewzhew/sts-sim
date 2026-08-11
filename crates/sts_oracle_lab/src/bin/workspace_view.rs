@@ -191,18 +191,27 @@ pub(super) fn combat_case(
     node: usize,
 ) -> Result<CombatCase, String> {
     let view = analysis.session.view_node(node)?;
-    let (search_nodes, search_ms) = if view.encounter.as_ref().is_some_and(|it| it.is_boss) {
-        (analysis.budget.boss_nodes, analysis.budget.boss_ms)
+    let (generation_work, wall_ms) = if view.encounter.as_ref().is_some_and(|it| it.is_boss) {
+        (
+            analysis.budget.boss_generation_work,
+            analysis.budget.boss_ms,
+        )
     } else if view.encounter.as_ref().is_some_and(|it| it.is_elite) {
-        (analysis.budget.elite_nodes, analysis.budget.elite_ms)
+        (
+            analysis.budget.elite_generation_work,
+            analysis.budget.elite_ms,
+        )
     } else {
-        (analysis.budget.hallway_nodes, analysis.budget.hallway_ms)
+        (
+            analysis.budget.hallway_generation_work,
+            analysis.budget.hallway_ms,
+        )
     };
     analysis.session.combat_case(
         node,
         analysis.seed,
         analysis.ascension,
-        search_nodes,
-        search_ms,
+        generation_work,
+        wall_ms,
     )
 }

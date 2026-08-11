@@ -27,6 +27,7 @@ pub(super) fn prepare() -> Result<RunStartup, String> {
         continue_capsule,
         event_owner_probe,
     ) = parse_args()?;
+    let resume_capsule_requested = resume_capsule_path.is_some();
     if let Some(continue_capsule) = continue_capsule {
         run_chain::run(args, overrides, continue_capsule)?;
         return Ok(RunStartup::Delegated);
@@ -45,11 +46,10 @@ pub(super) fn prepare() -> Result<RunStartup, String> {
         event_owner_probe::run(args, probe)?;
         return Ok(RunStartup::Delegated);
     }
-    let run_capsule = run_capsule_path.map(RunCapsule::new);
     if combat_gap_case_dir.is_none() {
-        combat_gap_case_dir = run_capsule
+        combat_gap_case_dir = run_capsule_path
             .as_ref()
-            .map(RunCapsule::combat_cases_dir)
+            .map(|path| path.join("combat_cases"))
             .or_else(|| {
                 default_combat_gap_case_dir(
                     trace_path.as_ref(),
@@ -61,13 +61,21 @@ pub(super) fn prepare() -> Result<RunStartup, String> {
     let started = Instant::now();
     let mut generation_start = 0usize;
     let mut capsule_args;
+    let mut resume_capsule_identity = None;
     let (mut frontier, next_branch_id) = if let Some(path) = resume_frontier.as_ref() {
         let (checkpoint, frontier, next_branch_id) = load_resume_frontier(path)?;
-        let requested_slice_generations =
-            overrides.generations.unwrap_or(checkpoint.args.generations);
-        capsule_args = checkpoint.args;
+        if resume_capsule_requested {
+            resume_capsule_identity = Some((
+                checkpoint.run_contract(),
+                checkpoint.source_identity().clone(),
+            ));
+        }
+        let requested_slice_generations = overrides
+            .generations
+            .unwrap_or(checkpoint.runtime_args.generations);
+        capsule_args = checkpoint.runtime_args;
         overrides.apply_to(&mut capsule_args);
-        args = checkpoint.args;
+        args = checkpoint.runtime_args;
         overrides.apply_to(&mut args);
         generation_start = checkpoint.generation;
         args.generations = generation_start.saturating_add(requested_slice_generations);
@@ -79,6 +87,13 @@ pub(super) fn prepare() -> Result<RunStartup, String> {
         overrides.apply_to(&mut args);
         capsule_args = args;
         branch_runtime::BranchRuntime::initial_frontier(args, started)
+    };
+    let run_capsule = match (run_capsule_path, resume_capsule_identity) {
+        (Some(path), Some((contract, source_identity))) => {
+            Some(RunCapsule::resume(path, contract, &source_identity)?)
+        }
+        (Some(path), None) => Some(RunCapsule::new(path)),
+        (None, _) => None,
     };
     let mut artifact_writes = ArtifactWriteSummary::default();
     if let Some(capsule) = run_capsule.as_ref() {
@@ -177,14 +192,14 @@ mod tests {
     }
 
     #[test]
-    fn legacy_frontier_without_manifest_still_resumes() {
+    fn current_standalone_frontier_without_manifest_resumes_from_embedded_identity() {
         let args = crate::runtime::branch::default_branch_args(20260713006);
         let (frontier, next_branch_id) =
             super::super::branch_runtime::BranchRuntime::initial_frontier(
                 args,
                 std::time::Instant::now(),
             );
-        let path = unique_root().join("legacy_frontier.json");
+        let path = unique_root().join("standalone_frontier.json");
         frontier_checkpoint::save(&path, args, 7, next_branch_id, &frontier).unwrap();
 
         let (checkpoint, restored, restored_next_id) = load_resume_frontier(&path).unwrap();
@@ -250,7 +265,7 @@ mod tests {
         );
         let restored_state_before_override = restored.session.run_state.clone();
         let restored_engine_before_override = restored.session.engine_state.clone();
-        let mut overridden_args = checkpoint.args;
+        let mut overridden_args = checkpoint.runtime_args;
         overridden_args.max_branches = 1;
         assert_eq!(overridden_args.max_branches, 1);
         assert_eq!(restored.session.run_state, restored_state_before_override);

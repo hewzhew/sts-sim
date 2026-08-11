@@ -140,8 +140,8 @@ pub(super) fn export_descendant_combat_case(
         actions.len()
     );
     exported.core.gap.reason = reason.to_string();
-    exported.combat_search_attempts.clear();
-    exported.failed_search = None;
+    exported.atomic_combat_search_attempts.clear();
+    exported.failed_atomic_combat_search = None;
     if let Some(parent) = output.parent() {
         std::fs::create_dir_all(parent).map_err(|error| error.to_string())?;
     }

@@ -963,7 +963,7 @@ slice_ms        // current wall_ms semantics renamed at the contract boundary
 Runtime feature flags:
 
 ```text
-checkpoint_before_combat_portfolio
+checkpoint_before_atomic_combat_search_session
 ```
 
 Per-slice derived budget facts:
@@ -999,7 +999,7 @@ RunContract:
   objective: RunObjective
   branching: BranchingContract
   automation: AutomationContract
-  combat_search: CombatSearchContract
+  atomic_combat_search_budget: AtomicCombatSearchBudgetContractV2
   slice: SliceContract
   features: RuntimeFeatureContract
 
@@ -1014,7 +1014,7 @@ BranchingContract:
 AutomationContract:
   auto_ops
 
-CombatSearchContract:
+AtomicCombatSearchBudgetContractV2:
   primary_nodes
   primary_ms
   rescue_nodes
@@ -1026,7 +1026,7 @@ SliceContract:
   slice_ms: Option<u64>
 
 RuntimeFeatureContract:
-  checkpoint_before_combat_portfolio
+  checkpoint_before_atomic_combat_search_session
 ```
 
 The nested shape makes identity and future config diffs readable. It also

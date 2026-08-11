@@ -31,7 +31,7 @@ impl<'a> RunCutpointRecorder<'a> {
         }
     }
 
-    pub(super) fn before_combat_search(
+    pub(super) fn before_atomic_combat_search(
         &mut self,
         session: &RunControlSession,
         context: &BoundedRunStepContextV1,
@@ -62,7 +62,10 @@ impl<'a> RunCutpointRecorder<'a> {
         Ok(())
     }
 
-    pub(super) fn after_combat_search(&mut self, status: &BranchStatus) -> Result<(), String> {
+    pub(super) fn after_atomic_combat_search(
+        &mut self,
+        status: &BranchStatus,
+    ) -> Result<(), String> {
         let Some(handle) = self.active_pre_combat.take() else {
             return Ok(());
         };
@@ -124,12 +127,12 @@ mod tests {
         let expected_gold = branch.session.run_state.gold;
         let mut recorder = RunCutpointRecorder::new(Some(&store), args, 17, branch.id + 1, &branch);
         recorder
-            .before_combat_search(&branch.session, &empty_context())
+            .before_atomic_combat_search(&branch.session, &empty_context())
             .unwrap();
         branch.session.run_state.gold += 99;
 
         recorder
-            .after_combat_search(&BranchStatus::CombatGap {
+            .after_atomic_combat_search(&BranchStatus::CombatGap {
                 boundary: "Combat".to_string(),
                 reason: "no accepted win".to_string(),
             })
@@ -153,11 +156,11 @@ mod tests {
         let (store, args, branch) = active_combat_branch();
         let mut recorder = RunCutpointRecorder::new(Some(&store), args, 17, branch.id + 1, &branch);
         recorder
-            .before_combat_search(&branch.session, &empty_context())
+            .before_atomic_combat_search(&branch.session, &empty_context())
             .unwrap();
 
         recorder
-            .after_combat_search(&BranchStatus::Running {
+            .after_atomic_combat_search(&BranchStatus::Running {
                 boundary: "Card Reward".to_string(),
                 owner: Owner::CardReward,
             })

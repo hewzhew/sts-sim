@@ -15,6 +15,7 @@ use crate::state::rewards::RewardState;
 
 use crate::eval::combat_case::{
     CombatCase, CombatCaseGap, CombatCaseRngSummary, CombatCaseRunSummary, CombatCaseSource,
+    CombatCaseWitnessBudgetV1,
 };
 use crate::eval::combat_case_context::capture_oracle_analysis_combat_case_production_context_v1;
 
@@ -24,15 +25,15 @@ use crate::eval::run_control::{
     seed_oracle_run_explorer_from_checkpoint_v1, strategic_combat_survival_hp_loss_limit_v1,
     CombatAutomationMonsterStateV1, CombatAutomationTrajectoryRecordV1, ExactCampfirePolicyAuditV1,
     ExactCardRewardPolicyAuditV1, ExactRoutePolicyAuditV1, ExactShopPolicyAuditV1,
-    LazyOracleRunDecisionV1, OracleCombatLocalCandidateDispositionV1,
-    OracleCombatSearchResumeKindV1, OracleResidentCombatJobEvidenceV1, OracleResidentCombatJobV1,
-    OracleRunBoundaryV1, OracleRunBranchV1, OracleRunCombatBudgetsV1,
-    OracleRunCombatEvidenceKindV1, OracleRunCombatWorkCheckpointV1,
+    LazyOracleRunDecisionV1, OracleCombatSearchResumeKindV1, OracleCombatWitnessAdvanceV1,
+    OracleCombatWitnessCandidateDispositionV1, OracleCombatWitnessCheckpointV1,
+    OracleCombatWitnessQuantumV1, OracleResidentCombatWitnessEvidenceV1,
+    OracleResidentCombatWitnessJobV1, OracleRunBoundaryV1, OracleRunBranchV1,
+    OracleRunCombatEvidenceKindV1, OracleRunCombatWitnessBudgetsV1,
     OracleRunDecisionAnnotationFnV1, OracleRunExplorerCheckpointV1, OracleRunExplorerV1,
-    OracleRunReplayStepV1, OracleRunWorkKindV1, RunControlCombatSearchQuantum,
-    RunControlCombatWorkAdvanceV1, RunControlHpLossLimit, RunControlSessionCheckpointV1,
-    RunControlTraceAnnotationV1, RunDecisionAction, RunPolicyCandidateV1, RunPolicyPriorFnV1,
-    RunProgressJournalV1, RunProgressStepV1,
+    OracleRunReplayStepV1, OracleRunWorkKindV1, RunControlHpLossLimit,
+    RunControlSessionCheckpointV1, RunControlTraceAnnotationV1, RunDecisionAction,
+    RunPolicyCandidateV1, RunPolicyPriorFnV1, RunProgressJournalV1, RunProgressStepV1,
 };
 
 #[path = "oracle_analysis_session/card_reward_path.rs"]
@@ -160,6 +161,10 @@ pub enum OracleAnalysisCombatStageExitV1 {
     SetupOrMechanicsError,
 }
 
+fn turn_graph_portfolio_engine_v1() -> crate::ai::combat_witness_contract::CombatWitnessEngineV1 {
+    crate::ai::combat_witness_contract::CombatWitnessEngineV1::TurnGraphPortfolioV1
+}
+
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct OracleAnalysisCombatGuideServiceBiasV1 {
@@ -170,6 +175,8 @@ pub struct OracleAnalysisCombatGuideServiceBiasV1 {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct OracleAnalysisCombatStageTraceV1 {
+    #[serde(default = "turn_graph_portfolio_engine_v1")]
+    pub witness_engine: crate::ai::combat_witness_contract::CombatWitnessEngineV1,
     pub stage: u8,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub guide_service_bias: Option<OracleAnalysisCombatGuideServiceBiasV1>,
@@ -201,7 +208,7 @@ pub struct OracleAnalysisCombatStageTraceV1 {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub local_candidate_satisfies_satisfaction: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub local_candidate_disposition: Option<OracleCombatLocalCandidateDispositionV1>,
+    pub local_candidate_disposition: Option<OracleCombatWitnessCandidateDispositionV1>,
     pub incumbent_discovery_source: Option<sts_combat_planner::OracleCombatWitnessDiscoverySource>,
     pub incumbent_final_hp: Option<i32>,
     pub incumbent_action_count: Option<usize>,
@@ -209,7 +216,7 @@ pub struct OracleAnalysisCombatStageTraceV1 {
     pub incumbent_potion_slots: Option<u64>,
     pub incumbent_satisfies_satisfaction: Option<bool>,
     pub incumbent_ends_quality_refinement: Option<bool>,
-    pub remaining_nodes: usize,
+    pub remaining_generation_work: usize,
     pub remaining_wall_ms: Option<u64>,
     pub last_status: Option<String>,
     pub exit: OracleAnalysisCombatStageExitV1,
@@ -223,6 +230,7 @@ pub struct OracleAnalysisCombatStageTraceV1 {
 /// discrepancy fields describe the live frontiers retained by this process.
 /// This report observes budget use; it does not grant additional search work.
 pub struct OracleAnalysisCombatProgressV1 {
+    pub witness_engine: crate::ai::combat_witness_contract::CombatWitnessEngineV1,
     /// Exact combat identity shared by every stage entry below.
     pub root_exact_state_hash: String,
     /// Completed stages followed by the current/final stage snapshot.
@@ -271,7 +279,7 @@ pub struct OracleAnalysisCombatProgressV1 {
     pub local_candidate_potions_used: Option<u32>,
     pub local_candidate_potion_slots: Option<u64>,
     pub local_candidate_satisfies_satisfaction: Option<bool>,
-    pub local_candidate_disposition: Option<OracleCombatLocalCandidateDispositionV1>,
+    pub local_candidate_disposition: Option<OracleCombatWitnessCandidateDispositionV1>,
     pub incumbent_discovery_source: Option<sts_combat_planner::OracleCombatWitnessDiscoverySource>,
     pub incumbent_final_hp: Option<i32>,
     pub incumbent_hp_loss: Option<i32>,
@@ -281,7 +289,7 @@ pub struct OracleAnalysisCombatProgressV1 {
     pub incumbent_satisfies_satisfaction: Option<bool>,
     pub incumbent_ends_quality_refinement: Option<bool>,
     pub quantum_count: usize,
-    pub remaining_nodes: usize,
+    pub remaining_generation_work: usize,
     pub remaining_wall_ms: Option<u64>,
     pub resume_kind: OracleCombatSearchResumeKindV1,
     pub restart_count: usize,
@@ -436,7 +444,7 @@ pub struct OracleAnalysisAdvanceReportV1 {
 #[serde(deny_unknown_fields)]
 pub struct OracleAnalysisAdvanceRequestV1 {
     pub max_quanta: usize,
-    pub quantum_nodes: usize,
+    pub quantum_generation_work: usize,
     pub quantum_ms: Option<u64>,
     pub wall_ms: Option<u64>,
     /// Continue past an insufficient verified witness until the configured
@@ -449,7 +457,7 @@ impl Default for OracleAnalysisAdvanceRequestV1 {
     fn default() -> Self {
         Self {
             max_quanta: 1,
-            quantum_nodes: 50_000,
+            quantum_generation_work: 50_000,
             quantum_ms: Some(1_000),
             wall_ms: None,
             improve_incumbent: false,
@@ -462,7 +470,7 @@ pub struct OracleAnalysisCombatProbeRequestV1 {
     /// Maximum additional portfolio generation work charged by this call.
     pub generation_work: usize,
     /// Preemption granularity used to rotate the current stage's portfolio.
-    pub quantum_nodes: usize,
+    pub quantum_generation_work: usize,
     /// Total wall deadline for this probe.
     pub wall_ms: u64,
 }
@@ -471,7 +479,7 @@ impl Default for OracleAnalysisCombatProbeRequestV1 {
     fn default() -> Self {
         Self {
             generation_work: 4_096,
-            quantum_nodes: 256,
+            quantum_generation_work: 256,
             wall_ms: 1_000,
         }
     }
@@ -507,7 +515,7 @@ pub struct OracleAnalysisCombatJobCheckpointV1 {
     pub stage: u8,
     #[serde(default)]
     pub completed_stage_trace: Vec<OracleAnalysisCombatStageTraceV1>,
-    pub work: OracleRunCombatWorkCheckpointV1,
+    pub work: OracleCombatWitnessCheckpointV1,
 }
 
 const fn default_oracle_analysis_combat_stage() -> u8 {
@@ -541,7 +549,7 @@ pub struct OracleAnalysisSessionV1 {
     edges: Vec<OracleAnalysisEdgeV1>,
     combat_jobs: BTreeMap<usize, OracleAnalysisCombatJobV1>,
     combat_scratch: Option<OracleAnalysisCombatLineLabV1>,
-    combat_budgets: OracleRunCombatBudgetsV1,
+    combat_budgets: OracleRunCombatWitnessBudgetsV1,
     decision_prior: Option<RunPolicyPriorFnV1>,
     decision_annotation: Option<OracleRunDecisionAnnotationFnV1>,
 }
@@ -549,14 +557,14 @@ pub struct OracleAnalysisSessionV1 {
 struct OracleAnalysisCombatJobV1 {
     stage: u8,
     completed_stage_trace: Vec<OracleAnalysisCombatStageTraceV1>,
-    work: OracleResidentCombatJobV1,
+    work: OracleResidentCombatWitnessJobV1,
 }
 
 impl OracleAnalysisSessionV1 {
     pub fn from_explorer(
         mut explorer: OracleRunExplorerV1,
         preferred_cursor_node_id: Option<usize>,
-        combat_budgets: OracleRunCombatBudgetsV1,
+        combat_budgets: OracleRunCombatWitnessBudgetsV1,
         decision_prior: Option<RunPolicyPriorFnV1>,
         decision_annotation: Option<OracleRunDecisionAnnotationFnV1>,
     ) -> Result<Self, String> {
@@ -620,7 +628,7 @@ impl OracleAnalysisSessionV1 {
 
     pub fn restore(
         checkpoint: OracleAnalysisSessionCheckpointV1,
-        combat_budgets: OracleRunCombatBudgetsV1,
+        combat_budgets: OracleRunCombatWitnessBudgetsV1,
         decision_prior: Option<RunPolicyPriorFnV1>,
         decision_annotation: Option<OracleRunDecisionAnnotationFnV1>,
     ) -> Result<Self, String> {
@@ -645,7 +653,7 @@ impl OracleAnalysisSessionV1 {
                 })?;
             let options =
                 combat_budgets.for_session_stage_restore(&branch.session, saved.stage, &saved.work);
-            let work = OracleResidentCombatJobV1::restore(
+            let work = OracleResidentCombatWitnessJobV1::restore(
                 &branch.session,
                 options,
                 saved.work,
@@ -928,8 +936,8 @@ impl OracleAnalysisSessionV1 {
         node_id: usize,
         seed: u64,
         ascension: u8,
-        search_nodes: usize,
-        search_ms: u64,
+        generation_work: usize,
+        wall_ms: u64,
     ) -> Result<CombatCase, String> {
         let branch = self.require_branch(node_id)?;
         let position: CombatPosition = branch.session.current_active_combat_position()?;
@@ -953,10 +961,10 @@ impl OracleAnalysisSessionV1 {
                     branch.session.run_state.act_num, branch.session.run_state.floor_num
                 ),
                 reason: "oracle_analysis_export".to_string(),
-                search_nodes,
-                search_ms,
-                rescue_search_nodes: 0,
-                rescue_search_ms: 0,
+                witness_budget: CombatCaseWitnessBudgetV1::TurnGraphPortfolioV1 {
+                    generation_work,
+                    wall_ms,
+                },
             },
             CombatCaseRunSummary {
                 act: branch.session.run_state.act_num,
@@ -1324,7 +1332,7 @@ impl OracleAnalysisSessionV1 {
         &mut self,
         request: OracleAnalysisAdvanceRequestV1,
     ) -> Result<OracleAnalysisAdvanceReportV1, String> {
-        if request.max_quanta == 0 || request.quantum_nodes == 0 {
+        if request.max_quanta == 0 || request.quantum_generation_work == 0 {
             return Err("oracle analysis advance requires positive quantum budgets".to_string());
         }
         let source_node_id = self.cursor_node_id;
@@ -1335,7 +1343,9 @@ impl OracleAnalysisSessionV1 {
                 branch.boundary
             ));
         }
-        let requested_nodes = request.quantum_nodes.saturating_mul(request.max_quanta);
+        let requested_nodes = request
+            .quantum_generation_work
+            .saturating_mul(request.max_quanta);
         let requested_wall_ms = request.wall_ms.or_else(|| {
             request.quantum_ms.map(|quantum_ms| {
                 quantum_ms.saturating_mul(u64::try_from(request.max_quanta).unwrap_or(u64::MAX))
@@ -1347,7 +1357,7 @@ impl OracleAnalysisSessionV1 {
         let has_resident_search = self.combat_jobs.contains_key(&source_node_id);
         if !has_resident_search {
             let stage = 0;
-            let work = OracleResidentCombatJobV1::new(
+            let work = OracleResidentCombatWitnessJobV1::new(
                 &branch.session,
                 self.combat_budgets
                     .for_session_stage(&branch.session, stage),
@@ -1383,9 +1393,9 @@ impl OracleAnalysisSessionV1 {
         let deadline = request
             .wall_ms
             .and_then(|wall_ms| started.checked_add(Duration::from_millis(wall_ms)));
-        let quantum = RunControlCombatSearchQuantum {
+        let quantum = OracleCombatWitnessQuantumV1 {
             label: "oracle_analysis_session",
-            additional_nodes: request.quantum_nodes,
+            additional_generation_work: request.quantum_generation_work,
             soft_wall_ms: request.quantum_ms,
         };
         let mut quanta_served = 0usize;
@@ -1415,18 +1425,18 @@ impl OracleAnalysisSessionV1 {
                 job.work.advance(&quantum, deadline)
             };
             match advance {
-                RunControlCombatWorkAdvanceV1::Pending => {
+                OracleCombatWitnessAdvanceV1::Pending => {
                     quanta_served = quanta_served.saturating_add(1);
                 }
-                RunControlCombatWorkAdvanceV1::GlobalDeadlineReached => break,
-                RunControlCombatWorkAdvanceV1::ReadyToFinish
-                | RunControlCombatWorkAdvanceV1::AllowanceExhausted => {
+                OracleCombatWitnessAdvanceV1::GlobalDeadlineReached => break,
+                OracleCombatWitnessAdvanceV1::ReadyToFinish
+                | OracleCombatWitnessAdvanceV1::AllowanceExhausted => {
                     quanta_served = quanta_served.saturating_add(1);
                     let stage_exit = match advance {
-                        RunControlCombatWorkAdvanceV1::ReadyToFinish => {
+                        OracleCombatWitnessAdvanceV1::ReadyToFinish => {
                             OracleAnalysisCombatStageExitV1::PromotedAfterReadyToFinish
                         }
-                        RunControlCombatWorkAdvanceV1::AllowanceExhausted => {
+                        OracleCombatWitnessAdvanceV1::AllowanceExhausted => {
                             OracleAnalysisCombatStageExitV1::PromotedAfterAllowanceExhausted
                         }
                         _ => unreachable!("matched terminal staged advance"),
@@ -1445,7 +1455,7 @@ impl OracleAnalysisSessionV1 {
                 break;
             }
         }
-        if terminal_advance == Some(RunControlCombatWorkAdvanceV1::AllowanceExhausted) {
+        if terminal_advance == Some(OracleCombatWitnessAdvanceV1::AllowanceExhausted) {
             return Ok(OracleAnalysisAdvanceReportV1 {
                 source_node_id,
                 status: OracleAnalysisAdvanceStatusV1::BudgetUnknown,
@@ -1457,7 +1467,7 @@ impl OracleAnalysisSessionV1 {
                 ),
             });
         }
-        if terminal_advance != Some(RunControlCombatWorkAdvanceV1::ReadyToFinish) {
+        if terminal_advance != Some(OracleCombatWitnessAdvanceV1::ReadyToFinish) {
             return Ok(OracleAnalysisAdvanceReportV1 {
                 source_node_id,
                 status: OracleAnalysisAdvanceStatusV1::SearchPending,
@@ -1549,7 +1559,10 @@ impl OracleAnalysisSessionV1 {
         &mut self,
         request: OracleAnalysisCombatProbeRequestV1,
     ) -> Result<OracleAnalysisCombatProbeReportV1, String> {
-        if request.generation_work == 0 || request.quantum_nodes == 0 || request.wall_ms == 0 {
+        if request.generation_work == 0
+            || request.quantum_generation_work == 0
+            || request.wall_ms == 0
+        {
             return Err(
                 "oracle analysis combat probe requires positive work, quantum, and wall budgets"
                     .to_string(),
@@ -1565,7 +1578,7 @@ impl OracleAnalysisSessionV1 {
         }
         if !self.combat_jobs.contains_key(&source_node_id) {
             let stage = 0;
-            let work = OracleResidentCombatJobV1::new(
+            let work = OracleResidentCombatWitnessJobV1::new(
                 &branch.session,
                 self.combat_budgets
                     .for_session_stage(&branch.session, stage),
@@ -1613,9 +1626,9 @@ impl OracleAnalysisSessionV1 {
             }
             let remaining =
                 usize::try_from(requested_work.saturating_sub(consumed)).unwrap_or(usize::MAX);
-            let quantum = RunControlCombatSearchQuantum {
+            let quantum = OracleCombatWitnessQuantumV1 {
                 label: "oracle_analysis_current_stage_probe",
-                additional_nodes: request.quantum_nodes.min(remaining),
+                additional_generation_work: request.quantum_generation_work.min(remaining),
                 soft_wall_ms: None,
             };
             let before_quantum = job.work.current_search_generation_work();
@@ -1624,7 +1637,7 @@ impl OracleAnalysisSessionV1 {
                 .advance_current_stage_probe(&quantum, Some(deadline));
             let after_quantum = job.work.current_search_generation_work();
             let quantum_consumed = after_quantum.saturating_sub(before_quantum);
-            if advance != RunControlCombatWorkAdvanceV1::GlobalDeadlineReached {
+            if advance != OracleCombatWitnessAdvanceV1::GlobalDeadlineReached {
                 quanta_served = quanta_served.saturating_add(1);
             }
             let total_consumed = after_quantum.saturating_sub(before_work);
@@ -1632,14 +1645,14 @@ impl OracleAnalysisSessionV1 {
                 break OracleAnalysisCombatProbeStopV1::WorkBudgetReached;
             }
             match advance {
-                RunControlCombatWorkAdvanceV1::GlobalDeadlineReached => {
+                OracleCombatWitnessAdvanceV1::GlobalDeadlineReached => {
                     break OracleAnalysisCombatProbeStopV1::WallReached;
                 }
-                RunControlCombatWorkAdvanceV1::ReadyToFinish
-                | RunControlCombatWorkAdvanceV1::AllowanceExhausted => {
+                OracleCombatWitnessAdvanceV1::ReadyToFinish
+                | OracleCombatWitnessAdvanceV1::AllowanceExhausted => {
                     break OracleAnalysisCombatProbeStopV1::StageExhausted;
                 }
-                RunControlCombatWorkAdvanceV1::Pending => {
+                OracleCombatWitnessAdvanceV1::Pending => {
                     if quantum_consumed == 0 {
                         // One member can perform bookkeeping without charging
                         // generation work. Require a full two-member portfolio
@@ -1770,7 +1783,7 @@ impl OracleAnalysisSessionV1 {
         // Analyst-supplied exact actions are prepared in an isolated work
         // object. A failed replay or downstream decision supply therefore
         // leaves any resident tactical frontier byte-for-byte untouched.
-        let mut work = OracleResidentCombatJobV1::for_exact_actions(
+        let mut work = OracleResidentCombatWitnessJobV1::for_exact_actions(
             &branch.session,
             self.combat_budgets.for_session(&branch.session),
             self.combat_budgets.guidance_bundle.as_deref(),
@@ -1830,7 +1843,7 @@ impl OracleAnalysisSessionV1 {
                 ));
             }
             let stage = 0;
-            let work = OracleResidentCombatJobV1::restart(
+            let work = OracleResidentCombatWitnessJobV1::restart(
                 &branch.session,
                 self.combat_budgets
                     .for_session_stage(&branch.session, stage),
@@ -1886,7 +1899,7 @@ impl OracleAnalysisSessionV1 {
                 next_stage,
                 &prior_work,
             );
-            OracleResidentCombatJobV1::promote(
+            OracleResidentCombatWitnessJobV1::promote(
                 &branch.session,
                 options,
                 prior_work,
@@ -1908,7 +1921,7 @@ impl OracleAnalysisSessionV1 {
     fn materialize_combat_work(
         &mut self,
         source_node_id: usize,
-        work: &OracleResidentCombatJobV1,
+        work: &OracleResidentCombatWitnessJobV1,
     ) -> Result<Option<usize>, String> {
         let committed = self
             .explorer
@@ -2143,10 +2156,11 @@ fn combat_stage_trace_view(
 
 fn combat_stage_trace_view_from_progress(
     job: &OracleAnalysisCombatJobV1,
-    progress: &OracleResidentCombatJobEvidenceV1,
+    progress: &OracleResidentCombatWitnessEvidenceV1,
     exit: OracleAnalysisCombatStageExitV1,
 ) -> OracleAnalysisCombatStageTraceV1 {
     OracleAnalysisCombatStageTraceV1 {
+        witness_engine: progress.witness_engine,
         stage: job.stage,
         guide_service_bias: progress.guide_service_bias.map(|bias| {
             OracleAnalysisCombatGuideServiceBiasV1 {
@@ -2180,7 +2194,7 @@ fn combat_stage_trace_view_from_progress(
         incumbent_potion_slots: progress.incumbent_potion_slots,
         incumbent_satisfies_satisfaction: progress.incumbent_satisfies_satisfaction,
         incumbent_ends_quality_refinement: progress.incumbent_ends_quality_refinement,
-        remaining_nodes: job.work.remaining_nodes(),
+        remaining_generation_work: job.work.remaining_generation_work(),
         remaining_wall_ms: job.work.remaining_wall_ms(),
         last_status: progress.last_status.clone(),
         exit,
@@ -2192,12 +2206,13 @@ fn combat_progress_view_with_exit(
     stage_exit: OracleAnalysisCombatStageExitV1,
 ) -> OracleAnalysisCombatProgressV1 {
     let work = &job.work;
-    let progress: OracleResidentCombatJobEvidenceV1 = work.evidence();
+    let progress: OracleResidentCombatWitnessEvidenceV1 = work.evidence();
     let mut stage_trace = job.completed_stage_trace.clone();
     stage_trace.push(combat_stage_trace_view_from_progress(
         job, &progress, stage_exit,
     ));
     OracleAnalysisCombatProgressV1 {
+        witness_engine: progress.witness_engine,
         root_exact_state_hash: progress.root_exact_state_hash,
         stage_trace,
         search_stage: job.stage,
@@ -2243,7 +2258,7 @@ fn combat_progress_view_with_exit(
         incumbent_satisfies_satisfaction: progress.incumbent_satisfies_satisfaction,
         incumbent_ends_quality_refinement: progress.incumbent_ends_quality_refinement,
         quantum_count: work.quantum_count(),
-        remaining_nodes: work.remaining_nodes(),
+        remaining_generation_work: work.remaining_generation_work(),
         remaining_wall_ms: work.remaining_wall_ms(),
         resume_kind: if work.restart_count() > 0 {
             OracleCombatSearchResumeKindV1::StateReplayExactSearchRestarted

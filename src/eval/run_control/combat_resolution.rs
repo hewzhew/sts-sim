@@ -79,6 +79,8 @@ impl RunCombatResolutionV1 {
                 if !matches!(
                     trajectory.source,
                     CombatAutomationTrajectorySource::SearchCombat
+                        | CombatAutomationTrajectorySource::AtomicExactV2
+                        | CombatAutomationTrajectorySource::TurnGraphPortfolioV1
                         | CombatAutomationTrajectorySource::OracleExactActions
                         | CombatAutomationTrajectorySource::CompleteLineSolver
                         | CombatAutomationTrajectorySource::TurnPlanRescue

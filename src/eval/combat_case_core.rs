@@ -8,8 +8,7 @@ use crate::runtime::combat::{CombatCard, CombatState};
 use crate::runtime::rng::RngPool;
 use crate::sim::combat::CombatPosition;
 
-pub const COMBAT_CASE_SCHEMA: &str = "combat_case";
-pub const LEGACY_COMBAT_GAP_CASE_SCHEMA: &str = "combat_gap_case";
+pub const COMBAT_CASE_SCHEMA: &str = "combat_case_v1";
 
 /// Production-independent, exact combat-case payload.
 ///
@@ -40,12 +39,23 @@ pub struct CombatCaseSource {
 pub struct CombatCaseGap {
     pub boundary: String,
     pub reason: String,
-    pub search_nodes: usize,
-    pub search_ms: u64,
-    #[serde(default)]
-    pub rescue_search_nodes: usize,
-    #[serde(default)]
-    pub rescue_search_ms: u64,
+    pub witness_budget: CombatCaseWitnessBudgetV1,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case", tag = "witness_engine")]
+pub enum CombatCaseWitnessBudgetV1 {
+    NotRun,
+    AtomicExactV2 {
+        primary_nodes: usize,
+        primary_wall_ms: u64,
+        rescue_nodes: usize,
+        rescue_wall_ms: u64,
+    },
+    TurnGraphPortfolioV1 {
+        generation_work: usize,
+        wall_ms: u64,
+    },
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -120,7 +130,7 @@ impl CombatCaseCoreV1 {
     }
 
     pub fn validate_schema(&self) -> Result<(), String> {
-        if self.schema != COMBAT_CASE_SCHEMA && self.schema != LEGACY_COMBAT_GAP_CASE_SCHEMA {
+        if self.schema != COMBAT_CASE_SCHEMA {
             return Err(format!("expected combat case, got {}", self.schema));
         }
         Ok(())

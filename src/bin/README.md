@@ -19,7 +19,7 @@ file only records binary ownership and boundaries.
 | `branch_tiny` | Lightweight owner-audit runner with run capsules, frontier continuation, seed-panel diagnostics, and combat-case capture. |
 | `branch_panel` | Rust seed-panel scheduler for smoke/drain runs over multiple `branch_tiny` capsules. |
 | `combat_case_review` | Review ladder for saved `CombatCase` artifacts from branch-tiny combat gaps; CLI owns IO, `combat_case_review/review_pipeline.rs` owns probe orchestration. |
-| `combat_search_v2_driver` | Thin compatibility adapter for `sts_combat_search_driver`; routine use goes through its lightweight `combat_search_v2` frontend and dedicated worker. |
+| `combat_search_v2_driver` | Thin compatibility adapter for the fixed-root `AtomicExactV2` driver; routine use goes through its lightweight frontend and dedicated worker, not the resident oracle portfolio. |
 | `rl_dataset_export` | Offline decision-sample export for imitation/RL experiments, including typed planner capture datasets and coverage reports from `SessionTraceV1`; exported behavior is not truth. |
 | `oracle_run` | Bounded exact run explorer and continuation adapter over the runtime-owned oracle-run API. |
 

@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::eval::combat_guidance_bundle::CombatGuidanceBundleV1;
 
-use super::RunControlSearchCombatOptions;
+use super::OracleCombatWitnessOptionsV1;
 
 /// Immutable owner input for selecting bounded combat-search lanes.
 ///
@@ -12,14 +12,14 @@ use super::RunControlSearchCombatOptions;
 /// artifacts may capture this small data contract without depending on the
 /// explorer's private queues or combat-work state.
 #[derive(Clone, Debug)]
-pub struct OracleRunCombatBudgetsV1 {
-    pub hallway: RunControlSearchCombatOptions,
-    pub elite: RunControlSearchCombatOptions,
-    pub boss: RunControlSearchCombatOptions,
+pub struct OracleRunCombatWitnessBudgetsV1 {
+    pub hallway: OracleCombatWitnessOptionsV1,
+    pub elite: OracleCombatWitnessOptionsV1,
+    pub boss: OracleCombatWitnessOptionsV1,
     /// Determines whether each configured search satisfaction is used
     /// literally or whether non-boss combat derives the shared strategic
     /// quality target from the exact run state.
-    pub quality_policy: OracleRunCombatQualityPolicyV1,
+    pub quality_policy: OracleRunCombatWitnessQualityPolicyV1,
     /// A value greater than one enables a two-fidelity schedule. The first
     /// exact attempt receives `1 / initial_divisor` of the configured
     /// allowance. A budget-unknown result remains a live exact edge and may
@@ -32,7 +32,7 @@ pub struct OracleRunCombatBudgetsV1 {
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
-pub enum OracleRunCombatQualityPolicyV1 {
+pub enum OracleRunCombatWitnessQualityPolicyV1 {
     /// Preserve the satisfaction carried by each configured search option.
     #[default]
     Configured,
@@ -43,13 +43,13 @@ pub enum OracleRunCombatQualityPolicyV1 {
     StrategicRun,
 }
 
-impl OracleRunCombatBudgetsV1 {
-    pub fn uniform(options: RunControlSearchCombatOptions) -> Self {
+impl OracleRunCombatWitnessBudgetsV1 {
+    pub fn uniform(options: OracleCombatWitnessOptionsV1) -> Self {
         Self {
             hallway: options.clone(),
             elite: options.clone(),
             boss: options,
-            quality_policy: OracleRunCombatQualityPolicyV1::Configured,
+            quality_policy: OracleRunCombatWitnessQualityPolicyV1::Configured,
             initial_divisor: 1,
             guidance_bundle: None,
         }

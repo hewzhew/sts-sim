@@ -1,11 +1,11 @@
-use sts_simulator::eval::run_control::{CombatSearchTraceSummary, RunProgressStepV1};
+use sts_simulator::eval::run_control::{AtomicCombatSearchTraceSummaryV2, RunProgressStepV1};
 
 use super::accepted_high_loss_diagnostic::AcceptedHighLossDiagnosticDraft;
 
 #[derive(Default)]
-pub(super) struct CombatSearchSessionOutput {
+pub(super) struct AtomicCombatSearchSessionOutputV2 {
     pub(super) progress_steps: Vec<RunProgressStepV1>,
-    pub(super) combat_search: Vec<CombatSearchTraceSummary>,
+    pub(super) atomic_combat_search_attempts: Vec<AtomicCombatSearchTraceSummaryV2>,
     pub(super) accepted_high_loss_diagnostics: Vec<AcceptedHighLossDiagnosticDraft>,
 }
 
@@ -15,7 +15,7 @@ mod tests {
 
     #[test]
     fn session_output_starts_without_high_loss_diagnostics() {
-        assert!(CombatSearchSessionOutput::default()
+        assert!(AtomicCombatSearchSessionOutputV2::default()
             .accepted_high_loss_diagnostics
             .is_empty());
     }

@@ -8,12 +8,22 @@ use sts_combat_planner::OracleCombatWitness;
 /// any live planner state.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
-pub enum OracleCombatLocalCandidateDispositionV1 {
+pub enum OracleCombatWitnessCandidateDispositionV1 {
     SelectedIncumbent,
     RejectedPotionSpendMissesSatisfaction,
     RejectedPotionSpendLeavesUnrecoveredTheft,
     RejectedOutsidePotionContract,
     RejectedByPortfolioComparison,
+}
+
+/// Typed reason why the resident portfolio could not return a verified
+/// complete witness. This is deliberately separate from atomic-v2 rejection
+/// reasons: a bounded missing witness is evidence about this job, not an
+/// atomic search result or proof that the combat is lost.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum OracleCombatWitnessFailureV1 {
+    NoVerifiedCompleteWin,
 }
 
 /// Durable resume contract for one run-owned exact-combat search job.
@@ -24,9 +34,9 @@ pub enum OracleCombatLocalCandidateDispositionV1 {
 /// owner before it can re-enter the portfolio.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
-pub struct OracleRunCombatWorkCheckpointV1 {
-    pub consumed_nodes: u64,
-    pub remaining_nodes: usize,
+pub struct OracleCombatWitnessCheckpointV1 {
+    pub consumed_generation_work: u64,
+    pub remaining_generation_work: usize,
     pub remaining_engine_steps: usize,
     pub remaining_wall_ms: Option<u64>,
     pub quantum_count: usize,
@@ -52,17 +62,17 @@ mod tests {
     use super::*;
 
     #[test]
-    fn legacy_checkpoint_shape_retains_defaults_without_live_search_state() {
-        let checkpoint: OracleRunCombatWorkCheckpointV1 =
+    fn witness_checkpoint_names_generation_work_explicitly() {
+        let checkpoint: OracleCombatWitnessCheckpointV1 =
             serde_json::from_value(serde_json::json!({
-                "consumed_nodes": 13,
-                "remaining_nodes": 21,
+                "consumed_generation_work": 13,
+                "remaining_generation_work": 21,
                 "remaining_engine_steps": 34,
                 "remaining_wall_ms": 55,
                 "quantum_count": 2,
                 "restart_count": 1
             }))
-            .expect("legacy combat-work checkpoint");
+            .expect("combat-witness checkpoint");
 
         assert_eq!(checkpoint.incumbent_revision, 0);
         assert_eq!(checkpoint.quanta_since_incumbent_improvement, 0);
@@ -72,8 +82,8 @@ mod tests {
         assert!(checkpoint.incumbent.is_none());
 
         let encoded = serde_json::to_value(checkpoint).expect("combat-work checkpoint JSON");
-        assert_eq!(encoded["consumed_nodes"], 13);
-        assert_eq!(encoded["remaining_nodes"], 21);
+        assert_eq!(encoded["consumed_generation_work"], 13);
+        assert_eq!(encoded["remaining_generation_work"], 21);
         assert!(encoded.get("max_potions_used").is_none());
         assert!(encoded.get("allowed_potion_slots").is_none());
         assert!(encoded.get("incumbent").is_none());
@@ -81,9 +91,9 @@ mod tests {
 
     #[test]
     fn checkpoint_rejects_live_search_fields() {
-        let error = serde_json::from_value::<OracleRunCombatWorkCheckpointV1>(serde_json::json!({
-            "consumed_nodes": 0,
-            "remaining_nodes": 0,
+        let error = serde_json::from_value::<OracleCombatWitnessCheckpointV1>(serde_json::json!({
+            "consumed_generation_work": 0,
+            "remaining_generation_work": 0,
             "remaining_engine_steps": 0,
             "remaining_wall_ms": null,
             "quantum_count": 0,

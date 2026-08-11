@@ -69,8 +69,11 @@ pub(super) fn build_review(
             );
         }
     }
-    let classification =
-        classify_gap_review(case.failed_search.as_ref(), &ladder, review_focus.as_ref());
+    let classification = classify_gap_review(
+        case.failed_atomic_combat_search.as_ref(),
+        &ladder,
+        review_focus.as_ref(),
+    );
     let review_focus_replay = if options.replay_focus {
         review_focus.as_ref().map(|focus| {
             replay_combat_search_witness_line_v0(&case.core.position, &focus_witness_line(focus))

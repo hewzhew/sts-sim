@@ -27,7 +27,8 @@ pub(super) fn classify_auto_outcome(
             reason: "one atomic progress step applied".to_string(),
         };
     }
-    if session.current_active_combat_position().is_ok() && outcome.combat_search_rejection.is_some()
+    if session.current_active_combat_position().is_ok()
+        && outcome.atomic_combat_search_rejection.is_some()
     {
         let boundary = build_decision_surface(session).view.header.title;
         return BranchStatus::CombatGap {

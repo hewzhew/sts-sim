@@ -1,4 +1,9 @@
 mod accepted_combat_line_evidence;
+mod atomic_combat_search;
+mod atomic_combat_search_attempt;
+mod atomic_combat_search_rejection;
+mod atomic_combat_search_render;
+mod atomic_combat_search_setup;
 mod auto_capture;
 mod auto_step;
 mod boss_relic_policy_prior;
@@ -22,11 +27,6 @@ mod combat_line_trace;
 mod combat_no_win_fallback;
 mod combat_quality_target;
 mod combat_resolution;
-mod combat_search;
-mod combat_search_attempt;
-mod combat_search_rejection;
-mod combat_search_render;
-mod combat_search_setup;
 mod combat_start;
 mod decision_action;
 mod decision_case;
@@ -40,13 +40,14 @@ mod input_gate;
 mod next_hint;
 mod noncombat_boundary;
 mod noncombat_policy_annotation;
-mod oracle_combat_budget;
 mod oracle_combat_policy;
-mod oracle_combat_work;
-mod oracle_combat_work_contract;
+mod oracle_combat_witness_budget;
+mod oracle_combat_witness_contract;
+mod oracle_combat_witness_options;
+mod oracle_combat_witness_work;
 mod oracle_neow;
-mod oracle_resident_combat_job;
-mod oracle_resident_combat_job_evidence;
+mod oracle_resident_combat_witness_evidence;
+mod oracle_resident_combat_witness_job;
 mod oracle_run_explorer;
 mod oracle_selection_cursor;
 pub mod outcome;
@@ -83,6 +84,10 @@ mod view_model;
 
 pub use accepted_combat_line_evidence::{
     accepted_combat_line_evidence_v1, AcceptedCombatLineEvidenceV1,
+};
+pub use atomic_combat_search::AtomicCombatSearchWorkV2;
+pub use atomic_combat_search_attempt::{
+    AtomicCombatSearchAttemptV2, AtomicVerifiedCombatCandidateV2,
 };
 pub use auto_capture::AutoCombatCaptureConfig;
 pub use boss_relic_policy_prior::{
@@ -129,10 +134,6 @@ pub use combat_resolution::{
     RunCombatResolutionBoundaryV1, RunCombatResolutionKindV1, RunCombatResolutionV1,
     RUN_COMBAT_RESOLUTION_SCHEMA_NAME, RUN_COMBAT_RESOLUTION_SCHEMA_VERSION,
 };
-pub use combat_search::{RunControlCombatWorkAdvanceV1, RunControlCombatWorkV1};
-pub use combat_search_attempt::{
-    RunControlCombatSearchAttemptV1, RunControlVerifiedCombatCandidateV1,
-};
 pub use decision_action::RunDecisionAction;
 pub use decision_case::{
     default_run_decision_case_path, save_run_decision_case_v1, RunDecisionCaseV1,
@@ -149,21 +150,25 @@ pub use forced_transition::{
     RunForcedTransitionKindV1, RunForcedTransitionV1, RUN_FORCED_TRANSITION_SCHEMA_NAME,
     RUN_FORCED_TRANSITION_SCHEMA_VERSION,
 };
-pub use oracle_combat_budget::{OracleRunCombatBudgetsV1, OracleRunCombatQualityPolicyV1};
 pub use oracle_combat_policy::{
     authorized_potion_trial_policy_v1, existing_combat_guide_service_bias_v1,
     existing_combat_knowledge_policy_v1,
 };
-pub use oracle_combat_work_contract::{
-    OracleCombatLocalCandidateDispositionV1, OracleRunCombatWorkCheckpointV1,
+pub use oracle_combat_witness_budget::{
+    OracleRunCombatWitnessBudgetsV1, OracleRunCombatWitnessQualityPolicyV1,
 };
+pub use oracle_combat_witness_contract::{
+    OracleCombatWitnessCandidateDispositionV1, OracleCombatWitnessCheckpointV1,
+    OracleCombatWitnessFailureV1,
+};
+pub use oracle_combat_witness_options::OracleCombatWitnessOptionsV1;
 pub use oracle_neow::{
     expand_oracle_neow_candidates_v1, ordered_oracle_neow_root_candidate_ids_v1,
     CompletedNeowCandidateV1, NeowOracleExpansionV1, NeowOracleReplayStepV1,
     UnresolvedNeowCandidateV1,
 };
-pub use oracle_resident_combat_job::OracleResidentCombatJobV1;
-pub use oracle_resident_combat_job_evidence::OracleResidentCombatJobEvidenceV1;
+pub use oracle_resident_combat_witness_evidence::OracleResidentCombatWitnessEvidenceV1;
+pub use oracle_resident_combat_witness_job::OracleResidentCombatWitnessJobV1;
 pub use oracle_run_explorer::{
     drive_oracle_run_explorer_v1, run_control_session_fingerprint_v2,
     seed_oracle_run_explorer_from_checkpoint_v1, seed_oracle_run_explorer_from_session_v1,
@@ -217,8 +222,9 @@ pub use progress_journal::{
     RunProgressJournalV1, RUN_PROGRESS_JOURNAL_SCHEMA_NAME, RUN_PROGRESS_JOURNAL_SCHEMA_VERSION,
 };
 pub use progress_options::{
-    RunControlAutoStepOptions, RunControlCombatSearchQuantum, RunControlCombatSegmentMode,
-    RunControlHpLossLimit, RunControlRouteAutomationMode, RunControlSearchCombatOptions,
+    AtomicCombatSearchAdvanceV2, AtomicCombatSearchOptionsV2, AtomicCombatSearchQuantumV2,
+    OracleCombatWitnessAdvanceV1, OracleCombatWitnessQuantumV1, RunControlAutoStepOptions,
+    RunControlCombatSegmentMode, RunControlHpLossLimit, RunControlRouteAutomationMode,
 };
 pub use progress_replay::{
     exact_audit_run_progress_journal_policy_v1, exact_census_run_progress_journal_combat_roots_v1,
@@ -261,9 +267,9 @@ pub use run_policy_prior::{
     RunPolicyPriorFnV1, RunPolicyPriorV1,
 };
 pub use session::{
-    canonical_player_class, RecentCombatAttritionV1, RunControlAutoAppliedKindV1,
-    RunControlAutoAppliedStepV1, RunControlCombatSearchRejection, RunControlConfig,
-    RunControlSession, RunControlSessionCheckpointV1, RunProgressOutcome, ShopVisitContextV1,
+    canonical_player_class, AtomicCombatSearchRejectionV2, RecentCombatAttritionV1,
+    RunControlAutoAppliedKindV1, RunControlAutoAppliedStepV1, RunControlConfig, RunControlSession,
+    RunControlSessionCheckpointV1, RunProgressOutcome, ShopVisitContextV1,
 };
 pub use session_trace::{
     load_session_trace_v1, SessionTraceArtifactKind, SessionTraceArtifactRefV1,
@@ -319,17 +325,18 @@ pub use strategic_probe_calibration::{
     STRATEGIC_PROBE_CALIBRATION_SCHEMA_NAME, STRATEGIC_PROBE_CALIBRATION_SCHEMA_VERSION,
 };
 pub use trace_annotation::{
-    annotations_have_combat_automation_trajectory_v1, combat_automation_trajectories_v1,
-    combat_search_trace_summaries, CardRewardFunctionV1, CardRewardObligationDeltaV1,
-    CardRewardObligationSourceV1, CardRewardOwnerProvenanceV1, CombatAutomationActionV1,
-    CombatAutomationAnswerClaimV1, CombatAutomationAnswerSourceV1, CombatAutomationCardOriginV1,
-    CombatAutomationMonsterStateV1, CombatAutomationOpportunityStateV1,
-    CombatAutomationPotionStateV1, CombatAutomationStepStateV1, CombatAutomationTrajectoryRecordV1,
-    CombatAutomationTrajectorySource, CombatSearchHpLossLimitV1, CombatSearchPerformanceSnapshotV1,
+    annotations_have_combat_automation_trajectory_v1, atomic_combat_search_trace_summaries,
+    combat_automation_trajectories_v1, AtomicCombatSearchTraceSummaryV2, CardRewardFunctionV1,
+    CardRewardObligationDeltaV1, CardRewardObligationSourceV1, CardRewardOwnerProvenanceV1,
+    CombatAutomationActionV1, CombatAutomationAnswerClaimV1, CombatAutomationAnswerSourceV1,
+    CombatAutomationCardOriginV1, CombatAutomationMonsterStateV1,
+    CombatAutomationOpportunityStateV1, CombatAutomationPotionStateV1, CombatAutomationStepStateV1,
+    CombatAutomationTrajectoryRecordV1, CombatAutomationTrajectorySource,
+    CombatSearchHpLossLimitV1, CombatSearchPerformanceSnapshotV1,
     CombatSearchStrategicHpQualityFactsV1, CombatSearchTerminalLineSummary,
-    CombatSearchTraceSummary, CombatVictoryContinuationFactsV1, CombatVictoryHpCarryoverV1,
-    RunControlTraceAnnotationV1, COMBAT_QUALITY_HP_LIMIT_EVALUATOR_V1,
-    COMBAT_SURVIVAL_HP_LIMIT_EVALUATOR_V1, COMBAT_VICTORY_CONTINUATION_EVALUATOR_V1,
+    CombatVictoryContinuationFactsV1, CombatVictoryHpCarryoverV1, RunControlTraceAnnotationV1,
+    COMBAT_QUALITY_HP_LIMIT_EVALUATOR_V1, COMBAT_SURVIVAL_HP_LIMIT_EVALUATOR_V1,
+    COMBAT_VICTORY_CONTINUATION_EVALUATOR_V1,
 };
 pub use transition_report::{
     ActionResult as RunActionResultV1, ActionResultChange as RunActionResultChangeV1,

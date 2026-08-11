@@ -14,7 +14,7 @@ impl OracleRunExplorerV1 {
     pub(super) fn prepare_branch_schedule(
         &self,
         branch: &OracleRunBranchV1,
-        combat_budgets: &OracleRunCombatBudgetsV1,
+        combat_budgets: &OracleRunCombatWitnessBudgetsV1,
         decision_prior: Option<RunPolicyPriorFnV1>,
     ) -> Result<PreparedOracleRunBranchScheduleV1, String> {
         if self
@@ -36,7 +36,7 @@ impl OracleRunExplorerV1 {
                 if self.registered_work_keys.contains(&work_key) {
                     return Ok(PreparedOracleRunBranchScheduleV1::None);
                 }
-                let work = OracleResidentCombatJobV1::new(
+                let work = OracleResidentCombatWitnessJobV1::new(
                     &branch.session,
                     combat_budgets.for_session_stage(&branch.session, 0),
                     combat_budgets.guidance_bundle.as_deref(),
@@ -81,7 +81,7 @@ impl OracleRunExplorerV1 {
     pub(super) fn schedule_branch(
         &mut self,
         branch_id: usize,
-        combat_budgets: &OracleRunCombatBudgetsV1,
+        combat_budgets: &OracleRunCombatWitnessBudgetsV1,
         decision_prior: Option<RunPolicyPriorFnV1>,
     ) -> Result<(), String> {
         let branch = self
@@ -97,7 +97,7 @@ impl OracleRunExplorerV1 {
     pub(super) fn prepare_deferred_combat(
         &self,
         deferred: &DeferredOracleCombatV1,
-        combat_budgets: &OracleRunCombatBudgetsV1,
+        combat_budgets: &OracleRunCombatWitnessBudgetsV1,
     ) -> Result<PendingOracleCombatV1, String> {
         if !self.pending_combats.is_empty() {
             return Err(
@@ -114,7 +114,7 @@ impl OracleRunExplorerV1 {
                     deferred.branch_id
                 )
             })?;
-        let work = OracleResidentCombatJobV1::promote(
+        let work = OracleResidentCombatWitnessJobV1::promote(
             &branch.session,
             combat_budgets.for_session_stage_with_prior(
                 &branch.session,

@@ -3,8 +3,8 @@ use std::time::{Duration, Instant};
 use crate::sim::combat::{CombatStepper, CombatTerminal, EngineCombatStepper};
 
 use super::super::{
-    OracleAnalysisSessionV1, OracleResidentCombatJobV1, RunControlCombatSearchQuantum,
-    RunControlCombatWorkAdvanceV1,
+    OracleAnalysisSessionV1, OracleCombatWitnessAdvanceV1, OracleCombatWitnessQuantumV1,
+    OracleResidentCombatWitnessJobV1,
 };
 use super::view::exact_hash;
 use super::{
@@ -35,12 +35,12 @@ impl OracleAnalysisSessionV1 {
         request: OracleAnalysisCombatScratchSearchRequestV1,
     ) -> Result<OracleAnalysisCombatScratchSearchReportV1, String> {
         if request.max_quanta == 0
-            || request.quantum_nodes == 0
+            || request.quantum_generation_work == 0
             || request.quantum_ms == 0
             || request.wall_ms == 0
         {
             return Err(
-                "combat scratch search max_quanta, quantum_nodes, quantum_ms, and wall_ms must be positive"
+                "combat scratch search max_quanta, quantum_generation_work, quantum_ms, and wall_ms must be positive"
                     .to_string(),
             );
         }
@@ -66,26 +66,28 @@ impl OracleAnalysisSessionV1 {
         active.engine_state = position.engine.clone();
         active.combat_state = position.combat.clone();
 
-        let total_work = request.max_quanta.saturating_mul(request.quantum_nodes);
+        let total_work = request
+            .max_quanta
+            .saturating_mul(request.quantum_generation_work);
         let mut options = self.combat_budgets.for_session(&trial);
-        options.max_nodes = Some(total_work);
+        options.max_generation_work = Some(total_work);
         options.wall_ms = Some(request.wall_ms);
         options.satisfaction =
-            Some(crate::ai::combat_search_v2::CombatSearchV2Satisfaction::FirstCompleteWin);
+            Some(crate::ai::combat_witness_contract::CombatWitnessSatisfactionV1::FirstCompleteWin);
         options.potion_policy =
-            Some(crate::ai::combat_search_v2::CombatSearchV2PotionPolicy::Never);
+            Some(crate::ai::combat_witness_contract::CombatWitnessPotionPolicyV1::Never);
         options.max_potions_used = Some(0);
         options.allowed_potion_slots = Some(0);
-        let mut work = OracleResidentCombatJobV1::new(
+        let mut work = OracleResidentCombatWitnessJobV1::new(
             &trial,
             options,
             self.combat_budgets.guidance_bundle.as_deref(),
         )?;
         let started = Instant::now();
         let deadline = started.checked_add(Duration::from_millis(request.wall_ms));
-        let quantum = RunControlCombatSearchQuantum {
+        let quantum = OracleCombatWitnessQuantumV1 {
             label: "combat-scratch-descendant-search",
-            additional_nodes: request.quantum_nodes,
+            additional_generation_work: request.quantum_generation_work,
             soft_wall_ms: Some(request.quantum_ms),
         };
         let mut quanta_served = 0usize;
@@ -93,7 +95,7 @@ impl OracleAnalysisSessionV1 {
         while !work.has_verified_witness() && quanta_served < request.max_quanta {
             let advance = work.advance(&quantum, deadline);
             quanta_served = quanta_served.saturating_add(1);
-            let stop = !matches!(advance, RunControlCombatWorkAdvanceV1::Pending);
+            let stop = !matches!(advance, OracleCombatWitnessAdvanceV1::Pending);
             last_advance = Some(advance);
             if stop {
                 break;
@@ -118,16 +120,16 @@ impl OracleAnalysisSessionV1 {
                 )
             } else {
                 let exit = match last_advance {
-                    Some(RunControlCombatWorkAdvanceV1::ReadyToFinish) => {
+                    Some(OracleCombatWitnessAdvanceV1::ReadyToFinish) => {
                         OracleAnalysisCombatScratchSearchExitV1::PortfolioCompleteWithoutWitness
                     }
-                    Some(RunControlCombatWorkAdvanceV1::AllowanceExhausted) => {
+                    Some(OracleCombatWitnessAdvanceV1::AllowanceExhausted) => {
                         OracleAnalysisCombatScratchSearchExitV1::AllowanceExhausted
                     }
-                    Some(RunControlCombatWorkAdvanceV1::GlobalDeadlineReached) => {
+                    Some(OracleCombatWitnessAdvanceV1::GlobalDeadlineReached) => {
                         OracleAnalysisCombatScratchSearchExitV1::DeadlineReached
                     }
-                    Some(RunControlCombatWorkAdvanceV1::Pending) | None => {
+                    Some(OracleCombatWitnessAdvanceV1::Pending) | None => {
                         OracleAnalysisCombatScratchSearchExitV1::QuantumLimitReached
                     }
                 };

@@ -164,7 +164,7 @@ struct RawInspectArgs {
     #[arg(long)]
     wall_ms: Option<u64>,
     #[arg(long)]
-    checkpoint_before_combat_portfolio: bool,
+    checkpoint_before_atomic_combat_search_session: bool,
 }
 
 #[derive(ClapArgs)]
@@ -202,7 +202,7 @@ struct InspectArgs {
     boss_search_nodes: usize,
     boss_search_ms: u64,
     wall_ms: Option<u64>,
-    checkpoint_before_combat_portfolio: bool,
+    checkpoint_before_atomic_combat_search_session: bool,
 }
 
 struct RunArgs {
@@ -243,8 +243,9 @@ impl RawInspectArgs {
             boss_search_nodes: self.boss_search_nodes.unwrap_or(defaults.boss_search_nodes),
             boss_search_ms: self.boss_search_ms.unwrap_or(defaults.boss_search_ms),
             wall_ms: resolve_slice_ms(self.slice_ms, self.wall_ms)?.or(defaults.wall_ms),
-            checkpoint_before_combat_portfolio: self.checkpoint_before_combat_portfolio
-                || defaults.checkpoint_before_combat_portfolio,
+            checkpoint_before_atomic_combat_search_session: self
+                .checkpoint_before_atomic_combat_search_session
+                || defaults.checkpoint_before_atomic_combat_search_session,
         })
     }
 }
@@ -335,7 +336,8 @@ impl InspectArgs {
         args.boss_search_nodes = self.boss_search_nodes;
         args.boss_search_ms = self.boss_search_ms;
         args.wall_ms = self.wall_ms;
-        args.checkpoint_before_combat_portfolio = self.checkpoint_before_combat_portfolio;
+        args.checkpoint_before_atomic_combat_search_session =
+            self.checkpoint_before_atomic_combat_search_session;
         args
     }
 }
@@ -485,7 +487,7 @@ mod tests {
             boss_search_nodes: 505,
             boss_search_ms: 606,
             wall_ms: Some(707),
-            checkpoint_before_combat_portfolio: true,
+            checkpoint_before_atomic_combat_search_session: true,
         };
         let source = SourceIdentity {
             git_commit: Some("abc123".to_string()),
@@ -504,18 +506,42 @@ mod tests {
         assert_eq!(requests[0].contract.branching.generations, 9);
         assert_eq!(requests[0].contract.branching.max_branches, 3);
         assert_eq!(requests[0].contract.automation.auto_ops, 4);
-        assert_eq!(requests[0].contract.combat_search.primary_nodes, 101);
-        assert_eq!(requests[0].contract.combat_search.primary_ms, 202);
-        assert_eq!(requests[0].contract.combat_search.rescue_nodes, 303);
-        assert_eq!(requests[0].contract.combat_search.rescue_ms, 404);
-        assert_eq!(requests[0].contract.combat_search.boss_nodes, 505);
-        assert_eq!(requests[0].contract.combat_search.boss_ms, 606);
+        assert_eq!(
+            requests[0]
+                .contract
+                .atomic_combat_search_budget
+                .primary_nodes,
+            101
+        );
+        assert_eq!(
+            requests[0].contract.atomic_combat_search_budget.primary_ms,
+            202
+        );
+        assert_eq!(
+            requests[0]
+                .contract
+                .atomic_combat_search_budget
+                .rescue_nodes,
+            303
+        );
+        assert_eq!(
+            requests[0].contract.atomic_combat_search_budget.rescue_ms,
+            404
+        );
+        assert_eq!(
+            requests[0].contract.atomic_combat_search_budget.boss_nodes,
+            505
+        );
+        assert_eq!(
+            requests[0].contract.atomic_combat_search_budget.boss_ms,
+            606
+        );
         assert_eq!(requests[0].contract.slice.slice_ms, Some(707));
         assert!(
             requests[0]
                 .contract
                 .features
-                .checkpoint_before_combat_portfolio
+                .checkpoint_before_atomic_combat_search_session
         );
     }
 

@@ -107,7 +107,7 @@ pub(super) fn promote(workspace: &Path) -> Result<Value, String> {
 pub(super) fn advance(
     workspace: &Path,
     max_quanta: usize,
-    quantum_nodes: usize,
+    quantum_generation_work: usize,
     quantum_ms: u64,
     wall_ms: Option<u64>,
     improve_incumbent: bool,
@@ -116,7 +116,7 @@ pub(super) fn advance(
     let mut analysis = load_oracle_analysis_workspace_v1(workspace)?;
     let (report, view) = analysis.advance(OracleAnalysisAdvanceRequestV1 {
         max_quanta,
-        quantum_nodes,
+        quantum_generation_work,
         quantum_ms: Some(quantum_ms),
         wall_ms,
         improve_incumbent,
@@ -169,14 +169,14 @@ pub(super) fn advance(
 pub(super) fn probe_combat(
     workspace: &Path,
     generation_work: usize,
-    quantum_nodes: usize,
+    quantum_generation_work: usize,
     wall_ms: u64,
     detailed: bool,
 ) -> Result<Value, String> {
     let mut analysis = load_oracle_analysis_workspace_v1(workspace)?;
     let (report, view) = analysis.probe_combat(OracleAnalysisCombatProbeRequestV1 {
         generation_work,
-        quantum_nodes,
+        quantum_generation_work,
         wall_ms,
     })?;
     save_oracle_analysis_workspace_v1(workspace, &analysis)?;

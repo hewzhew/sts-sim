@@ -1,8 +1,10 @@
 use serde_json::{json, Value};
 
-use super::combat_search_report::{CombatSearchSessionReport, CombatSearchSessionStatus};
+use super::atomic_combat_search_report::{
+    AtomicCombatSearchSessionReportV2, AtomicCombatSearchSessionStatusV2,
+};
 
-pub(super) fn capsule_value(report: &CombatSearchSessionReport) -> Value {
+pub(super) fn capsule_value(report: &AtomicCombatSearchSessionReportV2) -> Value {
     json!({
         "status": status_value(&report.status),
         "profile_id": report.profile_id,
@@ -24,7 +26,7 @@ pub(super) fn capsule_value(report: &CombatSearchSessionReport) -> Value {
     })
 }
 
-pub(super) fn trace_value(report: &CombatSearchSessionReport) -> Value {
+pub(super) fn trace_value(report: &AtomicCombatSearchSessionReportV2) -> Value {
     json!({
         "status": status_value(&report.status),
         "profile": report.profile_id,
@@ -46,7 +48,9 @@ pub(super) fn trace_value(report: &CombatSearchSessionReport) -> Value {
     })
 }
 
-fn quantum_value(quantum: &super::combat_search_report::CombatSearchQuantumReport) -> Value {
+fn quantum_value(
+    quantum: &super::atomic_combat_search_report::AtomicCombatSearchQuantumReportV2,
+) -> Value {
     json!({
         "label": quantum.label,
         "additional_nodes": quantum.additional_nodes,
@@ -54,13 +58,15 @@ fn quantum_value(quantum: &super::combat_search_report::CombatSearchQuantumRepor
     })
 }
 
-fn status_value(status: &CombatSearchSessionStatus) -> Value {
+fn status_value(status: &AtomicCombatSearchSessionStatusV2) -> Value {
     match status {
-        CombatSearchSessionStatus::Failed(reason) => json!({"kind": "failed", "reason": reason}),
-        CombatSearchSessionStatus::Advanced(boundary) => {
+        AtomicCombatSearchSessionStatusV2::Failed(reason) => {
+            json!({"kind": "failed", "reason": reason})
+        }
+        AtomicCombatSearchSessionStatusV2::Advanced(boundary) => {
             json!({"kind": "advanced", "boundary": boundary})
         }
-        CombatSearchSessionStatus::Terminal(result) => {
+        AtomicCombatSearchSessionStatusV2::Terminal(result) => {
             json!({"kind": "terminal", "result": result.as_str()})
         }
     }
@@ -69,19 +75,19 @@ fn status_value(status: &CombatSearchSessionStatus) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::runtime::branch::owner_audit::combat_search_report::CombatSearchQuantumReport;
+    use crate::runtime::branch::owner_audit::atomic_combat_search_report::AtomicCombatSearchQuantumReportV2;
 
     #[test]
     fn search_json_exposes_one_session_and_incremental_work() {
-        let report = CombatSearchSessionReport {
-            status: CombatSearchSessionStatus::Advanced("PostCombat".to_string()),
+        let report = AtomicCombatSearchSessionReportV2 {
+            status: AtomicCombatSearchSessionStatusV2::Advanced("PostCombat".to_string()),
             profile_id: "canonical_combat_session",
             max_nodes: 100,
             wall_ms: 200,
             potion_policy: "semantic",
             max_potions_used: Some(2),
             allowed_potion_slots: Some(3),
-            work_quanta: vec![CombatSearchQuantumReport {
+            work_quanta: vec![AtomicCombatSearchQuantumReportV2 {
                 label: "initial",
                 additional_nodes: 40,
                 soft_wall_ms: Some(80),

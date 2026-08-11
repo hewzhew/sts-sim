@@ -59,8 +59,7 @@ are attached only by their named crates. Physical proximity is not permission
 for a reverse dependency, duplicate owner, or broad facade dependency.
 
 Use `cargo test-core` and `cargo test-control` for their respective unit-test
-harnesses, `cargo architecture` for dependency-free source-boundary checks,
-and `cargo check-workspace` for every target. `test-control` explicitly names
+harnesses and `cargo check-workspace` for every target. `test-control` explicitly names
 combat eval, run-control, learning, runtime, and command owners; a dependency's
 private unit tests are never assumed to run transitively. Do not merge the
 harnesses again through test features or replace them with many integration-test
@@ -97,6 +96,14 @@ It must not pass through current strategy scores, owner ranks, explanation
 strings, or search-private state. Existing owners may supply behavior
 trajectories, but their selected actions are provenance rather than teacher
 labels.
+
+Combat search currently supplies replayable witnesses and diagnostics, not a
+policy-improvement operator. Before any search output becomes a learning
+target it must cross the separately owned public-information, chance-particle,
+fair-allocation, independent-evaluation, and qualification boundary in
+[`CombatSearchImprovementContractV1`](design/2026-08-11-combat-search-improvement-contract-v1.md).
+That contract is not implemented; `AtomicExactV2`, `TurnGraphPortfolioV1`, and
+their member engines are not certified teachers.
 
 Shared card mechanics used by that path belong to `content::cards::mechanics`,
 not to an analysis or reward-policy table. The profile owns upgrade-sensitive
@@ -1576,6 +1583,20 @@ Statuses and injections into other zones remain outside this gate.
 
 ## Runner And Combat
 
+The repository has two exact witness-engine identities, not one version ladder:
+
+- `AtomicExactV2` is the fixed-root atomic-action diagnostic/challenger engine
+  under `src/ai/combat_search_v2`; `branch_tiny` owner-audit still uses a
+  staged atomic session.
+- `TurnGraphPortfolioV1` is the current resident oracle witness producer. Run control
+  composes `LocalTurnGraphWitnessSession` and `PolicyDiscrepancySession`
+  through `OracleResidentCombatWitnessJobV1`.
+
+The canonical ownership, configuration, evidence, and naming map is
+[Combat Search Ownership](architecture/combat-search.md). The contracts below
+describe runner behavior; they do not make `combat_search_v2` the resident
+production owner or either engine a certified teacher.
+
 The runner owns run progression:
 
 - selecting or applying non-combat owner decisions,
@@ -1819,16 +1840,20 @@ records any wall overshoot, and then stops at the resulting boundary. A
 terminal outcome already reached by that transaction takes precedence over a
 run-wall stop classification.
 
-### Combat Search Orchestration
+### Atomic Owner-Audit Search Orchestration
 
 Combat search code should keep these phases separate:
 
 ```text
-portfolio context -> portfolio plan -> search profile -> search execution
-                  -> acceptance -> trace/render/rejection
+atomic session context -> staged session plan -> search profile
+                       -> search execution -> acceptance
+                       -> trace/render/rejection
 ```
 
-`branch_tiny` owns campaign-level portfolio orchestration. It should choose
+This subsection describes the atomic-v2 staged owner-audit session in
+`branch_tiny`; it does not describe `OracleResidentCombatWitnessJobV1`.
+
+`branch_tiny` owns campaign-level atomic-stage orchestration. It should choose
 which search profiles to run, execute them, and commit or reject results. It
 must not reinterpret combat strategy hidden inside a lane name.
 
@@ -1897,7 +1922,7 @@ and replayed from the unchanged root. Restored checkpoints may carry an
 already verified incumbent, but restoring one does not mint work or bypass the
 current potion and terminal contracts.
 
-`OracleRunCombatWorkCheckpointV1` is the small durable boundary shared by
+`OracleCombatWitnessCheckpointV1` is the small durable boundary shared by
 analysis jobs and the run explorer. It retains bounded allowance, continuity
 accounting, the exact potion contract, and at most one replay-exact incumbent.
 It never serializes a local-graph/discrepancy session, portfolio queue, planner
@@ -1906,13 +1931,13 @@ captures and restores this contract; restore rebuilds the tactical frontier
 from the enclosing branch's exact root and replays every incumbent action,
 including successor and terminal-position verification, before admitting it.
 
-Live orchestration holds `OracleResidentCombatJobV1`, an opaque capability over
+Live orchestration holds `OracleResidentCombatWitnessJobV1`, an opaque capability over
 the tactical work owner. Analysis, scratch search, and the run explorer may
 start or restore a job, grant bounded work, request typed evidence, checkpoint
 it, or atomically finish a verified result. They cannot name the underlying
-`OracleRunCombatWorkV1` or access local-graph/discrepancy sessions and queues;
+`OracleRunCombatWitnessWorkV1` or access local-graph/discrepancy sessions and queues;
 that implementation type is confined to its owner and this facade.
-`OracleResidentCombatJobEvidenceV1` is a separate owned snapshot containing
+`OracleResidentCombatWitnessEvidenceV1` is a separate owned snapshot containing
 only accounting, queue counts, typed progress snapshots, and incumbent/candidate
 facts. Status labels are owned data, and the evidence carries no live session,
 frontier entry, borrowed implementation state, or mutation authority.
@@ -1958,6 +1983,14 @@ diagnostic  opt-in sidecar data for large explanations and traces
 Checkpoint owns exact resume state. State owns scheduling data. Journal owns
 decision facts and candidate identity. Report is a cheap projection.
 Diagnostics are opt-in sidecars for large or narrow-use explanations.
+
+The current branch-tiny resume checkpoint is
+`branch_tiny_frontier_checkpoint_v3`. It owns its runtime arguments and source
+identity directly. A standalone current frontier may resume without a capsule
+manifest; a capsule continuation must first match that checkpoint against the
+V5 manifest's run contract and source identity. New-capsule construction never
+inherits an existing manifest's trajectory identity. Old schemas fail closed
+instead of entering a compatibility projection.
 
 Capsule campaign history is an immutable `RunTrajectorySegmentV1` DAG. Each
 segment contains one ordered `RunProgressJournalV1` plus planner-boundary visit

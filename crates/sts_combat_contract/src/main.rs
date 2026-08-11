@@ -340,11 +340,8 @@ fn run(args: Cli) -> Result<(), String> {
         )
     })?;
     let parse_elapsed_ns = elapsed_nanos(parse_started);
-    if loaded.schema != "combat_case" && loaded.schema != "combat_gap_case" {
-        return Err(format!(
-            "expected combat_case or combat_gap_case, got {}",
-            loaded.schema
-        ));
+    if loaded.schema != "combat_case_v1" {
+        return Err(format!("expected combat_case_v1, got {}", loaded.schema));
     }
     let watch_actions = args
         .watch_actions

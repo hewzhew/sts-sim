@@ -3,12 +3,12 @@ use crate::ai::combat_auto_policy_v1::{
     CombatAutoSearchPlanV1,
 };
 
-use super::progress_options::{RunControlHpLossLimit, RunControlSearchCombatOptions};
+use super::progress_options::{AtomicCombatSearchOptionsV2, RunControlHpLossLimit};
 use super::session::RunControlSession;
 
 pub(super) fn combat_auto_search_plan(
     session: &RunControlSession,
-    options: &RunControlSearchCombatOptions,
+    options: &AtomicCombatSearchOptionsV2,
 ) -> CombatAutoSearchPlanV1 {
     plan_combat_auto_search_v1(&CombatAutoSearchContextV1 {
         high_stakes_potion_budget: active_combat_high_stakes_potion_budget(session),
@@ -25,7 +25,7 @@ pub(super) fn combat_auto_search_plan(
 
 fn active_combat_high_stakes_potion_budget(session: &RunControlSession) -> Option<u32> {
     let combat = &session.active_combat.as_ref()?.combat_state;
-    crate::ai::combat_search_v2::high_stakes_semantic_potion_budget(combat)
+    crate::ai::combat_witness_contract::high_stakes_semantic_witness_potion_budget_v1(combat)
 }
 
 fn active_combat_has_usable_potion(session: &RunControlSession) -> bool {
@@ -42,7 +42,7 @@ fn active_combat_has_usable_potion(session: &RunControlSession) -> bool {
 
 fn combat_auto_hp_loss_gate(
     session: &RunControlSession,
-    options: &RunControlSearchCombatOptions,
+    options: &AtomicCombatSearchOptionsV2,
 ) -> CombatAutoHpLossGateV1 {
     match options.max_hp_loss {
         Some(RunControlHpLossLimit::Limit(_)) => CombatAutoHpLossGateV1::Limited,

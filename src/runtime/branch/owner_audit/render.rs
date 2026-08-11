@@ -2,8 +2,10 @@ use sts_simulator::eval::run_control::{
     build_decision_surface, render_progress_step_compact_v1, RunControlSession,
 };
 
+use super::atomic_combat_search_report::{
+    AtomicCombatSearchSessionReportV2, AtomicCombatSearchSessionStatusV2,
+};
 use super::branch_status_view;
-use super::combat_search_report::{CombatSearchSessionReport, CombatSearchSessionStatus};
 use super::owner_model::OwnerChoice;
 pub(super) use super::render_choice::{render_candidate_decision_compact, render_timeline_choice};
 use super::{render_choice, BoundarySite, Branch, BranchStatus, Owner};
@@ -33,8 +35,8 @@ pub(super) fn print_branch_timeline(
         );
     }
     print_progress_journal(&branch.recent_progress_journal);
-    if let Some(report) = branch.combat_portfolio.as_ref() {
-        print_combat_portfolio(report);
+    if let Some(report) = branch.atomic_combat_search_session.as_ref() {
+        print_atomic_combat_search_session(report);
     }
     print_reward_gap_detail(&branch.session, &branch.status);
     if choices.is_empty() {
@@ -93,10 +95,10 @@ fn print_progress_journal(journal: &sts_simulator::eval::run_control::RunProgres
     }
 }
 
-fn print_combat_portfolio(report: &CombatSearchSessionReport) {
+fn print_atomic_combat_search_session(report: &AtomicCombatSearchSessionReportV2) {
     println!(
-        "  combat_search_session: {} profile={} applied={} decision={} budget={}nodes/{}ms potion={} max_potions={:?}",
-        combat_portfolio_status_label(&report.status),
+        "  atomic_combat_search_session: {} profile={} applied={} decision={} budget={}nodes/{}ms potion={} max_potions={:?}",
+        atomic_combat_search_session_status_label(&report.status),
         report.profile_id,
         report.applied,
         report.decision,
@@ -125,11 +127,17 @@ fn print_action_path(prefix: &str, action_keys: &[String]) {
     }
 }
 
-fn combat_portfolio_status_label(status: &CombatSearchSessionStatus) -> String {
+fn atomic_combat_search_session_status_label(status: &AtomicCombatSearchSessionStatusV2) -> String {
     match status {
-        CombatSearchSessionStatus::Failed(reason) => format!("failed ({})", one_line(reason)),
-        CombatSearchSessionStatus::Advanced(boundary) => format!("combat-win -> {boundary}"),
-        CombatSearchSessionStatus::Terminal(result) => format!("terminal:{}", result.as_str()),
+        AtomicCombatSearchSessionStatusV2::Failed(reason) => {
+            format!("failed ({})", one_line(reason))
+        }
+        AtomicCombatSearchSessionStatusV2::Advanced(boundary) => {
+            format!("combat-win -> {boundary}")
+        }
+        AtomicCombatSearchSessionStatusV2::Terminal(result) => {
+            format!("terminal:{}", result.as_str())
+        }
     }
 }
 
@@ -176,7 +184,7 @@ fn status_owner(status: &BranchStatus) -> String {
         BranchStatus::Running { owner, .. } => owner_label(*owner),
         BranchStatus::AwaitingAuto { .. } => "AutoRun".to_string(),
         BranchStatus::AutomationGap { site, .. } => site_label(*site),
-        BranchStatus::CombatGap { .. } => "combat_search".to_string(),
+        BranchStatus::CombatGap { .. } => "atomic_combat_search_attempts".to_string(),
         BranchStatus::OperationBudgetExhausted { .. } => "automation_budget".to_string(),
         BranchStatus::BudgetGap { .. } => "automation_budget".to_string(),
         BranchStatus::Terminal(_) => "terminal".to_string(),

@@ -10,13 +10,14 @@ use sts_simulator::ai::strategy::shop_boss_preview::classify_shop_boss_preview_c
 use super::branch_path::BranchPathStep;
 use super::owner_model::{cleanup_target_label, ChoiceAnnotation, OwnerChoice};
 use super::{
-    combat_search_session_json, run_state_json, Args, BoundarySite, Branch, BranchStatus, Owner,
+    atomic_combat_search_session_json, run_state_json, Args, BoundarySite, Branch, BranchStatus,
+    Owner,
 };
 
 pub(super) fn run_start_event(args: Args) -> Value {
     json!({
         "event": "run_start",
-        "schema": "branch_tiny_trace_v4",
+        "schema": "branch_tiny_trace_v5",
         "seed": args.seed,
         "ascension": args.ascension,
         "generations": args.generations,
@@ -52,8 +53,8 @@ pub(super) fn node_event(
         "status": status_value(&branch.status),
         "arrived": branch.path.last().map(path_step_value),
         "trajectory_head": branch.trajectory.committed_head(),
-        "combat_search": branch.combat_search,
-        "combat_portfolio": branch.combat_portfolio.as_ref().map(combat_search_session_json::trace_value),
+        "atomic_combat_search_attempts": branch.atomic_combat_search_attempts,
+        "atomic_combat_search_session": branch.atomic_combat_search_session.as_ref().map(atomic_combat_search_session_json::trace_value),
         "choices": choices.iter().enumerate()
             .map(|(index, choice)| {
                 choice_value(index, choice, expanded.get(index).copied().unwrap_or(false))

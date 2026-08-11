@@ -4,16 +4,19 @@ use std::time::{Duration, Instant};
 const MIN_USABLE_WALL_ALLOWANCE: Duration = Duration::from_millis(1);
 
 use super::combat_line_executor::apply_oracle_combat_witness;
-use super::combat_search::RunControlCombatWorkAdvanceV1;
-use super::combat_search_setup::prepare_search_combat;
 use super::oracle_combat_policy::ExistingCombatKnowledgePolicy;
-use super::oracle_combat_work_contract::{
-    OracleCombatLocalCandidateDispositionV1, OracleRunCombatWorkCheckpointV1,
+use super::oracle_combat_witness_contract::{
+    OracleCombatWitnessCandidateDispositionV1, OracleCombatWitnessCheckpointV1,
+    OracleCombatWitnessFailureV1,
 };
-use super::oracle_resident_combat_job_evidence::OracleResidentCombatJobEvidenceV1;
-use super::progress_options::{RunControlCombatSearchQuantum, RunControlSearchCombatOptions};
-use super::session::{RunControlCombatSearchRejection, RunControlSession, RunProgressOutcome};
+use super::oracle_combat_witness_options::{
+    prepare_oracle_combat_witness_v1, OracleCombatWitnessOptionsV1,
+};
+use super::oracle_resident_combat_witness_evidence::OracleResidentCombatWitnessEvidenceV1;
+use super::progress_options::{OracleCombatWitnessAdvanceV1, OracleCombatWitnessQuantumV1};
+use super::session::{RunControlSession, RunProgressOutcome};
 use super::trace_annotation::CombatAutomationTrajectorySource;
+use crate::ai::combat_witness_contract::{CombatWitnessEngineV1, CombatWitnessSatisfactionV1};
 use crate::eval::combat_guidance_bundle::CombatGuidanceBundleV1;
 use crate::state::core::ClientInput;
 use sts_combat_planner::{
@@ -26,7 +29,7 @@ use sts_combat_planner::{
     TurnOptionAction, TurnOptionGeneratorConfig, DEFAULT_BACKED_GENERATION_QUANTUM_WORK,
 };
 
-pub(super) struct OracleRunCombatWorkV1 {
+pub(super) struct OracleRunCombatWitnessWorkV1 {
     start: crate::sim::combat::CombatPosition,
     guide_service_bias: Option<LocalTurnGraphGuideServiceBias>,
     local_search: LocalTurnGraphWitnessSession,
@@ -35,7 +38,7 @@ pub(super) struct OracleRunCombatWorkV1 {
     next_portfolio_member: PortfolioMemberV1,
     local_complete: bool,
     discrepancy_complete: bool,
-    remaining_work: usize,
+    remaining_generation_work: usize,
     remaining_engine_steps: usize,
     max_transition_steps: usize,
     max_potions_used: Option<u32>,
@@ -89,7 +92,7 @@ enum PortfolioAdvanceModeV1 {
 enum PortfolioWitnessSatisfactionV1 {
     FirstWitness,
     HpLossAtMost(u32),
-    PersistentRunValueGain,
+    MaterializedPersistentPayoffGain,
     BudgetOrExhaustion,
 }
 
@@ -108,14 +111,14 @@ enum PortfolioStatusV1 {
     PolicyDiscrepancy(PolicyDiscrepancyStatus),
 }
 
-impl OracleRunCombatWorkV1 {
+impl OracleRunCombatWitnessWorkV1 {
     pub(super) fn root_action_families(&self) -> Vec<LocalTurnGraphRootActionFamilySnapshot> {
         self.local_search.root_action_families()
     }
 
     pub(super) fn new_with_guidance(
         session: &RunControlSession,
-        options: RunControlSearchCombatOptions,
+        options: OracleCombatWitnessOptionsV1,
         guidance: Option<&CombatGuidanceBundleV1>,
     ) -> Result<Self, String> {
         Self::new_exact_planner(session, options, guidance)
@@ -123,54 +126,40 @@ impl OracleRunCombatWorkV1 {
 
     fn new_exact_planner(
         session: &RunControlSession,
-        options: RunControlSearchCombatOptions,
+        options: OracleCombatWitnessOptionsV1,
         guidance: Option<&CombatGuidanceBundleV1>,
     ) -> Result<Self, String> {
-        let prepared = prepare_search_combat(session, options)?;
-        let max_transition_steps = prepared.config.max_engine_steps_per_action.max(1);
-        let max_work = prepared.config.max_nodes;
-        let allow_potion_discard = prepared.config.allow_potion_discard.unwrap_or_else(|| {
-            matches!(
-                prepared.config.potion_policy,
-                crate::ai::combat_search_v2::CombatSearchV2PotionPolicy::All
-            )
-        });
-        let (satisfaction, planner_satisfaction) = match prepared.config.satisfaction {
-            crate::ai::combat_search_v2::CombatSearchV2Satisfaction::BudgetOrExhaustion => {
-                (
-                    PortfolioWitnessSatisfactionV1::BudgetOrExhaustion,
-                    OracleCombatWitnessSatisfaction::BudgetOrExhaustion,
-                )
-            }
-            crate::ai::combat_search_v2::CombatSearchV2Satisfaction::ZeroLossOrBudget => {
-                (
-                    PortfolioWitnessSatisfactionV1::HpLossAtMost(0),
-                    OracleCombatWitnessSatisfaction::HpLossAtMost(0),
-                )
-            }
-            crate::ai::combat_search_v2::CombatSearchV2Satisfaction::FirstCompleteWin => {
-                (
-                    PortfolioWitnessSatisfactionV1::FirstWitness,
-                    OracleCombatWitnessSatisfaction::FirstWitness,
-                )
-            }
-            crate::ai::combat_search_v2::CombatSearchV2Satisfaction::HpLossAtMost(limit) => {
-                (
-                    PortfolioWitnessSatisfactionV1::HpLossAtMost(limit),
-                    OracleCombatWitnessSatisfaction::HpLossAtMost(limit),
-                )
-            }
-            crate::ai::combat_search_v2::CombatSearchV2Satisfaction::PersistentRunValueGain => {
-                (
-                    PortfolioWitnessSatisfactionV1::PersistentRunValueGain,
-                    OracleCombatWitnessSatisfaction::BudgetOrExhaustion,
-                )
-            }
-            crate::ai::combat_search_v2::CombatSearchV2Satisfaction::FirstCompleteWinWithoutNewExternalBurden
-            | crate::ai::combat_search_v2::CombatSearchV2Satisfaction::HpLossAtMostWithoutNewExternalBurden(_)
-            | crate::ai::combat_search_v2::CombatSearchV2Satisfaction::PotionFreeHpLossAtMostWithoutNewExternalBurden(_) => {
-                return Err("oracle witness search does not yet own external-burden acceptance"
-                    .to_string());
+        let prepared = prepare_oracle_combat_witness_v1(session, options)?;
+        let max_transition_steps = prepared.max_engine_steps_per_transition;
+        let max_generation_work = prepared.max_generation_work;
+        let allow_potion_discard = prepared.allow_potion_discard;
+        let (satisfaction, planner_satisfaction) = match prepared.satisfaction {
+            CombatWitnessSatisfactionV1::BudgetOrExhaustion => (
+                PortfolioWitnessSatisfactionV1::BudgetOrExhaustion,
+                OracleCombatWitnessSatisfaction::BudgetOrExhaustion,
+            ),
+            CombatWitnessSatisfactionV1::ZeroLossOrBudget => (
+                PortfolioWitnessSatisfactionV1::HpLossAtMost(0),
+                OracleCombatWitnessSatisfaction::HpLossAtMost(0),
+            ),
+            CombatWitnessSatisfactionV1::FirstCompleteWin => (
+                PortfolioWitnessSatisfactionV1::FirstWitness,
+                OracleCombatWitnessSatisfaction::FirstWitness,
+            ),
+            CombatWitnessSatisfactionV1::HpLossAtMost(limit) => (
+                PortfolioWitnessSatisfactionV1::HpLossAtMost(limit),
+                OracleCombatWitnessSatisfaction::HpLossAtMost(limit),
+            ),
+            CombatWitnessSatisfactionV1::MaterializedPersistentPayoffGain => (
+                PortfolioWitnessSatisfactionV1::MaterializedPersistentPayoffGain,
+                OracleCombatWitnessSatisfaction::BudgetOrExhaustion,
+            ),
+            CombatWitnessSatisfactionV1::FirstCompleteWinWithoutNewExternalBurden
+            | CombatWitnessSatisfactionV1::HpLossAtMostWithoutNewExternalBurden(_)
+            | CombatWitnessSatisfactionV1::PotionFreeHpLossAtMostWithoutNewExternalBurden(_) => {
+                return Err(
+                    "oracle witness search does not yet own external-burden acceptance".to_string(),
+                );
             }
         };
         let root = CombatDecisionRoot::new(prepared.start.clone())
@@ -194,23 +183,25 @@ impl OracleRunCombatWorkV1 {
             LocalTurnGraphWitnessConfig {
                 generator: TurnOptionGeneratorConfig {
                     max_engine_steps_per_transition: max_transition_steps,
-                    allow_potion_expenditure: prepared.config.max_potions_used != Some(0),
+                    allow_potion_expenditure: prepared.max_potions_used != Some(0),
                     allow_potion_discard,
-                    allowed_potion_slots: prepared.options.allowed_potion_slots,
+                    allowed_potion_slots: prepared.allowed_potion_slots,
                     ..TurnOptionGeneratorConfig::default()
                 },
                 generation_quantum_work: 4,
                 backed_generation_quantum_work: DEFAULT_BACKED_GENERATION_QUANTUM_WORK,
                 guide_service_bias,
                 initial_expansion_work: 64,
-                root_initial_expansion_work: root_initial_expansion_work_for_budget(max_work),
+                root_initial_expansion_work: root_initial_expansion_work_for_budget(
+                    max_generation_work,
+                ),
                 max_turn_depth: 32,
                 satisfaction: planner_satisfaction,
                 require_no_unrecovered_stolen_gold: matches!(
                     satisfaction,
                     PortfolioWitnessSatisfactionV1::HpLossAtMost(_)
                 ),
-                max_potions_used: prepared.config.max_potions_used,
+                max_potions_used: prepared.max_potions_used,
             },
             policy.clone(),
         );
@@ -223,9 +214,9 @@ impl OracleRunCombatWorkV1 {
                     proposals_per_view: 8,
                     ..PolicyDiscrepancyTurnMacroConfig::default()
                 }),
-                max_potions_used: prepared.config.max_potions_used,
+                max_potions_used: prepared.max_potions_used,
                 allow_potion_discard,
-                allowed_potion_slots: prepared.options.allowed_potion_slots,
+                allowed_potion_slots: prepared.allowed_potion_slots,
                 ..PolicyDiscrepancyConfig::default()
             },
             policy,
@@ -239,18 +230,18 @@ impl OracleRunCombatWorkV1 {
             next_portfolio_member: PortfolioMemberV1::LocalTurnGraph,
             local_complete: false,
             discrepancy_complete: false,
-            remaining_work: max_work,
-            remaining_engine_steps: max_work.saturating_mul(max_transition_steps),
+            remaining_generation_work: max_generation_work,
+            remaining_engine_steps: max_generation_work.saturating_mul(max_transition_steps),
             max_transition_steps,
-            max_potions_used: prepared.config.max_potions_used,
-            allowed_potion_slots: prepared.options.allowed_potion_slots,
+            max_potions_used: prepared.max_potions_used,
+            allowed_potion_slots: prepared.allowed_potion_slots,
             allow_potion_discard,
             potion_spend_requires_satisfaction: false,
             protected_potion_free_incumbent: None,
             prior_stage_incumbent: None,
             stage_entry_incumbent: None,
             satisfaction,
-            remaining_wall_time: prepared.config.wall_time,
+            remaining_wall_time: prepared.wall_time,
             quantum_count: 0,
             prior_generation_work: 0,
             plan_prefix_proposals: 0,
@@ -267,7 +258,7 @@ impl OracleRunCombatWorkV1 {
             last_quantum_generation_work: 0,
             last_quantum_engine_steps: 0,
             search_resume_exact: false,
-            witness_source: CombatAutomationTrajectorySource::SearchCombat,
+            witness_source: CombatAutomationTrajectorySource::TurnGraphPortfolioV1,
         };
         work.offer_initial_plan_prefix();
         Ok(work)
@@ -275,14 +266,16 @@ impl OracleRunCombatWorkV1 {
 
     pub(super) fn restart_from_checkpoint_with_guidance(
         session: &RunControlSession,
-        options: RunControlSearchCombatOptions,
-        checkpoint: OracleRunCombatWorkCheckpointV1,
+        options: OracleCombatWitnessOptionsV1,
+        checkpoint: OracleCombatWitnessCheckpointV1,
         guidance: Option<&CombatGuidanceBundleV1>,
     ) -> Result<Self, String> {
         // A process restart restores the already charged allowance and exact
         // incumbent. The tactical frontier itself is intentionally rebuilt.
         let mut work = Self::new_exact_planner(session, options, guidance)?;
-        work.remaining_work = work.remaining_work.min(checkpoint.remaining_nodes);
+        work.remaining_generation_work = work
+            .remaining_generation_work
+            .min(checkpoint.remaining_generation_work);
         work.remaining_engine_steps = work
             .remaining_engine_steps
             .min(checkpoint.remaining_engine_steps);
@@ -294,7 +287,7 @@ impl OracleRunCombatWorkV1 {
             (configured, None) => configured,
         };
         work.quantum_count = checkpoint.quantum_count;
-        work.prior_generation_work = checkpoint.consumed_nodes;
+        work.prior_generation_work = checkpoint.consumed_generation_work;
         work.restart_count = checkpoint.restart_count.saturating_add(1);
         work.incumbent_revision = checkpoint.incumbent_revision;
         work.quanta_since_incumbent_improvement = checkpoint.quanta_since_incumbent_improvement;
@@ -319,13 +312,13 @@ impl OracleRunCombatWorkV1 {
     /// restart is explicit in both accounting and diagnostics.
     pub(super) fn restart_for_higher_fidelity_with_guidance(
         session: &RunControlSession,
-        options: RunControlSearchCombatOptions,
-        prior: OracleRunCombatWorkCheckpointV1,
+        options: OracleCombatWitnessOptionsV1,
+        prior: OracleCombatWitnessCheckpointV1,
         guidance: Option<&CombatGuidanceBundleV1>,
     ) -> Result<Self, String> {
         let mut work = Self::new_exact_planner(session, options, guidance)?;
         work.quantum_count = prior.quantum_count;
-        work.prior_generation_work = prior.consumed_nodes;
+        work.prior_generation_work = prior.consumed_generation_work;
         work.restart_count = prior.restart_count.saturating_add(1);
         work.incumbent_revision = prior.incumbent_revision;
         work.quanta_since_incumbent_improvement = prior.quanta_since_incumbent_improvement;
@@ -426,7 +419,7 @@ impl OracleRunCombatWorkV1 {
         const MAX_PLAN_PREFIX_TURNS: usize = 6;
         const MAX_PLAN_PREFIX_ACTIONS: usize = 64;
 
-        let max_actions = MAX_PLAN_PREFIX_ACTIONS.min(self.remaining_work);
+        let max_actions = MAX_PLAN_PREFIX_ACTIONS.min(self.remaining_generation_work);
         if max_actions == 0
             || wall_allowance_exhausted(self.remaining_wall_time)
             || !self.local_search.has_supported_initial_plan_prefix()
@@ -461,8 +454,8 @@ impl OracleRunCombatWorkV1 {
         self.plan_prefix_proposed_actions = self
             .plan_prefix_proposed_actions
             .saturating_add(report.proposed_actions.len());
-        self.remaining_work = self
-            .remaining_work
+        self.remaining_generation_work = self
+            .remaining_generation_work
             .saturating_sub(report.proposed_actions.len());
         self.remaining_engine_steps = self
             .remaining_engine_steps
@@ -474,7 +467,7 @@ impl OracleRunCombatWorkV1 {
     /// search restart even though its allowance necessarily starts fresh.
     pub(super) fn restart_from_exact_state_with_guidance(
         session: &RunControlSession,
-        options: RunControlSearchCombatOptions,
+        options: OracleCombatWitnessOptionsV1,
         guidance: Option<&CombatGuidanceBundleV1>,
     ) -> Result<Self, String> {
         let mut work = Self::new_with_guidance(session, options, guidance)?;
@@ -484,7 +477,7 @@ impl OracleRunCombatWorkV1 {
 
     pub(super) fn for_exact_action_witness_with_guidance(
         session: &RunControlSession,
-        options: RunControlSearchCombatOptions,
+        options: OracleCombatWitnessOptionsV1,
         guidance: Option<&CombatGuidanceBundleV1>,
     ) -> Result<Self, String> {
         // Exact analyst actions need simulator verification before they can
@@ -492,10 +485,10 @@ impl OracleRunCombatWorkV1 {
         Self::new_exact_planner(session, options, guidance)
     }
 
-    pub(super) fn checkpoint(&self) -> OracleRunCombatWorkCheckpointV1 {
-        OracleRunCombatWorkCheckpointV1 {
-            consumed_nodes: self.nodes_expanded(),
-            remaining_nodes: self.remaining_work,
+    pub(super) fn checkpoint(&self) -> OracleCombatWitnessCheckpointV1 {
+        OracleCombatWitnessCheckpointV1 {
+            consumed_generation_work: self.generation_work(),
+            remaining_generation_work: self.remaining_generation_work,
             remaining_engine_steps: self.remaining_engine_steps,
             remaining_wall_ms: self.remaining_wall_ms(),
             quantum_count: self.quantum_count,
@@ -511,9 +504,9 @@ impl OracleRunCombatWorkV1 {
 
     pub(super) fn advance(
         &mut self,
-        quantum: &RunControlCombatSearchQuantum,
+        quantum: &OracleCombatWitnessQuantumV1,
         global_deadline: Option<Instant>,
-    ) -> RunControlCombatWorkAdvanceV1 {
+    ) -> OracleCombatWitnessAdvanceV1 {
         // "First" is relative to the configured owner satisfaction. Survival
         // mode still accepts the first exact win; strategic quality modes keep
         // an insufficient win safe while using only this stage's allowance to
@@ -531,9 +524,9 @@ impl OracleRunCombatWorkV1 {
     /// for an analyst who explicitly requests exhaustive bounded improvement.
     pub(super) fn advance_improving_incumbent(
         &mut self,
-        quantum: &RunControlCombatSearchQuantum,
+        quantum: &OracleCombatWitnessQuantumV1,
         global_deadline: Option<Instant>,
-    ) -> RunControlCombatWorkAdvanceV1 {
+    ) -> OracleCombatWitnessAdvanceV1 {
         self.advance_with_witness_policy(
             quantum,
             global_deadline,
@@ -547,9 +540,9 @@ impl OracleRunCombatWorkV1 {
     /// the caller can inspect, continue, or explicitly accept the result.
     pub(super) fn advance_current_stage_probe(
         &mut self,
-        quantum: &RunControlCombatSearchQuantum,
+        quantum: &OracleCombatWitnessQuantumV1,
         global_deadline: Option<Instant>,
-    ) -> RunControlCombatWorkAdvanceV1 {
+    ) -> OracleCombatWitnessAdvanceV1 {
         // The portfolio layer is not the only satisfaction owner: the local
         // graph also closes itself when its configured witness threshold is
         // reached. Temporarily switch that resumable graph to budget service
@@ -569,22 +562,24 @@ impl OracleRunCombatWorkV1 {
 
     fn advance_with_witness_policy(
         &mut self,
-        quantum: &RunControlCombatSearchQuantum,
+        quantum: &OracleCombatWitnessQuantumV1,
         global_deadline: Option<Instant>,
         mode: PortfolioAdvanceModeV1,
-    ) -> RunControlCombatWorkAdvanceV1 {
+    ) -> OracleCombatWitnessAdvanceV1 {
         let now = Instant::now();
         let global_remaining =
             global_deadline.map(|deadline| deadline.saturating_duration_since(now));
         if global_remaining == Some(Duration::ZERO) {
-            return RunControlCombatWorkAdvanceV1::GlobalDeadlineReached;
+            return OracleCombatWitnessAdvanceV1::GlobalDeadlineReached;
         }
-        let work = quantum.additional_nodes.min(self.remaining_work);
+        let work = quantum
+            .additional_generation_work
+            .min(self.remaining_generation_work);
         if work == 0 || wall_allowance_exhausted(self.remaining_wall_time) {
             return if self.best_witness().is_some() {
-                RunControlCombatWorkAdvanceV1::ReadyToFinish
+                OracleCombatWitnessAdvanceV1::ReadyToFinish
             } else {
-                RunControlCombatWorkAdvanceV1::AllowanceExhausted
+                OracleCombatWitnessAdvanceV1::AllowanceExhausted
             };
         }
         let requested_wall = quantum.soft_wall_ms.map(Duration::from_millis);
@@ -594,11 +589,11 @@ impl OracleRunCombatWorkV1 {
             .min();
         if soft_wall == Some(Duration::ZERO) {
             return if global_remaining == Some(Duration::ZERO) {
-                RunControlCombatWorkAdvanceV1::GlobalDeadlineReached
+                OracleCombatWitnessAdvanceV1::GlobalDeadlineReached
             } else if self.best_witness().is_some() {
-                RunControlCombatWorkAdvanceV1::ReadyToFinish
+                OracleCombatWitnessAdvanceV1::ReadyToFinish
             } else {
-                RunControlCombatWorkAdvanceV1::AllowanceExhausted
+                OracleCombatWitnessAdvanceV1::AllowanceExhausted
             };
         }
         let deadline = soft_wall.and_then(|duration| now.checked_add(duration));
@@ -637,7 +632,7 @@ impl OracleRunCombatWorkV1 {
             self.local_complete,
             self.discrepancy_complete,
         ) else {
-            return RunControlCombatWorkAdvanceV1::ReadyToFinish;
+            return OracleCombatWitnessAdvanceV1::ReadyToFinish;
         };
         self.next_portfolio_member = member.other();
         let (consumed_work, consumed_engine, member_complete, status) =
@@ -730,7 +725,8 @@ impl OracleRunCombatWorkV1 {
             self.quanta_since_incumbent_improvement =
                 self.quanta_since_incumbent_improvement.saturating_add(1);
         }
-        self.remaining_work = self.remaining_work.saturating_sub(consumed_work);
+        self.remaining_generation_work =
+            self.remaining_generation_work.saturating_sub(consumed_work);
         self.remaining_engine_steps = self.remaining_engine_steps.saturating_sub(consumed_engine);
         if let Some(remaining) = &mut self.remaining_wall_time {
             *remaining = remaining.saturating_sub(now.elapsed());
@@ -743,7 +739,7 @@ impl OracleRunCombatWorkV1 {
             &self.start,
             self.stage_entry_incumbent.as_ref(),
             self.current_local_search_work(),
-            quantum.additional_nodes,
+            quantum.additional_generation_work,
         );
         let standard_satisfaction_reached = standard_witness_ends_stage(
             mode == PortfolioAdvanceModeV1::StopOnSatisfaction,
@@ -766,18 +762,18 @@ impl OracleRunCombatWorkV1 {
             || quality_satisfied
             || (self.local_complete && self.discrepancy_complete)
         {
-            RunControlCombatWorkAdvanceV1::ReadyToFinish
-        } else if self.remaining_work == 0
+            OracleCombatWitnessAdvanceV1::ReadyToFinish
+        } else if self.remaining_generation_work == 0
             || self.remaining_engine_steps == 0
             || wall_allowance_exhausted(self.remaining_wall_time)
         {
             if self.best_witness().is_some() {
-                RunControlCombatWorkAdvanceV1::ReadyToFinish
+                OracleCombatWitnessAdvanceV1::ReadyToFinish
             } else {
-                RunControlCombatWorkAdvanceV1::AllowanceExhausted
+                OracleCombatWitnessAdvanceV1::AllowanceExhausted
             }
         } else {
-            RunControlCombatWorkAdvanceV1::Pending
+            OracleCombatWitnessAdvanceV1::Pending
         }
     }
 
@@ -789,13 +785,15 @@ impl OracleRunCombatWorkV1 {
     /// autosave cycle before a requested thirty-second continuation begins.
     pub(super) fn ensure_requested_allowance(
         &mut self,
-        requested_nodes: usize,
+        requested_generation_work: usize,
         requested_wall_time: Option<Duration>,
     ) {
-        self.remaining_work = self.remaining_work.max(requested_nodes);
+        self.remaining_generation_work = self
+            .remaining_generation_work
+            .max(requested_generation_work);
         self.remaining_engine_steps = self
             .remaining_engine_steps
-            .max(requested_nodes.saturating_mul(self.max_transition_steps));
+            .max(requested_generation_work.saturating_mul(self.max_transition_steps));
         if let (Some(remaining), Some(requested)) =
             (&mut self.remaining_wall_time, requested_wall_time)
         {
@@ -934,7 +932,7 @@ impl OracleRunCombatWorkV1 {
         Ok(())
     }
 
-    pub(super) fn nodes_expanded(&self) -> u64 {
+    pub(super) fn generation_work(&self) -> u64 {
         self.prior_generation_work
             .saturating_add(self.current_generation_work())
     }
@@ -1016,8 +1014,8 @@ impl OracleRunCombatWorkV1 {
         self.quantum_count
     }
 
-    pub(super) fn remaining_nodes(&self) -> usize {
-        self.remaining_work
+    pub(super) fn remaining_generation_work(&self) -> usize {
+        self.remaining_generation_work
     }
 
     pub(super) fn current_search_generation_work(&self) -> u64 {
@@ -1045,7 +1043,7 @@ impl OracleRunCombatWorkV1 {
         self.restart_count
     }
 
-    pub(super) fn progress(&self) -> OracleResidentCombatJobEvidenceV1 {
+    pub(super) fn progress(&self) -> OracleResidentCombatWitnessEvidenceV1 {
         let local_counters = self.local_search.counters();
         let discrepancy_counters = self.discrepancy_search.counters();
         let local_progress = self.local_search.progress_snapshot();
@@ -1060,7 +1058,8 @@ impl OracleRunCombatWorkV1 {
         let current_generation_work = self.current_search_generation_work();
         let local_retained_state_work = self.local_search.retained_state_work();
         let discrepancy_retained_state_work = self.discrepancy_search.retained_state_work();
-        OracleResidentCombatJobEvidenceV1 {
+        OracleResidentCombatWitnessEvidenceV1 {
+            witness_engine: CombatWitnessEngineV1::TurnGraphPortfolioV1,
             root_exact_state_hash: crate::ai::combat_state_key::combat_exact_state_hash_v2(
                 &self.start.engine,
                 &self.start.combat,
@@ -1179,10 +1178,10 @@ impl OracleRunCombatWorkV1 {
         if let Some(witness) = self.best_witness() {
             let source = match witness.discovery_source {
                 OracleCombatWitnessDiscoverySource::PlannerSearch => {
-                    CombatAutomationTrajectorySource::SearchCombat
+                    CombatAutomationTrajectorySource::TurnGraphPortfolioV1
                 }
                 OracleCombatWitnessDiscoverySource::PolicyDiscrepancySearch => {
-                    CombatAutomationTrajectorySource::SearchCombat
+                    CombatAutomationTrajectorySource::TurnGraphPortfolioV1
                 }
                 OracleCombatWitnessDiscoverySource::RestoredExactActions => {
                     CombatAutomationTrajectorySource::OracleExactActions
@@ -1211,8 +1210,8 @@ impl OracleRunCombatWorkV1 {
                 .retained_state_work()
                 .saturating_add(self.discrepancy_search.retained_state_work()),
         ))
-        .with_combat_search_rejection(
-            RunControlCombatSearchRejection::NoCompleteWinningCandidate,
+        .with_oracle_combat_witness_failure(
+            OracleCombatWitnessFailureV1::NoVerifiedCompleteWin,
         ))
     }
 }
@@ -1233,7 +1232,9 @@ fn combat_witness_quality(
 ) -> CombatWitnessQualityV1 {
     let final_hp = witness.final_position.combat.entities.player.current_hp;
     let persistent_run_value =
-        crate::ai::combat_search_v2::persistent_run_value(&witness.final_position.combat);
+        crate::ai::combat_persistent_outcome_v1::materialized_persistent_payoff_score_v1(
+            &witness.final_position.combat,
+        );
     CombatWitnessQualityV1 {
         persistent_adjusted_hp: final_hp.saturating_add(persistent_run_value),
         final_hp,
@@ -1289,7 +1290,7 @@ fn planner_satisfaction(
         PortfolioWitnessSatisfactionV1::HpLossAtMost(limit) => {
             OracleCombatWitnessSatisfaction::HpLossAtMost(limit)
         }
-        PortfolioWitnessSatisfactionV1::PersistentRunValueGain
+        PortfolioWitnessSatisfactionV1::MaterializedPersistentPayoffGain
         | PortfolioWitnessSatisfactionV1::BudgetOrExhaustion => {
             OracleCombatWitnessSatisfaction::BudgetOrExhaustion
         }
@@ -1365,10 +1366,10 @@ fn combat_local_candidate_disposition(
     allow_potion_discard: bool,
     local_candidate: Option<&OracleCombatWitness>,
     incumbent: Option<&OracleCombatWitness>,
-) -> Option<OracleCombatLocalCandidateDispositionV1> {
+) -> Option<OracleCombatWitnessCandidateDispositionV1> {
     let local_candidate = local_candidate?;
     if incumbent.is_some_and(|incumbent| std::ptr::eq(local_candidate, incumbent)) {
-        return Some(OracleCombatLocalCandidateDispositionV1::SelectedIncumbent);
+        return Some(OracleCombatWitnessCandidateDispositionV1::SelectedIncumbent);
     }
     if !combat_witness_within_potion_contract(
         start,
@@ -1377,27 +1378,27 @@ fn combat_local_candidate_disposition(
         allowed_potion_slots,
     ) || (!allow_potion_discard && combat_witness_uses_potion_discard(local_candidate))
     {
-        return Some(OracleCombatLocalCandidateDispositionV1::RejectedOutsidePotionContract);
+        return Some(OracleCombatWitnessCandidateDispositionV1::RejectedOutsidePotionContract);
     }
     if potion_spend_requires_satisfaction
         && combat_witness_potion_expenditures(start, local_candidate) > 0
         && !combat_witness_satisfies(satisfaction, start, local_candidate)
     {
         return Some(
-            OracleCombatLocalCandidateDispositionV1::RejectedPotionSpendMissesSatisfaction,
+            OracleCombatWitnessCandidateDispositionV1::RejectedPotionSpendMissesSatisfaction,
         );
     }
     if potion_spend_requires_satisfaction
         && combat_witness_potion_expenditures(start, local_candidate) > 0
-        && crate::ai::combat_search_v2::unrecovered_stolen_gold(
+        && crate::ai::combat_persistent_outcome_v1::unrecovered_stolen_gold(
             &local_candidate.final_position.combat,
         ) > 0
     {
         return Some(
-            OracleCombatLocalCandidateDispositionV1::RejectedPotionSpendLeavesUnrecoveredTheft,
+            OracleCombatWitnessCandidateDispositionV1::RejectedPotionSpendLeavesUnrecoveredTheft,
         );
     }
-    Some(OracleCombatLocalCandidateDispositionV1::RejectedByPortfolioComparison)
+    Some(OracleCombatWitnessCandidateDispositionV1::RejectedByPortfolioComparison)
 }
 
 fn combat_witness_satisfies_strategic_quality(
@@ -1406,7 +1407,9 @@ fn combat_witness_satisfies_strategic_quality(
     witness: &OracleCombatWitness,
 ) -> bool {
     combat_witness_satisfies(satisfaction, start, witness)
-        && crate::ai::combat_search_v2::unrecovered_stolen_gold(&witness.final_position.combat) == 0
+        && crate::ai::combat_persistent_outcome_v1::unrecovered_stolen_gold(
+            &witness.final_position.combat,
+        ) == 0
 }
 
 fn combat_witness_ends_quality_refinement(
@@ -1558,9 +1561,12 @@ fn combat_witness_satisfies(
             let final_hp = witness.final_position.combat.entities.player.current_hp;
             initial_hp.saturating_sub(final_hp).max(0) as u32 <= limit
         }
-        PortfolioWitnessSatisfactionV1::PersistentRunValueGain => {
-            crate::ai::combat_search_v2::persistent_run_value(&witness.final_position.combat)
-                > crate::ai::combat_search_v2::persistent_run_value(&start.combat)
+        PortfolioWitnessSatisfactionV1::MaterializedPersistentPayoffGain => {
+            crate::ai::combat_persistent_outcome_v1::materialized_persistent_payoff_score_v1(
+                &witness.final_position.combat,
+            ) > crate::ai::combat_persistent_outcome_v1::materialized_persistent_payoff_score_v1(
+                &start.combat,
+            )
         }
         PortfolioWitnessSatisfactionV1::BudgetOrExhaustion => false,
     }
@@ -1617,6 +1623,7 @@ fn select_portfolio_member(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ai::combat_witness_contract::CombatWitnessPotionPolicyV1;
 
     fn hallway_combat_session() -> RunControlSession {
         let mut combat = crate::test_support::blank_test_combat();
@@ -1724,19 +1731,17 @@ mod tests {
         session
     }
 
-    fn single_potion_slot_options(slot_mask: u64) -> RunControlSearchCombatOptions {
-        RunControlSearchCombatOptions {
-            max_nodes: Some(16),
+    fn single_potion_slot_options(slot_mask: u64) -> OracleCombatWitnessOptionsV1 {
+        OracleCombatWitnessOptionsV1 {
+            max_generation_work: Some(16),
             max_potions_used: Some(1),
             allowed_potion_slots: Some(slot_mask),
-            satisfaction: Some(
-                crate::ai::combat_search_v2::CombatSearchV2Satisfaction::FirstCompleteWin,
-            ),
-            ..RunControlSearchCombatOptions::default()
+            satisfaction: Some(CombatWitnessSatisfactionV1::FirstCompleteWin),
+            ..OracleCombatWitnessOptionsV1::default()
         }
     }
 
-    fn explosive_stage_one_work() -> (RunControlSession, OracleRunCombatWorkV1) {
+    fn explosive_stage_one_work() -> (RunControlSession, OracleRunCombatWitnessWorkV1) {
         let mut session = one_strike_win_session();
         let combat = &mut session.active_combat.as_mut().unwrap().combat_state;
         combat.entities.monsters[0].current_hp = 10;
@@ -1751,7 +1756,7 @@ mod tests {
                 71,
             )),
         ];
-        let mut work = OracleRunCombatWorkV1::for_exact_action_witness_with_guidance(
+        let mut work = OracleRunCombatWitnessWorkV1::for_exact_action_witness_with_guidance(
             &session,
             single_potion_slot_options(0b01),
             None,
@@ -1838,7 +1843,7 @@ mod tests {
                 Some(&marginal_spend),
                 Some(&baseline),
             ),
-            Some(OracleCombatLocalCandidateDispositionV1::RejectedPotionSpendMissesSatisfaction)
+            Some(OracleCombatWitnessCandidateDispositionV1::RejectedPotionSpendMissesSatisfaction)
         );
         assert_eq!(
             combat_local_candidate_disposition(
@@ -1851,7 +1856,7 @@ mod tests {
                 Some(&baseline),
                 Some(&baseline),
             ),
-            Some(OracleCombatLocalCandidateDispositionV1::SelectedIncumbent)
+            Some(OracleCombatWitnessCandidateDispositionV1::SelectedIncumbent)
         );
         assert!(combat_witness_better_with_potion_quality_gate(
             &start,
@@ -2003,7 +2008,7 @@ mod tests {
                 Some(&full_recovery),
             ),
             Some(
-                OracleCombatLocalCandidateDispositionV1::RejectedPotionSpendLeavesUnrecoveredTheft
+                OracleCombatWitnessCandidateDispositionV1::RejectedPotionSpendLeavesUnrecoveredTheft
             )
         );
     }
@@ -2015,15 +2020,13 @@ mod tests {
             .current_active_combat_position()
             .expect("exact hallway combat root");
         let initial_hp = start.combat.entities.player.current_hp;
-        let mut work = OracleRunCombatWorkV1::for_exact_action_witness_with_guidance(
+        let mut work = OracleRunCombatWitnessWorkV1::for_exact_action_witness_with_guidance(
             &session,
-            RunControlSearchCombatOptions {
-                max_nodes: Some(1),
+            OracleCombatWitnessOptionsV1 {
+                max_generation_work: Some(1),
                 max_potions_used: Some(0),
-                satisfaction: Some(
-                    crate::ai::combat_search_v2::CombatSearchV2Satisfaction::HpLossAtMost(17),
-                ),
-                ..RunControlSearchCombatOptions::default()
+                satisfaction: Some(CombatWitnessSatisfactionV1::HpLossAtMost(17)),
+                ..OracleCombatWitnessOptionsV1::default()
             },
             None,
         )
@@ -2105,15 +2108,13 @@ mod tests {
             crate::content::potions::PotionId::FirePotion,
             7,
         ))];
-        let mut work = OracleRunCombatWorkV1::new_with_guidance(
+        let mut work = OracleRunCombatWitnessWorkV1::new_with_guidance(
             &session,
-            RunControlSearchCombatOptions {
-                max_nodes: Some(16),
+            OracleCombatWitnessOptionsV1 {
+                max_generation_work: Some(16),
                 max_potions_used: Some(0),
-                satisfaction: Some(
-                    crate::ai::combat_search_v2::CombatSearchV2Satisfaction::FirstCompleteWin,
-                ),
-                ..RunControlSearchCombatOptions::default()
+                satisfaction: Some(CombatWitnessSatisfactionV1::FirstCompleteWin),
+                ..OracleCombatWitnessOptionsV1::default()
             },
             None,
         )
@@ -2149,19 +2150,17 @@ mod tests {
                 target: Some(target),
             },
         ];
-        let options = |potion_policy| RunControlSearchCombatOptions {
-            max_nodes: Some(16),
+        let options = |potion_policy| OracleCombatWitnessOptionsV1 {
+            max_generation_work: Some(16),
             potion_policy: Some(potion_policy),
             max_potions_used: Some(1),
             allowed_potion_slots: Some(1),
-            satisfaction: Some(
-                crate::ai::combat_search_v2::CombatSearchV2Satisfaction::FirstCompleteWin,
-            ),
-            ..RunControlSearchCombatOptions::default()
+            satisfaction: Some(CombatWitnessSatisfactionV1::FirstCompleteWin),
+            ..OracleCombatWitnessOptionsV1::default()
         };
-        let mut semantic = OracleRunCombatWorkV1::for_exact_action_witness_with_guidance(
+        let mut semantic = OracleRunCombatWitnessWorkV1::for_exact_action_witness_with_guidance(
             &session,
-            options(crate::ai::combat_search_v2::CombatSearchV2PotionPolicy::SemanticBudgeted),
+            options(CombatWitnessPotionPolicyV1::SemanticBudgeted),
             None,
         )
         .expect("semantic exact-witness work");
@@ -2171,9 +2170,9 @@ mod tests {
             .expect_err("semantic victory search must omit explicit discard");
         assert!(error.contains("outside an all-legal search policy"));
 
-        let mut all_legal = OracleRunCombatWorkV1::for_exact_action_witness_with_guidance(
+        let mut all_legal = OracleRunCombatWitnessWorkV1::for_exact_action_witness_with_guidance(
             &session,
-            options(crate::ai::combat_search_v2::CombatSearchV2PotionPolicy::All),
+            options(CombatWitnessPotionPolicyV1::All),
             None,
         )
         .expect("all-legal exact-witness work");
@@ -2182,40 +2181,18 @@ mod tests {
             .expect("all-legal discard witness");
         assert!(all_legal.has_verified_witness());
 
-        let mut semantic_all_options =
-            options(crate::ai::combat_search_v2::CombatSearchV2PotionPolicy::All);
-        semantic_all_options.profile = Some(crate::ai::combat_search_v2::CombatSearchProfile {
-            label: "all_potion_use_without_discard",
-            engine: crate::ai::combat_search_v2::CombatSearchEngineProfile {
-                budget: crate::ai::combat_search_v2::CombatSearchBudgetSpec {
-                    max_nodes: 16,
-                    wall_ms: 100,
-                },
-                plugins: crate::ai::combat_search_v2::CombatSearchPluginStack {
-                    potion: crate::ai::combat_search_v2::CombatSearchPotionPlugin {
-                        policy: crate::ai::combat_search_v2::CombatSearchV2PotionPolicy::All,
-                        max_potions_used: Some(1),
-                        allowed_potion_slots: Some(1),
-                        allow_potion_discard: Some(false),
-                    },
-                    ..crate::ai::combat_search_v2::CombatSearchPluginStack::default()
-                },
-            },
-            policy: crate::ai::combat_search_v2::CombatSearchAttemptPolicy {
-                acceptance:
-                    crate::ai::combat_search_v2::CombatSearchAcceptancePluginId::AcceptedLineOnly,
-                artifacts: crate::ai::combat_search_v2::CombatSearchArtifactPluginId::None,
-            },
-        });
-        let mut semantic_all = OracleRunCombatWorkV1::for_exact_action_witness_with_guidance(
-            &session,
-            semantic_all_options,
-            None,
-        )
-        .expect("all-use semantic exact-witness work");
+        let mut semantic_all_options = options(CombatWitnessPotionPolicyV1::All);
+        semantic_all_options.allow_potion_discard = Some(false);
+        let mut semantic_all =
+            OracleRunCombatWitnessWorkV1::for_exact_action_witness_with_guidance(
+                &session,
+                semantic_all_options,
+                None,
+            )
+            .expect("all-use semantic exact-witness work");
         let error = semantic_all
             .verify_and_restore_action_witness(&actions)
-            .expect_err("explicit semantic profile must reject discard under All use policy");
+            .expect_err("explicit production admission must reject discard under All use policy");
         assert!(error.contains("outside an all-legal search policy"));
     }
 
@@ -2228,16 +2205,14 @@ mod tests {
             crate::content::potions::PotionId::FirePotion,
             8,
         ))];
-        let mut work = OracleRunCombatWorkV1::new_with_guidance(
+        let mut work = OracleRunCombatWitnessWorkV1::new_with_guidance(
             &session,
-            RunControlSearchCombatOptions {
-                max_nodes: Some(16),
+            OracleCombatWitnessOptionsV1 {
+                max_generation_work: Some(16),
                 max_potions_used: Some(1),
                 allowed_potion_slots: Some(1_u64 << 1),
-                satisfaction: Some(
-                    crate::ai::combat_search_v2::CombatSearchV2Satisfaction::FirstCompleteWin,
-                ),
-                ..RunControlSearchCombatOptions::default()
+                satisfaction: Some(CombatWitnessSatisfactionV1::FirstCompleteWin),
+                ..OracleCombatWitnessOptionsV1::default()
             },
             None,
         )
@@ -2278,7 +2253,7 @@ mod tests {
         );
 
         let stage_two_options = single_potion_slot_options(0b10);
-        let stage_two = OracleRunCombatWorkV1::restart_for_higher_fidelity_with_guidance(
+        let stage_two = OracleRunCombatWitnessWorkV1::restart_for_higher_fidelity_with_guidance(
             &session,
             stage_two_options.clone(),
             stage_one_checkpoint,
@@ -2319,7 +2294,7 @@ mod tests {
             ),
             0b01
         );
-        let restored = OracleRunCombatWorkV1::restart_from_checkpoint_with_guidance(
+        let restored = OracleRunCombatWitnessWorkV1::restart_from_checkpoint_with_guidance(
             &session,
             stage_two_options,
             stage_two_checkpoint,
@@ -2339,16 +2314,14 @@ mod tests {
     #[test]
     fn wider_potion_stage_keeps_a_separate_entry_incumbent_challenge() {
         let (session, stage_one) = explosive_stage_one_work();
-        let stage_two = OracleRunCombatWorkV1::restart_for_higher_fidelity_with_guidance(
+        let stage_two = OracleRunCombatWitnessWorkV1::restart_for_higher_fidelity_with_guidance(
             &session,
-            RunControlSearchCombatOptions {
-                max_nodes: Some(16),
+            OracleCombatWitnessOptionsV1 {
+                max_generation_work: Some(16),
                 max_potions_used: Some(2),
                 allowed_potion_slots: Some(0b11),
-                satisfaction: Some(
-                    crate::ai::combat_search_v2::CombatSearchV2Satisfaction::FirstCompleteWin,
-                ),
-                ..RunControlSearchCombatOptions::default()
+                satisfaction: Some(CombatWitnessSatisfactionV1::FirstCompleteWin),
+                ..OracleCombatWitnessOptionsV1::default()
             },
             stage_one.checkpoint(),
             None,
@@ -2390,7 +2363,7 @@ mod tests {
             .player
             .current_hp -= 1;
 
-        let error = match OracleRunCombatWorkV1::restart_for_higher_fidelity_with_guidance(
+        let error = match OracleRunCombatWitnessWorkV1::restart_for_higher_fidelity_with_guidance(
             &session,
             single_potion_slot_options(0b10),
             checkpoint,
@@ -2568,27 +2541,25 @@ mod tests {
     #[test]
     fn portfolio_charges_each_live_search_from_one_shared_allowance() {
         let session = hallway_combat_session();
-        let mut work = OracleRunCombatWorkV1::new_with_guidance(
+        let mut work = OracleRunCombatWitnessWorkV1::new_with_guidance(
             &session,
-            RunControlSearchCombatOptions {
-                max_nodes: Some(16),
-                satisfaction: Some(
-                    crate::ai::combat_search_v2::CombatSearchV2Satisfaction::FirstCompleteWin,
-                ),
-                ..RunControlSearchCombatOptions::default()
+            OracleCombatWitnessOptionsV1 {
+                max_generation_work: Some(16),
+                satisfaction: Some(CombatWitnessSatisfactionV1::FirstCompleteWin),
+                ..OracleCombatWitnessOptionsV1::default()
             },
             None,
         )
         .expect("portfolio should accept an active combat");
-        let quantum = RunControlCombatSearchQuantum {
+        let quantum = OracleCombatWitnessQuantumV1 {
             label: "portfolio_contract",
-            additional_nodes: 1,
+            additional_generation_work: 1,
             soft_wall_ms: None,
         };
 
         assert_eq!(
             work.advance(&quantum, None),
-            RunControlCombatWorkAdvanceV1::Pending
+            OracleCombatWitnessAdvanceV1::Pending
         );
         assert_eq!(work.local_search.counters().generation_work, 1);
         assert_eq!(
@@ -2597,11 +2568,11 @@ mod tests {
                 .applied_action_transitions,
             0
         );
-        assert_eq!(work.remaining_work, 15);
+        assert_eq!(work.remaining_generation_work, 15);
 
         assert_eq!(
             work.advance(&quantum, None),
-            RunControlCombatWorkAdvanceV1::Pending
+            OracleCombatWitnessAdvanceV1::Pending
         );
         assert_eq!(work.local_search.counters().generation_work, 1);
         assert_eq!(
@@ -2610,37 +2581,35 @@ mod tests {
                 .applied_action_transitions,
             1
         );
-        assert_eq!(work.remaining_work, 14);
+        assert_eq!(work.remaining_generation_work, 14);
     }
 
     #[test]
     fn boss_portfolio_serves_local_graph_across_caller_quanta() {
         let session = boss_combat_session();
-        let mut work = OracleRunCombatWorkV1::new_with_guidance(
+        let mut work = OracleRunCombatWitnessWorkV1::new_with_guidance(
             &session,
-            RunControlSearchCombatOptions {
-                max_nodes: Some(16),
-                satisfaction: Some(
-                    crate::ai::combat_search_v2::CombatSearchV2Satisfaction::FirstCompleteWin,
-                ),
-                ..RunControlSearchCombatOptions::default()
+            OracleCombatWitnessOptionsV1 {
+                max_generation_work: Some(16),
+                satisfaction: Some(CombatWitnessSatisfactionV1::FirstCompleteWin),
+                ..OracleCombatWitnessOptionsV1::default()
             },
             None,
         )
         .expect("boss portfolio should accept an active combat");
-        let quantum = RunControlCombatSearchQuantum {
+        let quantum = OracleCombatWitnessQuantumV1 {
             label: "boss_local_primary_contract",
-            additional_nodes: 1,
+            additional_generation_work: 1,
             soft_wall_ms: None,
         };
 
         assert_eq!(
             work.advance(&quantum, None),
-            RunControlCombatWorkAdvanceV1::Pending
+            OracleCombatWitnessAdvanceV1::Pending
         );
         assert_eq!(
             work.advance(&quantum, None),
-            RunControlCombatWorkAdvanceV1::Pending
+            OracleCombatWitnessAdvanceV1::Pending
         );
         assert_eq!(work.local_search.counters().generation_work, 2);
         assert_eq!(
@@ -2649,21 +2618,19 @@ mod tests {
                 .applied_action_transitions,
             0
         );
-        assert_eq!(work.remaining_work, 14);
+        assert_eq!(work.remaining_generation_work, 14);
     }
 
     #[test]
     fn timed_bronze_plan_materializes_one_bounded_charged_prefix() {
         let session = bronze_automaton_combat_session();
-        let max_work = 128;
-        let work = OracleRunCombatWorkV1::for_exact_action_witness_with_guidance(
+        let max_generation_work = 128;
+        let work = OracleRunCombatWitnessWorkV1::for_exact_action_witness_with_guidance(
             &session,
-            RunControlSearchCombatOptions {
-                max_nodes: Some(max_work),
-                satisfaction: Some(
-                    crate::ai::combat_search_v2::CombatSearchV2Satisfaction::FirstCompleteWin,
-                ),
-                ..RunControlSearchCombatOptions::default()
+            OracleCombatWitnessOptionsV1 {
+                max_generation_work: Some(max_generation_work),
+                satisfaction: Some(CombatWitnessSatisfactionV1::FirstCompleteWin),
+                ..OracleCombatWitnessOptionsV1::default()
             },
             None,
         )
@@ -2675,7 +2642,7 @@ mod tests {
         assert!((1..=64).contains(&progress.plan_prefix_proposed_actions));
         assert_eq!(progress.plan_prefix_proposal_rejections, 0);
         assert_eq!(
-            max_work.saturating_sub(work.remaining_work),
+            max_generation_work.saturating_sub(work.remaining_generation_work),
             progress.plan_prefix_proposed_actions,
             "materialized prefix actions must consume the shared generation allowance"
         );
@@ -2684,7 +2651,7 @@ mod tests {
             progress.plan_prefix_proposed_actions
         );
         assert_eq!(
-            max_work
+            max_generation_work
                 .saturating_mul(work.max_transition_steps)
                 .saturating_sub(work.remaining_engine_steps),
             progress.engine_steps,
@@ -2695,12 +2662,12 @@ mod tests {
     #[test]
     fn encounter_without_timed_plan_does_not_offer_a_prefix() {
         let session = hallway_combat_session();
-        let max_work = 16;
-        let work = OracleRunCombatWorkV1::for_exact_action_witness_with_guidance(
+        let max_generation_work = 16;
+        let work = OracleRunCombatWitnessWorkV1::for_exact_action_witness_with_guidance(
             &session,
-            RunControlSearchCombatOptions {
-                max_nodes: Some(max_work),
-                ..RunControlSearchCombatOptions::default()
+            OracleCombatWitnessOptionsV1 {
+                max_generation_work: Some(max_generation_work),
+                ..OracleCombatWitnessOptionsV1::default()
             },
             None,
         )
@@ -2711,29 +2678,27 @@ mod tests {
         assert_eq!(progress.plan_prefix_proposed_turns, 0);
         assert_eq!(progress.plan_prefix_proposed_actions, 0);
         assert_eq!(progress.plan_prefix_proposal_rejections, 0);
-        assert_eq!(work.remaining_work, max_work);
+        assert_eq!(work.remaining_generation_work, max_generation_work);
     }
 
     #[test]
     fn current_stage_probe_ignores_local_and_portfolio_satisfaction() {
         let session = one_strike_win_session();
-        let mut work = OracleRunCombatWorkV1::new_with_guidance(
+        let mut work = OracleRunCombatWitnessWorkV1::new_with_guidance(
             &session,
-            RunControlSearchCombatOptions {
-                max_nodes: Some(16),
-                satisfaction: Some(
-                    crate::ai::combat_search_v2::CombatSearchV2Satisfaction::HpLossAtMost(0),
-                ),
-                ..RunControlSearchCombatOptions::default()
+            OracleCombatWitnessOptionsV1 {
+                max_generation_work: Some(16),
+                satisfaction: Some(CombatWitnessSatisfactionV1::HpLossAtMost(0)),
+                ..OracleCombatWitnessOptionsV1::default()
             },
             None,
         )
         .expect("one-strike combat should create a portfolio");
 
         let result = work.advance_current_stage_probe(
-            &RunControlCombatSearchQuantum {
+            &OracleCombatWitnessQuantumV1 {
                 label: "current_stage_probe_contract",
-                additional_nodes: 1,
+                additional_generation_work: 1,
                 soft_wall_ms: None,
             },
             None,
@@ -2745,7 +2710,7 @@ mod tests {
         );
         assert_eq!(
             result,
-            RunControlCombatWorkAdvanceV1::Pending,
+            OracleCombatWitnessAdvanceV1::Pending,
             "quality satisfaction must not terminate the caller-bounded probe"
         );
     }
@@ -2753,42 +2718,38 @@ mod tests {
     #[test]
     fn explicit_budget_quality_mode_does_not_invent_an_early_threshold() {
         let session = one_strike_win_session();
-        let mut work = OracleRunCombatWorkV1::new_with_guidance(
+        let mut work = OracleRunCombatWitnessWorkV1::new_with_guidance(
             &session,
-            RunControlSearchCombatOptions {
-                max_nodes: Some(16),
-                satisfaction: Some(
-                    crate::ai::combat_search_v2::CombatSearchV2Satisfaction::BudgetOrExhaustion,
-                ),
-                ..RunControlSearchCombatOptions::default()
+            OracleCombatWitnessOptionsV1 {
+                max_generation_work: Some(16),
+                satisfaction: Some(CombatWitnessSatisfactionV1::BudgetOrExhaustion),
+                ..OracleCombatWitnessOptionsV1::default()
             },
             None,
         )
         .expect("one-strike combat should create a portfolio");
 
         let result = work.advance_improving_incumbent(
-            &RunControlCombatSearchQuantum {
+            &OracleCombatWitnessQuantumV1 {
                 label: "explicit_budget_contract",
-                additional_nodes: 1,
+                additional_generation_work: 1,
                 soft_wall_ms: None,
             },
             None,
         );
 
-        assert_eq!(result, RunControlCombatWorkAdvanceV1::Pending);
+        assert_eq!(result, OracleCombatWitnessAdvanceV1::Pending);
     }
 
     #[test]
     fn persistent_payoff_satisfaction_requires_materialized_run_value() {
         let session = one_strike_win_session();
-        let work = OracleRunCombatWorkV1::new_with_guidance(
+        let work = OracleRunCombatWitnessWorkV1::new_with_guidance(
             &session,
-            RunControlSearchCombatOptions {
-                max_nodes: Some(16),
-                satisfaction: Some(
-                    crate::ai::combat_search_v2::CombatSearchV2Satisfaction::PersistentRunValueGain,
-                ),
-                ..RunControlSearchCombatOptions::default()
+            OracleCombatWitnessOptionsV1 {
+                max_generation_work: Some(16),
+                satisfaction: Some(CombatWitnessSatisfactionV1::MaterializedPersistentPayoffGain),
+                ..OracleCombatWitnessOptionsV1::default()
             },
             None,
         )
@@ -2807,12 +2768,12 @@ mod tests {
             .gold_delta_this_combat = 20;
 
         assert!(!combat_witness_satisfies(
-            PortfolioWitnessSatisfactionV1::PersistentRunValueGain,
+            PortfolioWitnessSatisfactionV1::MaterializedPersistentPayoffGain,
             &work.start,
             &plain
         ));
         assert!(combat_witness_satisfies(
-            PortfolioWitnessSatisfactionV1::PersistentRunValueGain,
+            PortfolioWitnessSatisfactionV1::MaterializedPersistentPayoffGain,
             &work.start,
             &profitable
         ));
@@ -2821,11 +2782,11 @@ mod tests {
     #[test]
     fn production_darkling_work_reports_its_typed_guide_service_bias() {
         let session = darkling_combat_session();
-        let work = OracleRunCombatWorkV1::new_with_guidance(
+        let work = OracleRunCombatWitnessWorkV1::new_with_guidance(
             &session,
-            RunControlSearchCombatOptions {
-                max_nodes: Some(16),
-                ..RunControlSearchCombatOptions::default()
+            OracleCombatWitnessOptionsV1 {
+                max_generation_work: Some(16),
+                ..OracleCombatWitnessOptionsV1::default()
             },
             None,
         )
@@ -2844,14 +2805,12 @@ mod tests {
         // Keep one witness shape fixed and vary only its final HP so this
         // contract tests stage termination rather than search reachability.
         let session = one_strike_win_session();
-        let work = OracleRunCombatWorkV1::new_with_guidance(
+        let work = OracleRunCombatWitnessWorkV1::new_with_guidance(
             &session,
-            RunControlSearchCombatOptions {
-                max_nodes: Some(16),
-                satisfaction: Some(
-                    crate::ai::combat_search_v2::CombatSearchV2Satisfaction::HpLossAtMost(8),
-                ),
-                ..RunControlSearchCombatOptions::default()
+            OracleCombatWitnessOptionsV1 {
+                max_generation_work: Some(16),
+                satisfaction: Some(CombatWitnessSatisfactionV1::HpLossAtMost(8)),
+                ..OracleCombatWitnessOptionsV1::default()
             },
             None,
         )
@@ -2924,14 +2883,12 @@ mod tests {
     #[test]
     fn quality_satisfaction_rejects_a_verified_but_over_budget_win() {
         let session = one_strike_win_session();
-        let work = OracleRunCombatWorkV1::new_with_guidance(
+        let work = OracleRunCombatWitnessWorkV1::new_with_guidance(
             &session,
-            RunControlSearchCombatOptions {
-                max_nodes: Some(16),
-                satisfaction: Some(
-                    crate::ai::combat_search_v2::CombatSearchV2Satisfaction::HpLossAtMost(8),
-                ),
-                ..RunControlSearchCombatOptions::default()
+            OracleCombatWitnessOptionsV1 {
+                max_generation_work: Some(16),
+                satisfaction: Some(CombatWitnessSatisfactionV1::HpLossAtMost(8)),
+                ..OracleCombatWitnessOptionsV1::default()
             },
             None,
         )
@@ -3063,15 +3020,13 @@ mod tests {
         let start = session
             .current_active_combat_position()
             .expect("hallway combat root");
-        let mut work = OracleRunCombatWorkV1::for_exact_action_witness_with_guidance(
+        let mut work = OracleRunCombatWitnessWorkV1::for_exact_action_witness_with_guidance(
             &session,
-            RunControlSearchCombatOptions {
-                max_nodes: Some(1),
+            OracleCombatWitnessOptionsV1 {
+                max_generation_work: Some(1),
                 max_potions_used: Some(0),
-                satisfaction: Some(
-                    crate::ai::combat_search_v2::CombatSearchV2Satisfaction::BudgetOrExhaustion,
-                ),
-                ..RunControlSearchCombatOptions::default()
+                satisfaction: Some(CombatWitnessSatisfactionV1::BudgetOrExhaustion),
+                ..OracleCombatWitnessOptionsV1::default()
             },
             None,
         )
@@ -3123,7 +3078,9 @@ mod tests {
             71
         );
         assert_eq!(
-            crate::ai::combat_search_v2::recoverable_stolen_gold(&selected.final_position.combat),
+            crate::ai::combat_persistent_outcome_v1::recoverable_stolen_gold(
+                &selected.final_position.combat,
+            ),
             75
         );
     }
@@ -3131,25 +3088,23 @@ mod tests {
     #[test]
     fn production_exact_graph_charges_only_materialized_generation_work() {
         let session = hallway_combat_session();
-        let mut work = OracleRunCombatWorkV1::new_with_guidance(
+        let mut work = OracleRunCombatWitnessWorkV1::new_with_guidance(
             &session,
-            RunControlSearchCombatOptions {
-                max_nodes: Some(4_096),
-                satisfaction: Some(
-                    crate::ai::combat_search_v2::CombatSearchV2Satisfaction::BudgetOrExhaustion,
-                ),
-                ..RunControlSearchCombatOptions::default()
+            OracleCombatWitnessOptionsV1 {
+                max_generation_work: Some(4_096),
+                satisfaction: Some(CombatWitnessSatisfactionV1::BudgetOrExhaustion),
+                ..OracleCombatWitnessOptionsV1::default()
             },
             None,
         )
         .expect("portfolio should accept an active combat");
-        let quantum = RunControlCombatSearchQuantum {
+        let quantum = OracleCombatWitnessQuantumV1 {
             label: "exact_generation_accounting_contract",
-            additional_nodes: 4_096,
+            additional_generation_work: 4_096,
             soft_wall_ms: None,
         };
 
-        let before_remaining = work.remaining_work;
+        let before_remaining = work.remaining_generation_work;
         let _ = work.advance(&quantum, None);
         let counters = work.local_search.counters();
         assert_eq!(
@@ -3159,7 +3114,7 @@ mod tests {
             0
         );
         assert_eq!(
-            before_remaining.saturating_sub(work.remaining_work),
+            before_remaining.saturating_sub(work.remaining_generation_work),
             counters.generation_work
         );
     }

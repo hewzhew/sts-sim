@@ -2,11 +2,11 @@ use std::time::{Duration, Instant};
 
 use sts_combat_planner::LocalTurnGraphRootActionFamilySnapshot;
 
-use super::combat_search::RunControlCombatWorkAdvanceV1;
-use super::oracle_combat_work::OracleRunCombatWorkV1;
-use super::oracle_combat_work_contract::OracleRunCombatWorkCheckpointV1;
-use super::oracle_resident_combat_job_evidence::OracleResidentCombatJobEvidenceV1;
-use super::progress_options::{RunControlCombatSearchQuantum, RunControlSearchCombatOptions};
+use super::oracle_combat_witness_contract::OracleCombatWitnessCheckpointV1;
+use super::oracle_combat_witness_options::OracleCombatWitnessOptionsV1;
+use super::oracle_combat_witness_work::OracleRunCombatWitnessWorkV1;
+use super::oracle_resident_combat_witness_evidence::OracleResidentCombatWitnessEvidenceV1;
+use super::progress_options::{OracleCombatWitnessAdvanceV1, OracleCombatWitnessQuantumV1};
 use super::session::{RunControlSession, RunProgressOutcome};
 use crate::eval::combat_guidance_bundle::CombatGuidanceBundleV1;
 use crate::state::core::ClientInput;
@@ -16,27 +16,27 @@ use crate::state::core::ClientInput;
 /// Analysis and explorer orchestration may grant bounded work, inspect typed
 /// evidence, checkpoint, or commit a verified result. They never receive the
 /// live local-graph/discrepancy sessions or their private queues.
-pub struct OracleResidentCombatJobV1 {
-    work: OracleRunCombatWorkV1,
+pub struct OracleResidentCombatWitnessJobV1 {
+    work: OracleRunCombatWitnessWorkV1,
 }
 
-impl OracleResidentCombatJobV1 {
+impl OracleResidentCombatWitnessJobV1 {
     pub fn new(
         session: &RunControlSession,
-        options: RunControlSearchCombatOptions,
+        options: OracleCombatWitnessOptionsV1,
         guidance: Option<&CombatGuidanceBundleV1>,
     ) -> Result<Self, String> {
-        OracleRunCombatWorkV1::new_with_guidance(session, options, guidance)
+        OracleRunCombatWitnessWorkV1::new_with_guidance(session, options, guidance)
             .map(|work| Self { work })
     }
 
     pub fn restore(
         session: &RunControlSession,
-        options: RunControlSearchCombatOptions,
-        checkpoint: OracleRunCombatWorkCheckpointV1,
+        options: OracleCombatWitnessOptionsV1,
+        checkpoint: OracleCombatWitnessCheckpointV1,
         guidance: Option<&CombatGuidanceBundleV1>,
     ) -> Result<Self, String> {
-        OracleRunCombatWorkV1::restart_from_checkpoint_with_guidance(
+        OracleRunCombatWitnessWorkV1::restart_from_checkpoint_with_guidance(
             session, options, checkpoint, guidance,
         )
         .map(|work| Self { work })
@@ -44,11 +44,11 @@ impl OracleResidentCombatJobV1 {
 
     pub fn promote(
         session: &RunControlSession,
-        options: RunControlSearchCombatOptions,
-        checkpoint: OracleRunCombatWorkCheckpointV1,
+        options: OracleCombatWitnessOptionsV1,
+        checkpoint: OracleCombatWitnessCheckpointV1,
         guidance: Option<&CombatGuidanceBundleV1>,
     ) -> Result<Self, String> {
-        OracleRunCombatWorkV1::restart_for_higher_fidelity_with_guidance(
+        OracleRunCombatWitnessWorkV1::restart_for_higher_fidelity_with_guidance(
             session, options, checkpoint, guidance,
         )
         .map(|work| Self { work })
@@ -56,61 +56,65 @@ impl OracleResidentCombatJobV1 {
 
     pub fn restart(
         session: &RunControlSession,
-        options: RunControlSearchCombatOptions,
+        options: OracleCombatWitnessOptionsV1,
         guidance: Option<&CombatGuidanceBundleV1>,
     ) -> Result<Self, String> {
-        OracleRunCombatWorkV1::restart_from_exact_state_with_guidance(session, options, guidance)
-            .map(|work| Self { work })
+        OracleRunCombatWitnessWorkV1::restart_from_exact_state_with_guidance(
+            session, options, guidance,
+        )
+        .map(|work| Self { work })
     }
 
     pub fn for_exact_actions(
         session: &RunControlSession,
-        options: RunControlSearchCombatOptions,
+        options: OracleCombatWitnessOptionsV1,
         guidance: Option<&CombatGuidanceBundleV1>,
     ) -> Result<Self, String> {
-        OracleRunCombatWorkV1::for_exact_action_witness_with_guidance(session, options, guidance)
-            .map(|work| Self { work })
+        OracleRunCombatWitnessWorkV1::for_exact_action_witness_with_guidance(
+            session, options, guidance,
+        )
+        .map(|work| Self { work })
     }
 
     pub fn root_action_families(&self) -> Vec<LocalTurnGraphRootActionFamilySnapshot> {
         self.work.root_action_families()
     }
 
-    pub fn checkpoint(&self) -> OracleRunCombatWorkCheckpointV1 {
+    pub fn checkpoint(&self) -> OracleCombatWitnessCheckpointV1 {
         self.work.checkpoint()
     }
 
     pub fn advance(
         &mut self,
-        quantum: &RunControlCombatSearchQuantum,
+        quantum: &OracleCombatWitnessQuantumV1,
         deadline: Option<Instant>,
-    ) -> RunControlCombatWorkAdvanceV1 {
+    ) -> OracleCombatWitnessAdvanceV1 {
         self.work.advance(quantum, deadline)
     }
 
     pub fn advance_improving_incumbent(
         &mut self,
-        quantum: &RunControlCombatSearchQuantum,
+        quantum: &OracleCombatWitnessQuantumV1,
         deadline: Option<Instant>,
-    ) -> RunControlCombatWorkAdvanceV1 {
+    ) -> OracleCombatWitnessAdvanceV1 {
         self.work.advance_improving_incumbent(quantum, deadline)
     }
 
     pub fn advance_current_stage_probe(
         &mut self,
-        quantum: &RunControlCombatSearchQuantum,
+        quantum: &OracleCombatWitnessQuantumV1,
         deadline: Option<Instant>,
-    ) -> RunControlCombatWorkAdvanceV1 {
+    ) -> OracleCombatWitnessAdvanceV1 {
         self.work.advance_current_stage_probe(quantum, deadline)
     }
 
     pub fn ensure_requested_allowance(
         &mut self,
-        requested_nodes: usize,
+        requested_generation_work: usize,
         requested_wall_time: Option<Duration>,
     ) {
         self.work
-            .ensure_requested_allowance(requested_nodes, requested_wall_time);
+            .ensure_requested_allowance(requested_generation_work, requested_wall_time);
     }
 
     pub fn mark_search_resume_exact(&mut self) {
@@ -148,8 +152,8 @@ impl OracleResidentCombatJobV1 {
         self.work.quantum_count()
     }
 
-    pub fn remaining_nodes(&self) -> usize {
-        self.work.remaining_nodes()
+    pub fn remaining_generation_work(&self) -> usize {
+        self.work.remaining_generation_work()
     }
 
     pub fn current_search_generation_work(&self) -> u64 {
@@ -172,7 +176,7 @@ impl OracleResidentCombatJobV1 {
         self.work.restart_count()
     }
 
-    pub fn evidence(&self) -> OracleResidentCombatJobEvidenceV1 {
+    pub fn evidence(&self) -> OracleResidentCombatWitnessEvidenceV1 {
         self.work.progress()
     }
 

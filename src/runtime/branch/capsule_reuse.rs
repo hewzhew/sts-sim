@@ -5,7 +5,6 @@ use super::{RunContract, SourceIdentity};
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum CapsuleReuseDecision {
     Exact,
-    UnknownLegacy,
     Incompatible,
 }
 
@@ -14,11 +13,14 @@ pub fn decide_manifest_reuse(
     expected_contract: RunContract,
     expected_source: &SourceIdentity,
 ) -> CapsuleReuseDecision {
+    if manifest.get("schema").and_then(Value::as_str) != Some("branch_tiny_run_capsule_v5") {
+        return CapsuleReuseDecision::Incompatible;
+    }
     let Some(contract_value) = manifest.get("run_contract") else {
-        return CapsuleReuseDecision::UnknownLegacy;
+        return CapsuleReuseDecision::Incompatible;
     };
     let Some(source_value) = manifest.get("source_identity") else {
-        return CapsuleReuseDecision::UnknownLegacy;
+        return CapsuleReuseDecision::Incompatible;
     };
     let Ok(contract) = serde_json::from_value::<RunContract>(contract_value.clone()) else {
         return CapsuleReuseDecision::Incompatible;
@@ -55,7 +57,7 @@ mod tests {
             boss_search_nodes: 1,
             boss_search_ms: 1,
             wall_ms: Some(1),
-            checkpoint_before_combat_portfolio: false,
+            checkpoint_before_atomic_combat_search_session: false,
             wall_capped_search_budget: false,
             wall_capped_boss_budget: false,
         }
@@ -73,6 +75,7 @@ mod tests {
         let contract = RunContract::from_args(args(1));
         let source = source_identity();
         let manifest = json!({
+            "schema": "branch_tiny_run_capsule_v5",
             "run_contract": contract,
             "source_identity": source,
         });
@@ -84,7 +87,7 @@ mod tests {
     }
 
     #[test]
-    fn legacy_manifest_without_identity_is_unknown_not_exact() {
+    fn manifest_without_current_identity_is_incompatible() {
         let manifest = json!({
             "args": {"seed": 1}
         });
@@ -95,14 +98,35 @@ mod tests {
                 RunContract::from_args(args(1)),
                 &source_identity()
             ),
-            CapsuleReuseDecision::UnknownLegacy
+            CapsuleReuseDecision::Incompatible
         );
+    }
+
+    #[test]
+    fn old_or_missing_schema_is_incompatible_even_with_matching_payloads() {
+        let contract = RunContract::from_args(args(1));
+        let source = source_identity();
+        for schema in [None, Some("branch_tiny_run_capsule_v4")] {
+            let mut manifest = json!({
+                "run_contract": contract,
+                "source_identity": source,
+            });
+            if let Some(schema) = schema {
+                manifest["schema"] = json!(schema);
+            }
+
+            assert_eq!(
+                decide_manifest_reuse(&manifest, contract, &source_identity()),
+                CapsuleReuseDecision::Incompatible
+            );
+        }
     }
 
     #[test]
     fn mismatched_contract_is_incompatible() {
         let source = source_identity();
         let manifest = json!({
+            "schema": "branch_tiny_run_capsule_v5",
             "run_contract": RunContract::from_args(args(1)),
             "source_identity": source,
         });

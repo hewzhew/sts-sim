@@ -90,7 +90,7 @@ pub fn potion_run_continuation_context_v1(
     PotionRunContinuationContextV1 {
         schema_name: POTION_RUN_CONTINUATION_CONTEXT_SCHEMA_NAME.to_string(),
         schema_version: POTION_RUN_CONTINUATION_CONTEXT_SCHEMA_VERSION,
-        capture_boundary: "before_combat_search".to_string(),
+        capture_boundary: "before_atomic_combat_search".to_string(),
         act: run_state.act_num,
         floor: run_state.floor_num,
         current_hp: combat.entities.player.current_hp,
@@ -168,7 +168,7 @@ mod tests {
 
         let context = potion_run_continuation_context_v1(&run_state, &combat);
 
-        assert_eq!(context.capture_boundary, "before_combat_search");
+        assert_eq!(context.capture_boundary, "before_atomic_combat_search");
         assert_eq!(context.current_hp, 31);
         assert_eq!(context.visible_boss, Some(EncounterId::TheGuardian));
         assert_eq!(context.inventory.occupied_slots, 3);

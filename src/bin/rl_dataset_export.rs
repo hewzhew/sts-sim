@@ -888,7 +888,7 @@ fn combat_history_summary(input: &Value) -> Value {
         .filter(|history| !history.is_empty())
         .or_else(|| {
             input
-                .get("combat_search_attempts")
+                .get("atomic_combat_search_attempts")
                 .and_then(Value::as_array)
         });
     let Some(attempts) = attempts else {

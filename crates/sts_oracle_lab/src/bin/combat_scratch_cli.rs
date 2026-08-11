@@ -112,7 +112,7 @@ pub(super) enum CombatScratchCommand {
         #[arg(long, default_value_t = 4)]
         max_quanta: usize,
         #[arg(long, default_value_t = 1_024)]
-        quantum_nodes: usize,
+        quantum_generation_work: usize,
         #[arg(long, default_value_t = 100)]
         quantum_ms: u64,
         #[arg(long, default_value_t = 1_000)]

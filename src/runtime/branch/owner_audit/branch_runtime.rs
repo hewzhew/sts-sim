@@ -32,7 +32,7 @@ impl BranchRuntime {
         let deadline = RunDeadline::new(started, args.wall_ms);
         let advance =
             runner::advance_to_owner_or_gap(&mut session, deadline.cap_args(args, 1), deadline);
-        let combat_search = advance.combat_search;
+        let atomic_combat_search_attempts = advance.atomic_combat_search_attempts;
         (
             VecDeque::from([Branch {
                 id: 0,
@@ -41,12 +41,12 @@ impl BranchRuntime {
                 session,
                 status: advance.status,
                 policy_lane: BranchPolicyLane::default(),
-                combat_portfolio: advance.combat_portfolio,
+                atomic_combat_search_session: advance.atomic_combat_search_session,
                 recent_progress_journal: advance.progress_journal,
                 recent_planner_capture: advance.planner_capture,
                 trajectory: Default::default(),
-                combat_search: combat_search.clone(),
-                combat_search_history: combat_search,
+                atomic_combat_search_attempts: atomic_combat_search_attempts.clone(),
+                atomic_combat_search_history: atomic_combat_search_attempts,
                 comparison_search_start: None,
                 accepted_high_loss_diagnostics: advance.accepted_high_loss_diagnostics,
             }]),
@@ -79,7 +79,7 @@ mod tests {
             boss_search_nodes: 1,
             boss_search_ms: 1,
             wall_ms: None,
-            checkpoint_before_combat_portfolio: false,
+            checkpoint_before_atomic_combat_search_session: false,
             wall_capped_search_budget: false,
             wall_capped_boss_budget: false,
         }

@@ -73,7 +73,7 @@ impl OracleRunExplorerExplicitTransactionsV1<'_> {
     pub fn commit_verified_combat(
         &mut self,
         source_branch_id: usize,
-        work: &OracleResidentCombatJobV1,
+        work: &OracleResidentCombatWitnessJobV1,
         decision_prior: Option<RunPolicyPriorFnV1>,
     ) -> Result<OracleRunExplorerCombatCommitV1, String> {
         let prepared = self

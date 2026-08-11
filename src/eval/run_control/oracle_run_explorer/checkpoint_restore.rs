@@ -3,7 +3,7 @@ use super::*;
 
 pub fn seed_oracle_run_explorer_from_checkpoint_v1(
     checkpoint: OracleRunExplorerCheckpointV1,
-    combat_budgets: &OracleRunCombatBudgetsV1,
+    combat_budgets: &OracleRunCombatWitnessBudgetsV1,
 ) -> Result<OracleRunExplorerV1, String> {
     let OracleRunExplorerCheckpointV1 {
         state_fingerprint_algorithm,
@@ -213,7 +213,7 @@ pub fn seed_oracle_run_explorer_from_checkpoint_v1(
         }
         let options =
             combat_budgets.for_session_stage_restore(&branch.session, active.stage, &active.work);
-        let work = OracleResidentCombatJobV1::restore(
+        let work = OracleResidentCombatWitnessJobV1::restore(
             &branch.session,
             options,
             active.work,
@@ -247,7 +247,7 @@ pub fn seed_oracle_run_explorer_from_checkpoint_v1(
         if explorer.last_served_neow_root.is_none() {
             explorer.last_served_neow_root = Some(branch.neow_root_candidate_id.clone());
         }
-        let work = OracleResidentCombatJobV1::restart(
+        let work = OracleResidentCombatWitnessJobV1::restart(
             &branch.session,
             combat_budgets.for_session(&branch.session),
             combat_budgets.guidance_bundle.as_deref(),

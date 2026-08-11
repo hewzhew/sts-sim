@@ -43,9 +43,9 @@ use sts_oracle_runtime::eval::combat_case::{load_combat_case, CombatCase};
 use sts_oracle_runtime::eval::combat_case_context::restore_combat_case_oracle_analysis_owner_v1;
 use sts_oracle_runtime::eval::run_control::{
     authorized_potion_trial_policy_v1, existing_combat_knowledge_policy_v1,
-    oracle_potion_rescue_tier_v1, CombatSearchHpLossLimitV1, CombatSearchStrategicHpQualityFactsV1,
-    CombatSearchTraceSummary, CombatVictoryContinuationFactsV1, CombatVictoryHpCarryoverV1,
-    OraclePotionRescueTierV1, COMBAT_QUALITY_HP_LIMIT_EVALUATOR_V1,
+    oracle_potion_rescue_tier_v1, AtomicCombatSearchTraceSummaryV2, CombatSearchHpLossLimitV1,
+    CombatSearchStrategicHpQualityFactsV1, CombatVictoryContinuationFactsV1,
+    CombatVictoryHpCarryoverV1, OraclePotionRescueTierV1, COMBAT_QUALITY_HP_LIMIT_EVALUATOR_V1,
     COMBAT_SURVIVAL_HP_LIMIT_EVALUATOR_V1, COMBAT_VICTORY_CONTINUATION_EVALUATOR_V1,
 };
 use sts_oracle_runtime::runtime::branch::reconstruct_oracle_combat_context_trace_v1;
@@ -1226,30 +1226,34 @@ fn potion_continuation_context(
 struct SelectedContextTrace<'a> {
     source: &'static str,
     attempt_index: Option<usize>,
-    trace: &'a CombatSearchTraceSummary,
+    trace: &'a AtomicCombatSearchTraceSummaryV2,
 }
 
 fn select_context_trace<'a>(
     case: &'a CombatCase,
-    reconstructed: Option<&'a CombatSearchTraceSummary>,
-    has_fact: impl Fn(&CombatSearchTraceSummary) -> bool,
+    reconstructed: Option<&'a AtomicCombatSearchTraceSummaryV2>,
+    has_fact: impl Fn(&AtomicCombatSearchTraceSummaryV2) -> bool,
 ) -> Option<SelectedContextTrace<'a>> {
     if let Some((index, trace)) = case
-        .combat_search_attempts
+        .atomic_combat_search_attempts
         .iter()
         .enumerate()
         .rev()
         .find(|(_, trace)| has_fact(trace))
     {
         return Some(SelectedContextTrace {
-            source: "combat_search_attempts",
+            source: "atomic_combat_search_attempts",
             attempt_index: Some(index),
             trace,
         });
     }
-    if let Some(trace) = case.failed_search.as_ref().filter(|trace| has_fact(trace)) {
+    if let Some(trace) = case
+        .failed_atomic_combat_search
+        .as_ref()
+        .filter(|trace| has_fact(trace))
+    {
         return Some(SelectedContextTrace {
-            source: "failed_search",
+            source: "failed_atomic_combat_search",
             attempt_index: None,
             trace,
         });
@@ -1300,7 +1304,7 @@ fn project_saved_strategic_hp_quality(
 
 fn project_saved_run_continuation_context_with_reconstructed(
     case: &CombatCase,
-    reconstructed: Option<&CombatSearchTraceSummary>,
+    reconstructed: Option<&AtomicCombatSearchTraceSummaryV2>,
 ) -> PotionRunContinuationProjectionV1 {
     let Some(selected) = select_context_trace(case, reconstructed, |trace| {
         trace.potion_continuation_context.is_some()
@@ -1323,11 +1327,11 @@ fn project_saved_run_continuation_context_with_reconstructed(
         .clone();
     let mut mismatches = validate_saved_run_continuation_context(case, &context);
     let conflicting_contexts = case
-        .combat_search_attempts
+        .atomic_combat_search_attempts
         .iter()
         .filter_map(|attempt| attempt.potion_continuation_context.as_ref())
         .chain(
-            case.failed_search
+            case.failed_atomic_combat_search
                 .as_ref()
                 .and_then(|attempt| attempt.potion_continuation_context.as_ref()),
         )
@@ -1360,7 +1364,7 @@ fn project_saved_run_continuation_context_with_reconstructed(
 fn project_saved_potion_continuation_pressure_with_reconstructed(
     case: &CombatCase,
     run_level_projection: &PotionRunContinuationProjectionV1,
-    reconstructed: Option<&CombatSearchTraceSummary>,
+    reconstructed: Option<&AtomicCombatSearchTraceSummaryV2>,
 ) -> PotionContinuationPressureProjectionV1 {
     let Some(selected) = select_context_trace(case, reconstructed, |trace| {
         trace.potion_continuation_pressure.is_some()
@@ -1383,9 +1387,9 @@ fn project_saved_potion_continuation_pressure_with_reconstructed(
         .clone();
     let mut mismatches = Vec::new();
     let all_attempts = case
-        .combat_search_attempts
+        .atomic_combat_search_attempts
         .iter()
-        .chain(case.failed_search.iter());
+        .chain(case.failed_atomic_combat_search.iter());
     let missing_pressures = all_attempts
         .clone()
         .filter(|other| other.potion_continuation_pressure.is_none())
@@ -1460,7 +1464,7 @@ fn project_saved_potion_continuation_pressure_with_reconstructed(
 fn project_saved_combat_victory_continuation_with_reconstructed(
     case: &CombatCase,
     run_level_projection: &PotionRunContinuationProjectionV1,
-    reconstructed: Option<&CombatSearchTraceSummary>,
+    reconstructed: Option<&AtomicCombatSearchTraceSummaryV2>,
 ) -> CombatVictoryContinuationProjectionV1 {
     let Some(selected) = select_context_trace(case, reconstructed, |trace| {
         trace.combat_victory_continuation.is_some()
@@ -1482,9 +1486,9 @@ fn project_saved_combat_victory_continuation_with_reconstructed(
         .expect("filtered combat victory continuation")
         .clone();
     let all_attempts = case
-        .combat_search_attempts
+        .atomic_combat_search_attempts
         .iter()
-        .chain(case.failed_search.iter());
+        .chain(case.failed_atomic_combat_search.iter());
     let mut mismatches = Vec::new();
     let missing_facts = all_attempts
         .clone()
@@ -1577,7 +1581,7 @@ fn project_saved_strategic_hp_quality_with_reconstructed(
     case: &CombatCase,
     run_level_projection: &PotionRunContinuationProjectionV1,
     combat_victory_projection: &CombatVictoryContinuationProjectionV1,
-    reconstructed: Option<&CombatSearchTraceSummary>,
+    reconstructed: Option<&AtomicCombatSearchTraceSummaryV2>,
 ) -> StrategicHpQualityProjectionV1 {
     let Some(selected) = select_context_trace(case, reconstructed, |trace| {
         trace.strategic_hp_quality.is_some()
@@ -1599,9 +1603,9 @@ fn project_saved_strategic_hp_quality_with_reconstructed(
         .expect("filtered strategic HP quality")
         .clone();
     let all_attempts = case
-        .combat_search_attempts
+        .atomic_combat_search_attempts
         .iter()
-        .chain(case.failed_search.iter());
+        .chain(case.failed_atomic_combat_search.iter());
     let mut mismatches = Vec::new();
     let missing_facts = all_attempts
         .clone()
@@ -1836,7 +1840,7 @@ fn validate_saved_run_continuation_context(
     push_context_mismatch(
         &mut mismatches,
         "capture_boundary",
-        "before_combat_search",
+        "before_atomic_combat_search",
         context.capture_boundary.as_str(),
     );
     push_context_mismatch(&mut mismatches, "act", case.core.run.act, context.act);
@@ -3156,8 +3160,9 @@ mod tests {
     use sts_oracle_runtime::content::relics::{RelicId, RelicState};
     use sts_oracle_runtime::eval::combat_case::{
         CombatCaseGap, CombatCaseRngSummary, CombatCaseRunSummary, CombatCaseSource,
+        CombatCaseWitnessBudgetV1,
     };
-    use sts_oracle_runtime::eval::run_control::CombatSearchTraceSummary;
+    use sts_oracle_runtime::eval::run_control::AtomicCombatSearchTraceSummaryV2;
     use sts_oracle_runtime::runtime::combat::CombatCard;
     use sts_oracle_runtime::state::core::EngineState;
     use sts_oracle_runtime::state::RunState;
@@ -3187,7 +3192,7 @@ mod tests {
         combat.entities.potions = vec![Some(Potion::new(PotionId::RegenPotion, 50)), None];
         let context = potion_run_continuation_context_v1(&run_state, &combat);
         let pressure = potion_continuation_pressure_v1(&run_state, &context);
-        let attempt = CombatSearchTraceSummary {
+        let attempt = AtomicCombatSearchTraceSummaryV2 {
             source: "search_combat".to_owned(),
             lane: Some("no_potion_primary".to_owned()),
             potion_continuation_context: Some(context),
@@ -3201,7 +3206,7 @@ mod tests {
                 sts_oracle_runtime::eval::run_control::RunControlHpLossLimit::Limit(13),
                 sts_oracle_runtime::eval::run_control::RunControlHpLossLimit::Limit(13),
             )),
-            ..CombatSearchTraceSummary::default()
+            ..AtomicCombatSearchTraceSummaryV2::default()
         };
         let position = CombatPosition::new(EngineState::CombatPlayerTurn, combat);
 
@@ -3216,10 +3221,12 @@ mod tests {
             CombatCaseGap {
                 boundary: "Combat".to_owned(),
                 reason: "no win".to_owned(),
-                search_nodes: 100,
-                search_ms: 10,
-                rescue_search_nodes: 100,
-                rescue_search_ms: 10,
+                witness_budget: CombatCaseWitnessBudgetV1::AtomicExactV2 {
+                    primary_nodes: 100,
+                    primary_wall_ms: 10,
+                    rescue_nodes: 100,
+                    rescue_wall_ms: 10,
+                },
             },
             CombatCaseRunSummary {
                 act: run_state.act_num,
@@ -3498,7 +3505,7 @@ mod tests {
             projection.status,
             PotionRunContinuationProjectionStatusV1::ValidatedExactRoot
         );
-        assert_eq!(projection.source, Some("combat_search_attempts"));
+        assert_eq!(projection.source, Some("atomic_combat_search_attempts"));
         assert_eq!(projection.attempt_index, Some(0));
         assert_eq!(
             projection.attempt_lane.as_deref(),
@@ -3508,7 +3515,7 @@ mod tests {
         assert!(projection.captured_context.is_some());
 
         let mut mismatched_case = case;
-        mismatched_case.combat_search_attempts[0]
+        mismatched_case.atomic_combat_search_attempts[0]
             .potion_continuation_context
             .as_mut()
             .unwrap()
@@ -3532,8 +3539,8 @@ mod tests {
     #[test]
     fn exact_production_context_can_replace_missing_search_trace_facts() {
         let mut case = combat_case_with_trace_run_context();
-        let mut reconstructed = case.combat_search_attempts.remove(0);
-        case.failed_search = None;
+        let mut reconstructed = case.atomic_combat_search_attempts.remove(0);
+        case.failed_atomic_combat_search = None;
         reconstructed.source = "reconstructed_exact_production_context".to_string();
 
         let run_projection =
@@ -3580,8 +3587,8 @@ mod tests {
     #[test]
     fn legacy_case_without_saved_run_context_stays_explicitly_unavailable() {
         let mut case = combat_case_with_trace_run_context();
-        case.combat_search_attempts.clear();
-        case.failed_search = None;
+        case.atomic_combat_search_attempts.clear();
+        case.failed_atomic_combat_search = None;
 
         let projection = project_saved_run_continuation_context(&case);
 
@@ -3605,7 +3612,10 @@ mod tests {
             pressure_projection.status,
             PotionContinuationPressureProjectionStatusV1::ValidatedExactRoot
         );
-        assert_eq!(pressure_projection.source, Some("combat_search_attempts"));
+        assert_eq!(
+            pressure_projection.source,
+            Some("atomic_combat_search_attempts")
+        );
         assert_eq!(pressure_projection.attempt_index, Some(0));
         assert!(pressure_projection.mismatches.is_empty());
         assert!(pressure_projection.captured_pressure.is_some());
@@ -3617,12 +3627,12 @@ mod tests {
                                      mutate: fn(&mut PotionContinuationPressureV1),
                                      expected_field: &str| {
             mutate(
-                case.combat_search_attempts[0]
+                case.atomic_combat_search_attempts[0]
                     .potion_continuation_pressure
                     .as_mut()
                     .unwrap(),
             );
-            case.failed_search = Some(case.combat_search_attempts[0].clone());
+            case.failed_atomic_combat_search = Some(case.atomic_combat_search_attempts[0].clone());
             let run_projection = project_saved_run_continuation_context(&case);
             let pressure_projection =
                 project_saved_potion_continuation_pressure(&case, &run_projection);
@@ -3660,10 +3670,10 @@ mod tests {
     #[test]
     fn pressure_projection_rejects_missing_and_conflicting_trace_summaries() {
         let mut missing = combat_case_with_trace_run_context();
-        let mut summary_without_pressure = missing.combat_search_attempts[0].clone();
+        let mut summary_without_pressure = missing.atomic_combat_search_attempts[0].clone();
         summary_without_pressure.potion_continuation_pressure = None;
         missing
-            .combat_search_attempts
+            .atomic_combat_search_attempts
             .push(summary_without_pressure);
         let run_projection = project_saved_run_continuation_context(&missing);
         let missing_projection =
@@ -3678,14 +3688,16 @@ mod tests {
             .any(|mismatch| { mismatch.field == "trace_pressure_presence_consistency" }));
 
         let mut conflicting = combat_case_with_trace_run_context();
-        let mut conflicting_summary = conflicting.combat_search_attempts[0].clone();
+        let mut conflicting_summary = conflicting.atomic_combat_search_attempts[0].clone();
         conflicting_summary
             .potion_continuation_pressure
             .as_mut()
             .unwrap()
             .shop
             .current_gold += 1;
-        conflicting.combat_search_attempts.push(conflicting_summary);
+        conflicting
+            .atomic_combat_search_attempts
+            .push(conflicting_summary);
         let run_projection = project_saved_run_continuation_context(&conflicting);
         let conflicting_projection =
             project_saved_potion_continuation_pressure(&conflicting, &run_projection);
@@ -3702,7 +3714,7 @@ mod tests {
     #[test]
     fn pressure_projection_requires_a_validated_run_context() {
         let mut case = combat_case_with_trace_run_context();
-        case.combat_search_attempts[0]
+        case.atomic_combat_search_attempts[0]
             .potion_continuation_context
             .as_mut()
             .unwrap()
@@ -3726,7 +3738,7 @@ mod tests {
     fn serialized_legacy_case_without_pressure_remains_compatible_and_unavailable() {
         let case = combat_case_with_trace_run_context();
         let mut payload = serde_json::to_value(case).expect("serialize combat case");
-        for attempt in payload["combat_search_attempts"]
+        for attempt in payload["atomic_combat_search_attempts"]
             .as_array_mut()
             .expect("combat search attempts")
         {
@@ -3735,7 +3747,7 @@ mod tests {
                 .expect("combat search summary")
                 .remove("potion_continuation_pressure");
         }
-        payload["failed_search"]
+        payload["failed_atomic_combat_search"]
             .as_object_mut()
             .expect("failed search summary")
             .remove("potion_continuation_pressure");
@@ -3804,13 +3816,14 @@ mod tests {
         }));
 
         let mut tampered_case = combat_case_with_trace_run_context();
-        tampered_case.combat_search_attempts[0]
+        tampered_case.atomic_combat_search_attempts[0]
             .potion_continuation_pressure
             .as_mut()
             .unwrap()
             .shop
             .current_gold += 1;
-        tampered_case.failed_search = Some(tampered_case.combat_search_attempts[0].clone());
+        tampered_case.failed_atomic_combat_search =
+            Some(tampered_case.atomic_combat_search_attempts[0].clone());
         let tampered_run_projection = project_saved_run_continuation_context(&tampered_case);
         let tampered_pressure_projection =
             project_saved_potion_continuation_pressure(&tampered_case, &tampered_run_projection);
@@ -3936,7 +3949,7 @@ mod tests {
     #[test]
     fn spend_urgency_question_validates_exact_root_and_preserves_typed_route_order() {
         let case = combat_case_with_trace_run_context();
-        let source_order = case.combat_search_attempts[0]
+        let source_order = case.atomic_combat_search_attempts[0]
             .potion_continuation_context
             .as_ref()
             .expect("captured continuation context")
@@ -4067,13 +4080,13 @@ mod tests {
     #[test]
     fn spend_urgency_question_is_unavailable_for_legacy_context() {
         let mut case = combat_case_with_trace_run_context();
-        for attempt in &mut case.combat_search_attempts {
+        for attempt in &mut case.atomic_combat_search_attempts {
             attempt.potion_continuation_context = None;
             attempt.potion_continuation_pressure = None;
             attempt.combat_victory_continuation = None;
             attempt.strategic_hp_quality = None;
         }
-        if let Some(failed) = case.failed_search.as_mut() {
+        if let Some(failed) = case.failed_atomic_combat_search.as_mut() {
             failed.potion_continuation_context = None;
             failed.potion_continuation_pressure = None;
             failed.combat_victory_continuation = None;
@@ -4119,10 +4132,10 @@ mod tests {
     #[test]
     fn spend_urgency_question_keeps_legacy_victory_fact_explicitly_unavailable() {
         let mut case = combat_case_with_trace_run_context();
-        for attempt in &mut case.combat_search_attempts {
+        for attempt in &mut case.atomic_combat_search_attempts {
             attempt.combat_victory_continuation = None;
         }
-        if let Some(failed) = case.failed_search.as_mut() {
+        if let Some(failed) = case.failed_atomic_combat_search.as_mut() {
             failed.combat_victory_continuation = None;
         }
         let run_projection = project_saved_run_continuation_context(&case);
@@ -4168,10 +4181,10 @@ mod tests {
     #[test]
     fn spend_urgency_question_keeps_legacy_quality_fact_explicitly_unavailable() {
         let mut case = combat_case_with_trace_run_context();
-        for attempt in &mut case.combat_search_attempts {
+        for attempt in &mut case.atomic_combat_search_attempts {
             attempt.strategic_hp_quality = None;
         }
-        if let Some(failed) = case.failed_search.as_mut() {
+        if let Some(failed) = case.failed_atomic_combat_search.as_mut() {
             failed.strategic_hp_quality = None;
         }
         let run_projection = project_saved_run_continuation_context(&case);
@@ -4219,8 +4232,8 @@ mod tests {
         let mut case = combat_case_with_trace_run_context();
         case.core.position.combat.meta.is_boss_fight = true;
         let fact = CombatVictoryContinuationFactsV1::from_guaranteed_room_boss_full_heal(true);
-        case.combat_search_attempts[0].combat_victory_continuation = Some(fact.clone());
-        case.failed_search = Some(case.combat_search_attempts[0].clone());
+        case.atomic_combat_search_attempts[0].combat_victory_continuation = Some(fact.clone());
+        case.failed_atomic_combat_search = Some(case.atomic_combat_search_attempts[0].clone());
         let run_projection = project_saved_run_continuation_context(&case);
 
         let validated = project_saved_combat_victory_continuation(&case, &run_projection);
@@ -4247,13 +4260,13 @@ mod tests {
     #[test]
     fn strategic_hp_quality_projection_rejects_root_and_limit_mismatches() {
         let mut case = combat_case_with_trace_run_context();
-        let facts = case.combat_search_attempts[0]
+        let facts = case.atomic_combat_search_attempts[0]
             .strategic_hp_quality
             .as_mut()
             .expect("captured strategic HP quality");
         facts.entry_current_hp += 1;
         facts.quality_hp_loss_limit = CombatSearchHpLossLimitV1::Limited { max_hp_loss: 14 };
-        case.failed_search = Some(case.combat_search_attempts[0].clone());
+        case.failed_atomic_combat_search = Some(case.atomic_combat_search_attempts[0].clone());
         let run_projection = project_saved_run_continuation_context(&case);
         let victory_projection = project_saved_combat_victory_continuation(&case, &run_projection);
 
@@ -4273,13 +4286,13 @@ mod tests {
             .iter()
             .any(|mismatch| mismatch.field == "quality_hp_loss_limit"));
 
-        let facts = case.combat_search_attempts[0]
+        let facts = case.atomic_combat_search_attempts[0]
             .strategic_hp_quality
             .as_mut()
             .expect("captured strategic HP quality");
         facts.entry_current_hp = case.core.position.combat.entities.player.current_hp;
         facts.quality_hp_loss_limit = CombatSearchHpLossLimitV1::Unlimited;
-        case.failed_search = Some(case.combat_search_attempts[0].clone());
+        case.failed_atomic_combat_search = Some(case.atomic_combat_search_attempts[0].clone());
         let rejected =
             project_saved_strategic_hp_quality(&case, &run_projection, &victory_projection);
         assert!(rejected
@@ -4291,13 +4304,13 @@ mod tests {
     #[test]
     fn spend_urgency_question_rejects_mismatched_pressure() {
         let mut case = combat_case_with_trace_run_context();
-        case.combat_search_attempts[0]
+        case.atomic_combat_search_attempts[0]
             .potion_continuation_pressure
             .as_mut()
             .unwrap()
             .shop
             .current_gold += 1;
-        case.failed_search = Some(case.combat_search_attempts[0].clone());
+        case.failed_atomic_combat_search = Some(case.atomic_combat_search_attempts[0].clone());
         let run_projection = project_saved_run_continuation_context(&case);
         let pressure_projection =
             project_saved_potion_continuation_pressure(&case, &run_projection);
@@ -4335,7 +4348,7 @@ mod tests {
     #[test]
     fn route_ordering_uses_typed_occurs_before_modality() {
         let case = combat_case_with_trace_run_context();
-        let mut context = case.combat_search_attempts[0]
+        let mut context = case.atomic_combat_search_attempts[0]
             .potion_continuation_context
             .clone()
             .expect("captured continuation context");

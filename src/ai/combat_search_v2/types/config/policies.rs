@@ -106,40 +106,10 @@ impl CombatSearchV2PhaseGuardPolicy {
     }
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum CombatSearchV2PotionPolicy {
-    Never,
-    #[serde(alias = "all_legal_potion_actions")]
-    All,
-    #[serde(alias = "semantic_budgeted_potion_actions")]
-    SemanticBudgeted,
-}
-
-impl CombatSearchV2PotionPolicy {
-    pub(in crate::ai::combat_search_v2) fn label(self) -> &'static str {
-        match self {
-            CombatSearchV2PotionPolicy::Never => "never",
-            CombatSearchV2PotionPolicy::All => "all_legal_potion_actions",
-            CombatSearchV2PotionPolicy::SemanticBudgeted => "semantic_budgeted_potion_actions",
-        }
-    }
-}
-
-const HIGH_STAKES_BOSS_MAX_POTIONS_USED: u32 = 2;
-const HIGH_STAKES_ELITE_MAX_POTIONS_USED: u32 = 1;
-
-pub fn high_stakes_semantic_potion_budget(
-    combat: &crate::runtime::combat::CombatState,
-) -> Option<u32> {
-    if combat.meta.is_boss_fight {
-        Some(HIGH_STAKES_BOSS_MAX_POTIONS_USED)
-    } else if combat.meta.is_elite_fight {
-        Some(HIGH_STAKES_ELITE_MAX_POTIONS_USED)
-    } else {
-        None
-    }
-}
+/// Compatibility name retained inside the atomic-v2 module. Potion admission
+/// shared with the production portfolio is owned by the neutral contract.
+pub type CombatSearchV2PotionPolicy =
+    crate::ai::combat_witness_contract::CombatWitnessPotionPolicyV1;
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]

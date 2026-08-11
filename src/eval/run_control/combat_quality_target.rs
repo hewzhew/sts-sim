@@ -10,7 +10,7 @@ pub fn strategic_combat_persistent_payoff_matters_v1(session: &RunControlSession
     };
     room_boss_combat(session)
         && !room_boss_win_ends_requested_run(session)
-        && crate::ai::combat_search_v2::has_persistent_or_reward_payoff_opportunity(
+        && crate::ai::combat_persistent_outcome_v1::has_persistent_or_reward_payoff_opportunity(
             &active.combat_state,
         )
 }
@@ -42,7 +42,9 @@ pub fn strategic_combat_quality_hp_loss_limit_v1(
         return RunControlHpLossLimit::Unlimited;
     };
     if session.active_combat.as_ref().is_some_and(|active| {
-        crate::ai::combat_search_v2::has_healing_payoff_opportunity(&active.combat_state)
+        crate::ai::combat_persistent_outcome_v1::has_healing_payoff_opportunity(
+            &active.combat_state,
+        )
     }) {
         return RunControlHpLossLimit::Limit(0);
     }

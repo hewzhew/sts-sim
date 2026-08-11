@@ -1,4 +1,12 @@
 use super::accepted_combat_line_evidence::AcceptedCombatLineEvidenceV1;
+use super::atomic_combat_search::run_atomic_combat_search_work_plan_v2;
+use super::atomic_combat_search_rejection::{
+    build_atomic_combat_search_rejection_outcome, CombatSearchRejectionOutcome,
+};
+use super::atomic_combat_search_setup::{
+    effective_hp_loss_limit, prepare_atomic_combat_search_v2,
+    search_report_has_invalid_card_identity, PreparedAtomicCombatSearchV2,
+};
 use super::combat_line_adjudication::{CombatLineAcceptancePolicy, CombatLineAdjudicationV1};
 use super::combat_line_executor::apply_selected_combat_candidate_line;
 use super::combat_line_selector::{
@@ -13,20 +21,12 @@ use super::combat_line_trace::{
 use super::combat_no_win_fallback::{
     try_apply_no_win_fallback, try_apply_turn_segment_after_rejection,
 };
-use super::combat_search::run_search_work_plan;
-use super::combat_search_rejection::{
-    build_combat_search_rejection_outcome, CombatSearchRejectionOutcome,
-};
-use super::combat_search_setup::{
-    effective_hp_loss_limit, prepare_search_combat, search_report_has_invalid_card_identity,
-    PreparedCombatSearch,
-};
-use super::progress_options::{RunControlHpLossLimit, RunControlSearchCombatOptions};
-use super::session::{RunControlCombatSearchRejection, RunControlSession, RunProgressOutcome};
+use super::progress_options::{AtomicCombatSearchOptionsV2, RunControlHpLossLimit};
+use super::session::{AtomicCombatSearchRejectionV2, RunControlSession, RunProgressOutcome};
 use super::trace_annotation::{CombatAutomationTrajectorySource, RunControlTraceAnnotationV1};
 
-pub struct RunControlCombatSearchAttemptV1 {
-    prepared: PreparedCombatSearch,
+pub struct AtomicCombatSearchAttemptV2 {
+    prepared: PreparedAtomicCombatSearchV2,
     report: crate::ai::combat_search_v2::CombatSearchV2Report,
     review: ReviewedCombatSearchAttemptV1,
 }
@@ -42,7 +42,7 @@ enum ReviewedCombatSearchAttemptV1 {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct RunControlVerifiedCombatCandidateV1 {
+pub struct AtomicVerifiedCombatCandidateV2 {
     pub final_hp: i32,
     pub hp_loss: i32,
     pub potions_used: u32,
@@ -50,8 +50,8 @@ pub struct RunControlVerifiedCombatCandidateV1 {
     pub action_count: usize,
 }
 
-impl RunControlCombatSearchAttemptV1 {
-    pub fn verified_win(&self) -> Option<RunControlVerifiedCombatCandidateV1> {
+impl AtomicCombatSearchAttemptV2 {
+    pub fn verified_win(&self) -> Option<AtomicVerifiedCombatCandidateV2> {
         let ReviewedCombatSearchAttemptV1::Selected(selected) = &self.review else {
             return None;
         };
@@ -65,7 +65,7 @@ impl RunControlCombatSearchAttemptV1 {
         &mut self,
         session: &RunControlSession,
         max_hp_loss: u32,
-    ) -> Result<Option<RunControlVerifiedCombatCandidateV1>, String> {
+    ) -> Result<Option<AtomicVerifiedCombatCandidateV2>, String> {
         ensure_attempt_parent_unchanged(session, &self.prepared)?;
         let acceptance_policy =
             CombatLineAcceptancePolicy::from_plugin(self.prepared.effective_profile.acceptance);
@@ -116,35 +116,35 @@ impl RunControlCombatSearchAttemptV1 {
     }
 }
 
-pub(super) fn run_search_combat_attempt(
+pub(super) fn run_atomic_combat_search_attempt_v2(
     session: &RunControlSession,
-    options: RunControlSearchCombatOptions,
-) -> Result<RunControlCombatSearchAttemptV1, String> {
-    let prepared = prepare_search_combat(session, options)?;
-    let report = run_search_work_plan(
+    options: AtomicCombatSearchOptionsV2,
+) -> Result<AtomicCombatSearchAttemptV2, String> {
+    let prepared = prepare_atomic_combat_search_v2(session, options)?;
+    let report = run_atomic_combat_search_work_plan_v2(
         &prepared.start,
         prepared.config.clone(),
         &prepared.options.work_quanta,
     );
-    reviewed_search_combat_attempt(session, prepared, report)
+    reviewed_atomic_combat_search_attempt_v2(session, prepared, report)
 }
 
-pub(super) fn apply_prepared_search_report(
+pub(super) fn apply_prepared_atomic_combat_search_report_v2(
     session: &mut RunControlSession,
-    prepared: PreparedCombatSearch,
+    prepared: PreparedAtomicCombatSearchV2,
     report: crate::ai::combat_search_v2::CombatSearchV2Report,
 ) -> Result<RunProgressOutcome, String> {
-    let attempt = reviewed_search_combat_attempt(session, prepared, report)?;
-    apply_search_combat_attempt(session, attempt, None)
+    let attempt = reviewed_atomic_combat_search_attempt_v2(session, prepared, report)?;
+    apply_atomic_combat_search_attempt_v2(session, attempt, None)
 }
 
-pub(super) fn apply_search_combat_attempt(
+pub(super) fn apply_atomic_combat_search_attempt_v2(
     session: &mut RunControlSession,
-    attempt: RunControlCombatSearchAttemptV1,
+    attempt: AtomicCombatSearchAttemptV2,
     max_hp_loss_override: Option<RunControlHpLossLimit>,
 ) -> Result<RunProgressOutcome, String> {
     ensure_attempt_parent_unchanged(session, &attempt.prepared)?;
-    let RunControlCombatSearchAttemptV1 {
+    let AtomicCombatSearchAttemptV2 {
         prepared,
         report,
         review,
@@ -160,14 +160,14 @@ pub(super) fn apply_search_combat_attempt(
     };
     let selected = match review {
         ReviewedCombatSearchAttemptV1::InvalidCardIdentity => {
-            return Ok(build_combat_search_rejection_outcome(
+            return Ok(build_atomic_combat_search_rejection_outcome(
                 session,
                 &start,
                 &report,
                 CombatSearchRejectionOutcome {
                     result: "invalid_card_identity",
                     detail: None,
-                    rejection: RunControlCombatSearchRejection::InvalidCardIdentity,
+                    rejection: AtomicCombatSearchRejectionV2::InvalidCardIdentity,
                     trace_source: "search_combat_rejected",
                     execution_adjudication: None,
                 },
@@ -195,14 +195,14 @@ pub(super) fn apply_search_combat_attempt(
                     return Ok(outcome);
                 }
             }
-            return Ok(build_combat_search_rejection_outcome(
+            return Ok(build_atomic_combat_search_rejection_outcome(
                 session,
                 &start,
                 &report,
                 CombatSearchRejectionOutcome {
                     result: "no_complete_winning_candidate",
                     detail: None,
-                    rejection: RunControlCombatSearchRejection::NoCompleteWinningCandidate,
+                    rejection: AtomicCombatSearchRejectionV2::NoCompleteWinningCandidate,
                     trace_source: "search_combat_rejected",
                     execution_adjudication: None,
                 },
@@ -212,14 +212,14 @@ pub(super) fn apply_search_combat_attempt(
             adjudication,
             detail,
         } => {
-            return Ok(build_combat_search_rejection_outcome(
+            return Ok(build_atomic_combat_search_rejection_outcome(
                 session,
                 &start,
                 &report,
                 CombatSearchRejectionOutcome {
                     result: "dirty_winning_candidate_rejected",
                     detail: Some(detail),
-                    rejection: RunControlCombatSearchRejection::DirtyWinningCandidateRejected,
+                    rejection: AtomicCombatSearchRejectionV2::DirtyWinningCandidateRejected,
                     trace_source: "search_combat_rejected_dirty_win",
                     execution_adjudication: Some(adjudication),
                 },
@@ -240,7 +240,7 @@ pub(super) fn apply_search_combat_attempt(
             )? {
                 return Ok(outcome);
             }
-            return Ok(build_combat_search_rejection_outcome(
+            return Ok(build_atomic_combat_search_rejection_outcome(
                 session,
                 &start,
                 &report,
@@ -250,7 +250,7 @@ pub(super) fn apply_search_combat_attempt(
                         "candidate_hp_loss={} max_hp_loss={max_hp_loss}",
                         selected.line.hp_loss
                     )),
-                    rejection: RunControlCombatSearchRejection::HpLossLimitExceeded,
+                    rejection: AtomicCombatSearchRejectionV2::HpLossLimitExceeded,
                     trace_source: "search_combat_rejected",
                     execution_adjudication: None,
                 },
@@ -282,7 +282,7 @@ pub(super) fn apply_search_combat_attempt(
         &config,
         &report,
         selected.line,
-        CombatAutomationTrajectorySource::SearchCombat,
+        CombatAutomationTrajectorySource::AtomicExactV2,
         summary,
         None,
     )?
@@ -294,11 +294,11 @@ pub(super) fn apply_search_combat_attempt(
     Ok(outcome)
 }
 
-fn reviewed_search_combat_attempt(
+fn reviewed_atomic_combat_search_attempt_v2(
     session: &RunControlSession,
-    prepared: PreparedCombatSearch,
+    prepared: PreparedAtomicCombatSearchV2,
     report: crate::ai::combat_search_v2::CombatSearchV2Report,
-) -> Result<RunControlCombatSearchAttemptV1, String> {
+) -> Result<AtomicCombatSearchAttemptV2, String> {
     let review = if search_report_has_invalid_card_identity(&report) {
         ReviewedCombatSearchAttemptV1::InvalidCardIdentity
     } else if let Some(trajectory) = report.best_win_trajectory.as_ref() {
@@ -332,15 +332,15 @@ fn reviewed_search_combat_attempt(
     } else {
         ReviewedCombatSearchAttemptV1::NoCompleteWinningCandidate
     };
-    Ok(RunControlCombatSearchAttemptV1 {
+    Ok(AtomicCombatSearchAttemptV2 {
         prepared,
         report,
         review,
     })
 }
 
-fn verified_candidate_facts(selected: &SelectedCombatLine) -> RunControlVerifiedCombatCandidateV1 {
-    RunControlVerifiedCombatCandidateV1 {
+fn verified_candidate_facts(selected: &SelectedCombatLine) -> AtomicVerifiedCombatCandidateV2 {
+    AtomicVerifiedCombatCandidateV2 {
         final_hp: selected.line.final_hp,
         hp_loss: selected.line.hp_loss,
         potions_used: selected.line.potions_used,
@@ -351,7 +351,7 @@ fn verified_candidate_facts(selected: &SelectedCombatLine) -> RunControlVerified
 
 fn ensure_attempt_parent_unchanged(
     session: &RunControlSession,
-    prepared: &PreparedCombatSearch,
+    prepared: &PreparedAtomicCombatSearchV2,
 ) -> Result<(), String> {
     if session.current_active_combat_position()? != prepared.start {
         return Err(

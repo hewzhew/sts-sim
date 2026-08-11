@@ -7,10 +7,10 @@ use sts_simulator::eval::combat_capture::{
     capture_combat_position_from_runtime_progress_v2, save_combat_capture_v2, CombatCaptureV2,
 };
 use sts_simulator::eval::run_control::{
-    accepted_combat_line_evidence_v1, combat_automation_trajectories_v1,
-    combat_search_trace_summaries, AcceptedCombatLineEvidenceV1,
-    CombatAutomationTrajectoryRecordV1, CombatAutomationTrajectorySource, CombatSearchTraceSummary,
-    RunControlSession, RunControlTraceAnnotationV1,
+    accepted_combat_line_evidence_v1, atomic_combat_search_trace_summaries,
+    combat_automation_trajectories_v1, AcceptedCombatLineEvidenceV1,
+    AtomicCombatSearchTraceSummaryV2, CombatAutomationTrajectoryRecordV1,
+    CombatAutomationTrajectorySource, RunControlSession, RunControlTraceAnnotationV1,
 };
 use sts_simulator::sim::combat::CombatPosition;
 use sts_simulator::state::core::EngineState;
@@ -32,7 +32,7 @@ pub(super) struct AcceptedHighLossDiagnosticDraft {
     pub(super) capture: CombatCaptureV2,
     pub(super) evidence: AcceptedCombatLineEvidenceV1,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub(super) search: Option<CombatSearchTraceSummary>,
+    pub(super) search: Option<AtomicCombatSearchTraceSummaryV2>,
     pub(super) trajectory: CombatAutomationTrajectoryRecordV1,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(super) hard_hp_loss_limit: Option<u32>,
@@ -87,7 +87,7 @@ pub(super) fn accepted_high_loss_diagnostic(
     }
     let evidence = accepted_combat_line_evidence_v1(annotations)?.clone();
     let trajectory = combat_automation_trajectories_v1(annotations)
-        .find(|trajectory| trajectory.source == CombatAutomationTrajectorySource::SearchCombat)
+        .find(|trajectory| trajectory.source == CombatAutomationTrajectorySource::AtomicExactV2)
         .map(CombatAutomationTrajectoryRecordV1::from_ref)?;
     let attrition =
         accepted_combat_attrition_v1(capture.summary.player_hp, &evidence.selected, &trajectory);
@@ -117,7 +117,7 @@ pub(super) fn accepted_high_loss_diagnostic(
         lane: lane.to_string(),
         capture,
         evidence,
-        search: combat_search_trace_summaries(annotations).next(),
+        search: atomic_combat_search_trace_summaries(annotations).next(),
         trajectory,
         hard_hp_loss_limit,
         attrition: Some(attrition),
@@ -296,7 +296,7 @@ mod tests {
         vec![
             AcceptedCombatLineEvidenceV1::new(selected.clone(), selected, None).into_annotation(),
             CombatAutomationTrajectoryRecordV1::new(
-                CombatAutomationTrajectorySource::SearchCombat,
+                CombatAutomationTrajectorySource::AtomicExactV2,
                 observed_hp
                     .iter()
                     .enumerate()

@@ -5,11 +5,12 @@ use std::time::Duration;
 use serde::Serialize;
 
 use crate::ai::combat_search_v2::{
-    high_stakes_semantic_potion_budget, run_combat_search_v2, CombatSearchV2ChildRolloutPolicy,
-    CombatSearchV2Config, CombatSearchV2PotionPolicy, CombatSearchV2Report,
-    CombatSearchV2RolloutPolicy, CombatSearchV2RootActionPrior, CombatSearchV2Satisfaction,
-    CombatSearchV2TurnPlanPolicy, CombatSearchV2TurnPlanPrior,
+    run_combat_search_v2, CombatSearchV2ChildRolloutPolicy, CombatSearchV2Config,
+    CombatSearchV2PotionPolicy, CombatSearchV2Report, CombatSearchV2RolloutPolicy,
+    CombatSearchV2RootActionPrior, CombatSearchV2Satisfaction, CombatSearchV2TurnPlanPolicy,
+    CombatSearchV2TurnPlanPrior,
 };
+use crate::ai::combat_witness_contract::high_stakes_semantic_witness_potion_budget_v1;
 use crate::eval::artifact::ArtifactTrustLevel;
 use crate::eval::combat_capture::load_combat_capture_v2;
 use crate::eval::fingerprint::StateFingerprintV2;
@@ -99,7 +100,9 @@ impl CombatSearchV2RunOptions {
     ) -> CombatSearchV2Config {
         let mut config = self.to_search_config(input_label);
         if self.high_stakes_semantic_potions && self.potion_policy.is_none() {
-            if let Some(potion_budget) = high_stakes_semantic_potion_budget(&position.combat) {
+            if let Some(potion_budget) =
+                high_stakes_semantic_witness_potion_budget_v1(&position.combat)
+            {
                 config.potion_policy = CombatSearchV2PotionPolicy::SemanticBudgeted;
                 if self.max_potions_used.is_none() {
                     config.max_potions_used = Some(potion_budget);

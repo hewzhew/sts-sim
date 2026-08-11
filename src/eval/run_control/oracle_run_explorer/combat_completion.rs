@@ -59,7 +59,7 @@ impl OracleRunExplorerV1 {
     fn prepare_combat(
         &self,
         branch_id: usize,
-        work: &OracleResidentCombatJobV1,
+        work: &OracleResidentCombatWitnessJobV1,
     ) -> Result<PreparedOracleRunCombatV1, String> {
         let parent = self
             .branches
@@ -81,16 +81,16 @@ impl OracleRunExplorerV1 {
             )
         })?;
         if outcome.progress_steps.is_empty() {
-            let rejection = outcome.combat_search_rejection.ok_or_else(|| {
+            let failure = outcome.oracle_combat_witness_failure.ok_or_else(|| {
                 format!(
-                    "oracle combat branch {} made no progress without typed rejection",
+                    "oracle combat branch {} made no progress without a typed witness failure",
                     parent.branch_id
                 )
             })?;
             return Ok(PreparedOracleRunCombatV1::Unresolved(
                 OracleRunUnresolvedCombatV1 {
                     branch_id: parent.branch_id,
-                    rejection,
+                    failure,
                     evidence_kind: classify_unresolved_combat_evidence(
                         progress.last_status.as_deref(),
                         progress.generation_gap_count,
@@ -171,7 +171,7 @@ impl OracleRunExplorerV1 {
     pub(in super::super) fn prepare_explicit_combat(
         &self,
         branch_id: usize,
-        work: &OracleResidentCombatJobV1,
+        work: &OracleResidentCombatWitnessJobV1,
     ) -> Result<PreparedOracleRunCombatV1, String> {
         self.prepare_combat(branch_id, work)
     }

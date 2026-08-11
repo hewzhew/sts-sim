@@ -910,7 +910,7 @@ pub struct OracleAnalysisCombatScratchTreeV1 {
 #[serde(deny_unknown_fields)]
 pub struct OracleAnalysisCombatScratchSearchRequestV1 {
     pub max_quanta: usize,
-    pub quantum_nodes: usize,
+    pub quantum_generation_work: usize,
     pub quantum_ms: u64,
     pub wall_ms: u64,
 }
@@ -919,7 +919,7 @@ impl Default for OracleAnalysisCombatScratchSearchRequestV1 {
     fn default() -> Self {
         Self {
             max_quanta: 4,
-            quantum_nodes: 1_024,
+            quantum_generation_work: 1_024,
             quantum_ms: 100,
             wall_ms: 1_000,
         }

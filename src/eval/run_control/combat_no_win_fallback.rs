@@ -18,7 +18,7 @@ use super::combat_line_executor::{
     apply_smoke_bomb_survival_fallback,
 };
 use super::combat_line_trace::{millis_to_micros_u64, CombatCandidateLinePerformance};
-use super::progress_options::{RunControlCombatSegmentMode, RunControlSearchCombatOptions};
+use super::progress_options::{AtomicCombatSearchOptionsV2, RunControlCombatSegmentMode};
 use super::session::{RunControlSession, RunProgressOutcome};
 use super::trace_annotation::CombatAutomationTrajectorySource;
 
@@ -26,7 +26,7 @@ pub(super) fn try_apply_no_win_fallback(
     session: &mut RunControlSession,
     start: &CombatPosition,
     config: &CombatSearchV2Config,
-    options: &RunControlSearchCombatOptions,
+    options: &AtomicCombatSearchOptionsV2,
     search_report: &CombatSearchV2Report,
     hp_loss_limit: Option<u32>,
 ) -> Result<Option<RunProgressOutcome>, String> {
@@ -214,7 +214,7 @@ pub(super) fn try_apply_turn_segment_after_rejection(
     session: &mut RunControlSession,
     start: &CombatPosition,
     config: &CombatSearchV2Config,
-    options: &RunControlSearchCombatOptions,
+    options: &AtomicCombatSearchOptionsV2,
     search_report: &CombatSearchV2Report,
     rejection_result: &'static str,
 ) -> Result<Option<RunProgressOutcome>, String> {

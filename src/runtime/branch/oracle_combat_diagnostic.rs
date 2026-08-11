@@ -21,19 +21,28 @@ pub fn oracle_live_combat_diagnostic_v1(
             "oracle node {node} is not at an active combat boundary"
         ));
     }
-    let (search_nodes, search_ms) = if view.encounter.as_ref().is_some_and(|it| it.is_boss) {
-        (workspace.budget.boss_nodes, workspace.budget.boss_ms)
+    let (generation_work, wall_ms) = if view.encounter.as_ref().is_some_and(|it| it.is_boss) {
+        (
+            workspace.budget.boss_generation_work,
+            workspace.budget.boss_ms,
+        )
     } else if view.encounter.as_ref().is_some_and(|it| it.is_elite) {
-        (workspace.budget.elite_nodes, workspace.budget.elite_ms)
+        (
+            workspace.budget.elite_generation_work,
+            workspace.budget.elite_ms,
+        )
     } else {
-        (workspace.budget.hallway_nodes, workspace.budget.hallway_ms)
+        (
+            workspace.budget.hallway_generation_work,
+            workspace.budget.hallway_ms,
+        )
     };
     let case = workspace.session.combat_case(
         node,
         workspace.seed,
         workspace.ascension,
-        search_nodes,
-        search_ms,
+        generation_work,
+        wall_ms,
     )?;
     let progress_actions = view
         .combat
@@ -137,7 +146,7 @@ fn compact_combat_progress(combat: Option<&OracleAnalysisCombatProgressV1>) -> V
         "incumbent_actions": combat.incumbent_action_count,
         "last_status": combat.last_status,
         "quantum_count": combat.quantum_count,
-        "remaining_nodes": combat.remaining_nodes,
+        "remaining_generation_work": combat.remaining_generation_work,
         "remaining_wall_ms": combat.remaining_wall_ms,
         "resume_kind": combat.resume_kind,
         "restart_count": combat.restart_count,

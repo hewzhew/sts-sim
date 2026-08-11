@@ -25,7 +25,7 @@ pub struct Args {
     pub boss_search_ms: u64,
     pub wall_ms: Option<u64>,
     #[serde(skip)]
-    pub checkpoint_before_combat_portfolio: bool,
+    pub checkpoint_before_atomic_combat_search_session: bool,
     #[serde(skip)]
     pub wall_capped_search_budget: bool,
     #[serde(skip)]
@@ -38,7 +38,7 @@ pub struct RunContract {
     pub objective: RunObjective,
     pub branching: BranchingContract,
     pub automation: AutomationContract,
-    pub combat_search: CombatSearchContract,
+    pub atomic_combat_search_budget: AtomicCombatSearchBudgetContractV2,
     pub slice: SliceContract,
     pub features: RuntimeFeatureContract,
 }
@@ -61,7 +61,7 @@ pub struct AutomationContract {
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct CombatSearchContract {
+pub struct AtomicCombatSearchBudgetContractV2 {
     pub primary_nodes: usize,
     pub primary_ms: u64,
     pub rescue_nodes: usize,
@@ -77,7 +77,7 @@ pub struct SliceContract {
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct RuntimeFeatureContract {
-    pub checkpoint_before_combat_portfolio: bool,
+    pub checkpoint_before_atomic_combat_search_session: bool,
 }
 
 impl RunObjective {
@@ -108,7 +108,7 @@ impl RunContract {
             automation: AutomationContract {
                 auto_ops: args.auto_ops,
             },
-            combat_search: CombatSearchContract {
+            atomic_combat_search_budget: AtomicCombatSearchBudgetContractV2 {
                 primary_nodes: args.search_nodes,
                 primary_ms: args.search_ms,
                 rescue_nodes: args.rescue_search_nodes,
@@ -120,7 +120,8 @@ impl RunContract {
                 slice_ms: args.wall_ms,
             },
             features: RuntimeFeatureContract {
-                checkpoint_before_combat_portfolio: args.checkpoint_before_combat_portfolio,
+                checkpoint_before_atomic_combat_search_session: args
+                    .checkpoint_before_atomic_combat_search_session,
             },
         }
     }
@@ -145,7 +146,7 @@ pub fn default_branch_args(seed: u64) -> Args {
         boss_search_nodes: 800_000,
         boss_search_ms: 10_000,
         wall_ms: None,
-        checkpoint_before_combat_portfolio: false,
+        checkpoint_before_atomic_combat_search_session: false,
         wall_capped_search_budget: false,
         wall_capped_boss_budget: false,
     }
@@ -170,7 +171,7 @@ mod tests {
             boss_search_nodes: 505,
             boss_search_ms: 606,
             wall_ms: Some(707),
-            checkpoint_before_combat_portfolio: true,
+            checkpoint_before_atomic_combat_search_session: true,
             wall_capped_search_budget: true,
             wall_capped_boss_budget: true,
         }
@@ -186,14 +187,18 @@ mod tests {
         assert_eq!(contract.branching.generations, 11);
         assert_eq!(contract.branching.max_branches, 3);
         assert_eq!(contract.automation.auto_ops, 22);
-        assert_eq!(contract.combat_search.primary_nodes, 101);
-        assert_eq!(contract.combat_search.primary_ms, 202);
-        assert_eq!(contract.combat_search.rescue_nodes, 303);
-        assert_eq!(contract.combat_search.rescue_ms, 404);
-        assert_eq!(contract.combat_search.boss_nodes, 505);
-        assert_eq!(contract.combat_search.boss_ms, 606);
+        assert_eq!(contract.atomic_combat_search_budget.primary_nodes, 101);
+        assert_eq!(contract.atomic_combat_search_budget.primary_ms, 202);
+        assert_eq!(contract.atomic_combat_search_budget.rescue_nodes, 303);
+        assert_eq!(contract.atomic_combat_search_budget.rescue_ms, 404);
+        assert_eq!(contract.atomic_combat_search_budget.boss_nodes, 505);
+        assert_eq!(contract.atomic_combat_search_budget.boss_ms, 606);
         assert_eq!(contract.slice.slice_ms, Some(707));
-        assert!(contract.features.checkpoint_before_combat_portfolio);
+        assert!(
+            contract
+                .features
+                .checkpoint_before_atomic_combat_search_session
+        );
     }
 
     #[test]
@@ -222,7 +227,7 @@ mod tests {
         assert_eq!(args.boss_search_nodes, 800_000);
         assert_eq!(args.boss_search_ms, 10_000);
         assert_eq!(args.wall_ms, None);
-        assert!(!args.checkpoint_before_combat_portfolio);
+        assert!(!args.checkpoint_before_atomic_combat_search_session);
         assert!(!args.wall_capped_search_budget);
         assert!(!args.wall_capped_boss_budget);
     }

@@ -1,13 +1,13 @@
 use sts_simulator::eval::run_control::{
-    CombatSearchTraceSummary, PlannerBoundaryCaptureSegmentV1, RunControlSession,
+    AtomicCombatSearchTraceSummaryV2, PlannerBoundaryCaptureSegmentV1, RunControlSession,
     RunProgressJournalV1,
 };
 
 use super::accepted_high_loss_diagnostic::AcceptedHighLossDiagnosticDraft;
+use super::atomic_combat_search_report::AtomicCombatSearchSessionReportV2;
 use super::branch_path::BranchPathStep;
 use super::branch_policy_lane::BranchPolicyLane;
 use super::branch_trajectory::BranchTrajectoryState;
-use super::combat_search_report::CombatSearchSessionReport;
 pub(super) use sts_simulator::runtime::branch::{
     BoundarySite, BranchStatus, Owner, TerminalOutcome,
 };
@@ -20,12 +20,12 @@ pub(super) struct Branch {
     pub(super) session: RunControlSession,
     pub(super) status: BranchStatus,
     pub(super) policy_lane: BranchPolicyLane,
-    pub(super) combat_portfolio: Option<CombatSearchSessionReport>,
+    pub(super) atomic_combat_search_session: Option<AtomicCombatSearchSessionReportV2>,
     pub(super) recent_progress_journal: RunProgressJournalV1,
     pub(super) recent_planner_capture: PlannerBoundaryCaptureSegmentV1,
     pub(super) trajectory: BranchTrajectoryState,
-    pub(super) combat_search: Vec<CombatSearchTraceSummary>,
-    pub(super) combat_search_history: Vec<CombatSearchTraceSummary>,
+    pub(super) atomic_combat_search_attempts: Vec<AtomicCombatSearchTraceSummaryV2>,
+    pub(super) atomic_combat_search_history: Vec<AtomicCombatSearchTraceSummaryV2>,
     pub(super) comparison_search_start: Option<usize>,
     pub(super) accepted_high_loss_diagnostics: Vec<AcceptedHighLossDiagnosticDraft>,
 }

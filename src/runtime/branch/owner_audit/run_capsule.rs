@@ -2,6 +2,8 @@ use std::collections::VecDeque;
 use std::path::PathBuf;
 
 use super::capsule_artifact_store::CapsuleArtifactStore;
+use super::run_contract::RunContract;
+use super::run_identity::SourceIdentity;
 use super::run_slice_result::{ArtifactWriteSummary, RunSliceRequestKind, RunSliceResult};
 use super::{Args, Branch, BranchStatus, TerminalOutcome};
 
@@ -21,6 +23,16 @@ impl RunCapsule {
         Self {
             store: CapsuleArtifactStore::new(root),
         }
+    }
+
+    pub(super) fn resume(
+        root: PathBuf,
+        expected_contract: RunContract,
+        expected_source: &SourceIdentity,
+    ) -> Result<Self, String> {
+        Ok(Self {
+            store: CapsuleArtifactStore::resume(root, expected_contract, expected_source)?,
+        })
     }
 
     pub(super) fn combat_cases_dir(&self) -> PathBuf {

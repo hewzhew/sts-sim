@@ -1,25 +1,25 @@
 use crate::ai::combat_search_v2::CombatSearchV2Report;
 use crate::sim::combat::CombatPosition;
 
+use super::atomic_combat_search_render::{
+    render_policy_evidence_summary, render_search_diagnostics_summary,
+    render_search_performance_summary, render_search_policy_summary,
+};
 use super::combat_line_adjudication::CombatLineAdjudicationV1;
 use super::combat_line_trace::{
     attach_execution_adjudication, combat_search_performance_trace_annotation,
 };
-use super::combat_search_render::{
-    render_policy_evidence_summary, render_search_diagnostics_summary,
-    render_search_performance_summary, render_search_policy_summary,
-};
-use super::session::{RunControlCombatSearchRejection, RunControlSession, RunProgressOutcome};
+use super::session::{AtomicCombatSearchRejectionV2, RunControlSession, RunProgressOutcome};
 
 pub(super) struct CombatSearchRejectionOutcome {
     pub(super) result: &'static str,
     pub(super) detail: Option<String>,
-    pub(super) rejection: RunControlCombatSearchRejection,
+    pub(super) rejection: AtomicCombatSearchRejectionV2,
     pub(super) trace_source: &'static str,
     pub(super) execution_adjudication: Option<CombatLineAdjudicationV1>,
 }
 
-pub(super) fn build_combat_search_rejection_outcome(
+pub(super) fn build_atomic_combat_search_rejection_outcome(
     session: &RunControlSession,
     start: &CombatPosition,
     report: &CombatSearchV2Report,
@@ -30,7 +30,7 @@ pub(super) fn build_combat_search_rejection_outcome(
         render_search_rejection(report, rejection.result, rejection.detail),
         super::render::render_run_control_state(session)
     ))
-    .with_combat_search_rejection(rejection.rejection);
+    .with_atomic_combat_search_rejection(rejection.rejection);
     outcome
         .trace_annotations
         .push(combat_search_performance_trace_annotation(

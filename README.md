@@ -63,7 +63,7 @@ continuation examples, combat search drivers, and verification.
 | `oracle_lab_client` | lightweight typed client for repeated resident inspection and mutation |
 | `branch_tiny` / `branch_panel` | retained owner-audit/capsule diagnostics; not the current production oracle mainline |
 | `combat_case_review` | diagnostic review ladder for saved combat cases |
-| `combat_search_v2` / `combat_search_v2_worker` | lightweight CLI/help frontend plus a dedicated optimized worker for fixed combat search |
+| `combat_search_v2` / `combat_search_v2_worker` | `AtomicExactV2` fixed-root diagnostic/challenger; not the production resident witness engine |
 | `rl_dataset_export` | offline decision-sample export for imitation/RL experiments |
 
 See [src/bin/README.md](src/bin/README.md) for binary ownership boundaries.
@@ -107,6 +107,20 @@ archaeology.
 
 Generated outputs belong under ignored locations such as `target/` and
 `tools/artifacts/`.
+
+## Combat Search Names
+
+The repository has no version-ordered "highest" search. The current resident
+oracle witness producer uses `TurnGraphPortfolioV1`: run control composes complete-turn
+`LocalTurnGraphWitnessSession` and `PolicyDiscrepancySession` behind
+`OracleResidentCombatWitnessJobV1`. `combat_search_v2` is the atomic-action
+`AtomicExactV2` engine used for fixed-root diagnostics, challengers,
+benchmarks, and the legacy `branch_tiny` owner-audit path. Their configuration
+and evidence identities are distinct; see
+[Combat Search Ownership](docs/architecture/combat-search.md). Neither engine
+is a certified policy-improvement teacher; the missing qualification boundary
+is specified by
+[`CombatSearchImprovementContractV1`](docs/design/2026-08-11-combat-search-improvement-contract-v1.md).
 
 ## Development Hygiene
 

@@ -1,8 +1,9 @@
 use std::collections::HashMap;
 
+use crate::ai::card_semantics_v1::{card_mechanics_profile_v1, CombatExternalPayoffV1};
 use crate::content::cards::{get_card_definition, CardId, CardType};
 use crate::content::relics::RelicId;
-use crate::runtime::combat::{CombatState, MetaChange};
+use crate::runtime::combat::{CombatCard, CombatState, MetaChange};
 use crate::state::rewards::RewardItem;
 
 /// Exact persistent combat outcomes that must survive tactical witness search.
@@ -43,6 +44,67 @@ impl CombatPersistentOutcomeV1 {
 
     pub fn strictly_dominates(self, other: Self) -> bool {
         self.dominates_or_equals(other) && self != other
+    }
+}
+
+/// Compatibility score over persistent effects already materialized inside a
+/// combat state.
+///
+/// This is not a continuation value and does not predict the rest of the run.
+/// It only preserves the historical comparison among max HP, recovered gold,
+/// Ritual Dagger growth, and Genetic Algorithm growth while callers migrate to
+/// the typed `CombatPersistentOutcomeV1` frontier.
+pub fn materialized_persistent_payoff_score_v1(combat: &CombatState) -> i32 {
+    let outcome = CombatPersistentOutcomeV1::from_combat(combat);
+    outcome.max_hp
+        + outcome.recoverable_gold_delta.saturating_div(5)
+        + outcome.ritual_dagger_value
+        + outcome.genetic_algorithm_value
+}
+
+pub fn has_external_payoff_opportunity(combat: &CombatState) -> bool {
+    combat_cards(combat).any(|card| card_has_external_payoff_opportunity(card, combat))
+}
+
+pub fn has_persistent_or_reward_payoff_opportunity(combat: &CombatState) -> bool {
+    combat_cards(combat).any(|card| {
+        matches!(
+            card_mechanics_profile_v1(card.id).combat_external_payoff,
+            Some(CombatExternalPayoffV1::PersistentOrReward)
+        )
+    })
+}
+
+pub fn has_healing_payoff_opportunity(combat: &CombatState) -> bool {
+    combat.entities.player.current_hp < combat.entities.player.max_hp
+        && combat_cards(combat).any(|card| {
+            matches!(
+                card_mechanics_profile_v1(card.id).combat_external_payoff,
+                Some(CombatExternalPayoffV1::HealingIfDamaged)
+            )
+        })
+}
+
+fn combat_cards(combat: &CombatState) -> impl Iterator<Item = &CombatCard> {
+    combat
+        .meta
+        .master_deck_snapshot
+        .iter()
+        .chain(combat.zones.hand.iter())
+        .chain(combat.zones.draw_pile.iter())
+        .chain(combat.zones.discard_pile.iter())
+        .chain(combat.zones.exhaust_pile.iter())
+        .chain(combat.zones.limbo.iter())
+        .chain(combat.zones.queued_cards.iter().map(|queued| &queued.card))
+}
+
+fn card_has_external_payoff_opportunity(card: &CombatCard, combat: &CombatState) -> bool {
+    match card_mechanics_profile_v1(card.id).combat_external_payoff {
+        Some(CombatExternalPayoffV1::PersistentOrReward) => true,
+        Some(CombatExternalPayoffV1::HealingIfDamaged) => {
+            combat.entities.player.current_hp < combat.entities.player.max_hp
+        }
+        None => false,
     }
 }
 
@@ -166,5 +228,20 @@ mod tests {
         let outcome = CombatPersistentOutcomeV1::from_combat(&combat);
         assert_eq!(outcome.unrecovered_stolen_gold, 30);
         assert_eq!(recoverable_stolen_gold(&combat), 30);
+    }
+
+    #[test]
+    fn materialized_payoff_score_counts_recovered_stolen_gold_without_predicting_future_value() {
+        let mut escaped = crate::test_support::blank_test_combat();
+        escaped.entities.player.max_hp = 85;
+        escaped.entities.player.gold_delta_this_combat = -75;
+        let mut killed = escaped.clone();
+        killed
+            .runtime
+            .pending_rewards
+            .push(RewardItem::StolenGold { amount: 75 });
+
+        assert_eq!(materialized_persistent_payoff_score_v1(&escaped), 70);
+        assert_eq!(materialized_persistent_payoff_score_v1(&killed), 85);
     }
 }

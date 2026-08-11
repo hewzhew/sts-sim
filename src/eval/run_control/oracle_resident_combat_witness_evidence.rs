@@ -1,16 +1,18 @@
+use crate::ai::combat_witness_contract::CombatWitnessEngineV1;
 use sts_combat_planner::{
     LocalTurnGraphGuideServiceBias, OracleCombatDeepStateSnapshot,
     OracleCombatWitnessDiscoverySource, OracleCombatWitnessStateProgressSnapshot, TurnOptionAction,
 };
 
-use super::oracle_combat_work_contract::OracleCombatLocalCandidateDispositionV1;
+use super::oracle_combat_witness_contract::OracleCombatWitnessCandidateDispositionV1;
 
 /// Read-only evidence emitted by one resident combat job.
 ///
 /// Queue sizes and planner snapshots are observations only. This contract
 /// carries no live search session, frontier entry, or mutation authority.
 #[derive(Clone, Debug)]
-pub struct OracleResidentCombatJobEvidenceV1 {
+pub struct OracleResidentCombatWitnessEvidenceV1 {
+    pub witness_engine: CombatWitnessEngineV1,
     pub root_exact_state_hash: String,
     pub guide_service_bias: Option<LocalTurnGraphGuideServiceBias>,
     /// Work charged by earlier search attempts whose frontier was not
@@ -55,7 +57,7 @@ pub struct OracleResidentCombatJobEvidenceV1 {
     pub local_candidate_potions_used: Option<u32>,
     pub local_candidate_potion_slots: Option<u64>,
     pub local_candidate_satisfies_satisfaction: Option<bool>,
-    pub local_candidate_disposition: Option<OracleCombatLocalCandidateDispositionV1>,
+    pub local_candidate_disposition: Option<OracleCombatWitnessCandidateDispositionV1>,
     pub incumbent_discovery_source: Option<OracleCombatWitnessDiscoverySource>,
     pub incumbent_final_hp: Option<i32>,
     pub incumbent_hp_loss: Option<i32>,

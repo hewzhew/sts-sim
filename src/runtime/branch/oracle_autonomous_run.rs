@@ -107,7 +107,7 @@ pub struct OracleAutonomousRunConfigV1 {
     pub elite_wall_ms: u64,
     pub boss_wall_ms: u64,
     pub max_quanta: usize,
-    pub quantum_nodes: usize,
+    pub quantum_generation_work: usize,
     pub quantum_ms: u64,
     pub max_boundaries: usize,
     pub run_wall_ms: Option<u64>,
@@ -155,7 +155,7 @@ pub fn run_oracle_analysis_to_stop_v1(
 ) -> Result<Value, String> {
     if config.max_boundaries == 0
         || config.max_quanta == 0
-        || config.quantum_nodes == 0
+        || config.quantum_generation_work == 0
         || config.quantum_ms == 0
         || config.hallway_wall_ms == 0
         || config.elite_wall_ms == 0
@@ -271,7 +271,7 @@ pub fn run_oracle_analysis_to_stop_v1(
         let advance_started = Instant::now();
         let (report, mut after) = workspace.advance(OracleAnalysisAdvanceRequestV1 {
             max_quanta: config.max_quanta,
-            quantum_nodes: config.quantum_nodes,
+            quantum_generation_work: config.quantum_generation_work,
             quantum_ms: Some(config.quantum_ms),
             wall_ms: Some(wall_ms),
             // Standard advance checks strategic HP quality and promotes to an
@@ -880,7 +880,7 @@ mod tests {
                 elite_wall_ms: 1_000,
                 boss_wall_ms: 1_000,
                 max_quanta: 8,
-                quantum_nodes: 64,
+                quantum_generation_work: 64,
                 quantum_ms: 10,
                 max_boundaries: 1,
                 run_wall_ms: None,

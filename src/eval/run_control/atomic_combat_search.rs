@@ -5,39 +5,38 @@ use crate::ai::combat_search_v2::{
     CombatSearchV2WorkQuantum,
 };
 
-use super::combat_search_setup::{prepare_search_combat, PreparedCombatSearch};
-use super::progress_options::{RunControlCombatSearchQuantum, RunControlSearchCombatOptions};
+use super::atomic_combat_search_setup::{
+    prepare_atomic_combat_search_v2, PreparedAtomicCombatSearchV2,
+};
+use super::progress_options::{
+    AtomicCombatSearchAdvanceV2, AtomicCombatSearchOptionsV2, AtomicCombatSearchQuantumV2,
+};
 use super::session::{RunControlSession, RunProgressOutcome};
 
-pub(super) fn apply_search_combat(
+pub(super) fn apply_atomic_combat_search_v2(
     session: &mut RunControlSession,
-    options: RunControlSearchCombatOptions,
+    options: AtomicCombatSearchOptionsV2,
 ) -> Result<RunProgressOutcome, String> {
-    let attempt = super::combat_search_attempt::run_search_combat_attempt(session, options)?;
-    super::combat_search_attempt::apply_search_combat_attempt(session, attempt, None)
+    let attempt =
+        super::atomic_combat_search_attempt::run_atomic_combat_search_attempt_v2(session, options)?;
+    super::atomic_combat_search_attempt::apply_atomic_combat_search_attempt_v2(
+        session, attempt, None,
+    )
 }
 
-pub struct RunControlCombatWorkV1 {
-    prepared: PreparedCombatSearch,
+pub struct AtomicCombatSearchWorkV2 {
+    prepared: PreparedAtomicCombatSearchV2,
     search: CombatSearchV2Session,
     remaining_nodes: usize,
     remaining_wall_time: Option<Duration>,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum RunControlCombatWorkAdvanceV1 {
-    Pending,
-    ReadyToFinish,
-    AllowanceExhausted,
-    GlobalDeadlineReached,
-}
-
-impl RunControlCombatWorkV1 {
+impl AtomicCombatSearchWorkV2 {
     pub fn new(
         session: &RunControlSession,
-        options: RunControlSearchCombatOptions,
+        options: AtomicCombatSearchOptionsV2,
     ) -> Result<Self, String> {
-        let prepared = prepare_search_combat(session, options)?;
+        let prepared = prepare_atomic_combat_search_v2(session, options)?;
         let search = CombatSearchV2Session::new(
             &prepared.start.engine,
             &prepared.start.combat,
@@ -53,22 +52,22 @@ impl RunControlCombatWorkV1 {
 
     pub fn advance(
         &mut self,
-        quantum: &RunControlCombatSearchQuantum,
+        quantum: &AtomicCombatSearchQuantumV2,
         global_deadline: Option<Instant>,
-    ) -> RunControlCombatWorkAdvanceV1 {
+    ) -> AtomicCombatSearchAdvanceV2 {
         let now = Instant::now();
         let global_remaining =
             global_deadline.map(|deadline| deadline.saturating_duration_since(now));
         if global_remaining == Some(Duration::ZERO) {
-            return RunControlCombatWorkAdvanceV1::GlobalDeadlineReached;
+            return AtomicCombatSearchAdvanceV2::GlobalDeadlineReached;
         }
 
         let additional_nodes = quantum.additional_nodes.min(self.remaining_nodes);
         if additional_nodes == 0 {
-            return RunControlCombatWorkAdvanceV1::AllowanceExhausted;
+            return AtomicCombatSearchAdvanceV2::AllowanceExhausted;
         }
         if self.remaining_wall_time == Some(Duration::ZERO) {
-            return RunControlCombatWorkAdvanceV1::AllowanceExhausted;
+            return AtomicCombatSearchAdvanceV2::AllowanceExhausted;
         }
 
         let requested_wall = quantum.soft_wall_ms.map(Duration::from_millis);
@@ -78,9 +77,9 @@ impl RunControlCombatWorkV1 {
             .min();
         if soft_wall_time == Some(Duration::ZERO) {
             return if global_remaining == Some(Duration::ZERO) {
-                RunControlCombatWorkAdvanceV1::GlobalDeadlineReached
+                AtomicCombatSearchAdvanceV2::GlobalDeadlineReached
             } else {
-                RunControlCombatWorkAdvanceV1::AllowanceExhausted
+                AtomicCombatSearchAdvanceV2::AllowanceExhausted
             };
         }
 
@@ -105,12 +104,12 @@ impl RunControlCombatWorkV1 {
                 | CombatSearchV2AdvanceStop::FrontierExhausted
                 | CombatSearchV2AdvanceStop::AlreadyComplete
         ) {
-            return RunControlCombatWorkAdvanceV1::ReadyToFinish;
+            return AtomicCombatSearchAdvanceV2::ReadyToFinish;
         }
         if self.remaining_nodes == 0 || self.remaining_wall_time == Some(Duration::ZERO) {
-            RunControlCombatWorkAdvanceV1::AllowanceExhausted
+            AtomicCombatSearchAdvanceV2::AllowanceExhausted
         } else {
-            RunControlCombatWorkAdvanceV1::Pending
+            AtomicCombatSearchAdvanceV2::Pending
         }
     }
 
@@ -152,16 +151,20 @@ impl RunControlCombatWorkV1 {
             timed_production_deadline,
             self.prepared.config.wall_time,
         );
-        super::combat_search_attempt::apply_prepared_search_report(session, self.prepared, report)
+        super::atomic_combat_search_attempt::apply_prepared_atomic_combat_search_report_v2(
+            session,
+            self.prepared,
+            report,
+        )
     }
 }
 
-pub(super) fn run_search_work_plan(
+pub(super) fn run_atomic_combat_search_work_plan_v2(
     start: &crate::sim::combat::CombatPosition,
     config: crate::ai::combat_search_v2::CombatSearchV2Config,
-    work_quanta: &[super::progress_options::RunControlCombatSearchQuantum],
+    work_quanta: &[super::progress_options::AtomicCombatSearchQuantumV2],
 ) -> crate::ai::combat_search_v2::CombatSearchV2Report {
-    let default_quantum = super::progress_options::RunControlCombatSearchQuantum {
+    let default_quantum = super::progress_options::AtomicCombatSearchQuantumV2 {
         label: "single_run",
         additional_nodes: config.max_nodes,
         soft_wall_ms: config
@@ -197,7 +200,7 @@ pub(super) fn run_search_work_plan(
 }
 
 fn summed_quantum_wall_time(
-    quanta: &[super::progress_options::RunControlCombatSearchQuantum],
+    quanta: &[super::progress_options::AtomicCombatSearchQuantumV2],
 ) -> Option<Duration> {
     quanta.iter().try_fold(Duration::ZERO, |total, quantum| {
         quantum
@@ -222,7 +225,7 @@ impl CombatSearchWorkBudget {
 
     fn authorize(
         &mut self,
-        quantum: &super::progress_options::RunControlCombatSearchQuantum,
+        quantum: &super::progress_options::AtomicCombatSearchQuantumV2,
         now: Instant,
     ) -> Option<CombatSearchV2WorkQuantum> {
         let additional_nodes = quantum.additional_nodes.min(self.remaining_nodes);
@@ -254,17 +257,17 @@ impl CombatSearchWorkBudget {
 mod tests {
     use std::time::{Duration, Instant};
 
+    use super::super::atomic_combat_search_setup::{
+        effective_hp_loss_limit, high_stakes_search_options, search_config,
+    };
     use super::super::combat_line_trace::{
         combat_automation_answer_claims_v1, combat_automation_opportunity_state_v1,
         combat_automation_step_state_v1,
     };
     use super::super::combat_no_win_fallback::segment_mode_allows_turn_segment;
-    use super::super::combat_search_setup::{
-        effective_hp_loss_limit, high_stakes_search_options, search_config,
-    };
     use super::{
-        run_search_work_plan, CombatSearchWorkBudget, RunControlCombatWorkAdvanceV1,
-        RunControlCombatWorkV1,
+        run_atomic_combat_search_work_plan_v2, AtomicCombatSearchAdvanceV2,
+        AtomicCombatSearchWorkV2, CombatSearchWorkBudget,
     };
     use crate::ai::combat_search_v2::{
         CombatSearchAcceptancePluginId, CombatSearchActionPriorPluginId,
@@ -278,7 +281,7 @@ mod tests {
     fn work_budget_caps_every_quantum_to_one_node_and_wall_owner() {
         let started = Instant::now();
         let mut budget = CombatSearchWorkBudget::new(10, Some(Duration::from_millis(10)), started);
-        let requested = super::super::progress_options::RunControlCombatSearchQuantum {
+        let requested = super::super::progress_options::AtomicCombatSearchQuantumV2 {
             label: "test",
             additional_nodes: 6,
             soft_wall_ms: Some(8),
@@ -303,7 +306,7 @@ mod tests {
 
     #[test]
     fn legacy_no_win_solver_chain_is_opt_in() {
-        assert!(!RunControlSearchCombatOptions::default().enable_legacy_no_win_rescue);
+        assert!(!AtomicCombatSearchOptionsV2::default().enable_legacy_no_win_rescue);
     }
 
     #[test]
@@ -336,7 +339,7 @@ mod tests {
             crate::state::core::EngineState::CombatPlayerTurn,
             combat,
         );
-        let report = run_search_work_plan(
+        let report = run_atomic_combat_search_work_plan_v2(
             &start,
             crate::ai::combat_search_v2::CombatSearchV2Config {
                 max_nodes: 10,
@@ -346,12 +349,12 @@ mod tests {
                 ..crate::ai::combat_search_v2::CombatSearchV2Config::default()
             },
             &[
-                super::super::progress_options::RunControlCombatSearchQuantum {
+                super::super::progress_options::AtomicCombatSearchQuantumV2 {
                     label: "initial",
                     additional_nodes: 6,
                     soft_wall_ms: Some(100),
                 },
-                super::super::progress_options::RunControlCombatSearchQuantum {
+                super::super::progress_options::AtomicCombatSearchQuantumV2 {
                     label: "refine",
                     additional_nodes: 6,
                     soft_wall_ms: Some(100),
@@ -377,7 +380,7 @@ mod tests {
         RunControlTraceAnnotationV1,
     };
     use crate::eval::run_control::{
-        RunControlConfig, RunControlHpLossLimit, RunControlSearchCombatOptions, RunControlSession,
+        AtomicCombatSearchOptionsV2, RunControlConfig, RunControlHpLossLimit, RunControlSession,
     };
     use crate::runtime::combat::CombatCard;
     use crate::state::core::{
@@ -596,55 +599,55 @@ mod tests {
             .entities
             .monsters[0] =
             crate::test_support::planned_monster(crate::content::monsters::EnemyId::JawWorm, 1);
-        let mut work = RunControlCombatWorkV1::new(
+        let mut work = AtomicCombatSearchWorkV2::new(
             &session,
-            RunControlSearchCombatOptions {
+            AtomicCombatSearchOptionsV2 {
                 max_nodes: Some(8),
                 wall_ms: None,
                 rollout_policy: Some(CombatSearchV2RolloutPolicy::Disabled),
                 satisfaction: Some(CombatSearchV2Satisfaction::BudgetOrExhaustion),
-                ..RunControlSearchCombatOptions::default()
+                ..AtomicCombatSearchOptionsV2::default()
             },
         )
         .expect("combat work should initialize");
-        let quantum = super::super::progress_options::RunControlCombatSearchQuantum {
+        let quantum = super::super::progress_options::AtomicCombatSearchQuantumV2 {
             label: "resume_contract",
             additional_nodes: 1,
             soft_wall_ms: None,
         };
 
         let first = work.advance(&quantum, None);
-        assert_eq!(first, RunControlCombatWorkAdvanceV1::Pending);
+        assert_eq!(first, AtomicCombatSearchAdvanceV2::Pending);
         let first_nodes = work.snapshot().nodes_expanded;
         assert_eq!(work.quantum_count(), 1);
 
         let second = work.advance(&quantum, None);
-        assert_eq!(second, RunControlCombatWorkAdvanceV1::Pending);
+        assert_eq!(second, AtomicCombatSearchAdvanceV2::Pending);
         assert_eq!(work.quantum_count(), 2);
         assert!(work.snapshot().nodes_expanded >= first_nodes);
         assert!(work.remaining_nodes() <= 7);
     }
 
-    fn options_with_hp_loss(max_hp_loss: RunControlHpLossLimit) -> RunControlSearchCombatOptions {
-        RunControlSearchCombatOptions {
+    fn options_with_hp_loss(max_hp_loss: RunControlHpLossLimit) -> AtomicCombatSearchOptionsV2 {
+        AtomicCombatSearchOptionsV2 {
             max_hp_loss: Some(max_hp_loss),
-            ..RunControlSearchCombatOptions::default()
+            ..AtomicCombatSearchOptionsV2::default()
         }
     }
 
     fn options_with_potion_budget(
         potion_policy: CombatSearchV2PotionPolicy,
         max_potions_used: u32,
-    ) -> RunControlSearchCombatOptions {
-        RunControlSearchCombatOptions {
+    ) -> AtomicCombatSearchOptionsV2 {
+        AtomicCombatSearchOptionsV2 {
             potion_policy: Some(potion_policy),
             max_potions_used: Some(max_potions_used),
-            ..RunControlSearchCombatOptions::default()
+            ..AtomicCombatSearchOptionsV2::default()
         }
     }
 
     fn assert_potion_budget(
-        options: RunControlSearchCombatOptions,
+        options: AtomicCombatSearchOptionsV2,
         expected_policy: Option<CombatSearchV2PotionPolicy>,
         expected_max_used: Option<u32>,
     ) {
@@ -688,14 +691,14 @@ mod tests {
             }),
         ));
 
-        let outcome = super::apply_search_combat(
+        let outcome = super::apply_atomic_combat_search_v2(
             &mut session,
-            RunControlSearchCombatOptions {
+            AtomicCombatSearchOptionsV2 {
                 max_nodes: Some(1),
                 wall_ms: Some(1),
                 enable_legacy_no_win_rescue: false,
                 allow_smoke_bomb_survival_fallback: true,
-                ..RunControlSearchCombatOptions::default()
+                ..AtomicCombatSearchOptionsV2::default()
             },
         )
         .expect("search fallback should not error");
@@ -727,7 +730,7 @@ mod tests {
     #[test]
     fn combat_automation_trace_annotation_preserves_action_inputs() {
         let annotation = CombatAutomationTrajectoryRecordV1::new(
-            CombatAutomationTrajectorySource::SearchCombat,
+            CombatAutomationTrajectorySource::AtomicExactV2,
             vec![CombatAutomationActionV1 {
                 step_index: 7,
                 action_key: "combat/end_turn".to_string(),
@@ -749,7 +752,7 @@ mod tests {
         else {
             panic!("expected combat automation trajectory annotation")
         };
-        assert_eq!(source, CombatAutomationTrajectorySource::SearchCombat);
+        assert_eq!(source, CombatAutomationTrajectorySource::AtomicExactV2);
         assert_eq!(action_count, 1);
         assert_eq!(actions[0].step_index, 7);
         assert_eq!(actions[0].action_key, "combat/end_turn");
@@ -766,11 +769,11 @@ mod tests {
         });
 
         assert_eq!(
-            effective_hp_loss_limit(&session, &RunControlSearchCombatOptions::default()),
+            effective_hp_loss_limit(&session, &AtomicCombatSearchOptionsV2::default()),
             Some(12)
         );
         assert_eq!(
-            search_config(&session, RunControlSearchCombatOptions::default()).satisfaction,
+            search_config(&session, AtomicCombatSearchOptionsV2::default()).satisfaction,
             CombatSearchV2Satisfaction::HpLossAtMost(12)
         );
         assert_eq!(
@@ -813,16 +816,16 @@ mod tests {
             ..RunControlConfig::default()
         });
 
-        let config = search_config(&session, RunControlSearchCombatOptions::default());
+        let config = search_config(&session, AtomicCombatSearchOptionsV2::default());
         assert_eq!(config.max_nodes, 1234);
         assert_eq!(config.wall_time, Some(Duration::from_millis(5678)));
 
         let config = search_config(
             &session,
-            RunControlSearchCombatOptions {
+            AtomicCombatSearchOptionsV2 {
                 max_nodes: Some(90),
                 wall_ms: Some(12),
-                ..RunControlSearchCombatOptions::default()
+                ..AtomicCombatSearchOptionsV2::default()
             },
         );
         assert_eq!(config.max_nodes, 90);
@@ -853,9 +856,9 @@ mod tests {
 
         let config = search_config(
             &session,
-            RunControlSearchCombatOptions {
+            AtomicCombatSearchOptionsV2 {
                 profile: Some(profile),
-                ..RunControlSearchCombatOptions::default()
+                ..AtomicCombatSearchOptionsV2::default()
             },
         );
 
@@ -869,10 +872,10 @@ mod tests {
 
         let config = search_config(
             &session,
-            RunControlSearchCombatOptions {
+            AtomicCombatSearchOptionsV2 {
                 profile: Some(profile),
                 max_nodes: Some(444),
-                ..RunControlSearchCombatOptions::default()
+                ..AtomicCombatSearchOptionsV2::default()
             },
         );
         assert_eq!(config.max_nodes, 444);
@@ -886,7 +889,7 @@ mod tests {
             ..RunControlConfig::default()
         });
 
-        let config = search_config(&session, RunControlSearchCombatOptions::default());
+        let config = search_config(&session, AtomicCombatSearchOptionsV2::default());
         assert_eq!(
             config.potion_policy,
             CombatSearchV2PotionPolicy::SemanticBudgeted
@@ -895,10 +898,10 @@ mod tests {
 
         let config = search_config(
             &session,
-            RunControlSearchCombatOptions {
+            AtomicCombatSearchOptionsV2 {
                 potion_policy: Some(CombatSearchV2PotionPolicy::Never),
                 max_potions_used: Some(0),
-                ..RunControlSearchCombatOptions::default()
+                ..AtomicCombatSearchOptionsV2::default()
             },
         );
         assert_eq!(config.potion_policy, CombatSearchV2PotionPolicy::Never);
@@ -909,8 +912,7 @@ mod tests {
     fn high_stakes_search_options_enables_semantic_potions_for_boss_manual_search() {
         let session = session_with_combat_flags(true, false);
 
-        let options =
-            high_stakes_search_options(&session, RunControlSearchCombatOptions::default());
+        let options = high_stakes_search_options(&session, AtomicCombatSearchOptionsV2::default());
 
         assert_potion_budget(
             options,
@@ -923,8 +925,7 @@ mod tests {
     fn high_stakes_search_options_enables_single_semantic_potion_for_elite_manual_search() {
         let session = session_with_combat_flags(false, true);
 
-        let options =
-            high_stakes_search_options(&session, RunControlSearchCombatOptions::default());
+        let options = high_stakes_search_options(&session, AtomicCombatSearchOptionsV2::default());
 
         assert_potion_budget(
             options,
@@ -961,9 +962,9 @@ mod tests {
 
         let options = high_stakes_search_options(
             &session,
-            RunControlSearchCombatOptions {
+            AtomicCombatSearchOptionsV2 {
                 profile: Some(profile),
-                ..RunControlSearchCombatOptions::default()
+                ..AtomicCombatSearchOptionsV2::default()
             },
         );
 
@@ -1003,8 +1004,7 @@ mod tests {
     fn high_stakes_search_options_keeps_ordinary_manual_search_no_potion_default() {
         let session = session_with_combat_flags(false, false);
 
-        let options =
-            high_stakes_search_options(&session, RunControlSearchCombatOptions::default());
+        let options = high_stakes_search_options(&session, AtomicCombatSearchOptionsV2::default());
 
         assert_potion_budget(options, None, None);
     }

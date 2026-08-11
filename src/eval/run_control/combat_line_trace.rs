@@ -511,7 +511,9 @@ mod tests {
     use super::*;
     use crate::ai::combat_search_v2::{run_combat_search_v2, CombatSearchV2Config};
     use crate::eval::run_control::combat_candidate_line::CombatCandidateLineSource;
-    use crate::eval::run_control::{combat_search_trace_summaries, CombatSearchTraceSummary};
+    use crate::eval::run_control::{
+        atomic_combat_search_trace_summaries, AtomicCombatSearchTraceSummaryV2,
+    };
     use crate::state::core::EngineState;
 
     #[test]
@@ -540,7 +542,7 @@ mod tests {
         else {
             panic!("expected combat search performance annotation")
         };
-        let summary = combat_search_trace_summaries(&annotations)
+        let summary = atomic_combat_search_trace_summaries(&annotations)
             .next()
             .expect("combat search summary");
 
@@ -586,17 +588,17 @@ mod tests {
         let restored_snapshot: CombatSearchPerformanceSnapshotV1 =
             serde_json::from_value(snapshot_value).expect("legacy snapshot");
 
-        let mut summary_value = serde_json::to_value(CombatSearchTraceSummary {
+        let mut summary_value = serde_json::to_value(AtomicCombatSearchTraceSummaryV2 {
             coverage_status: "NodeBudgetLimited".to_string(),
             node_budget_hit: true,
-            ..CombatSearchTraceSummary::default()
+            ..AtomicCombatSearchTraceSummaryV2::default()
         })
         .expect("serialize summary");
         summary_value
             .as_object_mut()
             .expect("summary object")
             .remove("node_budget_hit");
-        let restored_summary: CombatSearchTraceSummary =
+        let restored_summary: AtomicCombatSearchTraceSummaryV2 =
             serde_json::from_value(summary_value).expect("legacy summary");
 
         assert!(!restored_snapshot.node_budget_hit);

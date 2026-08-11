@@ -8,7 +8,9 @@ use sts_oracle_runtime::ai::combat_state_key::combat_exact_state_hash_v2;
 use sts_oracle_runtime::content::monsters::EnemyId;
 use sts_oracle_runtime::content::potions::PotionId;
 use sts_oracle_runtime::content::powers::{store::powers_for, PowerId};
-use sts_oracle_runtime::eval::combat_case::{load_combat_case, save_combat_case, CombatCase};
+use sts_oracle_runtime::eval::combat_case::{
+    load_combat_case, save_combat_case, CombatCase, CombatCaseWitnessBudgetV1,
+};
 use sts_oracle_runtime::sim::combat::CombatPosition;
 
 use super::{
@@ -668,15 +670,12 @@ fn export_representative_case(
     exported.core.position = state.position.clone();
     exported.refresh_derived_summaries_and_clear_production_context();
     exported.branch_evidence = None;
-    exported.combat_search_attempts.clear();
-    exported.failed_search = None;
+    exported.atomic_combat_search_attempts.clear();
+    exported.failed_atomic_combat_search = None;
     exported.path.clear();
     exported.core.gap.boundary = format!("turn quality frontier depth {depth}");
     exported.core.gap.reason = "oracle_lab_turn_quality_frontier_representative".to_string();
-    exported.core.gap.search_nodes = 0;
-    exported.core.gap.search_ms = 0;
-    exported.core.gap.rescue_search_nodes = 0;
-    exported.core.gap.rescue_search_ms = 0;
+    exported.core.gap.witness_budget = CombatCaseWitnessBudgetV1::NotRun;
     save_combat_case(output, &exported)
 }
 

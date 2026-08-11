@@ -5,7 +5,7 @@ use super::run_cutpoint_store::RunCutpointStore;
 use super::run_deadline::RunDeadline;
 use super::run_slice_request::RunSliceRequest;
 use super::run_slice_result::{
-    combat_search_telemetry_from_branches, frontier_summary_from_branches,
+    atomic_combat_search_telemetry_from_branches, frontier_summary_from_branches,
     objective_satisfied_result, slice_result_from_summary, FrontierExhausted, RunSliceResult,
     RunStop, SoftPause,
 };
@@ -230,10 +230,10 @@ pub(super) fn run(request: RunSliceRequest) -> Result<RunSliceResult, String> {
             })
         }
     });
-    let combat_search = if let Some(branch) = selected_branch.as_ref() {
-        combat_search_telemetry_from_branches(std::iter::once(branch))
+    let atomic_combat_search_attempts = if let Some(branch) = selected_branch.as_ref() {
+        atomic_combat_search_telemetry_from_branches(std::iter::once(branch))
     } else {
-        combat_search_telemetry_from_branches(frontier.iter())
+        atomic_combat_search_telemetry_from_branches(frontier.iter())
     };
     let result = slice_result_from_summary(
         capsule_args,
@@ -248,7 +248,7 @@ pub(super) fn run(request: RunSliceRequest) -> Result<RunSliceResult, String> {
         deadline.remaining_ms(),
         elapsed_ms(started),
     )
-    .with_combat_search_telemetry(combat_search);
+    .with_atomic_combat_search_telemetry(atomic_combat_search_attempts);
     finish_slice_result(run_capsule.as_ref(), result)
 }
 
@@ -273,7 +273,7 @@ fn print_header(args: super::Args, resume_frontier: bool) {
         if resume_frontier { " resume=frontier" } else { "" }
     );
     println!(
-        "branch cap: {}; search={}nodes/{}ms; rescue={}nodes/{}ms diagnostic; combat_portfolio={}nodes/{}ms; '>' marks expanded choices",
+        "branch cap: {}; search={}nodes/{}ms; rescue={}nodes/{}ms diagnostic; atomic_combat_search_session={}nodes/{}ms; '>' marks expanded choices",
         args.max_branches,
         args.search_nodes,
         args.search_ms,
@@ -332,7 +332,7 @@ mod tests {
     fn cutpoint_root_reuses_existing_cutpoints_directory() {
         let frontier = temp_root()
             .join("cutpoints")
-            .join("latest_pre_combat_search.frontier.json");
+            .join("latest_pre_atomic_combat_search.frontier.json");
 
         let root = cutpoint_root_for_outputs(None, Some(&frontier), None).unwrap();
 

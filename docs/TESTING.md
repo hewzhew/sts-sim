@@ -23,7 +23,6 @@ Tests are deliberately split across real Cargo packages:
   package plus the separately compiled combat-evaluation, run-control, exact
   learning-environment, learning-adapter, branch-runtime, tools, and
   shared-contract owners;
-- `cargo architecture <filter>` runs dependency-free source-boundary checks.
 - `learning/dev.ps1 test` uses the explicitly configured Python 3.12 runtime
   and requires NumPy, PyTorch, the installed bridge, and the repository caller;
   it is the maintained complete online-learning pytest entrypoint. New and
@@ -170,3 +169,12 @@ When reviewing tests, prefer these questions over "does it pass?":
 
 Passing tests are not enough. The test suite should make the system easier to
 change, not harder to understand.
+
+## Architecture Is Not A Source Snapshot
+
+Do not test source text, file size, module placement, retired identifier
+absence, report prose, or private delegation shape. Those checks freeze an
+implementation without proving simulator, search, replay, or training
+behavior. Cargo package dependencies own compile-time direction; focused
+behavior tests own executable contracts; maintained architecture docs explain
+the intended map. Delete migration guards when their migration lands.

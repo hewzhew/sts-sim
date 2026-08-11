@@ -15,6 +15,7 @@ use crate::state::selection::DomainEvent;
 
 use super::auto_capture::AutoCombatCaptureConfig;
 use super::combat_line_adjudication::CombatLineAdjudicationV1;
+use super::oracle_combat_witness_contract::OracleCombatWitnessFailureV1;
 use super::outcome::CombatOutcomeTracker;
 use super::progress_step::{RunControlAutoStopV1, RunProgressStepV1};
 use super::reward_auto::RewardAutomationConfig;
@@ -437,7 +438,8 @@ pub struct RunControlDecisionParentSnapshotV1 {
 pub struct RunProgressOutcome {
     pub message: String,
     pub action_result: Option<ActionResult>,
-    pub combat_search_rejection: Option<RunControlCombatSearchRejection>,
+    pub atomic_combat_search_rejection: Option<AtomicCombatSearchRejectionV2>,
+    pub oracle_combat_witness_failure: Option<OracleCombatWitnessFailureV1>,
     pub execution_adjudication: Option<CombatLineAdjudicationV1>,
     pub auto_applied_steps: Vec<RunControlAutoAppliedStepV1>,
     pub trace_annotations: Vec<RunControlTraceAnnotationV1>,
@@ -447,7 +449,7 @@ pub struct RunProgressOutcome {
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
-pub enum RunControlCombatSearchRejection {
+pub enum AtomicCombatSearchRejectionV2 {
     InvalidCardIdentity,
     NoCompleteWinningCandidate,
     DirtyWinningCandidateRejected,
@@ -477,7 +479,8 @@ impl RunProgressOutcome {
         Self {
             message: message.into(),
             action_result: None,
-            combat_search_rejection: None,
+            atomic_combat_search_rejection: None,
+            oracle_combat_witness_failure: None,
             execution_adjudication: None,
             auto_applied_steps: Vec::new(),
             trace_annotations: Vec::new(),
@@ -497,7 +500,8 @@ impl RunProgressOutcome {
         Self {
             message: message.into(),
             action_result: Some(action_result),
-            combat_search_rejection: None,
+            atomic_combat_search_rejection: None,
+            oracle_combat_witness_failure: None,
             execution_adjudication: None,
             auto_applied_steps: Vec::new(),
             trace_annotations: Vec::new(),
@@ -610,11 +614,19 @@ impl RunProgressOutcome {
         resolutions.next().is_none().then_some(resolution)
     }
 
-    pub(in crate::eval::run_control) fn with_combat_search_rejection(
+    pub(in crate::eval::run_control) fn with_atomic_combat_search_rejection(
         mut self,
-        rejection: RunControlCombatSearchRejection,
+        rejection: AtomicCombatSearchRejectionV2,
     ) -> Self {
-        self.combat_search_rejection = Some(rejection);
+        self.atomic_combat_search_rejection = Some(rejection);
+        self
+    }
+
+    pub(in crate::eval::run_control) fn with_oracle_combat_witness_failure(
+        mut self,
+        failure: OracleCombatWitnessFailureV1,
+    ) -> Self {
+        self.oracle_combat_witness_failure = Some(failure);
         self
     }
 

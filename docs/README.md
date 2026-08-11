@@ -10,6 +10,9 @@ notes are not kept searchable; use git history for archaeology.
 3. [TESTING.md](TESTING.md): test ownership, cleanup, and review standards.
 4. [Supported Surfaces](architecture/supported-surfaces.md): current runtime,
    diagnostic, and retirement classifications.
+5. [Combat Search Ownership](architecture/combat-search.md): canonical map of
+   the atomic fixed-root engine and the production resident turn-graph
+   portfolio.
 
 ## Operational Runbooks
 
@@ -42,6 +45,10 @@ notes are not kept searchable; use git history for archaeology.
 - [Exact Model, Policy, and Lazy Run Search Migration](design/2026-07-24-exact-model-policy-lazy-run-search-migration.md):
   active oracle-mainline boundary between exact mechanics, policy guidance,
   state value, and lazy run search.
+- [Combat Search Improvement Contract V1](design/2026-08-11-combat-search-improvement-contract-v1.md):
+  not-yet-implemented public-information, chance-particle, fair-allocation,
+  independent-evaluation, and teacher-qualification boundary. No current
+  witness engine is certified by it.
 
 ## Rules
 

@@ -10,7 +10,7 @@ use sts_oracle_learning::eval::run_control::{
 };
 use sts_oracle_runtime::eval::combat_case::{
     load_combat_case, save_combat_case, CombatCase, CombatCaseGap, CombatCaseRngSummary,
-    CombatCaseRunSummary, CombatCaseSource,
+    CombatCaseRunSummary, CombatCaseSource, CombatCaseWitnessBudgetV1,
 };
 use sts_oracle_runtime::eval::combat_case_context::{
     capture_combat_case_production_context_v1, restore_combat_case_production_session_v1,
@@ -434,10 +434,7 @@ fn combat_case_from_session(session: &RunControlSession) -> Result<CombatCase, S
         CombatCaseGap {
             boundary: "learning_root_case_export".to_owned(),
             reason: "exact opaque learning root selected for bounded diagnosis".to_owned(),
-            search_nodes: 0,
-            search_ms: 0,
-            rescue_search_nodes: 0,
-            rescue_search_ms: 0,
+            witness_budget: CombatCaseWitnessBudgetV1::NotRun,
         },
         CombatCaseRunSummary {
             act: session.run_state.act_num,
@@ -1320,10 +1317,7 @@ mod tests {
             CombatCaseGap {
                 boundary: "learning recovery fixture".to_owned(),
                 reason: "contract".to_owned(),
-                search_nodes: 0,
-                search_ms: 0,
-                rescue_search_nodes: 0,
-                rescue_search_ms: 0,
+                witness_budget: CombatCaseWitnessBudgetV1::NotRun,
             },
             CombatCaseRunSummary {
                 act: session.run_state.act_num,

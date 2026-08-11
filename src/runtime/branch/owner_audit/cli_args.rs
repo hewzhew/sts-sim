@@ -19,7 +19,7 @@ pub(super) struct ArgsOverrides {
     pub(super) boss_search_nodes: Option<usize>,
     pub(super) boss_search_ms: Option<u64>,
     pub(super) wall_ms: Option<u64>,
-    pub(super) checkpoint_before_combat_portfolio: bool,
+    pub(super) checkpoint_before_atomic_combat_search_session: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -68,8 +68,8 @@ impl ArgsOverrides {
         if let Some(value) = self.wall_ms {
             args.wall_ms = Some(value);
         }
-        if self.checkpoint_before_combat_portfolio {
-            args.checkpoint_before_combat_portfolio = true;
+        if self.checkpoint_before_atomic_combat_search_session {
+            args.checkpoint_before_atomic_combat_search_session = true;
         }
     }
 }
@@ -160,8 +160,8 @@ pub(super) fn parse_args() -> Result<
             return Err(format!("unknown argument {key}"));
         }
         if key == "--checkpoint-before-combat-portfolio" {
-            args.checkpoint_before_combat_portfolio = true;
-            overrides.checkpoint_before_combat_portfolio = true;
+            args.checkpoint_before_atomic_combat_search_session = true;
+            overrides.checkpoint_before_atomic_combat_search_session = true;
             index += 1;
             continue;
         }

@@ -17,8 +17,8 @@ pub struct RunSliceResult {
     pub frontier: FrontierSummary,
     pub selected_branch: Option<BranchSummary>,
     pub budget: SliceBudgetSummary,
-    pub combat_search: CombatSearchTelemetrySummary,
-    pub primary_search: PrimarySearchOutcomeSummary,
+    pub atomic_combat_search_telemetry: AtomicCombatSearchTelemetryV2,
+    pub primary_atomic_witness: PrimaryAtomicCombatWitnessV2,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub execution_adjudication: Option<CombatLineAdjudicationV1>,
     pub artifacts: ArtifactWriteSummary,
@@ -157,18 +157,18 @@ pub struct SliceBudgetSummary {
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
-pub struct CombatSearchTelemetrySummary {
+pub struct AtomicCombatSearchTelemetryV2 {
     pub attempt_count: u64,
     pub complete_win_count: u64,
     pub terminal_win_count: u64,
     pub nodes_expanded: u64,
     pub total_us: u64,
-    pub timing: CombatSearchTimingSummary,
-    pub by_source: Vec<CombatSearchTelemetrySourceSummary>,
+    pub timing: AtomicCombatSearchTimingV2,
+    pub by_source: Vec<AtomicCombatSearchTelemetrySourceV2>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
-pub struct CombatSearchTimingSummary {
+pub struct AtomicCombatSearchTimingV2 {
     pub rollout_us: u64,
     pub expansion_us: u64,
     pub engine_step_us: u64,
@@ -182,30 +182,30 @@ pub struct CombatSearchTimingSummary {
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
-pub struct CombatSearchTelemetrySourceSummary {
+pub struct AtomicCombatSearchTelemetrySourceV2 {
     pub source: String,
     pub attempt_count: u64,
     pub complete_win_count: u64,
     pub terminal_win_count: u64,
     pub nodes_expanded: u64,
     pub total_us: u64,
-    pub timing: CombatSearchTimingSummary,
+    pub timing: AtomicCombatSearchTimingV2,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
-pub struct PrimarySearchOutcomeSummary {
+pub struct PrimaryAtomicCombatWitnessV2 {
     pub status: String,
-    pub profile: PrimarySearchProfileSummary,
-    pub telemetry: PrimarySearchTelemetrySummary,
-    pub accepted_line: Option<PrimarySearchLineSummary>,
-    pub best_complete_line: Option<PrimarySearchLineSummary>,
-    pub best_partial_line: Option<PrimarySearchLineSummary>,
+    pub profile: AtomicCombatSearchProfileEvidenceV2,
+    pub telemetry: AtomicCombatSearchPrimaryTelemetryV2,
+    pub accepted_line: Option<AtomicCombatSearchLineEvidenceV2>,
+    pub best_complete_line: Option<AtomicCombatSearchLineEvidenceV2>,
+    pub best_partial_line: Option<AtomicCombatSearchLineEvidenceV2>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub execution_adjudication: Option<CombatLineAdjudicationV1>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
-pub struct PrimarySearchProfileSummary {
+pub struct AtomicCombatSearchProfileEvidenceV2 {
     pub profile_id: Option<String>,
     pub stakes: Option<String>,
     pub max_nodes: Option<usize>,
@@ -218,7 +218,7 @@ pub struct PrimarySearchProfileSummary {
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
-pub struct PrimarySearchTelemetrySummary {
+pub struct AtomicCombatSearchPrimaryTelemetryV2 {
     pub elapsed_ms: Option<u64>,
     pub deadline_hit: Option<bool>,
     pub expanded_nodes: Option<u64>,
@@ -241,7 +241,7 @@ pub struct PrimarySearchTelemetrySummary {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct PrimarySearchLineSummary {
+pub struct AtomicCombatSearchLineEvidenceV2 {
     pub terminal: String,
     pub line_len: usize,
     pub final_player_hp: i32,
@@ -251,7 +251,7 @@ pub struct PrimarySearchLineSummary {
     pub first_action_kind: Option<String>,
 }
 
-impl CombatSearchTelemetrySummary {
+impl AtomicCombatSearchTelemetryV2 {
     pub fn record_attempt(
         &mut self,
         source: impl Into<String>,
@@ -266,7 +266,7 @@ impl CombatSearchTelemetrySummary {
             terminal_wins,
             nodes_expanded,
             total_us,
-            CombatSearchTimingSummary::default(),
+            AtomicCombatSearchTimingV2::default(),
         );
     }
 
@@ -277,7 +277,7 @@ impl CombatSearchTelemetrySummary {
         terminal_wins: u64,
         nodes_expanded: u64,
         total_us: u64,
-        timing: CombatSearchTimingSummary,
+        timing: AtomicCombatSearchTimingV2,
     ) {
         self.attempt_count += 1;
         self.complete_win_count += u64::from(complete_win);
@@ -314,9 +314,9 @@ impl CombatSearchTelemetrySummary {
         terminal_wins: u64,
         nodes_expanded: u64,
         total_us: u64,
-        timing: CombatSearchTimingSummary,
+        timing: AtomicCombatSearchTimingV2,
     ) {
-        self.record_source_summary(CombatSearchTelemetrySourceSummary {
+        self.record_source_summary(AtomicCombatSearchTelemetrySourceV2 {
             source,
             attempt_count: 1,
             complete_win_count: u64::from(complete_win),
@@ -327,7 +327,7 @@ impl CombatSearchTelemetrySummary {
         });
     }
 
-    fn record_source_summary(&mut self, source_summary: CombatSearchTelemetrySourceSummary) {
+    fn record_source_summary(&mut self, source_summary: AtomicCombatSearchTelemetrySourceV2) {
         if let Some(existing) = self
             .by_source
             .iter_mut()
@@ -347,7 +347,7 @@ impl CombatSearchTelemetrySummary {
     }
 }
 
-impl CombatSearchTimingSummary {
+impl AtomicCombatSearchTimingV2 {
     pub fn merge(&mut self, other: &Self) {
         self.rollout_us += other.rollout_us;
         self.expansion_us += other.expansion_us;
@@ -458,7 +458,7 @@ impl ArtifactWriteSummary {
         Self::single_ref(ArtifactRef::new(
             ArtifactKind::Frontier,
             path,
-            "branch_tiny_frontier_checkpoint",
+            "branch_tiny_frontier_checkpoint_v3",
             "owner_audit_runtime",
         ))
     }
@@ -620,20 +620,20 @@ mod trajectory_evidence_artifact_tests {
 }
 
 #[cfg(test)]
-mod combat_line_adjudication_compatibility_tests {
+mod primary_atomic_witness_evidence_tests {
     use super::*;
 
     #[test]
-    fn legacy_primary_search_outcome_without_adjudication_still_loads() {
-        let mut value = serde_json::to_value(PrimarySearchOutcomeSummary::default())
+    fn primary_atomic_witness_allows_missing_application_adjudication() {
+        let mut value = serde_json::to_value(PrimaryAtomicCombatWitnessV2::default())
             .expect("serialize default primary outcome");
         value
             .as_object_mut()
             .expect("primary outcome object")
             .remove("execution_adjudication");
 
-        let restored: PrimarySearchOutcomeSummary =
-            serde_json::from_value(value).expect("load legacy primary outcome");
+        let restored: PrimaryAtomicCombatWitnessV2 =
+            serde_json::from_value(value).expect("load unapplied primary witness");
 
         assert_eq!(restored.execution_adjudication, None);
     }
@@ -668,8 +668,8 @@ impl RunSliceResult {
                 search_budget_was_capped: args.wall_capped_search_budget,
                 boss_budget_was_capped: args.wall_capped_boss_budget,
             },
-            combat_search: CombatSearchTelemetrySummary::default(),
-            primary_search: PrimarySearchOutcomeSummary::default(),
+            atomic_combat_search_telemetry: AtomicCombatSearchTelemetryV2::default(),
+            primary_atomic_witness: PrimaryAtomicCombatWitnessV2::default(),
             execution_adjudication: None,
             artifacts: ArtifactWriteSummary::default(),
         }
@@ -680,19 +680,19 @@ impl RunSliceResult {
         self
     }
 
-    pub fn with_combat_search_telemetry(
+    pub fn with_atomic_combat_search_telemetry(
         mut self,
-        combat_search: CombatSearchTelemetrySummary,
+        atomic_combat_search_telemetry: AtomicCombatSearchTelemetryV2,
     ) -> Self {
-        self.combat_search = combat_search;
+        self.atomic_combat_search_telemetry = atomic_combat_search_telemetry;
         self
     }
 
-    pub fn with_primary_search_outcome(
+    pub fn with_primary_atomic_witness(
         mut self,
-        primary_search: PrimarySearchOutcomeSummary,
+        primary_atomic_witness: PrimaryAtomicCombatWitnessV2,
     ) -> Self {
-        self.primary_search = primary_search;
+        self.primary_atomic_witness = primary_atomic_witness;
         self
     }
 

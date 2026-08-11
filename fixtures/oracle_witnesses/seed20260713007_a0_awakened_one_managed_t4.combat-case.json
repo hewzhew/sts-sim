@@ -1,5 +1,5 @@
 {
-  "schema": "combat_case",
+  "schema": "combat_case_v1",
   "source": {
     "seed": 20260713007,
     "ascension": 0,
@@ -10,10 +10,13 @@
   "gap": {
     "boundary": "Act 3 Floor 48 oracle analysis combat + 21 exact prefix actions",
     "reason": "oracle_lab_prefix_successor",
-    "search_nodes": 2000000,
-    "search_ms": 30000,
-    "rescue_search_nodes": 0,
-    "rescue_search_ms": 0
+    "witness_budget": {
+      "witness_engine": "atomic_exact_v2",
+      "primary_nodes": 2000000,
+      "primary_wall_ms": 30000,
+      "rescue_nodes": 0,
+      "rescue_wall_ms": 0
+    }
   },
   "run": {
     "act": 3,

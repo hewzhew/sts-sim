@@ -2,6 +2,7 @@ use std::path::Path;
 
 use crate::eval::combat_case::{
     CombatCase, CombatCaseGap, CombatCaseRngSummary, CombatCaseRunSummary, CombatCaseSource,
+    CombatCaseWitnessBudgetV1,
 };
 use crate::eval::combat_case_context::capture_oracle_analysis_combat_case_production_context_v1;
 
@@ -45,12 +46,21 @@ pub fn recover_oracle_analysis_combat_case_v1(
     };
     let session = explorer.hydrated_branch_session(saved)?.into_session()?;
     let position = session.current_active_combat_position()?;
-    let (search_nodes, search_ms) = if position.combat.meta.is_boss_fight {
-        (artifact.budget.boss_nodes, artifact.budget.boss_ms)
+    let (generation_work, wall_ms) = if position.combat.meta.is_boss_fight {
+        (
+            artifact.budget.boss_generation_work,
+            artifact.budget.boss_ms,
+        )
     } else if position.combat.meta.is_elite_fight {
-        (artifact.budget.elite_nodes, artifact.budget.elite_ms)
+        (
+            artifact.budget.elite_generation_work,
+            artifact.budget.elite_ms,
+        )
     } else {
-        (artifact.budget.hallway_nodes, artifact.budget.hallway_ms)
+        (
+            artifact.budget.hallway_generation_work,
+            artifact.budget.hallway_ms,
+        )
     };
     let mut case = CombatCase::new(
         source,
@@ -60,10 +70,10 @@ pub fn recover_oracle_analysis_combat_case_v1(
                 session.run_state.act_num, session.run_state.floor_num
             ),
             reason: "selected_branch_recovery".to_string(),
-            search_nodes,
-            search_ms,
-            rescue_search_nodes: 0,
-            rescue_search_ms: 0,
+            witness_budget: CombatCaseWitnessBudgetV1::TurnGraphPortfolioV1 {
+                generation_work,
+                wall_ms,
+            },
         },
         CombatCaseRunSummary {
             act: session.run_state.act_num,

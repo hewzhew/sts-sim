@@ -30,7 +30,7 @@ pub(super) fn promote_replayable_terminal_rollout(
         | CombatSearchV2Satisfaction::ZeroLossOrBudget
         | CombatSearchV2Satisfaction::FirstCompleteWin
         | CombatSearchV2Satisfaction::HpLossAtMost(_)
-        | CombatSearchV2Satisfaction::PersistentRunValueGain => loop_state
+        | CombatSearchV2Satisfaction::MaterializedPersistentPayoffGain => loop_state
             .rollout_cache
             .best_replayable_terminal_win
             .clone(),

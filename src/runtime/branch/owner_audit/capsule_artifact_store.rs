@@ -11,6 +11,7 @@ use sts_simulator::ai::planner_core::stable_planner_id;
 use sts_simulator::ai::strategy::trajectory_comparison::TrajectoryDeployabilityEvidence;
 use sts_simulator::runtime::branch::RunTrajectoryDeploymentSummaryV1;
 
+use super::run_contract::RunContract;
 use super::run_identity::{current_source_identity, SourceIdentity};
 use super::run_slice_result::{
     ArtifactKind, ArtifactRef, ArtifactWriteSummary, RunSliceRequestKind, RunSliceResult, RunStop,
@@ -32,18 +33,83 @@ pub(super) struct CapsuleArtifactStore {
 impl CapsuleArtifactStore {
     pub(super) fn new(root: PathBuf) -> Self {
         let source_identity = current_source_identity();
-        let (existing_run_id, existing_created_at_ms) = existing_manifest_identity(&root);
-        let trajectory_run_id = OnceLock::new();
-        if let Some(run_id) = existing_run_id {
-            let _ = trajectory_run_id.set(run_id);
-        }
         Self {
             root,
-            started_at_ms: existing_created_at_ms.unwrap_or_else(now_ms),
+            started_at_ms: now_ms(),
             git_commit: source_identity.git_commit.clone(),
             source_identity,
-            trajectory_run_id,
+            trajectory_run_id: OnceLock::new(),
         }
+    }
+
+    pub(super) fn resume(
+        root: PathBuf,
+        expected_contract: RunContract,
+        expected_source: &SourceIdentity,
+    ) -> Result<Self, String> {
+        let current_source = current_source_identity();
+        if current_source != *expected_source {
+            return Err(format!(
+                "cannot resume capsule {}: frontier source identity is not the current source identity",
+                root.display()
+            ));
+        }
+        let manifest_path = root.join("manifest.json");
+        let payload = std::fs::read_to_string(&manifest_path).map_err(|error| {
+            format!(
+                "failed to read capsule manifest {}: {error}",
+                manifest_path.display()
+            )
+        })?;
+        let manifest: Value = serde_json::from_str(&payload).map_err(|error| {
+            format!(
+                "failed to parse capsule manifest {}: {error}",
+                manifest_path.display()
+            )
+        })?;
+        if super::super::capsule_reuse::decide_manifest_reuse(
+            &manifest,
+            expected_contract,
+            expected_source,
+        ) != super::super::capsule_reuse::CapsuleReuseDecision::Exact
+        {
+            return Err(format!(
+                "capsule manifest identity mismatch at {}: expected V5 schema, frontier run contract, and current source identity",
+                manifest_path.display()
+            ));
+        }
+        let trajectory_run_id = manifest
+            .get("trajectory_run_id")
+            .and_then(Value::as_str)
+            .filter(|value| !value.is_empty())
+            .ok_or_else(|| {
+                format!(
+                    "capsule manifest missing trajectory_run_id: {}",
+                    manifest_path.display()
+                )
+            })?
+            .to_string();
+        let started_at_ms = manifest
+            .get("created_at_epoch_ms")
+            .and_then(Value::as_u64)
+            .map(u128::from)
+            .ok_or_else(|| {
+                format!(
+                    "capsule manifest missing created_at_epoch_ms: {}",
+                    manifest_path.display()
+                )
+            })?;
+        let trajectory_run_id_cell = OnceLock::new();
+        trajectory_run_id_cell
+            .set(trajectory_run_id)
+            .expect("a new trajectory run-id cell is empty");
+        Ok(Self {
+            root,
+            started_at_ms,
+            git_commit: current_source.git_commit.clone(),
+            source_identity: current_source,
+            trajectory_run_id: trajectory_run_id_cell,
+        })
     }
 
     pub(super) fn trajectory_run_id(&self, args: Args) -> Result<String, String> {
@@ -127,7 +193,7 @@ impl CapsuleArtifactStore {
         ArtifactWriteSummary::single_ref(self.artifact_ref(
             ArtifactKind::Manifest,
             "manifest.json",
-            "branch_tiny_capsule_manifest",
+            "branch_tiny_run_capsule_v5",
         ))
     }
 
@@ -136,12 +202,12 @@ impl CapsuleArtifactStore {
         summary.record_ref(self.artifact_ref(
             ArtifactKind::Manifest,
             "manifest.json",
-            "branch_tiny_capsule_manifest",
+            "branch_tiny_run_capsule_v5",
         ));
         summary.record_ref(self.artifact_ref(
             ArtifactKind::Frontier,
             "frontier.json",
-            "branch_tiny_frontier_checkpoint",
+            "branch_tiny_frontier_checkpoint_v3",
         ));
         summary.record_ref(self.artifact_ref(
             ArtifactKind::Summary,
@@ -158,7 +224,7 @@ impl CapsuleArtifactStore {
         summary.record_ref(self.artifact_ref(
             ArtifactKind::Manifest,
             "manifest.json",
-            "branch_tiny_capsule_manifest",
+            "branch_tiny_run_capsule_v5",
         ));
         summary.record_ref(self.artifact_ref(
             ArtifactKind::Result,
@@ -681,24 +747,6 @@ mod deployment_evidence_tests {
     }
 }
 
-fn existing_manifest_identity(root: &Path) -> (Option<String>, Option<u128>) {
-    let Ok(payload) = std::fs::read_to_string(root.join("manifest.json")) else {
-        return (None, None);
-    };
-    let Ok(value) = serde_json::from_str::<Value>(&payload) else {
-        return (None, None);
-    };
-    let run_id = value
-        .get("trajectory_run_id")
-        .and_then(Value::as_str)
-        .map(str::to_string);
-    let created_at = value
-        .get("created_at_epoch_ms")
-        .and_then(Value::as_u64)
-        .map(u128::from);
-    (run_id, created_at)
-}
-
 fn absolute_normalized_path(path: &Path) -> Result<String, String> {
     let absolute = if path.is_absolute() {
         path.to_path_buf()
@@ -845,7 +893,7 @@ mod trajectory_artifact_tests {
             boss_search_nodes: 1,
             boss_search_ms: 1,
             wall_ms: Some(1_000),
-            checkpoint_before_combat_portfolio: true,
+            checkpoint_before_atomic_combat_search_session: true,
             wall_capped_search_budget: true,
             wall_capped_boss_budget: true,
         }
@@ -862,12 +910,12 @@ mod trajectory_artifact_tests {
                 owner: Owner::CardReward,
             },
             policy_lane,
-            combat_portfolio: None,
+            atomic_combat_search_session: None,
             recent_progress_journal: Default::default(),
             recent_planner_capture: Default::default(),
             trajectory: Default::default(),
-            combat_search: Vec::new(),
-            combat_search_history: Vec::new(),
+            atomic_combat_search_attempts: Vec::new(),
+            atomic_combat_search_history: Vec::new(),
             comparison_search_start: None,
             accepted_high_loss_diagnostics: Vec::new(),
         }
@@ -919,8 +967,13 @@ mod trajectory_artifact_tests {
             .unwrap();
 
         let checkpoint = frontier_checkpoint::load(&root.join("frontier.json")).unwrap();
+        let resumed_capsule = RunCapsule::resume(
+            root.clone(),
+            checkpoint.run_contract(),
+            checkpoint.source_identity(),
+        )
+        .unwrap();
         let (mut resumed, _) = checkpoint.into_frontier().unwrap();
-        let resumed_capsule = RunCapsule::new(root.clone());
         resumed_capsule
             .prepare_trajectory_frontier(args, 0, &mut resumed)
             .unwrap();
@@ -949,11 +1002,13 @@ mod trajectory_artifact_tests {
             second_head.segment_id, uninterrupted_second_segment_id,
             "splitting the same evidence across a resume must not change its segment identity"
         );
-        let resumed_store = CapsuleArtifactStore::new(root.clone());
-        let run_id = resumed_store.trajectory_run_id(args).unwrap();
-        resumed_store
-            .verify_branch_trajectory(&run_id, resumed.front().unwrap())
-            .unwrap();
+        let run_id = resumed
+            .front()
+            .unwrap()
+            .trajectory
+            .run_id()
+            .unwrap()
+            .to_string();
         let projection = resumed_capsule
             .project_branch_trajectory(resumed.front().unwrap())
             .unwrap()

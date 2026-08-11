@@ -5,34 +5,37 @@ use sts_simulator::ai::potion_continuation_pressure_v1::{
     potion_continuation_pressure_v1, PotionContinuationPressureV1,
 };
 use sts_simulator::eval::run_control::{
-    combat_search_trace_summaries, strategic_combat_victory_reaches_full_heal_v1,
-    CombatSearchStrategicHpQualityFactsV1, CombatSearchTraceSummary,
-    CombatVictoryContinuationFactsV1, RunControlCombatSearchAttemptV1, RunControlHpLossLimit,
+    atomic_combat_search_trace_summaries, strategic_combat_victory_reaches_full_heal_v1,
+    AtomicCombatSearchAttemptV2, AtomicCombatSearchTraceSummaryV2,
+    CombatSearchStrategicHpQualityFactsV1, CombatVictoryContinuationFactsV1, RunControlHpLossLimit,
     RunControlSession, RunControlTraceAnnotationV1, RunProgressOutcome, RunProgressStepV1,
 };
 
 use super::accepted_high_loss_diagnostic::{accepted_high_loss_diagnostic, capture_active_combat};
-use super::combat_search_report::{
-    combat_search_session_report, CombatSearchQuantumReport, CombatSearchSessionReport,
-    CombatSearchSessionReportInput,
+use super::atomic_combat_search_report::{
+    atomic_combat_search_session_report, AtomicCombatSearchQuantumReportV2,
+    AtomicCombatSearchSessionReportInputV2, AtomicCombatSearchSessionReportV2,
 };
-use super::combat_search_session_output::CombatSearchSessionOutput;
-use super::combat_search_session_plan::{
-    canonical_combat_search_session_plan, potion_conserving_primary_search_session_plan,
-    potion_conserving_refinement_search_session_plan, CombatSearchSessionPlan, PotionRescueKind,
+use super::atomic_combat_search_session_output::AtomicCombatSearchSessionOutputV2;
+use super::atomic_combat_search_session_plan::{
+    canonical_atomic_combat_search_session_plan, potion_conserving_primary_search_session_plan,
+    potion_conserving_refinement_search_session_plan, AtomicCombatSearchSessionPlanV2,
+    PotionRescueKind,
 };
-use super::combat_search_session_result::{combat_search_result, CombatSearchSessionResult};
-use super::combat_search_survival::{
+use super::atomic_combat_search_session_result::{
+    atomic_combat_search_result, AtomicCombatSearchSessionResultV2,
+};
+use super::atomic_combat_search_survival::{
     owner_audit_hp_loss_limit, owner_audit_search_quality_loss_target,
 };
-use super::combat_search_trace_actions::complete_search_action_keys;
+use super::atomic_combat_search_trace_actions::complete_search_action_keys;
 use super::{boundary_router, Args, BranchStatus};
 
-pub(super) fn run_combat_search_session_step(
+pub(super) fn run_atomic_combat_search_session_step(
     session: &mut RunControlSession,
     args: Args,
-) -> Result<CombatSearchSessionResult, String> {
-    let canonical_plan = canonical_combat_search_session_plan(session, args);
+) -> Result<AtomicCombatSearchSessionResultV2, String> {
+    let canonical_plan = canonical_atomic_combat_search_session_plan(session, args);
     if canonical_plan.should_checkpoint_before_search(args) {
         let status = awaiting_auto_boundary(
             "Combat",
@@ -46,10 +49,10 @@ pub(super) fn run_combat_search_session_step(
             false,
             "checkpoint",
         );
-        return Ok(combat_search_result(
+        return Ok(atomic_combat_search_result(
             status,
             Some(report),
-            CombatSearchSessionOutput::default(),
+            AtomicCombatSearchSessionOutputV2::default(),
         ));
     }
 
@@ -85,7 +88,8 @@ pub(super) fn run_combat_search_session_step(
     let mut prior_search_summaries = Vec::new();
     let mut complete_staged_summaries = None;
     let outcome = if staged {
-        let mut primary_attempt = match session.search_combat_attempt(plan.search.clone()) {
+        let mut primary_attempt = match session.atomic_combat_search_attempt_v2(plan.search.clone())
+        {
             Ok(attempt) => attempt,
             Err(error) => {
                 return Ok(search_error_result(&plan, error, prior_search_summaries));
@@ -103,7 +107,8 @@ pub(super) fn run_combat_search_session_step(
             RunControlHpLossLimit::Unlimited => primary_attempt.verified_win().is_some(),
         };
         if primary_satisfies {
-            match session.apply_combat_search_attempt(primary_attempt, quality_loss_limit) {
+            match session.apply_atomic_combat_search_attempt_v2(primary_attempt, quality_loss_limit)
+            {
                 Ok(outcome) => outcome,
                 Err(error) => {
                     return Ok(search_error_result(&plan, error, prior_search_summaries));
@@ -117,10 +122,10 @@ pub(super) fn run_combat_search_session_step(
             )
             .expect("a staged primary must retain one refinement quantum");
             let mut refinement_attempt =
-                match session.search_combat_attempt(refinement.search.clone()) {
+                match session.atomic_combat_search_attempt_v2(refinement.search.clone()) {
                     Ok(attempt) => attempt,
                     Err(error) => {
-                        let summaries = combat_search_attempt_summaries(
+                        let summaries = atomic_combat_search_attempt_summaries(
                             session,
                             &primary_attempt,
                             &plan,
@@ -143,7 +148,7 @@ pub(super) fn run_combat_search_session_step(
             };
             match satisfying_refinement {
                 Ok(Some(_)) => {
-                    prior_search_summaries.extend(combat_search_attempt_summaries(
+                    prior_search_summaries.extend(atomic_combat_search_attempt_summaries(
                         session,
                         &primary_attempt,
                         &plan,
@@ -156,9 +161,10 @@ pub(super) fn run_combat_search_session_step(
                         &strategic_hp_quality,
                     ));
                     plan = refinement;
-                    match session
-                        .apply_combat_search_attempt(refinement_attempt, quality_loss_limit)
-                    {
+                    match session.apply_atomic_combat_search_attempt_v2(
+                        refinement_attempt,
+                        quality_loss_limit,
+                    ) {
                         Ok(outcome) => outcome,
                         Err(error) => {
                             return Ok(search_error_result(&plan, error, prior_search_summaries));
@@ -166,7 +172,7 @@ pub(super) fn run_combat_search_session_step(
                     }
                 }
                 Ok(None) => {
-                    let mut summaries = combat_search_attempt_summaries(
+                    let mut summaries = atomic_combat_search_attempt_summaries(
                         session,
                         &primary_attempt,
                         &plan,
@@ -178,7 +184,7 @@ pub(super) fn run_combat_search_session_step(
                         &combat_victory_continuation,
                         &strategic_hp_quality,
                     );
-                    summaries.extend(combat_search_attempt_summaries(
+                    summaries.extend(atomic_combat_search_attempt_summaries(
                         session,
                         &refinement_attempt,
                         &refinement,
@@ -190,7 +196,7 @@ pub(super) fn run_combat_search_session_step(
                         &combat_victory_continuation,
                         &strategic_hp_quality,
                     ));
-                    match session.apply_combat_search_attempt(
+                    match session.apply_atomic_combat_search_attempt_v2(
                         primary_attempt,
                         RunControlHpLossLimit::Unlimited,
                     ) {
@@ -212,7 +218,7 @@ pub(super) fn run_combat_search_session_step(
                 }
             }
         } else {
-            prior_search_summaries.extend(combat_search_attempt_summaries(
+            prior_search_summaries.extend(atomic_combat_search_attempt_summaries(
                 session,
                 &primary_attempt,
                 &plan,
@@ -230,22 +236,26 @@ pub(super) fn run_combat_search_session_step(
                 PotionRescueKind::FindAnyWin,
             ) {
                 plan = refinement;
-                let refinement_attempt = match session.search_combat_attempt(plan.search.clone()) {
-                    Ok(attempt) => attempt,
-                    Err(error) => {
-                        return Ok(search_error_result(&plan, error, prior_search_summaries));
-                    }
-                };
-                match session
-                    .apply_combat_search_attempt(refinement_attempt, owner_hp_loss_limit_fact)
-                {
+                let refinement_attempt =
+                    match session.atomic_combat_search_attempt_v2(plan.search.clone()) {
+                        Ok(attempt) => attempt,
+                        Err(error) => {
+                            return Ok(search_error_result(&plan, error, prior_search_summaries));
+                        }
+                    };
+                match session.apply_atomic_combat_search_attempt_v2(
+                    refinement_attempt,
+                    owner_hp_loss_limit_fact,
+                ) {
                     Ok(outcome) => outcome,
                     Err(error) => {
                         return Ok(search_error_result(&plan, error, prior_search_summaries));
                     }
                 }
             } else {
-                match session.apply_combat_search_attempt(primary_attempt, quality_loss_limit) {
+                match session
+                    .apply_atomic_combat_search_attempt_v2(primary_attempt, quality_loss_limit)
+                {
                     Ok(outcome) => outcome,
                     Err(error) => {
                         return Ok(search_error_result(&plan, error, prior_search_summaries));
@@ -254,7 +264,7 @@ pub(super) fn run_combat_search_session_step(
             }
         }
     } else {
-        match session.apply_combat_search(plan.search.clone()) {
+        match session.apply_atomic_combat_search_v2(plan.search.clone()) {
             Ok(outcome) => outcome,
             Err(error) => {
                 return Ok(search_error_result(&plan, error, prior_search_summaries));
@@ -268,8 +278,8 @@ pub(super) fn run_combat_search_session_step(
     let facts = candidate_facts(session, &outcome.trace_annotations, owner_hp_loss_limit);
     let decision = session_decision(applied, facts.as_ref());
 
-    let combat_search = complete_staged_summaries.unwrap_or_else(|| {
-        prior_search_summaries.extend(combat_search_summaries(
+    let atomic_combat_search_attempts = complete_staged_summaries.unwrap_or_else(|| {
+        prior_search_summaries.extend(atomic_combat_search_summaries(
             &outcome,
             &plan,
             facts.as_ref(),
@@ -282,10 +292,10 @@ pub(super) fn run_combat_search_session_step(
         ));
         prior_search_summaries
     });
-    let mut output = CombatSearchSessionOutput {
+    let mut output = AtomicCombatSearchSessionOutputV2 {
         progress_steps: applied_steps,
-        combat_search,
-        ..CombatSearchSessionOutput::default()
+        atomic_combat_search_attempts,
+        ..AtomicCombatSearchSessionOutputV2::default()
     };
     if let Some(diagnostic) = combat_capture.and_then(|capture| {
         accepted_high_loss_diagnostic(
@@ -309,14 +319,14 @@ pub(super) fn run_combat_search_session_step(
             decision,
         )
     });
-    Ok(combat_search_result(status, report, output))
+    Ok(atomic_combat_search_result(status, report, output))
 }
 
 fn search_error_result(
-    plan: &CombatSearchSessionPlan,
+    plan: &AtomicCombatSearchSessionPlanV2,
     error: String,
-    combat_search: Vec<CombatSearchTraceSummary>,
-) -> CombatSearchSessionResult {
+    atomic_combat_search_attempts: Vec<AtomicCombatSearchTraceSummaryV2>,
+) -> AtomicCombatSearchSessionResultV2 {
     let status = BranchStatus::AdvanceFailed(error);
     let report = session_report(
         plan,
@@ -326,21 +336,21 @@ fn search_error_result(
         false,
         "search_error",
     );
-    combat_search_result(
+    atomic_combat_search_result(
         status,
         Some(report),
-        CombatSearchSessionOutput {
-            combat_search,
-            ..CombatSearchSessionOutput::default()
+        AtomicCombatSearchSessionOutputV2 {
+            atomic_combat_search_attempts,
+            ..AtomicCombatSearchSessionOutputV2::default()
         },
     )
 }
 
 #[allow(clippy::too_many_arguments)]
-fn combat_search_attempt_summaries(
+fn atomic_combat_search_attempt_summaries(
     session: &RunControlSession,
-    attempt: &RunControlCombatSearchAttemptV1,
-    plan: &CombatSearchSessionPlan,
+    attempt: &AtomicCombatSearchAttemptV2,
+    plan: &AtomicCombatSearchSessionPlanV2,
     owner_hp_loss_limit: Option<u32>,
     selected: bool,
     decision: &'static str,
@@ -348,10 +358,10 @@ fn combat_search_attempt_summaries(
     potion_continuation_pressure: &PotionContinuationPressureV1,
     combat_victory_continuation: &CombatVictoryContinuationFactsV1,
     strategic_hp_quality: &CombatSearchStrategicHpQualityFactsV1,
-) -> Vec<CombatSearchTraceSummary> {
+) -> Vec<AtomicCombatSearchTraceSummaryV2> {
     let annotations = vec![attempt.trace_annotation(session, plan.profile_id)];
     let facts = candidate_facts(session, &annotations, owner_hp_loss_limit);
-    combat_search_summaries_from_annotations(
+    atomic_combat_search_summaries_from_annotations(
         &annotations,
         plan,
         facts.as_ref(),
@@ -394,7 +404,7 @@ fn candidate_facts(
     owner_hp_loss_limit: Option<u32>,
 ) -> Option<SearchCandidateFacts> {
     let best_win =
-        combat_search_trace_summaries(annotations).find_map(|summary| summary.best_win)?;
+        atomic_combat_search_trace_summaries(annotations).find_map(|summary| summary.best_win)?;
     let tier = if owner_hp_loss_limit.is_some_and(|limit| best_win.hp_loss.max(0) as u32 > limit) {
         SearchCandidateTier::RelaxedCompleteWin
     } else {
@@ -430,9 +440,9 @@ fn committed_progress_steps(outcome: &RunProgressOutcome) -> Vec<RunProgressStep
         .collect()
 }
 
-fn combat_search_summaries(
+fn atomic_combat_search_summaries(
     outcome: &RunProgressOutcome,
-    plan: &CombatSearchSessionPlan,
+    plan: &AtomicCombatSearchSessionPlanV2,
     facts: Option<&SearchCandidateFacts>,
     applied: bool,
     decision: &'static str,
@@ -440,8 +450,8 @@ fn combat_search_summaries(
     potion_continuation_pressure: &PotionContinuationPressureV1,
     combat_victory_continuation: &CombatVictoryContinuationFactsV1,
     strategic_hp_quality: &CombatSearchStrategicHpQualityFactsV1,
-) -> Vec<CombatSearchTraceSummary> {
-    combat_search_summaries_from_annotations(
+) -> Vec<AtomicCombatSearchTraceSummaryV2> {
+    atomic_combat_search_summaries_from_annotations(
         &outcome.trace_annotations,
         plan,
         facts,
@@ -455,9 +465,9 @@ fn combat_search_summaries(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn combat_search_summaries_from_annotations(
+fn atomic_combat_search_summaries_from_annotations(
     annotations: &[RunControlTraceAnnotationV1],
-    plan: &CombatSearchSessionPlan,
+    plan: &AtomicCombatSearchSessionPlanV2,
     facts: Option<&SearchCandidateFacts>,
     applied: bool,
     decision: &'static str,
@@ -465,8 +475,8 @@ fn combat_search_summaries_from_annotations(
     potion_continuation_pressure: &PotionContinuationPressureV1,
     combat_victory_continuation: &CombatVictoryContinuationFactsV1,
     strategic_hp_quality: &CombatSearchStrategicHpQualityFactsV1,
-) -> Vec<CombatSearchTraceSummary> {
-    let mut summaries = combat_search_trace_summaries(annotations).collect::<Vec<_>>();
+) -> Vec<AtomicCombatSearchTraceSummaryV2> {
+    let mut summaries = atomic_combat_search_trace_summaries(annotations).collect::<Vec<_>>();
     for summary in &mut summaries {
         summary.lane = Some(plan.stage.label().to_string());
         summary.profile_id = Some(plan.profile_id.to_string());
@@ -477,9 +487,9 @@ fn combat_search_summaries_from_annotations(
         summary.profile_allowed_potion_slots = plan.allowed_potion_slots;
         summary.profile_internal_no_win_rescue_enabled = Some(false);
         summary.engine_fingerprint = Some(plan.semantics_fingerprint.clone());
-        summary.portfolio_candidate_tier = facts.map(|facts| facts.tier.as_str().to_string());
-        summary.portfolio_selected = Some(applied);
-        summary.portfolio_decision = Some(decision.to_string());
+        summary.atomic_stage_candidate_tier = facts.map(|facts| facts.tier.as_str().to_string());
+        summary.atomic_witness_selected = Some(applied);
+        summary.atomic_stage_decision = Some(decision.to_string());
         summary.potion_continuation_context = Some(potion_continuation_context.clone());
         summary.potion_continuation_pressure = Some(potion_continuation_pressure.clone());
         summary.combat_victory_continuation = Some(combat_victory_continuation.clone());
@@ -489,14 +499,14 @@ fn combat_search_summaries_from_annotations(
 }
 
 fn session_report(
-    plan: &CombatSearchSessionPlan,
+    plan: &AtomicCombatSearchSessionPlanV2,
     status: BranchStatus,
     action_keys: Vec<String>,
     facts: Option<&SearchCandidateFacts>,
     applied: bool,
     decision: &'static str,
-) -> CombatSearchSessionReport {
-    combat_search_session_report(CombatSearchSessionReportInput {
+) -> AtomicCombatSearchSessionReportV2 {
+    atomic_combat_search_session_report(AtomicCombatSearchSessionReportInputV2 {
         status,
         profile_id: plan.profile_id,
         max_nodes: plan.total_nodes,
@@ -508,7 +518,7 @@ fn session_report(
             .search
             .work_quanta
             .iter()
-            .map(|quantum| CombatSearchQuantumReport {
+            .map(|quantum| AtomicCombatSearchQuantumReportV2 {
                 label: quantum.label,
                 additional_nodes: quantum.additional_nodes,
                 soft_wall_ms: quantum.soft_wall_ms,
@@ -581,7 +591,7 @@ mod tests {
             boss_search_nodes: 512,
             boss_search_ms: 1_000,
             wall_ms: None,
-            checkpoint_before_combat_portfolio: false,
+            checkpoint_before_atomic_combat_search_session: false,
             wall_capped_search_budget: false,
             wall_capped_boss_budget: false,
         }
@@ -678,8 +688,8 @@ mod tests {
             .zones
             .card_uuid_counter = 2;
 
-        let result =
-            run_combat_search_session_step(&mut session, args()).expect("owner combat search");
+        let result = run_atomic_combat_search_session_step(&mut session, args())
+            .expect("owner combat search");
 
         assert!(
             session.active_combat.is_none(),
@@ -692,26 +702,26 @@ mod tests {
             .is_some_and(|potion| potion.as_ref().is_some_and(|potion| {
                 potion.id == PotionId::BlockPotion && potion.uuid == 10
             })));
-        assert!(result.combat_search.iter().any(|summary| {
+        assert!(result.atomic_combat_search_attempts.iter().any(|summary| {
             summary.lane.as_deref() == Some("no_potion_primary")
                 && summary.profile_max_potions_used == Some(0)
                 && summary.profile_allowed_potion_slots == Some(0)
         }));
         let continuation = result
-            .combat_search
+            .atomic_combat_search_attempts
             .iter()
             .find_map(|summary| summary.potion_continuation_context.as_ref())
             .expect("owner search should preserve pre-search potion context");
-        assert_eq!(continuation.capture_boundary, "before_combat_search");
+        assert_eq!(continuation.capture_boundary, "before_atomic_combat_search");
         assert_eq!(continuation.inventory.slot_capacity, 1);
         assert_eq!(continuation.inventory.occupied_slots, 1);
         assert!(continuation.inventory.inventory_full);
         let pressure = result
-            .combat_search
+            .atomic_combat_search_attempts
             .iter()
             .find_map(|summary| summary.potion_continuation_pressure.as_ref())
             .expect("owner search should preserve compact potion pressure");
-        assert_eq!(pressure.capture_boundary, "before_combat_search");
+        assert_eq!(pressure.capture_boundary, "before_atomic_combat_search");
         assert_eq!(pressure.inventory.slot_capacity, 1);
         assert_eq!(pressure.inventory.occupied_slots, 1);
         assert_eq!(pressure.shop.current_gold, 57);
@@ -719,7 +729,7 @@ mod tests {
             pressure.recovery.current_hp_deficit,
             continuation.max_hp - continuation.current_hp
         );
-        assert!(result.combat_search.iter().all(|summary| {
+        assert!(result.atomic_combat_search_attempts.iter().all(|summary| {
             summary
                 .combat_victory_continuation
                 .as_ref()
@@ -728,7 +738,7 @@ mod tests {
                         == CombatVictoryHpCarryoverV1::NotGuaranteedByRoomBossActTransition
                 })
         }));
-        assert!(result.combat_search.iter().all(|summary| {
+        assert!(result.atomic_combat_search_attempts.iter().all(|summary| {
             summary.strategic_hp_quality.as_ref().is_some_and(|facts| {
                 facts.entry_current_hp == continuation.current_hp
                     && facts.entry_max_hp == continuation.max_hp
@@ -755,8 +765,8 @@ mod tests {
         )];
         combat.zones.card_uuid_counter = 2;
 
-        let result =
-            run_combat_search_session_step(&mut session, args()).expect("full-heal boss search");
+        let result = run_atomic_combat_search_session_step(&mut session, args())
+            .expect("full-heal boss search");
 
         assert!(
             session.active_combat.is_none(),
@@ -766,21 +776,21 @@ mod tests {
             slot.as_ref()
                 .is_some_and(|potion| potion.id == PotionId::FirePotion && potion.uuid == 21)
         }));
-        assert!(result.combat_search.iter().any(|summary| {
+        assert!(result.atomic_combat_search_attempts.iter().any(|summary| {
             summary.lane.as_deref() == Some("no_potion_primary")
                 && summary.profile_max_potions_used == Some(0)
                 && summary.profile_allowed_potion_slots == Some(0)
-                && summary.portfolio_selected == Some(true)
+                && summary.atomic_witness_selected == Some(true)
                 && summary
                     .best_win
                     .as_ref()
                     .is_some_and(|win| win.potions_used == 0)
         }));
         assert!(result
-            .combat_search
+            .atomic_combat_search_attempts
             .iter()
             .all(|summary| summary.lane.as_deref() != Some("find_any_win")));
-        assert!(result.combat_search.iter().all(|summary| {
+        assert!(result.atomic_combat_search_attempts.iter().all(|summary| {
             summary
                 .combat_victory_continuation
                 .as_ref()
@@ -789,7 +799,7 @@ mod tests {
                         == CombatVictoryHpCarryoverV1::GuaranteedFullHealBeforeNextDamageBearingDecision
                 })
         }));
-        assert!(result.combat_search.iter().all(|summary| {
+        assert!(result.atomic_combat_search_attempts.iter().all(|summary| {
             summary.strategic_hp_quality.as_ref().is_some_and(|facts| {
                 facts.survival_hp_loss_limit == CombatSearchHpLossLimitV1::Unlimited
                     && facts.quality_hp_loss_limit == CombatSearchHpLossLimitV1::Unlimited
@@ -801,8 +811,8 @@ mod tests {
     fn owner_audit_uses_exact_single_potion_rescue_only_after_no_potion_failure() {
         let mut session = hallway_session(20, vec![Some(Potion::new(PotionId::FirePotion, 11))]);
 
-        let result =
-            run_combat_search_session_step(&mut session, args()).expect("owner potion rescue");
+        let result = run_atomic_combat_search_session_step(&mut session, args())
+            .expect("owner potion rescue");
 
         assert!(
             session.active_combat.is_none(),
@@ -813,13 +823,13 @@ mod tests {
             .potions
             .first()
             .is_none_or(Option::is_none));
-        assert!(result.combat_search.iter().any(|summary| {
+        assert!(result.atomic_combat_search_attempts.iter().any(|summary| {
             summary.lane.as_deref() == Some("no_potion_primary")
                 && summary.profile_max_potions_used == Some(0)
                 && summary.profile_allowed_potion_slots == Some(0)
-                && summary.portfolio_selected == Some(false)
+                && summary.atomic_witness_selected == Some(false)
         }));
-        assert!(result.combat_search.iter().any(|summary| {
+        assert!(result.atomic_combat_search_attempts.iter().any(|summary| {
             summary.lane.as_deref() == Some("find_any_win")
                 && summary.profile_max_potions_used == Some(1)
                 && summary.profile_allowed_potion_slots == Some(1)
@@ -844,8 +854,8 @@ mod tests {
         .into();
         combat.zones.card_uuid_counter = 2;
 
-        let result =
-            run_combat_search_session_step(&mut session, args()).expect("owner potion rescue");
+        let result = run_atomic_combat_search_session_step(&mut session, args())
+            .expect("owner potion rescue");
 
         assert!(
             session.active_combat.is_some(),
@@ -862,10 +872,10 @@ mod tests {
             .is_some_and(|slot| slot
                 .as_ref()
                 .is_some_and(|potion| { potion.id == PotionId::FirePotion && potion.uuid == 11 })));
-        assert!(result.combat_search.iter().any(|summary| {
+        assert!(result.atomic_combat_search_attempts.iter().any(|summary| {
             summary.lane.as_deref() == Some("find_any_win")
-                && summary.portfolio_selected == Some(false)
-                && summary.portfolio_decision.as_deref()
+                && summary.atomic_witness_selected == Some(false)
+                && summary.atomic_stage_decision.as_deref()
                     == Some("candidate_rejected_by_typed_acceptance")
                 && summary
                     .best_win
@@ -897,8 +907,8 @@ mod tests {
         .into();
         combat.zones.card_uuid_counter = 3;
 
-        let result =
-            run_combat_search_session_step(&mut session, args()).expect("owner quality rescue");
+        let result = run_atomic_combat_search_session_step(&mut session, args())
+            .expect("owner quality rescue");
 
         assert!(
             session.active_combat.is_none(),
@@ -914,13 +924,13 @@ mod tests {
                 .as_ref()
                 .is_some_and(|potion| potion.id == PotionId::PowerPotion && potion.uuid == 13)
         }));
-        assert!(result.combat_search.iter().any(|summary| {
+        assert!(result.atomic_combat_search_attempts.iter().any(|summary| {
             summary.lane.as_deref() == Some("no_potion_primary")
                 && summary.profile_max_potions_used == Some(0)
                 && summary.profile_allowed_potion_slots == Some(0)
-                && summary.portfolio_selected == Some(false)
+                && summary.atomic_witness_selected == Some(false)
         }));
-        assert!(result.combat_search.iter().any(|summary| {
+        assert!(result.atomic_combat_search_attempts.iter().any(|summary| {
             summary.lane.as_deref() == Some("improve_verified_win")
                 && summary.profile_max_potions_used == Some(1)
                 && summary.profile_allowed_potion_slots == Some(0b11)
@@ -948,8 +958,8 @@ mod tests {
         .into();
         combat.zones.card_uuid_counter = 3;
 
-        let result =
-            run_combat_search_session_step(&mut session, args()).expect("owner flexible rescue");
+        let result = run_atomic_combat_search_session_step(&mut session, args())
+            .expect("owner flexible rescue");
 
         assert!(
             session.active_combat.is_none(),
@@ -961,10 +971,10 @@ mod tests {
             .potions
             .first()
             .is_none_or(Option::is_none));
-        assert!(result.combat_search.iter().any(|summary| {
+        assert!(result.atomic_combat_search_attempts.iter().any(|summary| {
             summary.lane.as_deref() == Some("improve_verified_win")
                 && summary.profile_allowed_potion_slots == Some(1)
-                && summary.portfolio_selected == Some(true)
+                && summary.atomic_witness_selected == Some(true)
                 && summary
                     .best_win
                     .as_ref()
@@ -989,8 +999,8 @@ mod tests {
         .into();
         combat.zones.card_uuid_counter = 3;
 
-        let result =
-            run_combat_search_session_step(&mut session, args()).expect("owner quality fallback");
+        let result = run_atomic_combat_search_session_step(&mut session, args())
+            .expect("owner quality fallback");
 
         assert!(
             session.active_combat.is_none(),
@@ -1002,20 +1012,20 @@ mod tests {
                 .as_ref()
                 .is_some_and(|potion| potion.id == PotionId::WeakenPotion && potion.uuid == 14)
         }));
-        assert!(result.combat_search.iter().any(|summary| {
+        assert!(result.atomic_combat_search_attempts.iter().any(|summary| {
             summary.lane.as_deref() == Some("no_potion_primary")
-                && summary.portfolio_selected == Some(true)
-                && summary.portfolio_decision.as_deref()
+                && summary.atomic_witness_selected == Some(true)
+                && summary.atomic_stage_decision.as_deref()
                     == Some("accepted_protected_no_potion_incumbent")
                 && summary
                     .best_win
                     .as_ref()
                     .is_some_and(|win| win.potions_used == 0 && win.final_hp == 9)
         }));
-        assert!(result.combat_search.iter().any(|summary| {
+        assert!(result.atomic_combat_search_attempts.iter().any(|summary| {
             summary.lane.as_deref() == Some("improve_verified_win")
-                && summary.portfolio_selected == Some(false)
-                && summary.portfolio_decision.as_deref()
+                && summary.atomic_witness_selected == Some(false)
+                && summary.atomic_stage_decision.as_deref()
                     == Some("candidate_rejected_by_potion_quality_gate")
                 && summary
                     .best_win

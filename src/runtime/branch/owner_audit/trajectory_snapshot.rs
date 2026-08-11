@@ -58,7 +58,7 @@ pub(super) fn trajectory_snapshot_with_deployability(
     let comparison_search_start = branch
         .comparison_search_start
         .unwrap_or(0)
-        .min(branch.combat_search_history.len());
+        .min(branch.atomic_combat_search_history.len());
     TrajectorySnapshot {
         lane: branch.policy_lane.label(),
         terminal: terminal_state(&branch.status),
@@ -86,9 +86,11 @@ pub(super) fn trajectory_snapshot_with_deployability(
             failed_commitments,
         },
         search_comparability: classify_search_comparability(
-            &branch.combat_search_history[comparison_search_start..],
+            &branch.atomic_combat_search_history[comparison_search_start..],
         ),
-        full_search_comparability: classify_search_comparability(&branch.combat_search_history),
+        full_search_comparability: classify_search_comparability(
+            &branch.atomic_combat_search_history,
+        ),
     }
 }
 
@@ -176,7 +178,7 @@ mod tests {
         TrajectorySearchComparabilityStatus,
     };
     use sts_simulator::eval::run_control::{
-        CombatSearchTraceSummary, RunControlConfig, RunControlSession,
+        AtomicCombatSearchTraceSummaryV2, RunControlConfig, RunControlSession,
     };
 
     use super::*;
@@ -194,12 +196,12 @@ mod tests {
                 boundary: "test".to_string(),
             },
             policy_lane,
-            combat_portfolio: None,
+            atomic_combat_search_session: None,
             recent_progress_journal: Default::default(),
             recent_planner_capture: Default::default(),
             trajectory: Default::default(),
-            combat_search: Vec::new(),
-            combat_search_history: Vec::new(),
+            atomic_combat_search_attempts: Vec::new(),
+            atomic_combat_search_history: Vec::new(),
             comparison_search_start: None,
             accepted_high_loss_diagnostics: Vec::new(),
         }
@@ -235,11 +237,11 @@ mod tests {
     #[test]
     fn snapshot_classifies_retained_node_bounded_search_history() {
         let mut branch = test_branch(BranchPolicyLane::default());
-        branch.combat_search_history = vec![CombatSearchTraceSummary {
+        branch.atomic_combat_search_history = vec![AtomicCombatSearchTraceSummaryV2 {
             source: "primary".to_string(),
             coverage_status: "NodeBudgetLimited".to_string(),
             node_budget_hit: true,
-            ..CombatSearchTraceSummary::default()
+            ..AtomicCombatSearchTraceSummaryV2::default()
         }];
 
         let snapshot = trajectory_snapshot(&branch);
@@ -254,18 +256,18 @@ mod tests {
     #[test]
     fn snapshot_excludes_shared_prefix_from_pair_eligibility_but_keeps_full_audit() {
         let mut branch = test_branch(BranchPolicyLane::default());
-        branch.combat_search_history = vec![
-            CombatSearchTraceSummary {
+        branch.atomic_combat_search_history = vec![
+            AtomicCombatSearchTraceSummaryV2 {
                 source: "shared-prefix".to_string(),
                 coverage_status: "TimeBudgetLimited".to_string(),
                 deadline_hit: true,
-                ..CombatSearchTraceSummary::default()
+                ..AtomicCombatSearchTraceSummaryV2::default()
             },
-            CombatSearchTraceSummary {
+            AtomicCombatSearchTraceSummaryV2 {
                 source: "relic-suffix".to_string(),
                 coverage_status: "NodeBudgetLimited".to_string(),
                 node_budget_hit: true,
-                ..CombatSearchTraceSummary::default()
+                ..AtomicCombatSearchTraceSummaryV2::default()
             },
         ];
         branch.comparison_search_start = Some(1);

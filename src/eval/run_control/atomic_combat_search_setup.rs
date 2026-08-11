@@ -4,11 +4,11 @@ use crate::ai::combat_search_v2::{
 };
 use crate::sim::combat::CombatPosition;
 
-use super::progress_options::{RunControlHpLossLimit, RunControlSearchCombatOptions};
+use super::progress_options::{AtomicCombatSearchOptionsV2, RunControlHpLossLimit};
 use super::session::RunControlSession;
 
-pub(super) struct PreparedCombatSearch {
-    pub(super) options: RunControlSearchCombatOptions,
+pub(super) struct PreparedAtomicCombatSearchV2 {
+    pub(super) options: AtomicCombatSearchOptionsV2,
     pub(super) start: CombatPosition,
     pub(super) config: CombatSearchV2Config,
     pub(super) effective_profile: EffectiveCombatSearchProfile,
@@ -20,15 +20,15 @@ pub(super) struct EffectiveCombatSearchProfile {
     pub(super) acceptance: CombatSearchAcceptancePluginId,
 }
 
-pub(super) fn prepare_search_combat(
+pub(super) fn prepare_atomic_combat_search_v2(
     session: &RunControlSession,
-    options: RunControlSearchCombatOptions,
-) -> Result<PreparedCombatSearch, String> {
+    options: AtomicCombatSearchOptionsV2,
+) -> Result<PreparedAtomicCombatSearchV2, String> {
     let options = high_stakes_search_options(session, options);
     let start = session.current_active_combat_position()?;
     let config = search_config(session, options.clone());
     let effective_profile = effective_combat_search_profile(&options);
-    Ok(PreparedCombatSearch {
+    Ok(PreparedAtomicCombatSearchV2 {
         options,
         start,
         config,
@@ -37,7 +37,7 @@ pub(super) fn prepare_search_combat(
 }
 
 fn effective_combat_search_profile(
-    options: &RunControlSearchCombatOptions,
+    options: &AtomicCombatSearchOptionsV2,
 ) -> EffectiveCombatSearchProfile {
     options.profile.as_ref().map_or(
         EffectiveCombatSearchProfile {
@@ -53,7 +53,7 @@ fn effective_combat_search_profile(
 
 pub(super) fn effective_hp_loss_limit(
     session: &RunControlSession,
-    options: &RunControlSearchCombatOptions,
+    options: &AtomicCombatSearchOptionsV2,
 ) -> Option<u32> {
     match options.max_hp_loss {
         Some(RunControlHpLossLimit::Limit(limit)) => Some(limit),
@@ -64,7 +64,7 @@ pub(super) fn effective_hp_loss_limit(
 
 pub(super) fn effective_search_satisfaction(
     session: &RunControlSession,
-    options: &RunControlSearchCombatOptions,
+    options: &AtomicCombatSearchOptionsV2,
     profile_default: CombatSearchV2Satisfaction,
 ) -> CombatSearchV2Satisfaction {
     options
@@ -82,8 +82,8 @@ pub(super) fn effective_search_satisfaction(
 
 pub(in crate::eval::run_control) fn high_stakes_search_options(
     session: &RunControlSession,
-    mut options: RunControlSearchCombatOptions,
-) -> RunControlSearchCombatOptions {
+    mut options: AtomicCombatSearchOptionsV2,
+) -> AtomicCombatSearchOptionsV2 {
     let plan = super::combat_auto_policy::combat_auto_search_plan(session, &options);
     if options.profile.is_none()
         && options.potion_policy.is_none()
@@ -110,7 +110,7 @@ pub(super) fn search_report_has_invalid_card_identity(report: &CombatSearchV2Rep
 
 pub(super) fn search_config(
     session: &RunControlSession,
-    options: RunControlSearchCombatOptions,
+    options: AtomicCombatSearchOptionsV2,
 ) -> CombatSearchV2Config {
     let defaults = options
         .profile
@@ -207,8 +207,9 @@ mod adjudication_tests {
     #[test]
     fn prepared_search_always_carries_named_acceptance() {
         let session = active_session();
-        let manual = prepare_search_combat(&session, RunControlSearchCombatOptions::default())
-            .expect("manual search should prepare");
+        let manual =
+            prepare_atomic_combat_search_v2(&session, AtomicCombatSearchOptionsV2::default())
+                .expect("manual search should prepare");
         assert_eq!(manual.effective_profile.profile_id, "manual_default");
         assert_eq!(
             manual.effective_profile.acceptance,
@@ -229,11 +230,11 @@ mod adjudication_tests {
                 artifacts: CombatSearchArtifactPluginId::None,
             },
         };
-        let prepared = prepare_search_combat(
+        let prepared = prepare_atomic_combat_search_v2(
             &session,
-            RunControlSearchCombatOptions {
+            AtomicCombatSearchOptionsV2 {
                 profile: Some(profile),
-                ..RunControlSearchCombatOptions::default()
+                ..AtomicCombatSearchOptionsV2::default()
             },
         )
         .expect("profile search should prepare");
@@ -247,11 +248,11 @@ mod adjudication_tests {
     #[test]
     fn prepared_search_carries_exact_potion_slot_admission_into_engine_config() {
         let session = active_session();
-        let prepared = prepare_search_combat(
+        let prepared = prepare_atomic_combat_search_v2(
             &session,
-            RunControlSearchCombatOptions {
+            AtomicCombatSearchOptionsV2 {
                 allowed_potion_slots: Some(1 << 2),
-                ..RunControlSearchCombatOptions::default()
+                ..AtomicCombatSearchOptionsV2::default()
             },
         )
         .expect("masked search should prepare");

@@ -147,6 +147,7 @@ mod tests {
     use crate::content::relics::{RelicId, RelicState};
     use crate::eval::combat_case::{
         CombatCase, CombatCaseGap, CombatCaseRngSummary, CombatCaseRunSummary, CombatCaseSource,
+        CombatCaseWitnessBudgetV1,
     };
     use crate::eval::run_control::combat_line_adjudication::{
         CombatLineAdjudicationV1, CombatLineCleanlinessV1, CombatLineObservedOutcomeV1,
@@ -177,10 +178,12 @@ mod tests {
             CombatCaseGap {
                 boundary: "Combat".to_string(),
                 reason: "test".to_string(),
-                search_nodes: 10,
-                search_ms: 20,
-                rescue_search_nodes: 30,
-                rescue_search_ms: 40,
+                witness_budget: CombatCaseWitnessBudgetV1::AtomicExactV2 {
+                    primary_nodes: 10,
+                    primary_wall_ms: 20,
+                    rescue_nodes: 30,
+                    rescue_wall_ms: 40,
+                },
             },
             CombatCaseRunSummary {
                 act: 3,

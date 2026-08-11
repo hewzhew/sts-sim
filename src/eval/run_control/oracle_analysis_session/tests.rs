@@ -3,8 +3,8 @@ use super::*;
 use crate::content::potions::{Potion, PotionId};
 use crate::eval::run_control::{
     positive_ranked_run_policy_prior_v1, seed_oracle_run_explorer_from_session_v1,
-    DecisionCandidateKey, OracleRunCombatQualityPolicyV1, RunControlConfig,
-    RunControlSearchCombatOptions, RunControlSession, RunPolicyCandidateV1, RunPolicyPriorFnV1,
+    DecisionCandidateKey, OracleCombatWitnessOptionsV1, OracleRunCombatWitnessQualityPolicyV1,
+    RunControlConfig, RunControlSession, RunPolicyCandidateV1, RunPolicyPriorFnV1,
     RunPolicyPriorV1,
 };
 use crate::runtime::combat::CombatCard;
@@ -35,7 +35,7 @@ fn parameterized_selection_analysis_with_prior(
         return_state: Box::new(EngineState::MapNavigation),
     });
     let combat_budgets =
-        OracleRunCombatBudgetsV1::uniform(RunControlSearchCombatOptions::default());
+        OracleRunCombatWitnessBudgetsV1::uniform(OracleCombatWitnessOptionsV1::default());
     let explorer = seed_oracle_run_explorer_from_session_v1(
         run,
         RunProgressJournalV1::default(),
@@ -67,7 +67,7 @@ fn card_reward_analysis() -> OracleAnalysisSessionV1 {
     run.engine_state = EngineState::RewardScreen(reward);
 
     let combat_budgets =
-        OracleRunCombatBudgetsV1::uniform(RunControlSearchCombatOptions::default());
+        OracleRunCombatWitnessBudgetsV1::uniform(OracleCombatWitnessOptionsV1::default());
     let explorer = seed_oracle_run_explorer_from_session_v1(
         run,
         RunProgressJournalV1::default(),
@@ -213,14 +213,14 @@ fn combat_analysis(
     combat_analysis_with_budgets(
         combat,
         decision_prior,
-        OracleRunCombatBudgetsV1::uniform(RunControlSearchCombatOptions::default()),
+        OracleRunCombatWitnessBudgetsV1::uniform(OracleCombatWitnessOptionsV1::default()),
     )
 }
 
 fn combat_analysis_with_budgets(
     combat: crate::runtime::combat::CombatState,
     decision_prior: Option<RunPolicyPriorFnV1>,
-    combat_budgets: OracleRunCombatBudgetsV1,
+    combat_budgets: OracleRunCombatWitnessBudgetsV1,
 ) -> OracleAnalysisSessionV1 {
     let mut run = RunControlSession::new(RunControlConfig::default());
     run.engine_state = EngineState::CombatPlayerTurn;
@@ -531,9 +531,11 @@ fn smoke_bomb_escape_registers_the_materialized_child_decision_supply() {
     );
 }
 
-fn strategic_combat_budgets(options: RunControlSearchCombatOptions) -> OracleRunCombatBudgetsV1 {
-    let mut budgets = OracleRunCombatBudgetsV1::uniform(options);
-    budgets.quality_policy = OracleRunCombatQualityPolicyV1::StrategicRun;
+fn strategic_combat_budgets(
+    options: OracleCombatWitnessOptionsV1,
+) -> OracleRunCombatWitnessBudgetsV1 {
+    let mut budgets = OracleRunCombatWitnessBudgetsV1::uniform(options);
+    budgets.quality_policy = OracleRunCombatWitnessQualityPolicyV1::StrategicRun;
     budgets
 }
 
@@ -554,9 +556,9 @@ fn establish_current_combat_witness(analysis: &mut OracleAnalysisSessionV1) {
             break;
         }
         let _ = work.advance_improving_incumbent(
-            &RunControlCombatSearchQuantum {
+            &OracleCombatWitnessQuantumV1 {
                 label: "establish-test-incumbent",
-                additional_nodes: 32,
+                additional_generation_work: 32,
                 soft_wall_ms: None,
             },
             None,
@@ -573,7 +575,7 @@ fn strategic_nonboss_analysis_starts_with_an_exact_no_potion_stage() {
     let analysis = combat_analysis_with_budgets(
         potion_equipped_one_strike_combat(),
         None,
-        strategic_combat_budgets(RunControlSearchCombatOptions::default()),
+        strategic_combat_budgets(OracleCombatWitnessOptionsV1::default()),
     );
 
     let combat = analysis
@@ -591,16 +593,16 @@ fn strategic_no_potion_witness_that_meets_quality_materializes_without_rescue() 
     let mut analysis = combat_analysis_with_budgets(
         potion_equipped_one_strike_combat(),
         None,
-        strategic_combat_budgets(RunControlSearchCombatOptions {
-            max_nodes: Some(64),
-            ..RunControlSearchCombatOptions::default()
+        strategic_combat_budgets(OracleCombatWitnessOptionsV1 {
+            max_generation_work: Some(64),
+            ..OracleCombatWitnessOptionsV1::default()
         }),
     );
 
     let report = analysis
         .advance_cursor(OracleAnalysisAdvanceRequestV1 {
             max_quanta: 4,
-            quantum_nodes: 16,
+            quantum_generation_work: 16,
             quantum_ms: None,
             wall_ms: None,
             improve_incumbent: true,
@@ -627,9 +629,9 @@ fn exhausted_stage_probe_retains_a_satisfying_incumbent_until_explicit_acceptanc
     let mut analysis = combat_analysis_with_budgets(
         potion_equipped_one_strike_combat(),
         None,
-        strategic_combat_budgets(RunControlSearchCombatOptions {
-            max_nodes: Some(64),
-            ..RunControlSearchCombatOptions::default()
+        strategic_combat_budgets(OracleCombatWitnessOptionsV1 {
+            max_generation_work: Some(64),
+            ..OracleCombatWitnessOptionsV1::default()
         }),
     );
     establish_current_combat_witness(&mut analysis);
@@ -645,7 +647,7 @@ fn exhausted_stage_probe_retains_a_satisfying_incumbent_until_explicit_acceptanc
     let report = analysis
         .probe_cursor_combat_stage(OracleAnalysisCombatProbeRequestV1 {
             generation_work: 3,
-            quantum_nodes: 1,
+            quantum_generation_work: 1,
             wall_ms: 1_000,
         })
         .expect("probe the current no-potion stage");
@@ -674,7 +676,7 @@ fn exhausted_stage_probe_retains_a_satisfying_incumbent_until_explicit_acceptanc
     let resumed = analysis
         .probe_cursor_combat_stage(OracleAnalysisCombatProbeRequestV1 {
             generation_work: 2,
-            quantum_nodes: 1,
+            quantum_generation_work: 1,
             wall_ms: 1_000,
         })
         .expect("resume the same current-stage frontier");
@@ -735,9 +737,9 @@ fn strategic_advance_keeps_a_below_reserve_win_resident_until_explicit_acceptanc
     let mut analysis = combat_analysis_with_budgets(
         combat,
         None,
-        strategic_combat_budgets(RunControlSearchCombatOptions {
-            max_nodes: Some(0),
-            ..RunControlSearchCombatOptions::default()
+        strategic_combat_budgets(OracleCombatWitnessOptionsV1 {
+            max_generation_work: Some(0),
+            ..OracleCombatWitnessOptionsV1::default()
         }),
     );
     let actions = [
@@ -764,7 +766,7 @@ fn strategic_advance_keeps_a_below_reserve_win_resident_until_explicit_acceptanc
     let report = analysis
         .advance_cursor(OracleAnalysisAdvanceRequestV1 {
             max_quanta: 1,
-            quantum_nodes: 1,
+            quantum_generation_work: 1,
             quantum_ms: None,
             wall_ms: None,
             improve_incumbent: false,
@@ -808,16 +810,16 @@ fn bounded_no_potion_unknown_enters_the_full_potion_stage() {
     let mut analysis = combat_analysis_with_budgets(
         combat,
         None,
-        strategic_combat_budgets(RunControlSearchCombatOptions {
-            max_nodes: Some(2),
-            ..RunControlSearchCombatOptions::default()
+        strategic_combat_budgets(OracleCombatWitnessOptionsV1 {
+            max_generation_work: Some(2),
+            ..OracleCombatWitnessOptionsV1::default()
         }),
     );
 
     let report = analysis
         .advance_cursor(OracleAnalysisAdvanceRequestV1 {
             max_quanta: 2,
-            quantum_nodes: 1,
+            quantum_generation_work: 1,
             quantum_ms: None,
             wall_ms: None,
             improve_incumbent: true,
@@ -855,16 +857,16 @@ fn new_identity_stage_keeps_its_configured_share_of_a_larger_advance_request() {
     let mut analysis = combat_analysis_with_budgets(
         combat,
         None,
-        strategic_combat_budgets(RunControlSearchCombatOptions {
-            max_nodes: Some(9),
-            ..RunControlSearchCombatOptions::default()
+        strategic_combat_budgets(OracleCombatWitnessOptionsV1 {
+            max_generation_work: Some(9),
+            ..OracleCombatWitnessOptionsV1::default()
         }),
     );
 
     let report = analysis
         .advance_cursor(OracleAnalysisAdvanceRequestV1 {
             max_quanta: 1,
-            quantum_nodes: 1_000,
+            quantum_generation_work: 1_000,
             quantum_ms: None,
             wall_ms: None,
             improve_incumbent: true,
@@ -878,7 +880,7 @@ fn new_identity_stage_keeps_its_configured_share_of_a_larger_advance_request() {
     ));
     assert_eq!(job.stage, 1);
     assert_eq!(job.work.allowed_potion_slots(), Some(0b01));
-    assert_eq!(job.work.remaining_nodes(), 5);
+    assert_eq!(job.work.remaining_generation_work(), 5);
     let progress = report.combat.expect("identity-stage progress");
     assert_eq!(progress.stage_trace.len(), 2);
     assert_eq!(
@@ -904,16 +906,16 @@ fn typed_fire_potion_rescue_materializes_when_no_potion_win_exists() {
     let mut analysis = combat_analysis_with_budgets(
         combat,
         None,
-        strategic_combat_budgets(RunControlSearchCombatOptions {
-            max_nodes: Some(256),
-            ..RunControlSearchCombatOptions::default()
+        strategic_combat_budgets(OracleCombatWitnessOptionsV1 {
+            max_generation_work: Some(256),
+            ..OracleCombatWitnessOptionsV1::default()
         }),
     );
 
     let report = analysis
         .advance_cursor(OracleAnalysisAdvanceRequestV1 {
             max_quanta: 8,
-            quantum_nodes: 32,
+            quantum_generation_work: 32,
             quantum_ms: None,
             wall_ms: None,
             improve_incumbent: true,
@@ -960,16 +962,16 @@ fn common_strength_potion_can_rescue_a_verified_but_low_quality_win() {
     let mut analysis = combat_analysis_with_budgets(
         combat,
         None,
-        strategic_combat_budgets(RunControlSearchCombatOptions {
-            max_nodes: Some(512),
-            ..RunControlSearchCombatOptions::default()
+        strategic_combat_budgets(OracleCombatWitnessOptionsV1 {
+            max_generation_work: Some(512),
+            ..OracleCombatWitnessOptionsV1::default()
         }),
     );
 
     let first = analysis
         .advance_cursor(OracleAnalysisAdvanceRequestV1 {
             max_quanta: 16,
-            quantum_nodes: 32,
+            quantum_generation_work: 32,
             quantum_ms: None,
             wall_ms: None,
             improve_incumbent: true,
@@ -994,7 +996,7 @@ fn common_strength_potion_can_rescue_a_verified_but_low_quality_win() {
         analysis
             .advance_cursor(OracleAnalysisAdvanceRequestV1 {
                 max_quanta: 16,
-                quantum_nodes: 32,
+                quantum_generation_work: 32,
                 quantum_ms: None,
                 wall_ms: None,
                 improve_incumbent: true,
@@ -1025,7 +1027,7 @@ fn common_strength_potion_can_rescue_a_verified_but_low_quality_win() {
     );
     assert_eq!(
         final_stage.local_candidate_disposition,
-        Some(OracleCombatLocalCandidateDispositionV1::SelectedIncumbent)
+        Some(OracleCombatWitnessCandidateDispositionV1::SelectedIncumbent)
     );
     assert_eq!(
         analysis.view_cursor().expect("rescued child").current_hp,
@@ -1041,7 +1043,7 @@ fn boss_uses_stages_but_explicit_potion_overrides_remain_literal() {
     let boss = combat_analysis_with_budgets(
         boss_combat,
         None,
-        strategic_combat_budgets(RunControlSearchCombatOptions::default()),
+        strategic_combat_budgets(OracleCombatWitnessOptionsV1::default()),
     );
     let boss_progress = boss
         .view_cursor()
@@ -1057,9 +1059,9 @@ fn boss_uses_stages_but_explicit_potion_overrides_remain_literal() {
     let overridden = combat_analysis_with_budgets(
         potion_equipped_one_strike_combat(),
         None,
-        strategic_combat_budgets(RunControlSearchCombatOptions {
+        strategic_combat_budgets(OracleCombatWitnessOptionsV1 {
             max_potions_used: Some(1),
-            ..RunControlSearchCombatOptions::default()
+            ..OracleCombatWitnessOptionsV1::default()
         }),
     );
     let overridden_progress = overridden
@@ -1089,16 +1091,16 @@ fn boss_single_identity_rescue_finishes_before_multi_potion_fallback() {
     let mut analysis = combat_analysis_with_budgets(
         combat,
         None,
-        strategic_combat_budgets(RunControlSearchCombatOptions {
-            max_nodes: Some(256),
-            ..RunControlSearchCombatOptions::default()
+        strategic_combat_budgets(OracleCombatWitnessOptionsV1 {
+            max_generation_work: Some(256),
+            ..OracleCombatWitnessOptionsV1::default()
         }),
     );
 
     let report = analysis
         .advance_cursor(OracleAnalysisAdvanceRequestV1 {
             max_quanta: 8,
-            quantum_nodes: 32,
+            quantum_generation_work: 32,
             quantum_ms: None,
             wall_ms: None,
             improve_incumbent: true,
@@ -1134,16 +1136,16 @@ fn boss_multi_potion_fallback_remains_available_after_single_slot_misses() {
     let mut analysis = combat_analysis_with_budgets(
         combat,
         None,
-        strategic_combat_budgets(RunControlSearchCombatOptions {
-            max_nodes: Some(2_048),
-            ..RunControlSearchCombatOptions::default()
+        strategic_combat_budgets(OracleCombatWitnessOptionsV1 {
+            max_generation_work: Some(2_048),
+            ..OracleCombatWitnessOptionsV1::default()
         }),
     );
 
     let report = analysis
         .advance_cursor(OracleAnalysisAdvanceRequestV1 {
             max_quanta: 10_000,
-            quantum_nodes: 64,
+            quantum_generation_work: 64,
             quantum_ms: None,
             wall_ms: None,
             improve_incumbent: true,
@@ -1156,10 +1158,10 @@ fn boss_multi_potion_fallback_remains_available_after_single_slot_misses() {
             report.status,
             OracleAnalysisAdvanceStatusV1::BoundaryReached { .. }
         ),
-        "multi-potion fallback did not materialize: {:?}, stage={}, remaining_nodes={}, max_potions={:?}, allowed_slots={:?}",
+        "multi-potion fallback did not materialize: {:?}, stage={}, remaining_generation_work={}, max_potions={:?}, allowed_slots={:?}",
         report.status,
         progress.search_stage,
-        progress.remaining_nodes,
+        progress.remaining_generation_work,
         progress.max_potions_used,
         progress.allowed_potion_slots
     );
@@ -1177,9 +1179,9 @@ fn analysis_checkpoint_restores_the_resident_combat_stage() {
     combat.zones.hand.clear();
     combat.entities.monsters[0].current_hp = 200;
     combat.entities.monsters[0].max_hp = 200;
-    let budgets = strategic_combat_budgets(RunControlSearchCombatOptions {
-        max_nodes: Some(2),
-        ..RunControlSearchCombatOptions::default()
+    let budgets = strategic_combat_budgets(OracleCombatWitnessOptionsV1 {
+        max_generation_work: Some(2),
+        ..OracleCombatWitnessOptionsV1::default()
     });
     let mut analysis = combat_analysis_with_budgets(combat, None, budgets.clone());
     assert!(analysis
@@ -1226,9 +1228,9 @@ fn quality_gated_potion_replacement_survives_checkpoint_restore() {
     combat.entities.monsters[0].max_hp = 8;
     combat.zones.draw_pile = vec![CombatCard::new(crate::content::cards::CardId::Strike, 2)].into();
     combat.entities.potions = vec![Some(Potion::new(PotionId::SkillPotion, 60))];
-    let budgets = strategic_combat_budgets(RunControlSearchCombatOptions {
-        max_nodes: Some(512),
-        ..RunControlSearchCombatOptions::default()
+    let budgets = strategic_combat_budgets(OracleCombatWitnessOptionsV1 {
+        max_generation_work: Some(512),
+        ..OracleCombatWitnessOptionsV1::default()
     });
     let mut analysis = combat_analysis_with_budgets(combat, None, budgets.clone());
 
@@ -1242,9 +1244,9 @@ fn quality_gated_potion_replacement_survives_checkpoint_restore() {
             break;
         }
         let _ = work.advance_improving_incumbent(
-            &RunControlCombatSearchQuantum {
+            &OracleCombatWitnessQuantumV1 {
                 label: "quality-gate-checkpoint",
-                additional_nodes: 32,
+                additional_generation_work: 32,
                 soft_wall_ms: None,
             },
             None,
@@ -1294,7 +1296,7 @@ fn quality_gated_rescue_can_inspect_flexible_potions_without_admitting_passive_e
         Some(Potion::new(PotionId::FairyPotion, 63)),
         Some(Potion::new(PotionId::SmokeBomb, 64)),
     ];
-    let budgets = strategic_combat_budgets(RunControlSearchCombatOptions::default());
+    let budgets = strategic_combat_budgets(OracleCombatWitnessOptionsV1::default());
     let mut analysis = combat_analysis_with_budgets(combat, None, budgets.clone());
     establish_current_combat_witness(&mut analysis);
     let branch = analysis.require_branch(0).expect("combat branch");

@@ -27,7 +27,11 @@ use super::transition_report::CardSnapshot;
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum CombatAutomationTrajectorySource {
+    /// Historical payload written before the two exact search engines had
+    /// distinct evidence identities. New code must not emit this variant.
     SearchCombat,
+    AtomicExactV2,
+    TurnGraphPortfolioV1,
     /// An explicit action sequence supplied at an oracle-analysis boundary and
     /// accepted only after exact legal replay reaches terminal victory.
     OracleExactActions,
@@ -43,6 +47,8 @@ impl CombatAutomationTrajectorySource {
     pub fn label(self) -> &'static str {
         match self {
             CombatAutomationTrajectorySource::SearchCombat => "search_combat",
+            CombatAutomationTrajectorySource::AtomicExactV2 => "atomic_exact_v2",
+            CombatAutomationTrajectorySource::TurnGraphPortfolioV1 => "turn_graph_portfolio_v1",
             CombatAutomationTrajectorySource::OracleExactActions => "oracle_exact_actions",
             CombatAutomationTrajectorySource::CompleteLineSolver => "complete_line_solver",
             CombatAutomationTrajectorySource::TurnPlanRescue => "turn_plan_rescue",
@@ -343,7 +349,7 @@ impl CombatSearchStrategicHpQualityFactsV1 {
 
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
-pub struct CombatSearchTraceSummary {
+pub struct AtomicCombatSearchTraceSummaryV2 {
     pub source: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub lane: Option<String>,
@@ -364,11 +370,11 @@ pub struct CombatSearchTraceSummary {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub engine_fingerprint: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub portfolio_candidate_tier: Option<String>,
+    pub atomic_stage_candidate_tier: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub portfolio_selected: Option<bool>,
+    pub atomic_witness_selected: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub portfolio_decision: Option<String>,
+    pub atomic_stage_decision: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub potion_continuation_context: Option<PotionRunContinuationContextV1>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -629,14 +635,14 @@ pub fn combat_automation_trajectories_v1(
         .filter_map(RunControlTraceAnnotationV1::as_combat_automation_trajectory_v1)
 }
 
-pub fn combat_search_trace_summaries(
+pub fn atomic_combat_search_trace_summaries(
     annotations: &[RunControlTraceAnnotationV1],
-) -> impl Iterator<Item = CombatSearchTraceSummary> + '_ {
+) -> impl Iterator<Item = AtomicCombatSearchTraceSummaryV2> + '_ {
     annotations.iter().filter_map(|annotation| {
         let RunControlTraceAnnotationV1::CombatSearchPerformance { snapshot } = annotation else {
             return None;
         };
-        Some(CombatSearchTraceSummary {
+        Some(AtomicCombatSearchTraceSummaryV2 {
             source: snapshot.source.clone(),
             lane: None,
             profile_id: None,
@@ -647,9 +653,9 @@ pub fn combat_search_trace_summaries(
             profile_allowed_potion_slots: None,
             profile_internal_no_win_rescue_enabled: None,
             engine_fingerprint: None,
-            portfolio_candidate_tier: None,
-            portfolio_selected: None,
-            portfolio_decision: None,
+            atomic_stage_candidate_tier: None,
+            atomic_witness_selected: None,
+            atomic_stage_decision: None,
             potion_continuation_context: None,
             potion_continuation_pressure: None,
             combat_victory_continuation: None,
@@ -784,11 +790,11 @@ mod tests {
 
     #[test]
     fn legacy_combat_search_summary_without_potion_context_still_deserializes() {
-        let payload =
-            serde_json::to_value(CombatSearchTraceSummary::default()).expect("serialize summary");
+        let payload = serde_json::to_value(AtomicCombatSearchTraceSummaryV2::default())
+            .expect("serialize summary");
         assert!(payload.get("potion_continuation_context").is_none());
 
-        let restored: CombatSearchTraceSummary =
+        let restored: AtomicCombatSearchTraceSummaryV2 =
             serde_json::from_value(payload).expect("deserialize legacy summary");
 
         assert!(restored.potion_continuation_context.is_none());
