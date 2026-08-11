@@ -103,15 +103,21 @@ target it must cross the separately owned public-information, chance-particle,
 fair-allocation, independent-evaluation, and qualification boundary in
 [`CombatSearchImprovementContractV1`](design/2026-08-11-combat-search-improvement-contract-v1.md).
 Its independent-stream public-chance primitive and exact-upstream-conditioned
-combat-entry floor-chance primitive are implemented for feasibility work. The
-latter replays production combat start while varying only the five floor-local
-RNG streams; it is not a posterior over complete run seeds or alternative
-upstream histories. Exact public-boundary rejection is a bounded reference
-sampler, not the scalable default: multi-monster roots can make matching floor
-seeds too sparse for an improvement population. Fair allocation, a
-public-history run-seed posterior,
-qualification, and the teacher owner remain missing. `AtomicExactV2`,
-`TurnGraphPortfolioV1`, and their member engines are not certified teachers.
+combat-entry floor-chance primitive remain feasibility tools. The latter
+replays production combat start while varying only the five floor-local RNG
+streams; it is not a posterior over complete run seeds or alternative upstream
+histories. `combat_public_history_chance` owns the stronger finite-frame
+reference: every candidate starts a fresh production run from one complete run
+seed, must match each captured public decision snapshot, replays the same typed
+public candidate identities, and must reach the same combat snapshot. It never
+repairs or independently reseeds an RNG stream. In 2,048-seed A0 and A20 frames
+this exact conditioning retained only the source seed, so it establishes
+posterior degeneracy rather than manufacturing a multi-particle population.
+Natural-root equal-work search and a non-publishing distillation spike may test
+whether cross-root Expert Iteration carries signal, but they remain
+realized-private-future evidence. Qualification and the teacher owner are still
+missing. `AtomicExactV2`, `TurnGraphPortfolioV1`, and their member engines are
+not certified teachers.
 
 Shared card mechanics used by that path belong to `content::cards::mechanics`,
 not to an analysis or reward-policy table. The profile owns upgrade-sensitive
@@ -485,7 +491,11 @@ Changing an encoded field's meaning or turning a previously constant field into
 live information requires a semantic-schema version bump even when the table
 shape is unchanged. Checkpoints trained under the prior meaning must fail
 closed rather than silently consuming the new distribution.
-Semantic schema v8 also declares identity-residual categorical fields. Card
+Semantic schema v9 also carries the available combat-side public run context
+(`run_goal`, act, floor, keys, typed encounter, and public map) through the
+same run/map graph vocabulary used by strategic decisions. Detached exact
+combat positions retain an absent run-context graph rather than inventing one.
+Schema v9 also declares identity-residual categorical fields. Card
 and potion identities are encoded alongside shared typed mechanics: card
 definition type, rarity, upgrade-sensitive effective target and lifecycle
 flags, base/upgrade numerics, multi-damage, explicit mechanic-role coverage,

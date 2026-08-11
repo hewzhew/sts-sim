@@ -703,19 +703,22 @@ pytest, NumPy, PyTorch, the repository caller, and the installed bridge. The
 caller continues to load from the repository source path, so configuration
 does not build or install the local package into its own worktree. No separate
 requirements file or global pytest installation is needed.
-`test` writes its full log below `.oracle-lab/reports/`, keeps pytest's small
-reusable cache below `.oracle-lab/pytest/cache/`, and gives every invocation a
-fresh `.oracle-lab/pytest/runs/` base temporary directory. It does not write a
-`.pytest_cache` into `learning/` or depend on access to the process-wide system
-temporary directory.
+`test` keeps pytest's small reusable cache below `.oracle-lab/pytest/cache/`
+and gives every invocation a fresh `.oracle-lab/pytest/runs/` base temporary
+directory. A successful run removes its temporary tree and log immediately; a
+failed run preserves the full log below `.oracle-lab/reports/` and its temporary
+tree for diagnosis. It does not write a `.pytest_cache` into `learning/` or
+depend on access to the process-wide system temporary directory.
 
 Use `check-bridge` for the routine bridge edit loop. It builds a dev-profile
 wheel and verifies it through the isolated Python smoke and caller suite in
 seconds without changing the configured training runtime. A lightweight
 pytest tool environment is cached by Python ABI under ignored `.oracle-lab/`
 storage and revalidated against the `sts-learning[test]` requirement on every
-run. Each bridge wheel and smoke environment remains fresh; optional training
-dependencies may stay absent from the pytest tool and their tests may skip. Use
+run. Each bridge wheel and smoke environment remains fresh and is removed after
+a successful check; failures preserve their isolated directory and complete
+logs. Optional training dependencies may stay absent from the pytest tool and
+their tests may skip. Use
 `refresh-bridge` when a real experiment needs the new bridge: it verifies and
 installs a release-profile wheel with `--no-deps`, but defers the second Rust
 test-binary link. For a functional experiment that does not measure throughput,
@@ -931,6 +934,53 @@ The selected artifact follows caller slot order. Duplicate or out-of-range
 slots, source-width mismatch, malformed input, byte overflow, or an existing
 output path all fail before publication. Selection is curriculum configuration,
 not a policy score or teacher label.
+
+For the combat-search improvement laboratory, first collect natural roots in
+declared seed-partition order without encounter or outcome filtering:
+
+```powershell
+python -m sts_learning.combat_information_census `
+  --output <fresh-census.json> --root-artifact <fresh-roots.bin> --root-count 8 `
+  --seed-start <start> --seed-count 8 --ascension <0|20> --partition <training|held_out>
+```
+
+To measure the true finite-frame public-history posterior for one exported
+root, replay complete production run seeds instead of changing floor RNGs:
+
+```powershell
+python -m sts_learning.combat_public_history_chance `
+  --census <census.json> --root-slot <slot> `
+  --candidate-seed-start <start> --candidate-seed-count 2048 `
+  --partition <training|held_out> --output <fresh-scan.json> `
+  --root-artifact <fresh-matching-roots.bin>
+```
+
+Every candidate must match each captured public snapshot, replay the same typed
+public candidate identity, and reach the same combat snapshot. The receipt is
+exact only for its declared finite seed frame. A complete source-only result is
+a degenerate posterior, not a failure and not permission to manufacture chance
+particles.
+
+When that posterior is degenerate, measure cross-root Expert Iteration on an
+untouched natural batch:
+
+```powershell
+python -m sts_learning.natural_combat_search_census `
+  --artifact <roots.bin> --root-count <count> --behavior <frozen-behavior> `
+  --oracle-binary target\release\oracle_lab.exe --output-dir <fresh-dir> `
+  --solve-work-per-candidate 5000 --candidate-jobs 4
+```
+
+This command uses `potion_lane=never` for both the model candidate surface and
+the entire successor search. It records one strict proposal only when exact-win
+count and then winning final HP exceed the frozen greedy action; equal results
+retain the baseline. `combat_search_distillation_spike` may consume aligned
+training and disjoint held-out artifact/manifest pairs for one bounded
+in-memory cross-entropy update. It trains the strict proposal where present and
+the frozen baseline otherwise, writes no checkpoint, never publishes a model,
+and remains `teacher_valid=false`. PPO remains out of scope until a larger
+closed-loop evaluation qualifies the operator.
+
 For a bounded fixed-behavior coverage check over every root, use
 `CombatWinSignalCensusRunner` with the same `expected_roots`, one shared model
 seed, one explicit behavior seed per root, and `max_roots` equal to the intended

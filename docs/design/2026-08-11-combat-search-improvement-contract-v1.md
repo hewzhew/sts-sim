@@ -1,6 +1,6 @@
 # CombatSearchImprovementContractV1
 
-Status: **Partially implemented: two feasibility chance samplers, no qualified teacher**
+Status: **Partially implemented: exact finite-frame conditioning and natural-root distillation feasibility, no qualified teacher**
 
 Qualification status: **No current witness engine is a certified teacher.**
 
@@ -70,6 +70,12 @@ transitions. Search statistics and subsequent decisions must aggregate exact
 particles that share the same public information state. Particle identity is
 provenance only and never model input.
 
+Semantic schema v9 now supplies the combat actor with the available public run
+context: run goal, act, floor, keys, typed encounter, and public map. Earlier
+semantic rows omitted that context even though the Rust public snapshot owned
+it. Results that grouped natural roots under schema v8 therefore measured a
+model-input omission, not a valid public-information chance population.
+
 ### Exact roots
 
 An exact production root remains valuable for replay, debugging, matched
@@ -126,6 +132,68 @@ large bounded interval even when the source seed reconstructs exactly. Such a
 scan is `unknown`, not a loss or permission to fall back silently to the
 realized future. An accepted-seed cache may save repeated scanning, but cannot
 replace the missing public-history posterior.
+
+`combat_public_history_chance` is the exact finite-frame run-seed reference.
+It starts every candidate from a fresh production run using one complete run
+seed, compares every captured public decision snapshot, replays the same typed
+public candidate identity only after an exact match, and accepts only the same
+combat-entry snapshot. It neither fixes the source run state nor independently
+re-seeds any stream. Its receipt names the seed-only partition, raw candidate
+range, complete scanned frame, accepted run seeds, deterministic retained
+sample, and whether the source seed reconstructed. The result is exact for that
+declared finite prior frame; it is not a claim about all `2^64` seeds.
+
+On an A0 Jaw Worm root and an A20 Two Louse root, independent 2,048-seed
+training-partition frames each retained exactly one candidate: the original run
+seed. The retained opaque root digest was identical to the source root digest,
+and every other seed diverged at the first public decision snapshot before the
+combat-entry comparison. Thus full public map/history conditioning is already
+near-degenerate at these early roots. A multi-particle same-public-root teacher
+cannot be obtained by scanning harder or by falling back to floor-local seed
+repair.
+
+The learning caller can also compose sanitized decision snapshots and their
+selected public candidate ids into a decision-boundary prefix identity. This
+contains neither run seed nor private simulator handles, but it is not yet a
+complete transcript of non-decision public events. A bounded natural-entry
+census found every such prefix unique in 2,048 A0 roots and independently in
+2,048 A20 roots. After schema v9 admitted the missing combat run context, the
+model information rows were also 2,048/2,048 unique in both censuses. Natural
+seed collisions are therefore rejected as a practical particle sampler; a
+repeated coarse model row must not be relabeled as public-history conditioning.
+
+The first 2026-08-12 natural-entry spike exported opaque roots directly from that
+census in declared seed-partition order, with no encounter or outcome filter.
+On two A0 Jaw Worm roots, four selection and four disjoint evaluation particles
+plus 5,000 equal generation-work units per action selected Bash over the frozen
+Defend and reproduced `+7` and `+1` mean winning-HP deltas on evaluation.
+Three other completed roots produced no strict improvement and therefore no
+proposal. The strict rejection sampler also accepted zero alternative public
+matches for one A20 Two Louse root after 1,000,000 floor-seed candidates.
+These are feasibility and sparsity measurements with `teacher_valid = false`;
+by themselves they neither qualify a teacher nor justify a policy update.
+
+The subsequent natural-root path treats independent production seeds as the
+sampling unit instead. `natural_combat_search_census` gives every no-potion
+model candidate exactly 5,000 LocalTurnGraph generation-work units and records
+a proposal only when exact-win count and then winning final HP strictly exceed
+the frozen baseline. The no-potion contract covers the root candidate surface
+and the entire successor search; a potion-bearing A20 root exposed and fixed a
+previous mismatch where Rust searched potion actions hidden from the model.
+
+Across 8 natural A0 plus 8 natural A20 training roots, search produced five
+strict proposals and no budget-unknown result. A fixed 16-epoch, `3e-4`
+non-publishing distillation used the proposal action where strict improvement
+existed and otherwise anchored the frozen baseline. On a fresh disjoint
+8-A0/8-A20 held-out collection, the updated in-memory scorer selected two
+strictly better actions, fourteen equal actions, zero worse actions, and zero
+unknown actions under the same equal-work search evidence. The two improvements
+were `+2` and `+14` winning HP; mean held-out HP delta over all sixteen roots was
+`+1.0`, and mean best-search HP regret fell from `1.9375` to `0.9375`.
+This is the first positive evidence that cross-root search proposals form a
+learnable signal. It remains a small realized-private-future feasibility result:
+no model was published, `teacher_valid` remains false, and PPO is not
+authorized.
 
 ## Typed Root Candidate Identity
 
@@ -301,6 +369,9 @@ resource targets remain out of scope until this boundary is qualified.
 | exact simulator and replay | Required foundation |
 | independent-stream public-chance sampler | Feasibility primitive; public-equivalent but not a run-seed-consistent posterior |
 | conditioned combat-entry floor-chance sampler | Feasibility primitive; production combat start with exact upstream state fixed, not a posterior over complete run histories |
+| finite-frame public-history run-seed scan | Exact for its declared seed frame; complete production replay; observed early-root posterior was source-only |
+| natural combat-entry information census/export | Seed-partition-ordered opaque bootstrap roots plus sparsity/model-input diagnostics; not a chance sampler or teacher evidence |
+| natural-root equal-work search/distillation spike | Positive cross-root learnability evidence; realized private futures, non-publishing, not a certified teacher |
 | typed public trajectory and legal candidates | Required foundation |
 | `AtomicExactV2` | Witness/challenger engine; not certified |
 | `LocalTurnGraphWitnessSession` | Witness/rescue/diagnostic engine; not certified |
