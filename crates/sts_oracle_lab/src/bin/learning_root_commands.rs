@@ -34,6 +34,8 @@ const COLLECTION_SUMMARY_SCHEMA_NAME: &str = "CombatLearningRootCollectionSummar
 const COLLECTION_SUMMARY_SCHEMA_VERSION: u32 = 2;
 const RECOVERY_SUMMARY_SCHEMA_NAME: &str = "CombatLearningRecoveryRootSummary";
 const RECOVERY_SUMMARY_SCHEMA_VERSION: u32 = 1;
+const SEARCH_RECOVERY_SUMMARY_SCHEMA_NAME: &str = "CombatLearningSearchRecoveryRootSummary";
+const SEARCH_RECOVERY_SUMMARY_SCHEMA_VERSION: u32 = 1;
 const MERGE_SUMMARY_SCHEMA_NAME: &str = "CombatLearningRootMergeSummary";
 const MERGE_SUMMARY_SCHEMA_VERSION: u32 = 2;
 const CASE_SUMMARY_SCHEMA_NAME: &str = "CombatLearningRootCaseSummary";
@@ -79,6 +81,26 @@ pub(super) enum LearningRootCommand {
         case: PathBuf,
         #[arg(long)]
         actions: PathBuf,
+        #[arg(long)]
+        output: PathBuf,
+        #[arg(long, default_value_t = 8)]
+        max_roots: usize,
+        #[arg(long, default_value_t = 16 * 1024 * 1024)]
+        max_bytes: usize,
+    },
+    /// Recover a verified exact-win successor directly from its opaque source
+    /// root and Rust-owned search corpus, without case or action intermediates.
+    RecoverSearch {
+        #[arg(long)]
+        artifact: PathBuf,
+        #[arg(long)]
+        expected_roots: usize,
+        #[arg(long, default_value_t = 0)]
+        root_slot: usize,
+        #[arg(long)]
+        corpus: PathBuf,
+        #[arg(long)]
+        candidate_ordinal: usize,
         #[arg(long)]
         output: PathBuf,
         #[arg(long, default_value_t = 8)]
@@ -183,6 +205,25 @@ pub(super) struct CombatLearningRecoveryRootSummaryV1 {
 
 #[derive(Debug, Serialize)]
 #[serde(deny_unknown_fields)]
+pub(super) struct CombatLearningSearchRecoveryRootSummaryV1 {
+    schema_name: &'static str,
+    schema_version: u32,
+    source_artifact: PathBuf,
+    source_expected_roots: usize,
+    source_root_slot: usize,
+    source_identity: CombatLearningRootIdentityV1,
+    source_corpus: PathBuf,
+    source_candidate_ordinal: usize,
+    output: PathBuf,
+    payload_bytes: usize,
+    supplied_action_count: usize,
+    max_roots: usize,
+    final_hp: i32,
+    roots: Vec<CombatLearningRecoveredRootV1>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(deny_unknown_fields)]
 struct CombatLearningRecoveredRootV1 {
     actions_to_terminal: usize,
     identity: CombatLearningRootIdentityV1,
@@ -262,6 +303,25 @@ pub(super) fn run(command: LearningRootCommand) -> Result<(), String> {
             max_roots,
             max_bytes,
         } => super::print_json(&recover(&case, &actions, &output, max_roots, max_bytes)?),
+        LearningRootCommand::RecoverSearch {
+            artifact,
+            expected_roots,
+            root_slot,
+            corpus,
+            candidate_ordinal,
+            output,
+            max_roots,
+            max_bytes,
+        } => super::print_json(&recover_search(
+            &artifact,
+            expected_roots,
+            root_slot,
+            &corpus,
+            candidate_ordinal,
+            &output,
+            max_roots,
+            max_bytes,
+        )?),
         LearningRootCommand::Case {
             artifact,
             output,
@@ -684,6 +744,98 @@ pub(super) fn recover(
         output: output.to_path_buf(),
         payload_bytes: payload.len(),
         supplied_action_count: actions.len(),
+        max_roots,
+        final_hp,
+        roots,
+    })
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(super) fn recover_search(
+    artifact_path: &Path,
+    expected_roots: usize,
+    root_slot: usize,
+    corpus_path: &Path,
+    candidate_ordinal: usize,
+    output: &Path,
+    max_roots: usize,
+    max_bytes: usize,
+) -> Result<CombatLearningSearchRecoveryRootSummaryV1, String> {
+    require_fresh_output(output)?;
+    if expected_roots == 0 || expected_roots > MAX_COLLECTED_ROOTS {
+        return Err(format!(
+            "learning search recovery expected_roots must be in 1..={MAX_COLLECTED_ROOTS}"
+        ));
+    }
+    if root_slot >= expected_roots {
+        return Err("learning search recovery root_slot is outside expected_roots".to_owned());
+    }
+    if max_roots == 0 || max_roots > MAX_COLLECTED_ROOTS {
+        return Err(format!(
+            "learning search recovery max_roots must be in 1..={MAX_COLLECTED_ROOTS}"
+        ));
+    }
+    let payload = read_bounded_payload(artifact_path, max_bytes)?;
+    let artifact = CombatLearningRootBatchArtifactV1::decode(&payload, expected_roots, max_bytes)?;
+    let source_identity = artifact
+        .roots()
+        .get(root_slot)
+        .ok_or_else(|| "learning search recovery root slot is absent".to_owned())?
+        .identity()
+        .clone();
+    let witness = super::action_successor_reanalysis::load_exact_win_candidate_witness_v2(
+        corpus_path,
+        candidate_ordinal,
+        max_bytes,
+    )?;
+    if witness.source_expected_roots != expected_roots
+        || witness.source_root_slot != root_slot
+        || witness.source_root_id != source_identity.root_id
+        || witness.source_exact_state_hash != source_identity.exact_combat_state_hash
+    {
+        return Err(
+            "learning search recovery corpus does not match its exact source root".to_owned(),
+        );
+    }
+    let checkpoint = artifact
+        .into_checkpoints()?
+        .into_iter()
+        .nth(root_slot)
+        .ok_or_else(|| "learning search recovery checkpoint slot is absent".to_owned())?;
+    let supplied_action_count = witness.actions.len();
+    let (checkpoints, final_hp) =
+        replay_recovery_roots(checkpoint.into_session()?, &witness.actions, max_roots)?;
+    if final_hp != witness.final_hp {
+        return Err(format!(
+            "learning search recovery final HP {final_hp} does not match corpus {}",
+            witness.final_hp
+        ));
+    }
+    let recovered = CombatLearningRootBatchArtifactV1::from_checkpoints(checkpoints)?;
+    let roots = recovered
+        .roots()
+        .iter()
+        .enumerate()
+        .map(|(index, root)| CombatLearningRecoveredRootV1 {
+            actions_to_terminal: index + 1,
+            identity: root.identity().clone(),
+            context: *root.context(),
+        })
+        .collect();
+    let recovered_payload = recovered.encode(max_bytes)?;
+    write_new_payload(output, &recovered_payload)?;
+    Ok(CombatLearningSearchRecoveryRootSummaryV1 {
+        schema_name: SEARCH_RECOVERY_SUMMARY_SCHEMA_NAME,
+        schema_version: SEARCH_RECOVERY_SUMMARY_SCHEMA_VERSION,
+        source_artifact: artifact_path.to_path_buf(),
+        source_expected_roots: expected_roots,
+        source_root_slot: root_slot,
+        source_identity,
+        source_corpus: corpus_path.to_path_buf(),
+        source_candidate_ordinal: candidate_ordinal,
+        output: output.to_path_buf(),
+        payload_bytes: recovered_payload.len(),
+        supplied_action_count,
         max_roots,
         final_hp,
         roots,

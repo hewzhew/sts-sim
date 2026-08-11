@@ -7,11 +7,13 @@
 //! not privilege one action with a pre-existing witness floor. The command
 //! only writes an offline corpus; it cannot alter the production policy.
 
-use std::path::PathBuf;
+use std::fs::File;
+use std::io::Read;
+use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use clap::Args;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sts_combat_planner::CombatPolicyChoice;
 use sts_oracle_learning::eval::run_control::{
@@ -43,6 +45,7 @@ use super::exact_turn_corridor::load_action_segments as load_combat_action_segme
 use super::oracle_lab_runtime_identity;
 
 const CORPUS_SCHEMA: &str = "ActionSuccessorReanalysisCorpusV2";
+const MAX_WITNESS_CORPUS_ACTIONS: usize = 4_096;
 
 #[derive(Debug, Args)]
 pub(crate) struct ActionSuccessorReanalysisArgs {
@@ -103,7 +106,7 @@ pub(crate) struct ActionSuccessorReanalysisArgs {
     pub(crate) max_engine_steps_per_transition: usize,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 struct ActionSuccessorCandidate {
     canonical_index: usize,
     learning_candidate_ordinal: Option<usize>,
@@ -118,6 +121,126 @@ struct ActionSuccessorCandidate {
     exact_successor_hash: String,
     evidence: ExactCombatEvidence,
     continuation_witness_actions: Option<Vec<ClientInput>>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ExactWinWitnessCorpusV2 {
+    schema_name: String,
+    schema_version: u32,
+    source_mode: String,
+    source_root_id: Option<String>,
+    source_expected_roots: Option<usize>,
+    source_root_slot: usize,
+    source_actions: Vec<PathBuf>,
+    through: usize,
+    root_exact_state_hash: String,
+    config: ExactWinWitnessCorpusConfigV2,
+    candidates: Vec<ActionSuccessorCandidate>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ExactWinWitnessCorpusConfigV2 {
+    no_potions: bool,
+}
+
+pub(super) struct ExactWinCandidateWitnessV2 {
+    pub(super) source_root_id: String,
+    pub(super) source_exact_state_hash: String,
+    pub(super) source_expected_roots: usize,
+    pub(super) source_root_slot: usize,
+    pub(super) actions: Vec<ClientInput>,
+    pub(super) final_hp: i32,
+}
+
+pub(super) fn load_exact_win_candidate_witness_v2(
+    path: &Path,
+    learning_candidate_ordinal: usize,
+    max_bytes: usize,
+) -> Result<ExactWinCandidateWitnessV2, String> {
+    if max_bytes == 0 {
+        return Err("exact-win witness corpus byte limit must be positive".to_owned());
+    }
+    let mut payload = Vec::new();
+    File::open(path)
+        .map_err(|error| format!("failed to open {}: {error}", path.display()))?
+        .take(
+            u64::try_from(max_bytes)
+                .unwrap_or(u64::MAX)
+                .saturating_add(1),
+        )
+        .read_to_end(&mut payload)
+        .map_err(|error| format!("failed to read {}: {error}", path.display()))?;
+    if payload.is_empty() || payload.len() > max_bytes {
+        return Err(format!(
+            "exact-win witness corpus bytes must be in 1..={max_bytes}"
+        ));
+    }
+    let corpus = serde_json::from_slice::<ExactWinWitnessCorpusV2>(&payload)
+        .map_err(|error| format!("failed to decode {}: {error}", path.display()))?;
+    if corpus.schema_name != CORPUS_SCHEMA || corpus.schema_version != 2 {
+        return Err("exact-win witness corpus schema is unsupported".to_owned());
+    }
+    if corpus.source_mode != "opaque_combat_root_artifact"
+        || !corpus.source_actions.is_empty()
+        || corpus.through != 0
+    {
+        return Err(
+            "exact-win witness corpus is not rooted directly in one opaque artifact".to_owned(),
+        );
+    }
+    if !corpus.config.no_potions {
+        return Err("exact-win witness corpus must use the no-potion search lane".to_owned());
+    }
+    let source_root_id = corpus
+        .source_root_id
+        .filter(|identity| !identity.is_empty())
+        .ok_or_else(|| "exact-win witness corpus is missing its source root identity".to_owned())?;
+    let source_expected_roots = corpus
+        .source_expected_roots
+        .filter(|count| *count > 0)
+        .ok_or_else(|| "exact-win witness corpus is missing its source root count".to_owned())?;
+    if corpus.source_root_slot >= source_expected_roots {
+        return Err("exact-win witness corpus root slot is outside its source width".to_owned());
+    }
+    let mut candidates = corpus.candidates.into_iter().filter(|candidate| {
+        candidate.learning_candidate_ordinal == Some(learning_candidate_ordinal)
+    });
+    let candidate = candidates.next().ok_or_else(|| {
+        "exact-win witness corpus does not contain the requested candidate".to_owned()
+    })?;
+    if candidates.next().is_some() {
+        return Err("exact-win witness corpus repeats the requested learning candidate".to_owned());
+    }
+    let (final_hp, suffix_action_count) = match candidate.evidence {
+        ExactCombatEvidence::ExactWin {
+            final_hp,
+            suffix_action_count,
+            ..
+        } => (final_hp, suffix_action_count),
+        _ => return Err("requested successor candidate is not an exact win".to_owned()),
+    };
+    let continuation = candidate
+        .continuation_witness_actions
+        .ok_or_else(|| "exact-win successor candidate is missing its replay witness".to_owned())?;
+    if continuation.len() != suffix_action_count {
+        return Err("exact-win successor witness length does not match its evidence".to_owned());
+    }
+    let actions = std::iter::once(candidate.input)
+        .chain(continuation)
+        .collect::<Vec<_>>();
+    if actions.is_empty() || actions.len() > MAX_WITNESS_CORPUS_ACTIONS {
+        return Err(format!(
+            "exact-win successor action count must be in 1..={MAX_WITNESS_CORPUS_ACTIONS}"
+        ));
+    }
+    Ok(ExactWinCandidateWitnessV2 {
+        source_root_id,
+        source_exact_state_hash: corpus.root_exact_state_hash,
+        source_expected_roots,
+        source_root_slot: corpus.source_root_slot,
+        actions,
+        final_hp,
+    })
 }
 
 pub(crate) fn build(args: ActionSuccessorReanalysisArgs) -> Result<Value, String> {
@@ -139,7 +262,7 @@ pub(crate) fn build(args: ActionSuccessorReanalysisArgs) -> Result<Value, String
         return Err("--no-potions is incompatible with the legacy V2 teacher".to_string());
     }
 
-    let (source_seed, case_position, root_source_mode) = load_root_position(&args)?;
+    let (source_seed, case_position, root_source_mode, source_root_id) = load_root_position(&args)?;
     let witness_actions = load_combat_action_segments(&args.actions)?;
     if args.artifact.is_some() && !witness_actions.is_empty() {
         return Err("opaque artifact roots do not accept external witness actions".to_string());
@@ -398,6 +521,7 @@ pub(crate) fn build(args: ActionSuccessorReanalysisArgs) -> Result<Value, String
         "runtime": oracle_lab_runtime_identity(),
         "source_mode": source_mode,
         "source_seed": source_seed,
+        "source_root_id": source_root_id,
         "source_case": args.case,
         "source_artifact": args.artifact,
         "source_expected_roots": args.expected_roots,
@@ -465,13 +589,18 @@ pub(crate) fn build(args: ActionSuccessorReanalysisArgs) -> Result<Value, String
 
 fn load_root_position(
     args: &ActionSuccessorReanalysisArgs,
-) -> Result<(u64, CombatPosition, &'static str), String> {
+) -> Result<(u64, CombatPosition, &'static str, Option<String>), String> {
     if let Some(path) = args.case.as_deref() {
         if args.expected_roots.is_some() || args.root_slot != 0 {
             return Err("--expected-roots and nonzero --root-slot require --artifact".to_string());
         }
         let case = load_combat_case(path)?;
-        return Ok((case.core.source.seed, case.core.position, "exact_case_root"));
+        return Ok((
+            case.core.source.seed,
+            case.core.position,
+            "exact_case_root",
+            None,
+        ));
     }
     let path = args
         .artifact
@@ -492,6 +621,13 @@ fn load_root_position(
         expected_roots,
         args.max_artifact_bytes,
     )?;
+    let source_root_id = artifact
+        .roots()
+        .get(args.root_slot)
+        .ok_or_else(|| "opaque artifact root slot is out of range".to_string())?
+        .identity()
+        .root_id
+        .clone();
     let checkpoint = artifact
         .into_checkpoints()?
         .into_iter()
@@ -500,7 +636,12 @@ fn load_root_position(
     let session = checkpoint.into_session()?;
     let source_seed = session.run_state.seed;
     let position = session.current_active_combat_position()?;
-    Ok((source_seed, position, "opaque_combat_root_artifact"))
+    Ok((
+        source_seed,
+        position,
+        "opaque_combat_root_artifact",
+        Some(source_root_id),
+    ))
 }
 
 #[allow(clippy::too_many_arguments)]

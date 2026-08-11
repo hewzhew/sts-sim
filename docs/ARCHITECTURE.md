@@ -118,8 +118,13 @@ experiment, but an entrance-only update is not a combat-policy evaluation: if
 search supplies every continuation after the first action, the model has not
 played the combat. `combat_search_trajectory_census` therefore converts a
 replay-verified search win into bounded terminal-nearest opaque decision roots
-and independently searches every derived root. The witness creates exact
-states only; its actions never become labels. Distillation still uses a strict
+and independently searches every derived root. It passes the unchanged source
+artifact and the Rust-owned exact-win successor corpus to `learning-root
+recover-search`; Rust binds root count, slot, root id, exact state hash,
+no-potion lane, candidate ordinal, witness length, and final HP before emitting
+any suffix root. No `CombatCase` or caller-written action file participates.
+The witness creates exact states only; its actions never become labels.
+Distillation still uses a strict
 search proposal where present and the frozen baseline otherwise, then evaluates
 the updated scorer by letting it choose every action in complete held-out
 combats with no search suffix. The command remains non-publishing by default.

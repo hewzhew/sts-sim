@@ -126,10 +126,8 @@ def run_combat_search_trajectory_census(
             raise CombatSearchTrajectoryCensusError(
                 "source root search must contain exactly one root"
             )
-        corpus = _read_json_object(
-            Path(str(search_roots[0].get("corpus"))).resolve(),
-            "successor corpus",
-        )
+        corpus_path = Path(str(search_roots[0].get("corpus"))).resolve()
+        corpus = _read_json_object(corpus_path, "successor corpus")
         if (
             corpus.get("schema_name") != "ActionSuccessorReanalysisCorpusV2"
             or corpus.get("schema_version") != 2
@@ -149,49 +147,29 @@ def run_combat_search_trajectory_census(
                 "proposal ordinal is absent from its successor corpus"
             )
         evidence = _mapping(candidate.get("evidence"), "proposal evidence")
-        continuation = candidate.get("continuation_witness_actions")
-        if evidence.get("kind") != "exact_win" or not isinstance(continuation, list):
+        if evidence.get("kind") != "exact_win":
             raise CombatSearchTrajectoryCensusError(
                 "strict proposal lacks a complete exact-win witness"
-            )
-        actions = [candidate.get("input"), *continuation]
-        if any(action is None for action in actions):
-            raise CombatSearchTrajectoryCensusError(
-                "proposal witness contains a missing typed action"
             )
 
         trajectory_dir = output_dir / f"trajectory-{trajectory_index:03}"
         trajectory_dir.mkdir()
-        actions_path = trajectory_dir / "win.actions.json"
-        _write_json(actions_path, actions)
-        case_path = trajectory_dir / "root.case.json"
-        case_receipt = _run_oracle_json(
+        recovery_path = trajectory_dir / "recovery-roots.bin"
+        recovery_receipt = _run_oracle_json(
             oracle_binary,
             (
                 "learning-root",
-                "case",
+                "recover-search",
                 "--artifact",
                 str(artifact),
                 "--expected-roots",
                 str(expected_roots),
                 "--root-slot",
                 str(root_slot),
-                "--output",
-                str(case_path),
-                "--max-bytes",
-                str(max_artifact_bytes),
-            ),
-        )
-        recovery_path = trajectory_dir / "recovery-roots.bin"
-        recovery_receipt = _run_oracle_json(
-            oracle_binary,
-            (
-                "learning-root",
-                "recover",
-                "--case",
-                str(case_path),
-                "--actions",
-                str(actions_path),
+                "--corpus",
+                str(corpus_path),
+                "--candidate-ordinal",
+                str(proposal_ordinal),
                 "--output",
                 str(recovery_path),
                 "--max-roots",
@@ -224,23 +202,24 @@ def run_combat_search_trajectory_census(
                 "source_root": root.get("root"),
                 "source_proposal_ordinal": proposal_ordinal,
                 "source_win_final_hp": evidence.get("final_hp"),
-                "source_action_count": len(actions),
-                "case": str(case_path),
-                "actions": str(actions_path),
+                "source_action_count": operator.index(
+                    recovery_receipt.get("supplied_action_count")
+                ),
+                "source_corpus": str(corpus_path),
+                "source_identity": recovery_receipt.get("source_identity"),
                 "recovery_artifact": str(recovery_path),
                 "recovery_root_count": recovered_root_count,
                 "recovery_roots": recovered_roots,
                 "search_manifest": str(suffix_search_dir / "manifest.json"),
                 "proposal_count": suffix_search["proposal_count"],
                 "no_proposal_count": suffix_search["no_proposal_count"],
-                "case_identity": case_receipt.get("identity"),
             }
         )
 
     result = {
-        "schema": "sts-learning-combat-search-trajectory-census-v1",
+        "schema": "sts-learning-combat-search-trajectory-census-v2",
         "teacher_valid": False,
-        "claim": "verified_winning_trajectory_suffix_search_census_only",
+        "claim": "verified_artifact_native_winning_trajectory_suffix_search_census_only",
         "source": {
             "artifact": str(artifact),
             "artifact_sha256": source_digest,
@@ -254,6 +233,7 @@ def run_combat_search_trajectory_census(
             "candidate_jobs": candidate_jobs,
             "policy_seed": policy_seed,
             "potion_lane": "never",
+            "recovery_protocol": "opaque_artifact_exact_win_corpus_v1",
         },
         "trajectory_count": len(trajectories),
         "recovery_root_count": sum(

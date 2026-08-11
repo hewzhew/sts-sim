@@ -992,9 +992,13 @@ python -m sts_learning.combat_search_trajectory_census `
   --solve-work-per-candidate 5000 --candidate-jobs 4
 ```
 
-The exact action witness is used only to reconstruct suffix states. It never
-crosses into the training target; every suffix root receives a fresh equal-work
-search comparison. `combat_search_distillation_spike` may consume several such
+The Rust search corpus owns the exact action witness used only to reconstruct
+suffix states. `learning-root recover-search` reads it beside the unchanged
+opaque source artifact and verifies their root identity, candidate, witness,
+and terminal HP before writing the bounded suffix batch. The Python caller
+writes neither a `CombatCase` nor an action file. The witness never crosses
+into the training target; every suffix root receives a fresh equal-work search
+comparison. `combat_search_distillation_spike` may consume several such
 recovery artifact/search pairs plus disjoint natural held-out pairs. It trains
 the strict proposal where present and the frozen baseline otherwise. By default
 it writes no checkpoint. Pass `--candidate-output <fresh-dir>` only when the

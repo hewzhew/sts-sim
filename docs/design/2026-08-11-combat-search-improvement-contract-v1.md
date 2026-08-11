@@ -179,14 +179,16 @@ agreement but did not produce a stable independent first-action update. Those
 failed development results are not teacher evidence.
 
 `combat_search_trajectory_census` closes the more important execution gap. It
-takes a strict natural-root exact-win proposal, exports the opaque root as an
-exact production `CombatCase`, replays the complete winning witness, retains a
-bounded terminal-nearest chain of unique opaque decision roots, and then runs a
-fresh equal-work search on every retained root. The witness actions create
-states only; every label still comes from an independent search comparison at
-that state. Five A0/A20 source wins produced 39 decision roots and 15 strict
-proposals, raising useful target density from `5/32` entrance roots to `15/39`
-trajectory roots.
+takes a strict natural-root exact-win proposal and gives its unchanged opaque
+source artifact plus Rust-owned successor corpus to `learning-root
+recover-search`. Rust binds the exact source identity and terminal witness,
+retains a bounded terminal-nearest chain of unique opaque decision roots, and
+the caller then runs a fresh equal-work search on every retained root. No
+production `CombatCase` or caller-written action file is created. The witness
+actions create states only; every label still comes from an independent search
+comparison at that state. Five A0/A20 source wins produced 39 decision roots
+and 15 strict proposals, raising useful target density from `5/32` entrance
+roots to `15/39` trajectory roots.
 
 With the original proposal-else-frozen-baseline cross-entropy target, fixed 16
 epochs, and learning rate `3e-4`, an in-memory scorer was evaluated on a final
@@ -279,6 +281,12 @@ units each. All three searches completed with exact wins at respectively
 attack-target example and evidence that same-card/same-enemy candidates require
 ordered target state; it is not yet a target-order training distribution or a
 qualified teacher.
+The artifact-native trajectory path replayed that same exact win into four
+terminal-nearest roots without case or action intermediates. Fresh equal-work
+search found two strict proposals and two baseline-retained roots; one strict
+proposal was the original target-order decision. This verifies the durable
+collection path, but does not turn the repeated decision into an independent
+second target-order example.
 
 ## Typed Root Candidate Identity
 
