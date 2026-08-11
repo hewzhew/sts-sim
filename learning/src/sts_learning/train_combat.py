@@ -152,9 +152,9 @@ class CombatTrainingCommandConfig:
             raise CombatTrainingCommandError(
                 "combat training optimizer must be typed"
             )
-        if root_count < 2:
+        if root_count < 2 and updates > 0:
             raise CombatTrainingCommandError(
-                "multi-root training requires at least two roots"
+                "combat training updates require at least two roots"
             )
         if replicate_count < 2:
             raise CombatTrainingCommandError(

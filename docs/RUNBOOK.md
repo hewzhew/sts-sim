@@ -678,7 +678,9 @@ optimizer or a change to reward semantics.
 `train-combat -Updates 0` publishes the seeded initialization without collecting
 experience or applying an optimizer step. Use it for a paired untrained
 baseline under the same schema, model seed, evaluation roots, and behavior RNG;
-it is not a training result.
+it is not a training result. This initialization-only mode may bind one exact
+root for a narrow action-surface audit. Any nonzero update still requires at
+least two distinct source roots.
 
 `configure` installs the tool requirements declared by the local
 `sts-learning[test]` extra into the selected runtime, then verifies Python,

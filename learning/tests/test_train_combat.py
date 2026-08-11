@@ -27,6 +27,7 @@ from sts_learning.torch_combat_session_config import CombatSessionBridge
 from sts_learning.torch_combat_session_config import CombatWinSessionLimits
 from sts_learning.torch_provenance import AdamTrainingConfig
 from sts_learning.train_combat import (
+    CombatTrainingCommandError,
     CombatTrainingCommandConfig,
     run_combat_training,
 )
@@ -209,7 +210,7 @@ def test_training_command_can_publish_an_untrained_baseline(tmp_path: Path) -> N
         CombatTrainingCommandConfig(
             artifact=artifact,
             output=output,
-            root_count=2,
+            root_count=1,
             replicate_count=2,
             updates=0,
             model_seed=41,
@@ -238,6 +239,28 @@ def test_training_command_can_publish_an_untrained_baseline(tmp_path: Path) -> N
         (701,),
     )
     assert recovered.training_step == 0
+
+
+def test_training_command_requires_multiple_roots_only_for_updates(
+    tmp_path: Path,
+) -> None:
+    artifact = tmp_path / "roots.bin"
+    artifact.write_bytes(b"opaque-combat-roots")
+
+    with pytest.raises(
+        CombatTrainingCommandError,
+        match="training updates require at least two roots",
+    ):
+        CombatTrainingCommandConfig(
+            artifact=artifact,
+            output=tmp_path / "trained",
+            root_count=1,
+            replicate_count=2,
+            updates=1,
+            model_seed=41,
+            behavior_seed_base=92,
+            potion_lane=CombatPotionLane.NEVER,
+        )
 
 
 def test_training_command_warm_starts_from_a_verified_published_behavior(

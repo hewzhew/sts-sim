@@ -377,6 +377,9 @@ facts, canonical card/upgrade counts, and relic identities. This audit is read
 from the opaque root through the bridge; filenames are never trusted as
 curriculum identity.
 The output directory must be absent or empty; optimizer resume is not implied.
+An initialization-only `-Updates 0` publication may use one exact root for a
+narrow action-surface audit. A nonzero update remains multi-root and requires
+at least two distinct source roots.
 Publication makes the frozen scorer reproducible, but it does not make that
 scorer the accepted or best behavior. The current live promotion inside one
 training session only rotates the immutable on-policy collector after a real
