@@ -6,6 +6,9 @@
 
 use serde::Serialize;
 
+use crate::agent::information::action::{
+    PublicCombatIndexedChoiceCandidateV1, PublicCombatIndexedChoiceReasonV1,
+};
 use crate::ai::planner_core::{
     stable_planner_id, CandidateSetCompleteness, PlannerAction, PlannerCardObservation,
     PlannerDecisionContext, PlannerDecisionSite, PlannerMechanicsManifest, PlannerPublicHistory,
@@ -19,9 +22,8 @@ use crate::content::cards::CardId;
 use crate::content::potions::PotionId;
 use crate::content::relics::RelicId;
 use crate::sim::combat_action_surface::{
-    CombatIndexedChoiceCandidateV2, CombatIndexedChoiceInputEncodingV2,
-    CombatIndexedChoiceReasonV2, CombatSelectionInputEncodingV2, CombatSelectionPayloadLanguageV2,
-    CombatSelectionReasonV2,
+    CombatIndexedChoiceInputEncodingV2, CombatSelectionInputEncodingV2,
+    CombatSelectionPayloadLanguageV2, CombatSelectionReasonV2,
 };
 use crate::state::core::PileType;
 use crate::state::events::{EventActionKind, EventId};
@@ -897,8 +899,8 @@ enum PublicCombatAtomicIdentityV1 {
     SubmitIndexedChoice {
         choice_index: usize,
         input_encoding: CombatIndexedChoiceInputEncodingV2,
-        reason: CombatIndexedChoiceReasonV2,
-        candidate: CombatIndexedChoiceCandidateV2,
+        reason: PublicCombatIndexedChoiceReasonV1,
+        candidate: PublicCombatIndexedChoiceCandidateV1,
     },
     Proceed,
     Cancel,

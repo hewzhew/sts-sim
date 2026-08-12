@@ -18,9 +18,10 @@ use serde_json::{json, Value};
 use sts_combat_planner::CombatPolicyChoice;
 use sts_oracle_learning::eval::run_control::{
     CombatLearningPotionPolicyV1, CombatLearningRootBatchArtifactV1, LearningCombatBoundaryV1,
-    LearningCombatPrivateResolutionV1, LearningCombatPublicRunContextGapV1,
-    LearningCombatPublicRunContextV1, LearningModelDecisionV1, LearningObservationCompletenessV1,
+    LearningCombatPublicRunContextGapV1, LearningCombatPublicRunContextV1, LearningModelDecisionV1,
+    LearningObservationCompletenessV1,
 };
+use sts_oracle_runtime::agent::information::action::project_public_combat_actions_v1;
 use sts_oracle_runtime::agent::information::state::public_combat_state_v1;
 use sts_oracle_runtime::ai::combat_search_v2::oracle_search_witness_proposal_v1;
 use sts_oracle_runtime::ai::combat_state_key::combat_exact_state_hash_v2;
@@ -358,30 +359,17 @@ pub(crate) fn build(args: ActionSuccessorReanalysisArgs) -> Result<Value, String
         return Err("action-successor audit root has no materialized legal actions".to_string());
     }
 
+    let public_actions =
+        project_public_combat_actions_v1(&root_position.engine, &root_position.combat)
+            .map_err(|error| format!("cannot project public combat actions: {error}"))?;
     let learning_boundary = LearningCombatBoundaryV1 {
         observation: public_combat_state_v1(&root_position.combat),
         public_run_context: LearningCombatPublicRunContextV1::Unavailable {
             reason: LearningCombatPublicRunContextGapV1::DetachedExactCombatPosition,
         },
         observation_completeness: LearningObservationCompletenessV1::Complete,
-        private_resolution: LearningCombatPrivateResolutionV1 {
-            monster_entity_ids_by_order: root_position
-                .combat
-                .entities
-                .monsters
-                .iter()
-                .map(|monster| monster.id)
-                .collect(),
-            potion_uuids_by_slot: root_position
-                .combat
-                .entities
-                .potions
-                .iter()
-                .map(|potion| potion.as_ref().map(|potion| potion.uuid))
-                .collect(),
-        },
-        atomic_action_representatives,
-        legal_actions,
+        public_actions: public_actions.public,
+        private_resolution: public_actions.private_resolution,
     };
     let potion_policy = if args.no_potions {
         CombatLearningPotionPolicyV1::never()
@@ -396,17 +384,12 @@ pub(crate) fn build(args: ActionSuccessorReanalysisArgs) -> Result<Value, String
     let learning_ordinals = inputs
         .iter()
         .map(|input| {
-            let atomic_ordinal = learning_boundary
-                .legal_actions
+            let atomic_ordinal = legal_actions
                 .atomic_actions
                 .iter()
                 .position(|candidate| candidate == input)?;
-            let representative_ordinal =
-                learning_boundary.atomic_action_representatives[atomic_ordinal];
-            let representative_input = learning_boundary
-                .legal_actions
-                .atomic_actions
-                .get(representative_ordinal)?;
+            let representative_ordinal = atomic_action_representatives[atomic_ordinal];
+            let representative_input = legal_actions.atomic_actions.get(representative_ordinal)?;
             learning_decision.combat_atomic_ordinal_for_input(representative_input)
         })
         .collect::<Vec<_>>();
@@ -556,10 +539,9 @@ pub(crate) fn build(args: ActionSuccessorReanalysisArgs) -> Result<Value, String
             "materialized_candidates": candidates.len(),
             "atomic_actions": legal_surface.atomic_actions.len(),
             "canonical_atomic_representatives": learning_boundary
-                .atomic_action_representatives
+                .private_resolution
+                .atomic_inputs
                 .iter()
-                .enumerate()
-                .filter(|(ordinal, representative)| *ordinal == **representative)
                 .count(),
             "equivalence_compression": "model_canonical_representatives_v1",
             "structured_family_count": legal_surface.selection_families.len(),

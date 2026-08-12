@@ -3,6 +3,7 @@ use std::collections::BTreeSet;
 use serde::{Deserialize, Serialize};
 
 use crate::agent::belief::sample_independent_combat_futures_v1;
+use crate::agent::information::action::project_public_combat_actions_v1;
 use crate::agent::information::combat::ObservationEvidenceKindV1;
 use crate::agent::information::state::{
     public_combat_state_v1, CombatLearningEnemyIdentityV1, PublicCombatStateV1,
@@ -11,8 +12,6 @@ use crate::ai::combat_state_key::combat_exact_state_hash_v2;
 use crate::content::potions::PotionId;
 use crate::runtime::combat::CombatState;
 use crate::runtime::rng::RngPool;
-use crate::sim::combat_action_equivalence::canonical_combat_action_representatives_v1;
-use crate::sim::combat_action_surface::combat_legal_action_surface_v2;
 use crate::sim::combat_start::build_natural_combat_start;
 use crate::state::core::{ActiveCombat, ClientInput, CombatContext, EngineState};
 use crate::state::run::RunState;
@@ -583,15 +582,8 @@ fn combat_entry_candidate_matches_public_boundary_v1(
     if public_combat_state_v1(combat_state) != source.observation {
         return false;
     }
-    let legal_actions = combat_legal_action_surface_v2(engine_state, combat_state);
-    if legal_actions != source.legal_actions {
-        return false;
-    }
-    canonical_combat_action_representatives_v1(
-        engine_state,
-        combat_state,
-        &legal_actions.atomic_actions,
-    ) == source.atomic_action_representatives
+    project_public_combat_actions_v1(engine_state, combat_state)
+        .is_ok_and(|actions| actions.public == source.public_actions)
 }
 
 /// Cheap necessary conditions before projecting the complete learning boundary.

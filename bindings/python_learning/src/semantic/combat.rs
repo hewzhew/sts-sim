@@ -7,6 +7,9 @@ use sts_oracle_eval::agent::information::state::{
 use sts_oracle_eval::agent::information::combat::{
     HiddenInformationReasonV1, ObservationEvidenceKindV1,
 };
+use sts_oracle_eval::agent::information::action::{
+    PublicCombatIndexedChoiceCandidateV1, PublicCombatIndexedChoiceReasonV1,
+};
 use sts_oracle_eval::content::cards::CardType;
 use sts_oracle_learning::eval::run_control::{
     LearningCombatAtomicActionV1, LearningCombatIndexedChoiceV1, LearningCombatModelObservationV1,
@@ -18,9 +21,8 @@ use sts_oracle_learning::eval::run_control::{
 use sts_oracle_eval::runtime::action::CardDestination;
 use sts_oracle_eval::runtime::combat::{CombatPhase, Intent, OrbId, StanceId};
 use sts_oracle_eval::sim::combat_action_surface::{
-    CombatIndexedChoiceCandidateV2, CombatIndexedChoiceInputEncodingV2,
-    CombatIndexedChoiceReasonV2, CombatSelectionDistinctByV2, CombatSelectionInputEncodingV2,
-    CombatSelectionPayloadLanguageV2, CombatSelectionReasonV2,
+    CombatIndexedChoiceInputEncodingV2, CombatSelectionDistinctByV2,
+    CombatSelectionInputEncodingV2, CombatSelectionPayloadLanguageV2, CombatSelectionReasonV2,
 };
 use sts_oracle_eval::state::core::{GridSelectReason, HandSelectReason, PileType};
 
@@ -854,7 +856,7 @@ impl SemanticBatchBuilder {
             indexed.input_encoding as i64,
         );
         match indexed.reason {
-            CombatIndexedChoiceReasonV2::Discovery {
+            PublicCombatIndexedChoiceReasonV1::Discovery {
                 colorless,
                 card_type,
                 amount,
@@ -874,7 +876,7 @@ impl SemanticBatchBuilder {
                 }
                 self.scalar(token, ScalarField::IndexedChoiceAmount, *amount);
             }
-            CombatIndexedChoiceReasonV2::CardReward { destination } => {
+            PublicCombatIndexedChoiceReasonV1::CardReward { destination } => {
                 self.indexed_reason(token, IndexedChoiceReasonKind::CardReward);
                 self.category(
                     token,
@@ -882,7 +884,7 @@ impl SemanticBatchBuilder {
                     *destination as i64,
                 );
             }
-            CombatIndexedChoiceReasonV2::ForeignInfluence { upgraded } => {
+            PublicCombatIndexedChoiceReasonV1::ForeignInfluence { upgraded } => {
                 self.indexed_reason(token, IndexedChoiceReasonKind::ForeignInfluence);
                 self.category(
                     token,
@@ -890,15 +892,15 @@ impl SemanticBatchBuilder {
                     bool_value(*upgraded),
                 );
             }
-            CombatIndexedChoiceReasonV2::ChooseOne => {
+            PublicCombatIndexedChoiceReasonV1::ChooseOne => {
                 self.indexed_reason(token, IndexedChoiceReasonKind::ChooseOne);
             }
-            CombatIndexedChoiceReasonV2::Stance => {
+            PublicCombatIndexedChoiceReasonV1::Stance => {
                 self.indexed_reason(token, IndexedChoiceReasonKind::Stance);
             }
         }
         match indexed.candidate {
-            CombatIndexedChoiceCandidateV2::Card { card_id, upgrades } => {
+            PublicCombatIndexedChoiceCandidateV1::Card { card_id, upgrades } => {
                 self.category(
                     token,
                     CategoricalField::IndexedChoiceCandidateKind,
@@ -906,7 +908,7 @@ impl SemanticBatchBuilder {
                 );
                 self.action_card(token, *card_id, *upgrades);
             }
-            CombatIndexedChoiceCandidateV2::Stance { stance } => {
+            PublicCombatIndexedChoiceCandidateV1::Stance { stance } => {
                 self.category(
                     token,
                     CategoricalField::IndexedChoiceCandidateKind,

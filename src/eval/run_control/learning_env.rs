@@ -1,14 +1,16 @@
 use serde::{Deserialize, Serialize};
 
+use crate::agent::information::action::{
+    project_public_combat_actions_v1, CombatActionResolutionTableV1, PublicCombatActionSurfaceV1,
+};
 use crate::agent::information::state::{public_combat_state_v1, PublicCombatStateV1};
 use crate::ai::planner_core::{
     LegalCandidateSet, PlannerDecisionContext, PlannerObservation, PlannerPublicMap, PlannerRunGoal,
 };
 use crate::content::monsters::factory::EncounterId;
 use crate::content::potions::PotionId;
-use crate::sim::combat_action_equivalence::canonical_combat_action_representatives_v1;
 use crate::sim::combat_action_surface::{
-    combat_legal_action_surface_v2, pending_choice_input_is_legal, CombatLegalActionSurfaceV2,
+    combat_legal_action_surface_v2, pending_choice_input_is_legal,
 };
 use crate::state::core::{ClientInput, EngineState, RunResult};
 use crate::state::selection::SelectionResolution;
@@ -37,23 +39,9 @@ pub struct LearningCombatBoundaryV1 {
     pub observation: PublicCombatStateV1,
     pub public_run_context: LearningCombatPublicRunContextV1,
     pub observation_completeness: LearningObservationCompletenessV1,
-    /// Exact handles used only to translate public candidate ordinals back to
-    /// simulator inputs. Model observations must never encode these values.
-    pub private_resolution: LearningCombatPrivateResolutionV1,
-    /// One canonical legal-action ordinal for every complete atomic action.
-    ///
-    /// This projection never removes simulator legality.  A model-facing
-    /// adapter keeps only entries whose representative equals their own
-    /// ordinal, while execution still resolves the retained original input.
-    pub atomic_action_representatives: Vec<usize>,
-    pub legal_actions: CombatLegalActionSurfaceV2,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct LearningCombatPrivateResolutionV1 {
-    pub monster_entity_ids_by_order: Vec<crate::EntityId>,
-    pub potion_uuids_by_slot: Vec<Option<u32>>,
+    pub public_actions: PublicCombatActionSurfaceV1,
+    /// Exact handles used only after the policy returns public ordinals.
+    pub private_resolution: CombatActionResolutionTableV1,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -512,34 +500,14 @@ pub(super) fn learning_combat_boundary_v1(
     session: &RunControlSession,
 ) -> Result<LearningCombatBoundaryV1, String> {
     let position = session.current_combat_position_for_actions()?;
-    let legal_actions = combat_legal_action_surface_v2(&position.engine, &position.combat);
-    let atomic_action_representatives = canonical_combat_action_representatives_v1(
-        &position.engine,
-        &position.combat,
-        &legal_actions.atomic_actions,
-    );
+    let actions = project_public_combat_actions_v1(&position.engine, &position.combat)
+        .map_err(|error| format!("cannot project public combat actions: {error}"))?;
     Ok(LearningCombatBoundaryV1 {
         observation: public_combat_state_v1(&position.combat),
         public_run_context: learning_combat_public_run_context_v1(session),
         observation_completeness: LearningObservationCompletenessV1::Complete,
-        private_resolution: LearningCombatPrivateResolutionV1 {
-            monster_entity_ids_by_order: position
-                .combat
-                .entities
-                .monsters
-                .iter()
-                .map(|monster| monster.id)
-                .collect(),
-            potion_uuids_by_slot: position
-                .combat
-                .entities
-                .potions
-                .iter()
-                .map(|potion| potion.as_ref().map(|potion| potion.uuid))
-                .collect(),
-        },
-        atomic_action_representatives,
-        legal_actions,
+        public_actions: actions.public,
+        private_resolution: actions.private_resolution,
     })
 }
 
@@ -604,9 +572,6 @@ mod tests {
     use crate::content::monsters::EnemyId;
     use crate::content::potions::{Potion, PotionId};
     use crate::runtime::combat::CombatCard;
-    use crate::sim::combat_action_surface::{
-        CombatIndexedChoiceCandidateV2, CombatIndexedChoiceReasonV2,
-    };
     use crate::state::core::{ActiveCombat, CombatContext, RoomCombatContext, RunResult};
     use crate::state::map::node::RoomType;
     use crate::state::{DiscoveryChoiceState, PendingChoice};
@@ -731,20 +696,20 @@ mod tests {
             }
         ));
         assert!(boundary
-            .legal_actions
-            .atomic_actions
+            .private_resolution
+            .atomic_inputs
             .contains(&ClientInput::EndTurn));
         assert!(boundary
-            .legal_actions
-            .atomic_actions
+            .private_resolution
+            .atomic_inputs
             .contains(&ClientInput::UsePotion {
                 potion_index: 0,
                 target: None,
             }));
         assert_eq!(boundary.private_resolution.monster_entity_ids_by_order, [7]);
         assert!(boundary
-            .legal_actions
-            .atomic_actions
+            .private_resolution
+            .atomic_inputs
             .contains(&ClientInput::PlayCard {
                 card_index: 0,
                 target: Some(7),
@@ -850,13 +815,13 @@ mod tests {
             panic!("pending combat choice should remain a combat learning boundary");
         };
         let indexed = boundary
-            .legal_actions
+            .public_actions
             .indexed_choice
             .expect("indexed choice semantics");
 
         assert_eq!(
             indexed.reason,
-            CombatIndexedChoiceReasonV2::Discovery {
+            crate::agent::information::action::PublicCombatIndexedChoiceReasonV1::Discovery {
                 colorless: false,
                 card_type: None,
                 amount: 1,
@@ -865,11 +830,11 @@ mod tests {
         assert_eq!(
             indexed.candidates,
             vec![
-                CombatIndexedChoiceCandidateV2::Card {
+                crate::agent::information::action::PublicCombatIndexedChoiceCandidateV1::Card {
                     card_id: CardId::Bash,
                     upgrades: 0,
                 },
-                CombatIndexedChoiceCandidateV2::Card {
+                crate::agent::information::action::PublicCombatIndexedChoiceCandidateV1::Card {
                     card_id: CardId::FiendFire,
                     upgrades: 0,
                 },

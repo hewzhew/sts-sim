@@ -122,8 +122,13 @@ The following is repository fact as of this design:
   fingerprints and public-boundary checks.
 - `src/agent/information/state.rs` owns `PublicCombatStateV1`, the richer
   model-facing state. Potion UUIDs and monster entity IDs were removed.
-- `LearningCombatPrivateResolutionV1` holds those exact handles beside, not
+- `CombatActionResolutionTableV1` holds exact execution handles beside, not
   inside, the public state.
+- `PublicCombatActionSurfaceV1` owns canonical atomic, indexed-choice, and
+  symbolic Hand/Grid/Scry candidate semantics. Exact `ClientInput`, monster
+  entity ids, potion UUIDs, and selection-domain card UUIDs exist only in the
+  parallel resolution table. The learning boundary and model caller consume
+  this split directly.
 - `src/agent/belief/combat.rs` owns the `IndependentStreams` mechanics sampler.
   The old learning-env helper delegates to it and still performs its richer
   complete-boundary check.
@@ -132,14 +137,11 @@ The following is repository fact as of this design:
 
 The remaining known gaps are explicit:
 
-1. `CombatLegalActionSurfaceV2` still carries private card UUIDs inside
-   symbolic selection domains. The next information migration must produce a
-   canonical public action surface plus a complete private resolution table.
-2. `IndependentStreams` is not conditioned on a complete public run history.
-3. There is no canonical belief environment or information-set search owner.
-4. Current replay/trainer formats do not carry visit policies and recurrent
+1. `IndependentStreams` is not conditioned on a complete public run history.
+2. There is no canonical belief environment or information-set search owner.
+3. Current replay/trainer formats do not carry visit policies and recurrent
    public histories as the authoritative target.
-5. No current learned behavior is promoted for complete potion-aware A0 or A20
+4. No current learned behavior is promoted for complete potion-aware A0 or A20
    runs.
 
 These are implementation gaps, not reasons to revive the retired local
@@ -147,19 +149,16 @@ teacher contract.
 
 ## Delivery Order
 
-1. Finish public candidate identity and private resolution separation for all
-   atomic and symbolic combat actions. Migrate the model caller, then delete
-   the mixed surface from the learned-agent boundary.
-2. Introduce a canonical belief environment and a history-conditioned sampler
+1. Introduce a canonical belief environment and a history-conditioned sampler
    interface. Keep unsupported hidden-intent/history cases typed and visible.
-3. Implement the smallest potion-aware information-set search vertical slice.
+2. Implement the smallest potion-aware information-set search vertical slice.
    Its output is visits and run-win value samples, never a hard witness label.
-4. Replace combat-proposal replay with occurrence-weighted recurrent replay and
+3. Replace combat-proposal replay with occurrence-weighted recurrent replay and
    reanalysis. Bootstrap only enough non-random behavior to make search useful.
-5. Train and evaluate on natural complete A0 runs, including potion acquisition,
+4. Train and evaluate on natural complete A0 runs, including potion acquisition,
    use, discard, combat, and non-combat decisions. Promote only by paired
    complete-run outcomes.
-6. Expand the same system toward A20 by curriculum distribution and capacity,
+5. Expand the same system toward A20 by curriculum distribution and capacity,
    not by adding encounter-specific teachers.
 
 Each step must have a real downstream consumer in the next step. Small tests

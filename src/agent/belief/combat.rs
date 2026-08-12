@@ -2,11 +2,10 @@ use std::collections::BTreeSet;
 use std::error::Error;
 use std::fmt::{Display, Formatter};
 
+use crate::agent::information::action::project_public_combat_actions_v1;
 use crate::agent::information::combat::{combat_public_observation_v1, ObservationEvidenceKindV1};
 use crate::runtime::combat::CombatState;
 use crate::runtime::rng::StsRng;
-use crate::sim::combat_action_equivalence::canonical_combat_action_representatives_v1;
-use crate::sim::combat_action_surface::combat_legal_action_surface_v2;
 use crate::state::core::EngineState;
 
 /// Provenance for one sampled private combat future.
@@ -48,6 +47,7 @@ pub enum CombatBeliefSamplingErrorV1 {
     HiddenDrawMultiset,
     DrawPileTooLarge,
     PublicBoundaryChanged { particle_seed: u64 },
+    ActionProjection(String),
 }
 
 impl Display for CombatBeliefSamplingErrorV1 {
@@ -73,6 +73,9 @@ impl Display for CombatBeliefSamplingErrorV1 {
                 formatter,
                 "combat belief particle {particle_seed} changed public observation or legal actions"
             ),
+            Self::ActionProjection(error) => {
+                write!(formatter, "cannot project public combat actions: {error}")
+            }
         }
     }
 }
@@ -111,9 +114,9 @@ pub fn sample_independent_combat_futures_v1(
     {
         return Err(CombatBeliefSamplingErrorV1::HiddenCurrentIntent);
     }
-    let source_surface = combat_legal_action_surface_v2(engine, source);
-    let source_representatives =
-        canonical_combat_action_representatives_v1(engine, source, &source_surface.atomic_actions);
+    let source_actions = project_public_combat_actions_v1(engine, source)
+        .map_err(|error| CombatBeliefSamplingErrorV1::ActionProjection(error.to_string()))?
+        .public;
     let draw_evidence = source_observation.piles.draw.evidence;
 
     particle_seeds
@@ -134,16 +137,10 @@ pub fn sample_independent_combat_futures_v1(
             reseed_hidden_combat_futures_v1(&mut private_combat, particle_seed);
 
             let sampled_observation = combat_public_observation_v1(&private_combat);
-            let sampled_surface = combat_legal_action_surface_v2(engine, &private_combat);
-            let sampled_representatives = canonical_combat_action_representatives_v1(
-                engine,
-                &private_combat,
-                &sampled_surface.atomic_actions,
-            );
-            if sampled_observation != source_observation
-                || sampled_surface != source_surface
-                || sampled_representatives != source_representatives
-            {
+            let sampled_actions = project_public_combat_actions_v1(engine, &private_combat)
+                .map_err(|error| CombatBeliefSamplingErrorV1::ActionProjection(error.to_string()))?
+                .public;
+            if sampled_observation != source_observation || sampled_actions != source_actions {
                 return Err(CombatBeliefSamplingErrorV1::PublicBoundaryChanged { particle_seed });
             }
 
@@ -201,7 +198,6 @@ mod tests {
     use crate::content::potions::{Potion, PotionId};
     use crate::content::relics::{RelicId, RelicState};
     use crate::runtime::combat::{CombatCard, Intent};
-    use crate::state::core::ClientInput;
 
     #[test]
     fn particles_preserve_public_boundary_and_potion_actions() {
@@ -217,7 +213,9 @@ mod tests {
         let _ = combat.rng.potion_rng.random(99);
         let engine = EngineState::CombatPlayerTurn;
         let source_observation = combat_public_observation_v1(&combat);
-        let source_surface = combat_legal_action_surface_v2(&engine, &combat);
+        let source_surface = project_public_combat_actions_v1(&engine, &combat)
+            .unwrap()
+            .public;
 
         let particles = sample_independent_combat_futures_v1(&engine, &combat, &[101, 202])
             .expect("sample public-equivalent private futures");
@@ -228,7 +226,7 @@ mod tests {
         );
         assert!(source_surface.atomic_actions.iter().any(|action| matches!(
             action,
-            ClientInput::UsePotion {
+            crate::agent::information::action::PublicCombatAtomicActionV1::UsePotion {
                 potion_index: 0,
                 ..
             }
@@ -239,7 +237,9 @@ mod tests {
                 source_observation
             );
             assert_eq!(
-                combat_legal_action_surface_v2(&engine, &particle.private_combat),
+                project_public_combat_actions_v1(&engine, &particle.private_combat)
+                    .unwrap()
+                    .public,
                 source_surface
             );
             assert_eq!(particle.private_combat.rng.ai_rng.counter, 1);
