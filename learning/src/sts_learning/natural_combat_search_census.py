@@ -9,8 +9,12 @@ import operator
 import time
 from collections import Counter
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from pathlib import Path
 
+from .combat_search_distillation_candidate import (
+    recover_combat_search_distillation_candidate,
+)
 from .combat_root_artifacts import load_combat_root_source, read_combat_root_artifact
 from .exact_successor_search import (
     paired_search_comparison,
@@ -18,19 +22,85 @@ from .exact_successor_search import (
     select_complete_search_proposal,
 )
 from .published_combat_behavior import recover_published_combat_behavior
+from .policy import BehaviorManifestId
 from .torch_behavior import FrozenGreedyTorchPolicy
 from .torch_combat_session_config import CombatSessionBridge, CombatWinSessionLimits
+from .torch_policy import GreedyTorchPolicy
 
 
 class NaturalCombatSearchCensusError(RuntimeError):
     """A natural-root search surface or result was malformed."""
 
 
+@dataclass(frozen=True)
+class NaturalCombatSearchAnchor:
+    """One exact frozen scorer identity used for residual search."""
+
+    policy: FrozenGreedyTorchPolicy | GreedyTorchPolicy
+    manifest_id: BehaviorManifestId
+    receipt: Mapping[str, object]
+
+
+def recover_natural_combat_search_anchor(
+    *,
+    behavior: Path | None,
+    candidate: Path | None,
+    bridge: CombatSessionBridge,
+    limits: CombatWinSessionLimits,
+    policy_seed: int,
+) -> NaturalCombatSearchAnchor:
+    """Recover exactly one published or explicitly unqualified greedy anchor."""
+
+    if (behavior is None) == (candidate is None):
+        raise NaturalCombatSearchCensusError(
+            "exactly one published behavior or experimental candidate is required"
+        )
+    if behavior is not None:
+        behavior = Path(behavior).resolve()
+        published = recover_published_combat_behavior(
+            behavior,
+            bridge,
+            limits,
+            behavior_seeds=(_seed(policy_seed, "policy_seed"),),
+        )
+        policy = FrozenGreedyTorchPolicy.from_behavior(published.policies[0])
+        return NaturalCombatSearchAnchor(
+            policy=policy,
+            manifest_id=published.manifest_id,
+            receipt={
+                "kind": "published_combat_behavior",
+                "artifact": str(behavior),
+                "manifest_id": published.manifest_id.digest.hex(),
+            },
+        )
+
+    assert candidate is not None
+    candidate = Path(candidate).resolve()
+    restored = recover_combat_search_distillation_candidate(
+        candidate,
+        bridge,
+        limits,
+    )
+    return NaturalCombatSearchAnchor(
+        policy=GreedyTorchPolicy(restored.scorer, restored.manifest_id),
+        manifest_id=restored.manifest_id,
+        receipt={
+            "kind": "experimental_search_distillation_candidate",
+            "artifact": str(candidate),
+            "candidate_id": restored.candidate_id,
+            "manifest_id": restored.manifest_id.digest.hex(),
+            "source_manifest_id": restored.source_manifest_id.digest.hex(),
+            "loss": restored.loss,
+        },
+    )
+
+
 def run_natural_combat_search_census(
     *,
     artifact: Path,
     expected_roots: int,
-    behavior: Path,
+    behavior: Path | None,
+    candidate: Path | None,
     oracle_binary: Path,
     output_dir: Path,
     policy_seed: int,
@@ -49,7 +119,8 @@ def run_natural_combat_search_census(
     candidate_jobs = _positive(candidate_jobs, "candidate_jobs")
     max_artifact_bytes = _positive(max_artifact_bytes, "max_artifact_bytes")
     artifact = Path(artifact).resolve()
-    behavior = Path(behavior).resolve()
+    behavior = None if behavior is None else Path(behavior).resolve()
+    candidate = None if candidate is None else Path(candidate).resolve()
     oracle_binary = Path(oracle_binary).resolve()
     output_dir = Path(output_dir).resolve()
     if output_dir.exists():
@@ -65,13 +136,14 @@ def run_natural_combat_search_census(
         expected_roots=expected_roots,
         max_bytes=max_artifact_bytes,
     )
-    published = recover_published_combat_behavior(
-        behavior,
-        bridge,
-        limits,
-        behavior_seeds=(policy_seed,),
+    anchor = recover_natural_combat_search_anchor(
+        behavior=behavior,
+        candidate=candidate,
+        bridge=bridge,
+        limits=limits,
+        policy_seed=policy_seed,
     )
-    policy = FrozenGreedyTorchPolicy.from_behavior(published.policies[0])
+    policy = anchor.policy
 
     started = time.perf_counter()
     roots: list[dict[str, object]] = []
@@ -159,7 +231,8 @@ def run_natural_combat_search_census(
             "outcome_filter": "none",
             "encounter_filter": "none",
         },
-        "behavior_manifest_id": published.manifest_id.digest.hex(),
+        "behavior_manifest_id": anchor.manifest_id.digest.hex(),
+        "anchor": anchor.receipt,
         "policy_rule": "frozen_greedy",
         "policy_seed": policy_seed,
         "search": {
@@ -170,7 +243,7 @@ def run_natural_combat_search_census(
             "potion_lane": "never",
         },
         "proposal_rule": (
-            "strict_exact_win_count_then_winning_final_hp_over_frozen_baseline"
+            "strict_exact_win_count_then_winning_final_hp_over_frozen_anchor"
         ),
         "proposal_count": sum(
             root["proposal_ordinal"] is not None for root in roots
@@ -249,7 +322,9 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument("--artifact", type=Path, required=True)
     parser.add_argument("--root-count", type=int, required=True)
-    parser.add_argument("--behavior", type=Path, required=True)
+    anchor = parser.add_mutually_exclusive_group(required=True)
+    anchor.add_argument("--behavior", type=Path)
+    anchor.add_argument("--candidate", type=Path)
     parser.add_argument("--oracle-binary", type=Path, required=True)
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--policy-seed", type=int, default=2026081201)
@@ -262,9 +337,14 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         if not path.is_file():
             parser.error(f"--{name.replace('_', '-')} must be an existing file")
         setattr(args, name, path)
-    args.behavior = args.behavior.resolve()
-    if not args.behavior.is_dir():
-        parser.error("--behavior must be an existing directory")
+    for name in ("behavior", "candidate"):
+        path = getattr(args, name)
+        if path is None:
+            continue
+        path = path.resolve()
+        if not path.is_dir():
+            parser.error(f"--{name} must be an existing directory")
+        setattr(args, name, path)
     args.output_dir = args.output_dir.resolve()
     if args.output_dir.exists():
         parser.error("--output-dir must be fresh")
@@ -279,6 +359,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         artifact=args.artifact,
         expected_roots=args.root_count,
         behavior=args.behavior,
+        candidate=args.candidate,
         oracle_binary=args.oracle_binary,
         output_dir=args.output_dir,
         policy_seed=args.policy_seed,

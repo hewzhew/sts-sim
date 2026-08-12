@@ -11,7 +11,11 @@ import time
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 
-from .natural_combat_search_census import run_natural_combat_search_census
+from .natural_combat_search_census import (
+    recover_natural_combat_search_anchor,
+    run_natural_combat_search_census,
+)
+from .torch_combat_session_config import CombatSessionBridge, CombatWinSessionLimits
 
 
 class CombatSearchTrajectoryCensusError(RuntimeError):
@@ -24,7 +28,8 @@ def run_combat_search_trajectory_census(
     expected_roots: int,
     search_manifest: Path,
     root_slots: Sequence[int],
-    behavior: Path,
+    behavior: Path | None,
+    candidate: Path | None,
     oracle_binary: Path,
     output_dir: Path,
     max_recovery_roots: int,
@@ -55,7 +60,12 @@ def run_combat_search_trajectory_census(
 
     artifact = Path(artifact).resolve()
     search_manifest = Path(search_manifest).resolve()
-    behavior = Path(behavior).resolve()
+    if (behavior is None) == (candidate is None):
+        raise CombatSearchTrajectoryCensusError(
+            "exactly one published behavior or experimental candidate is required"
+        )
+    behavior = None if behavior is None else Path(behavior).resolve()
+    candidate = None if candidate is None else Path(candidate).resolve()
     oracle_binary = Path(oracle_binary).resolve()
     output_dir = Path(output_dir).resolve()
     for path, name in (
@@ -65,8 +75,9 @@ def run_combat_search_trajectory_census(
     ):
         if not path.is_file():
             raise CombatSearchTrajectoryCensusError(f"{name} must be a file")
-    if not behavior.is_dir():
-        raise CombatSearchTrajectoryCensusError("behavior must be a directory")
+    for path, name in ((behavior, "behavior"), (candidate, "candidate")):
+        if path is not None and not path.is_dir():
+            raise CombatSearchTrajectoryCensusError(f"{name} must be a directory")
     if output_dir.exists() or not output_dir.parent.is_dir():
         raise CombatSearchTrajectoryCensusError(
             "output_dir must be fresh below an existing directory"
@@ -103,6 +114,17 @@ def run_combat_search_trajectory_census(
     if len(roots) != expected_roots:
         raise CombatSearchTrajectoryCensusError(
             "search manifest does not cover every source root"
+        )
+    anchor = recover_natural_combat_search_anchor(
+        behavior=behavior,
+        candidate=candidate,
+        bridge=CombatSessionBridge.installed(),
+        limits=CombatWinSessionLimits(max_artifact_bytes=max_artifact_bytes),
+        policy_seed=policy_seed,
+    )
+    if manifest.get("behavior_manifest_id") != anchor.manifest_id.digest.hex():
+        raise CombatSearchTrajectoryCensusError(
+            "source search manifest and suffix-search anchor disagree"
         )
 
     output_dir.mkdir()
@@ -141,12 +163,15 @@ def run_combat_search_trajectory_census(
             operator.index(candidate.get("learning_candidate_ordinal")): candidate
             for candidate in _mapping_sequence(corpus, "candidates")
         }
-        candidate = candidates.get(proposal_ordinal)
-        if candidate is None:
+        proposal_candidate = candidates.get(proposal_ordinal)
+        if proposal_candidate is None:
             raise CombatSearchTrajectoryCensusError(
                 "proposal ordinal is absent from its successor corpus"
             )
-        evidence = _mapping(candidate.get("evidence"), "proposal evidence")
+        evidence = _mapping(
+            proposal_candidate.get("evidence"),
+            "proposal evidence",
+        )
         if evidence.get("kind") != "exact_win":
             raise CombatSearchTrajectoryCensusError(
                 "strict proposal lacks a complete exact-win witness"
@@ -189,6 +214,7 @@ def run_combat_search_trajectory_census(
             artifact=recovery_path,
             expected_roots=recovered_root_count,
             behavior=behavior,
+            candidate=candidate,
             oracle_binary=oracle_binary,
             output_dir=suffix_search_dir,
             policy_seed=policy_seed,
@@ -226,6 +252,7 @@ def run_combat_search_trajectory_census(
             "root_count": expected_roots,
             "search_manifest": str(search_manifest),
             "selected_root_slots": slots,
+            "anchor": anchor.receipt,
         },
         "config": {
             "max_recovery_roots": max_recovery_roots,
@@ -342,7 +369,9 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     parser.add_argument("--root-count", type=int, required=True)
     parser.add_argument("--search-manifest", type=Path, required=True)
     parser.add_argument("--root-slot", type=int, action="append", required=True)
-    parser.add_argument("--behavior", type=Path, required=True)
+    anchor = parser.add_mutually_exclusive_group(required=True)
+    anchor.add_argument("--behavior", type=Path)
+    anchor.add_argument("--candidate", type=Path)
     parser.add_argument("--oracle-binary", type=Path, required=True)
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--max-recovery-roots", type=int, default=8)
@@ -361,6 +390,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         search_manifest=args.search_manifest,
         root_slots=args.root_slot,
         behavior=args.behavior,
+        candidate=args.candidate,
         oracle_binary=args.oracle_binary,
         output_dir=args.output_dir,
         max_recovery_roots=args.max_recovery_roots,

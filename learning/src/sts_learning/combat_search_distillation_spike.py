@@ -114,6 +114,12 @@ def run_combat_search_distillation_spike(
         bridge,
         limits,
     )
+    expected_anchor_id = warm_start.source_manifest_id.digest.hex()
+    for name, partition in (("training", training), ("held-out", held_out)):
+        if partition["search_anchor_manifest_id"] != expected_anchor_id:
+            raise CombatSearchDistillationError(
+                f"{name} search evidence and warm-start behavior disagree"
+            )
     anchor = warm_start.scorer
     if anchor.training or any(parameter.requires_grad for parameter in anchor.parameters()):
         raise CombatSearchDistillationError("recovered anchor must be frozen")
@@ -311,6 +317,9 @@ def load_combat_search_distillation_partition(
     sources: list[dict[str, object]] = []
     seeds: list[int] = []
     root_ids: list[str] = []
+    record_index_by_root_id: dict[str, int] = {}
+    duplicate_root_occurrence_count = 0
+    search_anchor_manifest_ids: set[str] = set()
     for artifact_raw, manifest_raw in pairs:
         artifact = Path(artifact_raw).resolve()
         manifest_path = Path(manifest_raw).resolve()
@@ -321,6 +330,12 @@ def load_combat_search_distillation_partition(
         manifest, manifest_digest = _read_manifest(
             manifest_path,
             max_bytes=max_artifact_bytes,
+        )
+        search_anchor_manifest_ids.add(
+            _sha256_text(
+                manifest.get("behavior_manifest_id"),
+                "search behavior_manifest_id",
+            )
         )
         source_receipt = _mapping(manifest.get("source"), "source")
         root_count = _positive(source_receipt.get("root_count"), "root_count")
@@ -360,31 +375,39 @@ def load_combat_search_distillation_partition(
                 )
             audit = _mapping(root.get("root"), "root")
             seed = _seed(audit.get("seed"), "root seed")
-            seeds.append(seed)
             root_id = str(group.root_id)
+            record = {
+                "batch": batch,
+                "source_owner": source,
+                "source_slot": slot,
+                "root_id": root_id,
+                "exact_combat_state_hash": str(group.exact_combat_state_hash),
+                "seed": seed,
+                "ascension_level": operator.index(audit.get("ascension_level")),
+                "encounter_id": audit.get("encounter_id"),
+                "baseline_ordinal": operator.index(root.get("baseline_ordinal")),
+                "proposal_ordinal": (
+                    None
+                    if root.get("proposal_ordinal") is None
+                    else operator.index(root.get("proposal_ordinal"))
+                ),
+                "actions": _mapping_sequence(
+                    _mapping(root.get("search"), "root search"),
+                    "actions",
+                ),
+            }
+            existing_index = record_index_by_root_id.get(root_id)
+            if existing_index is not None:
+                if not _same_exact_search_record(records[existing_index], record):
+                    raise CombatSearchDistillationError(
+                        "one exact root has conflicting search evidence"
+                    )
+                duplicate_root_occurrence_count += 1
+                continue
+            record_index_by_root_id[root_id] = len(records)
+            records.append(record)
+            seeds.append(seed)
             root_ids.append(root_id)
-            records.append(
-                {
-                    "batch": batch,
-                    "source_owner": source,
-                    "source_slot": slot,
-                    "root_id": root_id,
-                    "exact_combat_state_hash": str(group.exact_combat_state_hash),
-                    "seed": seed,
-                    "ascension_level": operator.index(audit.get("ascension_level")),
-                    "encounter_id": audit.get("encounter_id"),
-                    "baseline_ordinal": operator.index(root.get("baseline_ordinal")),
-                    "proposal_ordinal": (
-                        None
-                        if root.get("proposal_ordinal") is None
-                        else operator.index(root.get("proposal_ordinal"))
-                    ),
-                    "actions": _mapping_sequence(
-                        _mapping(root.get("search"), "root search"),
-                        "actions",
-                    ),
-                }
-            )
         sources.append(
             {
                 "artifact": str(artifact),
@@ -394,8 +417,10 @@ def load_combat_search_distillation_partition(
                 "root_count": root_count,
             }
         )
-    if len(set(root_ids)) != len(root_ids):
-        raise CombatSearchDistillationError("one partition repeats an exact root")
+    if len(search_anchor_manifest_ids) != 1:
+        raise CombatSearchDistillationError(
+            "one partition mixes different search anchor manifests"
+        )
     if require_unique_seeds and len(set(seeds)) != len(seeds):
         raise CombatSearchDistillationError("one partition repeats a run seed")
     proposal_records = tuple(
@@ -407,6 +432,8 @@ def load_combat_search_distillation_partition(
         "sources": tuple(sources),
         "seeds": tuple(seeds),
         "root_ids": tuple(root_ids),
+        "search_anchor_manifest_id": next(iter(search_anchor_manifest_ids)),
+        "duplicate_root_occurrence_count": duplicate_root_occurrence_count,
     }
 
 
@@ -1088,6 +1115,10 @@ def combat_search_distillation_corpus_sha256(
     partition: Mapping[str, object],
 ) -> str:
     payload = {
+        "search_anchor_manifest_id": partition["search_anchor_manifest_id"],
+        "duplicate_root_occurrence_count": partition[
+            "duplicate_root_occurrence_count"
+        ],
         "sources": tuple(
             {
                 "artifact_sha256": source["artifact_sha256"],
@@ -1144,6 +1175,10 @@ def combat_search_distillation_partition_receipt(
         "root_count": len(records),
         "unique_run_seed_count": len(set(partition["seeds"])),
         "proposal_count": len(partition["proposal_records"]),
+        "search_anchor_manifest_id": partition["search_anchor_manifest_id"],
+        "duplicate_root_occurrence_count": partition[
+            "duplicate_root_occurrence_count"
+        ],
         "seeds": partition["seeds"],
         "ascension_counts": {
             str(ascension): sum(
@@ -1183,6 +1218,37 @@ def _read_manifest(
     ):
         raise CombatSearchDistillationError("unsupported natural search manifest")
     return payload, hashlib.sha256(content).hexdigest()
+
+
+def _same_exact_search_record(
+    left: Mapping[str, object],
+    right: Mapping[str, object],
+) -> bool:
+    for key in (
+        "root_id",
+        "exact_combat_state_hash",
+        "seed",
+        "ascension_level",
+        "encounter_id",
+        "baseline_ordinal",
+        "proposal_ordinal",
+        "actions",
+    ):
+        if left[key] != right[key]:
+            return False
+    return True
+
+
+def _sha256_text(value: object, name: str) -> str:
+    if not isinstance(value, str) or len(value) != 64:
+        raise CombatSearchDistillationError(f"{name} must be a sha256 hex digest")
+    try:
+        bytes.fromhex(value)
+    except ValueError as error:
+        raise CombatSearchDistillationError(
+            f"{name} must be a sha256 hex digest"
+        ) from error
+    return value.lower()
 
 
 def _mapping(value: object, name: str) -> Mapping[str, object]:

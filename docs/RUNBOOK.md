@@ -966,7 +966,8 @@ untouched natural batch:
 
 ```powershell
 python -m sts_learning.natural_combat_search_census `
-  --artifact <roots.bin> --root-count <count> --behavior <frozen-behavior> `
+  --artifact <roots.bin> --root-count <count> `
+  --candidate <experimental-candidate> `
   --oracle-binary target\release\oracle_lab.exe --output-dir <fresh-dir> `
   --solve-work-per-candidate 5000 --candidate-jobs 4
 ```
@@ -974,9 +975,12 @@ python -m sts_learning.natural_combat_search_census `
 This command uses `potion_lane=never` for both the model candidate surface and
 the entire successor search. It records one strict proposal only when exact-win
 count and then winning final HP exceed the frozen greedy action; equal results
-retain the baseline. An entrance-only result is a first-action diagnostic, not
-a combat-policy result, because its measured suffix is still supplied by
-search.
+retain the anchor. A published behavior is the initial anchor; an explicitly
+unqualified search-distillation candidate may be used as a residual-search
+anchor without promoting it. The manifest records the anchor kind, exact
+manifest identity, and candidate provenance when applicable. An entrance-only
+result is a first-action diagnostic, not a combat-policy result, because its
+measured suffix is still supplied by search.
 
 For a source root with a replayable exact-win proposal, expand the verified
 winning line into bounded suffix decision roots and independently search every
@@ -987,7 +991,7 @@ python -m sts_learning.combat_search_trajectory_census `
   --artifact <natural-roots.bin> --root-count <count> `
   --search-manifest <natural-search/manifest.json> `
   --root-slot <strict-proposal-slot> [--root-slot <another-slot>] `
-  --behavior <frozen-behavior> --oracle-binary target\release\oracle_lab.exe `
+  --candidate <experimental-candidate> --oracle-binary target\release\oracle_lab.exe `
   --output-dir <fresh-dir> --max-recovery-roots 8 `
   --solve-work-per-candidate 5000 --candidate-jobs 4
 ```

@@ -116,14 +116,23 @@ posterior degeneracy rather than manufacturing a multi-particle population.
 Natural-root equal-work search may seed a non-publishing Expert Iteration
 experiment, but an entrance-only update is not a combat-policy evaluation: if
 search supplies every continuation after the first action, the model has not
-played the combat. `combat_search_trajectory_census` therefore converts a
-replay-verified search win into bounded terminal-nearest opaque decision roots
+played the combat. Equal-work census may anchor either a completed published
+behavior or an explicitly unqualified search-distillation candidate; the
+latter is residual diagnosis, not promotion, and its candidate, source, loss,
+and manifest identities remain explicit. `combat_search_trajectory_census`
+therefore converts a replay-verified search win into bounded terminal-nearest
+opaque decision roots
 and independently searches every derived root. It passes the unchanged source
 artifact and the Rust-owned exact-win successor corpus to `learning-root
 recover-search`; Rust binds root count, slot, root id, exact state hash,
 no-potion lane, candidate ordinal, witness length, and final HP before emitting
 any suffix root. No `CombatCase` or caller-written action file participates.
 The witness creates exact states only; its actions never become labels.
+When several winning trajectories converge on the same canonical exact root,
+distillation gives that root one training weight only after its state hash,
+anchor action, proposal, and complete equal-work action evidence agree. Source
+provenance still retains every occurrence; conflicting evidence fails instead
+of being averaged or path-weighted.
 Distillation applies cross-entropy only to strict proposal rows. Roots without
 a strict improvement retain the complete frozen baseline distribution through
 forward `KL(anchor || candidate)` instead of turning the baseline argmax into a

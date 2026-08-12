@@ -80,6 +80,13 @@ def run_train_combat_search_candidate(
             bridge,
             limits,
         )
+        if (
+            training["search_anchor_manifest_id"]
+            != warm_start.source_manifest_id.digest.hex()
+        ):
+            raise TrainCombatSearchCandidateError(
+                "training search evidence and warm-start behavior disagree"
+            )
         initial = combat_search_distillation_partition_metrics(
             warm_start.scorer,
             training,
