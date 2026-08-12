@@ -262,9 +262,6 @@ fn normalize_identifier(raw: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::build_natural_combat_start;
-    use crate::agent::information::combat::{
-        combat_public_intent_facts_v1, ObservationEvidenceKindV1,
-    };
     use crate::content::cards::CardId;
     use crate::content::monsters::factory::EncounterId;
     use crate::content::relics::{RelicId, RelicState};
@@ -272,25 +269,6 @@ mod tests {
     use crate::runtime::combat::OrbId;
     use crate::state::map::node::RoomType;
     use crate::state::run::RunState;
-
-    #[test]
-    fn natural_combat_start_exposes_the_rolled_monster_intent() {
-        let mut run = RunState::new(1, 20, false, "Ironclad");
-
-        let (_engine_state, combat) =
-            build_natural_combat_start(&mut run, EncounterId::JawWorm, RoomType::MonsterRoom)
-                .expect("combat should initialize");
-        let monster = combat
-            .entities
-            .monsters
-            .first()
-            .expect("jaw worm should exist");
-        let intent = combat_public_intent_facts_v1(&combat, monster.id);
-
-        assert_eq!(intent.evidence, ObservationEvidenceKindV1::VisibleExact);
-        assert!(intent.intent.is_some());
-        assert_eq!(intent.hidden_reason, None);
-    }
 
     #[test]
     fn natural_combat_start_applies_ring_of_the_serpent_opening_hand_size() {

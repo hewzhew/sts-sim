@@ -6,12 +6,13 @@ linker = "rust-lld"
 
 [alias]
 test-core = ["test", "-p", "sts_simulator", "--lib"]
+test-agent = ["test", "-p", "sts_agent", "--lib"]
 test-planner = ["test", "-p", "sts_combat_planner", "--lib"]
 combat-contract = ["run", "--quiet", "--release", "-p", "sts_combat_contract", "--bin", "combat_contract", "--"]
 # Keep the retained combat-search capability package explicit: Cargo does not
 # run a dependency's private unit tests merely because control crates link it.
 test-control = [
-    "test",
+    "test", "-p", "sts_agent",
     "-p", "sts_combat_legacy",
     "-p", "sts_combat_search_driver",
     "-p", "sts_oracle_eval",

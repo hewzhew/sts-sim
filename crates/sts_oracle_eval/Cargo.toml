@@ -18,6 +18,7 @@ path = "src/lib.rs"
 
 [dependencies]
 sts_core = { package = "sts_simulator", path = "../.." }
+sts_agent = { path = "../sts_agent" }
 sts_combat_legacy = { path = "../sts_combat_legacy" }
 sts_combat_knowledge = { path = "../sts_combat_knowledge" }
 sts_combat_planner = { path = "../sts_combat_planner" }

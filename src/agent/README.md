@@ -1,18 +1,21 @@
 # Learned Agent Module Map
 
-`src/agent` is the simulator-level owner for the learned agent's information
-boundary. It is intentionally below evaluation, run control, Python bindings,
-and training code.
+`src/agent` is the physical source tree for the learned agent's information
+boundary. `crates/sts_agent` is its only Cargo owner and sits between simulator
+mechanics and evaluation, run control, Python bindings, and training code. Use
+`cargo test-agent` for the routine loop.
 
 | Module | Owns | Does not own |
 | --- | --- | --- |
 | `information/combat.rs` | compact public observation and visibility semantics | model architecture or exact handles |
 | `information/state.rs` | rich `PublicCombatStateV1` used by model-facing adapters | potion UUIDs, monster entity IDs, RNG state |
 | `information/action.rs` | canonical public atomic/indexed/symbolic candidates plus a parallel private resolution table | search values or policy choices |
-| `belief/combat.rs` | typed hidden-future particles and sampling provenance | search verdicts, teacher labels, run-control checkpoints |
+| `information/run.rs` | public run-continuation context carried into combat | exact run checkpoints or hidden map state |
+| `belief/combat.rs` | typed hidden-future particles and declared sampler conditioning | search verdicts, teacher labels, run-control checkpoints |
+| `belief/environment.rs` | public history, particle stepping, exact action resolution, and visible chance branches | search policy, rollout value, or training targets |
 
-Current important limitation: `IndependentStreams` is a public-boundary-
-preserving feasibility sampler, not a posterior over complete run histories.
-The next structural migration is the belief environment and conditioned
-sampler interface described in
-[`docs/design/2026-08-12-public-belief-agent-learning-system.md`](../../docs/design/2026-08-12-public-belief-agent-learning-system.md).
+Current limits: `IndependentStreams` is not a run-history posterior, hidden
+current intent is unsupported, and no search or learning target consumes the
+belief environment yet. Candidate approaches and their falsification questions
+live in the
+[working design](../../docs/design/2026-08-12-public-belief-agent-learning-system.md).

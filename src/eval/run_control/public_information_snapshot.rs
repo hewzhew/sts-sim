@@ -9,6 +9,7 @@ use serde::Serialize;
 use crate::agent::information::action::{
     PublicCombatIndexedChoiceCandidateV1, PublicCombatIndexedChoiceReasonV1,
 };
+use crate::agent::information::run::PublicCombatRunContextV1;
 use crate::ai::planner_core::{
     stable_planner_id, CandidateSetCompleteness, PlannerAction, PlannerCardObservation,
     PlannerDecisionContext, PlannerDecisionSite, PlannerMechanicsManifest, PlannerPublicHistory,
@@ -37,7 +38,7 @@ use super::learning_model_input::{
     LearningSelectionCandidateSemanticsV1, LearningSelectionDraftV1,
     LearningStrategicModelObservationV1, LearningStrategicPotionSlotV1, LearningStrategicPotionV1,
 };
-use super::{LearningBoundaryV1, LearningCombatPublicRunContextV1};
+use super::LearningBoundaryV1;
 
 pub const LEARNING_PUBLIC_STRATEGIC_OBSERVATION_SCHEMA_NAME: &str =
     "LearningPublicStrategicObservationV1";
@@ -452,7 +453,7 @@ impl From<LearningStrategicPotionV1<'_>> for PublicStrategicPotionIdentityV1 {
 struct PublicCombatObservationIdentityV1<'a> {
     mechanics_id: &'static str,
     mechanics_version: u32,
-    public_run_context: &'a LearningCombatPublicRunContextV1,
+    public_run_context: &'a PublicCombatRunContextV1,
     potions: Vec<Option<PublicCombatPotionIdentityV1>>,
     hidden_reasons: &'a [crate::agent::information::combat::HiddenInformationReasonV1],
     encounter: &'a crate::agent::information::state::CombatLearningEncounterV1,

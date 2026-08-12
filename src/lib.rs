@@ -1,6 +1,5 @@
 extern crate self as sts_simulator;
 
-pub mod agent;
 pub mod content;
 pub mod engine;
 mod ids;

@@ -498,6 +498,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7da8b5736845d9f2fcb837ea5d9e2628564b3b043a70948a3f0b778838c5fb4f"
 
 [[package]]
+name = "sts_agent"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "sts_simulator",
+]
+
+[[package]]
 name = "sts_combat_knowledge"
 version = "0.1.0"
 dependencies = [
@@ -557,6 +565,7 @@ dependencies = [
  "rmp-serde",
  "serde",
  "serde_json",
+ "sts_agent",
  "sts_combat_knowledge",
  "sts_combat_legacy",
  "sts_combat_planner",

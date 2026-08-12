@@ -3331,35 +3331,6 @@ fn philosopher_stone_strength_matches_java_battle_and_spawn_hooks() {
 }
 
 #[test]
-fn runic_dome_hides_public_intent_without_a_ui_model() {
-    let mut state = crate::test_support::blank_test_combat();
-    let mut monster = crate::test_support::test_monster(EnemyId::JawWorm);
-    monster.id = 99;
-    state.entities.monsters.push(monster);
-    state.set_monster_protocol_visible_intent(
-        99,
-        crate::runtime::combat::Intent::Attack { damage: 7, hits: 1 },
-    );
-    assert_eq!(
-        crate::agent::information::combat::combat_public_observation_v1(&state).monsters[0]
-            .intent
-            .evidence,
-        crate::agent::information::combat::ObservationEvidenceKindV1::VisibleExact
-    );
-
-    state
-        .entities
-        .player
-        .add_relic(RelicState::new(RelicId::RunicDome));
-    assert_eq!(
-        crate::agent::information::combat::combat_public_observation_v1(&state).monsters[0]
-            .intent
-            .evidence,
-        crate::agent::information::combat::ObservationEvidenceKindV1::Hidden
-    );
-}
-
-#[test]
 fn shared_boss_relic_third_batch_metadata_matches_java_sources() {
     assert_eq!(get_relic_tier(RelicId::SacredBark), RelicTier::Boss);
     assert_eq!(get_relic_tier(RelicId::SlaversCollar), RelicTier::Boss);

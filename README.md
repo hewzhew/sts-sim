@@ -12,20 +12,11 @@ and improved instead of explained from terminal logs.
 
 ## Current Focus
 
-```text
-exact simulator mechanics
-  -> public information + private action resolution
-  -> belief environment + information-set search
-  -> visit-policy / complete-run replay
-  -> recurrent policy/value
-  -> natural complete runs
-```
-
-The active direction is one potion-aware learned agent with the complete-run
-objective. A0 is a lower-variance curriculum and A20 is the final distribution;
-they do not use different architectures or objectives. Existing search,
-owners, cases, and trainers are optional diagnostics/bootstrap rather than
-compatibility constraints or automatic teachers.
+The implemented learned-agent boundary now covers public information, private
+action resolution, and belief transitions. The choice of search, replay,
+model, and A0-to-A20 curriculum remains experimental rather than prescribed.
+Final evaluation is still potion-aware natural complete runs; existing search,
+owners, cases, and trainers are not automatic teachers.
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the maintained boundary
 contract.
@@ -97,6 +88,7 @@ archaeology.
 | `src/runtime` | runtime support for run/combat execution |
 | `src/sim` | simulator-facing legal action and apply/search boundaries |
 | `src/agent` | learned-agent public information, private resolution, and belief contracts |
+| `crates/sts_agent` | independent Cargo owner for that source; agent edits do not relink simulator core |
 | `src/ai` | policies, strategic facts, deck mutation, combat search, route/search work |
 | `src/eval` | Historical physical source tree for combat eval, run-control, the analysis workbench, and learning adapters; the crates below define their Cargo owners |
 | `src/bin` | maintained command entrypoints |

@@ -2,7 +2,8 @@
 
 extern crate self as sts_simulator;
 
-pub use sts_core::{agent, content, engine, fixtures, sim, state, test_support, EntityId};
+pub use sts_agent::agent;
+pub use sts_core::{content, engine, fixtures, sim, state, test_support, EntityId};
 
 pub mod testing {
     pub use sts_core::fixtures;

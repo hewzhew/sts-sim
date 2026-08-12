@@ -24,7 +24,6 @@ pub use combat_learning_root_artifact::{
 pub use learning_env::LearningPreparedActionV1;
 pub use learning_env::{
     LearningActionV1, LearningBoundaryKindV1, LearningBoundaryV1, LearningCombatBoundaryV1,
-    LearningCombatPublicRunContextGapV1, LearningCombatPublicRunContextV1, LearningEnvV1,
-    LearningObservationCompletenessV1, LearningPublicRunContextV1, LearningStepV1,
+    LearningEnvV1, LearningObservationCompletenessV1, LearningPublicRunContextV1, LearningStepV1,
     LearningStrategicBoundaryV1, LearningStrategicContextKindV1, LearningTerminalOutcomeV1,
 };

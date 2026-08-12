@@ -6,7 +6,43 @@ use crate::agent::information::action::project_public_combat_actions_v1;
 use crate::agent::information::combat::{combat_public_observation_v1, ObservationEvidenceKindV1};
 use crate::runtime::combat::CombatState;
 use crate::runtime::rng::StsRng;
+use crate::sim::combat::CombatPosition;
 use crate::state::core::EngineState;
+
+use super::environment::{CombatPublicBoundaryV1, CombatPublicHistoryV1};
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CombatBeliefConditioningV1 {
+    /// Conditions on the current public boundary only. Earlier public history
+    /// is accepted for identity and future replacement, but is not used to
+    /// reconstruct a run-seed posterior.
+    CurrentPublicBoundaryOnly,
+}
+
+pub struct CombatBeliefSamplingRequestV1<'a> {
+    pub public_history: &'a CombatPublicHistoryV1,
+    pub exact_source: &'a CombatPosition,
+}
+
+pub trait CombatBeliefSamplerV1 {
+    fn conditioning(&self) -> CombatBeliefConditioningV1;
+
+    fn sample(
+        &self,
+        request: CombatBeliefSamplingRequestV1<'_>,
+    ) -> Result<Vec<CombatBeliefParticleV1>, CombatBeliefSamplingErrorV1>;
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct IndependentStreamsCombatBeliefSamplerV1 {
+    particle_seeds: Vec<u64>,
+}
+
+impl IndependentStreamsCombatBeliefSamplerV1 {
+    pub fn new(particle_seeds: Vec<u64>) -> Self {
+        Self { particle_seeds }
+    }
+}
 
 /// Provenance for one sampled private combat future.
 ///
@@ -22,7 +58,8 @@ pub enum CombatBeliefParticleOriginV1 {
 #[derive(Clone, Debug, PartialEq)]
 pub struct CombatBeliefParticleV1 {
     origin: CombatBeliefParticleOriginV1,
-    private_combat: CombatState,
+    probability_mass: f64,
+    private_position: CombatPosition,
 }
 
 impl CombatBeliefParticleV1 {
@@ -30,12 +67,32 @@ impl CombatBeliefParticleV1 {
         self.origin
     }
 
-    pub fn private_combat(&self) -> &CombatState {
-        &self.private_combat
+    pub fn probability_mass(&self) -> f64 {
+        self.probability_mass
     }
 
-    pub fn into_private_combat(self) -> CombatState {
-        self.private_combat
+    pub fn private_position(&self) -> &CombatPosition {
+        &self.private_position
+    }
+
+    pub fn into_private_position(self) -> CombatPosition {
+        self.private_position
+    }
+
+    pub(super) fn from_private_position(
+        origin: CombatBeliefParticleOriginV1,
+        probability_mass: f64,
+        private_position: CombatPosition,
+    ) -> Self {
+        Self {
+            origin,
+            probability_mass,
+            private_position,
+        }
+    }
+
+    pub(super) fn set_probability_mass(&mut self, probability_mass: f64) {
+        self.probability_mass = probability_mass;
     }
 }
 
@@ -47,6 +104,7 @@ pub enum CombatBeliefSamplingErrorV1 {
     HiddenDrawMultiset,
     DrawPileTooLarge,
     PublicBoundaryChanged { particle_seed: u64 },
+    HistoryBoundaryMismatch,
     ActionProjection(String),
 }
 
@@ -73,6 +131,9 @@ impl Display for CombatBeliefSamplingErrorV1 {
                 formatter,
                 "combat belief particle {particle_seed} changed public observation or legal actions"
             ),
+            Self::HistoryBoundaryMismatch => formatter.write_str(
+                "combat belief sampling source does not match the current public history boundary",
+            ),
             Self::ActionProjection(error) => {
                 write!(formatter, "cannot project public combat actions: {error}")
             }
@@ -81,6 +142,37 @@ impl Display for CombatBeliefSamplingErrorV1 {
 }
 
 impl Error for CombatBeliefSamplingErrorV1 {}
+
+impl CombatBeliefSamplerV1 for IndependentStreamsCombatBeliefSamplerV1 {
+    fn conditioning(&self) -> CombatBeliefConditioningV1 {
+        CombatBeliefConditioningV1::CurrentPublicBoundaryOnly
+    }
+
+    fn sample(
+        &self,
+        request: CombatBeliefSamplingRequestV1<'_>,
+    ) -> Result<Vec<CombatBeliefParticleV1>, CombatBeliefSamplingErrorV1> {
+        let CombatPublicBoundaryV1::Decision { decision } = request.public_history.current() else {
+            return Err(CombatBeliefSamplingErrorV1::HistoryBoundaryMismatch);
+        };
+        let exact_observation =
+            crate::agent::information::state::public_combat_state_v1(&request.exact_source.combat);
+        let exact_actions = project_public_combat_actions_v1(
+            &request.exact_source.engine,
+            &request.exact_source.combat,
+        )
+        .map_err(|error| CombatBeliefSamplingErrorV1::ActionProjection(error.to_string()))?
+        .public;
+        if decision.observation != exact_observation || decision.actions != exact_actions {
+            return Err(CombatBeliefSamplingErrorV1::HistoryBoundaryMismatch);
+        }
+        sample_independent_combat_futures_v1(
+            &request.exact_source.engine,
+            &request.exact_source.combat,
+            &self.particle_seeds,
+        )
+    }
+}
 
 /// Sample exact private combat futures that share one current public boundary.
 ///
@@ -118,6 +210,7 @@ pub fn sample_independent_combat_futures_v1(
         .map_err(|error| CombatBeliefSamplingErrorV1::ActionProjection(error.to_string()))?
         .public;
     let draw_evidence = source_observation.piles.draw.evidence;
+    let probability_mass = 1.0 / particle_seeds.len() as f64;
 
     particle_seeds
         .iter()
@@ -146,7 +239,8 @@ pub fn sample_independent_combat_futures_v1(
 
             Ok(CombatBeliefParticleV1 {
                 origin: CombatBeliefParticleOriginV1::IndependentStreams { particle_seed },
-                private_combat,
+                probability_mass,
+                private_position: CombatPosition::new(engine.clone(), private_combat),
             })
         })
         .collect()
@@ -233,21 +327,25 @@ mod tests {
         )));
         for particle in &particles {
             assert_eq!(
-                combat_public_observation_v1(&particle.private_combat),
+                combat_public_observation_v1(&particle.private_position.combat),
                 source_observation
             );
             assert_eq!(
-                project_public_combat_actions_v1(&engine, &particle.private_combat)
-                    .unwrap()
-                    .public,
+                project_public_combat_actions_v1(
+                    &particle.private_position.engine,
+                    &particle.private_position.combat,
+                )
+                .unwrap()
+                .public,
                 source_surface
             );
-            assert_eq!(particle.private_combat.rng.ai_rng.counter, 1);
-            assert_eq!(particle.private_combat.rng.potion_rng.counter, 1);
+            assert_eq!(particle.private_position.combat.rng.ai_rng.counter, 1);
+            assert_eq!(particle.private_position.combat.rng.potion_rng.counter, 1);
+            assert_eq!(particle.probability_mass(), 0.5);
         }
         assert_ne!(
-            particles[0].private_combat.rng.ai_rng,
-            particles[1].private_combat.rng.ai_rng
+            particles[0].private_position.combat.rng.ai_rng,
+            particles[1].private_position.combat.rng.ai_rng
         );
     }
 
@@ -279,7 +377,8 @@ mod tests {
 
         assert_eq!(
             particle
-                .private_combat
+                .private_position
+                .combat
                 .zones
                 .draw_pile
                 .iter()

@@ -10,10 +10,11 @@ use sts_oracle_eval::agent::information::combat::{
 use sts_oracle_eval::agent::information::action::{
     PublicCombatIndexedChoiceCandidateV1, PublicCombatIndexedChoiceReasonV1,
 };
+use sts_oracle_eval::agent::information::run::PublicCombatRunContextV1;
 use sts_oracle_eval::content::cards::CardType;
 use sts_oracle_learning::eval::run_control::{
     LearningCombatAtomicActionV1, LearningCombatIndexedChoiceV1, LearningCombatModelObservationV1,
-    LearningCombatMonsterV1, LearningCombatPublicRunContextV1,
+    LearningCombatMonsterV1,
     LearningCombatSelectionDomainSemanticsV1,
     LearningCombatSelectionFamilyV1, LearningModelCandidateSemanticsV1, LearningModelDecisionV1,
     LearningSelectionCandidateSemanticsV1, LearningSelectionDecisionV1, LearningSelectionDraftV1,
@@ -366,9 +367,9 @@ impl SemanticBatchBuilder {
         &mut self,
         root: u64,
         encounter: u64,
-        context: &LearningCombatPublicRunContextV1,
+        context: &PublicCombatRunContextV1,
     ) -> Result<(), SemanticEncodingError> {
-        let LearningCombatPublicRunContextV1::Available {
+        let PublicCombatRunContextV1::Available {
             run_goal,
             act,
             floor,

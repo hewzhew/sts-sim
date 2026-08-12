@@ -261,10 +261,13 @@ pub fn combat_public_chance_particle_checkpoints_v1(
         .into_iter()
         .map(|particle| {
             let mut session = source_session.clone();
+            let private_position = particle.into_private_position();
             let active = session.active_combat.as_mut().ok_or_else(|| {
                 "combat public-chance sampling requires an active combat".to_owned()
             })?;
-            active.combat_state = particle.into_private_combat();
+            active.engine_state = private_position.engine.clone();
+            active.combat_state = private_position.combat;
+            session.engine_state = private_position.engine;
             session.run_state.rng_pool = active.combat_state.rng.pool.clone();
             if learning_combat_boundary_v1(&session)? != public_root {
                 return Err(

@@ -1,175 +1,75 @@
-# Public-Belief Agent Learning System
+# Public-Information Agent: Facts And Working Hypotheses
 
-Status: **active clean-room architecture**
+Status: **working design, expected to change with evidence**
 
-This is the single maintained design for the learned agent. It replaces the
-former combat-search-improvement contract. Existing search, trainer, case, and
-experiment schemas may be deleted or migrated when they obstruct this design;
-they are evidence and bootstrap material, not compatibility requirements.
+This page is not a prescribed training recipe. It separates constraints that
+follow from the game and implemented code from hypotheses that still need
+experiments. When evidence rejects a hypothesis, change or delete it here; do
+not preserve it for compatibility.
 
-## The Problem We Are Actually Solving
+## Confirmed Constraints
 
-Slay the Spire is a long-horizon, partially observed stochastic control
-problem. A deployed policy observes public run and combat history, chooses one
-legal typed action, and eventually receives the only authoritative objective:
-whether the complete run wins. Deck, relic, potion, map, encounter, ascension,
-draw order, monster intent rules, and future chance all change the value of an
-action. A combat witness or local HP score cannot replace that continuation
-value.
+- The deployed agent may use only player-visible run/combat history and the
+  current public legal choices. Exact draw order when hidden, RNG state,
+  unrevealed intent, card/potion UUIDs, and monster entity ids are private.
+- Public candidate identity must remain executable. Public ordinals and typed
+  semantics are resolved through a parallel private table owned by the
+  environment, never by the model.
+- Potion acquisition, use, discard, and retention affect complete-run value.
+  A no-potion combat objective or static potion tier cannot be the final task.
+- A combat win, local HP score, exact-future witness, or named encounter is not
+  by itself a complete-run policy target.
+- A sampler must declare what it conditions on. A mechanics-feasible ensemble
+  must not be called a posterior over run histories.
 
-The learned agent is therefore one architecture at every ascension:
+## Implemented Boundary
 
-```text
-exact simulator mechanics
-  -> public information state + private action-resolution table
-  -> belief environment over hidden state and future chance
-  -> information-set search with a policy/value prior
-  -> visit policy + complete-run value targets
-  -> occurrence-weighted replay and reanalysis
-  -> recurrent typed policy/value model
-  -> natural complete runs
-  -> paired full-run candidate promotion
-```
+`crates/sts_agent` is the Cargo owner for the physical `src/agent` tree.
+`cargo test-agent` is the routine edit loop.
 
-A0 is a lower-variance curriculum distribution. A20 is the final distribution.
-Changing ascension must not switch action schemas, objectives, or agent
-architecture.
+- `information/state.rs`: `PublicCombatStateV1`, without simulator handles.
+- `information/action.rs`: public atomic/indexed/symbolic choices and
+  `CombatActionResolutionTableV1`.
+- `information/run.rs`: public run-continuation context carried into combat.
+- `belief/combat.rs`: typed particles and sampler conditioning. The current
+  `IndependentStreams` implementation only conditions on the present public
+  boundary; it independently resamples hidden combat streams and rejects
+  hidden current intent.
+- `belief/environment.rs`: typed public action-observation history and exact
+  particle stepping. One public action is resolved separately in every
+  particle. Different next visible observations become conditional chance
+  branches with normalized particle mass.
 
-## Formal Boundary
+These types provide information and transition mechanics. They do not produce
+policy targets, search values, teacher labels, or a trained agent.
 
-At decision time the environment owns an exact simulator state `x_t`, while
-the agent receives public information `i_t = O(h_t)`, where `h_t` is the public
-action-observation history. The agent never receives the exact hidden draw
-order, private RNG state, hidden intent, or simulator allocation handles.
+## Open Questions
 
-The belief environment represents
+The next implementation should answer one question at a time rather than
+assuming the full stack in advance:
 
-```text
-b_t(x) = P(x_t = x | public history h_t)
-```
+1. Can a small potion-aware information-set search consumer use the belief
+   environment with bounded, comparable work per public root action?
+2. Which hidden sources materially require run-seed/history conditioning, and
+   can that sampler be validated on replayable natural histories?
+3. What bootstrap behavior makes complete runs informative without turning an
+   existing heuristic/search owner into an unquestioned teacher?
+4. Which replay target and model memory improve held-out complete-run outcomes?
+5. Does A0 help as a curriculum for the same deployed task, and which parts
+   transfer toward A20? This is an empirical question, not an architecture
+   promise.
 
-through typed particles or another explicitly declared approximation. Search
-compares root actions on matched belief particles. It returns a distribution
-over the complete public legal-action set and a run-win value estimate. It
-does not return a privileged exact-future witness disguised as a label.
+Information-set MCTS/POMCP, visit-policy distillation, recurrent models, and
+the ordering of the questions above are candidates, not established facts.
+They should be retained only when a small downstream experiment distinguishes
+them from simpler alternatives.
 
-## Ownership
+## Acceptance And Deletion
 
-### `src/agent/information`
+A new layer is accepted only when a real caller exercises its typed output and
+the result answers a stated distributional question. Source-shape checks,
+report prose, named-fight anecdotes, and long milestone lists are not evidence.
 
-Owns semantic public state. `PublicCombatStateV1` contains cards, visible or
-unordered piles, powers, relics, potion identities and slots, monster order,
-public intent/history, encounter facts, and current resources. It contains no
-RNG state, card UUID, potion UUID, or monster entity ID.
-
-Public candidate identity is an ordinal plus typed semantics over public
-indices: hand ordinal, monster order, potion slot, choice ordinal, or public
-selection-domain ordinal. Simulator handles belong in a parallel private
-resolution table. A model may score public candidates but cannot inspect that
-table.
-
-### `src/agent/belief`
-
-Owns hidden-state/chance sampling and its provenance. A sampler must state what
-distribution it approximates, which public history it conditions on, and
-which gaps it rejects. It returns exact simulator particles only to the belief
-environment/search executor; particles never become model observations.
-
-The currently implemented `IndependentStreams` sampler is intentionally a
-mechanics feasibility sampler, not a run-seed posterior. It resamples hidden
-draw order and future combat RNG independently while preserving the public
-boundary, potion inventory, legal potion actions, and RNG counters. It rejects
-hidden current intent. A later seed/history-consistent sampler will be a new
-typed origin, not a silent reinterpretation of these particles.
-
-### Belief environment and search
-
-The belief environment owns particle stepping, public observation aggregation,
-chance refresh, and action application. Information-set MCTS/POMCP owns search
-statistics keyed by canonical public history, not by one exact private state.
-Every admitted action receives comparable root exploration before prior-guided
-exploitation. Chance particles are shared across root-action comparisons when
-possible so variance does not masquerade as action quality.
-
-Exact witness engines may provide rollout implementations or demonstrations,
-but their old frontier score, first-win stopping rule, and work units do not
-define the new search contract.
-
-### Replay, model, and learner
-
-Replay stores decision occurrences, not a hand-selected bag of named fights.
-One row binds public recurrent history, the complete public candidate set,
-search visit distribution, eventual complete-run outcome, behavior/search
-versions, and occurrence weight. Reanalysis may refresh policy/value targets
-without rewriting the episode provenance.
-
-The model has a shared typed recurrent/relational encoder with:
-
-- a ragged policy head over the current public candidate set;
-- a scalar complete-run win-probability head;
-- optional auxiliary heads for next public draw, next visible intent, and
-  combat-terminal resources, used only to improve representation.
-
-Potion actions exist in the action schema from the first training run. Potion
-opportunity cost is learned through run continuation value and later outcomes,
-not a static rarity or retained-value penalty.
-
-## Current Implemented Slice
-
-The following is repository fact as of this design:
-
-- `src/agent/information/combat.rs` owns the compact public observation used by
-  fingerprints and public-boundary checks.
-- `src/agent/information/state.rs` owns `PublicCombatStateV1`, the richer
-  model-facing state. Potion UUIDs and monster entity IDs were removed.
-- `CombatActionResolutionTableV1` holds exact execution handles beside, not
-  inside, the public state.
-- `PublicCombatActionSurfaceV1` owns canonical atomic, indexed-choice, and
-  symbolic Hand/Grid/Scry candidate semantics. Exact `ClientInput`, monster
-  entity ids, potion UUIDs, and selection-domain card UUIDs exist only in the
-  parallel resolution table. The learning boundary and model caller consume
-  this split directly.
-- `src/agent/belief/combat.rs` owns the `IndependentStreams` mechanics sampler.
-  The old learning-env helper delegates to it and still performs its richer
-  complete-boundary check.
-- the former `combat_belief` module was deleted because it read exact monster
-  plans and was an unused damage profile, not a belief state.
-
-The remaining known gaps are explicit:
-
-1. `IndependentStreams` is not conditioned on a complete public run history.
-2. There is no canonical belief environment or information-set search owner.
-3. Current replay/trainer formats do not carry visit policies and recurrent
-   public histories as the authoritative target.
-4. No current learned behavior is promoted for complete potion-aware A0 or A20
-   runs.
-
-These are implementation gaps, not reasons to revive the retired local
-teacher contract.
-
-## Delivery Order
-
-1. Introduce a canonical belief environment and a history-conditioned sampler
-   interface. Keep unsupported hidden-intent/history cases typed and visible.
-2. Implement the smallest potion-aware information-set search vertical slice.
-   Its output is visits and run-win value samples, never a hard witness label.
-3. Replace combat-proposal replay with occurrence-weighted recurrent replay and
-   reanalysis. Bootstrap only enough non-random behavior to make search useful.
-4. Train and evaluate on natural complete A0 runs, including potion acquisition,
-   use, discard, combat, and non-combat decisions. Promote only by paired
-   complete-run outcomes.
-5. Expand the same system toward A20 by curriculum distribution and capacity,
-   not by adding encounter-specific teachers.
-
-Each step must have a real downstream consumer in the next step. Small tests
-protect public/private separation, exact transition semantics, and replayable
-action resolution; temporary reports and prose guards do not qualify as
-architecture.
-
-## Deletion Policy
-
-Breaking migration is the default. Once the new learned-agent boundary serves
-a consumer, remove the replaced entry point, schema, helper, and documentation
-in the same change. Frozen legacy artifacts may stop loading. Git history is
-the archive; the active tree should describe only the system we intend to
-build.
+Breaking migration is the default. Once a replacement has a consumer, delete
+the old entry point, schema, helper, and duplicate documentation. Git history
+is sufficient archaeology.

@@ -17,6 +17,9 @@ Tests are deliberately split across real Cargo packages:
 
 - `cargo test-core <filter>` tests `sts_simulator` domain, engine, simulation,
   and stable policy code;
+- `cargo test-agent <filter>` tests public information, private action
+  resolution, particle sampling, and belief transitions without relinking the
+  simulator's monolithic mechanics test binary;
 - `cargo test-planner <filter>` tests the exact complete-turn planner without
   linking the core crate's monolithic unit-test binary;
 - `cargo test-control <filter>` tests the retained combat-search capability

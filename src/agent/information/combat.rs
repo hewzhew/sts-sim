@@ -462,4 +462,22 @@ mod tests {
             vec!["Bash", "Strike_R", "Defend_R"]
         );
     }
+
+    #[test]
+    fn natural_combat_start_exposes_the_rolled_monster_intent() {
+        let mut run = crate::state::run::RunState::new(1, 20, false, "Ironclad");
+        let (_engine, combat) = crate::sim::combat_start::build_natural_combat_start(
+            &mut run,
+            crate::content::monsters::factory::EncounterId::JawWorm,
+            crate::state::map::node::RoomType::MonsterRoom,
+        )
+        .expect("combat should initialize");
+        let monster = combat.entities.monsters.first().expect("jaw worm");
+
+        let intent = combat_public_intent_facts_v1(&combat, monster.id);
+
+        assert_eq!(intent.evidence, ObservationEvidenceKindV1::VisibleExact);
+        assert!(intent.intent.is_some());
+        assert_eq!(intent.hidden_reason, None);
+    }
 }

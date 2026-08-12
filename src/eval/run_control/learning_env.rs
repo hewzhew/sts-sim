@@ -3,11 +3,11 @@ use serde::{Deserialize, Serialize};
 use crate::agent::information::action::{
     project_public_combat_actions_v1, CombatActionResolutionTableV1, PublicCombatActionSurfaceV1,
 };
+use crate::agent::information::run::PublicCombatRunContextV1;
 use crate::agent::information::state::{public_combat_state_v1, PublicCombatStateV1};
 use crate::ai::planner_core::{
-    LegalCandidateSet, PlannerDecisionContext, PlannerObservation, PlannerPublicMap, PlannerRunGoal,
+    LegalCandidateSet, PlannerDecisionContext, PlannerObservation, PlannerRunGoal,
 };
-use crate::content::monsters::factory::EncounterId;
 use crate::content::potions::PotionId;
 use crate::sim::combat_action_surface::{
     combat_legal_action_surface_v2, pending_choice_input_is_legal,
@@ -37,39 +37,11 @@ pub struct LearningStrategicBoundaryV1 {
 #[serde(deny_unknown_fields)]
 pub struct LearningCombatBoundaryV1 {
     pub observation: PublicCombatStateV1,
-    pub public_run_context: LearningCombatPublicRunContextV1,
+    pub public_run_context: PublicCombatRunContextV1,
     pub observation_completeness: LearningObservationCompletenessV1,
     pub public_actions: PublicCombatActionSurfaceV1,
     /// Exact handles used only after the policy returns public ordinals.
     pub private_resolution: CombatActionResolutionTableV1,
-}
-
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-#[serde(tag = "status", rename_all = "snake_case")]
-pub enum LearningCombatPublicRunContextV1 {
-    Available {
-        run_goal: PlannerRunGoal,
-        act: u8,
-        floor: i32,
-        keys: [bool; 3],
-        public_map: PlannerPublicMap,
-        encounter_id: Option<EncounterId>,
-    },
-    Unavailable {
-        reason: LearningCombatPublicRunContextGapV1,
-    },
-}
-
-impl LearningCombatPublicRunContextV1 {
-    pub fn is_available(&self) -> bool {
-        matches!(self, Self::Available { .. })
-    }
-}
-
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum LearningCombatPublicRunContextGapV1 {
-    DetachedExactCombatPosition,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -511,10 +483,8 @@ pub(super) fn learning_combat_boundary_v1(
     })
 }
 
-fn learning_combat_public_run_context_v1(
-    session: &RunControlSession,
-) -> LearningCombatPublicRunContextV1 {
-    LearningCombatPublicRunContextV1::Available {
+fn learning_combat_public_run_context_v1(session: &RunControlSession) -> PublicCombatRunContextV1 {
+    PublicCombatRunContextV1::Available {
         run_goal: if session.run_state.is_final_act_available {
             PlannerRunGoal::HeartVictory
         } else {
@@ -690,7 +660,7 @@ mod tests {
         );
         assert!(matches!(
             boundary.public_run_context,
-            LearningCombatPublicRunContextV1::Available {
+            PublicCombatRunContextV1::Available {
                 encounter_id: Some(crate::content::monsters::factory::EncounterId::JawWorm),
                 ..
             }

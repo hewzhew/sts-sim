@@ -45,9 +45,9 @@ notes are not kept searchable; use git history for archaeology.
 - [Exact Model, Policy, and Lazy Run Search Migration](design/2026-07-24-exact-model-policy-lazy-run-search-migration.md):
   active oracle-mainline boundary between exact mechanics, policy guidance,
   state value, and lazy run search.
-- [Public-Belief Agent Learning System](design/2026-08-12-public-belief-agent-learning-system.md):
-  active clean-room architecture for public information, hidden-state belief,
-  information-set search, recurrent replay, and complete-run learning.
+- [Public-Information Agent: Facts And Working Hypotheses](design/2026-08-12-public-belief-agent-learning-system.md):
+  implemented public/private and belief-transition boundaries, plus explicitly
+  unsettled search, replay, model, and curriculum questions.
 
 ## Rules
 

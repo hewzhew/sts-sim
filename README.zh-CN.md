@@ -8,18 +8,10 @@
 
 ## 当前主线
 
-```text
-exact simulator mechanics
-  -> public information + private action resolution
-  -> belief environment + information-set search
-  -> visit-policy / complete-run replay
-  -> recurrent policy/value
-  -> natural complete runs
-```
-
-当前主线是同一套 potion-aware、完整跑局目标的 learned agent。A0 只是低方差
-课程，A20 是最终分布；二者不切换架构或目标。旧 combat search、owner、case
-和 trainer 可作为诊断或 bootstrap，但不约束新系统，也不自动成为老师。
+已经实现的是 learned agent 的公开信息、私有动作解析与 belief transition
+边界。尚未证明的是应该采用哪一种 search、replay、模型和 A0→A20 课程；这些是
+接下来要用小实验区分的假设，不是既定架构。最终评估仍以 potion-aware 的真实完整
+跑局为准，旧 combat search、owner、case 和 trainer 不自动成为老师。
 
 维护中的边界契约见 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)。
 
@@ -84,6 +76,7 @@ Binary 边界见 [src/bin/README.md](src/bin/README.md)。
 | `src/runtime` | run/combat 执行时支持 |
 | `src/sim` | 面向模拟器的 legal action、apply、search 边界 |
 | `src/agent` | learned agent 的 public information、private resolution 与 belief contract |
+| `crates/sts_agent` | 上述 agent 源码的独立 Cargo owner；agent edit-test 不重链接 simulator core |
 | `src/ai` | policy、strategic facts、deck mutation、combat search、route/search work |
 | `src/eval` | combat eval、run-control、analysis workbench、learning adapter 的历史物理源码树；Cargo owner 由下列 crate 明确切分 |
 | `src/bin` | 当前维护的命令入口 |

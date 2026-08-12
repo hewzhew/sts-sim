@@ -21,15 +21,16 @@ The maintained oracle command path has one compile-time dependency direction:
 
 ```text
 oracle executable hosts -> sts_oracle_runtime -> sts_oracle_run_control
-                                              -> sts_oracle_eval -> sts_simulator
+                                              -> sts_oracle_eval -> sts_agent -> sts_simulator
 learning callers -> sts_oracle_learning -> sts_oracle_learning_env
                                       -> sts_oracle_run_control
 combat-search frontend -> capability worker -> sts_oracle_eval
 ```
 
-`sts_simulator` owns game content, state, engine transitions, simulation, the
-public-information/belief contracts under `src/agent`, and stable lower policy
-layers. `sts_oracle_eval` owns combat evaluation and
+`sts_simulator` owns game content, state, engine transitions, simulation, and
+stable lower policy layers. `sts_agent` owns the public-information/belief
+contracts under `src/agent` and depends only on that simulator surface.
+`sts_oracle_eval` owns combat evaluation and
 exact-search orchestration, including the production-independent typed
 `CombatCaseCoreV1` consumed by fixed-combat frontends.
 `sts_oracle_run_control` consumes that lower surface and owns exact run
@@ -59,8 +60,8 @@ owner boundary; run-control and learning modules below the same physical tree
 are attached only by their named crates. Physical proximity is not permission
 for a reverse dependency, duplicate owner, or broad facade dependency.
 
-Use `cargo test-core` and `cargo test-control` for their respective unit-test
-harnesses and `cargo check-workspace` for every target. `test-control` explicitly names
+Use `cargo test-core`, `cargo test-agent`, and `cargo test-control` for their
+respective unit-test harnesses and `cargo check-workspace` for every target. `test-control` explicitly names
 combat eval, run-control, learning, runtime, and command owners; a dependency's
 private unit tests are never assumed to run transitively. Do not merge the
 harnesses again through test features or replace them with many integration-test
@@ -86,25 +87,12 @@ The intended flow is:
 domain -> analysis -> strategy -> policy -> runtime
 ```
 
-The learned-agent path is a separate clean-room flow:
-
-```text
-exact domain mechanics
-  -> public information + private action resolution
-  -> belief environment
-  -> information-set search
-  -> visit-policy / complete-run value replay
-  -> recurrent learned policy/value
-  -> runtime
-```
-
-It must not pass through current strategy scores, owner ranks, explanation
-strings, or search-private state. Existing owners may supply behavior
-trajectories, but their selected actions are provenance rather than teacher
-labels.
-
-The canonical learned-agent design is
-[`Public-Belief Agent Learning System`](design/2026-08-12-public-belief-agent-learning-system.md).
+The learned-agent boundary is deliberately separate from current strategy
+scores, owner ranks, explanation strings, and search-private state. Existing
+owners may supply behavior trajectories, but their selected actions are
+provenance rather than teacher labels. Search, replay, model, and curriculum
+choices remain working hypotheses documented in
+[`Public-Information Agent: Facts And Working Hypotheses`](design/2026-08-12-public-belief-agent-learning-system.md).
 `src/agent/information` owns model-visible semantics;
 `src/agent/belief` owns hidden-future sampling provenance. Exact UUIDs and
 entity ids may exist in a parallel execution-resolution table but never in the
@@ -112,11 +100,27 @@ public state or model features. Current witness engines remain optional rollout
 or demonstration sources; their exact-future trajectories, local scores, and
 first-win order are not policy targets.
 
-The first independent-stream combat particle sampler is explicitly a mechanics
-feasibility implementation, not a posterior over complete run histories. It
-preserves the public boundary and potion actions and rejects hidden current
-intent. A history/seed-consistent sampler must use a distinct typed origin and
-cannot silently upgrade old particles or artifacts.
+The physical source remains under `src/agent`, while `crates/sts_agent` is its
+Cargo owner. It depends downward on simulator mechanics; evaluation and
+learning depend upward on it. The simulator core does not re-export the agent
+module. Use `cargo test-agent` for this edit loop so belief work neither relinks
+the full mechanics test binary nor invalidates unrelated search crates.
+
+The independent-stream combat sampler is a mechanics-feasibility
+implementation, not a posterior over complete run histories. It preserves the
+public boundary and potion actions and rejects hidden current intent. Any
+history/seed-conditioned replacement must use a distinct typed origin rather
+than silently reinterpreting old particles or artifacts.
+
+`CombatBeliefEnvironmentV1` is the canonical combat information-state stepper.
+It owns a typed public action-observation history and a normalized population
+of exact private particles. One public action ordinal is resolved separately
+through every particle's private table before exact execution. Successors are
+grouped by the complete next public boundary; a newly visible draw, intent, or
+terminal result therefore creates conditional chance branches instead of
+remaining mixed in one belief. Samplers receive the full public-history prefix
+and must declare whether they condition on that prefix or only the current
+boundary. This environment supplies mechanics, not search visits or values.
 
 Shared card mechanics used by that path belong to `content::cards::mechanics`,
 not to an analysis or reward-policy table. The profile owns upgrade-sensitive

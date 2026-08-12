@@ -642,6 +642,7 @@ the maintained broad handoff commands are:
 cargo fmt --all -- --check
 cargo check-workspace
 cargo test-core
+cargo test-agent
 cargo test-control
 cargo check --workspace --release --all-targets
 cargo test -p sts_combat_search_driver --lib
@@ -1465,8 +1466,8 @@ the maintained training-verification entrypoint.
 
 The root package is the sole default member and disables automatic bins and
 integration tests. Bare `cargo test --lib` therefore checks only the core
-package. Use `cargo test-core <filter>` and `cargo test-control <filter>`
-for targeted tests, then broaden in proportion to risk. Compilation ownership
+package. Use `cargo test-core <filter>`, `cargo test-agent <filter>`, and
+`cargo test-control <filter>` for targeted tests, then broaden in proportion to risk. Compilation ownership
 and dependency direction are maintained in
 [ARCHITECTURE.md](ARCHITECTURE.md#cargo-package-boundary).
 

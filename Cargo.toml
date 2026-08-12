@@ -20,6 +20,7 @@ members = [
     "crates/sts_oracle_run_control",
     "crates/sts_oracle_runtime",
     "crates/oracle_lab_protocol",
+    "crates/sts_agent",
     "crates/sts_combat_legacy",
     "crates/sts_combat_knowledge",
     "crates/sts_combat_contract",
@@ -79,6 +80,12 @@ codegen-units = 256
 [profile.release.package.sts_oracle_eval]
 # Combat evaluation contains hot exact-search orchestration. Keep its optimized
 # code generation independent from run-control, branch persistence, and command IO.
+opt-level = 2
+codegen-units = 64
+
+[profile.release.package.sts_agent]
+# Agent information/belief iteration is independent from the O3 simulator
+# mechanics owner. O2 retains hot-path optimization with faster codegen.
 opt-level = 2
 codegen-units = 64
 
@@ -143,6 +150,10 @@ opt-level = 3
 codegen-units = 1
 
 [profile.release-final.package.sts_oracle_eval]
+opt-level = 3
+codegen-units = 1
+
+[profile.release-final.package.sts_agent]
 opt-level = 3
 codegen-units = 1
 

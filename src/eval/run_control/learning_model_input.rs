@@ -20,6 +20,7 @@ use crate::agent::information::action::{
     PublicCombatSelectionDomainCandidateV1, PublicCombatSelectionFamilyV1,
 };
 use crate::agent::information::combat::HiddenInformationReasonV1;
+use crate::agent::information::run::PublicCombatRunContextV1;
 use crate::agent::information::state::{
     CombatLearningCardZonesV1, CombatLearningEncounterV1, CombatLearningMonsterStateV1,
     CombatLearningPlayerStateV1, CombatLearningPotionV1, CombatLearningTurnV1,
@@ -38,8 +39,7 @@ use crate::state::core::{ClientInput, PileType};
 use crate::state::selection::{SelectionReason, SelectionResolution, SelectionScope};
 
 use super::{
-    LearningActionV1, LearningBoundaryV1, LearningCombatBoundaryV1,
-    LearningCombatPublicRunContextV1, LearningStrategicBoundaryV1,
+    LearningActionV1, LearningBoundaryV1, LearningCombatBoundaryV1, LearningStrategicBoundaryV1,
 };
 
 /// The semantic strategic state visible to a model.
@@ -121,7 +121,7 @@ impl LearningStrategicPotionV1<'_> {
 /// validation metadata rather than model inputs.
 #[derive(Clone, Copy, Debug)]
 pub struct LearningCombatModelObservationV1<'a> {
-    pub public_run_context: &'a LearningCombatPublicRunContextV1,
+    pub public_run_context: &'a PublicCombatRunContextV1,
     pub potions: &'a [Option<CombatLearningPotionV1>],
     pub hidden_reasons: &'a [HiddenInformationReasonV1],
     pub encounter: &'a CombatLearningEncounterV1,
@@ -3072,8 +3072,8 @@ mod tests {
         let boundary = LearningBoundaryV1::Combat {
             boundary: LearningCombatBoundaryV1 {
                 observation: crate::agent::information::state::public_combat_state_v1(&combat),
-                public_run_context: LearningCombatPublicRunContextV1::Unavailable {
-                    reason: super::super::LearningCombatPublicRunContextGapV1::DetachedExactCombatPosition,
+                public_run_context: PublicCombatRunContextV1::Unavailable {
+                    reason: crate::agent::information::run::PublicCombatRunContextGapV1::DetachedExactCombatPosition,
                 },
                 observation_completeness: super::super::LearningObservationCompletenessV1::Complete,
                 public_actions: projection.public,

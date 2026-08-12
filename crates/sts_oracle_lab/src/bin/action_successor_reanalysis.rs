@@ -18,10 +18,12 @@ use serde_json::{json, Value};
 use sts_combat_planner::CombatPolicyChoice;
 use sts_oracle_learning::eval::run_control::{
     CombatLearningPotionPolicyV1, CombatLearningRootBatchArtifactV1, LearningCombatBoundaryV1,
-    LearningCombatPublicRunContextGapV1, LearningCombatPublicRunContextV1, LearningModelDecisionV1,
-    LearningObservationCompletenessV1,
+    LearningModelDecisionV1, LearningObservationCompletenessV1,
 };
 use sts_oracle_runtime::agent::information::action::project_public_combat_actions_v1;
+use sts_oracle_runtime::agent::information::run::{
+    PublicCombatRunContextGapV1, PublicCombatRunContextV1,
+};
 use sts_oracle_runtime::agent::information::state::public_combat_state_v1;
 use sts_oracle_runtime::ai::combat_search_v2::oracle_search_witness_proposal_v1;
 use sts_oracle_runtime::ai::combat_state_key::combat_exact_state_hash_v2;
@@ -364,8 +366,8 @@ pub(crate) fn build(args: ActionSuccessorReanalysisArgs) -> Result<Value, String
             .map_err(|error| format!("cannot project public combat actions: {error}"))?;
     let learning_boundary = LearningCombatBoundaryV1 {
         observation: public_combat_state_v1(&root_position.combat),
-        public_run_context: LearningCombatPublicRunContextV1::Unavailable {
-            reason: LearningCombatPublicRunContextGapV1::DetachedExactCombatPosition,
+        public_run_context: PublicCombatRunContextV1::Unavailable {
+            reason: PublicCombatRunContextGapV1::DetachedExactCombatPosition,
         },
         observation_completeness: LearningObservationCompletenessV1::Complete,
         public_actions: public_actions.public,
