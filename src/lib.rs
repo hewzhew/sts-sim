@@ -1,5 +1,6 @@
 extern crate self as sts_simulator;
 
+pub mod agent;
 pub mod content;
 pub mod engine;
 mod ids;
@@ -36,16 +37,6 @@ mod rewards {
 
     pub mod state {
         pub use crate::state::rewards::*;
-    }
-}
-
-// Legacy compatibility paths. New code should use `ai`, `sim`, or `eval`
-// directly; there is intentionally no `src/bot` implementation tree.
-pub mod bot {
-    pub mod combat {
-        pub mod monster_belief {
-            pub use crate::ai::combat_belief::*;
-        }
     }
 }
 

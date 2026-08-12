@@ -9,23 +9,24 @@
 ## 当前主线
 
 ```text
-typed simulator state
-  -> typed non-combat owners and deck mutation bridges
-  -> branch-tiny run capsules and seed panels
-  -> combat cases for search review
-  -> offline datasets and diagnostics when useful
+exact simulator mechanics
+  -> public information + private action resolution
+  -> belief environment + information-set search
+  -> visit-policy / complete-run replay
+  -> recurrent policy/value
+  -> natural complete runs
 ```
 
-当前设计方向是把策略、执行、诊断分开：
-
-- owner 只产出 typed non-combat decision；
-- runtime 执行 typed decision，不重新解析展示文本；
-- combat search 只解决战斗内部问题；
-- panel 和 review tool 输出证据，不充当 teacher label。
+当前主线是同一套 potion-aware、完整跑局目标的 learned agent。A0 只是低方差
+课程，A20 是最终分布；二者不切换架构或目标。旧 combat search、owner、case
+和 trainer 可作为诊断或 bootstrap，但不约束新系统，也不自动成为老师。
 
 维护中的边界契约见 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)。
 
 ## 快速开始
+
+下面是现有 simulator/oracle 诊断入口；新的 learned-agent 闭环尚未伪装成一个
+已经可训练的命令。
 
 跑单个 owner-audit seed：
 
@@ -69,6 +70,7 @@ Binary 边界见 [src/bin/README.md](src/bin/README.md)。
 - [docs/TESTING.md](docs/TESTING.md): 测试归属和清理标准。
 - [tools/README.md](tools/README.md): 离线工具边界和 artifact 规则。
 - [src/ai/README.md](src/ai/README.md): AI 模块地图和清理方向。
+- [src/agent/README.md](src/agent/README.md): learned agent 的公开信息与 belief 所有权。
 
 退役文档不保留在工作区里污染搜索结果。需要考古时查 git history。
 
@@ -81,6 +83,7 @@ Binary 边界见 [src/bin/README.md](src/bin/README.md)。
 | `src/engine` | 状态转移和 action handler |
 | `src/runtime` | run/combat 执行时支持 |
 | `src/sim` | 面向模拟器的 legal action、apply、search 边界 |
+| `src/agent` | learned agent 的 public information、private resolution 与 belief contract |
 | `src/ai` | policy、strategic facts、deck mutation、combat search、route/search work |
 | `src/eval` | combat eval、run-control、analysis workbench、learning adapter 的历史物理源码树；Cargo owner 由下列 crate 明确切分 |
 | `src/bin` | 当前维护的命令入口 |
@@ -106,8 +109,9 @@ Binary 边界见 [src/bin/README.md](src/bin/README.md)。
 `AtomicExactV2`，用于固定根诊断、挑战、benchmark，以及旧
 `branch_tiny` owner-audit 兼容路径。两者的配置和证据身份已经分开；详见
 [战斗搜索所有权](docs/architecture/combat-search.md)。
-两套引擎目前都只产出 witness/诊断证据，不是经过认证的策略改进老师；尚未实现的资格契约见
-[`CombatSearchImprovementContractV1`](docs/design/2026-08-11-combat-search-improvement-contract-v1.md)。
+两套引擎目前都只产出 witness/诊断证据，不是 learned agent 或权威老师；新的
+完整主线见
+[Public-Belief Agent Learning System](docs/design/2026-08-12-public-belief-agent-learning-system.md)。
 
 ## 开发卫生
 

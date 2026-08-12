@@ -27,8 +27,9 @@ learning callers -> sts_oracle_learning -> sts_oracle_learning_env
 combat-search frontend -> capability worker -> sts_oracle_eval
 ```
 
-`sts_simulator` owns game content, state, engine transitions, simulation, and
-stable lower policy layers. `sts_oracle_eval` owns combat evaluation and
+`sts_simulator` owns game content, state, engine transitions, simulation, the
+public-information/belief contracts under `src/agent`, and stable lower policy
+layers. `sts_oracle_eval` owns combat evaluation and
 exact-search orchestration, including the production-independent typed
 `CombatCaseCoreV1` consumed by fixed-combat frontends.
 `sts_oracle_run_control` consumes that lower surface and owns exact run
@@ -85,11 +86,16 @@ The intended flow is:
 domain -> analysis -> strategy -> policy -> runtime
 ```
 
-The learned-policy path is a separate clean-room flow:
+The learned-agent path is a separate clean-room flow:
 
 ```text
-domain -> hidden-free observation + complete typed action surface
-       -> learned policy/value -> runtime
+exact domain mechanics
+  -> public information + private action resolution
+  -> belief environment
+  -> information-set search
+  -> visit-policy / complete-run value replay
+  -> recurrent learned policy/value
+  -> runtime
 ```
 
 It must not pass through current strategy scores, owner ranks, explanation
@@ -97,71 +103,20 @@ strings, or search-private state. Existing owners may supply behavior
 trajectories, but their selected actions are provenance rather than teacher
 labels.
 
-Combat search currently supplies replayable witnesses and diagnostics, not a
-policy-improvement operator. Before any search output becomes a learning
-target it must cross the separately owned public-information, chance-particle,
-fair-allocation, independent-evaluation, and qualification boundary in
-[`CombatSearchImprovementContractV1`](design/2026-08-11-combat-search-improvement-contract-v1.md).
-Its independent-stream public-chance primitive and exact-upstream-conditioned
-combat-entry floor-chance primitive remain feasibility tools. The latter
-replays production combat start while varying only the five floor-local RNG
-streams; it is not a posterior over complete run seeds or alternative upstream
-histories. `combat_public_history_chance` owns the stronger finite-frame
-reference: every candidate starts a fresh production run from one complete run
-seed, must match each captured public decision snapshot, replays the same typed
-public candidate identities, and must reach the same combat snapshot. It never
-repairs or independently reseeds an RNG stream. In 2,048-seed A0 and A20 frames
-this exact conditioning retained only the source seed, so it establishes
-posterior degeneracy rather than manufacturing a multi-particle population.
-Natural-root equal-work search may seed a non-publishing Expert Iteration
-experiment, but an entrance-only update is not a combat-policy evaluation: if
-search supplies every continuation after the first action, the model has not
-played the combat. Equal-work census may anchor either a completed published
-behavior or an explicitly unqualified search-distillation candidate; the
-latter is residual diagnosis, not promotion, and its candidate, source, loss,
-and manifest identities remain explicit. `combat_search_trajectory_census`
-therefore converts a replay-verified search win into bounded terminal-nearest
-opaque decision roots
-and independently searches every derived root. It passes the unchanged source
-artifact and the Rust-owned exact-win successor corpus to `learning-root
-recover-search`; Rust binds root count, slot, root id, exact state hash,
-no-potion lane, candidate ordinal, witness length, and final HP before emitting
-any suffix root. No `CombatCase` or caller-written action file participates.
-The witness creates exact states only; its actions never become labels.
-When several winning trajectories converge on the same canonical exact root,
-distillation gives that root one training weight only after its state hash,
-anchor action, proposal, and complete equal-work action evidence agree. Source
-provenance still retains every occurrence; conflicting evidence fails instead
-of being averaged or path-weighted.
-Distillation applies cross-entropy only to strict proposal rows. Roots without
-a strict improvement retain the complete frozen baseline distribution through
-forward `KL(anchor || candidate)` instead of turning the baseline argmax into a
-hard label. At the unchanged anchor the KL gradient is zero, so sparse proposal
-gradients are not diluted on the first bounded step; subsequent explicit steps
-pay for distribution drift on retained roots. The selected loss profile is
-part of both the candidate receipt and trainer manifest identity. Legacy
-proposal-else-baseline candidates remain exactly recoverable under their old
-identity but are not silently reinterpreted. Evaluation then lets the updated
-scorer choose every action in complete held-out combats with no search suffix.
-The command remains non-publishing by default.
-An explicit candidate output may retain one tensor-only checkpoint and exact
-greedy behavior manifest under an `experimental_unqualified` receipt. This
-candidate has no production training journal, so normal combat behavior
-recovery rejects it; only the explicit candidate loader may restore it. Before
-returning, the distillation command requires byte-exact training and held-out
-logits, identical greedy complete-combat action traces, and identical terminal
-outcomes between the live scorer and a fresh disk restore. A separate
-training-only owner consumes the same fixed recovery-root/search pairs and
-publishes no evaluation verdict. Its default is one bounded optimizer step;
-multi-epoch fitting is explicit because the first corpus showed unchanged
-survival but increasing unseen action-order regressions after the first step.
-It verifies exact training logits after disk restore. A separate
-fresh-root evaluator compares that restored candidate with its frozen source
-behavior by letting both play complete no-potion combats; it consumes no search
-result or teacher label. This remains realized-private-future, non-production
-evidence. Qualification and the teacher owner are still missing;
-`AtomicExactV2`, `TurnGraphPortfolioV1`, and their member engines are not
-certified teachers.
+The canonical learned-agent design is
+[`Public-Belief Agent Learning System`](design/2026-08-12-public-belief-agent-learning-system.md).
+`src/agent/information` owns model-visible semantics;
+`src/agent/belief` owns hidden-future sampling provenance. Exact UUIDs and
+entity ids may exist in a parallel execution-resolution table but never in the
+public state or model features. Current witness engines remain optional rollout
+or demonstration sources; their exact-future trajectories, local scores, and
+first-win order are not policy targets.
+
+The first independent-stream combat particle sampler is explicitly a mechanics
+feasibility implementation, not a posterior over complete run histories. It
+preserves the public boundary and potion actions and rejects hidden current
+intent. A history/seed-consistent sampler must use a distinct typed origin and
+cannot silently upgrade old particles or artifacts.
 
 Shared card mechanics used by that path belong to `content::cards::mechanics`,
 not to an analysis or reward-policy table. The profile owns upgrade-sensitive

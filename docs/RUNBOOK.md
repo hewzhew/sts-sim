@@ -10,6 +10,11 @@ command-oriented and version-independent:
 - CLI flags and emitted schema versions are owned by the corresponding Rust
   command, not copied here.
 
+The public-belief learned-agent architecture does not yet have an end-to-end
+training command. Existing combat-search and learning commands below remain
+diagnostic/bootstrap surfaces; their availability is not evidence that they
+implement the active learned-agent design.
+
 ## Command Surfaces
 
 Use the narrowest maintained surface for the task:

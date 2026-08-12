@@ -1,8 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::ai::combat_learning_observation::{
-    combat_learning_observation_v1, CombatLearningObservationV1,
-};
+use crate::agent::information::state::{public_combat_state_v1, PublicCombatStateV1};
 use crate::ai::planner_core::{
     LegalCandidateSet, PlannerDecisionContext, PlannerObservation, PlannerPublicMap, PlannerRunGoal,
 };
@@ -36,9 +34,12 @@ pub struct LearningStrategicBoundaryV1 {
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct LearningCombatBoundaryV1 {
-    pub observation: CombatLearningObservationV1,
+    pub observation: PublicCombatStateV1,
     pub public_run_context: LearningCombatPublicRunContextV1,
     pub observation_completeness: LearningObservationCompletenessV1,
+    /// Exact handles used only to translate public candidate ordinals back to
+    /// simulator inputs. Model observations must never encode these values.
+    pub private_resolution: LearningCombatPrivateResolutionV1,
     /// One canonical legal-action ordinal for every complete atomic action.
     ///
     /// This projection never removes simulator legality.  A model-facing
@@ -46,6 +47,13 @@ pub struct LearningCombatBoundaryV1 {
     /// ordinal, while execution still resolves the retained original input.
     pub atomic_action_representatives: Vec<usize>,
     pub legal_actions: CombatLegalActionSurfaceV2,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct LearningCombatPrivateResolutionV1 {
+    pub monster_entity_ids_by_order: Vec<crate::EntityId>,
+    pub potion_uuids_by_slot: Vec<Option<u32>>,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -511,9 +519,25 @@ pub(super) fn learning_combat_boundary_v1(
         &legal_actions.atomic_actions,
     );
     Ok(LearningCombatBoundaryV1 {
-        observation: combat_learning_observation_v1(&position.combat),
+        observation: public_combat_state_v1(&position.combat),
         public_run_context: learning_combat_public_run_context_v1(session),
         observation_completeness: LearningObservationCompletenessV1::Complete,
+        private_resolution: LearningCombatPrivateResolutionV1 {
+            monster_entity_ids_by_order: position
+                .combat
+                .entities
+                .monsters
+                .iter()
+                .map(|monster| monster.id)
+                .collect(),
+            potion_uuids_by_slot: position
+                .combat
+                .entities
+                .potions
+                .iter()
+                .map(|potion| potion.as_ref().map(|potion| potion.uuid))
+                .collect(),
+        },
         atomic_action_representatives,
         legal_actions,
     })
@@ -717,7 +741,7 @@ mod tests {
                 potion_index: 0,
                 target: None,
             }));
-        assert_eq!(boundary.observation.monsters[0].entity_id, 7);
+        assert_eq!(boundary.private_resolution.monster_entity_ids_by_order, [7]);
         assert!(boundary
             .legal_actions
             .atomic_actions

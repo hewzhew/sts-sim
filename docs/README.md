@@ -45,11 +45,9 @@ notes are not kept searchable; use git history for archaeology.
 - [Exact Model, Policy, and Lazy Run Search Migration](design/2026-07-24-exact-model-policy-lazy-run-search-migration.md):
   active oracle-mainline boundary between exact mechanics, policy guidance,
   state value, and lazy run search.
-- [Combat Search Improvement Contract V1](design/2026-08-11-combat-search-improvement-contract-v1.md):
-  partially implemented boundary. Independent-stream and exact-upstream-
-  conditioned floor-chance samplers support feasibility experiments; fair
-  allocation, a public-history run-seed posterior, and teacher qualification
-  remain missing. No current witness engine is certified by it.
+- [Public-Belief Agent Learning System](design/2026-08-12-public-belief-agent-learning-system.md):
+  active clean-room architecture for public information, hidden-state belief,
+  information-set search, recurrent replay, and complete-run learning.
 
 ## Rules
 

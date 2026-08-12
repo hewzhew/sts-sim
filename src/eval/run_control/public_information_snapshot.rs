@@ -452,11 +452,11 @@ struct PublicCombatObservationIdentityV1<'a> {
     mechanics_version: u32,
     public_run_context: &'a LearningCombatPublicRunContextV1,
     potions: Vec<Option<PublicCombatPotionIdentityV1>>,
-    hidden_reasons: &'a [crate::ai::combat_public_observation::HiddenInformationReasonV1],
-    encounter: &'a crate::ai::combat_learning_observation::CombatLearningEncounterV1,
-    turn: &'a crate::ai::combat_learning_observation::CombatLearningTurnV1,
-    player: &'a crate::ai::combat_learning_observation::CombatLearningPlayerStateV1,
-    cards: &'a crate::ai::combat_learning_observation::CombatLearningCardZonesV1,
+    hidden_reasons: &'a [crate::agent::information::combat::HiddenInformationReasonV1],
+    encounter: &'a crate::agent::information::state::CombatLearningEncounterV1,
+    turn: &'a crate::agent::information::state::CombatLearningTurnV1,
+    player: &'a crate::agent::information::state::CombatLearningPlayerStateV1,
+    cards: &'a crate::agent::information::state::CombatLearningCardZonesV1,
     monsters: Vec<PublicCombatMonsterIdentityV1<'a>>,
 }
 
@@ -493,10 +493,10 @@ struct PublicCombatPotionIdentityV1 {
     requires_target: bool,
 }
 
-impl From<&crate::ai::combat_learning_observation::CombatLearningPotionV1>
+impl From<&crate::agent::information::state::CombatLearningPotionV1>
     for PublicCombatPotionIdentityV1
 {
-    fn from(potion: &crate::ai::combat_learning_observation::CombatLearningPotionV1) -> Self {
+    fn from(potion: &crate::agent::information::state::CombatLearningPotionV1) -> Self {
         Self {
             potion_id: potion.potion_id,
             can_use: potion.can_use,
@@ -510,7 +510,7 @@ impl From<&crate::ai::combat_learning_observation::CombatLearningPotionV1>
 #[serde(deny_unknown_fields)]
 struct PublicCombatMonsterIdentityV1<'a> {
     slot: u8,
-    enemy: crate::ai::combat_learning_observation::CombatLearningEnemyIdentityV1,
+    enemy: crate::agent::information::state::CombatLearningEnemyIdentityV1,
     hp: i32,
     max_hp: i32,
     block: i32,
@@ -518,11 +518,10 @@ struct PublicCombatMonsterIdentityV1<'a> {
     escaped: bool,
     dying: bool,
     half_dead: bool,
-    intent: &'a crate::ai::combat_learning_observation::CombatLearningIntentV1,
-    executed_moves: &'a crate::ai::combat_learning_observation::CombatLearningMonsterMoveHistoryV1,
-    public_counters:
-        &'a [crate::ai::combat_learning_observation::CombatLearningMonsterPublicCounterV1],
-    powers: &'a [crate::ai::combat_learning_observation::CombatLearningPowerV1],
+    intent: &'a crate::agent::information::state::CombatLearningIntentV1,
+    executed_moves: &'a crate::agent::information::state::CombatLearningMonsterMoveHistoryV1,
+    public_counters: &'a [crate::agent::information::state::CombatLearningMonsterPublicCounterV1],
+    powers: &'a [crate::agent::information::state::CombatLearningPowerV1],
 }
 
 impl<'a> From<LearningCombatMonsterV1<'a>> for PublicCombatMonsterIdentityV1<'a> {
@@ -549,7 +548,7 @@ impl<'a> From<LearningCombatMonsterV1<'a>> for PublicCombatMonsterIdentityV1<'a>
 #[serde(deny_unknown_fields)]
 struct CombatPublicHistorySnapshotV1<'a> {
     turn_count: u32,
-    turn_counters: &'a crate::ai::combat_learning_observation::CombatLearningTurnCountersV1,
+    turn_counters: &'a crate::agent::information::state::CombatLearningTurnCountersV1,
     monster_histories: Vec<CombatPublicMonsterHistorySnapshotV1<'a>>,
 }
 
@@ -574,9 +573,8 @@ impl<'a> CombatPublicHistorySnapshotV1<'a> {
 #[serde(deny_unknown_fields)]
 struct CombatPublicMonsterHistorySnapshotV1<'a> {
     slot: u8,
-    executed_moves: &'a crate::ai::combat_learning_observation::CombatLearningMonsterMoveHistoryV1,
-    public_counters:
-        &'a [crate::ai::combat_learning_observation::CombatLearningMonsterPublicCounterV1],
+    executed_moves: &'a crate::agent::information::state::CombatLearningMonsterMoveHistoryV1,
+    public_counters: &'a [crate::agent::information::state::CombatLearningMonsterPublicCounterV1],
 }
 
 #[derive(Serialize)]

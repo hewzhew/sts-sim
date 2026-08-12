@@ -19,21 +19,27 @@ fn test_power(power_type: PowerId, instance_id: u32, amount: i32) -> Power {
 }
 
 #[test]
-fn private_rng_and_card_uuid_do_not_change_learning_observation() {
+fn private_rng_and_execution_handles_do_not_change_public_state() {
     let mut left = crate::test_support::blank_test_combat();
     left.zones.hand = vec![CombatCard::new(CardId::Bash, 1)];
+    left.entities.potions = vec![Some(Potion::new(PotionId::FruitJuice, 41))];
+    let mut monster = crate::test_support::test_monster(EnemyId::JawWorm);
+    monster.id = 7;
+    left.entities.monsters.push(monster);
     let mut right = left.clone();
     right.zones.hand[0].uuid = 99;
+    right.entities.potions[0].as_mut().unwrap().uuid = 199;
+    right.entities.monsters[0].id = 299;
     right.rng = CombatRng::new(RngPool::new(123_456));
 
     assert_eq!(
-        combat_learning_observation_v1(&left),
-        combat_learning_observation_v1(&right)
+        public_combat_state_v1(&left),
+        public_combat_state_v1(&right)
     );
 }
 
 #[test]
-fn unordered_public_pile_order_does_not_change_learning_observation() {
+fn unordered_public_pile_order_does_not_change_public_state() {
     let mut left = crate::test_support::blank_test_combat();
     left.zones.discard_pile = vec![
         CombatCard::new(CardId::Bash, 1),
@@ -52,8 +58,8 @@ fn unordered_public_pile_order_does_not_change_learning_observation() {
     right.zones.exhaust_pile.reverse();
 
     assert_eq!(
-        combat_learning_observation_v1(&left),
-        combat_learning_observation_v1(&right)
+        public_combat_state_v1(&left),
+        public_combat_state_v1(&right)
     );
 }
 
@@ -69,8 +75,8 @@ fn draw_order_is_hidden_without_frozen_eye_and_visible_with_it() {
     right.zones.draw_pile.swap(0, 1);
 
     assert_eq!(
-        combat_learning_observation_v1(&left),
-        combat_learning_observation_v1(&right)
+        public_combat_state_v1(&left),
+        public_combat_state_v1(&right)
     );
 
     left.entities
@@ -81,8 +87,8 @@ fn draw_order_is_hidden_without_frozen_eye_and_visible_with_it() {
         .player
         .add_relic(RelicState::new(RelicId::FrozenEye));
     assert_ne!(
-        combat_learning_observation_v1(&left),
-        combat_learning_observation_v1(&right)
+        public_combat_state_v1(&left),
+        public_combat_state_v1(&right)
     );
 }
 
@@ -104,7 +110,7 @@ fn runic_dome_hides_typed_intent_facts() {
         .player
         .add_relic(RelicState::new(RelicId::RunicDome));
 
-    let observation = combat_learning_observation_v1(&combat);
+    let observation = public_combat_state_v1(&combat);
 
     assert_eq!(observation.monsters[0].intent.intent, None);
     assert_eq!(
@@ -114,7 +120,7 @@ fn runic_dome_hides_typed_intent_facts() {
 }
 
 #[test]
-fn learning_observation_keeps_domain_card_potion_and_enemy_identities() {
+fn public_state_keeps_domain_card_potion_and_enemy_identities() {
     let mut combat = crate::test_support::blank_test_combat();
     combat.zones.hand = vec![CombatCard::new(CardId::Bash, 1)];
     combat.entities.potions = vec![Some(Potion::new(PotionId::FruitJuice, 41))];
@@ -123,7 +129,7 @@ fn learning_observation_keeps_domain_card_potion_and_enemy_identities() {
         .monsters
         .push(crate::test_support::test_monster(EnemyId::JawWorm));
 
-    let observation = combat_learning_observation_v1(&combat);
+    let observation = public_combat_state_v1(&combat);
 
     assert_eq!(observation.cards.hand.cards[0].card_id, CardId::Bash);
     assert_eq!(
@@ -138,10 +144,6 @@ fn learning_observation_keeps_domain_card_potion_and_enemy_identities() {
         CombatLearningEnemyIdentityV1::Known {
             enemy_id: EnemyId::JawWorm,
         }
-    );
-    assert_eq!(
-        observation.monsters[0].entity_id,
-        combat.entities.monsters[0].id
     );
 }
 
@@ -172,7 +174,7 @@ fn hand_attack_projects_current_damage_for_each_monster_without_mutating_the_car
     );
     store::set_powers_for(&mut combat, 2, vec![test_power(PowerId::Vulnerable, 3, 1)]);
 
-    let observation = combat_learning_observation_v1(&combat);
+    let observation = public_combat_state_v1(&combat);
     let projected = &observation.cards.hand.cards[0];
 
     assert_eq!(projected.current_damage, 6);
@@ -194,7 +196,7 @@ fn hand_multi_attack_projection_stays_aligned_to_monster_order() {
     combat.entities.monsters = vec![first, second];
     store::set_powers_for(&mut combat, 2, vec![test_power(PowerId::Vulnerable, 1, 1)]);
 
-    let observation = combat_learning_observation_v1(&combat);
+    let observation = public_combat_state_v1(&combat);
     let projected = &observation.cards.hand.cards[0];
 
     assert_eq!(projected.current_damage, 4);
@@ -214,7 +216,7 @@ fn hand_skill_projects_current_block_without_fake_target_damage() {
         .push(crate::test_support::test_monster(EnemyId::Cultist));
     store::set_powers_for(&mut combat, 0, vec![test_power(PowerId::Dexterity, 1, 2)]);
 
-    let observation = combat_learning_observation_v1(&combat);
+    let observation = public_combat_state_v1(&combat);
     let projected = &observation.cards.hand.cards[0];
 
     assert_eq!(projected.current_block, 7);
@@ -223,14 +225,14 @@ fn hand_skill_projects_current_block_without_fake_target_damage() {
 }
 
 #[test]
-fn serialized_learning_observation_uses_v2_current_card_projection() {
+fn serialized_public_state_uses_current_card_projection() {
     let mut combat = crate::test_support::blank_test_combat();
     combat.zones.hand = vec![CombatCard::new(CardId::Strike, 1)];
-    let observation = combat_learning_observation_v1(&combat);
-    let value = serde_json::to_value(observation).expect("serialize learning observation");
+    let observation = public_combat_state_v1(&combat);
+    let value = serde_json::to_value(observation).expect("serialize public combat state");
 
-    assert_eq!(value["schema_name"], "CombatLearningObservation");
-    assert_eq!(value["schema_version"], 2);
+    assert_eq!(value["schema_name"], "PublicCombatState");
+    assert_eq!(value["schema_version"], 1);
     assert!(value.get("cards").is_some());
     assert!(value.get("player").is_some());
     assert!(value.get("player_summary").is_none());
@@ -241,10 +243,10 @@ fn serialized_learning_observation_uses_v2_current_card_projection() {
 }
 
 #[test]
-fn public_powers_relics_and_dynamic_cards_change_learning_observation() {
+fn public_powers_relics_and_dynamic_cards_change_public_state() {
     let mut baseline = crate::test_support::blank_test_combat();
     baseline.zones.hand = vec![CombatCard::new(CardId::Bash, 1)];
-    let baseline_observation = combat_learning_observation_v1(&baseline);
+    let baseline_observation = public_combat_state_v1(&baseline);
 
     let mut changed = baseline.clone();
     changed.zones.hand[0].base_damage_mut = 4;
@@ -266,14 +268,11 @@ fn public_powers_relics_and_dynamic_cards_change_learning_observation() {
         }],
     );
 
-    assert_ne!(
-        baseline_observation,
-        combat_learning_observation_v1(&changed)
-    );
+    assert_ne!(baseline_observation, public_combat_state_v1(&changed));
 }
 
 #[test]
-fn private_monster_roll_state_does_not_change_learning_observation() {
+fn private_monster_roll_state_does_not_change_public_state() {
     let mut left = crate::test_support::blank_test_combat();
     let mut louse = crate::test_support::test_monster(EnemyId::LouseNormal);
     louse.id = 7;
@@ -292,8 +291,8 @@ fn private_monster_roll_state_does_not_change_learning_observation() {
     right.entities.monsters[0].louse.bite_damage = Some(9);
 
     assert_eq!(
-        combat_learning_observation_v1(&left),
-        combat_learning_observation_v1(&right),
+        public_combat_state_v1(&left),
+        public_combat_state_v1(&right),
         "the private current roll and unrevealed louse damage must not leak"
     );
 }
@@ -312,7 +311,7 @@ fn executed_monster_history_is_public_but_the_current_roll_is_not() {
         .player
         .add_relic(RelicState::new(RelicId::RunicDome));
 
-    let observation = combat_learning_observation_v1(&combat);
+    let observation = public_combat_state_v1(&combat);
 
     assert_eq!(
         observation.monsters[0].executed_moves,
@@ -324,13 +323,13 @@ fn executed_monster_history_is_public_but_the_current_roll_is_not() {
 }
 
 #[test]
-fn public_encounter_counters_change_learning_observation() {
+fn public_encounter_counters_change_public_state() {
     let mut thief_combat = crate::test_support::blank_test_combat();
     let mut looter = crate::test_support::test_monster(EnemyId::Looter);
     looter.thief.stolen_gold = 17;
     thief_combat.entities.monsters.push(looter);
 
-    let thief_observation = combat_learning_observation_v1(&thief_combat);
+    let thief_observation = public_combat_state_v1(&thief_combat);
     assert_eq!(
         thief_observation.monsters[0].public_counters,
         vec![CombatLearningMonsterPublicCounterV1::StolenGold { amount: 17 }]
@@ -341,7 +340,7 @@ fn public_encounter_counters_change_learning_observation() {
     hexaghost.hexaghost.orb_active_count = 4;
     hexaghost_combat.entities.monsters.push(hexaghost);
 
-    let hexaghost_observation = combat_learning_observation_v1(&hexaghost_combat);
+    let hexaghost_observation = public_combat_state_v1(&hexaghost_combat);
     assert_eq!(
         hexaghost_observation.monsters[0].public_counters,
         vec![CombatLearningMonsterPublicCounterV1::HexaghostActiveOrbs { count: 4 }]

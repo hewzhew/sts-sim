@@ -1,4 +1,4 @@
-//! Stable public combat observation used by durable state fingerprints.
+//! Public combat information visible to a deployed agent.
 
 use serde::{Deserialize, Serialize};
 

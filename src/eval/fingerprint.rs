@@ -3,9 +3,7 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
-use crate::ai::combat_public_observation::{
-    combat_public_observation_v1, CombatPublicObservationV1,
-};
+use crate::agent::information::combat::{combat_public_observation_v1, CombatPublicObservationV1};
 use crate::ai::combat_state_key::{
     combat_exact_state_hash_v2, stable_dominance_bucket_key, stable_outcome_key,
 };

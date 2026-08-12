@@ -1,4 +1,4 @@
-//! Hidden-free combat state for online policy and value learning.
+//! Complete public combat information for a deployed policy and value model.
 //!
 //! This projection is deliberately explicit. It must not serialize
 //! `CombatState`, RNG pools, queued engine actions, or simulator-only runtime
@@ -14,23 +14,22 @@ use crate::content::monsters::EnemyId;
 use crate::content::potions::PotionId;
 use crate::content::powers::PowerId;
 use crate::content::relics::RelicState;
-use crate::ids::EntityId;
 use crate::runtime::combat::{
     CombatCard, CombatPhase, CombatState, EphemeralCounters, Intent, MonsterEntity, MonsterId,
     OrbEntity, OrbId, Power, PowerPayload, StanceId,
 };
 
-use super::combat_public_observation::{
+use crate::agent::information::combat::{
     combat_public_draw_evidence_v1, combat_public_hidden_reasons_v1, combat_public_intent_facts_v1,
     HiddenInformationReasonV1, InformationAccessV1, ObservationEvidenceKindV1,
 };
 
-pub const COMBAT_LEARNING_OBSERVATION_SCHEMA_NAME: &str = "CombatLearningObservation";
-pub const COMBAT_LEARNING_OBSERVATION_SCHEMA_VERSION: u32 = 2;
+pub const PUBLIC_COMBAT_STATE_SCHEMA_NAME: &str = "PublicCombatState";
+pub const PUBLIC_COMBAT_STATE_SCHEMA_VERSION: u32 = 1;
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
-pub struct CombatLearningObservationV1 {
+pub struct PublicCombatStateV1 {
     pub schema_name: String,
     pub schema_version: u32,
     pub information_access: InformationAccessV1,
@@ -97,9 +96,6 @@ pub struct CombatLearningPlayerStateV1 {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct CombatLearningPotionV1 {
-    /// Internal exact identity used only to keep root-scoped action contracts
-    /// from authorizing a replacement potion in the same slot.
-    pub potion_uuid: u32,
     pub potion_id: PotionId,
     pub can_use: bool,
     pub can_discard: bool,
@@ -119,7 +115,6 @@ pub struct CombatLearningOrbV1 {
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct CombatLearningMonsterStateV1 {
-    pub entity_id: EntityId,
     pub slot: u8,
     pub enemy: CombatLearningEnemyIdentityV1,
     pub hp: i32,
@@ -247,7 +242,7 @@ impl PartialOrd for CombatLearningCardV1 {
     }
 }
 
-pub fn combat_learning_observation_v1(combat: &CombatState) -> CombatLearningObservationV1 {
+pub fn public_combat_state_v1(combat: &CombatState) -> PublicCombatStateV1 {
     let draw_evidence = combat_public_draw_evidence_v1(combat);
     let player = &combat.entities.player;
     let monsters = combat
@@ -257,7 +252,6 @@ pub fn combat_learning_observation_v1(combat: &CombatState) -> CombatLearningObs
         .map(|monster| {
             let intent = combat_public_intent_facts_v1(combat, monster.id);
             CombatLearningMonsterStateV1 {
-                entity_id: monster.id,
                 slot: monster.slot,
                 enemy: EnemyId::from_id(monster.monster_type).map_or(
                     CombatLearningEnemyIdentityV1::Unmapped {
@@ -290,9 +284,9 @@ pub fn combat_learning_observation_v1(combat: &CombatState) -> CombatLearningObs
         })
         .collect();
 
-    CombatLearningObservationV1 {
-        schema_name: COMBAT_LEARNING_OBSERVATION_SCHEMA_NAME.to_string(),
-        schema_version: COMBAT_LEARNING_OBSERVATION_SCHEMA_VERSION,
+    PublicCombatStateV1 {
+        schema_name: PUBLIC_COMBAT_STATE_SCHEMA_NAME.to_string(),
+        schema_version: PUBLIC_COMBAT_STATE_SCHEMA_VERSION,
         information_access: InformationAccessV1::Public,
         potions: combat
             .entities
@@ -300,7 +294,6 @@ pub fn combat_learning_observation_v1(combat: &CombatState) -> CombatLearningObs
             .iter()
             .map(|slot| {
                 slot.as_ref().map(|potion| CombatLearningPotionV1 {
-                    potion_uuid: potion.uuid,
                     potion_id: potion.id,
                     can_use: potion.can_use,
                     can_discard: potion.can_discard,

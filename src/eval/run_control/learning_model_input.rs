@@ -13,11 +13,11 @@
 use std::collections::BTreeSet;
 use std::fmt;
 
-use crate::ai::combat_learning_observation::{
+use crate::agent::information::combat::HiddenInformationReasonV1;
+use crate::agent::information::state::{
     CombatLearningCardZonesV1, CombatLearningEncounterV1, CombatLearningMonsterStateV1,
     CombatLearningPlayerStateV1, CombatLearningPotionV1, CombatLearningTurnV1,
 };
-use crate::ai::combat_public_observation::HiddenInformationReasonV1;
 use crate::ai::planner_core::{
     CandidateRepresentationGap, CandidateSetCompleteness, PlannerAction, PlannerCardObservation,
     PlannerDecisionContext, PlannerDecisionSite, PlannerPotionSlotObservation,
@@ -212,11 +212,7 @@ impl CombatLearningPotionPolicyV1 {
         }
     }
 
-    fn allows_input(
-        &self,
-        observation: &crate::ai::combat_learning_observation::CombatLearningObservationV1,
-        input: &ClientInput,
-    ) -> bool {
+    fn allows_input(&self, boundary: &LearningCombatBoundaryV1, input: &ClientInput) -> bool {
         let potion_slot = match input {
             ClientInput::UsePotion { potion_index, .. } => Some(*potion_index),
             ClientInput::DiscardPotion(slot) => Some(*slot),
@@ -225,21 +221,18 @@ impl CombatLearningPotionPolicyV1 {
         let Some(potion_slot) = potion_slot else {
             return true;
         };
-        self.allows_potion_slot(observation, potion_slot)
+        self.allows_potion_slot(boundary, potion_slot)
     }
 
-    fn allows_potion_slot(
-        &self,
-        observation: &crate::ai::combat_learning_observation::CombatLearningObservationV1,
-        potion_slot: usize,
-    ) -> bool {
+    fn allows_potion_slot(&self, boundary: &LearningCombatBoundaryV1, potion_slot: usize) -> bool {
         match self {
             Self::All => true,
-            Self::RootSlots { potion_uuids, .. } => observation
-                .potions
+            Self::RootSlots { potion_uuids, .. } => boundary
+                .private_resolution
+                .potion_uuids_by_slot
                 .get(potion_slot)
-                .and_then(Option::as_ref)
-                .is_some_and(|potion| potion_uuids.contains(&potion.potion_uuid)),
+                .and_then(|potion_uuid| *potion_uuid)
+                .is_some_and(|potion_uuid| potion_uuids.contains(&potion_uuid)),
         }
     }
 }
@@ -313,7 +306,7 @@ impl<'a> LearningCombatMonsterV1<'a> {
         self.monster.slot
     }
 
-    pub fn enemy(&self) -> crate::ai::combat_learning_observation::CombatLearningEnemyIdentityV1 {
+    pub fn enemy(&self) -> crate::agent::information::state::CombatLearningEnemyIdentityV1 {
         self.monster.enemy
     }
 
@@ -345,23 +338,23 @@ impl<'a> LearningCombatMonsterV1<'a> {
         self.monster.half_dead
     }
 
-    pub fn intent(&self) -> &'a crate::ai::combat_learning_observation::CombatLearningIntentV1 {
+    pub fn intent(&self) -> &'a crate::agent::information::state::CombatLearningIntentV1 {
         &self.monster.intent
     }
 
     pub fn executed_moves(
         &self,
-    ) -> &'a crate::ai::combat_learning_observation::CombatLearningMonsterMoveHistoryV1 {
+    ) -> &'a crate::agent::information::state::CombatLearningMonsterMoveHistoryV1 {
         &self.monster.executed_moves
     }
 
     pub fn public_counters(
         &self,
-    ) -> &'a [crate::ai::combat_learning_observation::CombatLearningMonsterPublicCounterV1] {
+    ) -> &'a [crate::agent::information::state::CombatLearningMonsterPublicCounterV1] {
         &self.monster.public_counters
     }
 
-    pub fn powers(&self) -> &'a [crate::ai::combat_learning_observation::CombatLearningPowerV1] {
+    pub fn powers(&self) -> &'a [crate::agent::information::state::CombatLearningPowerV1] {
         &self.monster.powers
     }
 }
@@ -793,7 +786,7 @@ impl<'a> LearningModelDecisionV1<'a> {
             if boundary.atomic_action_representatives[atomic_ordinal] != atomic_ordinal {
                 continue;
             }
-            if !potion_policy.allows_input(observation, input) {
+            if !potion_policy.allows_input(boundary, input) {
                 continue;
             }
             if !combat_learning_policy_candidate_allowed(boundary, input, potion_policy) {
@@ -936,7 +929,7 @@ fn combat_learning_policy_candidate_allowed(
         .iter()
         .any(|candidate| match candidate {
             ClientInput::UsePotion { potion_index, .. } if potion_index != discarded_slot => {
-                potion_policy.allows_potion_slot(&boundary.observation, *potion_index)
+                potion_policy.allows_potion_slot(boundary, *potion_index)
                     && boundary
                         .observation
                         .potions
@@ -1615,10 +1608,10 @@ fn combat_atomic_semantics<'a>(
         target
             .map(|entity_id| {
                 boundary
-                    .observation
-                    .monsters
+                    .private_resolution
+                    .monster_entity_ids_by_order
                     .iter()
-                    .position(|monster| monster.entity_id == entity_id)
+                    .position(|private_entity_id| *private_entity_id == entity_id)
                     .ok_or(LearningModelInputError::CombatTargetMissing)
             })
             .transpose()
@@ -3077,13 +3070,25 @@ mod tests {
         );
         let boundary = LearningBoundaryV1::Combat {
             boundary: LearningCombatBoundaryV1 {
-                observation: crate::ai::combat_learning_observation::combat_learning_observation_v1(
-                    &combat,
-                ),
+                observation: crate::agent::information::state::public_combat_state_v1(&combat),
                 public_run_context: LearningCombatPublicRunContextV1::Unavailable {
                     reason: super::super::LearningCombatPublicRunContextGapV1::DetachedExactCombatPosition,
                 },
                 observation_completeness: super::super::LearningObservationCompletenessV1::Complete,
+                private_resolution: super::super::LearningCombatPrivateResolutionV1 {
+                    monster_entity_ids_by_order: combat
+                        .entities
+                        .monsters
+                        .iter()
+                        .map(|monster| monster.id)
+                        .collect(),
+                    potion_uuids_by_slot: combat
+                        .entities
+                        .potions
+                        .iter()
+                        .map(|potion| potion.as_ref().map(|potion| potion.uuid))
+                        .collect(),
+                },
                 atomic_action_representatives:
                     crate::sim::combat_action_equivalence::canonical_combat_action_representatives_v1(
                         &EngineState::PendingChoice(PendingChoice::ScrySelect {

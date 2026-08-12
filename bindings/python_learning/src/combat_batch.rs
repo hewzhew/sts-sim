@@ -8,7 +8,7 @@ use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyDict};
 use serde::Serialize;
-use sts_oracle_eval::ai::combat_learning_observation::{
+use sts_oracle_eval::agent::information::state::{
     CombatLearningCardV1, CombatLearningEnemyIdentityV1, CombatLearningIntentV1,
     CombatLearningPowerV1,
 };
@@ -138,7 +138,6 @@ impl<'a> ReadyActionCardV1<'a> {
 #[derive(Serialize)]
 #[serde(deny_unknown_fields)]
 struct ReadyActionMonsterV1<'a> {
-    entity_id: usize,
     slot: u8,
     enemy: CombatLearningEnemyIdentityV1,
     hp: i32,
@@ -436,11 +435,7 @@ impl CombatLearningBatchEnv {
                     player_max_hp: observation.player.max_hp,
                     enemy_hp,
                     enemy_max_hp,
-                    potion_uuids: observation
-                        .potions
-                        .iter()
-                        .map(|potion| potion.as_ref().map(|potion| potion.potion_uuid))
-                        .collect(),
+                    potion_uuids: boundary.private_resolution.potion_uuids_by_slot.clone(),
                     potion_ids: observation
                         .potions
                         .iter()
@@ -525,7 +520,6 @@ impl CombatLearningBatchEnv {
                 .monsters
                 .iter()
                 .map(|monster| ReadyActionMonsterV1 {
-                    entity_id: monster.entity_id,
                     slot: monster.slot,
                     enemy: monster.enemy,
                     hp: monster.hp,

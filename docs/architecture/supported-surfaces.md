@@ -32,11 +32,10 @@ There is no version-number ranking of search engines:
 - `TurnGraphPortfolioV1` is the resident witness portfolio over
   `LocalTurnGraphWitnessSession` and `PolicyDiscrepancySession`.
 
-Both currently produce replayable witnesses and diagnostics. Neither is a
-certified teacher. The canonical details live in
-[Combat Search Ownership](combat-search.md); the missing teacher boundary lives
-in
-[CombatSearchImprovementContractV1](../design/2026-08-11-combat-search-improvement-contract-v1.md).
+Both currently produce replayable witnesses and diagnostics. Neither is the
+learned agent or an authoritative teacher. The canonical search details live in
+[Combat Search Ownership](combat-search.md); the learned-agent direction lives
+in [Public-Belief Agent Learning System](../design/2026-08-12-public-belief-agent-learning-system.md).
 
 ## Human Entry Points
 

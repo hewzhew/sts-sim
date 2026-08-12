@@ -1,10 +1,10 @@
 //! Complete combat-side encoding for semantic schema v9.
 
-use sts_oracle_eval::ai::combat_learning_observation::{
+use sts_oracle_eval::agent::information::state::{
     CombatLearningCardCollectionV1, CombatLearningCardV1, CombatLearningEnemyIdentityV1,
     CombatLearningMonsterPublicCounterV1, CombatLearningPowerV1,
 };
-use sts_oracle_eval::ai::combat_public_observation::{
+use sts_oracle_eval::agent::information::combat::{
     HiddenInformationReasonV1, ObservationEvidenceKindV1,
 };
 use sts_oracle_eval::content::cards::CardType;
@@ -404,7 +404,7 @@ impl SemanticBatchBuilder {
     fn encode_turn_counters(
         &mut self,
         turn: u64,
-        counters: &sts_oracle_eval::ai::combat_learning_observation::CombatLearningTurnCountersV1,
+        counters: &sts_oracle_eval::agent::information::state::CombatLearningTurnCountersV1,
     ) -> Result<(), SemanticEncodingError> {
         let token = self.add_token(TokenKind::CombatTurnCounters)?;
         self.edge(turn, RelationKind::TurnHasCounters, token);

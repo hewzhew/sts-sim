@@ -3340,17 +3340,23 @@ fn runic_dome_hides_public_intent_without_a_ui_model() {
         99,
         crate::runtime::combat::Intent::Attack { damage: 7, hits: 1 },
     );
-    assert!(!crate::bot::combat::monster_belief::hidden_intent_active(
-        &state
-    ));
+    assert_eq!(
+        crate::agent::information::combat::combat_public_observation_v1(&state).monsters[0]
+            .intent
+            .evidence,
+        crate::agent::information::combat::ObservationEvidenceKindV1::VisibleExact
+    );
 
     state
         .entities
         .player
         .add_relic(RelicState::new(RelicId::RunicDome));
-    assert!(crate::bot::combat::monster_belief::hidden_intent_active(
-        &state
-    ));
+    assert_eq!(
+        crate::agent::information::combat::combat_public_observation_v1(&state).monsters[0]
+            .intent
+            .evidence,
+        crate::agent::information::combat::ObservationEvidenceKindV1::Hidden
+    );
 }
 
 #[test]

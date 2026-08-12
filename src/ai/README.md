@@ -1,7 +1,8 @@
 # AI Module Map
 
-`src/ai` contains policy, strategy, search, and diagnostic code. It is not one
-flat policy layer. New code should choose an owner layer before it is added.
+`src/ai` contains retained hand-authored policy, strategy, search, and
+diagnostic code. It is not the learned-agent owner. Public model state and
+hidden-future belief belong in [`src/agent`](../agent/README.md).
 
 ## Current Layers
 

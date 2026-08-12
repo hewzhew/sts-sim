@@ -18,10 +18,10 @@ use serde_json::{json, Value};
 use sts_combat_planner::CombatPolicyChoice;
 use sts_oracle_learning::eval::run_control::{
     CombatLearningPotionPolicyV1, CombatLearningRootBatchArtifactV1, LearningCombatBoundaryV1,
-    LearningCombatPublicRunContextGapV1, LearningCombatPublicRunContextV1, LearningModelDecisionV1,
-    LearningObservationCompletenessV1,
+    LearningCombatPrivateResolutionV1, LearningCombatPublicRunContextGapV1,
+    LearningCombatPublicRunContextV1, LearningModelDecisionV1, LearningObservationCompletenessV1,
 };
-use sts_oracle_runtime::ai::combat_learning_observation::combat_learning_observation_v1;
+use sts_oracle_runtime::agent::information::state::public_combat_state_v1;
 use sts_oracle_runtime::ai::combat_search_v2::oracle_search_witness_proposal_v1;
 use sts_oracle_runtime::ai::combat_state_key::combat_exact_state_hash_v2;
 use sts_oracle_runtime::eval::combat_action_imitation::concrete_combat_action_candidates_v1;
@@ -359,11 +359,27 @@ pub(crate) fn build(args: ActionSuccessorReanalysisArgs) -> Result<Value, String
     }
 
     let learning_boundary = LearningCombatBoundaryV1 {
-        observation: combat_learning_observation_v1(&root_position.combat),
+        observation: public_combat_state_v1(&root_position.combat),
         public_run_context: LearningCombatPublicRunContextV1::Unavailable {
             reason: LearningCombatPublicRunContextGapV1::DetachedExactCombatPosition,
         },
         observation_completeness: LearningObservationCompletenessV1::Complete,
+        private_resolution: LearningCombatPrivateResolutionV1 {
+            monster_entity_ids_by_order: root_position
+                .combat
+                .entities
+                .monsters
+                .iter()
+                .map(|monster| monster.id)
+                .collect(),
+            potion_uuids_by_slot: root_position
+                .combat
+                .entities
+                .potions
+                .iter()
+                .map(|potion| potion.as_ref().map(|potion| potion.uuid))
+                .collect(),
+        },
         atomic_action_representatives,
         legal_actions,
     };

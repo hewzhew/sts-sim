@@ -262,7 +262,7 @@ fn normalize_identifier(raw: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::build_natural_combat_start;
-    use crate::ai::combat_public_observation::{
+    use crate::agent::information::combat::{
         combat_public_intent_facts_v1, ObservationEvidenceKindV1,
     };
     use crate::content::cards::CardId;

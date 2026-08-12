@@ -13,24 +13,27 @@ and improved instead of explained from terminal logs.
 ## Current Focus
 
 ```text
-typed simulator state
-  -> typed non-combat owners and deck mutation bridges
-  -> branch-tiny run capsules and seed panels
-  -> combat cases for search review
-  -> offline datasets and diagnostics when useful
+exact simulator mechanics
+  -> public information + private action resolution
+  -> belief environment + information-set search
+  -> visit-policy / complete-run replay
+  -> recurrent policy/value
+  -> natural complete runs
 ```
 
-The active direction is to keep strategy, execution, and diagnostics separate:
-
-- owners choose typed non-combat decisions;
-- runtime applies those decisions without parsing display text;
-- combat search only solves combat;
-- panels and review tools expose evidence, not teacher labels.
+The active direction is one potion-aware learned agent with the complete-run
+objective. A0 is a lower-variance curriculum and A20 is the final distribution;
+they do not use different architectures or objectives. Existing search,
+owners, cases, and trainers are optional diagnostics/bootstrap rather than
+compatibility constraints or automatic teachers.
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the maintained boundary
 contract.
 
 ## Quick Start
+
+These are existing simulator/oracle diagnostic entry points. The new
+learned-agent loop is not yet presented as a finished training command.
 
 Run one owner-audit seed:
 
@@ -78,6 +81,8 @@ See [src/bin/README.md](src/bin/README.md) for binary ownership boundaries.
 - [tools/README.md](tools/README.md): offline tool boundaries and artifact
   rules.
 - [src/ai/README.md](src/ai/README.md): AI module map and cleanup direction.
+- [src/agent/README.md](src/agent/README.md): learned-agent public-information
+  and belief ownership.
 
 Retired docs are not kept searchable in the working tree. Use git history for
 archaeology.
@@ -91,6 +96,7 @@ archaeology.
 | `src/engine` | state transitions and action handlers |
 | `src/runtime` | runtime support for run/combat execution |
 | `src/sim` | simulator-facing legal action and apply/search boundaries |
+| `src/agent` | learned-agent public information, private resolution, and belief contracts |
 | `src/ai` | policies, strategic facts, deck mutation, combat search, route/search work |
 | `src/eval` | Historical physical source tree for combat eval, run-control, the analysis workbench, and learning adapters; the crates below define their Cargo owners |
 | `src/bin` | maintained command entrypoints |
@@ -118,9 +124,8 @@ oracle witness producer uses `TurnGraphPortfolioV1`: run control composes comple
 benchmarks, and the legacy `branch_tiny` owner-audit path. Their configuration
 and evidence identities are distinct; see
 [Combat Search Ownership](docs/architecture/combat-search.md). Neither engine
-is a certified policy-improvement teacher; the missing qualification boundary
-is specified by
-[`CombatSearchImprovementContractV1`](docs/design/2026-08-11-combat-search-improvement-contract-v1.md).
+is the learned agent or an authoritative teacher; the new complete direction
+is [Public-Belief Agent Learning System](docs/design/2026-08-12-public-belief-agent-learning-system.md).
 
 ## Development Hygiene
 

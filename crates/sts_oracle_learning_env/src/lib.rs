@@ -3,7 +3,7 @@
 extern crate self as sts_simulator;
 
 pub use sts_oracle_run_control::{
-    ai, content, engine, fixtures, runtime, sim, state, test_support, EntityId,
+    agent, ai, content, engine, fixtures, runtime, sim, state, test_support, EntityId,
 };
 
 pub mod testing {

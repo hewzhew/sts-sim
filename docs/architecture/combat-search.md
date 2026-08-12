@@ -119,12 +119,11 @@ frontier sample, rollout estimate, stage trace, or accepted action sequence is
 evidence with its own root and budget contract. Learning code may consume it
 only through an explicitly designed target contract.
 
-No current engine implements or passes a certified improvement operator. The
-maintained specification for the missing public-information, chance-particle,
-fair-root-allocation, independent-evaluation, and qualification boundary is
-[`CombatSearchImprovementContractV1`](../design/2026-08-11-combat-search-improvement-contract-v1.md).
-Until that contract is implemented and qualified, best witnesses remain
-debug/replay provenance and must not be projected into teacher labels.
+No current engine is the learned agent or an authoritative teacher. The active
+learned-agent architecture is
+[`Public-Belief Agent Learning System`](../design/2026-08-12-public-belief-agent-learning-system.md).
+Best witnesses remain optional rollout/bootstrap provenance and must not be
+projected into labels without the information-set search/replay owner.
 
 ## Where To Start
 
@@ -136,9 +135,8 @@ debug/replay provenance and must not be projected into teacher labels.
 - Fixed-root CLI performance: `crates/sts_combat_search_driver` and `cs.cmd`.
 - Result application and rejection: the engine-named run-control adapter, then
   the shared combat-resolution transaction.
-- Policy-improvement teacher work: start with
-  `CombatSearchImprovementContractV1`; do not add teacher semantics to either
-  witness engine.
+- Learned-agent work: start with the public-belief design; do not add belief,
+  replay, or teacher authority to either witness engine.
 
 When a new control appears, first name which row in the engine table consumes
 it. If neither engine reads it, it is not a supported search option.
